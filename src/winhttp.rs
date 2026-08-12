@@ -1,4 +1,6 @@
+use crate::branding::USER_AGENT;
 use crate::navigation::{ParsedUrl, UrlError};
+use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE};
 use std::ffi::c_void;
 use std::io;
 use std::ptr::{null, null_mut};
@@ -8,6 +10,7 @@ type HInternet = *mut c_void;
 const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
 const WINHTTP_QUERY_STATUS_CODE: u32 = 19;
+const WINHTTP_QUERY_CONTENT_TYPE: u32 = 1;
 const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;
 const WINHTTP_OPTION_URL: u32 = 34;
 const WINHTTP_OPTION_DECOMPRESSION: u32 = 118;
@@ -90,11 +93,12 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
     pub final_url: String,
     pub status: u32,
+    pub content_type: Option<String>,
 }
 
 pub fn get(url: &str) -> Result<HttpResponse, String> {
     let parsed = ParsedUrl::parse(url).map_err(|error| error.to_string())?;
-    let agent = wide("Breeze/0.1 (+https://localhost)");
+    let agent = wide(USER_AGENT);
     let session = InternetHandle::new(unsafe {
         WinHttpOpen(
             agent.as_ptr(),
@@ -158,6 +162,7 @@ pub fn get(url: &str) -> Result<HttpResponse, String> {
     }
 
     let final_url = query_final_url(request.0).unwrap_or_else(|| url.to_string());
+    let content_type = query_header_string(request.0, WINHTTP_QUERY_CONTENT_TYPE);
     let mut body = Vec::with_capacity(32 * 1024);
     let mut buffer = [0_u8; 16 * 1024];
     loop {
@@ -189,28 +194,58 @@ pub fn get(url: &str) -> Result<HttpResponse, String> {
         body,
         final_url,
         status,
+        content_type,
     })
 }
 
-pub fn decode_text(bytes: &[u8]) -> String {
+pub fn decode_text(bytes: &[u8], content_type: Option<&str>) -> String {
     if let Some(bytes) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(bytes).into_owned();
+        return decode_with_encoding(bytes, UTF_8);
     }
     if let Some(bytes) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let units = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect::<Vec<_>>();
-        return String::from_utf16_lossy(&units);
+        return decode_with_encoding(bytes, UTF_16LE);
     }
     if let Some(bytes) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        let units = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
-            .collect::<Vec<_>>();
-        return String::from_utf16_lossy(&units);
+        return decode_with_encoding(bytes, UTF_16BE);
     }
-    String::from_utf8_lossy(bytes).into_owned()
+    let encoding = content_type
+        .and_then(charset_from_content_type)
+        .or_else(|| sniff_meta_charset(bytes))
+        .and_then(|label| Encoding::for_label(label.as_bytes()))
+        .unwrap_or(UTF_8);
+    decode_with_encoding(bytes, encoding)
+}
+
+fn decode_with_encoding(bytes: &[u8], encoding: &'static Encoding) -> String {
+    let (decoded, _, _) = encoding.decode(bytes);
+    decoded.into_owned()
+}
+
+fn charset_from_content_type(content_type: &str) -> Option<String> {
+    content_type.split(';').skip(1).find_map(|parameter| {
+        let (name, value) = parameter.trim().split_once('=')?;
+        name.trim()
+            .eq_ignore_ascii_case("charset")
+            .then(|| value.trim().trim_matches(['\'', '"']).to_ascii_lowercase())
+    })
+}
+
+fn sniff_meta_charset(bytes: &[u8]) -> Option<String> {
+    let prefix = &bytes[..bytes.len().min(1024)];
+    let ascii = prefix
+        .iter()
+        .map(|byte| (*byte as char).to_ascii_lowercase())
+        .collect::<String>();
+    let charset = ascii.find("charset")?;
+    let after = ascii[charset + "charset".len()..].trim_start();
+    let after = after.strip_prefix('=')?.trim_start();
+    let after = after.trim_start_matches(['\'', '"']);
+    let end = after
+        .find(|character: char| {
+            character.is_ascii_whitespace() || matches!(character, '\'' | '"' | ';' | '>')
+        })
+        .unwrap_or(after.len());
+    (!after[..end].is_empty()).then(|| after[..end].to_string())
 }
 
 fn query_status(request: HInternet) -> Result<u32, String> {
@@ -247,6 +282,35 @@ fn query_final_url(request: HInternet) -> Option<String> {
             WINHTTP_OPTION_URL,
             buffer.as_mut_ptr().cast(),
             &mut bytes,
+        )
+    } == 0
+    {
+        return None;
+    }
+    let length = buffer
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..length]))
+}
+
+fn query_header_string(request: HInternet, query: u32) -> Option<String> {
+    let mut bytes = 0_u32;
+    unsafe {
+        WinHttpQueryHeaders(request, query, null(), null_mut(), &mut bytes, null_mut());
+    }
+    if bytes < 2 {
+        return None;
+    }
+    let mut buffer = vec![0_u16; (bytes as usize).div_ceil(2)];
+    if unsafe {
+        WinHttpQueryHeaders(
+            request,
+            query,
+            null(),
+            buffer.as_mut_ptr().cast(),
+            &mut bytes,
+            null_mut(),
         )
     } == 0
     {
@@ -306,7 +370,22 @@ mod tests {
 
     #[test]
     fn decodes_utf_boms() {
-        assert_eq!(decode_text(&[0xEF, 0xBB, 0xBF, b'o', b'k']), "ok");
-        assert_eq!(decode_text(&[0xFF, 0xFE, b'o', 0, b'k', 0]), "ok");
+        assert_eq!(decode_text(&[0xEF, 0xBB, 0xBF, b'o', b'k'], None), "ok");
+        assert_eq!(decode_text(&[0xFF, 0xFE, b'o', 0, b'k', 0], None), "ok");
+    }
+
+    #[test]
+    fn honors_http_charset_before_meta() {
+        assert_eq!(
+            decode_text(b"Fran\xe7ais", Some("text/html; charset=ISO-8859-1")),
+            "Français"
+        );
+        assert_eq!(
+            decode_text(
+                b"<meta charset=windows-1252>\x93quoted\x94",
+                Some("text/html")
+            ),
+            "<meta charset=windows-1252>“quoted”"
+        );
     }
 }

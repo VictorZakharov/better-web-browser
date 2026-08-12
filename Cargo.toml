@@ -2,8 +2,15 @@
 name = "better-web-browser"
 version = "0.1.0"
 edition = "2024"
-description = "A performance-first native document browser MVP"
+description = "A performance-first browser engine MVP"
 license = "MIT"
+
+[dependencies]
+cssparser = "0.37.0"
+encoding_rs = "0.8.35"
+html5ever = "0.39.0"
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
+resvg = { version = "0.48.1", default-features = false }
 
 [lib]
 name = "better_web_browser"

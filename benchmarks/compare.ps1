@@ -151,7 +151,7 @@ foreach ($url in $Urls) {
 
 $null = $markdown.AppendLine('## Scope warning')
 $null = $markdown.AppendLine()
-$null = $markdown.AppendLine('Breeze currently downloads HTML and renders a safe readable-document subset. Chromium executes the complete page, including CSS, JavaScript, images, media, accessibility infrastructure, GPU services, and site-isolated subprocesses. The results compare the architectural fast path, not feature-equivalent browsers.')
+$null = $markdown.AppendLine('The prototype owns HTML, CSS, layout, images/SVG, forms, and painting, but does not yet implement JavaScript, canvas, media, accessibility, or site isolation. Chromium executes the complete web platform. Treat performance results as exploratory until the measured page path is feature-equivalent.')
 
 $records | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $resultDirectory 'raw-results.json') -Encoding UTF8
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $resultDirectory 'summary.json') -Encoding UTF8

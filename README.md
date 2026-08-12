@@ -1,8 +1,8 @@
-# Breeze
+# Breeze (temporary name)
 
-Breeze is a performance-first, document-oriented browser MVP written in Rust. It uses native Win32 controls, Windows WinHTTP for HTTP/TLS, a compact HTML-to-document parser, and a retained GDI text display list. The release executable has no third-party runtime dependencies.
+Breeze is a performance-first browser-engine MVP written in Rust. The product name is provisional and isolated in `src/branding.rs` so it can be replaced without touching engine code.
 
-This is the first half of the proposed dual-engine design: the small readable-document fast path. It is not yet a general Chromium replacement.
+This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. The executable owns its HTML DOM, CSS cascade, layout, display list, resource loading, image/SVG decoding, form submission, and Win32 painting path. The sibling Chromium project is an external measurement oracle only.
 
 ## Run it
 
@@ -10,69 +10,46 @@ Requirements: Windows 10/11 and a current stable Rust toolchain.
 
 ```powershell
 cargo run --release
+cargo run --release -- https://www.google.com/
 ```
 
-You can also open a URL immediately:
+The normal page surface is always the default. **Reader** is an explicit optional feature; navigating or reloading returns to the normal page surface.
 
-```powershell
-cargo run --release -- https://example.org/
-```
+Current page support includes:
 
-The address bar accepts HTTP(S) addresses and search terms. Click blue text to follow links; use the mouse wheel or native scrollbar to navigate long documents.
+- HTML5 tree construction with an engine-owned DOM
+- A growing CSS cascade and box-layout implementation
+- External stylesheets, raster images, transparent images, and inline SVG
+- Native text/search/password controls, buttons, and GET forms
+- Character-set decoding from BOM, HTTP headers, or HTML metadata
+- Links, history, reload, scrolling, and background networking
 
-## Built-in task manager
+## Task manager
 
-Click **Task manager** in the toolbar. The modeless popup refreshes every second and displays:
-
-- Normalized process CPU utilization
-- Working set, private memory, and peak working set
-- Process handle count and uptime
-- Active requests, completed/failed pages, and downloaded bytes
-- Last HTML parse duration and retained draw-item count
-
-For an automated smoke check, start with `--task-manager`.
+Click **Task manager**. Its modeless popup refreshes every second and reports normalized CPU use, working/private/peak memory, handles, uptime, network activity, parsing time, and retained display items.
 
 ## Chromium comparison
 
-The sibling `../better-web-browser-chromium-baseline` project controls an installed Chrome/Edge build through the Chrome DevTools Protocol. It launches a fresh profile for every run and measures the entire Chromium process tree.
-
-Run a comparison from this repository:
+The sibling `../better-web-browser-chromium-baseline` project launches an installed Chrome or Edge build with a fresh profile and measures the complete process tree. It is not referenced by this crate or shipped in this executable.
 
 ```powershell
 .\benchmarks\compare.ps1 -Urls https://example.org/ -Iterations 3
 ```
 
-Reports are written beneath `benchmark-results/<timestamp>/`. Each report includes medians for window readiness, process-start-to-page-ready time, navigation, CPU time, working set, private memory, and process count.
-
-The benchmark is intentionally transparent about scope: Breeze downloads and lays out readable HTML, while Chromium executes the complete page with CSS, JavaScript, media, accessibility infrastructure, GPU services, and site-isolated subprocesses.
+Performance claims are valid only when the exercised page path is feature-equivalent. The visual acceptance target is perceptual parity: with the same viewport, scale, fonts, locale, and network state, a person looking at the page surfaces side by side should not be able to identify which is Chromium. Exact byte-for-byte raster equality is not required.
 
 ## Architecture
 
 ```text
-Address/search input
-        │
-        ▼
-URL normalization and history
-        │
-        ▼
-Background WinHTTP request ─────► atomic telemetry
-        │
-        ▼
-Bounded HTML document parser
-        │
-        ▼
-Compact blocks and linked spans
-        │
-        ▼
-Width-aware retained text layout
-        │
-        ▼
-Visible-item native GDI painting
+URL/history -> WinHTTP -> charset decode -> HTML5 DOM
+                                      |-> CSS cascade
+                                      |-> resource discovery/decode
+                                      `-> box layout -> display list -> Win32/GDI paint
 ```
 
-The network request runs off the UI thread. Parsed documents are capped at 2 MiB of rendered text, response bodies at 16 MiB, and scripts, styles, iframes, SVG, canvas, and templates are discarded before layout.
+The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
 
-## Test and benchmark modes
+## Verification
 
 ```powershell
 cargo test --all-targets
@@ -84,15 +61,12 @@ cargo build --release
   --settle-ms 2000
 ```
 
-Benchmark mode paints the page, waits for the requested settle period, writes one JSON record, and exits automatically.
-
-## Current limitations
+## Honest current limitations
 
 - Windows-only native shell
-- No CSS, JavaScript, images, forms, cookies, downloads, tabs, or compatibility fallback yet
-- Readable-content extraction rather than standards-complete HTML layout
-- UTF-8 and BOM-marked UTF-16 decoding only
-- Basic accessibility and no text selection
-- Parser and native boundary have not been security-audited
+- JavaScript, canvas, media, cookies, downloads, tabs, accessibility, and text selection are not implemented yet
+- CSS selector/layout/painting coverage is substantial enough for the classic Google page, but far from the complete web platform
+- Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
+- No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
-Do not use this MVP for sensitive authenticated browsing. The next meaningful milestone is a hardened parser plus tabs/hibernation, followed by a full-engine compatibility handoff.
+Google's same-user-agent fallback page is now a live visual fixture: it renders the real logo, navigation, apps SVG, styled sign-in link, search form, language row, and footer through the owned path. That is a milestone, not a claim of general-web parity.

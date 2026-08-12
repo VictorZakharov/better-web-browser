@@ -129,7 +129,7 @@ pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
     if looks_like_search {
         return Ok(format!(
             "https://duckduckgo.com/html/?q={}",
-            encode_query(input)
+            encode_www_form_component(input)
         ));
     }
 
@@ -208,7 +208,7 @@ fn normalize_path(path_and_query: &str) -> String {
     normalized
 }
 
-fn encode_query(input: &str) -> String {
+pub fn encode_www_form_component(input: &str) -> String {
     let mut encoded = String::with_capacity(input.len());
     for byte in input.bytes() {
         match byte {
