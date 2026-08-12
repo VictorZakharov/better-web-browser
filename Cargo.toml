@@ -1,0 +1,21 @@
+[package]
+name = "better-web-browser"
+version = "0.1.0"
+edition = "2024"
+description = "A performance-first native document browser MVP"
+license = "MIT"
+
+[lib]
+name = "better_web_browser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "better-web-browser"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
