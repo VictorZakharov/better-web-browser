@@ -5,6 +5,21 @@ on:
   pull_request:
 
 jobs:
+  linear-history:
+    name: Linear PR history
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reject merge commits introduced by the pull request
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./scripts/check-linear-history.ps1 -BaseSha $env:BASE_SHA -HeadSha $env:HEAD_SHA
+
   windows:
     runs-on: windows-latest
     steps:
