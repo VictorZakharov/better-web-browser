@@ -17,15 +17,14 @@ $legacyCeilings = @{
     'src/engine/css.rs'       = 2856
     'src/engine/dom.rs'       = 986
     'src/engine/layout.rs'    = 3405
-    'src/engine/page.rs'      = 753
     'src/engine/scheduler.rs' = 518
-    'src/engine/script.rs'    = 3658
-    'src/windows_app.rs'      = 4734
+    'src/engine/script.rs'    = 1444
+    'src/windows_app.rs'      = 3562
     'src/winhttp.rs'          = 760
 }
 
 $sourceRoots = @('src', 'tests', 'benchmarks', 'scripts')
-$extensions = @('.rs', '.cs', '.ps1')
+$extensions = @('.rs', '.js', '.cs', '.ps1')
 $violations = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()
 
