@@ -1,11 +1,34 @@
 name: CI
 
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
-  windows:
+  linear-history:
+    name: Linear PR history
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reject merge commits introduced by the pull request
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./scripts/check-linear-history.ps1 -BaseSha $env:BASE_SHA -HeadSha $env:HEAD_SHA
+
+  source:
+    name: Source and formatting
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -18,7 +41,66 @@ jobs:
         run: ./scripts/check-source-size.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  lint:
+    name: Lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Restore Cargo build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-lint-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'vendor/boa_engine/Cargo.toml') }}
+          restore-keys: windows-cargo-lint-
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Restore Cargo build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-test-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'vendor/boa_engine/Cargo.toml') }}
+          restore-keys: windows-cargo-test-
       - name: Test
         run: cargo test --all-targets
+
+  windows:
+    name: windows
+    if: ${{ always() }}
+    needs:
+      - source
+      - lint
+      - test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Windows worker
+        shell: bash
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT"
+            exit 1
+          fi
