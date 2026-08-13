@@ -2,7 +2,7 @@
 
 Breeze is a performance-first browser-engine MVP written in Rust. The product name is provisional and isolated in `src/branding.rs` so it can be replaced without touching engine code.
 
-This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. The executable owns its HTML DOM, CSS cascade, JavaScript bindings, layout, display list, resource loading, image/SVG/font decoding, form submission, cookie jar, and Win32 painting path. The sibling Chromium project is an external measurement oracle only.
+This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. The executable owns its HTML DOM, CSS cascade, JavaScript bindings, layout, display list, resource loading, image/SVG/font decoding, form submission, cookie jar, and Win32 painting path.
 
 ## Run it
 
@@ -31,13 +31,32 @@ Click **Task manager**. Its modeless popup refreshes every second and reports no
 
 ## Chromium comparison
 
-The sibling `../better-web-browser-chromium-baseline` project launches an installed Chrome or Edge build with a fresh profile and measures the complete process tree. It is not referenced by this crate or shipped in this executable.
+The comparison harness runs Breeze and a separately supplied Chromium reference as fresh hidden processes, then reports median timing, memory, CPU, and process counts.
 
 ```powershell
-.\benchmarks\compare.ps1 -Urls https://example.org/ -Iterations 3
+.\benchmarks\compare.ps1 `
+  -Urls https://example.org/ `
+  -Iterations 3 `
+  -ChromiumProject <path-to-reference-harness>
 ```
 
 Performance claims are valid only when the exercised page path is feature-equivalent. The visual acceptance target is perceptual parity: with the same viewport, scale, fonts, locale, and network state, a person looking at the page surfaces side by side should not be able to identify which is Chromium. Exact byte-for-byte raster equality is not required.
+
+### Current benchmark snapshot
+
+Three alternating hidden release runs of `https://www.neolisk.blog/` on 2026-08-13, with a 2-second settle period, produced these medians:
+
+| Metric | Breeze | Chromium | Result |
+|---|---:|---:|---:|
+| Window ready | 11.7 ms | 192.7 ms | Breeze 16.42x faster |
+| Process start to page ready | 495.0 ms | 846.5 ms | Breeze 1.71x faster |
+| Navigation | 481.2 ms | 517.1 ms | Breeze 1.07x faster |
+| Working set | 91.9 MiB | 607.4 MiB | Breeze 6.61x smaller |
+| Private memory | 78.2 MiB | 395.1 MiB | Breeze 5.05x smaller |
+| CPU time | 625.0 ms | 3,968.8 ms | Breeze 6.35x lower |
+| Processes | 1 | 10 | Breeze uses 10x fewer |
+
+Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event and implements substantially more of the web platform. Treat this as a reproducible development snapshot, not a universal or feature-equivalent browser claim.
 
 ## Architecture
 
