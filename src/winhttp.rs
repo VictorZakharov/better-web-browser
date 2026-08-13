@@ -114,6 +114,12 @@ pub struct HttpResponse {
     pub content_type: Option<String>,
 }
 
+impl HttpResponse {
+    pub fn is_success(&self) -> bool {
+        (200..=299).contains(&self.status)
+    }
+}
+
 pub struct HttpClient {
     connections: Mutex<HashMap<(String, String, u16), Arc<InternetHandle>>>,
     cookies: Mutex<Vec<StoredCookie>>,
@@ -237,10 +243,6 @@ impl HttpClient {
         )?;
 
         let status = query_status(request.0)?;
-        if !(200..=299).contains(&status) {
-            return Err(format!("server returned HTTP {status}"));
-        }
-
         let final_url = query_final_url(request.0).unwrap_or_else(|| url.to_string());
         let content_type = query_header_string(request.0, WINHTTP_QUERY_CONTENT_TYPE);
         let mut body = Vec::with_capacity(32 * 1024);
@@ -719,5 +721,40 @@ mod tests {
             request.contains("Accept-Language: en-CA,en;q=0.9\r\n"),
             "{request}"
         );
+    }
+
+    #[test]
+    fn returns_http_error_responses_with_their_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let receiver = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).unwrap();
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+            }
+            let body = b"<h1>Try again later</h1>";
+            write!(
+                stream,
+                "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(body).unwrap();
+        });
+
+        let url = format!("http://127.0.0.1:{port}/limited");
+        let client = HttpClient::with_access_type(WINHTTP_ACCESS_TYPE_NO_PROXY).unwrap();
+        let response = client.get(&url).unwrap();
+        receiver.join().unwrap();
+        assert_eq!(response.status, 429);
+        assert!(!response.is_success());
+        assert_eq!(response.content_type.as_deref(), Some("text/html"));
+        assert_eq!(response.body, b"<h1>Try again later</h1>");
     }
 }

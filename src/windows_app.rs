@@ -61,6 +61,9 @@ const WM_NCDESTROY: u32 = 0x0082;
 const WM_SETFONT: u32 = 0x0030;
 const EM_SETCUEBANNER: u32 = 0x1501;
 const EM_SETMARGINS: u32 = 0x00D3;
+const CB_ADDSTRING: u32 = 0x0143;
+const CB_GETCURSEL: u32 = 0x0147;
+const CB_SETCURSEL: u32 = 0x014E;
 const WM_APP: u32 = 0x8000;
 const WM_APP_PAGE_LOADED: u32 = WM_APP + 1;
 const WM_APP_TASK_CLOSED: u32 = WM_APP + 2;
@@ -79,6 +82,7 @@ const ES_PASSWORD: u32 = 0x0020;
 const ES_MULTILINE: u32 = 0x0004;
 const ES_AUTOVSCROLL: u32 = 0x0040;
 const BS_OWNERDRAW: u32 = 0x000B;
+const CBS_DROPDOWNLIST: u32 = 0x0003;
 const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
 
 const SW_SHOW: i32 = 5;
@@ -128,6 +132,8 @@ const ID_READER: usize = 1007;
 const ID_PAGE_CONTROL_BASE: usize = 2000;
 
 const DEFAULT_DPI: u32 = 96;
+const DEFAULT_WINDOW_WIDTH_DIP: i32 = 1120;
+const DEFAULT_WINDOW_HEIGHT_DIP: i32 = 780;
 const TOOLBAR_HEIGHT_DIP: i32 = 64;
 const STATUS_HEIGHT_DIP: i32 = 30;
 const CONTENT_MARGIN_DIP: i32 = 28;
@@ -433,6 +439,7 @@ unsafe extern "system" {
     fn DrawTextW(dc: Hdc, text: *const u16, length: i32, rectangle: *mut Rect, format: u32) -> i32;
     fn TrackMouseEvent(event: *mut TrackMouseEventData) -> i32;
     fn SetProcessDpiAwarenessContext(context: Handle) -> i32;
+    fn GetDpiForSystem() -> u32;
     fn GetDpiForWindow(window: Hwnd) -> u32;
 }
 
@@ -563,6 +570,7 @@ pub fn run() -> Result<(), String> {
         // Per-monitor V2 keeps the custom chrome crisp as windows move between displays.
         // A failure is harmless when a host process has already selected a DPI mode.
         SetProcessDpiAwarenessContext(-4_isize as Handle);
+        let initial_dpi = GetDpiForSystem().max(DEFAULT_DPI);
         let instance = GetModuleHandleW(null());
         if instance.is_null() {
             return Err(last_error("locate application module"));
@@ -571,20 +579,25 @@ pub fn run() -> Result<(), String> {
         register_class(instance, TASK_CLASS, task_window_proc, COLOR_WINDOW)?;
 
         let options = LaunchOptions::parse(process_started)?;
+        let benchmark_is_hidden = options.benchmark.is_some();
         let metrics = Arc::new(BrowserMetrics::default());
         let state = Box::new(BrowserState::new(instance, metrics, options)?);
         let state_pointer = Box::into_raw(state);
         let class = wide(MAIN_CLASS);
         let title = wide(PRODUCT_NAME);
+        let window_style = WS_OVERLAPPEDWINDOW
+            | WS_VSCROLL
+            | WS_CLIPCHILDREN
+            | if benchmark_is_hidden { 0 } else { WS_VISIBLE };
         let window = CreateWindowExW(
             0,
             class.as_ptr(),
             title.as_ptr(),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_VSCROLL | WS_CLIPCHILDREN,
+            window_style,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            1120,
-            780,
+            scale_dip(DEFAULT_WINDOW_WIDTH_DIP, initial_dpi),
+            scale_dip(DEFAULT_WINDOW_HEIGHT_DIP, initial_dpi),
             null_mut(),
             null_mut(),
             instance,
@@ -594,7 +607,14 @@ pub fn run() -> Result<(), String> {
             return Err(last_error("create browser window"));
         }
 
-        ShowWindow(window, SW_SHOW);
+        ShowWindow(
+            window,
+            if benchmark_is_hidden {
+                SW_HIDE
+            } else {
+                SW_SHOW
+            },
+        );
         UpdateWindow(window);
         let mut message: Msg = std::mem::zeroed();
         loop {
@@ -649,6 +669,7 @@ impl LaunchOptions {
         let mut open_task_manager = false;
         let mut benchmark_url = None;
         let mut output = None;
+        let mut screenshot = None;
         let mut settle_ms = 2_000_u64;
 
         while let Some(argument) = arguments.next() {
@@ -665,6 +686,13 @@ impl LaunchOptions {
                         arguments
                             .next()
                             .ok_or_else(|| "--output requires a path".to_string())?,
+                    ));
+                }
+                "--screenshot" => {
+                    screenshot = Some(PathBuf::from(
+                        arguments
+                            .next()
+                            .ok_or_else(|| "--screenshot requires a path".to_string())?,
                     ));
                 }
                 "--settle-ms" => {
@@ -714,8 +742,12 @@ impl LaunchOptions {
                 script_diagnostics: Vec::new(),
                 script_runtime_stopped: false,
                 finish_scheduled: false,
+                screenshot,
             })
         } else {
+            if screenshot.is_some() {
+                return Err("--screenshot requires --benchmark".to_string());
+            }
             None
         };
 
@@ -754,6 +786,7 @@ struct BenchmarkRun {
     script_diagnostics: Vec<String>,
     script_runtime_stopped: bool,
     finish_scheduled: bool,
+    screenshot: Option<PathBuf>,
 }
 
 pub fn show_fatal_error(error: &str) {
@@ -1764,7 +1797,10 @@ impl BrowserState {
                     .into_iter()
                     .filter_map(|request| request.join().ok())
                     .filter_map(|(resource, response)| {
-                        response.ok().map(|response| (resource, response.body))
+                        response
+                            .ok()
+                            .filter(winhttp::HttpResponse::is_success)
+                            .map(|response| (resource, response.body))
                     })
                     .collect::<Vec<_>>()
             });
@@ -1816,6 +1852,11 @@ impl BrowserState {
         let Some(benchmark) = self.benchmark.as_ref() else {
             return;
         };
+        let screenshot = benchmark.screenshot.clone();
+        let mut client: Rect = std::mem::zeroed();
+        GetClientRect(self.window, &mut client);
+        let viewport_width = client.right.max(1) as f32 / self.page_scale();
+        let viewport_height = self.viewport_height().max(1) as f32 / self.page_scale();
         let memory = process_memory();
         let elapsed = benchmark.process_started.elapsed();
         let cpu_ticks = process_cpu_ticks()
@@ -1876,6 +1917,8 @@ impl BrowserState {
                 "  \"final_url\": {},\n",
                 "  \"error\": {},\n",
                 "  \"http_status\": {},\n",
+                "  \"viewport_width_css_px\": {:.3},\n",
+                "  \"viewport_height_css_px\": {:.3},\n",
                 "  \"window_ready_ms\": {:.3},\n",
                 "  \"page_ready_ms\": {:.3},\n",
                 "  \"navigation_ms\": {:.3},\n",
@@ -1912,6 +1955,8 @@ impl BrowserState {
                 .map(json_string)
                 .unwrap_or_else(|| "null".into()),
             benchmark.status,
+            viewport_width,
+            viewport_height,
             benchmark.window_ready.as_secs_f64() * 1_000.0,
             benchmark.page_ready.as_secs_f64() * 1_000.0,
             navigation_ms,
@@ -1947,7 +1992,110 @@ impl BrowserState {
         if let Err(error) = write_result {
             self.set_status(&format!("Failed to write benchmark: {error}"));
         }
+        if let Some(path) = screenshot
+            && let Err(error) = self.capture_screenshot(&path)
+        {
+            self.set_status(&format!("Failed to capture benchmark: {error}"));
+        }
         DestroyWindow(self.window);
+    }
+
+    unsafe fn capture_screenshot(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let mut client: Rect = std::mem::zeroed();
+        if GetClientRect(self.window, &mut client) == 0 {
+            return Err(last_error("measure benchmark capture"));
+        }
+        let width = client.right.max(1);
+        let height = client.bottom.max(1);
+        let byte_len = usize::try_from(width)
+            .ok()
+            .and_then(|width| {
+                usize::try_from(height)
+                    .ok()
+                    .and_then(|height| width.checked_mul(height))
+            })
+            .and_then(|pixels| pixels.checked_mul(4))
+            .ok_or_else(|| "benchmark capture is too large".to_string())?;
+
+        let window_dc = GetDC(self.window);
+        if window_dc.is_null() {
+            return Err(last_error("open benchmark capture surface"));
+        }
+        let memory_dc = CreateCompatibleDC(window_dc);
+        if memory_dc.is_null() {
+            ReleaseDC(self.window, window_dc);
+            return Err(last_error("create benchmark capture surface"));
+        }
+        let info = BitmapInfo {
+            header: BitmapInfoHeader {
+                size: size_of::<BitmapInfoHeader>() as u32,
+                width,
+                height: -height,
+                planes: 1,
+                bit_count: 32,
+                compression: 0,
+                size_image: byte_len.min(u32::MAX as usize) as u32,
+                x_pixels_per_meter: 0,
+                y_pixels_per_meter: 0,
+                colors_used: 0,
+                colors_important: 0,
+            },
+            colors: [0],
+        };
+        let mut pixels = null_mut();
+        let bitmap = CreateDIBSection(window_dc, &info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0);
+        if bitmap.is_null() || pixels.is_null() {
+            DeleteDC(memory_dc);
+            ReleaseDC(self.window, window_dc);
+            return Err(last_error("allocate benchmark capture bitmap"));
+        }
+
+        let previous = SelectObject(memory_dc, bitmap);
+        self.paint_surface(memory_dc, &client);
+        if let Some(fonts) = self.fonts.as_ref() {
+            SelectObject(memory_dc, fonts.ui);
+            SetTextColor(memory_dc, CHROME_THEME.text);
+            SetBkMode(memory_dc, TRANSPARENT);
+            let mut address_rect = self
+                .chrome
+                .address_frame
+                .inset(self.scale(16), self.scale(1));
+            let address = window_text(self.controls.address);
+            draw_text_in_rect(
+                memory_dc,
+                &address,
+                &mut address_rect,
+                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+            );
+        }
+        let bgra = std::slice::from_raw_parts(pixels.cast::<u8>(), byte_len);
+        let mut rgba = Vec::with_capacity(byte_len);
+        for pixel in bgra.chunks_exact(4) {
+            rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]);
+        }
+
+        if !previous.is_null() {
+            SelectObject(memory_dc, previous);
+        }
+        DeleteObject(bitmap);
+        DeleteDC(memory_dc);
+        ReleaseDC(self.window, window_dc);
+
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("create screenshot directory: {error}"))?;
+        }
+        image::save_buffer(
+            path,
+            &rgba,
+            width as u32,
+            height as u32,
+            image::ColorType::Rgba8,
+        )
+        .map_err(|error| format!("write screenshot: {error}"))
     }
 
     unsafe fn go_back(&mut self) {
@@ -2093,6 +2241,15 @@ impl BrowserState {
             })
             .map(|control| (control.spec.node_id, window_text(control.window)))
             .collect::<HashMap<_, _>>();
+        let previous_selections = self
+            .page_controls
+            .iter()
+            .filter(|control| control.spec.kind == ControlKind::Select)
+            .filter_map(|control| {
+                let selected = SendMessageW(control.window, CB_GETCURSEL, 0, 0);
+                (selected >= 0).then_some((control.spec.node_id, selected as usize))
+            })
+            .collect::<HashMap<_, _>>();
         self.destroy_page_controls();
         if self.surface != Surface::Page {
             return;
@@ -2110,8 +2267,13 @@ impl BrowserState {
             let id = ID_PAGE_CONTROL_BASE + index;
             let (class, style, text) = match spec.kind {
                 ControlKind::Submit | ControlKind::Button | ControlKind::Reset => {
-                    ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.value.clone())
+                    ("BUTTON", BS_OWNERDRAW | WS_TABSTOP, spec.label.clone())
                 }
+                ControlKind::Select => (
+                    "COMBOBOX",
+                    CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL,
+                    String::new(),
+                ),
                 ControlKind::Password => (
                     "EDIT",
                     WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
@@ -2143,6 +2305,18 @@ impl BrowserState {
             }
             let font = self.dynamic_fonts.get_or_create(&spec.font, self.dpi);
             SendMessageW(window, WM_SETFONT, font as usize, 1);
+            if spec.kind == ControlKind::Select {
+                for option in &spec.options {
+                    let label = wide(&option.label);
+                    SendMessageW(window, CB_ADDSTRING, 0, label.as_ptr() as isize);
+                }
+                let selected = previous_selections
+                    .get(&spec.node_id)
+                    .copied()
+                    .unwrap_or(spec.selected_index)
+                    .min(spec.options.len().saturating_sub(1));
+                SendMessageW(window, CB_SETCURSEL, selected, 0);
+            }
             if !spec.placeholder.is_empty()
                 && matches!(
                     spec.kind,
@@ -2200,7 +2374,12 @@ impl BrowserState {
                     ((rect.width - left_inset - right_inset).max(1.0) * scale).ceil() as i32;
                 let height =
                     ((rect.height - top_inset - bottom_inset).max(1.0) * scale).ceil() as i32;
-                MoveWindow(control.window, x, y, width, height, 1);
+                let native_height = if control.spec.kind == ControlKind::Select {
+                    height + self.scale(220)
+                } else {
+                    height
+                };
+                MoveWindow(control.window, x, y, width, native_height, 1);
                 ShowWindow(control.window, SW_SHOW);
             } else {
                 ShowWindow(control.window, SW_HIDE);
@@ -2233,16 +2412,24 @@ impl BrowserState {
         };
         if spec.kind == ControlKind::Reset {
             for page_control in &self.page_controls {
-                if page_control.spec.form_id == Some(form_id)
-                    && matches!(
-                        page_control.spec.kind,
-                        ControlKind::Text
-                            | ControlKind::TextArea
-                            | ControlKind::Password
-                            | ControlKind::Search
-                    )
-                {
+                if page_control.spec.form_id != Some(form_id) {
+                    continue;
+                }
+                if matches!(
+                    page_control.spec.kind,
+                    ControlKind::Text
+                        | ControlKind::TextArea
+                        | ControlKind::Password
+                        | ControlKind::Search
+                ) {
                     set_window_text(page_control.window, &page_control.spec.value);
+                } else if page_control.spec.kind == ControlKind::Select {
+                    SendMessageW(
+                        page_control.window,
+                        CB_SETCURSEL,
+                        page_control.spec.selected_index,
+                        0,
+                    );
                 }
             }
             return;
@@ -2267,6 +2454,15 @@ impl BrowserState {
                     page_control.spec.name.clone(),
                     window_text(page_control.window),
                 )),
+                ControlKind::Select => {
+                    let selected = SendMessageW(page_control.window, CB_GETCURSEL, 0, 0);
+                    let value = (selected >= 0)
+                        .then_some(selected as usize)
+                        .and_then(|index| page_control.spec.options.get(index))
+                        .map(|option| option.value.clone())
+                        .unwrap_or_else(|| page_control.spec.value.clone());
+                    fields.push((page_control.spec.name.clone(), value));
+                }
                 ControlKind::Submit if page_control.spec.node_id == spec.node_id => {
                     fields.push((
                         page_control.spec.name.clone(),
@@ -2560,7 +2756,100 @@ impl BrowserState {
                                 );
                             }
                         }
-                        DisplayItem::Control(_) => {}
+                        DisplayItem::BackgroundImage {
+                            clip_rect,
+                            tile_rect,
+                            url,
+                            repeat_x,
+                            repeat_y,
+                        } => {
+                            let clip =
+                                screen_rect(*clip_rect, self.scroll_y, toolbar_height, scale);
+                            if !intersects(&clip, &content)
+                                || tile_rect.width <= 0.0
+                                || tile_rect.height <= 0.0
+                            {
+                                continue;
+                            }
+                            if let Some(image) = self.page.images.get(url) {
+                                let bitmap = self.image_bitmaps.get_or_create(url, image, dc);
+                                if !bitmap.is_null() {
+                                    paint_background_image(
+                                        dc,
+                                        bitmap,
+                                        image,
+                                        *clip_rect,
+                                        *tile_rect,
+                                        *repeat_x,
+                                        *repeat_y,
+                                        self.scroll_y,
+                                        toolbar_height,
+                                        scale,
+                                    );
+                                }
+                            }
+                        }
+                        DisplayItem::Control(spec) => {
+                            if self.benchmark.is_some() {
+                                let mut rectangle =
+                                    screen_rect(spec.rect, self.scroll_y, toolbar_height, scale);
+                                if !intersects(&rectangle, &content) {
+                                    continue;
+                                }
+                                let is_button = matches!(
+                                    spec.kind,
+                                    ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+                                );
+                                if !is_button {
+                                    let [border_top, border_right, border_bottom, border_left] =
+                                        spec.border_width
+                                            .map(|width| (width * scale).ceil() as i32);
+                                    let [padding_top, padding_right, padding_bottom, padding_left] =
+                                        spec.padding.map(|width| (width * scale).ceil() as i32);
+                                    rectangle.left += border_left + padding_left;
+                                    rectangle.top += border_top + padding_top;
+                                    rectangle.right -= border_right + padding_right;
+                                    rectangle.bottom -= border_bottom + padding_bottom;
+                                }
+                                let font = self.dynamic_fonts.get_or_create(&spec.font, self.dpi);
+                                SelectObject(dc, font);
+                                SetTextColor(
+                                    dc,
+                                    if spec.text_color.alpha == 0 {
+                                        CHROME_THEME.text
+                                    } else {
+                                        spec.text_color.to_colorref()
+                                    },
+                                );
+                                let value = self
+                                    .page_controls
+                                    .iter()
+                                    .find(|control| control.spec.node_id == spec.node_id)
+                                    .map(|control| window_text(control.window))
+                                    .unwrap_or_else(|| spec.value.clone());
+                                let text = if spec.kind == ControlKind::Password {
+                                    "•".repeat(value.chars().count())
+                                } else if value.is_empty() {
+                                    if spec.kind == ControlKind::Select || is_button {
+                                        spec.label.clone()
+                                    } else {
+                                        spec.placeholder.clone()
+                                    }
+                                } else {
+                                    value
+                                };
+                                draw_text_in_rect(
+                                    dc,
+                                    &text,
+                                    &mut rectangle,
+                                    DT_VCENTER
+                                        | DT_SINGLELINE
+                                        | DT_END_ELLIPSIS
+                                        | DT_NOPREFIX
+                                        | if is_button { DT_CENTER } else { 0 },
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -2787,7 +3076,7 @@ impl BrowserState {
             spec.background_color.to_colorref(),
             radius,
         );
-        if spec.border_width.iter().any(|width| *width > 0.0) {
+        if spec.border_color.alpha > 0 && spec.border_width.iter().any(|width| *width > 0.0) {
             paint_border(
                 item.dc,
                 &item.item_rect,
@@ -2807,7 +3096,7 @@ impl BrowserState {
             );
         }
 
-        if spec.value.is_empty()
+        if spec.label.is_empty()
             && let Some(icon_url) = spec.icon_url.as_deref()
             && let Some(image) = self.page.images.get(icon_url)
         {
@@ -2873,7 +3162,7 @@ impl BrowserState {
         }
         draw_text_in_rect(
             item.dc,
-            &spec.value,
+            &spec.label,
             &mut text_rect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
@@ -2982,6 +3271,9 @@ fn load_page_resources(
             let Ok(response) = response else {
                 continue;
             };
+            if !response.is_success() {
+                continue;
+            }
             let size = response.body.len() as u64;
             if size > *resource_budget {
                 continue;
@@ -4223,6 +4515,72 @@ unsafe fn paint_alpha_image(
         bottom: screen_y + (rect.height * scale).round().max(1.0) as i32,
     };
     paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn paint_background_image(
+    destination: Hdc,
+    bitmap: Hbitmap,
+    image: &DecodedImage,
+    clip_rect: RectF,
+    tile_rect: RectF,
+    repeat_x: bool,
+    repeat_y: bool,
+    scroll_y: i32,
+    content_top: i32,
+    scale: f32,
+) {
+    if tile_rect.width <= 0.0 || tile_rect.height <= 0.0 {
+        return;
+    }
+    let clip = screen_rect(clip_rect, scroll_y, content_top, scale);
+    let saved = SaveDC(destination);
+    IntersectClipRect(destination, clip.left, clip.top, clip.right, clip.bottom);
+
+    let start_x = if repeat_x {
+        tile_rect.x + ((clip_rect.x - tile_rect.x) / tile_rect.width).floor() * tile_rect.width
+    } else {
+        tile_rect.x
+    };
+    let start_y = if repeat_y {
+        tile_rect.y + ((clip_rect.y - tile_rect.y) / tile_rect.height).floor() * tile_rect.height
+    } else {
+        tile_rect.y
+    };
+    let mut painted = 0_usize;
+    let mut y = start_y;
+    loop {
+        let mut x = start_x;
+        loop {
+            let tile = RectF {
+                x,
+                y,
+                width: tile_rect.width,
+                height: tile_rect.height,
+            };
+            let destination_rect = screen_rect(tile, scroll_y, content_top, scale);
+            paint_alpha_bitmap(destination, bitmap, image, &destination_rect);
+            painted += 1;
+            if !repeat_x || painted >= 4_096 {
+                break;
+            }
+            x += tile_rect.width;
+            if x >= clip_rect.right() {
+                break;
+            }
+        }
+        if !repeat_y || painted >= 4_096 {
+            break;
+        }
+        y += tile_rect.height;
+        if y >= clip_rect.bottom() {
+            break;
+        }
+    }
+
+    if saved != 0 {
+        RestoreDC(destination, saved);
+    }
 }
 
 unsafe fn paint_alpha_bitmap(

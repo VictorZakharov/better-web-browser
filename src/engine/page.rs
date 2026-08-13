@@ -214,16 +214,32 @@ impl Page {
         for (source_url, css) in &self.stylesheet_sources {
             available_faces.extend(discover_font_faces(css, source_url));
         }
-        let styles = StyleSet::from_dom(
+        let styles = StyleSet::from_sources(
             &self.dom,
-            &self.external_stylesheets,
+            &self.base_url,
+            &self.stylesheet_sources,
             viewport_width.max(1.0),
         );
+        let mut known_images = self
+            .resources
+            .iter()
+            .filter_map(|resource| match resource {
+                PageResource::Image { url } => Some(url.clone()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
         let mut requested_faces = Vec::<(String, u16, bool)>::new();
         for node in Node::descendants(&self.dom.document) {
             let style = styles.get(&node);
             if style.display == Display::None || !style.visibility {
                 continue;
+            }
+            if known_images.len() < MAX_IMAGES
+                && let Some(url) = style.background_image.as_ref()
+                && known_images.insert(url.clone())
+            {
+                self.resources
+                    .push(PageResource::Image { url: url.clone() });
             }
             let family = style
                 .font_family
@@ -294,6 +310,11 @@ impl Page {
     }
 
     pub fn add_image(&mut self, url: String, bytes: &[u8]) -> Result<(), String> {
+        if looks_like_svg(bytes) {
+            let image = decode_svg(bytes, "external SVG")?;
+            self.images.insert(url, image);
+            return Ok(());
+        }
         let reader = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .map_err(|error| format!("detect image format: {error}"))?;
@@ -326,7 +347,12 @@ impl Page {
     }
 
     pub fn style(&self, viewport_width: f32) -> StyleSet {
-        StyleSet::from_dom(&self.dom, &self.external_stylesheets, viewport_width)
+        StyleSet::from_sources(
+            &self.dom,
+            &self.base_url,
+            &self.stylesheet_sources,
+            viewport_width,
+        )
     }
 
     pub fn cached_style(&self, viewport_width: f32) -> Option<&StyleSet> {
@@ -482,18 +508,28 @@ pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
 fn decode_inline_svg(node: &NodeRef) -> Result<DecodedImage, String> {
     let mut source = String::new();
     serialize_svg_node(node, &mut source, true);
+    decode_svg(source.as_bytes(), "inline SVG")
+}
+
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(512)]);
+    let prefix = prefix.trim_start_matches('\u{feff}').trim_start();
+    prefix.starts_with("<svg") || (prefix.starts_with("<?xml") && prefix.contains("<svg"))
+}
+
+fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImage, String> {
     let options = resvg::usvg::Options::default();
-    let tree = resvg::usvg::Tree::from_data(source.as_bytes(), &options)
-        .map_err(|error| format!("parse inline SVG: {error}"))?;
+    let tree = resvg::usvg::Tree::from_data(source, &options)
+        .map_err(|error| format!("parse {description}: {error}"))?;
     let size = tree.size().to_int_size();
     let width = size.width();
     let height = size.height();
     if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_DECODED_IMAGE_PIXELS
     {
-        return Err("inline SVG has invalid dimensions".into());
+        return Err(format!("{description} has invalid dimensions"));
     }
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-        .ok_or_else(|| "allocate inline SVG pixels".to_string())?;
+        .ok_or_else(|| format!("allocate {description} pixels"))?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::default(),
@@ -637,6 +673,22 @@ mod tests {
     }
 
     #[test]
+    fn discovers_background_images_from_computed_styles() {
+        let mut page = Page::parse(
+            r#"<a class="logo"></a>"#,
+            "https://example.com/articles/page.html",
+        );
+        page.add_stylesheet_from(
+            "https://cdn.example/css/site.css",
+            ".logo { background: no-repeat center url(../images/logo.svg) }".into(),
+        );
+        page.refresh_resources(800.0);
+        assert!(page.resources.contains(&PageResource::Image {
+            url: "https://cdn.example/images/logo.svg".into()
+        }));
+    }
+
+    #[test]
     fn decodes_images_to_bgra() {
         let mut page = Page::parse("", "https://example.com/");
         let source = image::RgbaImage::from_pixel(1, 1, image::Rgba([12, 34, 56, 255]));
@@ -649,6 +701,19 @@ mod tests {
         let image = &page.images["https://example.com/a.png"];
         assert_eq!((image.width, image.height), (1, 1));
         assert_eq!(image.bgra, vec![56, 34, 12, 255]);
+    }
+
+    #[test]
+    fn rasterizes_external_svg_images() {
+        let mut page = Page::parse("", "https://example.com/");
+        page.add_image(
+            "https://example.com/logo.svg".into(),
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="red"/></svg>"#,
+        )
+        .unwrap();
+        let image = &page.images["https://example.com/logo.svg"];
+        assert_eq!((image.width, image.height), (20, 10));
+        assert!(image.bgra.chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 
     #[test]

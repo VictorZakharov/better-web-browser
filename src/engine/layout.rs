@@ -1,6 +1,6 @@
 use super::css::{
-    AlignItems, BoxSizing, Color, ComputedStyle, Display, FlexDirection, Float, JustifyContent,
-    Length, Position, ResolvedEdges, StyleSet, TextAlign, WhiteSpace, parse_length,
+    AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, FlexDirection, Float,
+    JustifyContent, Length, Position, ResolvedEdges, StyleSet, TextAlign, WhiteSpace, parse_length,
 };
 use super::dom::{Node, NodeData, NodeRef};
 use super::page::{Page, inline_svg_key};
@@ -51,15 +51,22 @@ pub trait TextMeasurer {
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32);
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlKind {
     Text,
     TextArea,
     Password,
     Search,
+    Select,
     Submit,
     Button,
     Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectOption {
+    pub value: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +76,9 @@ pub struct ControlSpec {
     pub kind: ControlKind,
     pub name: String,
     pub value: String,
+    pub label: String,
+    pub options: Vec<SelectOption>,
+    pub selected_index: usize,
     pub placeholder: String,
     pub form_id: Option<usize>,
     pub background_color: Color,
@@ -116,6 +126,13 @@ pub enum DisplayItem {
         url: String,
         alt: String,
         tint: Option<Color>,
+    },
+    BackgroundImage {
+        clip_rect: RectF,
+        tile_rect: RectF,
+        url: String,
+        repeat_x: bool,
+        repeat_y: bool,
     },
     Control(ControlSpec),
 }
@@ -168,7 +185,7 @@ pub fn layout_page<M: TextMeasurer>(
     if let Some(body_style) = engine.styles.styles.get(&node_id(&root))
         && body_style.background_color.alpha > 0
     {
-        engine.output.background = body_style.background_color;
+        engine.output.background = body_style.background_color.composite_over(Color::WHITE);
     }
     let metrics = engine.layout_block(&root, 0.0, 0.0, viewport_width.max(1.0));
     engine.output.content_height = metrics.bottom.max(viewport_height);
@@ -200,6 +217,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if style.display == Display::None || !style.visibility {
             return BlockMetrics { bottom: y };
         }
+        let block_control = input_control_data(node);
 
         let margins = style.margin.resolve(containing_width, style.font_size);
         let borders = style
@@ -327,17 +345,35 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: border_box_width,
                     height: 0.0,
                 },
-                color: style.background_color,
+                color: self.effective_background_color(node),
                 radius: 0.0,
             });
             Some(index)
         } else {
             None
         };
+        let background_image_index = style.background_image.as_ref().map(|url| {
+            let index = self.output.items.len();
+            self.output.items.push(DisplayItem::BackgroundImage {
+                clip_rect: RectF {
+                    x,
+                    y: border_y,
+                    width: border_box_width,
+                    height: 0.0,
+                },
+                tile_rect: RectF::default(),
+                url: url.clone(),
+                repeat_x: style.background_repeat_x,
+                repeat_y: style.background_repeat_y,
+            });
+            index
+        });
 
         let collapsed = style.overflow_hidden && maximum_height.is_some_and(|height| height <= 0.0);
         let content_bottom = if collapsed {
             content_y
+        } else if let Some((kind, _)) = block_control.as_ref() {
+            content_y + default_control_content_height(node, kind, &style)
         } else {
             match style.display {
                 Display::Flex => {
@@ -378,13 +414,61 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             *target = rect;
             *target_radius = radius;
         }
-        if borders.vertical() > 0.0 || borders.horizontal() > 0.0 {
+        if let Some(index) = background_image_index
+            && let Some(tile_rect) = self.background_tile_rect(&style, rect)
+            && let DisplayItem::BackgroundImage {
+                clip_rect,
+                tile_rect: target_tile,
+                ..
+            } = &mut self.output.items[index]
+        {
+            *clip_rect = rect;
+            *target_tile = tile_rect;
+        }
+        if style.border_color.alpha > 0 && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
+        {
             self.output.items.push(DisplayItem::BorderRect {
                 rect,
                 widths: [borders.top, borders.right, borders.bottom, borders.left],
-                color: style.border_color,
+                color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
                 radius,
             });
+        }
+        if let Some((kind, value)) = block_control {
+            let icon = self.control_background_icon(&style, rect.width, rect.height);
+            let mut label = input_control_label(node, kind, &value);
+            if icon.is_some() && value.is_empty() {
+                label.clear();
+            }
+            self.output.items.push(DisplayItem::Control(ControlSpec {
+                node_id: node_id(node),
+                rect,
+                kind,
+                name: node.attr("name").unwrap_or_default(),
+                value,
+                label,
+                options: Vec::new(),
+                selected_index: 0,
+                placeholder: node
+                    .attr("placeholder")
+                    .or_else(|| node.attr("title"))
+                    .unwrap_or_default(),
+                form_id: nearest_form(node).map(|form| node_id(&form)),
+                background_color: self.effective_background_color(node),
+                text_color: style.color,
+                border_color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
+                border_width: [borders.top, borders.right, borders.bottom, borders.left],
+                border_radius: radius,
+                padding: [padding.top, padding.right, padding.bottom, padding.left],
+                font: FontSpec::from_style(&style),
+                icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
+                icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
+                icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
+            }));
         }
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
@@ -1026,14 +1110,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     }
                     "img" | "image" => self.collect_image(node, style, link, output),
                     "input" | "textarea" => self.collect_input(node, style, output),
+                    "select" => self.collect_select(node, style, output),
                     "button" => self.collect_button(node, style, output),
                     "svg" => self.collect_svg(node, style, output),
                     _ => {
                         if style.display == Display::InlineBlock
-                            || style.margin != super::css::Edges::ZERO
+                            || style.margin.left != Length::Px(0.0)
+                            || style.margin.right != Length::Px(0.0)
                             || style.padding != super::css::Edges::ZERO
                             || style.border_width != super::css::Edges::ZERO
                             || style.background_color.alpha > 0
+                            || style.background_image.is_some()
                         {
                             if *pending_space {
                                 output.push(text_atom(" ".into(), style, link.clone()));
@@ -1052,7 +1139,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             }
                             output.push(InlineAtom::InlineBox {
                                 children,
-                                style: style.clone(),
+                                style: Box::new(style.clone()),
                             });
                         } else if honor_block_boundaries && is_block_level(style.display) {
                             if !output.is_empty()
@@ -1164,29 +1251,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     fn collect_input(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
-        let is_textarea = node.tag_name() == Some("textarea");
-        let input_type = node
-            .attr("type")
-            .unwrap_or_else(|| "text".into())
-            .to_ascii_lowercase();
-        if matches!(
-            input_type.as_str(),
-            "hidden" | "checkbox" | "radio" | "file"
-        ) {
+        let Some((kind, value)) = input_control_data(node) else {
             return;
-        }
-        let kind = if is_textarea {
-            ControlKind::TextArea
-        } else {
-            match input_type.as_str() {
-                "password" => ControlKind::Password,
-                "search" => ControlKind::Search,
-                "submit" => ControlKind::Submit,
-                "button" => ControlKind::Button,
-                "reset" => ControlKind::Reset,
-                _ => ControlKind::Text,
-            }
         };
+        let is_textarea = kind == ControlKind::TextArea;
         let is_button = matches!(
             kind,
             ControlKind::Submit | ControlKind::Button | ControlKind::Reset
@@ -1241,17 +1309,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             content_height + vertical_insets
         };
+        let icon = self.control_background_icon(style, width, height);
+        let mut label = input_control_label(node, kind, &value);
+        if icon.is_some() && value.is_empty() {
+            label.clear();
+        }
         output.push(InlineAtom::Control {
-            spec: ControlSpec {
+            spec: Box::new(ControlSpec {
                 node_id: node_id(node),
                 rect: RectF::default(),
                 kind,
                 name: node.attr("name").unwrap_or_default(),
-                value: if is_textarea {
-                    node.text_content()
-                } else {
-                    node.attr("value").unwrap_or_default()
-                },
+                label,
+                value,
+                options: Vec::new(),
+                selected_index: 0,
                 placeholder: node
                     .attr("placeholder")
                     .or_else(|| node.attr("title"))
@@ -1259,7 +1331,107 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 form_id: nearest_form(node).map(|form| node_id(&form)),
                 background_color: self.effective_background_color(node),
                 text_color: style.color,
-                border_color: style.border_color,
+                border_color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
+                border_width: [border.top, border.right, border.bottom, border.left],
+                border_radius: resolve_border_radius(
+                    style.border_radius,
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    },
+                    style.font_size,
+                ),
+                padding: [padding.top, padding.right, padding.bottom, padding.left],
+                font: FontSpec::from_style(style),
+                icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
+                icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
+                icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
+            }),
+            width: width + margin.horizontal(),
+            height: height + margin.vertical(),
+            inset_x: margin.left,
+            inset_y: margin.top,
+            control_width: width,
+            control_height: height,
+        });
+    }
+
+    fn collect_select(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
+        let options = Node::descendants(node)
+            .skip(1)
+            .filter(|descendant| descendant.tag_name() == Some("option"))
+            .map(|option| {
+                let label = option.text_content().trim().to_string();
+                let value = option.attr("value").unwrap_or_else(|| label.clone());
+                let selected = option.attr("selected").is_some();
+                (SelectOption { value, label }, selected)
+            })
+            .collect::<Vec<_>>();
+        let selected_index = options
+            .iter()
+            .position(|(_, selected)| *selected)
+            .unwrap_or(0)
+            .min(options.len().saturating_sub(1));
+        let options = options
+            .into_iter()
+            .map(|(option, _)| option)
+            .collect::<Vec<_>>();
+        let selected = options.get(selected_index);
+        let value = selected
+            .map(|option| option.value.clone())
+            .unwrap_or_default();
+        let label = selected
+            .map(|option| option.label.clone())
+            .unwrap_or_default();
+        let default_width =
+            (label.chars().count() as f32 * style.font_size * 0.58 + 38.0).max(90.0);
+        let content_width =
+            element_length(node, "width", style.width, default_width, style.font_size);
+        let content_height = element_length(
+            node,
+            "height",
+            style.height,
+            style.line_height + 10.0,
+            style.font_size,
+        );
+        let margin = style.margin.resolve(self.viewport.width, style.font_size);
+        let padding = style.padding.resolve(self.viewport.width, style.font_size);
+        let border = style
+            .border_width
+            .resolve(self.viewport.width, style.font_size);
+        let horizontal_insets = padding.horizontal() + border.horizontal();
+        let vertical_insets = padding.vertical() + border.vertical();
+        let width = if style.box_sizing == BoxSizing::BorderBox {
+            content_width
+        } else {
+            content_width + horizontal_insets
+        };
+        let height = if style.box_sizing == BoxSizing::BorderBox {
+            content_height
+        } else {
+            content_height + vertical_insets
+        };
+        output.push(InlineAtom::Control {
+            spec: Box::new(ControlSpec {
+                node_id: node_id(node),
+                rect: RectF::default(),
+                kind: ControlKind::Select,
+                name: node.attr("name").unwrap_or_default(),
+                value,
+                label,
+                options,
+                selected_index,
+                placeholder: String::new(),
+                form_id: nearest_form(node).map(|form| node_id(&form)),
+                background_color: self.effective_background_color(node),
+                text_color: style.color,
+                border_color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
                 border_width: [border.top, border.right, border.bottom, border.left],
                 border_radius: resolve_border_radius(
                     style.border_radius,
@@ -1276,7 +1448,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 icon_url: None,
                 icon_width: 0.0,
                 icon_height: 0.0,
-            },
+            }),
             width: width + margin.horizontal(),
             height: height + margin.vertical(),
             inset_x: margin.left,
@@ -1288,7 +1460,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
     fn collect_button(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
         let label = node.text_content().trim().to_string();
-        let icon = Node::descendants(node)
+        let mut icon = Node::descendants(node)
             .skip(1)
             .find(|descendant| descendant.tag_name() == Some("svg"))
             .and_then(|svg| {
@@ -1347,8 +1519,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             content_height + padding.vertical() + border.vertical()
         };
+        if icon.is_none() {
+            icon = self.control_background_icon(style, width, height);
+        }
         output.push(InlineAtom::Control {
-            spec: ControlSpec {
+            spec: Box::new(ControlSpec {
                 node_id: node_id(node),
                 rect: RectF::default(),
                 kind: match node.attr("type").as_deref() {
@@ -1357,12 +1532,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     _ => ControlKind::Submit,
                 },
                 name: node.attr("name").unwrap_or_default(),
-                value: node.attr("value").unwrap_or(label),
+                value: node.attr("value").unwrap_or_else(|| label.clone()),
+                label: label.clone(),
+                options: Vec::new(),
+                selected_index: 0,
                 placeholder: String::new(),
                 form_id: nearest_form(node).map(|form| node_id(&form)),
                 background_color: self.effective_background_color(node),
                 text_color: style.color,
-                border_color: style.border_color,
+                border_color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
                 border_width: [border.top, border.right, border.bottom, border.left],
                 border_radius: resolve_border_radius(
                     style.border_radius,
@@ -1379,7 +1559,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
                 icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
                 icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
-            },
+            }),
             width: width + margin.horizontal(),
             height: height + margin.vertical(),
             inset_x: margin.left,
@@ -1390,15 +1570,77 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     fn effective_background_color(&self, node: &NodeRef) -> Color {
+        let mut colors = Vec::new();
         let mut candidate = Some(node.clone());
         while let Some(current) = candidate {
             let color = self.styles.get(&current).background_color;
             if color.alpha > 0 {
-                return color;
+                colors.push(color);
             }
             candidate = current.parent();
         }
-        self.output.background
+        colors
+            .into_iter()
+            .rev()
+            .fold(Color::WHITE, |backdrop, color| {
+                color.composite_over(backdrop)
+            })
+    }
+
+    fn background_tile_rect(&self, style: &ComputedStyle, clip_rect: RectF) -> Option<RectF> {
+        let url = style.background_image.as_ref()?;
+        let image = self.page.images.get(url)?;
+        let (width, height) = resolve_background_size(
+            style.background_size,
+            clip_rect,
+            image.width as f32,
+            image.height as f32,
+            style.font_size,
+            self.viewport,
+        )?;
+        let x = clip_rect.x
+            + resolve_background_position(
+                style.background_position_x,
+                clip_rect.width,
+                width,
+                style.font_size,
+                self.viewport,
+            );
+        let y = clip_rect.y
+            + resolve_background_position(
+                style.background_position_y,
+                clip_rect.height,
+                height,
+                style.font_size,
+                self.viewport,
+            );
+        Some(RectF {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    fn control_background_icon(
+        &self,
+        style: &ComputedStyle,
+        width: f32,
+        height: f32,
+    ) -> Option<(String, f32, f32)> {
+        if style.background_repeat_x || style.background_repeat_y {
+            return None;
+        }
+        let tile = self.background_tile_rect(
+            style,
+            RectF {
+                x: 0.0,
+                y: 0.0,
+                width,
+                height,
+            },
+        )?;
+        Some((style.background_image.clone()?, tile.width, tile.height))
     }
 
     fn layout_inline_atoms(
@@ -1431,8 +1673,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let measured = self.measure_atom(atom, line.is_empty());
-            let should_wrap =
-                !line.is_empty() && line_width + measured.width > width && !measured.no_wrap;
+            let should_wrap = !line.is_empty()
+                && line_width + measured.width > width
+                && measured.break_before
+                && !measured.no_wrap;
             if should_wrap {
                 y = self.paint_line(
                     &line,
@@ -1479,6 +1723,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 no_wrap,
                 ..
             } => {
+                let break_before = text.chars().next().is_some_and(char::is_whitespace);
                 let text = if line_start {
                     text.trim_start()
                 } else {
@@ -1491,6 +1736,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width,
                     height: line_height.max(measured_height),
                     no_wrap: *no_wrap,
+                    break_before,
                 }
             }
             InlineAtom::Image { width, height, .. }
@@ -1501,6 +1747,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 width: *width,
                 height: *height,
                 no_wrap: false,
+                break_before: false,
             },
             InlineAtom::InlineBox { children, style } => {
                 let metrics = self.measure_inline_box(children, style);
@@ -1510,6 +1757,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: metrics.total_width(),
                     height: metrics.total_height(),
                     no_wrap: style.white_space == WhiteSpace::NoWrap,
+                    break_before: false,
                 }
             }
             InlineAtom::Break => unreachable!(),
@@ -1677,7 +1925,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 control_height,
                 ..
             } => {
-                let mut spec = spec.clone();
+                let mut spec = spec.as_ref().clone();
                 spec.rect = RectF {
                     x: x + inset_x,
                     y: atom_y + inset_y,
@@ -1691,12 +1939,26 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         radius: spec.border_radius,
                     });
                 }
-                if spec.border_width.iter().any(|width| *width > 0.0) {
+                if spec.border_color.alpha > 0 && spec.border_width.iter().any(|width| *width > 0.0)
+                {
                     self.output.items.push(DisplayItem::BorderRect {
                         rect: spec.rect,
                         widths: spec.border_width,
                         color: spec.border_color,
                         radius: spec.border_radius,
+                    });
+                }
+                if let Some(url) = spec.icon_url.as_ref() {
+                    self.output.items.push(DisplayItem::Image {
+                        rect: RectF {
+                            x: spec.rect.x + (spec.rect.width - spec.icon_width).max(0.0) / 2.0,
+                            y: spec.rect.y + (spec.rect.height - spec.icon_height).max(0.0) / 2.0,
+                            width: spec.icon_width.min(spec.rect.width).max(0.0),
+                            height: spec.icon_height.min(spec.rect.height).max(0.0),
+                        },
+                        url: url.clone(),
+                        alt: String::new(),
+                        tint: None,
                     });
                 }
                 self.output.items.push(DisplayItem::Control(spec));
@@ -1716,11 +1978,26 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 if style.background_color.alpha > 0 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
-                        color: style.background_color,
+                        color: style
+                            .background_color
+                            .composite_over(self.output.background),
                         radius,
                     });
                 }
-                if metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0 {
+                if let Some(tile_rect) = self.background_tile_rect(style, border_rect)
+                    && let Some(url) = style.background_image.as_ref()
+                {
+                    self.output.items.push(DisplayItem::BackgroundImage {
+                        clip_rect: border_rect,
+                        tile_rect,
+                        url: url.clone(),
+                        repeat_x: style.background_repeat_x,
+                        repeat_y: style.background_repeat_y,
+                    });
+                }
+                if style.border_color.alpha > 0
+                    && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
+                {
                     self.output.items.push(DisplayItem::BorderRect {
                         rect: border_rect,
                         widths: [
@@ -1729,7 +2006,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             metrics.border.bottom,
                             metrics.border.left,
                         ],
-                        color: style.border_color,
+                        color: style.border_color.composite_over(
+                            style
+                                .background_color
+                                .composite_over(self.output.background),
+                        ),
                         radius,
                     });
                 }
@@ -1786,7 +2067,7 @@ enum InlineAtom {
         image_height: f32,
     },
     Control {
-        spec: ControlSpec,
+        spec: Box<ControlSpec>,
         width: f32,
         height: f32,
         inset_x: f32,
@@ -1796,7 +2077,7 @@ enum InlineAtom {
     },
     InlineBox {
         children: Vec<InlineAtom>,
-        style: ComputedStyle,
+        style: Box<ComputedStyle>,
     },
     Placeholder {
         width: f32,
@@ -1811,6 +2092,7 @@ struct MeasuredAtom<'a> {
     width: f32,
     height: f32,
     no_wrap: bool,
+    break_before: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1856,6 +2138,17 @@ fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }
             | DisplayItem::Image { rect, .. } => rect,
+            DisplayItem::BackgroundImage {
+                clip_rect,
+                tile_rect,
+                ..
+            } => {
+                clip_rect.x += offset_x;
+                clip_rect.y += offset_y;
+                tile_rect.x += offset_x;
+                tile_rect.y += offset_y;
+                continue;
+            }
             DisplayItem::Control(spec) => &mut spec.rect,
         };
         rect.x += offset_x;
@@ -1971,6 +2264,96 @@ fn split_grid_once(input: &str, delimiter: char) -> Option<(&str, &str)> {
         }
     }
     None
+}
+
+fn resolve_background_size(
+    size: BackgroundSize,
+    area: RectF,
+    natural_width: f32,
+    natural_height: f32,
+    font_size: f32,
+    viewport: RectF,
+) -> Option<(f32, f32)> {
+    if natural_width <= 0.0 || natural_height <= 0.0 {
+        return None;
+    }
+    let (width, height) = match size {
+        BackgroundSize::Auto => (natural_width, natural_height),
+        BackgroundSize::Contain | BackgroundSize::Cover => {
+            let horizontal = area.width / natural_width;
+            let vertical = area.height / natural_height;
+            let scale = if size == BackgroundSize::Contain {
+                horizontal.min(vertical)
+            } else {
+                horizontal.max(vertical)
+            };
+            (natural_width * scale, natural_height * scale)
+        }
+        BackgroundSize::Explicit { width, height } => {
+            let width = resolve_background_length(width, area.width, font_size, viewport);
+            let height = resolve_background_length(height, area.height, font_size, viewport);
+            match (width, height) {
+                (Some(width), Some(height)) => (width, height),
+                (Some(width), None) => (width, width * natural_height / natural_width),
+                (None, Some(height)) => (height * natural_width / natural_height, height),
+                (None, None) => (natural_width, natural_height),
+            }
+        }
+    };
+    (width > 0.0 && height > 0.0).then_some((width, height))
+}
+
+fn resolve_background_position(
+    position: Length,
+    area_size: f32,
+    image_size: f32,
+    font_size: f32,
+    viewport: RectF,
+) -> f32 {
+    match position {
+        Length::Percent(percent) => (area_size - image_size) * percent / 100.0,
+        Length::Calc {
+            px,
+            percent,
+            em,
+            vw,
+            vh,
+        } => {
+            px + (area_size - image_size) * percent / 100.0
+                + font_size * em
+                + viewport.width * vw / 100.0
+                + viewport.height * vh / 100.0
+        }
+        _ => resolve_background_length(position, area_size, font_size, viewport).unwrap_or(0.0),
+    }
+}
+
+fn resolve_background_length(
+    length: Length,
+    basis: f32,
+    font_size: f32,
+    viewport: RectF,
+) -> Option<f32> {
+    match length {
+        Length::Auto => None,
+        Length::Px(value) => Some(value),
+        Length::Percent(value) => Some(basis * value / 100.0),
+        Length::Em(value) => Some(font_size * value),
+        Length::Vw(value) => Some(viewport.width * value / 100.0),
+        Length::Vh(value) => Some(viewport.height * value / 100.0),
+        Length::Calc {
+            px,
+            percent,
+            em,
+            vw,
+            vh,
+        } => Some(
+            px + basis * percent / 100.0
+                + font_size * em
+                + viewport.width * vw / 100.0
+                + viewport.height * vh / 100.0,
+        ),
+    }
 }
 
 fn resolve_grid_columns(
@@ -2187,6 +2570,16 @@ fn resolve_height_value(length: Length, viewport: RectF, font_size: f32) -> Opti
         Length::Em(value) => Some(value * font_size),
         Length::Vh(value) => Some(viewport.height * value / 100.0),
         Length::Vw(value) => Some(viewport.width * value / 100.0),
+        Length::Calc {
+            px,
+            percent,
+            em,
+            vw,
+            vh,
+        } if percent.abs() <= f32::EPSILON => {
+            Some(px + font_size * em + viewport.width * vw / 100.0 + viewport.height * vh / 100.0)
+        }
+        Length::Calc { .. } => None,
     }
 }
 
@@ -2210,6 +2603,73 @@ fn element_length(
         })
         .unwrap_or(fallback)
         .max(0.0)
+}
+
+fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)> {
+    let tag = node.tag_name()?;
+    if tag == "textarea" {
+        return Some((ControlKind::TextArea, node.text_content()));
+    }
+    if tag != "input" {
+        return None;
+    }
+    let input_type = node
+        .attr("type")
+        .unwrap_or_else(|| "text".into())
+        .to_ascii_lowercase();
+    if matches!(
+        input_type.as_str(),
+        "hidden" | "checkbox" | "radio" | "file"
+    ) {
+        return None;
+    }
+    let kind = match input_type.as_str() {
+        "password" => ControlKind::Password,
+        "search" => ControlKind::Search,
+        "submit" => ControlKind::Submit,
+        "button" => ControlKind::Button,
+        "reset" => ControlKind::Reset,
+        _ => ControlKind::Text,
+    };
+    Some((kind, node.attr("value").unwrap_or_default()))
+}
+
+fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str) -> String {
+    if !matches!(
+        kind,
+        ControlKind::Submit | ControlKind::Button | ControlKind::Reset
+    ) || !value.is_empty()
+    {
+        return value.to_string();
+    }
+    let label = node
+        .attr("aria-label")
+        .or_else(|| node.attr("title"))
+        .or_else(|| node.attr("alt"))
+        .unwrap_or_default();
+    if kind == ControlKind::Submit && label.eq_ignore_ascii_case("search") {
+        "Go".to_string()
+    } else {
+        label
+    }
+}
+
+fn default_control_content_height(
+    node: &NodeRef,
+    kind: &ControlKind,
+    style: &ComputedStyle,
+) -> f32 {
+    match kind {
+        ControlKind::Submit | ControlKind::Button | ControlKind::Reset => 30.0,
+        ControlKind::TextArea => {
+            node.attr("rows")
+                .and_then(|rows| rows.parse::<f32>().ok())
+                .unwrap_or(2.0)
+                * style.line_height
+                + 10.0
+        }
+        _ => style.line_height + 10.0,
+    }
 }
 
 fn nearest_form(node: &NodeRef) -> Option<NodeRef> {
@@ -2360,6 +2820,54 @@ mod tests {
     }
 
     #[test]
+    fn centers_explicitly_sized_background_images_in_block_boxes() {
+        let mut page = Page::parse(
+            r#"<style>
+                body { margin: 0 }
+                .logo {
+                    display: block;
+                    width: 65px;
+                    height: 60px;
+                    background: no-repeat center/auto 36px url('/logo.svg');
+                }
+               </style><a class="logo"></a>"#,
+            "https://example.com/",
+        );
+        page.images.insert(
+            "https://example.com/logo.svg".into(),
+            super::super::page::DecodedImage {
+                width: 48,
+                height: 48,
+                bgra: vec![0; 48 * 48 * 4],
+            },
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+        let (clip, tile, repeat_x, repeat_y) = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::BackgroundImage {
+                    clip_rect,
+                    tile_rect,
+                    repeat_x,
+                    repeat_y,
+                    ..
+                } => Some((*clip_rect, *tile_rect, *repeat_x, *repeat_y)),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(clip.width, 65.0);
+        assert_eq!(clip.height, 60.0);
+        assert!((tile.x - 14.5).abs() < 0.01);
+        assert!((tile.y - 12.0).abs() < 0.01);
+        assert_eq!(tile.width, 36.0);
+        assert_eq!(tile.height, 36.0);
+        assert!(!repeat_x);
+        assert!(!repeat_y);
+    }
+
+    #[test]
     fn preserves_spaces_between_inline_elements() {
         let page = Page::parse(
             "<p>Hello <span>wide</span> world</p>",
@@ -2376,6 +2884,74 @@ mod tests {
             })
             .collect::<String>();
         assert_eq!(text, "Hello wide world");
+    }
+
+    #[test]
+    fn vertical_margins_do_not_make_normal_inline_text_unbreakable() {
+        let page = Page::parse(
+            r#"<style>
+                body { margin: 0 }
+                .column { width: 100px }
+                a { margin: 0 0 .2em }
+               </style><div class="column"><a href="/result">alpha beta gamma delta</a></div>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+        let lines = output
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                DisplayItem::Text {
+                    rect,
+                    link: Some(link),
+                    ..
+                } if link == "https://example.com/result" => Some(rect.y),
+                _ => None,
+            })
+            .fold(Vec::<f32>::new(), |mut lines, y| {
+                if !lines.iter().any(|line| (line - y).abs() < 0.01) {
+                    lines.push(y);
+                }
+                lines
+            });
+        assert!(
+            lines.len() >= 2,
+            "expected wrapped inline text, got {lines:?}"
+        );
+    }
+
+    #[test]
+    fn does_not_break_before_punctuation_at_inline_boundaries() {
+        let page = Page::parse(
+            r#"<style>body { margin: 0 } p { width: 84px; margin: 0 }</style>
+               <p>alpha <b>beta</b>. gamma</p>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+        let text_items = output
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                DisplayItem::Text { rect, text, .. } => Some((text.as_str(), rect.y)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let beta_y = text_items
+            .iter()
+            .find_map(|(text, y)| text.contains("beta").then_some(*y))
+            .unwrap();
+        let punctuation_y = text_items
+            .iter()
+            .find_map(|(text, y)| (*text == ".").then_some(*y))
+            .unwrap();
+        let gamma_y = text_items
+            .iter()
+            .find_map(|(text, y)| text.contains("gamma").then_some(*y))
+            .unwrap();
+        assert_eq!(punctuation_y, beta_y);
+        assert!(gamma_y > punctuation_y);
     }
 
     #[test]
@@ -2536,6 +3112,75 @@ mod tests {
         assert_eq!(control.kind, ControlKind::TextArea);
         assert_eq!(control.name, "q");
         assert_eq!(control.value, "hello");
+    }
+
+    #[test]
+    fn preserves_block_level_replaced_form_controls() {
+        let page = Page::parse(
+            r#"<style>body{margin:0}input{display:block;width:100%;height:44px;border:0}</style>
+               <form action="/search"><input name="q" value="test"></form>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        let control = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::Control(control) => Some(control),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(control.kind, ControlKind::Text);
+        assert_eq!(control.name, "q");
+        assert_eq!(control.value, "test");
+        assert_eq!(control.rect.width, 300.0);
+        assert_eq!(control.rect.height, 44.0);
+    }
+
+    #[test]
+    fn represents_select_as_one_native_control_instead_of_all_option_text() {
+        let page = Page::parse(
+            r#"<style>body{margin:0}</style><form action="/search">
+               <select name="region"><option value="all">All Regions</option>
+               <option value="ca" selected>Canada</option></select></form>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        let control = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::Control(control) => Some(control),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(control.kind, ControlKind::Select);
+        assert_eq!(control.name, "region");
+        assert_eq!(control.value, "ca");
+        assert_eq!(control.label, "Canada");
+        assert_eq!(control.options.len(), 2);
+        assert!(!output.items.iter().any(
+            |item| matches!(item, DisplayItem::Text { text, .. } if text.contains("All RegionsCanada"))
+        ));
+    }
+
+    #[test]
+    fn keeps_transparent_borders_in_layout_without_painting_them() {
+        let page = Page::parse(
+            r#"<style>body{margin:0}.result{height:20px;border:1px solid rgba(0,0,0,0)}</style>
+               <div class="result"></div>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        assert!(
+            !output
+                .items
+                .iter()
+                .any(|item| matches!(item, DisplayItem::BorderRect { .. }))
+        );
     }
 
     #[test]

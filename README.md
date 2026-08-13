@@ -18,10 +18,10 @@ The normal page surface is always the default. **Reader** is an explicit optiona
 Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
-- A growing CSS cascade with block, inline, flex, grid, table, float, and positioned layout
-- External stylesheets, raster images, transparent images, inline SVG, and webfonts
+- A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
+- External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and webfonts
 - A bounded Boa JavaScript runtime with owned DOM bindings, events, timers, navigation, storage, and cookies
-- Native text/search/password controls, buttons, and GET forms
+- Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - Links, history, reload, scrolling, and background networking
 
@@ -60,8 +60,12 @@ cargo build --release
 .\target\release\better-web-browser.exe `
   --benchmark https://example.org/ `
   --output result.json `
+  --screenshot result.png `
   --settle-ms 2000
 ```
+
+Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
+verification without putting a browser window on the desktop.
 
 ## Honest current limitations
 
@@ -73,4 +77,4 @@ cargo build --release
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
-Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client, so a recovery or classic fallback page must not be treated as search-result compatibility.
+Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.

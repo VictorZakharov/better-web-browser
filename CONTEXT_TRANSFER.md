@@ -1,6 +1,43 @@
 # Context Transfer: Better Web Browser
 
-Last updated: 2026-08-12 21:03 (America/Toronto)
+Last updated: 2026-08-13 (America/Toronto)
+
+## 2026-08-13 continuation
+
+There is a substantial uncommitted renderer batch in `README.md`, `src/engine/css.rs`,
+`src/engine/layout.rs`, `src/engine/mod.rs`, `src/engine/page.rs`,
+`src/windows_app.rs`, and `src/winhttp.rs`.
+
+- CSS custom properties now cascade/inherit before `var()` substitution, including
+  fallbacks and cycle handling. Linear `calc()` lengths support px, percent, em,
+  vw, and vh. The implementation follows the CSS Variables and CSS Values specs
+  and reuses `cssparser` component values instead of introducing an ad-hoc tokenizer.
+- CSS background images, stylesheet-relative URLs, background geometry/repeat,
+  external SVG rasterization, alpha compositing, functional selectors, DPI-aware
+  viewport metrics, and several inline-formatting fixes are implemented.
+- Normal inline text with only vertical margins no longer becomes an unbreakable
+  atomic box, and punctuation after nested inline elements stays attached to the
+  preceding text.
+- WinHTTP now returns HTTP error responses with their document bodies, matching
+  Fetch's distinction between HTTP error statuses and network errors. Failed
+  subresources remain filtered out.
+- Final hidden release captures are `target/final-neolisk-release.png` and
+  `target/final-ddg-release.png`. Neolisk is recognizably close to Chromium.
+  DuckDuckGo HTML has matching result width/wrapping and coherent geometry; its
+  remaining obvious difference is missing generated select chevrons/native-control
+  detail. Both captures returned HTTP 200 with zero JavaScript errors.
+- Google still is **not solved**. Breeze remains on Google and never proxies or
+  reroutes to another provider. A fresh headless Chromium profile on the same
+  machine/network also received Google's unusual-traffic page. Breeze now retains
+  and renders Google's HTTP 429 response document instead of showing a blank page.
+- A fresh alternating, hidden/headless Neolisk comparison (three samples each)
+  measured median page-ready at 574.9 ms for Breeze versus 381.1 ms for Chromium:
+  Breeze is currently 1.51x slower, not 3x. Median working set was 33.1 MiB versus
+  604.9 MiB (Chromium 18.3x higher); private memory was 17.8 MiB versus 392.7 MiB
+  (22.1x higher). Breeze used one process versus Chromium's eleven.
+- Validation is clean: `cargo fmt --all -- --check`, 68 tests across all targets,
+  `cargo clippy --all-targets -- -D warnings`, `git diff --check`, and a release
+  build all succeeded.
 
 ## Read this first
 
