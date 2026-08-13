@@ -1,3 +1,4 @@
 /target/
 /benchmark-results/
+/CONTEXT_TRANSFER.md
 *.pdb
