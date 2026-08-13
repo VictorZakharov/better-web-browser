@@ -22,7 +22,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: ./scripts/check-linear-history.ps1 -BaseSha $env:BASE_SHA -HeadSha $env:HEAD_SHA
 
-  windows:
+  source:
+    name: Source and formatting
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +36,48 @@ jobs:
         run: ./scripts/check-source-size.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  lint:
+    name: Lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
       - name: Test
         run: cargo test --all-targets
+
+  windows:
+    name: windows
+    if: ${{ always() }}
+    needs:
+      - source
+      - lint
+      - test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Windows worker
+        shell: bash
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT"
+            exit 1
+          fi
