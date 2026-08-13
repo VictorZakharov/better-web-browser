@@ -17,6 +17,7 @@
 - Push the topic branch, open a pull request, and wait for all required checks. Only the user may merge pull requests; never run `gh pr merge` or enable auto-merge. Stop at "ready to merge" and provide the pull-request link.
 - Merge pull requests with GitHub's merge-commit method only. Squash merging and rebase merging are disabled for this repository.
 - Preserve the required check names `windows` and `Linear PR history` when editing CI. The `windows` gate aggregates the parallel source/format, lint, and test workers; coordinate any intentional rename with branch protection.
+- Optimize CI for wall-clock feedback. Independent checks may spend additional standard hosted-runner minutes in parallel; do not serialize them merely to minimize total runner usage. Preserve the per-worker Cargo caches and measure end-to-end timing after material CI changes.
 - After a merge, delete the remote topic branch, fast-forward local `main` from `origin/main`, and create a new branch before starting unrelated work.
 - Preserve unrelated user changes. If the worktree is not clean or the branch cannot be rebased safely, stop and report the conflict instead of stashing, overwriting, or force-pushing.
 

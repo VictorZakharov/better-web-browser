@@ -4,10 +4,12 @@ use std::net::{TcpListener, TcpStream};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+static NEXT_ARTIFACT_ID: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn hidden_benchmark(
     url: &str,
@@ -213,8 +215,9 @@ impl TestArtifacts {
             .duration_since(UNIX_EPOCH)
             .expect("system clock precedes Unix epoch")
             .as_nanos();
+        let artifact_id = NEXT_ARTIFACT_ID.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "breeze-live-runtime-{}-{nonce}",
+            "breeze-live-runtime-{}-{nonce}-{artifact_id}",
             std::process::id()
         ));
         fs::create_dir(&root).expect("create live-runtime artifact directory");

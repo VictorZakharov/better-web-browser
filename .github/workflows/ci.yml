@@ -1,5 +1,10 @@
 name: CI
 
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
 on:
   push:
     branches:
@@ -46,6 +51,15 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
+      - name: Restore Cargo build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-lint-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'vendor/boa_engine/Cargo.toml') }}
+          restore-keys: windows-cargo-lint-
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
@@ -58,6 +72,15 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
+      - name: Restore Cargo build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-test-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'vendor/boa_engine/Cargo.toml') }}
+          restore-keys: windows-cargo-test-
       - name: Test
         run: cargo test --all-targets
 
