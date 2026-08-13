@@ -8,6 +8,13 @@
 - Do not add dependencies, copied code, generated assets, or vendored material without checking provenance, licensing, and whether an existing project dependency already solves the problem.
 - Keep diagnostics and user-facing errors actionable, and do not leave temporary probes, hard-coded test URLs, debug output, or captured artifacts in commits.
 
+## Source-file size
+
+- Keep cohesive hand-written source modules at or below 400 lines when practical; 500 lines is the hard limit for new files.
+- Run `./scripts/check-source-size.ps1` before committing. Existing oversized files have frozen ceilings and must shrink as they are split; do not raise a ceiling to accommodate new code.
+- Prioritize extracting frequently edited oversized files (`src/windows_app.rs`, `src/engine/script.rs`, and `src/engine/page.rs`) before adding another subsystem to them.
+- Split by ownership or responsibility, not arbitrary line ranges. Keep a small coordinating module and move tests, platform adapters, bindings, parsing, or lifecycle policy behind focused interfaces.
+
 ## Automated browser execution
 
 - Run all browser tests, captures, diagnostics, and benchmarks without visible UI. This applies to Breeze and to every reference browser, including Chromium.

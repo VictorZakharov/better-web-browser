@@ -12,4 +12,4 @@ pub use layout::{
     TextMeasurer, layout_page, layout_page_with_style_viewport,
 };
 pub use page::{DecodedImage, Page, PageResource};
-pub use script::ScriptOutcome;
+pub use script::{ScriptOutcome, ScriptRuntime};

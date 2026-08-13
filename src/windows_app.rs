@@ -1,10 +1,15 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+mod document_navigation;
+mod resources;
+mod runtime;
+mod runtime_metrics;
+
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
     ControlKind, DecodedImage, DisplayItem, FontSpec, LayoutOutput, Page, PageResource, RectF,
-    ScriptOutcome, TextMeasurer, WebFont, layout_page_with_style_viewport,
+    ScriptOutcome, ScriptRuntime, TextMeasurer, WebFont, layout_page_with_style_viewport,
 };
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
@@ -130,6 +135,9 @@ const ID_GO: usize = 1005;
 const ID_TASK_MANAGER: usize = 1006;
 const ID_READER: usize = 1007;
 const ID_PAGE_CONTROL_BASE: usize = 2000;
+const ID_SCRIPT_RUNTIME_TIMER: usize = 1;
+const PAGE_RESOURCE_BUDGET: u64 = 32 * 1024 * 1024;
+const MAX_POST_LOAD_TIMER_CALLBACKS: usize = 128;
 
 const DEFAULT_DPI: u32 = 96;
 const DEFAULT_WINDOW_WIDTH_DIP: i32 = 1120;
@@ -1197,6 +1205,10 @@ struct BrowserState {
     chrome: ChromeLayout,
     status_text: String,
     page: Page,
+    script_runtime: Option<ScriptRuntime>,
+    script_runtime_clock: Option<Instant>,
+    loaded_page_resources: HashSet<PageResource>,
+    page_resource_budget: u64,
     document: Option<Document>,
     reader_html: String,
     reader_url: String,
@@ -1208,6 +1220,7 @@ struct BrowserState {
     scroll_y: i32,
     history: Vec<String>,
     history_index: usize,
+    script_navigation: document_navigation::ScriptNavigationGuard,
     generation: u64,
     loading: bool,
     startup_url: Option<String>,
@@ -1246,6 +1259,10 @@ impl BrowserState {
             chrome: ChromeLayout::default(),
             status_text: "Ready".to_string(),
             page,
+            script_runtime: None,
+            script_runtime_clock: None,
+            loaded_page_resources: HashSet::new(),
+            page_resource_budget: PAGE_RESOURCE_BUDGET,
             document: Some(home),
             reader_html: HOME_HTML.to_string(),
             reader_url: HOME_URL.to_string(),
@@ -1257,6 +1274,7 @@ impl BrowserState {
             scroll_y: 0,
             history: Vec::new(),
             history_index: 0,
+            script_navigation: document_navigation::ScriptNavigationGuard::default(),
             generation: 0,
             loading: false,
             startup_url: options.startup_url,
@@ -1531,11 +1549,13 @@ impl BrowserState {
     }
 
     unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
+        self.cancel_script_runtime();
         if self.loading {
             self.generation = self.generation.wrapping_add(1);
         }
         match history_mode {
             HistoryMode::Push => {
+                self.script_navigation.reset(&url);
                 if self.history.get(self.history_index) != Some(&url) {
                     if !self.history.is_empty() {
                         self.history.truncate(self.history_index + 1);
@@ -1544,7 +1564,8 @@ impl BrowserState {
                     self.history_index = self.history.len() - 1;
                 }
             }
-            HistoryMode::Existing => {}
+            HistoryMode::Existing => self.script_navigation.reset(&url),
+            HistoryMode::Script => {}
         }
         self.update_history_buttons();
         self.generation = self.generation.wrapping_add(1);
@@ -1561,13 +1582,6 @@ impl BrowserState {
         let window_value = self.window as isize;
         let metrics = Arc::clone(&self.metrics);
         let http_client = Arc::clone(&self.http_client);
-        let requested_viewport_width = if self.media_viewport_width > 0.0 {
-            self.media_viewport_width
-        } else {
-            let mut client: Rect = std::mem::zeroed();
-            GetClientRect(self.window, &mut client);
-            client.right.max(1) as f32 / self.page_scale()
-        };
         let navigation_thread = std::thread::Builder::new()
             .name("breeze-navigation".into())
             .stack_size(16 * 1024 * 1024)
@@ -1579,21 +1593,18 @@ impl BrowserState {
                     let mut response = client.get(&url)?;
                     let mut network_time = started.elapsed();
                     let mut bytes = response.body.len() as u64;
-                    let mut resource_budget = 32_u64 * 1024 * 1024;
+                    let mut resource_budget = PAGE_RESOURCE_BUDGET;
                     let mut visited = HashSet::from([response.final_url.clone()]);
                     let mut navigation_count = 0;
                     let mut html_parse_time = Duration::ZERO;
                     let mut resource_processing_time = Duration::ZERO;
-                    let mut script_time = Duration::ZERO;
-                    let mut style_refresh_time = Duration::ZERO;
-
                     let (
                         rendered_page,
                         html,
                         final_url,
                         status,
-                        script_outcome,
-                        deferred_resources,
+                        loaded_resources,
+                        remaining_resource_budget,
                     ) = loop {
                         let final_url = response.final_url.clone();
                         let status = response.status;
@@ -1629,106 +1640,13 @@ impl BrowserState {
                             &mut network_time,
                             &mut resource_processing_time,
                         );
-                        let script_started = Instant::now();
-                        let script_network_before = network_time;
-                        let mut script_outcome = {
-                            let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
-                                let request_started = Instant::now();
-                                let response = client.get(url);
-                                network_time += request_started.elapsed();
-                                let response = response?;
-                                if !response.is_success() {
-                                    return Err(format!(
-                                        "server returned HTTP {}",
-                                        response.status
-                                    ));
-                                }
-                                let size = response.body.len() as u64;
-                                if size > resource_budget {
-                                    return Err("page resource budget was exhausted".into());
-                                }
-                                let processing_started = Instant::now();
-                                let code = winhttp::decode_text(
-                                    &response.body,
-                                    response.content_type.as_deref(),
-                                );
-                                resource_processing_time += processing_started.elapsed();
-                                bytes += size;
-                                resource_budget -= size;
-                                Ok(code)
-                            };
-                            rendered_page
-                                .execute_first_paint_scripts_with_loader(&mut dynamic_script_loader)
-                        };
-                        let dynamic_script_network =
-                            network_time.saturating_sub(script_network_before);
-                        script_time += script_started
-                            .elapsed()
-                            .saturating_sub(dynamic_script_network);
-                        for cookie in &script_outcome.cookie_updates {
-                            if let Err(error) = client.set_cookie(&final_url, cookie) {
-                                script_outcome
-                                    .errors
-                                    .push(format!("document.cookie: {error}"));
-                            }
-                        }
-                        if script_outcome.runtime_stopped {
-                            let fallback_parse_started = Instant::now();
-                            rendered_page = Page::parse(&html, &final_url);
-                            html_parse_time += fallback_parse_started.elapsed();
-                        } else {
-                            let style_refresh_started = Instant::now();
-                            rendered_page.refresh_resources(requested_viewport_width);
-                            style_refresh_time += style_refresh_started.elapsed();
-                            load_page_resources(
-                                &client,
-                                &mut rendered_page,
-                                &mut loaded_resources,
-                                &mut resource_budget,
-                                &mut bytes,
-                                &mut network_time,
-                                &mut resource_processing_time,
-                            );
-                        }
-
-                        if navigation_count < 5
-                            && let Some(navigation_url) = script_outcome.navigation_url.clone()
-                            && navigation_url != final_url
-                            && visited.insert(navigation_url.clone())
-                        {
-                            let navigation_started = Instant::now();
-                            let navigation_response = client.get(&navigation_url);
-                            network_time += navigation_started.elapsed();
-                            match navigation_response {
-                                Ok(next_response) => {
-                                    bytes += next_response.body.len() as u64;
-                                    visited.insert(next_response.final_url.clone());
-                                    response = next_response;
-                                    navigation_count += 1;
-                                    continue;
-                                }
-                                Err(error) => script_outcome.errors.push(format!(
-                                    "{navigation_url}: script-requested navigation failed: {error}"
-                                )),
-                            }
-                        }
-
-                        let deferred_resources = rendered_page
-                            .resources
-                            .iter()
-                            .filter(|resource| {
-                                !loaded_resources.contains(*resource)
-                                    && matches!(resource, PageResource::Font { .. })
-                            })
-                            .cloned()
-                            .collect();
                         break (
                             rendered_page,
                             html,
                             final_url,
                             status,
-                            script_outcome,
-                            deferred_resources,
+                            loaded_resources,
+                            resource_budget,
                         );
                     };
                     let parse_time = started.elapsed().saturating_sub(network_time);
@@ -1743,10 +1661,8 @@ impl BrowserState {
                         parse_time,
                         html_parse_time,
                         resource_processing_time,
-                        script_time,
-                        style_refresh_time,
-                        script_outcome,
-                        deferred_resources,
+                        loaded_resources,
+                        remaining_resource_budget,
                     })
                 })();
                 if result.is_err() {
@@ -1767,100 +1683,6 @@ impl BrowserState {
         }
     }
 
-    unsafe fn finish_navigation(&mut self, message: LoadMessage) {
-        if message.generation != self.generation {
-            return;
-        }
-        self.loading = false;
-        match message.result {
-            Ok(mut page) => {
-                let deferred_resources = std::mem::take(&mut page.deferred_resources);
-                self.destroy_page_controls();
-                self.image_bitmaps.clear();
-                self.dynamic_fonts.clear();
-                self.web_fonts.clear();
-                self.page = page.page;
-                self.web_fonts.register(&self.page.fonts);
-                self.document = None;
-                self.reader_html = page.html;
-                self.reader_url = page.final_url.clone();
-                self.surface = Surface::Page;
-                set_window_text(self.controls.reader, "Reader");
-                self.scroll_y = 0;
-                if let Some(current) = self.history.get_mut(self.history_index) {
-                    *current = page.final_url.clone();
-                }
-                set_window_text(self.controls.address, &page.final_url);
-                set_window_text(
-                    self.window,
-                    &format!("{} — {PRODUCT_NAME}", self.page.title),
-                );
-                let layout_started = Instant::now();
-                self.rebuild_layout();
-                let layout_build_time = layout_started.elapsed();
-                if let Some(benchmark) = self.benchmark.as_mut() {
-                    benchmark.network_time = page.network_time;
-                    benchmark.parse_time = page.parse_time;
-                    benchmark.html_parse_time = page.html_parse_time;
-                    benchmark.resource_processing_time = page.resource_processing_time;
-                    benchmark.script_time = page.script_time;
-                    benchmark.style_refresh_time = page.style_refresh_time;
-                    benchmark.status = page.status;
-                    benchmark.bytes = page.bytes;
-                    benchmark.final_url = page.final_url.clone();
-                    benchmark.script_executed = page.script_outcome.executed;
-                    benchmark.script_mutations = page.script_outcome.mutation_count;
-                    benchmark.script_errors = page.script_outcome.errors.clone();
-                    benchmark.script_console = page.script_outcome.console.clone();
-                    benchmark.script_diagnostics = page.script_outcome.diagnostics.clone();
-                    benchmark.script_runtime_stopped = page.script_outcome.runtime_stopped;
-                }
-                let script_status =
-                    if page.script_outcome.executed == 0 && page.script_outcome.errors.is_empty() {
-                        String::new()
-                    } else {
-                        format!(
-                            "  •  JS {} / {} mutations / {} errors",
-                            page.script_outcome.executed,
-                            page.script_outcome.mutation_count,
-                            page.script_outcome.errors.len()
-                        )
-                    };
-                self.set_status(&format!(
-                    "HTTP {}  •  {}  •  network {}  •  parse {}{}",
-                    page.status,
-                    format_bytes(page.bytes),
-                    format_duration(page.network_time),
-                    format_duration(page.parse_time),
-                    script_status
-                ));
-                let paint_started = Instant::now();
-                InvalidateRect(self.window, null(), 0);
-                UpdateWindow(self.window);
-                let paint_time = paint_started.elapsed();
-                if let Some(benchmark) = self.benchmark.as_mut() {
-                    benchmark.layout_time = layout_started.elapsed();
-                    benchmark.layout_build_time = layout_build_time;
-                    benchmark.layout_tree_time = self.last_layout_tree_time;
-                    benchmark.layout_finalize_time = self.last_layout_finalize_time;
-                    benchmark.text_measure_count = self.last_text_measure_count;
-                    benchmark.paint_time = paint_time;
-                    benchmark.page_ready = benchmark.process_started.elapsed();
-                }
-                self.schedule_benchmark_finish();
-                self.begin_deferred_resources(deferred_resources);
-            }
-            Err(error) => {
-                self.set_status(&format!("Load failed: {error}"));
-                if let Some(benchmark) = self.benchmark.as_mut() {
-                    benchmark.error = Some(error);
-                    benchmark.page_ready = benchmark.process_started.elapsed();
-                }
-                self.schedule_benchmark_finish();
-            }
-        }
-    }
-
     unsafe fn schedule_benchmark_finish(&mut self) {
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
@@ -1877,81 +1699,6 @@ impl BrowserState {
                 PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
             }
         });
-    }
-
-    unsafe fn begin_deferred_resources(&self, resources: Vec<PageResource>) {
-        if resources.is_empty() {
-            return;
-        }
-        let generation = self.generation;
-        let window = self.window as isize;
-        let http_client = Arc::clone(&self.http_client);
-        std::thread::spawn(move || {
-            let client = http_client;
-            let loaded = std::thread::scope(|scope| {
-                let client = &client;
-                let requests = resources
-                    .into_iter()
-                    .map(|resource| {
-                        scope.spawn(move || {
-                            let response = client.get(page_resource_url(&resource));
-                            (resource, response)
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                requests
-                    .into_iter()
-                    .filter_map(|request| request.join().ok())
-                    .filter_map(|(resource, response)| {
-                        response
-                            .ok()
-                            .filter(winhttp::HttpResponse::is_success)
-                            .map(|response| (resource, response.body))
-                    })
-                    .collect::<Vec<_>>()
-            });
-            let message = Box::new(DeferredResourcesMessage { generation, loaded });
-            let pointer = Box::into_raw(message);
-            if unsafe {
-                PostMessageW(
-                    window as Hwnd,
-                    WM_APP_DEFERRED_RESOURCES,
-                    0,
-                    pointer as isize,
-                )
-            } == 0
-            {
-                unsafe { drop(Box::from_raw(pointer)) };
-            }
-        });
-    }
-
-    unsafe fn finish_deferred_resources(&mut self, message: DeferredResourcesMessage) {
-        if message.generation != self.generation {
-            return;
-        }
-        let mut changed = false;
-        for (resource, body) in message.loaded {
-            if let PageResource::Font {
-                url,
-                family,
-                weight,
-                italic,
-            } = resource
-            {
-                changed |= self
-                    .page
-                    .add_font(url, family, weight, italic, &body)
-                    .is_ok();
-            }
-        }
-        if changed {
-            self.web_fonts.clear();
-            self.web_fonts.register(&self.page.fonts);
-            self.dynamic_fonts.clear();
-            self.rebuild_layout();
-            InvalidateRect(self.window, null(), 0);
-        }
     }
 
     unsafe fn finish_benchmark(&mut self) {
@@ -3341,6 +3088,7 @@ impl BrowserState {
 impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
+            self.cancel_script_runtime();
             if !self.content_brush.is_null() {
                 DeleteObject(self.content_brush);
             }
@@ -3354,6 +3102,7 @@ impl Drop for BrowserState {
 enum HistoryMode {
     Push,
     Existing,
+    Script,
 }
 
 fn load_page_resources(
@@ -3472,10 +3221,8 @@ struct LoadedPage {
     parse_time: Duration,
     html_parse_time: Duration,
     resource_processing_time: Duration,
-    script_time: Duration,
-    style_refresh_time: Duration,
-    script_outcome: ScriptOutcome,
-    deferred_resources: Vec<PageResource>,
+    loaded_resources: HashSet<PageResource>,
+    remaining_resource_budget: u64,
 }
 
 struct DeferredResourcesMessage {
@@ -3640,6 +3387,10 @@ unsafe extern "system" fn main_window_proc(
             } else {
                 DefWindowProcW(window, message, wparam, lparam)
             }
+        }
+        WM_TIMER if wparam == ID_SCRIPT_RUNTIME_TIMER => {
+            state.pump_script_runtime();
+            0
         }
         WM_APP_CHROME_INVALIDATE => {
             let toolbar = Rect {

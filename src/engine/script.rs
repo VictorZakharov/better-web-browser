@@ -22,7 +22,7 @@ const STARTUP_TIMER_PASSES: usize = 6;
 const STARTUP_TIMER_SLICE: Duration = Duration::from_millis(250);
 const MAX_TIMER_CALLBACKS_PER_SLICE: usize = 128;
 
-pub(crate) type DynamicScriptLoader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
+pub type DynamicScriptLoader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
 
 #[derive(Debug, Clone)]
 pub struct ScriptInput {
@@ -77,8 +77,8 @@ struct HostState {
 struct HostStateLink(Weak<RefCell<HostState>>);
 
 /// Owns one document's JavaScript realm and all native state that must remain on the realm's
-/// creating thread. The Windows shell does not retain this object yet; doing so safely requires
-/// keeping the document and realm together on one renderer thread.
+/// creating thread. Embedders must keep this runtime and its document together on that owner
+/// thread for the complete document lifetime.
 pub struct ScriptRuntime {
     context: Option<Box<Context>>,
     host: Rc<RefCell<HostState>>,
@@ -147,7 +147,7 @@ impl ScriptRuntime {
         self.context.is_some()
     }
 
-    pub(crate) fn advance_time_with_loader(
+    pub fn advance_time_with_loader(
         &mut self,
         advance: Duration,
         max_callbacks: usize,
