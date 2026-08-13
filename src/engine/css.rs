@@ -1,10 +1,10 @@
-use super::dom::{Dom, NodeRef};
+use super::dom::{Dom, NodeId, NodeRef};
 use crate::navigation::resolve_url;
 use cssparser::color::{parse_hash_color, parse_named_color};
 use cssparser::{Parser, ParserInput, ToCss, Token};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Color {
@@ -164,6 +164,22 @@ pub enum Display {
     TableCell,
 }
 
+impl Display {
+    pub(crate) const fn css_keyword(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Block => "block",
+            Self::Inline => "inline",
+            Self::InlineBlock => "inline-block",
+            Self::Flex => "flex",
+            Self::Grid => "grid",
+            Self::Table => "table",
+            Self::TableRow => "table-row",
+            Self::TableCell => "table-cell",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
     Static,
@@ -288,7 +304,7 @@ pub struct ComputedStyle {
     pub grid_column_end: Option<usize>,
     pub grid_row_start: Option<usize>,
     pub grid_row_end: Option<usize>,
-    custom_properties: HashMap<String, String>,
+    custom_properties: Arc<HashMap<String, String>>,
 }
 
 impl ComputedStyle {
@@ -349,7 +365,7 @@ impl ComputedStyle {
             grid_column_end: None,
             grid_row_start: None,
             grid_row_end: None,
-            custom_properties: HashMap::new(),
+            custom_properties: Arc::new(HashMap::new()),
         }
     }
 
@@ -365,9 +381,7 @@ impl ComputedStyle {
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
             style.visibility = parent.visibility;
-            style
-                .custom_properties
-                .clone_from(&parent.custom_properties);
+            style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style
     }
@@ -375,7 +389,7 @@ impl ComputedStyle {
 
 #[derive(Debug, Default)]
 pub struct StyleSet {
-    pub styles: HashMap<usize, ComputedStyle>,
+    pub styles: HashMap<NodeId, ComputedStyle>,
     rules: Vec<Rule>,
     document_base_url: String,
 }
@@ -472,7 +486,7 @@ impl StyleSet {
             apply_resolved_declaration(&mut style, declaration, parent, &self.document_base_url);
         }
         apply_presentational_hints(node, &mut style);
-        if node.attr("hidden").is_some() {
+        if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
             style.display = Display::None;
         }
         style.line_height = style.line_height.max(style.font_size);
@@ -539,8 +553,8 @@ fn parse_html_length(value: &str) -> Option<Length> {
     }
 }
 
-fn node_id(node: &NodeRef) -> usize {
-    Rc::as_ptr(node) as usize
+fn node_id(node: &NodeRef) -> NodeId {
+    node.id()
 }
 
 #[derive(Debug)]
@@ -730,21 +744,18 @@ fn apply_custom_properties(
     {
         let value = declaration.value.trim();
         if value.eq_ignore_ascii_case("initial") {
-            style.custom_properties.remove(&declaration.name);
+            Arc::make_mut(&mut style.custom_properties).remove(&declaration.name);
         } else if value.eq_ignore_ascii_case("inherit") || value.eq_ignore_ascii_case("unset") {
             if let Some(value) = parent
                 .and_then(|parent| parent.custom_properties.get(&declaration.name))
                 .cloned()
             {
-                style
-                    .custom_properties
-                    .insert(declaration.name.clone(), value);
+                Arc::make_mut(&mut style.custom_properties).insert(declaration.name.clone(), value);
             } else {
-                style.custom_properties.remove(&declaration.name);
+                Arc::make_mut(&mut style.custom_properties).remove(&declaration.name);
             }
         } else {
-            style
-                .custom_properties
+            Arc::make_mut(&mut style.custom_properties)
                 .insert(declaration.name.clone(), declaration.value.clone());
         }
     }
@@ -1228,7 +1239,7 @@ fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> bool {
             .borrow()
             .iter()
             .find(|child| child.element().is_some())
-            .is_some_and(|child| Rc::ptr_eq(child, node));
+            .is_some_and(|child| child.id() == node.id());
         if !is_first {
             return false;
         }
@@ -1299,11 +1310,8 @@ fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) -> bool {
     }
 }
 
-fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyle) {
-    let Some(tag) = node.tag_name() else {
-        return;
-    };
-    style.display = match tag {
+pub(crate) fn user_agent_display(tag: &str) -> Display {
+    match tag {
         "html" | "body" | "address" | "article" | "aside" | "blockquote" | "center" | "details"
         | "dialog" | "div" | "dl" | "fieldset" | "figcaption" | "figure" | "footer" | "form"
         | "header" | "hgroup" | "hr" | "main" | "nav" | "ol" | "p" | "pre" | "section"
@@ -1312,11 +1320,45 @@ fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyle) {
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,
         "img" | "input" | "button" | "select" | "textarea" | "svg" => Display::InlineBlock,
-        "head" | "base" | "link" | "meta" | "title" | "style" | "script" | "template" => {
-            Display::None
-        }
+        "head" | "base" | "datalist" | "link" | "meta" | "title" | "style" | "script"
+        | "template" | "rp" => Display::None,
         _ => Display::Inline,
+    }
+}
+
+pub(crate) fn user_agent_style_property(tag: &str, property: &str) -> Option<&'static str> {
+    match property {
+        "display" => Some(user_agent_display(tag).css_keyword()),
+        "background-color" if tag == "mark" => Some("rgb(255, 255, 0)"),
+        "color" if tag == "mark" => Some("rgb(0, 0, 0)"),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_hidden_by_html_rendering(node: &NodeRef) -> bool {
+    if node.tag_name() == Some("dialog") && node.attr("open").is_none() {
+        return true;
+    }
+    let Some(parent) = node.parent() else {
+        return false;
     };
+    if parent.tag_name() != Some("details") || parent.attr("open").is_some() {
+        return false;
+    }
+    let first_summary = parent
+        .children
+        .borrow()
+        .iter()
+        .find(|child| child.tag_name() == Some("summary"))
+        .cloned();
+    first_summary.is_none_or(|summary| summary.id() != node.id())
+}
+
+fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyle) {
+    let Some(tag) = node.tag_name() else {
+        return;
+    };
+    style.display = user_agent_display(tag);
     match tag {
         "body" => style.margin = uniform_edges(Length::Px(8.0)),
         "p" => {
@@ -1344,6 +1386,10 @@ fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyle) {
         "b" | "strong" => style.font_weight = 700,
         "i" | "em" => style.italic = true,
         "small" => style.font_size *= 0.833,
+        "mark" => {
+            style.color = Color::BLACK;
+            style.background_color = Color::rgb(255, 255, 0);
+        }
         "a" => {
             style.color = Color::rgb(0, 0, 238);
             style.text_decoration_underline = true;
@@ -2315,7 +2361,7 @@ fn consume_identifier(bytes: &[u8], start: usize) -> usize {
     cursor
 }
 
-fn media_matches(prelude: &str, viewport_width: f32) -> bool {
+pub(crate) fn media_matches(prelude: &str, viewport_width: f32) -> bool {
     let queries = prelude
         .trim()
         .strip_prefix("@media")
@@ -2694,6 +2740,28 @@ mod tests {
         let styles = StyleSet::from_dom(&dom, &[], 1000.0);
         let body = dom.elements_named("body").next().unwrap();
         assert_eq!(styles.get(&body).color, Color::rgb(0, 128, 0));
+    }
+
+    #[test]
+    fn applies_html_rendering_states_for_details_and_dialog() {
+        let dom = dom::parse(
+            r#"<details id="closed"><summary id="closed-summary">More</summary><p id="closed-content">Hidden</p></details>
+               <details open><summary>Less</summary><p id="open-content">Visible</p></details>
+               <dialog id="closed-dialog">Closed</dialog>
+               <dialog id="open-dialog" open>Open</dialog>"#,
+        );
+        let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+        let by_id = |id: &str| {
+            dom::Node::descendants(&dom.document)
+                .find(|node| node.attr("id").as_deref() == Some(id))
+                .unwrap()
+        };
+
+        assert_eq!(styles.get(&by_id("closed-summary")).display, Display::Block);
+        assert_eq!(styles.get(&by_id("closed-content")).display, Display::None);
+        assert_eq!(styles.get(&by_id("open-content")).display, Display::Block);
+        assert_eq!(styles.get(&by_id("closed-dialog")).display, Display::None);
+        assert_eq!(styles.get(&by_id("open-dialog")).display, Display::Block);
     }
 
     #[test]

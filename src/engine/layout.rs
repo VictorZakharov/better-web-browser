@@ -2,11 +2,10 @@ use super::css::{
     AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, FlexDirection, Float,
     JustifyContent, Length, Position, ResolvedEdges, StyleSet, TextAlign, WhiteSpace, parse_length,
 };
-use super::dom::{Node, NodeData, NodeRef};
+use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};
 use crate::navigation::resolve_url;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RectF {
@@ -71,7 +70,7 @@ pub struct SelectOption {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControlSpec {
-    pub node_id: usize,
+    pub node_id: NodeId,
     pub rect: RectF,
     pub kind: ControlKind,
     pub name: String,
@@ -80,7 +79,7 @@ pub struct ControlSpec {
     pub options: Vec<SelectOption>,
     pub selected_index: usize,
     pub placeholder: String,
-    pub form_id: Option<usize>,
+    pub form_id: Option<NodeId>,
     pub background_color: Color,
     pub text_color: Color,
     pub border_color: Color,
@@ -95,7 +94,7 @@ pub struct ControlSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormSpec {
-    pub node_id: usize,
+    pub node_id: NodeId,
     pub action: String,
     pub method: String,
     pub hidden_fields: Vec<(String, String)>,
@@ -134,7 +133,7 @@ pub enum DisplayItem {
         repeat_x: bool,
         repeat_y: bool,
     },
-    Control(ControlSpec),
+    Control(Box<ControlSpec>),
 }
 
 #[derive(Debug, Default)]
@@ -142,7 +141,7 @@ pub struct LayoutOutput {
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,
-    pub forms: HashMap<usize, FormSpec>,
+    pub forms: HashMap<NodeId, FormSpec>,
 }
 
 pub fn layout_page<M: TextMeasurer>(
@@ -151,17 +150,38 @@ pub fn layout_page<M: TextMeasurer>(
     viewport_height: f32,
     measurer: &mut M,
 ) -> LayoutOutput {
+    layout_page_with_style_viewport(
+        page,
+        viewport_width,
+        viewport_height,
+        viewport_width,
+        measurer,
+    )
+}
+
+/// Lays out a page when the CSS media viewport and content area have different widths.
+/// Classic scrollbars occupy content space but remain part of the media-query viewport.
+pub fn layout_page_with_style_viewport<M: TextMeasurer>(
+    page: &Page,
+    viewport_width: f32,
+    viewport_height: f32,
+    style_viewport_width: f32,
+    measurer: &mut M,
+) -> LayoutOutput {
     let computed_styles;
-    let styles = if let Some(styles) = page.cached_style(viewport_width) {
-        styles
+    let cached_styles = page.cached_style(style_viewport_width);
+    let styles = if let Some(cached_styles) = cached_styles {
+        cached_styles
     } else {
-        computed_styles = page.style(viewport_width);
+        computed_styles = page.style(style_viewport_width);
         &computed_styles
     };
     let mut engine = LayoutEngine {
         page,
         styles,
         measurer,
+        measurement_cache: HashMap::new(),
+        inline_box_cache: HashMap::new(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -196,6 +216,8 @@ struct LayoutEngine<'a, M> {
     page: &'a Page,
     styles: &'a StyleSet,
     measurer: &'a mut M,
+    measurement_cache: HashMap<(usize, bool), CachedAtomMeasurement>,
+    inline_box_cache: HashMap<usize, InlineBoxMetrics>,
     viewport: RectF,
     output: LayoutOutput,
 }
@@ -442,33 +464,35 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if icon.is_some() && value.is_empty() {
                 label.clear();
             }
-            self.output.items.push(DisplayItem::Control(ControlSpec {
-                node_id: node_id(node),
-                rect,
-                kind,
-                name: node.attr("name").unwrap_or_default(),
-                value,
-                label,
-                options: Vec::new(),
-                selected_index: 0,
-                placeholder: node
-                    .attr("placeholder")
-                    .or_else(|| node.attr("title"))
-                    .unwrap_or_default(),
-                form_id: nearest_form(node).map(|form| node_id(&form)),
-                background_color: self.effective_background_color(node),
-                text_color: style.color,
-                border_color: style
-                    .border_color
-                    .composite_over(self.effective_background_color(node)),
-                border_width: [borders.top, borders.right, borders.bottom, borders.left],
-                border_radius: radius,
-                padding: [padding.top, padding.right, padding.bottom, padding.left],
-                font: FontSpec::from_style(&style),
-                icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
-                icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
-                icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
-            }));
+            self.output
+                .items
+                .push(DisplayItem::Control(Box::new(ControlSpec {
+                    node_id: node_id(node),
+                    rect,
+                    kind,
+                    name: node.attr("name").unwrap_or_default(),
+                    value,
+                    label,
+                    options: Vec::new(),
+                    selected_index: 0,
+                    placeholder: node
+                        .attr("placeholder")
+                        .or_else(|| node.attr("title"))
+                        .unwrap_or_default(),
+                    form_id: nearest_form(node).map(|form| node_id(&form)),
+                    background_color: self.effective_background_color(node),
+                    text_color: style.color,
+                    border_color: style
+                        .border_color
+                        .composite_over(self.effective_background_color(node)),
+                    border_width: [borders.top, borders.right, borders.bottom, borders.left],
+                    border_radius: radius,
+                    padding: [padding.top, padding.right, padding.bottom, padding.left],
+                    font: FontSpec::from_style(&style),
+                    icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
+                    icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
+                    icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
+                })));
         }
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
@@ -676,25 +700,30 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 style.box_sizing,
             )
         };
-        let mut atoms = Vec::new();
-        let mut pending_space = false;
-        for child in node.children.borrow().iter() {
-            self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
-        }
-        let mut intrinsic_width = 0.0_f32;
-        let mut current_line = 0.0_f32;
-        let mut line_start = true;
-        for atom in &atoms {
-            if matches!(atom, InlineAtom::Break) {
-                intrinsic_width = intrinsic_width.max(current_line);
-                current_line = 0.0;
-                line_start = true;
-            } else {
-                current_line += self.measure_atom(atom, line_start).width;
-                line_start = false;
+        let intrinsic_width = if specified.is_some() {
+            0.0
+        } else {
+            let mut atoms = Vec::new();
+            let mut pending_space = false;
+            for child in node.children.borrow().iter() {
+                self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
             }
-        }
-        intrinsic_width = intrinsic_width.max(current_line);
+            self.begin_inline_measurement_context();
+            let mut intrinsic_width = 0.0_f32;
+            let mut current_line = 0.0_f32;
+            let mut line_start = true;
+            for atom in &atoms {
+                if matches!(atom, InlineAtom::Break) {
+                    intrinsic_width = intrinsic_width.max(current_line);
+                    current_line = 0.0;
+                    line_start = true;
+                } else {
+                    current_line += self.measure_atom(atom, line_start).width;
+                    line_start = false;
+                }
+            }
+            intrinsic_width.max(current_line)
+        };
         let mut basis =
             specified.unwrap_or(intrinsic_width + insets).max(0.0) + margin.horizontal();
         if let Some(minimum) = resolve_outer_size(
@@ -1652,6 +1681,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         align: TextAlign,
         default_line_height: f32,
     ) -> f32 {
+        self.begin_inline_measurement_context();
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
         let mut line_height = 0.0_f32;
@@ -1691,7 +1721,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_width = 0.0;
                 line_height = 0.0;
             }
-            let measured = if line.is_empty() {
+            let measured = if should_wrap {
                 self.measure_atom(atom, true)
             } else {
                 measured
@@ -1714,8 +1744,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y
     }
 
+    fn begin_inline_measurement_context(&mut self) {
+        // Inline atoms are short-lived per formatting context, so pointer-keyed measurements
+        // must not outlive a context and alias recycled allocations from a later atom tree.
+        self.measurement_cache.clear();
+        self.inline_box_cache.clear();
+    }
+
     fn measure_atom<'a>(&mut self, atom: &'a InlineAtom, line_start: bool) -> MeasuredAtom<'a> {
-        match atom {
+        let cache_key = (atom as *const InlineAtom as usize, line_start);
+        if let Some(measured) = self.measurement_cache.get(&cache_key) {
+            return measured.for_atom(atom);
+        }
+        let measured = match atom {
             InlineAtom::Text {
                 text,
                 font,
@@ -1732,7 +1773,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let (width, measured_height) = self.measurer.measure(text, font);
                 MeasuredAtom {
                     atom,
-                    text: Some(text.to_string()),
+                    text: Some(text),
                     width,
                     height: line_height.max(measured_height),
                     no_wrap: *no_wrap,
@@ -1750,7 +1791,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 break_before: false,
             },
             InlineAtom::InlineBox { children, style } => {
-                let metrics = self.measure_inline_box(children, style);
+                let metrics = self.measure_inline_box(atom, children, style);
                 MeasuredAtom {
                     atom,
                     text: None,
@@ -1761,14 +1802,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
             }
             InlineAtom::Break => unreachable!(),
-        }
+        };
+        self.measurement_cache
+            .insert(cache_key, CachedAtomMeasurement::from(&measured));
+        measured
     }
 
     fn measure_inline_box(
         &mut self,
+        atom: &InlineAtom,
         children: &[InlineAtom],
         style: &ComputedStyle,
     ) -> InlineBoxMetrics {
+        let cache_key = atom as *const InlineAtom as usize;
+        if let Some(metrics) = self.inline_box_cache.get(&cache_key) {
+            return *metrics;
+        }
         let mut children_width = 0.0_f32;
         let mut children_height = 0.0_f32;
         for (index, child) in children.iter().enumerate() {
@@ -1842,14 +1891,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             border_box_height = border_box_height.min(maximum + vertical_insets);
         }
 
-        InlineBoxMetrics {
+        let metrics = InlineBoxMetrics {
             margin,
             border,
             padding,
             border_box_width: border_box_width.max(0.0),
             border_box_height: border_box_height.max(0.0),
             children_width,
-        }
+        };
+        self.inline_box_cache.insert(cache_key, metrics);
+        metrics
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1881,7 +1932,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             InlineAtom::Text {
                 font, color, link, ..
             } => {
-                let text = measured.text.as_deref().unwrap_or_default();
+                let text = measured.text.unwrap_or_default();
                 if !text.is_empty() {
                     self.output.items.push(DisplayItem::Text {
                         rect: RectF {
@@ -1961,10 +2012,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         tint: None,
                     });
                 }
-                self.output.items.push(DisplayItem::Control(spec));
+                self.output.items.push(DisplayItem::Control(Box::new(spec)));
             }
             InlineAtom::InlineBox { children, style } => {
-                let metrics = self.measure_inline_box(children, style);
+                let metrics = self.measure_inline_box(measured.atom, children, style);
                 let border_x = x + metrics.margin.left;
                 let border_y = atom_y + metrics.margin.top;
                 let border_rect = RectF {
@@ -2088,11 +2139,54 @@ enum InlineAtom {
 
 struct MeasuredAtom<'a> {
     atom: &'a InlineAtom,
-    text: Option<String>,
+    text: Option<&'a str>,
     width: f32,
     height: f32,
     no_wrap: bool,
     break_before: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CachedAtomMeasurement {
+    text_start: Option<usize>,
+    width: f32,
+    height: f32,
+    no_wrap: bool,
+    break_before: bool,
+}
+
+impl CachedAtomMeasurement {
+    fn for_atom<'a>(&self, atom: &'a InlineAtom) -> MeasuredAtom<'a> {
+        let text = match (atom, self.text_start) {
+            (InlineAtom::Text { text, .. }, Some(start)) => text.get(start..),
+            _ => None,
+        };
+        MeasuredAtom {
+            atom,
+            text,
+            width: self.width,
+            height: self.height,
+            no_wrap: self.no_wrap,
+            break_before: self.break_before,
+        }
+    }
+}
+
+impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
+    fn from(measured: &MeasuredAtom<'_>) -> Self {
+        Self {
+            text_start: measured.text.and_then(|measured_text| {
+                let InlineAtom::Text { text, .. } = measured.atom else {
+                    return None;
+                };
+                Some(text.len() - measured_text.len())
+            }),
+            width: measured.width,
+            height: measured.height,
+            no_wrap: measured.no_wrap,
+            break_before: measured.break_before,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2521,8 +2615,8 @@ fn resolve_border_radius(radius: Length, rect: RectF, font_size: f32) -> f32 {
         .clamp(0.0, basis / 2.0)
 }
 
-fn node_id(node: &NodeRef) -> usize {
-    Rc::as_ptr(node) as usize
+fn node_id(node: &NodeRef) -> NodeId {
+    node.id()
 }
 
 fn svg_uses_current_color(node: &NodeRef) -> bool {
@@ -2673,6 +2767,18 @@ fn default_control_content_height(
 }
 
 fn nearest_form(node: &NodeRef) -> Option<NodeRef> {
+    if let Some(form_id) = node.attr("form") {
+        let mut root = node.clone();
+        while let Some(parent) = root.parent() {
+            root = parent;
+        }
+        if let Some(form) = Node::descendants(&root).find(|candidate| {
+            candidate.tag_name() == Some("form")
+                && candidate.attr("id").as_deref() == Some(form_id.as_str())
+        }) {
+            return Some(form);
+        }
+    }
     let mut ancestor = node.parent();
     while let Some(candidate) = ancestor {
         if candidate.tag_name() == Some("form") {
@@ -2683,7 +2789,7 @@ fn nearest_form(node: &NodeRef) -> Option<NodeRef> {
     None
 }
 
-fn collect_forms(page: &Page) -> HashMap<usize, FormSpec> {
+fn collect_forms(page: &Page) -> HashMap<NodeId, FormSpec> {
     page.dom
         .elements_named("form")
         .map(|form| {
@@ -2696,8 +2802,9 @@ fn collect_forms(page: &Page) -> HashMap<usize, FormSpec> {
                 .attr("method")
                 .unwrap_or_else(|| "get".into())
                 .to_ascii_lowercase();
-            let hidden_fields = super::dom::Node::descendants(&form)
+            let hidden_fields = super::dom::Node::descendants(&page.dom.document)
                 .filter(|node| node.tag_name() == Some("input"))
+                .filter(|node| nearest_form(node).is_some_and(|owner| owner.id() == form.id()))
                 .filter(|node| {
                     node.attr("type")
                         .is_some_and(|kind| kind.eq_ignore_ascii_case("hidden"))
@@ -2779,6 +2886,18 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct CountingMeasurer {
+        calls: usize,
+    }
+
+    impl TextMeasurer for CountingMeasurer {
+        fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
+            self.calls += 1;
+            (text.chars().count() as f32 * font.size * 0.5, font.size)
+        }
+    }
+
     #[test]
     fn lays_out_centered_image_form_and_links() {
         let mut page = Page::parse(
@@ -2817,6 +2936,43 @@ mod tests {
             .count();
         assert_eq!(controls, 2);
         assert!(output.items.iter().any(|item| matches!(item, DisplayItem::Text { link: Some(link), .. } if link == "https://example.com/about")));
+    }
+
+    #[test]
+    fn associates_external_controls_and_hidden_fields_with_their_form_owner() {
+        let page = Page::parse(
+            r#"<form id="search" action="/find"></form>
+               <input form="search" name="q" value="rust">
+               <input form="search" type="hidden" name="lang" value="en">"#,
+            "https://example.com/",
+        );
+        let form = page.dom.elements_named("form").next().unwrap();
+        let form_id = node_id(&form);
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+
+        assert!(output.items.iter().any(|item| {
+            matches!(item, DisplayItem::Control(control) if control.name == "q" && control.form_id == Some(form_id))
+        }));
+        assert_eq!(
+            output.forms[&form_id].hidden_fields,
+            [("lang".into(), "en".into())]
+        );
+    }
+
+    #[test]
+    fn evaluates_media_queries_against_the_style_viewport() {
+        let page = Page::parse(
+            r#"<style>@media (min-width: 1100px) { p { color: #c00 } }</style><p>Wide</p>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page_with_style_viewport(&page, 1080.0, 600.0, 1110.0, &mut measurer);
+
+        assert!(output.items.iter().any(|item| {
+            matches!(item, DisplayItem::Text { text, color, .. }
+                if text == "Wide" && *color == Color::rgb(204, 0, 0))
+        }));
     }
 
     #[test]
@@ -2884,6 +3040,45 @@ mod tests {
             })
             .collect::<String>();
         assert_eq!(text, "Hello wide world");
+    }
+
+    #[test]
+    fn caches_measurements_for_nested_inline_boxes() {
+        let page = Page::parse(
+            r#"<p><span style="background: red"><span style="background: blue">cached measurement</span></span></p>"#,
+            "https://example.com/",
+        );
+        let mut measurer = CountingMeasurer::default();
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+        let text = output
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                DisplayItem::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+
+        assert_eq!(text, "cached measurement");
+        assert_eq!(measurer.calls, 2);
+    }
+
+    #[test]
+    fn skips_intrinsic_measurement_for_a_definite_flex_basis() {
+        let definite_page = Page::parse(
+            r#"<div style="display:flex"><span style="width:100px">definite basis</span></div>"#,
+            "https://example.com/",
+        );
+        let automatic_page = Page::parse(
+            r#"<div style="display:flex"><span>automatic basis</span></div>"#,
+            "https://example.com/",
+        );
+        let mut definite_measurer = CountingMeasurer::default();
+        layout_page(&definite_page, 800.0, 600.0, &mut definite_measurer);
+        let mut automatic_measurer = CountingMeasurer::default();
+        layout_page(&automatic_page, 800.0, 600.0, &mut automatic_measurer);
+
+        assert!(definite_measurer.calls < automatic_measurer.calls);
     }
 
     #[test]

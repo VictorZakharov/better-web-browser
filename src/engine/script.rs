@@ -1,18 +1,26 @@
-use super::dom::{Node, NodeData, NodeRef};
+use super::css::{is_hidden_by_html_rendering, user_agent_style_property};
+use super::dom::{Node, NodeData, NodeId, NodeRef};
+use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
 use crate::navigation::resolve_url;
 use boa_engine::{
-    Context, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source,
-    property::Attribute,
+    Context, Finalize, JsData, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source,
+    Trace, property::Attribute,
 };
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::rc::Rc;
-use std::time::Instant;
+use std::rc::{Rc, Weak};
+use std::time::{Duration, Instant};
 
 const MAX_LOOP_ITERATIONS: u64 = if cfg!(test) { 25_000 } else { 5_000_000 };
 const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DYNAMIC_SCRIPTS: usize = 32;
+// This makes the former effective startup horizon explicit. The JavaScript shim used to advance
+// 200 ms while dispatching lifecycle events plus five 250 ms settlement slices. Lifecycle dispatch
+// no longer runs timer tasks reentrantly, so use six slices for a clear 1.5 second virtual budget.
+const STARTUP_TIMER_PASSES: usize = 6;
+const STARTUP_TIMER_SLICE: Duration = Duration::from_millis(250);
+const MAX_TIMER_CALLBACKS_PER_SLICE: usize = 128;
 
 pub(crate) type DynamicScriptLoader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
 
@@ -34,6 +42,7 @@ pub struct ScriptOutcome {
     pub navigation_url: Option<String>,
     pub cookie_updates: Vec<String>,
     pub runtime_stopped: bool,
+    pub render_requested: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +55,7 @@ struct HostState {
     document: NodeRef,
     document_url: String,
     nodes: HashMap<u32, NodeRef>,
-    node_ids: HashMap<usize, u32>,
+    node_ids: HashMap<NodeId, u32>,
     next_node_id: u32,
     mutation_count: usize,
     console: Vec<String>,
@@ -56,7 +65,149 @@ struct HostState {
     executed: usize,
     diagnostics: Vec<String>,
     pending_dynamic_scripts: Vec<PendingDynamicScript>,
-    started_dynamic_scripts: HashSet<usize>,
+    started_dynamic_scripts: HashSet<NodeId>,
+    timers: EventLoopScheduler<u32>,
+    timer_handles: HashMap<u32, TaskHandle>,
+}
+
+/// A Boa context owns only a weak link to native document state. If an evaluator panic requires
+/// leaking the damaged context, the page DOM and scheduler can still be released normally.
+#[derive(Clone, Finalize, JsData, Trace)]
+#[boa_gc(unsafe_empty_trace)]
+struct HostStateLink(Weak<RefCell<HostState>>);
+
+/// Owns one document's JavaScript realm and all native state that must remain on the realm's
+/// creating thread. The Windows shell does not retain this object yet; doing so safely requires
+/// keeping the document and realm together on one renderer thread.
+pub struct ScriptRuntime {
+    context: Option<Box<Context>>,
+    host: Rc<RefCell<HostState>>,
+    total_script_bytes: usize,
+    initialized: bool,
+}
+
+impl ScriptRuntime {
+    pub fn new(document: NodeRef, document_url: &str) -> Self {
+        let host = Rc::new(RefCell::new(HostState::new(document, document_url)));
+        let mut context = Box::new(Context::default());
+        context.insert_data(HostStateLink(Rc::downgrade(&host)));
+        Self {
+            context: Some(context),
+            host,
+            total_script_bytes: 0,
+            initialized: false,
+        }
+    }
+
+    pub fn execute_initial(&mut self, scripts: &[ScriptInput]) -> ScriptOutcome {
+        self.execute_initial_with_loader(scripts, None)
+    }
+
+    pub(crate) fn execute_initial_with_loader(
+        &mut self,
+        scripts: &[ScriptInput],
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if self.initialized {
+            return lifecycle_error("the document's initial scripts have already executed");
+        }
+        self.initialized = true;
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            execute_inner(
+                scripts,
+                context,
+                &host,
+                &mut self.total_script_bytes,
+                &mut dynamic_script_loader,
+            )
+        }));
+        self.finish_guarded_run(result)
+    }
+
+    /// Advances this realm's monotonic clock and runs bounded post-load timer work.
+    pub fn advance_time(&mut self, advance: Duration, max_callbacks: usize) -> ScriptOutcome {
+        self.advance_time_with_loader(advance, max_callbacks, None)
+    }
+
+    /// Returns the delay until the next timer should wake this runtime.
+    pub fn next_timer_delay(&mut self) -> Option<Duration> {
+        let mut host = self.host.borrow_mut();
+        let now = host.timers.now();
+        host.timers
+            .next_due_time()
+            .map(|due| due.saturating_sub(now))
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.context.is_some()
+    }
+
+    pub(crate) fn advance_time_with_loader(
+        &mut self,
+        advance: Duration,
+        max_callbacks: usize,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut outcome = ScriptOutcome::default();
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            settle_timer_slice(
+                context,
+                &host,
+                &mut outcome,
+                &mut dynamic_script_loader,
+                &mut self.total_script_bytes,
+                advance,
+                max_callbacks,
+            );
+            append_timer_summary(&host, &mut outcome);
+            outcome
+        }));
+        self.finish_guarded_run(result)
+    }
+
+    /// Cancels the document's queued work and tears down its healthy JavaScript context.
+    ///
+    /// The runtime remains inert after cancellation; callers should create a new runtime for the
+    /// replacement document.
+    pub fn cancel_document(&mut self) {
+        self.context.take();
+        let mut host = self.host.borrow_mut();
+        host.timers.clear();
+        host.timer_handles.clear();
+        host.pending_dynamic_scripts.clear();
+    }
+
+    fn finish_guarded_run(
+        &mut self,
+        result: Result<ScriptOutcome, Box<dyn std::any::Any + Send>>,
+    ) -> ScriptOutcome {
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(payload) => {
+                // Some evaluator failures leave Boa's garbage-collected maps borrowed. Leaking
+                // only that damaged context avoids a double-panic abort. Its host link is weak, so
+                // dropping this runtime still releases the document and scheduler.
+                if let Some(context) = self.context.take() {
+                    std::mem::forget(context);
+                }
+                stopped_runtime_outcome(panic_detail(payload))
+            }
+        };
+        finish_host(outcome, &self.host)
+    }
 }
 
 impl HostState {
@@ -76,21 +227,22 @@ impl HostState {
             diagnostics: Vec::new(),
             pending_dynamic_scripts: Vec::new(),
             started_dynamic_scripts: HashSet::new(),
+            timers: EventLoopScheduler::new(),
+            timer_handles: HashMap::new(),
         };
-        for node in Node::descendants(&state.document).collect::<Vec<_>>() {
-            state.id_for(&node);
-        }
+        let document = state.document.clone();
+        state.register_subtree(&document);
         state
     }
 
     fn id_for(&mut self, node: &NodeRef) -> u32 {
-        let pointer = Rc::as_ptr(node) as usize;
-        if let Some(id) = self.node_ids.get(&pointer) {
+        let node_id = node.id();
+        if let Some(id) = self.node_ids.get(&node_id) {
             return *id;
         }
         let id = self.next_node_id;
         self.next_node_id = self.next_node_id.saturating_add(1);
-        self.node_ids.insert(pointer, id);
+        self.node_ids.insert(node_id, id);
         self.nodes.insert(id, node.clone());
         id
     }
@@ -100,8 +252,16 @@ impl HostState {
     }
 
     fn register_subtree(&mut self, root: &NodeRef) {
-        for node in Node::descendants(root) {
+        let mut stack = vec![root.clone()];
+        while let Some(node) = stack.pop() {
             self.id_for(&node);
+            stack.extend(node.children.borrow().iter().rev().cloned());
+            if let Some(contents) = node
+                .element()
+                .and_then(|element| element.template_contents.borrow().clone())
+            {
+                stack.push(contents);
+            }
         }
     }
 
@@ -115,10 +275,75 @@ impl HostState {
         }
     }
 
+    fn record_mutation(&mut self) {
+        self.mutation_count += 1;
+        self.timers.request_render();
+    }
+
+    fn schedule_timer(&mut self, id: u32, delay: Duration, repeat: bool) {
+        if let Some(previous) = self.timer_handles.remove(&id) {
+            self.timers.cancel(previous);
+        }
+        let handle = if repeat {
+            self.timers.queue_repeating_task(
+                TaskSource::Timer,
+                delay,
+                delay.max(Duration::from_millis(1)),
+                id,
+            )
+        } else {
+            self.timers.queue_task(TaskSource::Timer, delay, id)
+        };
+        self.timer_handles.insert(id, handle);
+    }
+
+    fn cancel_timer(&mut self, id: u32) -> bool {
+        self.timer_handles
+            .remove(&id)
+            .is_some_and(|handle| self.timers.cancel(handle))
+    }
+
+    fn take_ready_timer(&mut self) -> Option<u32> {
+        let mut ready = None;
+        self.timers.run_one_task(|_, work| {
+            if let ScheduledWork::Task(task) = work {
+                ready = Some((task.payload, task.repeating));
+            }
+        });
+        let (id, repeating) = ready?;
+        if !repeating {
+            self.timer_handles.remove(&id);
+        }
+        Some(id)
+    }
+
+    fn timer_summary(&self) -> String {
+        let now = self.timers.now();
+        let mut timers = self
+            .timer_handles
+            .iter()
+            .filter_map(|(id, handle)| {
+                self.timers.scheduled_for(*handle).map(|due| {
+                    (
+                        due,
+                        *id,
+                        format!("{id}@{}", due.saturating_sub(now).as_millis()),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        timers.sort_by_key(|(due, id, _)| (*due, *id));
+        timers
+            .into_iter()
+            .map(|(_, _, summary)| summary)
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     fn is_connected(&self, node: &NodeRef) -> bool {
         let mut current = Some(node.clone());
         while let Some(node) = current {
-            if Rc::ptr_eq(&node, &self.document) {
+            if node.id() == self.document.id() {
                 return true;
             }
             current = node.parent();
@@ -137,8 +362,7 @@ impl HostState {
         let Some(source) = node.attr("src").filter(|source| !source.trim().is_empty()) else {
             return;
         };
-        let pointer = Rc::as_ptr(node) as usize;
-        if !self.started_dynamic_scripts.insert(pointer) {
+        if !self.started_dynamic_scripts.insert(node.id()) {
             return;
         }
         self.pending_dynamic_scripts.push(PendingDynamicScript {
@@ -192,10 +416,6 @@ impl HostState {
     }
 }
 
-thread_local! {
-    static ACTIVE_HOST: RefCell<Option<HostState>> = const { RefCell::new(None) };
-}
-
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
 }
@@ -213,52 +433,54 @@ fn execute_impl(
     document: NodeRef,
     document_url: &str,
     scripts: &[ScriptInput],
-    mut dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
 ) -> ScriptOutcome {
     if scripts.is_empty() {
         return ScriptOutcome::default();
     }
 
-    ACTIVE_HOST.with(|host| {
-        *host.borrow_mut() = Some(HostState::new(document, document_url));
-    });
+    ScriptRuntime::new(document, document_url)
+        .execute_initial_with_loader(scripts, dynamic_script_loader)
+}
 
-    // Keep ownership outside the unwind boundary. Some evaluator failures leave Boa's
-    // garbage-collected maps borrowed; dropping that damaged context while the first panic is
-    // unwinding can trigger a second panic and abort the whole browser process.
-    let mut context = Box::new(Context::default());
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        execute_inner(scripts, &mut context, &mut dynamic_script_loader)
-    }));
-    if result.is_err() {
-        // The context is not safe to finalize after an internal evaluator panic. This path stops
-        // the runtime and falls back to the pre-script DOM, so retaining this one failed context
-        // is preferable to allowing a double-panic process abort.
-        std::mem::forget(context);
+fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown evaluator panic".to_string())
+}
+
+fn stopped_runtime_outcome(detail: String) -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec![format!(
+            "JavaScript runtime was stopped safely after an evaluator failure: {detail}"
+        )],
+        runtime_stopped: true,
+        ..ScriptOutcome::default()
     }
-    let outcome = match result {
-        Ok(outcome) => outcome,
-        Err(payload) => {
-            let detail = payload
-                .downcast_ref::<&str>()
-                .map(|message| (*message).to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown evaluator panic".to_string());
-            ScriptOutcome {
-                errors: vec![format!(
-                    "JavaScript runtime was stopped safely after an evaluator failure: {detail}"
-                )],
-                runtime_stopped: true,
-                ..ScriptOutcome::default()
-            }
-        }
-    };
-    finish_host(outcome)
+}
+
+fn inactive_runtime_outcome() -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec!["JavaScript runtime is inactive because its document was cancelled".into()],
+        runtime_stopped: true,
+        ..ScriptOutcome::default()
+    }
+}
+
+fn lifecycle_error(message: &str) -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec![format!("JavaScript runtime lifecycle: {message}")],
+        ..ScriptOutcome::default()
+    }
 }
 
 fn execute_inner(
     scripts: &[ScriptInput],
     context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
+    total_bytes: &mut usize,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
@@ -315,7 +537,6 @@ fn execute_inner(
         return outcome;
     }
 
-    let mut total_bytes = 0_usize;
     for script in scripts {
         if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -325,14 +546,15 @@ fn execute_inner(
             ));
             break;
         }
-        total_bytes += script.code.len();
+        *total_bytes += script.code.len();
 
-        evaluate_script(context, &mut outcome, script, false);
+        evaluate_script(context, host, &mut outcome, script, false);
         drain_dynamic_scripts(
             context,
+            host,
             &mut outcome,
             dynamic_script_loader,
-            &mut total_bytes,
+            total_bytes,
         );
     }
 
@@ -352,57 +574,104 @@ fn execute_inner(
     }
     drain_dynamic_scripts(
         context,
+        host,
         &mut outcome,
         dynamic_script_loader,
-        &mut total_bytes,
+        total_bytes,
     );
-    for _ in 0..5 {
-        if let Err(error) = context.eval(Source::from_bytes("__drainTimers(250, 128);")) {
-            outcome
-                .errors
-                .push(format!("settle JavaScript timers: {error}"));
-            break;
-        }
-        if let Err(error) = context.run_jobs() {
-            outcome
-                .errors
-                .push(format!("settle JavaScript promise jobs: {error}"));
-            break;
-        }
-        drain_dynamic_scripts(
+    for _ in 0..STARTUP_TIMER_PASSES {
+        settle_startup_timer_slice(
             context,
+            host,
             &mut outcome,
             dynamic_script_loader,
-            &mut total_bytes,
+            total_bytes,
         );
     }
 
-    if let Ok(value) = context.eval(Source::from_bytes("__pendingTimerSummary();"))
-        && let Ok(summary) = value.to_string(context)
-    {
-        let summary = summary.to_std_string_escaped();
-        if !summary.is_empty() {
-            outcome
-                .diagnostics
-                .push(format!("JavaScript timers after settling: {summary}"));
-        }
-    }
+    append_timer_summary(host, &mut outcome);
 
     outcome
 }
 
+fn append_timer_summary(host: &Rc<RefCell<HostState>>, outcome: &mut ScriptOutcome) {
+    let timer_summary = host.borrow().timer_summary();
+    if !timer_summary.is_empty() {
+        outcome
+            .diagnostics
+            .push(format!("JavaScript timers after settling: {timer_summary}"));
+    }
+}
+
+fn settle_startup_timer_slice(
+    context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
+    outcome: &mut ScriptOutcome,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    total_bytes: &mut usize,
+) {
+    settle_timer_slice(
+        context,
+        host,
+        outcome,
+        dynamic_script_loader,
+        total_bytes,
+        STARTUP_TIMER_SLICE,
+        MAX_TIMER_CALLBACKS_PER_SLICE,
+    );
+}
+
+fn settle_timer_slice(
+    context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
+    outcome: &mut ScriptOutcome,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    total_bytes: &mut usize,
+    advance: Duration,
+    max_callbacks: usize,
+) {
+    let horizon = host.borrow().timers.now().saturating_add(advance);
+
+    for _ in 0..max_callbacks {
+        let timer_id = {
+            let mut host = host.borrow_mut();
+            let due = host.timers.next_due_time();
+            due.filter(|due| *due <= horizon).and_then(|due| {
+                host.timers.advance_to(due);
+                host.take_ready_timer()
+            })
+        };
+        let Some(timer_id) = timer_id else {
+            break;
+        };
+
+        let invocation = format!("__runTimer({timer_id});");
+        if let Err(error) = context.eval(Source::from_bytes(&invocation)) {
+            outcome
+                .errors
+                .push(format!("JavaScript timer {timer_id}: {error}"));
+        }
+        // HTML performs a microtask checkpoint after every task. Boa owns the Promise job queue,
+        // so drain it here rather than once after a whole batch of timer callbacks.
+        if let Err(error) = context.run_jobs() {
+            outcome
+                .errors
+                .push(format!("JavaScript timer {timer_id} promise job: {error}"));
+        }
+        drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+    }
+
+    host.borrow_mut().timers.advance_to(horizon);
+}
+
 fn evaluate_script(
     context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     script: &ScriptInput,
     dispatch_load: bool,
 ) -> bool {
-    let node_id = ACTIVE_HOST.with(|host| {
-        host.borrow_mut()
-            .as_mut()
-            .map(|state| state.id_for(&script.node))
-            .unwrap_or_default()
-    });
+    let node_id = host.borrow_mut().id_for(&script.node);
     let current_script = format!("document.__setCurrentScript({node_id});");
     if let Err(error) = context.eval(Source::from_bytes(&current_script)) {
         outcome.errors.push(format!(
@@ -415,11 +684,7 @@ fn evaluate_script(
     let succeeded = match context.eval(Source::from_bytes(&script.code)) {
         Ok(_) => {
             outcome.executed += 1;
-            ACTIVE_HOST.with(|host| {
-                if let Some(state) = host.borrow_mut().as_mut() {
-                    state.executed += 1;
-                }
-            });
+            host.borrow_mut().executed += 1;
             if let Err(error) = context.run_jobs() {
                 outcome
                     .errors
@@ -460,6 +725,7 @@ fn evaluate_script(
 
 fn drain_dynamic_scripts(
     context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     total_bytes: &mut usize,
@@ -469,12 +735,7 @@ fn drain_dynamic_scripts(
     };
     let mut executed = 0_usize;
     loop {
-        let pending = ACTIVE_HOST.with(|host| {
-            host.borrow_mut()
-                .as_mut()
-                .map(|state| std::mem::take(&mut state.pending_dynamic_scripts))
-                .unwrap_or_default()
-        });
+        let pending = std::mem::take(&mut host.borrow_mut().pending_dynamic_scripts);
         if pending.is_empty() {
             return;
         }
@@ -512,7 +773,7 @@ fn drain_dynamic_scripts(
                 code,
                 finish_lifecycle: false,
             };
-            evaluate_script(context, outcome, &script, true);
+            evaluate_script(context, host, outcome, &script, true);
         }
     }
 }
@@ -539,15 +800,15 @@ if (typeof String.prototype.substr !== 'function') {
 }
 "#;
 
-fn finish_host(mut outcome: ScriptOutcome) -> ScriptOutcome {
-    if let Some(state) = ACTIVE_HOST.with(|host| host.borrow_mut().take()) {
-        outcome.mutation_count = state.mutation_count;
-        outcome.executed = outcome.executed.max(state.executed);
-        outcome.console.extend(state.console);
-        outcome.diagnostics.extend(state.diagnostics);
-        outcome.navigation_url = state.navigation_url;
-        outcome.cookie_updates = state.cookie_updates;
-    }
+fn finish_host(mut outcome: ScriptOutcome, host: &Rc<RefCell<HostState>>) -> ScriptOutcome {
+    let mut state = host.borrow_mut();
+    outcome.mutation_count = std::mem::take(&mut state.mutation_count);
+    outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
+    outcome.console.append(&mut state.console);
+    outcome.diagnostics.append(&mut state.diagnostics);
+    outcome.navigation_url = state.navigation_url.take();
+    outcome.cookie_updates.append(&mut state.cookie_updates);
+    outcome.render_requested = state.timers.take_render_request();
     outcome
 }
 
@@ -563,339 +824,416 @@ pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {
 
 fn host_call(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let operation = argument_string(args, 0, context)?;
-    ACTIVE_HOST.with(|host| {
-        let mut host = host.borrow_mut();
-        let state = host
-            .as_mut()
-            .ok_or_else(|| JsNativeError::typ().with_message("browser host is not active"))?;
+    let host = context
+        .get_data::<HostStateLink>()
+        .and_then(|link| link.0.upgrade())
+        .ok_or_else(|| JsNativeError::typ().with_message("browser host is not active"))?;
+    let mut host = host.borrow_mut();
+    let state = &mut *host;
 
-        match operation.as_str() {
-            "document" => {
-                let document = state.document.clone();
-                Ok(JsValue::from(state.id_for(&document)))
-            }
-            "nodeType" => {
-                let kind = state
-                    .node(argument_id(args, 1))
-                    .map(|node| match node.data {
-                        NodeData::Element(_) => 1,
-                        NodeData::Text(_) => 3,
-                        NodeData::Comment(_) => 8,
-                        NodeData::Document => 9,
-                        NodeData::Doctype { .. } => 10,
-                        NodeData::ProcessingInstruction { .. } => 7,
-                    })
-                    .unwrap_or_default();
-                Ok(JsValue::from(kind))
-            }
-            "tagName" => {
-                let value = state
-                    .node(argument_id(args, 1))
-                    .and_then(|node| node.tag_name().map(str::to_ascii_uppercase))
-                    .unwrap_or_default();
-                Ok(js_string(value))
-            }
-            "parent" => {
-                let parent = state
-                    .node(argument_id(args, 1))
-                    .and_then(|node| node.parent());
-                Ok(JsValue::from(
-                    parent.map(|node| state.id_for(&node)).unwrap_or_default(),
-                ))
-            }
-            "firstChild" => {
-                let child = state
-                    .node(argument_id(args, 1))
-                    .and_then(|node| node.children.borrow().first().cloned());
-                Ok(JsValue::from(
-                    child.map(|node| state.id_for(&node)).unwrap_or_default(),
-                ))
-            }
-            "lastChild" => {
-                let child = state
-                    .node(argument_id(args, 1))
-                    .and_then(|node| node.children.borrow().last().cloned());
-                Ok(JsValue::from(
-                    child.map(|node| state.id_for(&node)).unwrap_or_default(),
-                ))
-            }
-            "nextSibling" => Ok(JsValue::from(sibling_id(state, args, true))),
-            "previousSibling" => Ok(JsValue::from(sibling_id(state, args, false))),
-            "children" => {
-                let children = state
-                    .node(argument_id(args, 1))
-                    .map(|node| node.children.borrow().clone())
-                    .unwrap_or_default();
-                Ok(js_string(join_node_ids(state, &children, false)))
-            }
-            "elementChildren" => {
-                let children = state
-                    .node(argument_id(args, 1))
-                    .map(|node| node.children.borrow().clone())
-                    .unwrap_or_default();
-                Ok(js_string(join_node_ids(state, &children, true)))
-            }
-            "createElement" => {
-                let tag_name = argument_string(args, 1, context)?;
-                let node = Node::create_element(&tag_name);
-                Ok(JsValue::from(state.id_for(&node)))
-            }
-            "createText" => {
-                let contents = argument_string(args, 1, context)?;
-                let node = Node::create_text(&contents);
-                Ok(JsValue::from(state.id_for(&node)))
-            }
-            "createComment" => {
-                let contents = argument_string(args, 1, context)?;
-                let node = Node::create_comment(&contents);
-                Ok(JsValue::from(state.id_for(&node)))
-            }
-            "appendChild" => {
-                let parent = state.node(argument_id(args, 1));
-                let child = state.node(argument_id(args, 2));
-                let changed = parent
-                    .zip(child.clone())
-                    .is_some_and(|(parent, child)| Node::append_child(&parent, child));
-                if changed {
-                    state.mutation_count += 1;
-                    if let (Some(parent), Some(child)) = (
-                        state.node(argument_id(args, 1)),
-                        state.node(argument_id(args, 2)),
-                    ) {
-                        state.diagnose(format!(
-                            "append {} to {}",
-                            node_label(&child),
-                            node_label(&parent)
-                        ));
-                        state.queue_dynamic_script(&child);
-                    }
-                }
-                Ok(JsValue::from(if changed {
-                    child.map(|node| state.id_for(&node)).unwrap_or_default()
-                } else {
-                    0
-                }))
-            }
-            "insertBefore" => {
-                let parent = state.node(argument_id(args, 1));
-                let child = state.node(argument_id(args, 2));
-                let reference_id = argument_id(args, 3);
-                let changed = if reference_id == 0 {
-                    parent
-                        .zip(child.clone())
-                        .is_some_and(|(parent, child)| Node::append_child(&parent, child))
-                } else {
-                    let reference = state.node(reference_id);
-                    parent.zip(child.clone()).zip(reference).is_some_and(
-                        |((parent, child), reference)| {
-                            Node::insert_before(&parent, child, &reference)
-                        },
-                    )
-                };
-                if changed {
-                    state.mutation_count += 1;
-                    state.diagnose("insert node before sibling".into());
-                    if let Some(child) = child.as_ref() {
-                        state.queue_dynamic_script(child);
-                    }
-                }
-                Ok(JsValue::from(if changed {
-                    child.map(|node| state.id_for(&node)).unwrap_or_default()
-                } else {
-                    0
-                }))
-            }
-            "removeChild" => {
-                let parent = state.node(argument_id(args, 1));
-                let child = state.node(argument_id(args, 2));
-                let changed = parent
-                    .zip(child)
-                    .is_some_and(|(parent, child)| Node::remove_child(&parent, &child));
-                if changed {
-                    state.mutation_count += 1;
-                    state.diagnose("remove child node".into());
-                }
-                Ok(JsValue::from(changed))
-            }
-            "remove" => {
-                let node = state.node(argument_id(args, 1));
-                let changed = node.as_ref().is_some_and(|node| node.parent().is_some());
-                if let Some(node) = node {
-                    Node::remove_from_parent(&node);
-                }
-                if changed {
-                    state.mutation_count += 1;
-                    state.diagnose("remove node".into());
-                }
-                Ok(JsValue::from(changed))
-            }
-            "textGet" => {
-                let value = state
-                    .node(argument_id(args, 1))
-                    .map(|node| node.text_content())
-                    .unwrap_or_default();
-                Ok(js_string(value))
-            }
-            "textSet" => {
-                let contents = argument_string(args, 2, context)?;
-                let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                    Node::set_text_content(&node, &contents);
-                    state.register_subtree(&node);
-                    true
-                } else {
-                    false
-                };
-                if changed {
-                    state.mutation_count += 1;
-                    if let Some(node) = state.node(argument_id(args, 1)) {
-                        state.diagnose(format!("set textContent on {}", node_label(&node)));
-                    }
-                }
-                Ok(JsValue::from(changed))
-            }
-            "attrGet" => {
-                let name = argument_string(args, 2, context)?;
-                let value = state
-                    .node(argument_id(args, 1))
-                    .and_then(|node| node.attr(&name));
-                Ok(value.map_or_else(JsValue::null, js_string))
-            }
-            "attrSet" => {
-                let name = argument_string(args, 2, context)?;
-                let value = argument_string(args, 3, context)?;
-                let changed = state
-                    .node(argument_id(args, 1))
-                    .is_some_and(|node| node.set_attr(&name, &value));
-                if changed {
-                    state.mutation_count += 1;
-                    if let Some(node) = state.node(argument_id(args, 1)) {
-                        state.diagnose(format!("set {} on {}", name, node_label(&node)));
-                        if name.eq_ignore_ascii_case("src") {
-                            state.queue_dynamic_script(&node);
-                        }
-                    }
-                }
-                Ok(JsValue::from(changed))
-            }
-            "attrRemove" => {
-                let name = argument_string(args, 2, context)?;
-                let changed = state
-                    .node(argument_id(args, 1))
-                    .is_some_and(|node| node.remove_attr(&name));
-                if changed {
-                    state.mutation_count += 1;
-                    if let Some(node) = state.node(argument_id(args, 1)) {
-                        state.diagnose(format!("remove {} from {}", name, node_label(&node)));
-                    }
-                }
-                Ok(JsValue::from(changed))
-            }
-            "attrHas" => {
-                let name = argument_string(args, 2, context)?;
-                let present = state
-                    .node(argument_id(args, 1))
-                    .is_some_and(|node| node.attr(&name).is_some());
-                Ok(JsValue::from(present))
-            }
-            "innerHtmlGet" => {
-                let value = state
-                    .node(argument_id(args, 1))
-                    .map(|node| serialize_children(&node))
-                    .unwrap_or_default();
-                Ok(js_string(value))
-            }
-            "innerHtmlSet" => {
-                let html = argument_string(args, 2, context)?;
-                let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                    Node::replace_inner_html(&node, &html, true);
-                    state.register_subtree(&node);
-                    true
-                } else {
-                    false
-                };
-                if changed {
-                    state.mutation_count += 1;
-                    if let Some(node) = state.node(argument_id(args, 1)) {
-                        state.diagnose(format!("replace innerHTML of {}", node_label(&node)));
-                    }
-                }
-                Ok(JsValue::from(changed))
-            }
-            "innerHtmlAppend" => {
-                let html = argument_string(args, 2, context)?;
-                let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                    let holder = Node::create_element("div");
-                    Node::replace_inner_html(&holder, &html, true);
-                    for child in holder.children.borrow().clone() {
-                        Node::append_child(&node, child);
-                    }
-                    state.register_subtree(&node);
-                    true
-                } else {
-                    false
-                };
-                if changed {
-                    state.mutation_count += 1;
-                    if let Some(node) = state.node(argument_id(args, 1)) {
-                        state.diagnose(format!("append innerHTML to {}", node_label(&node)));
-                    }
-                }
-                Ok(JsValue::from(changed))
-            }
-            "query" => {
-                let selector = argument_string(args, 2, context)?;
-                let node = state
-                    .node(argument_id(args, 1))
-                    .and_then(|root| query_selector_all(&root, &selector).into_iter().next());
-                Ok(JsValue::from(
-                    node.map(|node| state.id_for(&node)).unwrap_or_default(),
-                ))
-            }
-            "queryAll" => {
-                let selector = argument_string(args, 2, context)?;
-                let nodes = state
-                    .node(argument_id(args, 1))
-                    .map(|root| query_selector_all(&root, &selector))
-                    .unwrap_or_default();
-                Ok(js_string(join_node_ids(state, &nodes, false)))
-            }
-            "byId" => {
-                let wanted = argument_string(args, 1, context)?;
-                let root = state.document.clone();
-                let node = Node::descendants(&root)
-                    .find(|node| node.attr("id").as_deref() == Some(wanted.as_str()));
-                Ok(JsValue::from(
-                    node.map(|node| state.id_for(&node)).unwrap_or_default(),
-                ))
-            }
-            "documentUrl" => Ok(js_string(state.document_url.clone())),
-            "cookieGet" => Ok(js_string(state.cookie_header())),
-            "cookieSet" => {
-                state.set_cookie(argument_string(args, 1, context)?);
-                Ok(JsValue::undefined())
-            }
-            "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
-            "resolveUrl" => {
-                let value = argument_string(args, 1, context)?;
-                Ok(js_string(state.resolved_url(&value)))
-            }
-            "navigate" => {
-                let value = argument_string(args, 1, context)?;
-                let resolved = state.resolved_url(&value);
-                state.navigation_url = Some(resolved.clone());
-                Ok(js_string(resolved))
-            }
-            "console" => {
-                let level = argument_string(args, 1, context)?;
-                let message = argument_string(args, 2, context)?;
-                state.console.push(format!("{level}: {message}"));
-                Ok(JsValue::undefined())
-            }
-            _ => Err(JsNativeError::typ()
-                .with_message(format!("unsupported browser host operation: {operation}"))
-                .into()),
+    match operation.as_str() {
+        "document" => {
+            let document = state.document.clone();
+            Ok(JsValue::from(state.id_for(&document)))
         }
-    })
+        "nodeType" => {
+            let kind = state
+                .node(argument_id(args, 1))
+                .map(|node| match node.data {
+                    NodeData::Element(_) => 1,
+                    NodeData::Text(_) => 3,
+                    NodeData::Comment(_) => 8,
+                    NodeData::Document if node.id() == state.document.id() => 9,
+                    NodeData::Document => 11,
+                    NodeData::Doctype { .. } => 10,
+                    NodeData::ProcessingInstruction { .. } => 7,
+                })
+                .unwrap_or_default();
+            Ok(JsValue::from(kind))
+        }
+        "tagName" => {
+            let value = state
+                .node(argument_id(args, 1))
+                .and_then(|node| {
+                    node.tag_name().map(|tag| {
+                        if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml") {
+                            tag.to_ascii_uppercase()
+                        } else {
+                            tag.to_string()
+                        }
+                    })
+                })
+                .unwrap_or_default();
+            Ok(js_string(value))
+        }
+        "localName" => {
+            let value = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.tag_name().map(str::to_string))
+                .unwrap_or_default();
+            Ok(js_string(value))
+        }
+        "namespaceUri" => {
+            let value = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.namespace_uri().map(str::to_string));
+            Ok(value.map_or_else(JsValue::null, js_string))
+        }
+        "templateContent" => {
+            let contents = state.node(argument_id(args, 1)).and_then(|node| {
+                node.element()
+                    .and_then(|element| element.template_contents.borrow().clone())
+            });
+            Ok(JsValue::from(
+                contents.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "uaStyle" => {
+            let property = argument_string(args, 2, context)?.to_ascii_lowercase();
+            let value = state
+                .node(argument_id(args, 1))
+                .and_then(|node| {
+                    if property == "display" && is_hidden_by_html_rendering(&node) {
+                        Some("none")
+                    } else {
+                        node.tag_name()
+                            .and_then(|tag| user_agent_style_property(tag, &property))
+                    }
+                })
+                .unwrap_or_default();
+            Ok(js_string(value.to_string()))
+        }
+        "parent" => {
+            let parent = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.parent());
+            Ok(JsValue::from(
+                parent.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "firstChild" => {
+            let child = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.children.borrow().first().cloned());
+            Ok(JsValue::from(
+                child.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "lastChild" => {
+            let child = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.children.borrow().last().cloned());
+            Ok(JsValue::from(
+                child.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "nextSibling" => Ok(JsValue::from(sibling_id(state, args, true))),
+        "previousSibling" => Ok(JsValue::from(sibling_id(state, args, false))),
+        "children" => {
+            let children = state
+                .node(argument_id(args, 1))
+                .map(|node| node.children.borrow().clone())
+                .unwrap_or_default();
+            Ok(js_string(join_node_ids(state, &children, false)))
+        }
+        "elementChildren" => {
+            let children = state
+                .node(argument_id(args, 1))
+                .map(|node| node.children.borrow().clone())
+                .unwrap_or_default();
+            Ok(js_string(join_node_ids(state, &children, true)))
+        }
+        "createElement" => {
+            let tag_name = argument_string(args, 1, context)?;
+            let node = Node::create_element_for(&state.document, &tag_name);
+            Ok(JsValue::from(state.id_for(&node)))
+        }
+        "createText" => {
+            let contents = argument_string(args, 1, context)?;
+            let node = Node::create_text_for(&state.document, &contents);
+            Ok(JsValue::from(state.id_for(&node)))
+        }
+        "createComment" => {
+            let contents = argument_string(args, 1, context)?;
+            let node = Node::create_comment_for(&state.document, &contents);
+            Ok(JsValue::from(state.id_for(&node)))
+        }
+        "appendChild" => {
+            let parent = state.node(argument_id(args, 1));
+            let child = state.node(argument_id(args, 2));
+            let changed = parent
+                .zip(child.clone())
+                .is_some_and(|(parent, child)| Node::append_child(&parent, child));
+            if changed {
+                state.record_mutation();
+                if let (Some(parent), Some(child)) = (
+                    state.node(argument_id(args, 1)),
+                    state.node(argument_id(args, 2)),
+                ) {
+                    state.diagnose(format!(
+                        "append {} to {}",
+                        node_label(&child),
+                        node_label(&parent)
+                    ));
+                    state.queue_dynamic_script(&child);
+                }
+            }
+            Ok(JsValue::from(if changed {
+                child.map(|node| state.id_for(&node)).unwrap_or_default()
+            } else {
+                0
+            }))
+        }
+        "insertBefore" => {
+            let parent = state.node(argument_id(args, 1));
+            let child = state.node(argument_id(args, 2));
+            let reference_id = argument_id(args, 3);
+            let changed = if reference_id == 0 {
+                parent
+                    .zip(child.clone())
+                    .is_some_and(|(parent, child)| Node::append_child(&parent, child))
+            } else {
+                let reference = state.node(reference_id);
+                parent.zip(child.clone()).zip(reference).is_some_and(
+                    |((parent, child), reference)| Node::insert_before(&parent, child, &reference),
+                )
+            };
+            if changed {
+                state.record_mutation();
+                state.diagnose("insert node before sibling".into());
+                if let Some(child) = child.as_ref() {
+                    state.queue_dynamic_script(child);
+                }
+            }
+            Ok(JsValue::from(if changed {
+                child.map(|node| state.id_for(&node)).unwrap_or_default()
+            } else {
+                0
+            }))
+        }
+        "removeChild" => {
+            let parent = state.node(argument_id(args, 1));
+            let child = state.node(argument_id(args, 2));
+            let changed = parent
+                .zip(child)
+                .is_some_and(|(parent, child)| Node::remove_child(&parent, &child));
+            if changed {
+                state.record_mutation();
+                state.diagnose("remove child node".into());
+            }
+            Ok(JsValue::from(changed))
+        }
+        "remove" => {
+            let node = state.node(argument_id(args, 1));
+            let changed = node.as_ref().is_some_and(|node| node.parent().is_some());
+            if let Some(node) = node {
+                Node::remove_from_parent(&node);
+            }
+            if changed {
+                state.record_mutation();
+                state.diagnose("remove node".into());
+            }
+            Ok(JsValue::from(changed))
+        }
+        "textGet" => {
+            let value = state
+                .node(argument_id(args, 1))
+                .map(|node| node.text_content())
+                .unwrap_or_default();
+            Ok(js_string(value))
+        }
+        "textSet" => {
+            let contents = argument_string(args, 2, context)?;
+            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
+                Node::set_text_content(&node, &contents);
+                state.register_subtree(&node);
+                true
+            } else {
+                false
+            };
+            if changed {
+                state.record_mutation();
+                if let Some(node) = state.node(argument_id(args, 1)) {
+                    state.diagnose(format!("set textContent on {}", node_label(&node)));
+                }
+            }
+            Ok(JsValue::from(changed))
+        }
+        "attrGet" => {
+            let name = argument_string(args, 2, context)?;
+            let value = state
+                .node(argument_id(args, 1))
+                .and_then(|node| node.attr(&name));
+            Ok(value.map_or_else(JsValue::null, js_string))
+        }
+        "attrSet" => {
+            let name = argument_string(args, 2, context)?;
+            let value = argument_string(args, 3, context)?;
+            let changed = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| node.set_attr(&name, &value));
+            if changed {
+                state.record_mutation();
+                if let Some(node) = state.node(argument_id(args, 1)) {
+                    state.diagnose(format!("set {} on {}", name, node_label(&node)));
+                    if name.eq_ignore_ascii_case("src") {
+                        state.queue_dynamic_script(&node);
+                    }
+                }
+            }
+            Ok(JsValue::from(changed))
+        }
+        "attrRemove" => {
+            let name = argument_string(args, 2, context)?;
+            let changed = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| node.remove_attr(&name));
+            if changed {
+                state.record_mutation();
+                if let Some(node) = state.node(argument_id(args, 1)) {
+                    state.diagnose(format!("remove {} from {}", name, node_label(&node)));
+                }
+            }
+            Ok(JsValue::from(changed))
+        }
+        "attrHas" => {
+            let name = argument_string(args, 2, context)?;
+            let present = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| node.attr(&name).is_some());
+            Ok(JsValue::from(present))
+        }
+        "attrNames" => {
+            let names = state
+                .node(argument_id(args, 1))
+                .and_then(|node| {
+                    node.element().map(|element| {
+                        element
+                            .attrs
+                            .borrow()
+                            .iter()
+                            .map(|attribute| attribute.name.local.to_string())
+                            .collect::<Vec<_>>()
+                            .join("\u{1f}")
+                    })
+                })
+                .unwrap_or_default();
+            Ok(js_string(names))
+        }
+        "innerHtmlGet" => {
+            let value = state
+                .node(argument_id(args, 1))
+                .map(|node| serialize_children(&node))
+                .unwrap_or_default();
+            Ok(js_string(value))
+        }
+        "innerHtmlSet" => {
+            let html = argument_string(args, 2, context)?;
+            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
+                Node::replace_inner_html(&node, &html, true);
+                state.register_subtree(&node);
+                true
+            } else {
+                false
+            };
+            if changed {
+                state.record_mutation();
+                if let Some(node) = state.node(argument_id(args, 1)) {
+                    state.diagnose(format!("replace innerHTML of {}", node_label(&node)));
+                }
+            }
+            Ok(JsValue::from(changed))
+        }
+        "innerHtmlAppend" => {
+            let html = argument_string(args, 2, context)?;
+            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
+                let holder = Node::create_element_for(&state.document, "div");
+                Node::replace_inner_html(&holder, &html, true);
+                for child in holder.children.borrow().clone() {
+                    Node::append_child(&node, child);
+                }
+                state.register_subtree(&node);
+                true
+            } else {
+                false
+            };
+            if changed {
+                state.record_mutation();
+                if let Some(node) = state.node(argument_id(args, 1)) {
+                    state.diagnose(format!("append innerHTML to {}", node_label(&node)));
+                }
+            }
+            Ok(JsValue::from(changed))
+        }
+        "query" => {
+            let selector = argument_string(args, 2, context)?;
+            let node = state
+                .node(argument_id(args, 1))
+                .and_then(|root| query_selector_all(&root, &selector).into_iter().next());
+            Ok(JsValue::from(
+                node.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "queryAll" => {
+            let selector = argument_string(args, 2, context)?;
+            let nodes = state
+                .node(argument_id(args, 1))
+                .map(|root| query_selector_all(&root, &selector))
+                .unwrap_or_default();
+            Ok(js_string(join_node_ids(state, &nodes, false)))
+        }
+        "byId" => {
+            let wanted = argument_string(args, 1, context)?;
+            let root = state.document.clone();
+            let node = Node::descendants(&root)
+                .find(|node| node.attr("id").as_deref() == Some(wanted.as_str()));
+            Ok(JsValue::from(
+                node.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
+        "documentUrl" => Ok(js_string(state.document_url.clone())),
+        "cookieGet" => Ok(js_string(state.cookie_header())),
+        "cookieSet" => {
+            state.set_cookie(argument_string(args, 1, context)?);
+            Ok(JsValue::undefined())
+        }
+        "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
+        "resolveUrl" => {
+            let value = argument_string(args, 1, context)?;
+            Ok(js_string(state.resolved_url(&value)))
+        }
+        "navigate" => {
+            let value = argument_string(args, 1, context)?;
+            let resolved = state.resolved_url(&value);
+            state.navigation_url = Some(resolved.clone());
+            Ok(js_string(resolved))
+        }
+        "timerSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("timer identifiers must be positive integers")
+                    .into());
+            }
+            let delay = argument_duration(args, 2);
+            let repeat = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
+            state.schedule_timer(id, delay, repeat);
+            Ok(JsValue::from(id))
+        }
+        "timerCancel" => {
+            let cancelled = state.cancel_timer(argument_id(args, 1));
+            Ok(JsValue::from(cancelled))
+        }
+        "console" => {
+            let level = argument_string(args, 1, context)?;
+            let message = argument_string(args, 2, context)?;
+            state.console.push(format!("{level}: {message}"));
+            Ok(JsValue::undefined())
+        }
+        _ => Err(JsNativeError::typ()
+            .with_message(format!("unsupported browser host operation: {operation}"))
+            .into()),
+    }
 }
 
 fn argument_string(arguments: &[JsValue], index: usize, context: &mut Context) -> JsResult<String> {
@@ -912,6 +1250,15 @@ fn argument_id(arguments: &[JsValue], index: usize) -> u32 {
         .filter(|value| value.is_finite() && *value >= 0.0 && *value <= f64::from(u32::MAX))
         .map(|value| value as u32)
         .unwrap_or_default()
+}
+
+fn argument_duration(arguments: &[JsValue], index: usize) -> Duration {
+    let milliseconds = arguments
+        .get(index)
+        .and_then(JsValue::as_number)
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(0.0);
+    Duration::try_from_secs_f64(milliseconds / 1_000.0).unwrap_or(Duration::MAX)
 }
 
 fn js_string(value: String) -> JsValue {
@@ -947,7 +1294,7 @@ fn sibling_id(state: &mut HostState, arguments: &[JsValue], next: bool) -> u32 {
         return 0;
     };
     let children = parent.children.borrow();
-    let Some(index) = children.iter().position(|child| Rc::ptr_eq(child, &node)) else {
+    let Some(index) = children.iter().position(|child| child.id() == node.id()) else {
         return 0;
     };
     let sibling = if next {
@@ -966,13 +1313,13 @@ fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef> {
         .map(str::trim)
         .filter(|group| !group.is_empty())
         .collect::<Vec<_>>();
-    let mut result = Vec::new();
+    let mut result: Vec<NodeRef> = Vec::new();
     for node in Node::descendants(root).skip(1) {
         if node.element().is_none() {
             continue;
         }
         if groups.iter().any(|group| matches_selector(&node, group))
-            && !result.iter().any(|existing| Rc::ptr_eq(existing, &node))
+            && !result.iter().any(|existing| existing.id() == node.id())
         {
             result.push(node);
         }
@@ -1077,7 +1424,7 @@ fn matches_compound_selector(node: &NodeRef, selector: &str) -> bool {
                             .borrow()
                             .iter()
                             .find(|child| child.element().is_some())
-                            .is_none_or(|child| !Rc::ptr_eq(child, node))
+                            .is_none_or(|child| child.id() != node.id())
                         {
                             return false;
                         }
@@ -1092,7 +1439,7 @@ fn matches_compound_selector(node: &NodeRef, selector: &str) -> bool {
                             .iter()
                             .rev()
                             .find(|child| child.element().is_some())
-                            .is_none_or(|child| !Rc::ptr_eq(child, node))
+                            .is_none_or(|child| child.id() != node.id())
                         {
                             return false;
                         }
@@ -1109,7 +1456,11 @@ fn matches_compound_selector(node: &NodeRef, selector: &str) -> bool {
 
 fn serialize_children(node: &NodeRef) -> String {
     let mut output = String::new();
-    for child in node.children.borrow().iter() {
+    let target = node
+        .element()
+        .and_then(|element| element.template_contents.borrow().clone())
+        .unwrap_or_else(|| node.clone());
+    for child in target.children.borrow().iter() {
         serialize_node(child, &mut output);
     }
     output
@@ -1209,6 +1560,41 @@ const BROWSER_BOOTSTRAP: &str = r#"
             this.detail = init.detail === undefined ? null : init.detail;
         }
     }
+    class MessageEvent extends Event {
+        constructor(type, init = {}) {
+            super(type, init);
+            this.data = init.data === undefined ? null : init.data;
+            this.origin = init.origin === undefined ? '' : String(init.origin);
+            this.lastEventId = init.lastEventId === undefined ? '' : String(init.lastEventId);
+            this.source = init.source === undefined ? null : init.source;
+            this.ports = Object.freeze([...(init.ports || [])]);
+        }
+        initMessageEvent(type, bubbles = false, cancelable = false, data = null, origin = '', lastEventId = '', source = null, ports = []) {
+            this.type = String(type);
+            this.bubbles = !!bubbles;
+            this.cancelable = !!cancelable;
+            this.data = data;
+            this.origin = String(origin);
+            this.lastEventId = String(lastEventId);
+            this.source = source;
+            this.ports = Object.freeze([...ports]);
+        }
+    }
+    class ToggleEvent extends Event {
+        constructor(type, init = {}) {
+            super(type, init);
+            this.oldState = init.oldState === undefined ? '' : String(init.oldState);
+            this.newState = init.newState === undefined ? '' : String(init.newState);
+            this.source = init.source === undefined ? null : init.source;
+        }
+    }
+    class DOMException extends Error {
+        constructor(message = '', name = 'Error') {
+            super(String(message));
+            this.name = String(name);
+            this.code = 0;
+        }
+    }
     const listenerStore = new WeakMap();
     class EventTarget {
         addEventListener(type, callback) {
@@ -1227,16 +1613,17 @@ const BROWSER_BOOTSTRAP: &str = r#"
         }
         dispatchEvent(event) {
             if (!(event instanceof Event)) event = new Event(String(event));
-            event.target ||= this;
-            event.currentTarget = this;
+            const dispatchTarget = this.__eventTargetProxy || this;
+            event.target ||= dispatchTarget;
+            event.currentTarget = dispatchTarget;
             const bucket = listenerStore.get(this)?.get(event.type) || [];
             for (const callback of [...bucket]) {
-                if (typeof callback === 'function') callback.call(this, event);
+                if (typeof callback === 'function') callback.call(dispatchTarget, event);
                 else callback.handleEvent(event);
                 if (event.__immediate) break;
             }
-            const handler = this['on' + event.type];
-            if (!event.__immediate && typeof handler === 'function') handler.call(this, event);
+            const handler = dispatchTarget['on' + event.type];
+            if (!event.__immediate && typeof handler === 'function') handler.call(dispatchTarget, event);
             return !event.defaultPrevented;
         }
     }
@@ -1247,7 +1634,12 @@ const BROWSER_BOOTSTRAP: &str = r#"
             this.__id = id;
         }
         get nodeType() { return host('nodeType', this.__id); }
-        get nodeName() { return this.nodeType === 1 ? host('tagName', this.__id) : this.nodeType === 9 ? '#document' : this.nodeType === 3 ? '#text' : '#comment'; }
+        get nodeName() {
+            return this.nodeType === 1 ? host('tagName', this.__id) :
+                this.nodeType === 9 ? '#document' :
+                this.nodeType === 11 ? '#document-fragment' :
+                this.nodeType === 3 ? '#text' : '#comment';
+        }
         get ownerDocument() { return this.nodeType === 9 ? null : document; }
         get parentNode() { return wrap(host('parent', this.__id)); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }
@@ -1313,6 +1705,7 @@ const BROWSER_BOOTSTRAP: &str = r#"
     }
 
     class Comment extends Text {}
+    class DocumentFragment extends Node {}
 
     class DOMTokenList {
         constructor(element, attribute) { this.element = element; this.attribute = attribute; }
@@ -1388,7 +1781,9 @@ const BROWSER_BOOTSTRAP: &str = r#"
 
     class Element extends Node {
         get tagName() { return host('tagName', this.__id); }
-        get localName() { return this.tagName.toLowerCase(); }
+        get localName() { return host('localName', this.__id); }
+        get namespaceURI() { return host('namespaceUri', this.__id); }
+        get prefix() { return null; }
         get id() { return this.getAttribute('id') || ''; }
         set id(value) { this.setAttribute('id', value); }
         get className() { return this.getAttribute('class') || ''; }
@@ -1409,9 +1804,24 @@ const BROWSER_BOOTSTRAP: &str = r#"
             return false;
         }
         getAttributeNames() {
-            const names = [];
-            for (const match of this.outerHTML.matchAll(/\s+([^\s=/>]+)/g)) names.push(match[1]);
-            return names;
+            const names = host('attrNames', this.__id);
+            return names ? names.split('\u001f') : [];
+        }
+        get attributes() {
+            const element = this;
+            const attributes = this.getAttributeNames().map(name => ({
+                name,
+                nodeName: name,
+                get value() { return element.getAttribute(name) || ''; },
+                set value(value) { element.setAttribute(name, value); },
+                get nodeValue() { return this.value; },
+                set nodeValue(value) { this.value = value; },
+                ownerElement: element,
+                specified: true
+            }));
+            attributes.item = index => attributes[index] || null;
+            attributes.getNamedItem = name => attributes.find(attribute => attribute.name === String(name)) || null;
+            return attributes;
         }
         matches(selector) { return this.parentNode?.querySelectorAll(selector).includes(this) || false; }
         closest(selector) {
@@ -1459,7 +1869,14 @@ const BROWSER_BOOTSTRAP: &str = r#"
         }
         get contentWindow() { return this.localName === 'iframe' ? iframeWindow : null; }
         get contentDocument() { return this.localName === 'iframe' ? iframeDocument : null; }
-        click() { this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true })); }
+        click() {
+            const allowed = this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+            if (allowed && this.localName === 'summary') {
+                const details = this.parentElement;
+                const firstSummary = details?.children.find(child => child.localName === 'summary');
+                if (details instanceof HTMLDetailsElement && firstSummary === this) details.open = !details.open;
+            }
+        }
         focus() { document.activeElement = this; this.dispatchEvent(new Event('focus')); }
         blur() { if (document.activeElement === this) document.activeElement = document.body; this.dispatchEvent(new Event('blur')); }
         get clientWidth() { return 0; }
@@ -1468,6 +1885,498 @@ const BROWSER_BOOTSTRAP: &str = r#"
         get offsetHeight() { return 0; }
         getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON() { return this; } }; }
     }
+
+    const dataPropertyName = attribute => attribute.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    const dataAttributeName = property => {
+        property = String(property);
+        if (/-[a-z]/.test(property)) throw new SyntaxError('dataset property names cannot contain a dash followed by a lowercase letter');
+        return 'data-' + property.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase());
+    };
+    class DOMStringMap {}
+    const datasetFor = element => new Proxy(new DOMStringMap(), {
+        get(target, property, receiver) {
+            if (typeof property !== 'string' || property in target) return Reflect.get(target, property, receiver);
+            const value = element.getAttribute(dataAttributeName(property));
+            return value == null ? undefined : value;
+        },
+        set(_target, property, value) {
+            if (typeof property !== 'string') return false;
+            element.setAttribute(dataAttributeName(property), String(value));
+            return true;
+        },
+        deleteProperty(_target, property) {
+            if (typeof property === 'string') element.removeAttribute(dataAttributeName(property));
+            return true;
+        },
+        has(target, property) {
+            return property in target || (typeof property === 'string' && element.hasAttribute(dataAttributeName(property)));
+        },
+        ownKeys() {
+            return element.getAttributeNames()
+                .filter(name => name.startsWith('data-') && !/[A-Z]/.test(name.slice(5)))
+                .map(dataPropertyName);
+        },
+        getOwnPropertyDescriptor(_target, property) {
+            if (typeof property !== 'string' || !element.hasAttribute(dataAttributeName(property))) return undefined;
+            return { configurable: true, enumerable: true, writable: true, value: element.getAttribute(dataAttributeName(property)) };
+        }
+    });
+    class HTMLElement extends Element {
+        get dataset() { return this.__dataset ||= datasetFor(this); }
+    }
+    Object.defineProperties(HTMLElement.prototype, {
+        translate: {
+            configurable: true,
+            get() {
+                const value = this.getAttribute('translate');
+                if (value == null || value === '') return this.parentElement?.translate ?? true;
+                return value.toLowerCase() !== 'no';
+            },
+            set(value) { this.setAttribute('translate', value ? 'yes' : 'no'); }
+        },
+        accessKey: {
+            configurable: true,
+            get() { return this.getAttribute('accesskey') || ''; },
+            set(value) { this.setAttribute('accesskey', value); }
+        },
+        accessKeyLabel: {
+            configurable: true,
+            get() { return ''; }
+        }
+    });
+    class HTMLUnknownElement extends HTMLElement {}
+    class HTMLTimeElement extends HTMLElement {
+        get dateTime() { return this.getAttribute('datetime') || ''; }
+        set dateTime(value) { this.setAttribute('datetime', value); }
+    }
+    class HTMLDataElement extends HTMLElement {
+        get value() { return this.getAttribute('value') || ''; }
+        set value(value) { this.setAttribute('value', value); }
+    }
+    class HTMLAnchorElement extends HTMLElement {
+        get target() { return this.getAttribute('target') || ''; }
+        set target(value) { this.setAttribute('target', value); }
+        get download() { return this.getAttribute('download') || ''; }
+        set download(value) { this.setAttribute('download', value); }
+        get ping() { return this.getAttribute('ping') || ''; }
+        set ping(value) { this.setAttribute('ping', value); }
+        get rel() { return this.getAttribute('rel') || ''; }
+        set rel(value) { this.setAttribute('rel', value); }
+        get relList() { return this.__relList ||= new DOMTokenList(this, 'rel'); }
+        get hreflang() { return this.getAttribute('hreflang') || ''; }
+        set hreflang(value) { this.setAttribute('hreflang', value); }
+        get type() { return this.getAttribute('type') || ''; }
+        set type(value) { this.setAttribute('type', value); }
+        get referrerPolicy() { return this.getAttribute('referrerpolicy') || ''; }
+        set referrerPolicy(value) { this.setAttribute('referrerpolicy', value); }
+        get text() { return this.textContent; }
+        set text(value) { this.textContent = String(value); }
+    }
+    class HTMLDetailsElement extends HTMLElement {
+        get open() { return this.hasAttribute('open'); }
+        set open(value) {
+            const wasOpen = this.open;
+            const isOpen = !!value;
+            if (wasOpen === isOpen) return;
+            this.toggleAttribute('open', isOpen);
+            setTimeout(() => this.dispatchEvent(new ToggleEvent('toggle', {
+                oldState: wasOpen ? 'open' : 'closed',
+                newState: isOpen ? 'open' : 'closed'
+            })), 0);
+        }
+    }
+    class HTMLDialogElement extends HTMLElement {
+        constructor(id) {
+            super(id);
+            this.returnValue = '';
+            this.__isModal = false;
+        }
+        get open() { return this.hasAttribute('open'); }
+        set open(value) { this.toggleAttribute('open', !!value); }
+        get closedBy() { return this.getAttribute('closedby') || 'none'; }
+        set closedBy(value) { this.setAttribute('closedby', value); }
+        show() {
+            if (this.open) return;
+            const event = new ToggleEvent('beforetoggle', {
+                cancelable: true, oldState: 'closed', newState: 'open', source: this
+            });
+            if (!this.dispatchEvent(event)) return;
+            this.open = true;
+            this.focus();
+            setTimeout(() => this.dispatchEvent(new ToggleEvent('toggle', {
+                oldState: 'closed', newState: 'open', source: this
+            })), 0);
+        }
+        showModal() {
+            if (!this.isConnected) throw new DOMException('Dialog is not connected to a document', 'InvalidStateError');
+            if (this.open) {
+                if (!this.__isModal) throw new DOMException('Dialog is already open non-modally', 'InvalidStateError');
+                return;
+            }
+            this.__isModal = true;
+            this.show();
+        }
+        close(returnValue) {
+            if (!this.open) return;
+            if (returnValue !== undefined) this.returnValue = String(returnValue);
+            this.__isModal = false;
+            this.open = false;
+            setTimeout(() => this.dispatchEvent(new Event('close')), 0);
+        }
+        requestClose(returnValue) {
+            if (!this.open) return;
+            if (this.dispatchEvent(new Event('cancel', { cancelable: true }))) this.close(returnValue);
+        }
+    }
+    class HTMLScriptElement extends HTMLElement {
+        get async() { return this.hasAttribute('async'); }
+        set async(value) { this.toggleAttribute('async', !!value); }
+        get defer() { return this.hasAttribute('defer'); }
+        set defer(value) { this.toggleAttribute('defer', !!value); }
+        get text() { return this.textContent; }
+        set text(value) { this.textContent = String(value); }
+    }
+    class HTMLImageElement extends HTMLElement {
+        get srcset() { return this.getAttribute('srcset') || ''; }
+        set srcset(value) { this.setAttribute('srcset', value); }
+        get sizes() { return this.getAttribute('sizes') || ''; }
+        set sizes(value) { this.setAttribute('sizes', value); }
+    }
+    class HTMLPictureElement extends HTMLElement {}
+    class HTMLSourceElement extends HTMLElement {
+        get srcset() { return this.getAttribute('srcset') || ''; }
+        set srcset(value) { this.setAttribute('srcset', value); }
+        get sizes() { return this.getAttribute('sizes') || ''; }
+        set sizes(value) { this.setAttribute('sizes', value); }
+        get media() { return this.getAttribute('media') || ''; }
+        set media(value) { this.setAttribute('media', value); }
+    }
+    class HTMLInputElement extends HTMLElement {
+        get placeholder() { return this.getAttribute('placeholder') || ''; }
+        set placeholder(value) { this.setAttribute('placeholder', value); }
+        get form() { return associatedForm(this); }
+        get selectionStart() { return this.__selectionStart ?? 0; }
+        set selectionStart(value) { this.__selectionStart = Math.max(0, Number(value) || 0); }
+        get selectionEnd() { return this.__selectionEnd ?? this.value.length; }
+        set selectionEnd(value) { this.__selectionEnd = Math.max(0, Number(value) || 0); }
+        get selectionDirection() { return this.__selectionDirection || 'none'; }
+        set selectionDirection(value) {
+            value = String(value);
+            this.__selectionDirection = value === 'forward' || value === 'backward' ? value : 'none';
+        }
+        setSelectionRange(start, end, direction = 'none') {
+            this.selectionStart = start;
+            this.selectionEnd = Math.max(this.selectionStart, Number(end) || 0);
+            this.selectionDirection = direction;
+        }
+        select() { this.setSelectionRange(0, this.value.length); }
+        get indeterminate() { return !!this.__indeterminate; }
+        set indeterminate(value) { this.__indeterminate = !!value; }
+        get list() {
+            const id = this.getAttribute('list');
+            const candidate = id ? document.getElementById(id) : null;
+            return candidate instanceof HTMLDataListElement ? candidate : null;
+        }
+        get min() { return this.getAttribute('min') || ''; }
+        set min(value) { this.setAttribute('min', value); }
+        get max() { return this.getAttribute('max') || ''; }
+        set max(value) { this.setAttribute('max', value); }
+        get step() { return this.getAttribute('step') || ''; }
+        set step(value) { this.setAttribute('step', value); }
+        get pattern() { return this.getAttribute('pattern') || ''; }
+        set pattern(value) { this.setAttribute('pattern', value); }
+        get required() { return this.hasAttribute('required'); }
+        set required(value) { this.toggleAttribute('required', !!value); }
+        get autofocus() { return this.hasAttribute('autofocus'); }
+        set autofocus(value) { this.toggleAttribute('autofocus', !!value); }
+        get autocomplete() { return this.getAttribute('autocomplete') || ''; }
+        set autocomplete(value) { this.setAttribute('autocomplete', value); }
+        get multiple() { return this.hasAttribute('multiple'); }
+        set multiple(value) { this.toggleAttribute('multiple', !!value); }
+        get dirName() { return this.getAttribute('dirname') || ''; }
+        set dirName(value) { this.setAttribute('dirname', value); }
+        get formAction() {
+            const value = this.getAttribute('formaction');
+            return value == null ? '' : host('resolveUrl', value);
+        }
+        set formAction(value) { this.setAttribute('formaction', value); }
+        get formEnctype() { return this.getAttribute('formenctype') || ''; }
+        set formEnctype(value) { this.setAttribute('formenctype', value); }
+        get formMethod() { return this.getAttribute('formmethod') || ''; }
+        set formMethod(value) { this.setAttribute('formmethod', value); }
+        get formNoValidate() { return this.hasAttribute('formnovalidate'); }
+        set formNoValidate(value) { this.toggleAttribute('formnovalidate', !!value); }
+        get formTarget() { return this.getAttribute('formtarget') || ''; }
+        set formTarget(value) { this.setAttribute('formtarget', value); }
+        get labels() { return labelsFor(this); }
+        get willValidate() { return !this.disabled && !['hidden', 'button', 'reset'].includes(this.type); }
+        get validity() { return validityFor(this); }
+        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
+        setCustomValidity(message) { this.__customValidity = String(message); }
+        checkValidity() { return checkControlValidity(this); }
+        reportValidity() { return this.checkValidity(); }
+    }
+    class HTMLTextAreaElement extends HTMLElement {
+        get placeholder() { return this.getAttribute('placeholder') || ''; }
+        set placeholder(value) { this.setAttribute('placeholder', value); }
+        get form() { return associatedForm(this); }
+        get value() { return this.__value ?? this.textContent; }
+        set value(value) { this.__value = String(value); }
+        get defaultValue() { return this.textContent; }
+        set defaultValue(value) { this.textContent = String(value); }
+        get minLength() { return reflectedInteger(this, 'minlength', -1); }
+        set minLength(value) { this.setAttribute('minlength', String(Math.trunc(Number(value)))); }
+        get maxLength() { return reflectedInteger(this, 'maxlength', -1); }
+        set maxLength(value) { this.setAttribute('maxlength', String(Math.trunc(Number(value)))); }
+        get wrap() { return (this.getAttribute('wrap') || 'soft').toLowerCase() === 'hard' ? 'hard' : 'soft'; }
+        set wrap(value) { this.setAttribute('wrap', value); }
+        get required() { return this.hasAttribute('required'); }
+        set required(value) { this.toggleAttribute('required', !!value); }
+        get labels() { return labelsFor(this); }
+        get willValidate() { return !this.disabled; }
+        get validity() { return validityFor(this); }
+        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
+        setCustomValidity(message) { this.__customValidity = String(message); }
+        checkValidity() { return checkControlValidity(this); }
+        reportValidity() { return this.checkValidity(); }
+    }
+    class HTMLOrderedListElement extends HTMLElement {
+        get reversed() { return this.hasAttribute('reversed'); }
+        set reversed(value) { this.toggleAttribute('reversed', !!value); }
+    }
+    class HTMLSelectElement extends HTMLElement {
+        get form() { return associatedForm(this); }
+        get required() { return this.hasAttribute('required'); }
+        set required(value) { this.toggleAttribute('required', !!value); }
+        get labels() { return labelsFor(this); }
+        get willValidate() { return !this.disabled; }
+        get validity() { return validityFor(this); }
+        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please select an item.'); }
+        setCustomValidity(message) { this.__customValidity = String(message); }
+        checkValidity() { return checkControlValidity(this); }
+        reportValidity() { return this.checkValidity(); }
+    }
+    class HTMLButtonElement extends HTMLElement {
+        get form() { return associatedForm(this); }
+        get labels() { return labelsFor(this); }
+        get formAction() {
+            const value = this.getAttribute('formaction');
+            return value == null ? '' : host('resolveUrl', value);
+        }
+        set formAction(value) { this.setAttribute('formaction', value); }
+        get formEnctype() { return this.getAttribute('formenctype') || ''; }
+        set formEnctype(value) { this.setAttribute('formenctype', value); }
+        get formMethod() { return this.getAttribute('formmethod') || ''; }
+        set formMethod(value) { this.setAttribute('formmethod', value); }
+        get formNoValidate() { return this.hasAttribute('formnovalidate'); }
+        set formNoValidate(value) { this.toggleAttribute('formnovalidate', !!value); }
+        get formTarget() { return this.getAttribute('formtarget') || ''; }
+        set formTarget(value) { this.setAttribute('formtarget', value); }
+    }
+    class HTMLLabelElement extends HTMLElement {
+        get htmlFor() { return this.getAttribute('for') || ''; }
+        set htmlFor(value) { this.setAttribute('for', value); }
+        get control() {
+            if (this.htmlFor) return document.getElementById(this.htmlFor);
+            return this.querySelector('button, input, meter, output, progress, select, textarea');
+        }
+        click() {
+            super.click();
+            this.control?.focus();
+        }
+    }
+    class HTMLFieldSetElement extends HTMLElement {
+        get elements() {
+            return this.querySelectorAll('button, fieldset, input, object, output, select, textarea');
+        }
+        get form() { return associatedForm(this); }
+        get disabled() { return this.hasAttribute('disabled'); }
+        set disabled(value) { this.toggleAttribute('disabled', !!value); }
+        get type() { return 'fieldset'; }
+    }
+    class HTMLDataListElement extends HTMLElement {
+        get options() { return this.querySelectorAll('option'); }
+    }
+    class HTMLOutputElement extends HTMLElement {
+        get htmlFor() { return this.__htmlFor ||= new DOMTokenList(this, 'for'); }
+        get form() { return associatedForm(this); }
+        get name() { return this.getAttribute('name') || ''; }
+        set name(value) { this.setAttribute('name', value); }
+        get type() { return 'output'; }
+        get value() { return this.textContent; }
+        set value(value) { this.textContent = String(value); }
+        get defaultValue() { return this.__defaultValue ?? this.textContent; }
+        set defaultValue(value) {
+            value = String(value);
+            if (this.__defaultValue === undefined) this.textContent = value;
+            else this.__defaultValue = value;
+        }
+        get labels() { return labelsFor(this); }
+        get willValidate() { return false; }
+        get validity() { return validValidityState(); }
+        get validationMessage() { return ''; }
+        setCustomValidity(_message) {}
+        checkValidity() { return true; }
+        reportValidity() { return true; }
+    }
+    class HTMLProgressElement extends HTMLElement {
+        get value() { return clampedNumberAttribute(this, 'value', 0, 0, this.max); }
+        set value(value) { this.setAttribute('value', value); }
+        get max() { return positiveNumberAttribute(this, 'max', 1); }
+        set max(value) { this.setAttribute('max', value); }
+        get position() { return this.hasAttribute('value') ? this.value / this.max : -1; }
+        get labels() { return labelsFor(this); }
+    }
+    class HTMLMeterElement extends HTMLElement {
+        get min() { return numberAttribute(this, 'min', 0); }
+        set min(value) { this.setAttribute('min', value); }
+        get max() { return Math.max(this.min, numberAttribute(this, 'max', 1)); }
+        set max(value) { this.setAttribute('max', value); }
+        get value() { return clampedNumberAttribute(this, 'value', 0, this.min, this.max); }
+        set value(value) { this.setAttribute('value', value); }
+        get low() { return clampedNumberAttribute(this, 'low', this.min, this.min, this.max); }
+        set low(value) { this.setAttribute('low', value); }
+        get high() { return clampedNumberAttribute(this, 'high', this.max, this.low, this.max); }
+        set high(value) { this.setAttribute('high', value); }
+        get optimum() { return clampedNumberAttribute(this, 'optimum', (this.min + this.max) / 2, this.min, this.max); }
+        set optimum(value) { this.setAttribute('optimum', value); }
+        get labels() { return labelsFor(this); }
+    }
+    class HTMLTemplateElement extends HTMLElement {
+        get content() { return wrap(host('templateContent', this.__id)); }
+    }
+    class HTMLFormElement extends HTMLElement {
+        get elements() {
+            return document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
+                .filter(element => associatedForm(element) === this);
+        }
+        get length() { return this.elements.length; }
+        get noValidate() { return this.hasAttribute('novalidate'); }
+        set noValidate(value) { this.toggleAttribute('novalidate', !!value); }
+        checkValidity() {
+            let valid = true;
+            for (const control of this.elements) if (typeof control.checkValidity === 'function' && !control.checkValidity()) valid = false;
+            return valid;
+        }
+        reportValidity() { return this.checkValidity(); }
+    }
+    function reflectedInteger(element, attribute, fallback) {
+        const value = Number(element.getAttribute(attribute));
+        return Number.isFinite(value) ? Math.trunc(value) : fallback;
+    }
+    function numberAttribute(element, attribute, fallback) {
+        const value = Number(element.getAttribute(attribute));
+        return Number.isFinite(value) ? value : fallback;
+    }
+    function positiveNumberAttribute(element, attribute, fallback) {
+        const value = numberAttribute(element, attribute, fallback);
+        return value > 0 ? value : fallback;
+    }
+    function clampedNumberAttribute(element, attribute, fallback, minimum, maximum) {
+        return Math.min(maximum, Math.max(minimum, numberAttribute(element, attribute, fallback)));
+    }
+    function labelsFor(element) {
+        return document.querySelectorAll('label').filter(label => label.control === element);
+    }
+    function validValidityState() {
+        return {
+            valueMissing: false, typeMismatch: false, patternMismatch: false,
+            tooLong: false, tooShort: false, rangeUnderflow: false,
+            rangeOverflow: false, stepMismatch: false, badInput: false,
+            customError: false, valid: true
+        };
+    }
+    function validityFor(element) {
+        const value = String(element.value ?? '');
+        const type = String(element.type || '').toLowerCase();
+        const required = !!element.required;
+        const valueMissing = required && value === '';
+        let typeMismatch = false;
+        if (value && type === 'email') typeMismatch = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+        if (value && type === 'url') typeMismatch = !/^[a-z][a-z0-9+.-]*:\/\/[^\s]+$/i.test(value);
+        let patternMismatch = false;
+        const pattern = element.pattern;
+        if (value && pattern) {
+            try { patternMismatch = !(new RegExp('^(?:' + pattern + ')$')).test(value); } catch (_error) {}
+        }
+        const numeric = Number(value);
+        const hasNumber = value !== '' && Number.isFinite(numeric);
+        const minimum = Number(element.min);
+        const maximum = Number(element.max);
+        const rangeUnderflow = hasNumber && element.min !== '' && Number.isFinite(minimum) && numeric < minimum;
+        const rangeOverflow = hasNumber && element.max !== '' && Number.isFinite(maximum) && numeric > maximum;
+        const badInput = (type === 'number' || type === 'range') && value !== '' && !hasNumber;
+        const customError = !!element.__customValidity;
+        const valid = !(valueMissing || typeMismatch || patternMismatch || rangeUnderflow || rangeOverflow || badInput || customError);
+        return {
+            valueMissing, typeMismatch, patternMismatch,
+            tooLong: false, tooShort: false, rangeUnderflow,
+            rangeOverflow, stepMismatch: false, badInput,
+            customError, valid
+        };
+    }
+    function checkControlValidity(element) {
+        if (!element.willValidate || element.validity.valid) return true;
+        element.dispatchEvent(new Event('invalid', { cancelable: true }));
+        return false;
+    }
+    function associatedForm(element) {
+        const explicit = element.getAttribute('form');
+        if (explicit) {
+            const form = document.getElementById(explicit);
+            return form?.localName === 'form' ? form : null;
+        }
+        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+            if (ancestor.localName === 'form') return ancestor;
+        }
+        return null;
+    }
+    Object.defineProperties(HTMLElement.prototype, {
+        onchange: { configurable: true, writable: true, value: null },
+        onerror: { configurable: true, writable: true, value: null },
+        oninput: { configurable: true, writable: true, value: null },
+        oninvalid: { configurable: true, writable: true, value: null }
+    });
+
+    const htmlNamespace = 'http://www.w3.org/1999/xhtml';
+    const knownHtmlElements = new Set((
+        'html head title base link meta style body article section nav aside h1 h2 h3 h4 h5 h6 ' +
+        'hgroup header footer address p hr pre blockquote ol ul menu li dl dt dd figure figcaption ' +
+        'main search div a em strong small s cite q dfn abbr ruby rt rp data time code var samp kbd ' +
+        'sub sup i b u mark bdi bdo span br wbr ins del picture source img iframe embed object video ' +
+        'audio track map area table caption colgroup col tbody thead tfoot tr td th form label input ' +
+        'button select datalist optgroup option textarea output progress meter fieldset legend details ' +
+        'summary dialog script noscript template slot canvas acronym applet basefont bgsound big blink ' +
+        'center content dir font frame frameset image keygen marquee menuitem nobr noembed noframes ' +
+        'param plaintext rb rtc shadow spacer strike tt xmp'
+    ).split(/\s+/));
+    const htmlElementConstructor = localName => {
+        if (localName === 'time') return HTMLTimeElement;
+        if (localName === 'data') return HTMLDataElement;
+        if (localName === 'a') return HTMLAnchorElement;
+        if (localName === 'details') return HTMLDetailsElement;
+        if (localName === 'dialog') return HTMLDialogElement;
+        if (localName === 'script') return HTMLScriptElement;
+        if (localName === 'img') return HTMLImageElement;
+        if (localName === 'picture') return HTMLPictureElement;
+        if (localName === 'source') return HTMLSourceElement;
+        if (localName === 'input') return HTMLInputElement;
+        if (localName === 'textarea') return HTMLTextAreaElement;
+        if (localName === 'ol') return HTMLOrderedListElement;
+        if (localName === 'select') return HTMLSelectElement;
+        if (localName === 'button') return HTMLButtonElement;
+        if (localName === 'label') return HTMLLabelElement;
+        if (localName === 'fieldset') return HTMLFieldSetElement;
+        if (localName === 'datalist') return HTMLDataListElement;
+        if (localName === 'output') return HTMLOutputElement;
+        if (localName === 'progress') return HTMLProgressElement;
+        if (localName === 'meter') return HTMLMeterElement;
+        if (localName === 'template') return HTMLTemplateElement;
+        if (localName === 'form') return HTMLFormElement;
+        return knownHtmlElements.has(localName) || localName.includes('-')
+            ? HTMLElement
+            : HTMLUnknownElement;
+    };
 
     class Document extends Node {
         constructor(id) {
@@ -1526,7 +2435,17 @@ const BROWSER_BOOTSTRAP: &str = r#"
         if (!id) return null;
         if (cache.has(id)) return cache.get(id);
         const type = host('nodeType', id);
-        const node = type === 9 ? new Document(id) : type === 1 ? new Element(id) : type === 8 ? new Comment(id) : new Text(id);
+        let node;
+        if (type === 9) node = new Document(id);
+        else if (type === 1) {
+            const namespace = host('namespaceUri', id);
+            const Constructor = namespace === htmlNamespace
+                ? htmlElementConstructor(host('localName', id))
+                : Element;
+            node = new Constructor(id);
+        }
+        else if (type === 11) node = new DocumentFragment(id);
+        else node = type === 8 ? new Comment(id) : new Text(id);
         cache.set(id, node);
         return node;
     }
@@ -1541,19 +2460,53 @@ const BROWSER_BOOTSTRAP: &str = r#"
     windowObject.document = document;
     windowObject.Node = Node;
     windowObject.Element = Element;
-    windowObject.HTMLElement = Element;
+    windowObject.HTMLElement = HTMLElement;
+    windowObject.HTMLUnknownElement = HTMLUnknownElement;
+    windowObject.HTMLTimeElement = HTMLTimeElement;
+    windowObject.HTMLDataElement = HTMLDataElement;
+    windowObject.HTMLAnchorElement = HTMLAnchorElement;
+    windowObject.HTMLDetailsElement = HTMLDetailsElement;
+    windowObject.HTMLDialogElement = HTMLDialogElement;
+    windowObject.HTMLScriptElement = HTMLScriptElement;
+    windowObject.HTMLImageElement = HTMLImageElement;
+    windowObject.HTMLPictureElement = HTMLPictureElement;
+    windowObject.HTMLSourceElement = HTMLSourceElement;
+    windowObject.HTMLInputElement = HTMLInputElement;
+    windowObject.HTMLTextAreaElement = HTMLTextAreaElement;
+    windowObject.HTMLOrderedListElement = HTMLOrderedListElement;
+    windowObject.HTMLSelectElement = HTMLSelectElement;
+    windowObject.HTMLButtonElement = HTMLButtonElement;
+    windowObject.HTMLLabelElement = HTMLLabelElement;
+    windowObject.HTMLFieldSetElement = HTMLFieldSetElement;
+    windowObject.HTMLDataListElement = HTMLDataListElement;
+    windowObject.HTMLOutputElement = HTMLOutputElement;
+    windowObject.HTMLProgressElement = HTMLProgressElement;
+    windowObject.HTMLMeterElement = HTMLMeterElement;
+    windowObject.HTMLTemplateElement = HTMLTemplateElement;
+    windowObject.HTMLFormElement = HTMLFormElement;
     windowObject.Document = Document;
     windowObject.Text = Text;
+    windowObject.DocumentFragment = DocumentFragment;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;
+    windowObject.MessageEvent = MessageEvent;
+    windowObject.ToggleEvent = ToggleEvent;
+    windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
     windowObject.DOMTokenList = DOMTokenList;
+    windowObject.DOMStringMap = DOMStringMap;
     windowObject.CSSStyleDeclaration = CSSStyleDeclaration;
+    Object.defineProperty(windowEvents, '__eventTargetProxy', { value: windowObject });
     windowObject.addEventListener = windowEvents.addEventListener.bind(windowEvents);
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
 
     const iframeWindow = isolatedIframeWindow || windowObject;
+    const iframeEvents = new EventTarget();
+    Object.defineProperty(iframeEvents, '__eventTargetProxy', { value: iframeWindow });
+    iframeWindow.addEventListener = iframeEvents.addEventListener.bind(iframeEvents);
+    iframeWindow.removeEventListener = iframeEvents.removeEventListener.bind(iframeEvents);
+    iframeWindow.dispatchEvent = iframeEvents.dispatchEvent.bind(iframeEvents);
     const iframeDocument = {
         defaultView: iframeWindow,
         readyState: 'complete',
@@ -1599,6 +2552,72 @@ const BROWSER_BOOTSTRAP: &str = r#"
     };
     windowObject.location = location;
     document.location = location;
+    function cloneMessageValue(value, memory = new Map()) {
+        if (value === null || ['undefined', 'boolean', 'number', 'string', 'bigint'].includes(typeof value)) return value;
+        if (typeof value === 'symbol' || typeof value === 'function') {
+            throw new DOMException('The value could not be cloned', 'DataCloneError');
+        }
+        if (memory.has(value)) return memory.get(value);
+        if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) return value.slice(0);
+        if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView?.(value)) {
+            const buffer = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+            return typeof DataView !== 'undefined' && value instanceof DataView
+                ? new DataView(buffer)
+                : new value.constructor(buffer);
+        }
+        if (value instanceof Date) return new Date(value.getTime());
+        if (value instanceof RegExp) return new RegExp(value.source, value.flags);
+        if (value instanceof Map) {
+            const clone = new Map();
+            memory.set(value, clone);
+            for (const [key, entry] of value) clone.set(cloneMessageValue(key, memory), cloneMessageValue(entry, memory));
+            return clone;
+        }
+        if (value instanceof Set) {
+            const clone = new Set();
+            memory.set(value, clone);
+            for (const entry of value) clone.add(cloneMessageValue(entry, memory));
+            return clone;
+        }
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) {
+            throw new DOMException('The value could not be cloned', 'DataCloneError');
+        }
+        const clone = Array.isArray(value) ? [] : {};
+        memory.set(value, clone);
+        for (const key of Object.keys(value)) clone[key] = cloneMessageValue(value[key], memory);
+        return clone;
+    }
+    const targetOriginValue = targetOrigin => {
+        targetOrigin = targetOrigin === undefined ? '/' : String(targetOrigin);
+        if (targetOrigin === '*' || targetOrigin === '/') return targetOrigin;
+        const parsed = parseUrl(host('resolveUrl', targetOrigin));
+        if (!parsed.protocol || !parsed.host) throw new DOMException('Invalid target origin', 'SyntaxError');
+        return parsed.protocol + '//' + parsed.host;
+    };
+    function postMessageTo(targetEvents, message, targetOriginOrOptions = '/', transfer = []) {
+        let targetOrigin = targetOriginOrOptions;
+        if (targetOriginOrOptions && typeof targetOriginOrOptions === 'object') {
+            targetOrigin = targetOriginOrOptions.targetOrigin ?? '/';
+            transfer = targetOriginOrOptions.transfer || [];
+        }
+        if (transfer && transfer.length) {
+            throw new DOMException('Transferable objects are not implemented', 'DataCloneError');
+        }
+        const cloned = cloneMessageValue(message);
+        const expectedOrigin = targetOriginValue(targetOrigin);
+        if (expectedOrigin !== '*' && expectedOrigin !== '/' && expectedOrigin !== location.origin) return;
+        setTimeout(() => targetEvents.dispatchEvent(new MessageEvent('message', {
+            data: cloned,
+            origin: location.origin,
+            source: windowObject,
+            ports: []
+        })), 0);
+    }
+    windowObject.postMessage = (message, targetOriginOrOptions = '/', transfer = []) =>
+        postMessageTo(windowEvents, message, targetOriginOrOptions, transfer);
+    iframeWindow.postMessage = (message, targetOriginOrOptions = '/', transfer = []) =>
+        postMessageTo(iframeEvents, message, targetOriginOrOptions, transfer);
     windowObject.history = {
         length: 1,
         state: null,
@@ -1682,6 +2701,149 @@ const BROWSER_BOOTSTRAP: &str = r#"
         while (output.length % 4) output += '=';
         return output;
     };
+    const unicodeScalarAt = (input, index) => {
+        const first = input.charCodeAt(index);
+        if (first >= 0xD800 && first <= 0xDBFF && index + 1 < input.length) {
+            const second = input.charCodeAt(index + 1);
+            if (second >= 0xDC00 && second <= 0xDFFF) {
+                return [0x10000 + ((first - 0xD800) << 10) + second - 0xDC00, 2];
+            }
+        }
+        return [first >= 0xD800 && first <= 0xDFFF ? 0xFFFD : first, 1];
+    };
+    const utf8Bytes = scalar => {
+        if (scalar <= 0x7F) return [scalar];
+        if (scalar <= 0x7FF) return [0xC0 | (scalar >> 6), 0x80 | (scalar & 0x3F)];
+        if (scalar <= 0xFFFF) {
+            return [0xE0 | (scalar >> 12), 0x80 | ((scalar >> 6) & 0x3F), 0x80 | (scalar & 0x3F)];
+        }
+        return [
+            0xF0 | (scalar >> 18),
+            0x80 | ((scalar >> 12) & 0x3F),
+            0x80 | ((scalar >> 6) & 0x3F),
+            0x80 | (scalar & 0x3F)
+        ];
+    };
+    class TextEncoder {
+        get encoding() { return 'utf-8'; }
+        encode(input = '') {
+            input = String(input);
+            const output = [];
+            for (let index = 0; index < input.length;) {
+                const [scalar, units] = unicodeScalarAt(input, index);
+                output.push(...utf8Bytes(scalar));
+                index += units;
+            }
+            return new Uint8Array(output);
+        }
+        encodeInto(source, destination) {
+            source = String(source);
+            if (!(destination instanceof Uint8Array)) throw new TypeError('destination must be a Uint8Array');
+            let read = 0;
+            let written = 0;
+            while (read < source.length) {
+                const [scalar, units] = unicodeScalarAt(source, read);
+                const bytes = utf8Bytes(scalar);
+                if (written + bytes.length > destination.length) break;
+                destination.set(bytes, written);
+                written += bytes.length;
+                read += units;
+            }
+            return { read, written };
+        }
+    }
+    const decoderInputBytes = input => {
+        if (input === undefined) return [];
+        if (input instanceof ArrayBuffer) return [...new Uint8Array(input)];
+        if (ArrayBuffer.isView?.(input)) return [...new Uint8Array(input.buffer, input.byteOffset, input.byteLength)];
+        throw new TypeError('input must be an ArrayBuffer or an ArrayBuffer view');
+    };
+    const scalarString = scalar => scalar <= 0xFFFF
+        ? String.fromCharCode(scalar)
+        : String.fromCharCode(0xD800 + ((scalar - 0x10000) >> 10), 0xDC00 + ((scalar - 0x10000) & 0x3FF));
+    class TextDecoder {
+        constructor(label = 'utf-8', options = {}) {
+            label = String(label).trim().toLowerCase();
+            if (!['utf-8', 'utf8', 'unicode-1-1-utf-8'].includes(label)) {
+                throw new RangeError('Only UTF-8 decoding is implemented');
+            }
+            this.__fatal = !!options.fatal;
+            this.__ignoreBOM = !!options.ignoreBOM;
+            this.__pending = [];
+            this.__streaming = false;
+            this.__bomSeen = false;
+        }
+        get encoding() { return 'utf-8'; }
+        get fatal() { return this.__fatal; }
+        get ignoreBOM() { return this.__ignoreBOM; }
+        decode(input, options = {}) {
+            const stream = !!options.stream;
+            const bytes = (this.__streaming ? this.__pending : []).concat(decoderInputBytes(input));
+            this.__pending = [];
+            let output = '';
+            let index = 0;
+            const emit = scalar => {
+                if (!this.__bomSeen) {
+                    this.__bomSeen = true;
+                    if (!this.__ignoreBOM && scalar === 0xFEFF) return;
+                }
+                output += scalarString(scalar);
+            };
+            const fail = () => {
+                if (this.__fatal) throw new TypeError('The encoded data was not valid UTF-8');
+                emit(0xFFFD);
+            };
+            while (index < bytes.length) {
+                const first = bytes[index];
+                if (first <= 0x7F) {
+                    emit(first);
+                    index++;
+                    continue;
+                }
+                let needed = 0;
+                let scalar = 0;
+                let minimum = 0;
+                if (first >= 0xC2 && first <= 0xDF) {
+                    needed = 1; scalar = first & 0x1F; minimum = 0x80;
+                } else if (first >= 0xE0 && first <= 0xEF) {
+                    needed = 2; scalar = first & 0x0F; minimum = 0x800;
+                } else if (first >= 0xF0 && first <= 0xF4) {
+                    needed = 3; scalar = first & 0x07; minimum = 0x10000;
+                } else {
+                    fail();
+                    index++;
+                    continue;
+                }
+                if (index + needed >= bytes.length) {
+                    if (stream) this.__pending = bytes.slice(index);
+                    else fail();
+                    index = bytes.length;
+                    break;
+                }
+                let valid = true;
+                for (let offset = 1; offset <= needed; offset++) {
+                    const continuation = bytes[index + offset];
+                    if ((continuation & 0xC0) !== 0x80) { valid = false; break; }
+                    scalar = (scalar << 6) | (continuation & 0x3F);
+                }
+                if (!valid || scalar < minimum || scalar > 0x10FFFF || (scalar >= 0xD800 && scalar <= 0xDFFF)) {
+                    fail();
+                    index++;
+                    continue;
+                }
+                emit(scalar);
+                index += needed + 1;
+            }
+            this.__streaming = stream;
+            if (!stream) {
+                this.__pending = [];
+                this.__bomSeen = false;
+            }
+            return output;
+        }
+    }
+    windowObject.TextEncoder = TextEncoder;
+    windowObject.TextDecoder = TextDecoder;
     const makeConsole = level => (...args) => host('console', level, args.map(value => {
         try { return typeof value === 'string' ? value : JSON.stringify(value); }
         catch (_) { return String(value); }
@@ -1694,46 +2856,32 @@ const BROWSER_BOOTSTRAP: &str = r#"
     };
 
     let nextTimer = 1;
-    let virtualTimerTime = 0;
     const timers = new Map();
     const queueTimer = (callback, delay, repeat, args) => {
         const id = nextTimer++;
         delay = Math.max(0, Number(delay) || 0);
-        timers.set(id, { callback, delay, due: virtualTimerTime + delay, repeat, args });
+        timers.set(id, { callback, repeat, args });
+        host('timerSchedule', id, delay, repeat);
         return id;
     };
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
     windowObject.setInterval = (callback, delay, ...args) => queueTimer(callback, delay, true, args);
-    windowObject.clearTimeout = windowObject.clearInterval = id => timers.delete(Number(id));
+    windowObject.clearTimeout = windowObject.clearInterval = id => {
+        id = Number(id);
+        timers.delete(id);
+        host('timerCancel', id);
+    };
     windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
     windowObject.queueMicrotask = callback => Promise.resolve().then(callback);
-    windowObject.__drainTimers = (maxAdvance = 100, maxCallbacks = 128) => {
-        const horizon = virtualTimerTime + Math.max(0, Number(maxAdvance) || 0);
-        let count = 0;
-        while (count < maxCallbacks) {
-            const next = [...timers]
-                .filter(([, timer]) => timer.due <= horizon)
-                .sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0];
-            if (!next) break;
-            const [id, timer] = next;
-            virtualTimerTime = timer.due;
-            if (timer.repeat) {
-                timer.due = virtualTimerTime + Math.max(1, timer.delay);
-                timers.set(id, timer);
-            }
-            else {
-                timers.delete(id);
-            }
-            if (typeof timer.callback === 'function') timer.callback(...timer.args);
-            else (0, eval)(String(timer.callback));
-            count++;
-        }
-        virtualTimerTime = Math.max(virtualTimerTime, horizon);
+    windowObject.__runTimer = id => {
+        const timer = timers.get(Number(id));
+        if (!timer) return false;
+        if (!timer.repeat) timers.delete(Number(id));
+        if (typeof timer.callback === 'function') timer.callback(...timer.args);
+        else (0, eval)(String(timer.callback));
+        return true;
     };
-    windowObject.__pendingTimerSummary = () => [...timers]
-        .map(([id, timer]) => id + '@' + Math.max(0, timer.due - virtualTimerTime) + (timer.repeat ? 'r' : ''))
-        .join(',');
 
     class URLSearchParams {
         constructor(init = '') {
@@ -1771,10 +2919,26 @@ const BROWSER_BOOTSTRAP: &str = r#"
         get searchParams() { return new URLSearchParams(this.search); }
     };
 
-    windowObject.getComputedStyle = element => element?.style || styleProxy(document.createElement('div'));
+    const computedStyleProxy = element => new Proxy({
+        getPropertyValue(name) {
+            name = String(name).toLowerCase();
+            const inline = element?.style?.getPropertyValue(name) || '';
+            return inline || (element ? host('uaStyle', element.__id, name) : '');
+        },
+        get cssText() { return ''; }
+    }, {
+        get(target, property) {
+            if (property in target) {
+                const value = target[property];
+                return typeof value === 'function' ? value.bind(target) : value;
+            }
+            return target.getPropertyValue(String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()));
+        }
+    });
+    windowObject.getComputedStyle = element => computedStyleProxy(element);
     windowObject.matchMedia = query => ({ media: String(query), matches: false, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } });
     windowObject.CSS = { supports() { return false; }, escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); } };
-    windowObject.Image = class Image extends Element {
+    windowObject.Image = class Image extends HTMLImageElement {
         constructor() {
             const element = document.createElement('img');
             Object.defineProperty(element, 'src', {
@@ -1816,10 +2980,8 @@ const BROWSER_BOOTSTRAP: &str = r#"
     windowObject.__finishDocument = () => {
         document.readyState = 'interactive';
         document.dispatchEvent(new Event('DOMContentLoaded'));
-        windowObject.__drainTimers();
         document.readyState = 'complete';
         windowObject.dispatchEvent(new Event('load'));
-        windowObject.__drainTimers();
     };
 })();
 "#;
@@ -1941,6 +3103,334 @@ mod tests {
     }
 
     #[test]
+    fn exposes_html_element_identity_namespaces_and_ua_defaults() {
+        let (dom, outcome) = execute_html(
+            r##"<body><div id="status">no</div><script>
+                const container = document.createElement('div');
+                container.innerHTML = '<svg><circle></circle></svg><math><mi>x</mi></math>';
+                const section = document.createElement('section');
+                const unknown = document.createElement('madeupelement');
+                const time = document.createElement('time');
+                const data = document.createElement('data');
+                const image = document.createElement('img');
+                const picture = document.createElement('picture');
+                const source = document.createElement('source');
+                const input = document.createElement('input');
+                const mark = document.createElement('mark');
+                const rp = document.createElement('rp');
+                const parent = document.createElement('div');
+                const translatedChild = document.createElement('span');
+                const list = document.createElement('ol');
+                const select = document.createElement('select');
+                const fieldset = document.createElement('fieldset');
+                const field = document.createElement('input');
+                const form = document.createElement('form');
+                const externalField = document.createElement('input');
+                const label = document.createElement('label');
+                parent.translate = false;
+                parent.appendChild(translatedChild);
+                parent.accessKey = 'x';
+                list.reversed = true;
+                fieldset.appendChild(field);
+                form.id = 'owner';
+                externalField.id = 'owned-field';
+                externalField.setAttribute('form', 'owner');
+                label.htmlFor = 'owned-field';
+                document.body.appendChild(form);
+                document.body.appendChild(externalField);
+                document.body.appendChild(label);
+                time.dateTime = '2026-08-13';
+                data.value = '42';
+                image.srcset = 'small.png 1x, large.png 2x';
+                image.sizes = '100vw';
+                source.srcset = 'wide.png 2x';
+                source.sizes = '50vw';
+                source.media = '(min-width: 600px)';
+                input.placeholder = 'Search';
+                if (
+                    section instanceof HTMLElement &&
+                    !(section instanceof HTMLUnknownElement) &&
+                    unknown instanceof HTMLUnknownElement &&
+                    time instanceof HTMLTimeElement && time.getAttribute('datetime') === '2026-08-13' &&
+                    data instanceof HTMLDataElement && data.getAttribute('value') === '42' &&
+                    image instanceof HTMLImageElement && image.getAttribute('srcset').includes('large.png') &&
+                    image.sizes === '100vw' && picture instanceof HTMLPictureElement &&
+                    source instanceof HTMLSourceElement && source.srcset === 'wide.png 2x' &&
+                    source.sizes === '50vw' && source.media === '(min-width: 600px)' &&
+                    input instanceof HTMLInputElement && input.getAttribute('placeholder') === 'Search' &&
+                    'onerror' in image &&
+                    getComputedStyle(section).display === 'block' &&
+                    getComputedStyle(mark).backgroundColor === 'rgb(255, 255, 0)' &&
+                    getComputedStyle(rp).display === 'none' &&
+                    translatedChild.translate === false &&
+                    parent.getAttribute('translate') === 'no' && parent.accessKey === 'x' &&
+                    typeof parent.accessKeyLabel === 'string' &&
+                    list instanceof HTMLOrderedListElement && list.hasAttribute('reversed') &&
+                    select instanceof HTMLSelectElement &&
+                    fieldset instanceof HTMLFieldSetElement && fieldset.elements[0] === field &&
+                    externalField.form === form && label instanceof HTMLLabelElement &&
+                    label.control === externalField &&
+                    container.firstChild.namespaceURI === 'http://www.w3.org/2000/svg' &&
+                    container.lastChild.namespaceURI === 'http://www.w3.org/1998/Math/MathML'
+                ) document.getElementById('status').textContent = 'yes';
+            </script></body>"##,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn exposes_dataset_and_core_html_form_interfaces() {
+        let (dom, outcome) = execute_html(
+            r##"<body><div id="status">no</div><script>
+                const data = document.createElement('div');
+                data.setAttribute('data-user-id', '41');
+                const sameDataset = data.dataset === data.dataset;
+                data.dataset.userId = '42';
+                data.dataset.displayName = 'Ada';
+                const datasetKeys = Object.keys(data.dataset).sort().join(',');
+                delete data.dataset.displayName;
+
+                const form = document.createElement('form');
+                form.id = 'owner';
+                const input = document.createElement('input');
+                input.id = 'email';
+                input.type = 'email';
+                input.required = true;
+                input.value = 'not-an-email';
+                input.selectionDirection = 'backward';
+                input.formAction = '/submit';
+                input.formMethod = 'post';
+                input.formNoValidate = true;
+                let inputEvents = 0;
+                let invalidEvents = 0;
+                input.oninput = () => inputEvents++;
+                input.onchange = () => inputEvents++;
+                input.oninvalid = () => invalidEvents++;
+                input.dispatchEvent(new Event('input'));
+                input.dispatchEvent(new Event('change'));
+                form.appendChild(input);
+                document.body.appendChild(form);
+                const label = document.createElement('label');
+                label.htmlFor = 'email';
+                document.body.appendChild(label);
+
+                const datalist = document.createElement('datalist');
+                datalist.id = 'choices';
+                datalist.appendChild(document.createElement('option'));
+                input.setAttribute('list', 'choices');
+                document.body.appendChild(datalist);
+
+                const textarea = document.createElement('textarea');
+                textarea.minLength = 2;
+                textarea.maxLength = 20;
+                textarea.wrap = 'hard';
+                const select = document.createElement('select');
+                select.required = true;
+                const fieldset = document.createElement('fieldset');
+                fieldset.disabled = true;
+                const output = document.createElement('output');
+                output.value = 'ready';
+                const progress = document.createElement('progress');
+                progress.max = 10;
+                progress.value = 4;
+                const meter = document.createElement('meter');
+                meter.min = 0;
+                meter.max = 100;
+                meter.value = 75;
+                const formIsValid = form.checkValidity();
+
+                if (
+                    data.dataset instanceof DOMStringMap && sameDataset && data.dataset.userId === '42' &&
+                    data.getAttribute('data-user-id') === '42' && !data.hasAttribute('data-display-name') &&
+                    datasetKeys === 'displayName,userId' && input instanceof HTMLInputElement &&
+                    input.selectionDirection === 'backward' && !input.validity.valid &&
+                    input.form === form && input.labels[0] === label && form.elements[0] === input &&
+                    input.formAction === 'https://example.com/submit' && input.formMethod === 'post' &&
+                    input.formNoValidate && datalist instanceof HTMLDataListElement &&
+                    input.list === datalist && datalist.options.length === 1 &&
+                    textarea instanceof HTMLTextAreaElement && textarea.minLength === 2 &&
+                    textarea.maxLength === 20 && textarea.wrap === 'hard' &&
+                    select instanceof HTMLSelectElement && select.required &&
+                    fieldset instanceof HTMLFieldSetElement && fieldset.disabled &&
+                    output instanceof HTMLOutputElement && output.value === 'ready' &&
+                    progress instanceof HTMLProgressElement && progress.position === 0.4 &&
+                    meter instanceof HTMLMeterElement && meter.value === 75 &&
+                    form instanceof HTMLFormElement && !formIsValid &&
+                    inputEvents === 2 && invalidEvents === 1
+                ) document.getElementById('status').textContent = 'yes';
+            </script></body>"##,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn exposes_template_contents_as_a_document_fragment() {
+        let (dom, outcome) = execute_html(
+            r#"<body><template id="parsed"><span id="inside">parsed</span></template><div id="status">no</div><script>
+                const parsed = document.getElementById('parsed');
+                const created = document.createElement('template');
+                created.innerHTML = '<p data-value="42">created</p>';
+                const paragraph = created.content.querySelector('p');
+                if (
+                    parsed instanceof HTMLTemplateElement &&
+                    parsed.firstChild === null &&
+                    parsed.content instanceof DocumentFragment &&
+                    parsed.content.nodeType === 11 &&
+                    parsed.content.ownerDocument === document &&
+                    parsed.content.firstChild.textContent === 'parsed' &&
+                    document.getElementById('inside') === null &&
+                    paragraph.textContent === 'created' &&
+                    paragraph.dataset.value === '42' &&
+                    created.innerHTML.includes('<p data-value="42">created</p>') &&
+                    !created.content.isConnected
+                ) document.getElementById('status').textContent = 'yes';
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn exposes_links_interactive_elements_and_script_reflection() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">no</div><script>
+                const anchor = document.createElement('a');
+                anchor.download = 'report.txt';
+                anchor.ping = '/audit-one /audit-two';
+                anchor.relList.add('noopener', 'noreferrer');
+
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = 'More';
+                const content = document.createElement('p');
+                content.textContent = 'Details';
+                details.append(summary, content);
+                document.body.appendChild(details);
+                const closedDisplay = getComputedStyle(content).display;
+                summary.click();
+                const openDisplay = getComputedStyle(content).display;
+
+                const dialog = document.createElement('dialog');
+                document.body.appendChild(dialog);
+                const closedDialogDisplay = getComputedStyle(dialog).display;
+                let closeEvents = 0;
+                dialog.addEventListener('close', () => closeEvents++);
+                dialog.showModal();
+                const openDialogDisplay = getComputedStyle(dialog).display;
+                dialog.close('accepted');
+
+                const reflectedScript = document.createElement('script');
+                reflectedScript.async = true;
+                reflectedScript.defer = true;
+                reflectedScript.text = 'window.answer = 42';
+                setTimeout(() => {
+                    if (
+                        anchor instanceof HTMLAnchorElement && anchor.download === 'report.txt' &&
+                        anchor.ping.includes('/audit-two') && anchor.relList.contains('noopener') &&
+                        details instanceof HTMLDetailsElement && details.open &&
+                        closedDisplay === 'none' && openDisplay === 'block' &&
+                        dialog instanceof HTMLDialogElement && !dialog.open && dialog.returnValue === 'accepted' &&
+                        closedDialogDisplay === 'none' && openDialogDisplay === 'block' && closeEvents === 1 &&
+                        reflectedScript instanceof HTMLScriptElement && reflectedScript.async && reflectedScript.defer &&
+                        reflectedScript.text.includes('answer')
+                    ) document.getElementById('status').textContent = 'yes';
+                }, 0);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn encodes_utf8_and_delivers_cloned_window_messages() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">no</div><script>
+                const bytes = new TextEncoder().encode('A¢😀');
+                const decoded = new TextDecoder().decode(bytes);
+                const destination = new Uint8Array(4);
+                const progress = new TextEncoder().encodeInto('¢BC', destination);
+                let messages = 0;
+                window.addEventListener('message', event => {
+                    messages++;
+                    if (
+                        decoded === 'A¢😀' && bytes.join(',') === '65,194,162,240,159,152,128' &&
+                        progress.read === 3 && progress.written === 4 &&
+                        event.origin === location.origin && event.source === window &&
+                        event.data.nested.value === 42 && event.data !== payload
+                    ) document.getElementById('status').textContent = 'yes';
+                });
+                const payload = { nested: { value: 42 } };
+                window.postMessage(payload, location.origin);
+                payload.nested.value = 7;
+                window.postMessage('discarded', 'https://other.example');
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn exposes_tokenizer_results_through_dom_bindings() {
+        let (dom, outcome) = execute_html(
+            r##"<body><div id="status">no</div><script>
+                let result = true;
+                const failures = [];
+                const check = (name, value) => { if (!value) failures.push(name); return value; };
+                const e = document.createElement('div');
+                e.innerHTML = '<div<div>';
+                result &= check('tag-name', e.firstChild && e.firstChild.nodeName === 'DIV<DIV');
+                e.innerHTML = "<div foo<bar=''>";
+                result &= check('attribute-name', e.firstChild.attributes[0].name === 'foo<bar');
+                e.innerHTML = '<div foo=`bar`>';
+                result &= check('unquoted-attribute', e.firstChild.getAttribute('foo') === '`bar`');
+                e.innerHTML = "<div \"foo=''>";
+                result &= check('quoted-name', e.firstChild.attributes[0].name === '"foo');
+                e.innerHTML = "<a href='\nbar'></a>";
+                result &= check('attribute-newline', e.firstChild.getAttribute('href') === '\nbar');
+                e.innerHTML = '<!DOCTYPE html>';
+                result &= check('doctype', e.firstChild === null);
+                e.innerHTML = '\r';
+                result &= check('cr-normalization', e.firstChild.nodeValue === '\n');
+                e.innerHTML = '&lang;&rang;&apos;&ImaginaryI;&Kopf;&notinva;';
+                result &= check('entities', e.firstChild.nodeValue === '\u27E8\u27E9\'\u2148\uD835\uDD42\u2209');
+                e.innerHTML = '<?import namespace="foo" implementation="#bar">';
+                result &= check('processing-instruction', e.firstChild.nodeType === 8 && e.firstChild.nodeValue === '?import namespace="foo" implementation="#bar"');
+                e.innerHTML = '<!--foo--bar-->';
+                result &= check('comment', e.firstChild.nodeType === 8 && e.firstChild.nodeValue === 'foo--bar');
+                e.innerHTML = '<![CDATA[x]]>';
+                result &= check('cdata', e.firstChild.nodeType === 8 && e.firstChild.nodeValue === '[CDATA[x]]');
+                e.innerHTML = '<textarea><!--</textarea>--></textarea>';
+                result &= check('textarea', e.firstChild.firstChild.nodeValue === '<!--');
+                e.innerHTML = '<style><!--</style>--></style>';
+                result &= check('style', e.firstChild.firstChild.nodeValue === '<!--');
+                document.getElementById('status').textContent = result ? 'yes' : failures.join(',');
+            </script></body>"##,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "yes"
+        );
+    }
+
+    #[test]
     fn drains_short_timers_before_layout() {
         let (dom, outcome) = execute_html(
             r#"<body><div id="status">waiting</div><script>
@@ -1969,6 +3459,24 @@ mod tests {
     }
 
     #[test]
+    fn settles_nested_startup_poll_within_the_explicit_horizon() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                setTimeout(() => {
+                    setTimeout(() => {
+                        document.getElementById('status').textContent = 'ready';
+                    }, 100);
+                }, 1200);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+    }
+
+    #[test]
     fn rescheduled_short_timer_does_not_starve_later_startup_timer() {
         let (dom, outcome) = execute_html(
             r#"<body><div id="status">waiting</div><script>
@@ -1982,6 +3490,272 @@ mod tests {
             dom.elements_named("div").next().unwrap().text_content(),
             "ready"
         );
+    }
+
+    #[test]
+    fn runs_a_microtask_checkpoint_between_same_deadline_timer_tasks() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                const order = [];
+                setTimeout(() => {
+                    order.push('timer-one');
+                    queueMicrotask(() => order.push('microtask'));
+                }, 0);
+                setTimeout(() => {
+                    order.push('timer-two');
+                    document.getElementById('status').textContent = order.join(',');
+                }, 0);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "timer-one,microtask,timer-two"
+        );
+    }
+
+    #[test]
+    fn clear_timeout_cancels_the_rust_scheduled_task() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                const cancelled = setTimeout(() => {
+                    document.getElementById('status').textContent = 'cancelled task ran';
+                }, 10);
+                clearTimeout(cancelled);
+                setTimeout(() => {
+                    document.getElementById('status').textContent = 'ready';
+                }, 10);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn clear_interval_stops_a_rescheduled_repeating_task() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                let count = 0;
+                const interval = setInterval(() => {
+                    count++;
+                    if (count === 3) {
+                        clearInterval(interval);
+                        document.getElementById('status').textContent = String(count);
+                    }
+                }, 10);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "3"
+        );
+        assert!(
+            outcome
+                .diagnostics
+                .iter()
+                .all(|message| !message.contains("timers after settling")),
+            "{:?}",
+            outcome.diagnostics
+        );
+    }
+
+    #[test]
+    fn a_throwing_timer_does_not_prevent_the_next_task() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                setTimeout(() => { throw new Error('expected timer failure'); }, 0);
+                setTimeout(() => {
+                    document.getElementById('status').textContent = 'ready';
+                }, 0);
+            </script></body>"#,
+        );
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+        assert!(
+            outcome
+                .errors
+                .iter()
+                .any(|error| error.contains("expected timer failure")),
+            "{:?}",
+            outcome.errors
+        );
+    }
+
+    #[test]
+    fn dom_mutations_request_one_render_checkpoint() {
+        let (_, mutating) = execute_html(
+            r#"<body><div id="status"></div><script>
+                setTimeout(() => {
+                    const status = document.getElementById('status');
+                    status.textContent = 'ready';
+                    status.setAttribute('data-ready', 'true');
+                }, 0);
+            </script></body>"#,
+        );
+        assert!(mutating.errors.is_empty(), "{:?}", mutating.errors);
+        assert_eq!(mutating.mutation_count, 2);
+        assert!(mutating.render_requested);
+
+        let (_, non_mutating) =
+            execute_html(r#"<script>setTimeout(() => console.log('ready'), 0);</script>"#);
+        assert!(non_mutating.errors.is_empty(), "{:?}", non_mutating.errors);
+        assert_eq!(non_mutating.mutation_count, 0);
+        assert!(!non_mutating.render_requested);
+    }
+
+    #[test]
+    fn retained_runtime_executes_post_load_work_in_the_same_realm() {
+        let dom = dom::parse_with_scripting(
+            r#"<body><div id="status">waiting</div><script>
+                window.retainedValue = 41;
+                setTimeout(() => {
+                    document.getElementById('status').textContent = String(++window.retainedValue);
+                }, 2000);
+            </script></body>"#,
+            true,
+        );
+        let scripts = dom
+            .elements_named("script")
+            .map(|node| ScriptInput {
+                source_url: "https://example.com/#inline".into(),
+                code: node.text_content(),
+                node,
+                finish_lifecycle: true,
+            })
+            .collect::<Vec<_>>();
+        let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+
+        let initial = runtime.execute_initial(&scripts);
+        assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+        assert!(!initial.render_requested);
+        assert_eq!(runtime.next_timer_delay(), Some(Duration::from_millis(500)));
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "waiting"
+        );
+
+        // Startup settlement advances 1,500 ms; this reaches the retained 2,000 ms timer.
+        let post_load = runtime.advance_time(Duration::from_millis(500), 16);
+        assert!(post_load.errors.is_empty(), "{:?}", post_load.errors);
+        assert!(post_load.render_requested);
+        assert_eq!(post_load.mutation_count, 1);
+        assert_eq!(runtime.next_timer_delay(), None);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "42"
+        );
+    }
+
+    #[test]
+    fn retained_document_realms_advance_independently() {
+        fn retained_fixture(label: &str) -> (super::super::dom::Dom, ScriptRuntime) {
+            let html = format!(
+                r#"<body><div>waiting</div><script>
+                    window.realmLabel = '{label}';
+                    setTimeout(() => {{
+                        document.querySelector('div').textContent = window.realmLabel;
+                    }}, 2000);
+                </script></body>"#
+            );
+            let dom = dom::parse_with_scripting(&html, true);
+            let scripts = dom
+                .elements_named("script")
+                .map(|node| ScriptInput {
+                    source_url: "https://example.com/#inline".into(),
+                    code: node.text_content(),
+                    node,
+                    finish_lifecycle: true,
+                })
+                .collect::<Vec<_>>();
+            let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+            let outcome = runtime.execute_initial(&scripts);
+            assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+            (dom, runtime)
+        }
+
+        let (first_dom, mut first_runtime) = retained_fixture("first");
+        let (second_dom, mut second_runtime) = retained_fixture("second");
+        first_runtime.advance_time(Duration::from_millis(500), 16);
+
+        assert_eq!(
+            first_dom
+                .elements_named("div")
+                .next()
+                .unwrap()
+                .text_content(),
+            "first"
+        );
+        assert_eq!(
+            second_dom
+                .elements_named("div")
+                .next()
+                .unwrap()
+                .text_content(),
+            "waiting"
+        );
+
+        second_runtime.advance_time(Duration::from_millis(500), 16);
+        assert_eq!(
+            second_dom
+                .elements_named("div")
+                .next()
+                .unwrap()
+                .text_content(),
+            "second"
+        );
+    }
+
+    #[test]
+    fn dropping_a_runtime_releases_its_document_owned_scheduler() {
+        let dom = dom::parse_with_scripting("<body></body>", true);
+        let runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+        let host = Rc::downgrade(&runtime.host);
+        drop(runtime);
+        assert!(host.upgrade().is_none());
+    }
+
+    #[test]
+    fn cancelling_a_document_prevents_its_retained_callbacks() {
+        let dom = dom::parse_with_scripting(
+            r#"<body><div>waiting</div><script>
+                setTimeout(() => {
+                    document.querySelector('div').textContent = 'stale callback';
+                }, 2000);
+            </script></body>"#,
+            true,
+        );
+        let scripts = dom
+            .elements_named("script")
+            .map(|node| ScriptInput {
+                source_url: "https://example.com/#inline".into(),
+                code: node.text_content(),
+                node,
+                finish_lifecycle: true,
+            })
+            .collect::<Vec<_>>();
+        let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+        let initial = runtime.execute_initial(&scripts);
+        assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+
+        runtime.cancel_document();
+        assert!(!runtime.is_active());
+        assert_eq!(runtime.next_timer_delay(), None);
+        let cancelled = runtime.advance_time(Duration::from_secs(10), 128);
+
+        assert!(cancelled.runtime_stopped);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "waiting"
+        );
+        let host = runtime.host.borrow();
+        assert_eq!(host.timers.pending_task_count(), 0);
+        assert_eq!(host.timers.pending_microtask_count(), 0);
     }
 
     #[test]

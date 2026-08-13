@@ -4,7 +4,7 @@ use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NA
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
     ControlKind, DecodedImage, DisplayItem, FontSpec, LayoutOutput, Page, PageResource, RectF,
-    ScriptOutcome, TextMeasurer, WebFont, layout_page,
+    ScriptOutcome, TextMeasurer, WebFont, layout_page_with_style_viewport,
 };
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
@@ -406,6 +406,7 @@ unsafe extern "system" {
     fn BeginPaint(window: Hwnd, paint: *mut PaintStruct) -> Hdc;
     fn EndPaint(window: Hwnd, paint: *const PaintStruct) -> i32;
     fn GetClientRect(window: Hwnd, rectangle: *mut Rect) -> i32;
+    fn GetWindowRect(window: Hwnd, rectangle: *mut Rect) -> i32;
     fn MoveWindow(window: Hwnd, x: i32, y: i32, width: i32, height: i32, repaint: i32) -> i32;
     fn InvalidateRect(window: Hwnd, rectangle: *const Rect, erase: i32) -> i32;
     fn SetWindowTextW(window: Hwnd, text: *const u16) -> i32;
@@ -616,6 +617,7 @@ pub fn run() -> Result<(), String> {
             },
         );
         UpdateWindow(window);
+        (*state_pointer).complete_startup();
         let mut message: Msg = std::mem::zeroed();
         loop {
             let result = GetMessageW(&mut message, null_mut(), 0, 0);
@@ -731,6 +733,11 @@ impl LaunchOptions {
                 script_time: Duration::ZERO,
                 style_refresh_time: Duration::ZERO,
                 layout_time: Duration::ZERO,
+                layout_build_time: Duration::ZERO,
+                layout_tree_time: Duration::ZERO,
+                layout_finalize_time: Duration::ZERO,
+                text_measure_count: 0,
+                paint_time: Duration::ZERO,
                 status: 0,
                 bytes: 0,
                 final_url: String::new(),
@@ -775,6 +782,11 @@ struct BenchmarkRun {
     script_time: Duration,
     style_refresh_time: Duration,
     layout_time: Duration,
+    layout_build_time: Duration,
+    layout_tree_time: Duration,
+    layout_finalize_time: Duration,
+    text_measure_count: usize,
+    paint_time: Duration,
     status: u32,
     bytes: u64,
     final_url: String,
@@ -1143,6 +1155,7 @@ struct GdiTextMeasurer<'a> {
     dc: Hdc,
     fonts: &'a mut DynamicFonts,
     dpi: u32,
+    calls: usize,
 }
 
 impl TextMeasurer for GdiTextMeasurer<'_> {
@@ -1151,6 +1164,7 @@ impl TextMeasurer for GdiTextMeasurer<'_> {
             let handle = self.fonts.get_or_create(font, self.dpi);
             SelectObject(self.dc, handle);
             let size = measure_text(self.dc, text);
+            self.calls += 1;
             let scale = dpi_scale(self.dpi);
             (size.cx as f32 / scale, size.cy as f32 / scale)
         }
@@ -1202,6 +1216,11 @@ struct BrowserState {
     metrics: Arc<BrowserMetrics>,
     http_client: Arc<winhttp::HttpClient>,
     task_window: Hwnd,
+    last_layout_tree_time: Duration,
+    last_layout_finalize_time: Duration,
+    last_text_measure_count: usize,
+    media_viewport_width: f32,
+    outer_window_width: i32,
 }
 
 impl BrowserState {
@@ -1246,6 +1265,11 @@ impl BrowserState {
             metrics,
             http_client,
             task_window: null_mut(),
+            last_layout_tree_time: Duration::ZERO,
+            last_layout_finalize_time: Duration::ZERO,
+            last_text_measure_count: 0,
+            media_viewport_width: 0.0,
+            outer_window_width: 0,
         })
     }
 
@@ -1297,19 +1321,22 @@ impl BrowserState {
         self.resize_controls();
         self.rebuild_layout();
 
+        Ok(())
+    }
+
+    unsafe fn complete_startup(&mut self) {
+        self.reset_media_viewport_width();
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.window_ready = benchmark.process_started.elapsed();
         }
         if self.open_task_manager_on_start {
             self.open_task_manager();
         }
-
         if let Some(url) = self.startup_url.take() {
             self.navigate_from_input(&url, HistoryMode::Push);
         } else {
             SetFocus(self.controls.address);
         }
-        Ok(())
     }
 
     unsafe fn create_control(&self, class: &str, text: &str, extra_style: u32, id: usize) -> Hwnd {
@@ -1337,6 +1364,40 @@ impl BrowserState {
 
     fn page_scale(&self) -> f32 {
         dpi_scale(self.dpi)
+    }
+
+    unsafe fn reset_media_viewport_width(&mut self) {
+        let mut client: Rect = std::mem::zeroed();
+        if GetClientRect(self.window, &mut client) != 0 {
+            self.media_viewport_width = client.right.max(1) as f32 / self.page_scale();
+        }
+        let mut outer: Rect = std::mem::zeroed();
+        if GetWindowRect(self.window, &mut outer) != 0 {
+            self.outer_window_width = outer.width();
+        }
+    }
+
+    unsafe fn track_media_viewport_resize(&mut self) {
+        let mut outer: Rect = std::mem::zeroed();
+        if GetWindowRect(self.window, &mut outer) == 0 {
+            return;
+        }
+        let width = outer.width();
+        if self.outer_window_width == 0 || self.media_viewport_width <= 0.0 {
+            self.reset_media_viewport_width();
+            return;
+        }
+        let physical_delta = width - self.outer_window_width;
+        // A classic scrollbar can change the Win32 client width without changing the CSS
+        // media viewport. Only an outer-window resize changes the media-query width.
+        if physical_delta != 0 {
+            self.media_viewport_width = resized_media_viewport_width(
+                self.media_viewport_width,
+                physical_delta,
+                self.page_scale(),
+            );
+        }
+        self.outer_window_width = width;
     }
 
     fn toolbar_height(&self) -> i32 {
@@ -1500,9 +1561,13 @@ impl BrowserState {
         let window_value = self.window as isize;
         let metrics = Arc::clone(&self.metrics);
         let http_client = Arc::clone(&self.http_client);
-        let mut client: Rect = std::mem::zeroed();
-        GetClientRect(self.window, &mut client);
-        let requested_viewport_width = client.right.max(1) as f32 / self.page_scale();
+        let requested_viewport_width = if self.media_viewport_width > 0.0 {
+            self.media_viewport_width
+        } else {
+            let mut client: Rect = std::mem::zeroed();
+            GetClientRect(self.window, &mut client);
+            client.right.max(1) as f32 / self.page_scale()
+        };
         let navigation_thread = std::thread::Builder::new()
             .name("breeze-navigation".into())
             .stack_size(16 * 1024 * 1024)
@@ -1732,6 +1797,7 @@ impl BrowserState {
                 );
                 let layout_started = Instant::now();
                 self.rebuild_layout();
+                let layout_build_time = layout_started.elapsed();
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.network_time = page.network_time;
                     benchmark.parse_time = page.parse_time;
@@ -1768,10 +1834,17 @@ impl BrowserState {
                     format_duration(page.parse_time),
                     script_status
                 ));
+                let paint_started = Instant::now();
                 InvalidateRect(self.window, null(), 0);
                 UpdateWindow(self.window);
+                let paint_time = paint_started.elapsed();
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.layout_time = layout_started.elapsed();
+                    benchmark.layout_build_time = layout_build_time;
+                    benchmark.layout_tree_time = self.last_layout_tree_time;
+                    benchmark.layout_finalize_time = self.last_layout_finalize_time;
+                    benchmark.text_measure_count = self.last_text_measure_count;
+                    benchmark.paint_time = paint_time;
                     benchmark.page_ready = benchmark.process_started.elapsed();
                 }
                 self.schedule_benchmark_finish();
@@ -1962,6 +2035,11 @@ impl BrowserState {
                 "  \"javascript_ms\": {:.3},\n",
                 "  \"style_refresh_ms\": {:.3},\n",
                 "  \"layout_and_paint_ms\": {:.3},\n",
+                "  \"layout_build_ms\": {:.3},\n",
+                "  \"layout_tree_ms\": {:.3},\n",
+                "  \"layout_finalize_ms\": {:.3},\n",
+                "  \"text_measure_count\": {},\n",
+                "  \"paint_ms\": {:.3},\n",
                 "  \"settle_ms\": {},\n",
                 "  \"working_set_bytes\": {},\n",
                 "  \"private_bytes\": {},\n",
@@ -2000,6 +2078,11 @@ impl BrowserState {
             benchmark.script_time.as_secs_f64() * 1_000.0,
             benchmark.style_refresh_time.as_secs_f64() * 1_000.0,
             benchmark.layout_time.as_secs_f64() * 1_000.0,
+            benchmark.layout_build_time.as_secs_f64() * 1_000.0,
+            benchmark.layout_tree_time.as_secs_f64() * 1_000.0,
+            benchmark.layout_finalize_time.as_secs_f64() * 1_000.0,
+            benchmark.text_measure_count,
+            benchmark.paint_time.as_secs_f64() * 1_000.0,
             benchmark.settle.as_millis(),
             memory.working_set,
             memory.private_usage,
@@ -2178,12 +2261,14 @@ impl BrowserState {
     }
 
     unsafe fn rebuild_layout(&mut self) {
+        let layout_started = Instant::now();
         let mut client: Rect = std::mem::zeroed();
         GetClientRect(self.window, &mut client);
         let dc = GetDC(self.window);
         if dc.is_null() {
             return;
         }
+        self.last_text_measure_count = 0;
         SetBkMode(dc, TRANSPARENT);
         match self.surface {
             Surface::Page => {
@@ -2194,9 +2279,21 @@ impl BrowserState {
                     dc,
                     fonts: &mut self.dynamic_fonts,
                     dpi: self.dpi,
+                    calls: 0,
                 };
-                self.page_layout =
-                    layout_page(&self.page, viewport_width, viewport_height, &mut measurer);
+                let style_viewport_width = if self.media_viewport_width > 0.0 {
+                    self.media_viewport_width
+                } else {
+                    viewport_width
+                };
+                self.page_layout = layout_page_with_style_viewport(
+                    &self.page,
+                    viewport_width,
+                    viewport_height,
+                    style_viewport_width,
+                    &mut measurer,
+                );
+                self.last_text_measure_count = measurer.calls;
                 self.content_height = (self.page_layout.content_height * scale).ceil() as i32;
                 self.metrics
                     .set_retained_draw_items(self.page_layout.items.len());
@@ -2221,9 +2318,13 @@ impl BrowserState {
             }
         }
         ReleaseDC(self.window, dc);
+        self.last_layout_tree_time = layout_started.elapsed();
         self.clamp_scroll();
         self.update_scrollbar();
         self.recreate_page_controls();
+        self.last_layout_finalize_time = layout_started
+            .elapsed()
+            .saturating_sub(self.last_layout_tree_time);
     }
 
     unsafe fn toggle_reader(&mut self) {
@@ -2292,7 +2393,7 @@ impl BrowserState {
             .items
             .iter()
             .filter_map(|item| match item {
-                DisplayItem::Control(spec) => Some(spec.clone()),
+                DisplayItem::Control(spec) => Some((**spec).clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3461,6 +3562,7 @@ unsafe extern "system" fn main_window_proc(
             0
         }
         WM_SIZE => {
+            state.track_media_viewport_resize();
             state.resize_controls();
             state.rebuild_layout();
             InvalidateRect(window, null(), 0);
@@ -4859,6 +4961,10 @@ fn dpi_scale(dpi: u32) -> f32 {
     dpi.max(1) as f32 / DEFAULT_DPI as f32
 }
 
+fn resized_media_viewport_width(current: f32, physical_delta: i32, scale: f32) -> f32 {
+    (current + physical_delta as f32 / scale.max(f32::EPSILON)).max(1.0)
+}
+
 fn scale_dip(value: i32, dpi: u32) -> i32 {
     ((value as i64 * dpi.max(1) as i64 + (DEFAULT_DPI as i64 / 2)) / DEFAULT_DPI as i64)
         .clamp(i32::MIN as i64, i32::MAX as i64) as i32
@@ -4986,5 +5092,11 @@ mod tests {
     #[test]
     fn escapes_json_strings_without_a_dependency() {
         assert_eq!(json_string("a\n\"b\\c"), "\"a\\n\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn tracks_media_viewport_across_physical_resizes() {
+        assert_eq!(resized_media_viewport_width(1100.0, 125, 1.25), 1200.0);
+        assert_eq!(resized_media_viewport_width(10.0, -100, 1.0), 1.0);
     }
 }

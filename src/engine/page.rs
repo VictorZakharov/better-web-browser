@@ -1,4 +1,4 @@
-use super::css::{Display, StyleSet};
+use super::css::{Display, StyleSet, media_matches, parse_length};
 use super::dom::{self, Dom, Node, NodeData, NodeRef};
 use super::font::{WebFont, WebFontFace, decode_web_font, discover_font_faces};
 use super::script::{self, ScriptInput, ScriptOutcome};
@@ -61,6 +61,7 @@ pub struct Page {
     cached_styles: Option<(f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
     pub fonts: Vec<WebFont>,
+    responsive_viewport_width: f32,
 }
 
 impl Page {
@@ -81,7 +82,8 @@ impl Page {
         }
         let title = dom.title();
         let base_url = document_base_url(&dom, source_url);
-        let (resources, scripts) = discover_resources(&dom, &base_url);
+        let responsive_viewport_width = 1280.0;
+        let (resources, scripts) = discover_resources(&dom, &base_url, responsive_viewport_width);
 
         let mut images = HashMap::new();
         for svg in dom.elements_named("svg").take(MAX_INLINE_SVGS) {
@@ -102,6 +104,7 @@ impl Page {
             cached_styles: None,
             images,
             fonts: Vec::new(),
+            responsive_viewport_width,
         }
     }
 
@@ -222,7 +225,9 @@ impl Page {
 
     pub fn refresh_resources(&mut self, viewport_width: f32) {
         self.base_url = document_base_url(&self.dom, &self.source_url);
-        let (resources, _) = discover_resources(&self.dom, &self.base_url);
+        self.responsive_viewport_width = viewport_width.max(1.0);
+        let (resources, _) =
+            discover_resources(&self.dom, &self.base_url, self.responsive_viewport_width);
         for resource in resources {
             if !matches!(resource, PageResource::Script { .. })
                 && !self.resources.contains(&resource)
@@ -383,7 +388,7 @@ impl Page {
     }
 
     pub(crate) fn image_url(&self, node: &NodeRef) -> Option<String> {
-        resolve_image_url(node, &self.base_url)
+        resolve_image_url(node, &self.base_url, self.responsive_viewport_width)
     }
 }
 
@@ -394,7 +399,11 @@ fn document_base_url(dom: &Dom, source_url: &str) -> String {
         .unwrap_or_else(|| source_url.to_string())
 }
 
-fn discover_resources(dom: &Dom, base_url: &str) -> (Vec<PageResource>, Vec<PageScript>) {
+fn discover_resources(
+    dom: &Dom,
+    base_url: &str,
+    viewport_width: f32,
+) -> (Vec<PageResource>, Vec<PageScript>) {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
     for link in dom.elements_named("link") {
@@ -425,7 +434,7 @@ fn discover_resources(dom: &Dom, base_url: &str) -> (Vec<PageResource>, Vec<Page
         if seen_images.len() >= MAX_IMAGES {
             break;
         }
-        if let Some(url) = resolve_image_url(&node, base_url)
+        if let Some(url) = resolve_image_url(&node, base_url, viewport_width)
             && seen_images.insert(url.clone())
         {
             resources.push(PageResource::Image { url });
@@ -470,7 +479,11 @@ fn discover_resources(dom: &Dom, base_url: &str) -> (Vec<PageResource>, Vec<Page
     (resources, scripts)
 }
 
-pub(crate) fn resolve_image_url(node: &NodeRef, base_url: &str) -> Option<String> {
+pub(crate) fn resolve_image_url(
+    node: &NodeRef,
+    base_url: &str,
+    viewport_width: f32,
+) -> Option<String> {
     let source = node
         .attr("data-src")
         .filter(|source| !source.trim().is_empty())
@@ -478,21 +491,135 @@ pub(crate) fn resolve_image_url(node: &NodeRef, base_url: &str) -> Option<String
             node.attr("data-lazy-src")
                 .filter(|source| !source.trim().is_empty())
         })
-        .or_else(|| {
-            node.attr("srcset")
-                .and_then(|srcset| preferred_srcset_candidate(&srcset))
-        })
+        .or_else(|| picture_source(node, viewport_width))
+        .or_else(|| responsive_source(node, viewport_width))
         .or_else(|| node.attr("src"))
         .or_else(|| node.attr("href"))?;
     resolve_url(base_url, source.trim())
 }
 
-fn preferred_srcset_candidate(srcset: &str) -> Option<String> {
-    srcset
+fn picture_source(node: &NodeRef, viewport_width: f32) -> Option<String> {
+    if node.tag_name() != Some("img") {
+        return None;
+    }
+    let picture = node
+        .parent()
+        .filter(|parent| parent.tag_name() == Some("picture"))?;
+    for source in picture.children.borrow().iter() {
+        if source.id() == node.id() {
+            break;
+        }
+        if source.tag_name() != Some("source")
+            || source
+                .attr("media")
+                .is_some_and(|media| !media_matches(&media, viewport_width))
+            || source
+                .attr("type")
+                .is_some_and(|kind| !supported_image_type(&kind))
+        {
+            continue;
+        }
+        if let Some(candidate) = responsive_source(source, viewport_width) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn responsive_source(node: &NodeRef, viewport_width: f32) -> Option<String> {
+    let srcset = node.attr("srcset")?;
+    let slot_width = source_size(
+        node.attr("sizes").as_deref().unwrap_or("100vw"),
+        viewport_width,
+    );
+    preferred_srcset_candidate(&srcset, slot_width, 2.0)
+}
+
+#[derive(Debug)]
+struct ImageCandidate<'a> {
+    url: &'a str,
+    density: f32,
+}
+
+fn preferred_srcset_candidate(
+    srcset: &str,
+    slot_width: f32,
+    target_density: f32,
+) -> Option<String> {
+    let mut candidates = srcset
         .split(',')
-        .filter_map(|candidate| candidate.split_ascii_whitespace().next())
-        .rfind(|candidate| !candidate.is_empty())
-        .map(str::to_string)
+        .filter_map(|candidate| {
+            let mut parts = candidate.split_ascii_whitespace();
+            let url = parts.next()?.trim();
+            if url.is_empty() {
+                return None;
+            }
+            let descriptor = parts.next();
+            let density = match descriptor {
+                Some(value) if value.ends_with('w') => {
+                    value[..value.len() - 1].parse::<f32>().ok()? / slot_width.max(1.0)
+                }
+                Some(value) if value.ends_with('x') => {
+                    value[..value.len() - 1].parse::<f32>().ok()?
+                }
+                Some(_) => return None,
+                None => 1.0,
+            };
+            (density.is_finite() && density > 0.0).then_some(ImageCandidate { url, density })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.density.total_cmp(&right.density));
+    candidates
+        .iter()
+        .find(|candidate| candidate.density >= target_density)
+        .or_else(|| candidates.last())
+        .map(|candidate| candidate.url.to_string())
+}
+
+fn source_size(sizes: &str, viewport_width: f32) -> f32 {
+    for entry in sizes
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        let (condition, length) = if entry.starts_with('(') {
+            let Some(close) = entry.find(')') else {
+                continue;
+            };
+            (Some(&entry[..=close]), entry[close + 1..].trim())
+        } else {
+            (None, entry)
+        };
+        if condition.is_some_and(|condition| !media_matches(condition, viewport_width)) {
+            continue;
+        }
+        if let Some(size) = parse_length(length)
+            .and_then(|length| length.resolve(viewport_width, 16.0))
+            .filter(|size| *size >= 0.0)
+        {
+            return size;
+        }
+    }
+    viewport_width
+}
+
+fn supported_image_type(kind: &str) -> bool {
+    matches!(
+        kind.split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "image/bmp"
+            | "image/gif"
+            | "image/jpeg"
+            | "image/png"
+            | "image/svg+xml"
+            | "image/vnd.microsoft.icon"
+            | "image/webp"
+            | "image/x-icon"
+    )
 }
 
 fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
@@ -512,7 +639,7 @@ fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
 }
 
 pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
-    format!("inline-svg:{:x}", std::rc::Rc::as_ptr(node) as usize)
+    format!("inline-svg:{:032x}", node.id().to_wire())
 }
 
 fn decode_inline_svg(node: &NodeRef) -> Result<DecodedImage, String> {
@@ -646,6 +773,49 @@ mod tests {
         assert!(page.resources.contains(&PageResource::Image {
             url: "https://example.com/posts/large.jpg".into()
         }));
+    }
+
+    #[test]
+    fn selects_picture_sources_by_media_type_and_viewport() {
+        let mut page = Page::parse(
+            r#"<picture>
+                <source type="image/avif" srcset="unsupported.avif">
+                <source media="(max-width: 600px)" srcset="phone.jpg">
+                <source media="(min-width: 601px)" srcset="desktop.webp" type="image/webp">
+                <img src="fallback.jpg" alt="responsive">
+            </picture>"#,
+            "https://example.com/images/",
+        );
+        let image = page.dom.elements_named("img").next().unwrap();
+        assert_eq!(
+            page.image_url(&image).as_deref(),
+            Some("https://example.com/images/desktop.webp")
+        );
+
+        page.refresh_resources(500.0);
+        assert_eq!(
+            page.image_url(&image).as_deref(),
+            Some("https://example.com/images/phone.jpg")
+        );
+        assert!(page.resources.contains(&PageResource::Image {
+            url: "https://example.com/images/phone.jpg".into()
+        }));
+    }
+
+    #[test]
+    fn uses_sizes_to_choose_width_described_srcset_candidates() {
+        let mut page = Page::parse(
+            r#"<img sizes="(max-width: 600px) 100vw, 50vw"
+                     srcset="small.jpg 400w, medium.jpg 800w, large.jpg 1600w"
+                     src="fallback.jpg">"#,
+            "https://example.com/",
+        );
+        page.refresh_resources(400.0);
+        let image = page.dom.elements_named("img").next().unwrap();
+        assert_eq!(
+            page.image_url(&image).as_deref(),
+            Some("https://example.com/medium.jpg")
+        );
     }
 
     #[test]

@@ -50,7 +50,7 @@ function Invoke-BreezeRun([string] $Url, [string] $Slug, [int] $Iteration) {
         '--output', (Quote-ProcessArgument $output),
         '--settle-ms', $SettleMs
     ) -join ' '
-    $process = Start-Process -FilePath $breezeExe -ArgumentList $arguments -PassThru -Wait
+    $process = Start-Process -FilePath $breezeExe -ArgumentList $arguments -WindowStyle Hidden -PassThru -Wait
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $output)) {
         throw "Breeze benchmark failed for $Url (exit $($process.ExitCode))."
     }
@@ -70,6 +70,9 @@ function Invoke-ChromiumRun([string] $Url, [string] $Slug, [int] $Iteration) {
         throw "Chromium benchmark failed for $Url (exit $LASTEXITCODE)."
     }
     $record = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+    if ($record.headless -ne $true) {
+        throw 'Chromium baseline did not attest to a headless run; refusing to continue.'
+    }
     $record | Add-Member -NotePropertyName iteration -NotePropertyValue $Iteration
     return $record
 }
@@ -109,7 +112,7 @@ $null = $markdown.AppendLine('# Breeze vs Chromium benchmark')
 $null = $markdown.AppendLine()
 $null = $markdown.AppendLine("Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')")
 $null = $markdown.AppendLine()
-$null = $markdown.AppendLine("Iterations: $Iterations; settle period: $SettleMs ms; each Chromium run uses a fresh temporary profile.")
+$null = $markdown.AppendLine("Iterations: $Iterations; settle period: $SettleMs ms; each Chromium run uses unified Headless Chrome with a fresh temporary profile.")
 $null = $markdown.AppendLine()
 
 foreach ($url in $Urls) {

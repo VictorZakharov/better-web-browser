@@ -3,12 +3,13 @@ pub mod dom;
 mod font;
 pub mod layout;
 pub mod page;
+pub mod scheduler;
 pub mod script;
 
 pub use font::WebFont;
 pub use layout::{
     ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, RectF, SelectOption,
-    TextMeasurer, layout_page,
+    TextMeasurer, layout_page, layout_page_with_style_viewport,
 };
 pub use page::{DecodedImage, Page, PageResource};
 pub use script::ScriptOutcome;

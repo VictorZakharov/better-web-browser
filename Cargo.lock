@@ -46,6 +46,7 @@ name = "better-web-browser"
 version = "0.1.0"
 dependencies = [
  "boa_engine",
+ "boa_gc",
  "cssparser",
  "encoding_rs",
  "flate2",
