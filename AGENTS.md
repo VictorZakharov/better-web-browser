@@ -14,7 +14,7 @@
 - Start each logical change from an up-to-date `origin/main`: fetch, fast-forward local `main`, then create a focused topic branch.
 - Keep every pull-request branch linear. Rebase onto `origin/main` when it moves; do not merge `main` or another branch into the topic branch. CI's `Linear PR history` check rejects merge commits introduced by a pull request.
 - Keep commits reviewable and scoped to one logical batch. Before pushing, run the relevant local checks plus `./scripts/check-source-size.ps1` and `cargo fmt --all -- --check`.
-- Push the topic branch, open a pull request, and wait for all required checks. Only the user may merge pull requests; stop at "ready to merge" and provide the pull-request link.
+- Push the topic branch, open a pull request, and wait for all required checks. Only the user may merge pull requests; never run `gh pr merge` or enable auto-merge. Stop at "ready to merge" and provide the pull-request link.
 - Merge pull requests with GitHub's merge-commit method only. Squash merging and rebase merging are disabled for this repository.
 - After a merge, delete the remote topic branch, fast-forward local `main` from `origin/main`, and create a new branch before starting unrelated work.
 - Preserve unrelated user changes. If the worktree is not clean or the branch cannot be rebased safely, stop and report the conflict instead of stashing, overwriting, or force-pushing.
