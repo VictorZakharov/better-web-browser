@@ -11,4 +11,4 @@
 
 Use `-ChromiumProject <path>` if the baseline sibling has a different location. Use `-SkipBuild` after both release binaries have already been built.
 
-The report deliberately includes a scope warning. Performance comparisons are exploratory until the measured page path is feature-equivalent. Chromium renders and executes the complete web platform; the prototype does not yet implement JavaScript, canvas, media, accessibility, or site isolation.
+The report deliberately includes a scope warning. Performance comparisons are exploratory until the measured page path is feature-equivalent. Chromium renders and executes the complete web platform; the prototype implements only a JavaScript/browser-API subset and still lacks canvas, media, accessibility, and site isolation.

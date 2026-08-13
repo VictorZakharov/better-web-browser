@@ -8,9 +8,12 @@ use boa_engine::{
 };
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
+
+mod runtime;
+
+pub use runtime::ScriptRuntime;
 
 const MAX_LOOP_ITERATIONS: u64 = if cfg!(test) { 25_000 } else { 5_000_000 };
 const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
@@ -75,140 +78,6 @@ struct HostState {
 #[derive(Clone, Finalize, JsData, Trace)]
 #[boa_gc(unsafe_empty_trace)]
 struct HostStateLink(Weak<RefCell<HostState>>);
-
-/// Owns one document's JavaScript realm and all native state that must remain on the realm's
-/// creating thread. Embedders must keep this runtime and its document together on that owner
-/// thread for the complete document lifetime.
-pub struct ScriptRuntime {
-    context: Option<Box<Context>>,
-    host: Rc<RefCell<HostState>>,
-    total_script_bytes: usize,
-    initialized: bool,
-}
-
-impl ScriptRuntime {
-    pub fn new(document: NodeRef, document_url: &str) -> Self {
-        let host = Rc::new(RefCell::new(HostState::new(document, document_url)));
-        let mut context = Box::new(Context::default());
-        context.insert_data(HostStateLink(Rc::downgrade(&host)));
-        Self {
-            context: Some(context),
-            host,
-            total_script_bytes: 0,
-            initialized: false,
-        }
-    }
-
-    pub fn execute_initial(&mut self, scripts: &[ScriptInput]) -> ScriptOutcome {
-        self.execute_initial_with_loader(scripts, None)
-    }
-
-    pub(crate) fn execute_initial_with_loader(
-        &mut self,
-        scripts: &[ScriptInput],
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> ScriptOutcome {
-        if self.initialized {
-            return lifecycle_error("the document's initial scripts have already executed");
-        }
-        self.initialized = true;
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut dynamic_script_loader = dynamic_script_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            execute_inner(
-                scripts,
-                context,
-                &host,
-                &mut self.total_script_bytes,
-                &mut dynamic_script_loader,
-            )
-        }));
-        self.finish_guarded_run(result)
-    }
-
-    /// Advances this realm's monotonic clock and runs bounded post-load timer work.
-    pub fn advance_time(&mut self, advance: Duration, max_callbacks: usize) -> ScriptOutcome {
-        self.advance_time_with_loader(advance, max_callbacks, None)
-    }
-
-    /// Returns the delay until the next timer should wake this runtime.
-    pub fn next_timer_delay(&mut self) -> Option<Duration> {
-        let mut host = self.host.borrow_mut();
-        let now = host.timers.now();
-        host.timers
-            .next_due_time()
-            .map(|due| due.saturating_sub(now))
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.context.is_some()
-    }
-
-    pub fn advance_time_with_loader(
-        &mut self,
-        advance: Duration,
-        max_callbacks: usize,
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> ScriptOutcome {
-        if !self.initialized {
-            return lifecycle_error("the document's initial scripts have not executed");
-        }
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut outcome = ScriptOutcome::default();
-        let mut dynamic_script_loader = dynamic_script_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            settle_timer_slice(
-                context,
-                &host,
-                &mut outcome,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-                advance,
-                max_callbacks,
-            );
-            append_timer_summary(&host, &mut outcome);
-            outcome
-        }));
-        self.finish_guarded_run(result)
-    }
-
-    /// Cancels the document's queued work and tears down its healthy JavaScript context.
-    ///
-    /// The runtime remains inert after cancellation; callers should create a new runtime for the
-    /// replacement document.
-    pub fn cancel_document(&mut self) {
-        self.context.take();
-        let mut host = self.host.borrow_mut();
-        host.timers.clear();
-        host.timer_handles.clear();
-        host.pending_dynamic_scripts.clear();
-    }
-
-    fn finish_guarded_run(
-        &mut self,
-        result: Result<ScriptOutcome, Box<dyn std::any::Any + Send>>,
-    ) -> ScriptOutcome {
-        let outcome = match result {
-            Ok(outcome) => outcome,
-            Err(payload) => {
-                // Some evaluator failures leave Boa's garbage-collected maps borrowed. Leaking
-                // only that damaged context avoids a double-panic abort. Its host link is weak, so
-                // dropping this runtime still releases the document and scheduler.
-                if let Some(context) = self.context.take() {
-                    std::mem::forget(context);
-                }
-                stopped_runtime_outcome(panic_detail(payload))
-            }
-        };
-        finish_host(outcome, &self.host)
-    }
-}
 
 impl HostState {
     fn new(document: NodeRef, document_url: &str) -> Self {
@@ -558,7 +427,9 @@ fn execute_inner(
         );
     }
 
-    let finish_lifecycle = scripts.iter().any(|script| script.finish_lifecycle);
+    // An async-only document still completes parsing before its first external script arrives.
+    let finish_lifecycle =
+        scripts.is_empty() || scripts.iter().any(|script| script.finish_lifecycle);
     let lifecycle = if finish_lifecycle {
         "document.__setCurrentScript(0); __finishDocument();"
     } else {
@@ -591,6 +462,55 @@ fn execute_inner(
 
     append_timer_summary(host, &mut outcome);
 
+    outcome
+}
+
+fn execute_additional_inner(
+    scripts: &[ScriptInput],
+    context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
+    total_bytes: &mut usize,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+) -> ScriptOutcome {
+    let mut outcome = ScriptOutcome::default();
+    for script in scripts {
+        if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
+            outcome.errors.push(format!(
+                "{}: skipped because the page exceeds the {} MiB JavaScript limit",
+                script.source_url,
+                MAX_SCRIPT_BYTES / 1024 / 1024
+            ));
+            continue;
+        }
+        *total_bytes += script.code.len();
+        evaluate_script(context, host, &mut outcome, script, true);
+        drain_dynamic_scripts(
+            context,
+            host,
+            &mut outcome,
+            dynamic_script_loader,
+            total_bytes,
+        );
+    }
+
+    if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
+        outcome
+            .errors
+            .push(format!("finish additional script task: {error}"));
+    }
+    if let Err(error) = context.run_jobs() {
+        outcome
+            .errors
+            .push(format!("finish additional script promise jobs: {error}"));
+    }
+    drain_dynamic_scripts(
+        context,
+        host,
+        &mut outcome,
+        dynamic_script_loader,
+        total_bytes,
+    );
+    append_timer_summary(host, &mut outcome);
     outcome
 }
 
@@ -3607,155 +3527,6 @@ mod tests {
         assert!(non_mutating.errors.is_empty(), "{:?}", non_mutating.errors);
         assert_eq!(non_mutating.mutation_count, 0);
         assert!(!non_mutating.render_requested);
-    }
-
-    #[test]
-    fn retained_runtime_executes_post_load_work_in_the_same_realm() {
-        let dom = dom::parse_with_scripting(
-            r#"<body><div id="status">waiting</div><script>
-                window.retainedValue = 41;
-                setTimeout(() => {
-                    document.getElementById('status').textContent = String(++window.retainedValue);
-                }, 2000);
-            </script></body>"#,
-            true,
-        );
-        let scripts = dom
-            .elements_named("script")
-            .map(|node| ScriptInput {
-                source_url: "https://example.com/#inline".into(),
-                code: node.text_content(),
-                node,
-                finish_lifecycle: true,
-            })
-            .collect::<Vec<_>>();
-        let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-
-        let initial = runtime.execute_initial(&scripts);
-        assert!(initial.errors.is_empty(), "{:?}", initial.errors);
-        assert!(!initial.render_requested);
-        assert_eq!(runtime.next_timer_delay(), Some(Duration::from_millis(500)));
-        assert_eq!(
-            dom.elements_named("div").next().unwrap().text_content(),
-            "waiting"
-        );
-
-        // Startup settlement advances 1,500 ms; this reaches the retained 2,000 ms timer.
-        let post_load = runtime.advance_time(Duration::from_millis(500), 16);
-        assert!(post_load.errors.is_empty(), "{:?}", post_load.errors);
-        assert!(post_load.render_requested);
-        assert_eq!(post_load.mutation_count, 1);
-        assert_eq!(runtime.next_timer_delay(), None);
-        assert_eq!(
-            dom.elements_named("div").next().unwrap().text_content(),
-            "42"
-        );
-    }
-
-    #[test]
-    fn retained_document_realms_advance_independently() {
-        fn retained_fixture(label: &str) -> (super::super::dom::Dom, ScriptRuntime) {
-            let html = format!(
-                r#"<body><div>waiting</div><script>
-                    window.realmLabel = '{label}';
-                    setTimeout(() => {{
-                        document.querySelector('div').textContent = window.realmLabel;
-                    }}, 2000);
-                </script></body>"#
-            );
-            let dom = dom::parse_with_scripting(&html, true);
-            let scripts = dom
-                .elements_named("script")
-                .map(|node| ScriptInput {
-                    source_url: "https://example.com/#inline".into(),
-                    code: node.text_content(),
-                    node,
-                    finish_lifecycle: true,
-                })
-                .collect::<Vec<_>>();
-            let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-            let outcome = runtime.execute_initial(&scripts);
-            assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-            (dom, runtime)
-        }
-
-        let (first_dom, mut first_runtime) = retained_fixture("first");
-        let (second_dom, mut second_runtime) = retained_fixture("second");
-        first_runtime.advance_time(Duration::from_millis(500), 16);
-
-        assert_eq!(
-            first_dom
-                .elements_named("div")
-                .next()
-                .unwrap()
-                .text_content(),
-            "first"
-        );
-        assert_eq!(
-            second_dom
-                .elements_named("div")
-                .next()
-                .unwrap()
-                .text_content(),
-            "waiting"
-        );
-
-        second_runtime.advance_time(Duration::from_millis(500), 16);
-        assert_eq!(
-            second_dom
-                .elements_named("div")
-                .next()
-                .unwrap()
-                .text_content(),
-            "second"
-        );
-    }
-
-    #[test]
-    fn dropping_a_runtime_releases_its_document_owned_scheduler() {
-        let dom = dom::parse_with_scripting("<body></body>", true);
-        let runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-        let host = Rc::downgrade(&runtime.host);
-        drop(runtime);
-        assert!(host.upgrade().is_none());
-    }
-
-    #[test]
-    fn cancelling_a_document_prevents_its_retained_callbacks() {
-        let dom = dom::parse_with_scripting(
-            r#"<body><div>waiting</div><script>
-                setTimeout(() => {
-                    document.querySelector('div').textContent = 'stale callback';
-                }, 2000);
-            </script></body>"#,
-            true,
-        );
-        let scripts = dom
-            .elements_named("script")
-            .map(|node| ScriptInput {
-                source_url: "https://example.com/#inline".into(),
-                code: node.text_content(),
-                node,
-                finish_lifecycle: true,
-            })
-            .collect::<Vec<_>>();
-        let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-        let initial = runtime.execute_initial(&scripts);
-        assert!(initial.errors.is_empty(), "{:?}", initial.errors);
-
-        runtime.cancel_document();
-        assert!(!runtime.is_active());
-        assert_eq!(runtime.next_timer_delay(), None);
-        let cancelled = runtime.advance_time(Duration::from_secs(10), 128);
-
-        assert!(cancelled.runtime_stopped);
-        assert_eq!(
-            dom.elements_named("div").next().unwrap().text_content(),
-            "waiting"
-        );
-        let host = runtime.host.borrow();
-        assert_eq!(host.timers.pending_task_count(), 0);
-        assert_eq!(host.timers.pending_microtask_count(), 0);
     }
 
     #[test]

@@ -17,10 +17,10 @@ $legacyCeilings = @{
     'src/engine/css.rs'       = 2856
     'src/engine/dom.rs'       = 986
     'src/engine/layout.rs'    = 3405
-    'src/engine/page.rs'      = 755
+    'src/engine/page.rs'      = 753
     'src/engine/scheduler.rs' = 518
-    'src/engine/script.rs'    = 3887
-    'src/windows_app.rs'      = 4853
+    'src/engine/script.rs'    = 3658
+    'src/windows_app.rs'      = 4734
     'src/winhttp.rs'          = 760
 }
 

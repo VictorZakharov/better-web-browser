@@ -168,11 +168,7 @@ impl Page {
         self.execute_script_phase(true, Some(dynamic_script_loader))
     }
 
-    /// Starts the first-paint scripts and retains their realm for post-load work.
-    ///
-    /// The caller must keep the returned runtime on the same thread as this page. Both objects
-    /// share the page DOM, allowing later timer callbacks to participate in style and layout
-    /// invalidation without transferring a Boa context across threads.
+    /// Starts first-paint scripts and retains their same-thread realm for post-load work.
     pub fn start_first_paint_script_runtime_with_loader(
         &mut self,
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
@@ -208,7 +204,9 @@ impl Page {
                 })
             })
             .collect::<Vec<_>>();
-        let (runtime, mut outcome) = if inputs.is_empty() {
+        let retains_non_blocking_scripts =
+            first_paint_only && self.scripts.iter().any(|script| !script.blocks_first_paint);
+        let (runtime, mut outcome) = if inputs.is_empty() && !retains_non_blocking_scripts {
             (None, ScriptOutcome::default())
         } else {
             let mut runtime = ScriptRuntime::new(self.dom.document.clone(), &self.source_url);

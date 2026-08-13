@@ -2,6 +2,117 @@
 
 use super::*;
 
+pub(super) fn load_page_resources(
+    client: &winhttp::HttpClient,
+    page: &mut Page,
+    loaded: &mut HashSet<PageResource>,
+    resource_budget: &mut u64,
+    bytes: &mut u64,
+    network_time: &mut Duration,
+    resource_processing_time: &mut Duration,
+) {
+    const MAX_PARALLEL_FETCHES: usize = 24;
+    let resources = page
+        .resources
+        .iter()
+        .filter(|resource| {
+            !loaded.contains(*resource) && page.resource_blocks_first_paint(resource)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for batch in resources.chunks(MAX_PARALLEL_FETCHES) {
+        if *resource_budget == 0 {
+            break;
+        }
+        for resource in batch {
+            loaded.insert(resource.clone());
+        }
+
+        let batch_started = Instant::now();
+        let responses = std::thread::scope(|scope| {
+            let requests = batch
+                .iter()
+                .map(|resource| scope.spawn(move || client.get(page_resource_url(resource))))
+                .collect::<Vec<_>>();
+            requests
+                .into_iter()
+                .map(|request| {
+                    request.join().unwrap_or_else(|_| {
+                        Err("resource request worker terminated unexpectedly".into())
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        *network_time += batch_started.elapsed();
+
+        let processing_started = Instant::now();
+        for (resource, response) in batch.iter().cloned().zip(responses) {
+            let Ok(response) = response else {
+                continue;
+            };
+            if !response.is_success() {
+                continue;
+            }
+            let size = response.body.len() as u64;
+            if size > *resource_budget {
+                continue;
+            }
+
+            let retained = match resource {
+                PageResource::Stylesheet { url } => {
+                    page.add_stylesheet_from(
+                        &url,
+                        winhttp::decode_text(&response.body, response.content_type.as_deref()),
+                    );
+                    true
+                }
+                PageResource::Image { url } => page.add_image(url, &response.body).is_ok(),
+                PageResource::Script { url } => {
+                    page.add_script(
+                        &url,
+                        winhttp::decode_text(&response.body, response.content_type.as_deref()),
+                    );
+                    true
+                }
+                PageResource::Font {
+                    url,
+                    family,
+                    weight,
+                    italic,
+                } => page
+                    .add_font(url, family, weight, italic, &response.body)
+                    .is_ok(),
+            };
+            if retained {
+                *bytes += size;
+                *resource_budget -= size;
+                if *resource_budget == 0 {
+                    break;
+                }
+            }
+        }
+        *resource_processing_time += processing_started.elapsed();
+        if *resource_budget == 0 {
+            break;
+        }
+    }
+}
+
+fn page_resource_url(resource: &PageResource) -> &str {
+    match resource {
+        PageResource::Stylesheet { url }
+        | PageResource::Image { url }
+        | PageResource::Script { url }
+        | PageResource::Font { url, .. } => url,
+    }
+}
+
+pub(super) struct DeferredResourcesMessage {
+    pub generation: u64,
+    pub loaded: Vec<(PageResource, Vec<u8>)>,
+}
+
 impl BrowserState {
     pub(super) fn unloaded_font_resources(&self) -> Vec<PageResource> {
         self.page

@@ -71,14 +71,14 @@ verification without putting a browser window on the desktop.
 
 - Windows-only native shell
 - JavaScript and cookies implement only an early subset; fetch/XHR, modules, workers, and much of the browser API surface remain incomplete
-- The JavaScript realm is not yet retained as a persistent post-load event loop; startup timers use a bounded virtual-time queue
+- The JavaScript realm is retained on the document's UI thread for timer and script-completion tasks, but fetch/XHR, user-input task dispatch, and other event-loop sources remain incomplete
 - JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
 - Canvas, media, downloads, tabs, accessibility, text selection, and site isolation are not implemented yet
 - CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
-- Non-render-blocking async scripts are not yet executed after first paint
+- External classic `async` scripts execute on arrival without delaying page-ready, but their fetch currently starts after first paint instead of overlapping HTML parsing; `defer` scheduling is not yet modeled separately
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
 Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
 
-As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **73 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
+As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **158 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.

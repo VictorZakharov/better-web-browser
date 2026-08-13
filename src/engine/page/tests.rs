@@ -311,3 +311,34 @@ fn retained_first_paint_runtime_mutates_the_same_page_after_load() {
         "updated 42"
     );
 }
+
+#[test]
+fn async_only_page_retains_an_empty_realm_for_later_execution() {
+    let mut page = Page::parse_scripted(
+        r#"<body><div id="status">initial</div><script async src="later.js"></script>"#,
+        "https://example.com/",
+    );
+    let mut unused_loader = |_url: &str| Err("unexpected dynamic script".to_string());
+    let (runtime, initial) = page.start_first_paint_script_runtime_with_loader(&mut unused_loader);
+
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.executed, 0);
+    let mut runtime = runtime.expect("async-only page did not retain a realm");
+    let script = page.scripts.first().expect("async script was discovered");
+    let later = super::super::script::ScriptInput {
+        node: script.node.clone(),
+        source_url: script.source_url.clone(),
+        code: "document.body.textContent = document.readyState;".into(),
+        finish_lifecycle: false,
+    };
+    let outcome = runtime.execute_additional_with_loader(&[later], None);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        page.dom
+            .elements_named("body")
+            .next()
+            .unwrap()
+            .text_content(),
+        "complete"
+    );
+}
