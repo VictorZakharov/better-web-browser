@@ -5,13 +5,16 @@ use boa_engine::{
     property::Attribute,
 };
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::time::Instant;
 
 const MAX_LOOP_ITERATIONS: u64 = if cfg!(test) { 25_000 } else { 5_000_000 };
 const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_DYNAMIC_SCRIPTS: usize = 32;
+
+pub(crate) type DynamicScriptLoader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
 
 #[derive(Debug, Clone)]
 pub struct ScriptInput {
@@ -33,6 +36,12 @@ pub struct ScriptOutcome {
     pub runtime_stopped: bool,
 }
 
+#[derive(Debug, Clone)]
+struct PendingDynamicScript {
+    node: NodeRef,
+    source_url: String,
+}
+
 struct HostState {
     document: NodeRef,
     document_url: String,
@@ -46,6 +55,8 @@ struct HostState {
     cookie_updates: Vec<String>,
     executed: usize,
     diagnostics: Vec<String>,
+    pending_dynamic_scripts: Vec<PendingDynamicScript>,
+    started_dynamic_scripts: HashSet<usize>,
 }
 
 impl HostState {
@@ -63,6 +74,8 @@ impl HostState {
             cookie_updates: Vec::new(),
             executed: 0,
             diagnostics: Vec::new(),
+            pending_dynamic_scripts: Vec::new(),
+            started_dynamic_scripts: HashSet::new(),
         };
         for node in Node::descendants(&state.document).collect::<Vec<_>>() {
             state.id_for(&node);
@@ -100,6 +113,39 @@ impl HostState {
         if self.diagnostics.len() < 64 {
             self.diagnostics.push(message);
         }
+    }
+
+    fn is_connected(&self, node: &NodeRef) -> bool {
+        let mut current = Some(node.clone());
+        while let Some(node) = current {
+            if Rc::ptr_eq(&node, &self.document) {
+                return true;
+            }
+            current = node.parent();
+        }
+        false
+    }
+
+    fn queue_dynamic_script(&mut self, node: &NodeRef) {
+        if node.tag_name() != Some("script") || !self.is_connected(node) {
+            return;
+        }
+        let script_type = node.attr("type").unwrap_or_default();
+        if !is_classic_javascript_type(&script_type) {
+            return;
+        }
+        let Some(source) = node.attr("src").filter(|source| !source.trim().is_empty()) else {
+            return;
+        };
+        let pointer = Rc::as_ptr(node) as usize;
+        if !self.started_dynamic_scripts.insert(pointer) {
+            return;
+        }
+        self.pending_dynamic_scripts.push(PendingDynamicScript {
+            node: node.clone(),
+            source_url: self.resolved_url(source.trim()),
+        });
+        self.diagnose("queued dynamically inserted external script".into());
     }
 
     fn cookie_header(&self) -> String {
@@ -151,6 +197,24 @@ thread_local! {
 }
 
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
+    execute_impl(document, document_url, scripts, None)
+}
+
+pub fn execute_with_loader(
+    document: NodeRef,
+    document_url: &str,
+    scripts: &[ScriptInput],
+    dynamic_script_loader: &mut DynamicScriptLoader<'_>,
+) -> ScriptOutcome {
+    execute_impl(document, document_url, scripts, Some(dynamic_script_loader))
+}
+
+fn execute_impl(
+    document: NodeRef,
+    document_url: &str,
+    scripts: &[ScriptInput],
+    mut dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+) -> ScriptOutcome {
     if scripts.is_empty() {
         return ScriptOutcome::default();
     }
@@ -163,7 +227,9 @@ pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -
     // garbage-collected maps borrowed; dropping that damaged context while the first panic is
     // unwinding can trigger a second panic and abort the whole browser process.
     let mut context = Box::new(Context::default());
-    let result = catch_unwind(AssertUnwindSafe(|| execute_inner(scripts, &mut context)));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        execute_inner(scripts, &mut context, &mut dynamic_script_loader)
+    }));
     if result.is_err() {
         // The context is not safe to finalize after an internal evaluator panic. This path stops
         // the runtime and falls back to the pre-script DOM, so retaining this one failed context
@@ -190,7 +256,11 @@ pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -
     finish_host(outcome)
 }
 
-fn execute_inner(scripts: &[ScriptInput], context: &mut Context) -> ScriptOutcome {
+fn execute_inner(
+    scripts: &[ScriptInput],
+    context: &mut Context,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
     context
         .runtime_limits_mut()
@@ -257,47 +327,13 @@ fn execute_inner(scripts: &[ScriptInput], context: &mut Context) -> ScriptOutcom
         }
         total_bytes += script.code.len();
 
-        let node_id = ACTIVE_HOST.with(|host| {
-            host.borrow_mut()
-                .as_mut()
-                .map(|state| state.id_for(&script.node))
-                .unwrap_or_default()
-        });
-        let current_script = format!("document.__setCurrentScript({node_id});");
-        if let Err(error) = context.eval(Source::from_bytes(&current_script)) {
-            outcome.errors.push(format!(
-                "{}: set document.currentScript: {error}",
-                script.source_url
-            ));
-        }
-
-        let script_started = Instant::now();
-        match context.eval(Source::from_bytes(&script.code)) {
-            Ok(_) => {
-                outcome.executed += 1;
-                ACTIVE_HOST.with(|host| {
-                    if let Some(state) = host.borrow_mut().as_mut() {
-                        state.executed += 1;
-                    }
-                });
-                if let Err(error) = context.run_jobs() {
-                    outcome
-                        .errors
-                        .push(format!("{}: promise job: {error}", script.source_url));
-                }
-            }
-            Err(error) => outcome
-                .errors
-                .push(format!("{}: {error}", script.source_url)),
-        }
-        let script_time = script_started.elapsed();
-        if script_time.as_millis() >= 1 {
-            outcome.diagnostics.push(format!(
-                "JavaScript {:.3} ms: {}",
-                script_time.as_secs_f64() * 1_000.0,
-                script.source_url
-            ));
-        }
+        evaluate_script(context, &mut outcome, script, false);
+        drain_dynamic_scripts(
+            context,
+            &mut outcome,
+            dynamic_script_loader,
+            &mut total_bytes,
+        );
     }
 
     let finish_lifecycle = scripts.iter().any(|script| script.finish_lifecycle);
@@ -314,8 +350,14 @@ fn execute_inner(scripts: &[ScriptInput], context: &mut Context) -> ScriptOutcom
     if let Err(error) = context.run_jobs() {
         outcome.errors.push(format!("finish promise jobs: {error}"));
     }
-    for _ in 0..4 {
-        if let Err(error) = context.eval(Source::from_bytes("__drainTimers();")) {
+    drain_dynamic_scripts(
+        context,
+        &mut outcome,
+        dynamic_script_loader,
+        &mut total_bytes,
+    );
+    for _ in 0..5 {
+        if let Err(error) = context.eval(Source::from_bytes("__drainTimers(250, 128);")) {
             outcome
                 .errors
                 .push(format!("settle JavaScript timers: {error}"));
@@ -327,6 +369,12 @@ fn execute_inner(scripts: &[ScriptInput], context: &mut Context) -> ScriptOutcom
                 .push(format!("settle JavaScript promise jobs: {error}"));
             break;
         }
+        drain_dynamic_scripts(
+            context,
+            &mut outcome,
+            dynamic_script_loader,
+            &mut total_bytes,
+        );
     }
 
     if let Ok(value) = context.eval(Source::from_bytes("__pendingTimerSummary();"))
@@ -341,6 +389,132 @@ fn execute_inner(scripts: &[ScriptInput], context: &mut Context) -> ScriptOutcom
     }
 
     outcome
+}
+
+fn evaluate_script(
+    context: &mut Context,
+    outcome: &mut ScriptOutcome,
+    script: &ScriptInput,
+    dispatch_load: bool,
+) -> bool {
+    let node_id = ACTIVE_HOST.with(|host| {
+        host.borrow_mut()
+            .as_mut()
+            .map(|state| state.id_for(&script.node))
+            .unwrap_or_default()
+    });
+    let current_script = format!("document.__setCurrentScript({node_id});");
+    if let Err(error) = context.eval(Source::from_bytes(&current_script)) {
+        outcome.errors.push(format!(
+            "{}: set document.currentScript: {error}",
+            script.source_url
+        ));
+    }
+
+    let script_started = Instant::now();
+    let succeeded = match context.eval(Source::from_bytes(&script.code)) {
+        Ok(_) => {
+            outcome.executed += 1;
+            ACTIVE_HOST.with(|host| {
+                if let Some(state) = host.borrow_mut().as_mut() {
+                    state.executed += 1;
+                }
+            });
+            if let Err(error) = context.run_jobs() {
+                outcome
+                    .errors
+                    .push(format!("{}: promise job: {error}", script.source_url));
+            }
+            true
+        }
+        Err(error) => {
+            outcome
+                .errors
+                .push(format!("{}: {error}", script.source_url));
+            false
+        }
+    };
+    let script_time = script_started.elapsed();
+    if script_time.as_millis() >= 1 {
+        outcome.diagnostics.push(format!(
+            "JavaScript {:.3} ms: {}",
+            script_time.as_secs_f64() * 1_000.0,
+            script.source_url
+        ));
+    }
+
+    if dispatch_load {
+        let event_type = if succeeded { "load" } else { "error" };
+        let dispatch = format!(
+            "if (document.currentScript) document.currentScript.dispatchEvent(new Event('{event_type}'));"
+        );
+        if let Err(error) = context.eval(Source::from_bytes(&dispatch)) {
+            outcome.errors.push(format!(
+                "{}: dispatch {event_type} event: {error}",
+                script.source_url
+            ));
+        }
+    }
+    succeeded
+}
+
+fn drain_dynamic_scripts(
+    context: &mut Context,
+    outcome: &mut ScriptOutcome,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    total_bytes: &mut usize,
+) {
+    let Some(loader) = dynamic_script_loader.as_mut() else {
+        return;
+    };
+    let mut executed = 0_usize;
+    loop {
+        let pending = ACTIVE_HOST.with(|host| {
+            host.borrow_mut()
+                .as_mut()
+                .map(|state| std::mem::take(&mut state.pending_dynamic_scripts))
+                .unwrap_or_default()
+        });
+        if pending.is_empty() {
+            return;
+        }
+
+        for pending_script in pending {
+            if executed >= MAX_DYNAMIC_SCRIPTS {
+                outcome.errors.push(format!(
+                    "dynamically inserted scripts exceeded the limit of {MAX_DYNAMIC_SCRIPTS}"
+                ));
+                return;
+            }
+            executed += 1;
+            let code = match loader(&pending_script.source_url) {
+                Ok(code) => code,
+                Err(error) => {
+                    outcome.errors.push(format!(
+                        "{}: dynamically inserted script could not be loaded: {error}",
+                        pending_script.source_url
+                    ));
+                    continue;
+                }
+            };
+            if total_bytes.saturating_add(code.len()) > MAX_SCRIPT_BYTES {
+                outcome.errors.push(format!(
+                    "{}: skipped because the page exceeds the {} MiB JavaScript limit",
+                    pending_script.source_url,
+                    MAX_SCRIPT_BYTES / 1024 / 1024
+                ));
+                return;
+            }
+            *total_bytes += code.len();
+            let script = ScriptInput {
+                node: pending_script.node,
+                source_url: pending_script.source_url,
+                code,
+                finish_lifecycle: false,
+            };
+            evaluate_script(context, outcome, &script, true);
+        }
+    }
 }
 
 const IFRAME_REALM_BOOTSTRAP: &str = r#"
@@ -375,6 +549,16 @@ fn finish_host(mut outcome: ScriptOutcome) -> ScriptOutcome {
         outcome.cookie_updates = state.cookie_updates;
     }
     outcome
+}
+
+pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {
+    matches!(
+        script_type.trim().to_ascii_lowercase().as_str(),
+        "" | "text/javascript"
+            | "application/javascript"
+            | "text/ecmascript"
+            | "application/ecmascript"
+    )
 }
 
 fn host_call(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
@@ -483,6 +667,7 @@ fn host_call(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
                             node_label(&child),
                             node_label(&parent)
                         ));
+                        state.queue_dynamic_script(&child);
                     }
                 }
                 Ok(JsValue::from(if changed {
@@ -510,6 +695,9 @@ fn host_call(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
                 if changed {
                     state.mutation_count += 1;
                     state.diagnose("insert node before sibling".into());
+                    if let Some(child) = child.as_ref() {
+                        state.queue_dynamic_script(child);
+                    }
                 }
                 Ok(JsValue::from(if changed {
                     child.map(|node| state.id_for(&node)).unwrap_or_default()
@@ -582,6 +770,9 @@ fn host_call(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
                     state.mutation_count += 1;
                     if let Some(node) = state.node(argument_id(args, 1)) {
                         state.diagnose(format!("set {} on {}", name, node_label(&node)));
+                        if name.eq_ignore_ascii_case("src") {
+                            state.queue_dynamic_script(&node);
+                        }
                     }
                 }
                 Ok(JsValue::from(changed))
@@ -1503,10 +1694,12 @@ const BROWSER_BOOTSTRAP: &str = r#"
     };
 
     let nextTimer = 1;
+    let virtualTimerTime = 0;
     const timers = new Map();
     const queueTimer = (callback, delay, repeat, args) => {
         const id = nextTimer++;
-        timers.set(id, { callback, delay: Math.max(0, Number(delay) || 0), repeat, args });
+        delay = Math.max(0, Number(delay) || 0);
+        timers.set(id, { callback, delay, due: virtualTimerTime + delay, repeat, args });
         return id;
     };
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
@@ -1515,22 +1708,31 @@ const BROWSER_BOOTSTRAP: &str = r#"
     windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
     windowObject.queueMicrotask = callback => Promise.resolve().then(callback);
-    windowObject.__drainTimers = (maxDelay = 100, maxCallbacks = 128) => {
+    windowObject.__drainTimers = (maxAdvance = 100, maxCallbacks = 128) => {
+        const horizon = virtualTimerTime + Math.max(0, Number(maxAdvance) || 0);
         let count = 0;
         while (count < maxCallbacks) {
             const next = [...timers]
-                .filter(([, timer]) => !timer.repeat && timer.delay <= maxDelay)
-                .sort((a, b) => a[1].delay - b[1].delay)[0];
+                .filter(([, timer]) => timer.due <= horizon)
+                .sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0];
             if (!next) break;
             const [id, timer] = next;
-            timers.delete(id);
+            virtualTimerTime = timer.due;
+            if (timer.repeat) {
+                timer.due = virtualTimerTime + Math.max(1, timer.delay);
+                timers.set(id, timer);
+            }
+            else {
+                timers.delete(id);
+            }
             if (typeof timer.callback === 'function') timer.callback(...timer.args);
             else (0, eval)(String(timer.callback));
             count++;
         }
+        virtualTimerTime = Math.max(virtualTimerTime, horizon);
     };
     windowObject.__pendingTimerSummary = () => [...timers]
-        .map(([id, timer]) => id + '@' + timer.delay + (timer.repeat ? 'r' : ''))
+        .map(([id, timer]) => id + '@' + Math.max(0, timer.due - virtualTimerTime) + (timer.repeat ? 'r' : ''))
         .join(',');
 
     class URLSearchParams {
@@ -1573,7 +1775,18 @@ const BROWSER_BOOTSTRAP: &str = r#"
     windowObject.matchMedia = query => ({ media: String(query), matches: false, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } });
     windowObject.CSS = { supports() { return false; }, escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); } };
     windowObject.Image = class Image extends Element {
-        constructor() { const element = document.createElement('img'); return element; }
+        constructor() {
+            const element = document.createElement('img');
+            Object.defineProperty(element, 'src', {
+                configurable: true,
+                get() { const value = this.getAttribute('src'); return value == null ? '' : host('resolveUrl', value); },
+                set(value) {
+                    this.setAttribute('src', String(value));
+                    setTimeout(() => this.dispatchEvent(new Event('error')), 0);
+                }
+            });
+            return element;
+        }
     };
     windowObject.MutationObserver = class { constructor(callback) { this.callback = callback; } observe() {} disconnect() {} takeRecords() { return []; } };
     windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
@@ -1649,10 +1862,119 @@ mod tests {
     }
 
     #[test]
+    fn executes_classic_scripts_with_html_like_comments() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                <!--
+                document.getElementById('status').textContent = 'ready';
+                -->
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(outcome.executed, 1);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn loads_dynamically_inserted_external_scripts_in_the_same_realm() {
+        let dom = dom::parse_with_scripting(
+            r#"<html><head></head><body><div id="status">waiting</div><script>
+                window.initialValue = 40;
+                const loader = document.createElement('script');
+                loader.src = '/dynamic.js';
+                loader.onload = () => {
+                    document.getElementById('status').textContent = String(window.dynamicAnswer);
+                };
+                document.head.appendChild(loader);
+            </script></body></html>"#,
+            true,
+        );
+        let scripts = dom
+            .elements_named("script")
+            .map(|node| ScriptInput {
+                source_url: "https://example.com/#inline".into(),
+                code: node.text_content(),
+                node,
+                finish_lifecycle: true,
+            })
+            .collect::<Vec<_>>();
+        let mut requested = Vec::new();
+        let mut loader = |url: &str| {
+            requested.push(url.to_string());
+            Ok("window.dynamicAnswer = window.initialValue + 2;".to_string())
+        };
+        let outcome = execute_with_loader(
+            dom.document.clone(),
+            "https://example.com/",
+            &scripts,
+            &mut loader,
+        );
+
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(outcome.executed, 2);
+        assert_eq!(requested, ["https://example.com/dynamic.js"]);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "42"
+        );
+    }
+
+    #[test]
+    fn image_constructor_reports_failed_load_asynchronously() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                const image = new Image();
+                image.src = 'data:image/unsupported;base64,AAAA';
+                image.onerror = () => {
+                    document.getElementById('status').textContent = 'unsupported';
+                };
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "unsupported"
+        );
+    }
+
+    #[test]
     fn drains_short_timers_before_layout() {
         let (dom, outcome) = execute_html(
             r#"<body><div id="status">waiting</div><script>
                 setTimeout(() => document.getElementById('status').textContent = 'ready', 20);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn settles_bounded_one_second_startup_timers() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                setTimeout(() => document.getElementById('status').textContent = 'ready', 500);
+            </script></body>"#,
+        );
+        assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+        assert_eq!(
+            dom.elements_named("div").next().unwrap().text_content(),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn rescheduled_short_timer_does_not_starve_later_startup_timer() {
+        let (dom, outcome) = execute_html(
+            r#"<body><div id="status">waiting</div><script>
+                function poll() { setTimeout(poll, 300); }
+                setTimeout(poll, 300);
+                setTimeout(() => document.getElementById('status').textContent = 'ready', 1000);
             </script></body>"#,
         );
         assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);

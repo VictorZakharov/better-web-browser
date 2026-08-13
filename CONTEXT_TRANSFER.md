@@ -4,9 +4,9 @@ Last updated: 2026-08-13 (America/Toronto)
 
 ## 2026-08-13 continuation
 
-There is a substantial uncommitted renderer batch in `README.md`, `src/engine/css.rs`,
-`src/engine/layout.rs`, `src/engine/mod.rs`, `src/engine/page.rs`,
-`src/windows_app.rs`, and `src/winhttp.rs`.
+The renderer batch below was committed as `e9761fd` (`Expand standards rendering and
+diagnostics`). The HTML5test compatibility batch is included in the subsequent local
+checkpoint containing this handoff. These commits have not been pushed.
 
 - CSS custom properties now cascade/inherit before `var()` substitution, including
   fallbacks and cycle handling. Linear `calc()` lengths support px, percent, em,
@@ -35,7 +35,24 @@ There is a substantial uncommitted renderer batch in `README.md`, `src/engine/cs
   Breeze is currently 1.51x slower, not 3x. Median working set was 33.1 MiB versus
   604.9 MiB (Chromium 18.3x higher); private memory was 17.8 MiB versus 392.7 MiB
   (22.1x higher). Breeze used one process versus Chromium's eleven.
-- Validation is clean: `cargo fmt --all -- --check`, 68 tests across all targets,
+- HTML5test initially stopped at its loading rectangle. Three general engine gaps
+  were fixed: Boa's existing `annex-b` feature now accepts browser-required
+  HTML-like JavaScript comments; dynamically inserted classic external scripts
+  load and execute in the same realm with `load` events; and the bounded startup
+  timer queue now uses monotonic virtual due times so rescheduled short polls do
+  not starve later timers. JavaScript-created `Image` objects asynchronously report
+  `error` until their decode path is connected, allowing unsupported-format probes
+  to finish honestly instead of hanging forever.
+- The hidden release capture `target/html5test-release.png` now renders an actual
+  score of **73 / 588**, HTTP 200, with five scripts, 4,673 DOM mutations, and zero
+  JavaScript errors. This is a useful backlog, not a conformance claim. A persistent
+  post-load JavaScript event loop, modules, fetch/XHR, workers, and JavaScript image
+  decoding remain incomplete. Use selected Web Platform Tests as the normative
+  implementation/regression source and HTML5test as the broad dashboard.
+- Post-change Neolisk release samples were 513.4, 539.1, and 561.5 ms page-ready
+  (539.1 ms median), about 33 MiB working set, 12 scripts, seven DOM mutations, and
+  zero errors. The existing visual result remained intact.
+- Validation is clean: `cargo fmt --all -- --check`, 73 tests across all targets,
   `cargo clippy --all-targets -- -D warnings`, `git diff --check`, and a release
   build all succeeded.
 

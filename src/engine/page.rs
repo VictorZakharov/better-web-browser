@@ -151,14 +151,25 @@ impl Page {
     }
 
     pub fn execute_scripts(&mut self) -> ScriptOutcome {
-        self.execute_script_phase(false)
+        self.execute_script_phase(false, None)
     }
 
     pub fn execute_first_paint_scripts(&mut self) -> ScriptOutcome {
-        self.execute_script_phase(true)
+        self.execute_script_phase(true, None)
     }
 
-    fn execute_script_phase(&mut self, first_paint_only: bool) -> ScriptOutcome {
+    pub fn execute_first_paint_scripts_with_loader(
+        &mut self,
+        dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
+    ) -> ScriptOutcome {
+        self.execute_script_phase(true, Some(dynamic_script_loader))
+    }
+
+    fn execute_script_phase(
+        &mut self,
+        first_paint_only: bool,
+        dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
         self.cached_styles = None;
         let inputs = self
             .scripts
@@ -173,7 +184,16 @@ impl Page {
                 })
             })
             .collect::<Vec<_>>();
-        let mut outcome = script::execute(self.dom.document.clone(), &self.source_url, &inputs);
+        let mut outcome = if let Some(dynamic_script_loader) = dynamic_script_loader {
+            script::execute_with_loader(
+                self.dom.document.clone(),
+                &self.source_url,
+                &inputs,
+                dynamic_script_loader,
+            )
+        } else {
+            script::execute(self.dom.document.clone(), &self.source_url, &inputs)
+        };
         for missing in self
             .scripts
             .iter()
@@ -419,7 +439,7 @@ fn discover_resources(dom: &Dom, base_url: &str) -> (Vec<PageResource>, Vec<Page
             continue;
         }
         let script_type = node.attr("type").unwrap_or_default();
-        if !is_classic_javascript_type(&script_type) {
+        if !script::is_classic_javascript_type(&script_type) {
             continue;
         }
         if let Some(url) = node
@@ -473,16 +493,6 @@ fn preferred_srcset_candidate(srcset: &str) -> Option<String> {
         .filter_map(|candidate| candidate.split_ascii_whitespace().next())
         .rfind(|candidate| !candidate.is_empty())
         .map(str::to_string)
-}
-
-fn is_classic_javascript_type(script_type: &str) -> bool {
-    matches!(
-        script_type.trim().to_ascii_lowercase().as_str(),
-        "" | "text/javascript"
-            | "application/javascript"
-            | "text/ecmascript"
-            | "application/ecmascript"
-    )
 }
 
 fn parse_immediate_refresh_target(content: &str) -> Option<&str> {

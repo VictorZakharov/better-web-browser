@@ -1565,8 +1565,41 @@ impl BrowserState {
                             &mut resource_processing_time,
                         );
                         let script_started = Instant::now();
-                        let mut script_outcome = rendered_page.execute_first_paint_scripts();
-                        script_time += script_started.elapsed();
+                        let script_network_before = network_time;
+                        let mut script_outcome = {
+                            let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
+                                let request_started = Instant::now();
+                                let response = client.get(url);
+                                network_time += request_started.elapsed();
+                                let response = response?;
+                                if !response.is_success() {
+                                    return Err(format!(
+                                        "server returned HTTP {}",
+                                        response.status
+                                    ));
+                                }
+                                let size = response.body.len() as u64;
+                                if size > resource_budget {
+                                    return Err("page resource budget was exhausted".into());
+                                }
+                                let processing_started = Instant::now();
+                                let code = winhttp::decode_text(
+                                    &response.body,
+                                    response.content_type.as_deref(),
+                                );
+                                resource_processing_time += processing_started.elapsed();
+                                bytes += size;
+                                resource_budget -= size;
+                                Ok(code)
+                            };
+                            rendered_page
+                                .execute_first_paint_scripts_with_loader(&mut dynamic_script_loader)
+                        };
+                        let dynamic_script_network =
+                            network_time.saturating_sub(script_network_before);
+                        script_time += script_started
+                            .elapsed()
+                            .saturating_sub(dynamic_script_network);
                         for cookie in &script_outcome.cookie_updates {
                             if let Err(error) = client.set_cookie(&final_url, cookie) {
                                 script_outcome

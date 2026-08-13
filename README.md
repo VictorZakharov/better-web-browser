@@ -20,7 +20,7 @@ Current page support includes:
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and webfonts
-- A bounded Boa JavaScript runtime with owned DOM bindings, events, timers, navigation, storage, and cookies
+- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, events, startup timers, dynamically inserted classic scripts, navigation, storage, and cookies
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - Links, history, reload, scrolling, and background networking
@@ -71,6 +71,8 @@ verification without putting a browser window on the desktop.
 
 - Windows-only native shell
 - JavaScript and cookies implement only an early subset; fetch/XHR, modules, workers, and much of the browser API surface remain incomplete
+- The JavaScript realm is not yet retained as a persistent post-load event loop; startup timers use a bounded virtual-time queue
+- JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
 - Canvas, media, downloads, tabs, accessibility, text selection, and site isolation are not implemented yet
 - CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
 - Non-render-blocking async scripts are not yet executed after first paint
@@ -78,3 +80,5 @@ verification without putting a browser window on the desktop.
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
 Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
+
+As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **73 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
