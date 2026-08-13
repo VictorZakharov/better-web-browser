@@ -2,7 +2,7 @@
 
 Breeze is a performance-first browser-engine MVP written in Rust. The product name is provisional and isolated in `src/branding.rs` so it can be replaced without touching engine code.
 
-This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. The executable owns its HTML DOM, CSS cascade, layout, display list, resource loading, image/SVG decoding, form submission, and Win32 painting path. The sibling Chromium project is an external measurement oracle only.
+This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. The executable owns its HTML DOM, CSS cascade, JavaScript bindings, layout, display list, resource loading, image/SVG/font decoding, form submission, cookie jar, and Win32 painting path. The sibling Chromium project is an external measurement oracle only.
 
 ## Run it
 
@@ -18,8 +18,9 @@ The normal page surface is always the default. **Reader** is an explicit optiona
 Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
-- A growing CSS cascade and box-layout implementation
-- External stylesheets, raster images, transparent images, and inline SVG
+- A growing CSS cascade with block, inline, flex, grid, table, float, and positioned layout
+- External stylesheets, raster images, transparent images, inline SVG, and webfonts
+- A bounded Boa JavaScript runtime with owned DOM bindings, events, timers, navigation, storage, and cookies
 - Native text/search/password controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - Links, history, reload, scrolling, and background networking
@@ -42,6 +43,7 @@ Performance claims are valid only when the exercised page path is feature-equiva
 
 ```text
 URL/history -> WinHTTP -> charset decode -> HTML5 DOM
+                                      |-> JavaScript/DOM mutation
                                       |-> CSS cascade
                                       |-> resource discovery/decode
                                       `-> box layout -> display list -> Win32/GDI paint
@@ -64,9 +66,11 @@ cargo build --release
 ## Honest current limitations
 
 - Windows-only native shell
-- JavaScript, canvas, media, cookies, downloads, tabs, accessibility, and text selection are not implemented yet
-- CSS selector/layout/painting coverage is substantial enough for the classic Google page, but far from the complete web platform
+- JavaScript and cookies implement only an early subset; fetch/XHR, modules, workers, and much of the browser API surface remain incomplete
+- Canvas, media, downloads, tabs, accessibility, text selection, and site isolation are not implemented yet
+- CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
+- Non-render-blocking async scripts are not yet executed after first paint
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
-Google's same-user-agent fallback page is now a live visual fixture: it renders the real logo, navigation, apps SVG, styled sign-in link, search form, language row, and footer through the owned path. That is a milestone, not a claim of general-web parity.
+Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client, so a recovery or classic fallback page must not be treated as search-result compatibility.

@@ -1,8 +1,8 @@
 use super::css::{
-    BoxSizing, Color, ComputedStyle, Display, Float, Length, ResolvedEdges, StyleSet, TextAlign,
-    WhiteSpace,
+    AlignItems, BoxSizing, Color, ComputedStyle, Display, FlexDirection, Float, JustifyContent,
+    Length, Position, ResolvedEdges, StyleSet, TextAlign, WhiteSpace, parse_length,
 };
-use super::dom::{NodeData, NodeRef};
+use super::dom::{Node, NodeData, NodeRef};
 use super::page::{Page, inline_svg_key};
 use crate::navigation::resolve_url;
 use std::collections::HashMap;
@@ -71,6 +71,16 @@ pub struct ControlSpec {
     pub value: String,
     pub placeholder: String,
     pub form_id: Option<usize>,
+    pub background_color: Color,
+    pub text_color: Color,
+    pub border_color: Color,
+    pub border_width: [f32; 4],
+    pub border_radius: f32,
+    pub padding: [f32; 4],
+    pub font: FontSpec,
+    pub icon_url: Option<String>,
+    pub icon_width: f32,
+    pub icon_height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +115,7 @@ pub enum DisplayItem {
         rect: RectF,
         url: String,
         alt: String,
+        tint: Option<Color>,
     },
     Control(ControlSpec),
 }
@@ -123,10 +134,16 @@ pub fn layout_page<M: TextMeasurer>(
     viewport_height: f32,
     measurer: &mut M,
 ) -> LayoutOutput {
-    let styles = page.style(viewport_width);
+    let computed_styles;
+    let styles = if let Some(styles) = page.cached_style(viewport_width) {
+        styles
+    } else {
+        computed_styles = page.style(viewport_width);
+        &computed_styles
+    };
     let mut engine = LayoutEngine {
         page,
-        styles: &styles,
+        styles,
         measurer,
         viewport: RectF {
             x: 0.0,
@@ -229,21 +246,48 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
 
         let mut border_y = y + margins.top;
-        if matches!(
-            style.position,
-            super::css::Position::Absolute | super::css::Position::Fixed
-        ) {
-            if let Some(left) = style.left.resolve(containing_width, style.font_size) {
-                x = if style.position == super::css::Position::Fixed {
-                    self.viewport.x + left
+        if matches!(style.position, Position::Absolute | Position::Fixed) {
+            let (positioning_x, positioning_y, positioning_width, positioning_height) =
+                if style.position == Position::Fixed {
+                    (
+                        self.viewport.x,
+                        self.viewport.y,
+                        self.viewport.width,
+                        self.viewport.height,
+                    )
                 } else {
-                    containing_x + left
+                    (containing_x, y, containing_width, self.viewport.height)
                 };
+            let left = style.left.resolve(positioning_width, style.font_size);
+            let right = style.right.resolve(positioning_width, style.font_size);
+            if let Some(left) = left {
+                x = positioning_x + left;
+                if right.is_some()
+                    && auto_left
+                    && auto_right
+                    && border_box_width < positioning_width
+                {
+                    x = positioning_x + (positioning_width - border_box_width) / 2.0;
+                }
+            } else if let Some(right) = right {
+                x = positioning_x + positioning_width - border_box_width - right;
+            }
+            if let Some(top) = style.top.resolve(positioning_height, style.font_size) {
+                border_y = positioning_y + top;
+            } else if let Some(bottom) = style.bottom.resolve(positioning_height, style.font_size) {
+                border_y = positioning_y + positioning_height - bottom;
+            }
+        } else if style.position == Position::Relative {
+            if let Some(left) = style.left.resolve(containing_width, style.font_size) {
+                x += left;
             } else if let Some(right) = style.right.resolve(containing_width, style.font_size) {
-                x = containing_x + containing_width - border_box_width - right;
+                x -= right;
             }
             if let Some(top) = style.top.resolve(self.viewport.height, style.font_size) {
-                border_y = top;
+                border_y += top;
+            } else if let Some(bottom) = style.bottom.resolve(self.viewport.height, style.font_size)
+            {
+                border_y -= bottom;
             }
         }
 
@@ -251,6 +295,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_y = border_y + borders.top + padding.top;
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal()).max(0.0);
+        let vertical_insets = borders.vertical() + padding.vertical();
+        let specified_height = resolve_content_height(
+            style.height,
+            self.viewport,
+            style.font_size,
+            vertical_insets,
+            style.box_sizing,
+        );
+        let minimum_height = resolve_content_height(
+            style.min_height,
+            self.viewport,
+            style.font_size,
+            vertical_insets,
+            style.box_sizing,
+        )
+        .unwrap_or(0.0);
+        let maximum_height = resolve_content_height(
+            style.max_height,
+            self.viewport,
+            style.font_size,
+            vertical_insets,
+            style.box_sizing,
+        );
         let background_index = if style.background_color.alpha > 0 {
             let index = self.output.items.len();
             self.output.items.push(DisplayItem::SolidRect {
@@ -261,38 +328,37 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: 0.0,
                 },
                 color: style.background_color,
-                radius: style.border_radius,
+                radius: 0.0,
             });
             Some(index)
         } else {
             None
         };
 
-        let content_bottom = match style.display {
-            Display::Flex => self.layout_flex(node, content_x, content_y, content_width, &style),
-            Display::Table => self.layout_table(node, content_x, content_y, content_width, &style),
-            _ => self.layout_block_children(node, content_x, content_y, content_width, &style),
+        let collapsed = style.overflow_hidden && maximum_height.is_some_and(|height| height <= 0.0);
+        let content_bottom = if collapsed {
+            content_y
+        } else {
+            match style.display {
+                Display::Flex => {
+                    self.layout_flex(node, content_x, content_y, content_width, &style)
+                }
+                Display::Grid => {
+                    self.layout_grid(node, content_x, content_y, content_width, &style)
+                }
+                Display::Table => {
+                    self.layout_table(node, content_x, content_y, content_width, &style)
+                }
+                _ => self.layout_block_children(node, content_x, content_y, content_width, &style),
+            }
         };
         let natural_content_height = (content_bottom - content_y).max(0.0);
-        let vertical_insets = borders.vertical() + padding.vertical();
-        let specified_height = resolve_content_size(
-            style.height,
-            self.viewport.height,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        );
-        let minimum_height = resolve_content_size(
-            style.min_height,
-            self.viewport.height,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        )
-        .unwrap_or(0.0);
-        let content_height = specified_height
+        let mut content_height = specified_height
             .unwrap_or(natural_content_height)
             .max(minimum_height);
+        if let Some(maximum_height) = maximum_height {
+            content_height = content_height.min(maximum_height);
+        }
         let border_box_height =
             borders.top + padding.top + content_height + padding.bottom + borders.bottom;
         let rect = RectF {
@@ -301,26 +367,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             width: border_box_width,
             height: border_box_height,
         };
+        let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
         if let Some(index) = background_index
-            && let DisplayItem::SolidRect { rect: target, .. } = &mut self.output.items[index]
+            && let DisplayItem::SolidRect {
+                rect: target,
+                radius: target_radius,
+                ..
+            } = &mut self.output.items[index]
         {
             *target = rect;
+            *target_radius = radius;
         }
         if borders.vertical() > 0.0 || borders.horizontal() > 0.0 {
             self.output.items.push(DisplayItem::BorderRect {
                 rect,
                 widths: [borders.top, borders.right, borders.bottom, borders.left],
                 color: style.border_color,
-                radius: style.border_radius,
+                radius,
             });
         }
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
         BlockMetrics {
-            bottom: if matches!(
-                style.position,
-                super::css::Position::Absolute | super::css::Position::Fixed
-            ) {
+            bottom: if matches!(style.position, Position::Absolute | Position::Fixed) {
                 y
             } else {
                 flow_bottom
@@ -336,8 +405,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         style: &ComputedStyle,
     ) -> f32 {
+        let positioning_y = y;
         let mut atoms = Vec::new();
         let mut pending_space = false;
+        let mut left_float_width = 0.0_f32;
+        let mut right_float_width = 0.0_f32;
+        let mut float_bottom = y;
         if node.tag_name() == Some("li") {
             atoms.push(InlineAtom::Text {
                 text: "• ".into(),
@@ -351,37 +424,127 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         for child in node.children.borrow().iter() {
             let child_style = self.styles.get(child);
             if is_block_level(child_style.display)
-                && !matches!(
-                    child_style.position,
-                    super::css::Position::Absolute | super::css::Position::Fixed
-                )
+                && child_style.float != Float::None
+                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
+            {
+                let remaining_width = (width - left_float_width - right_float_width).max(0.0);
+                let float_width = self
+                    .flex_item_basis(child, child_style, remaining_width)
+                    .clamp(0.0, remaining_width);
+                let float_x = if child_style.float == Float::Right {
+                    x + width - right_float_width - float_width
+                } else {
+                    x + left_float_width
+                };
+                let metrics = self.layout_block(child, float_x, y, float_width);
+                float_bottom = float_bottom.max(metrics.bottom);
+                if child_style.float == Float::Right {
+                    right_float_width += float_width;
+                } else {
+                    left_float_width += float_width;
+                }
+            } else if is_block_level(child_style.display)
+                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
             {
                 if !atoms.is_empty() {
                     y = self.layout_inline_atoms(
                         &atoms,
-                        x,
+                        x + left_float_width,
                         y,
-                        width,
+                        (width - left_float_width - right_float_width).max(0.0),
                         style.text_align,
                         style.line_height,
                     );
                     atoms.clear();
                     pending_space = false;
                 }
+                y = y.max(float_bottom);
                 y = self.layout_block(child, x, y, width).bottom;
             } else if is_block_level(child_style.display) {
-                self.layout_block(child, x, y, width);
+                self.layout_block(child, x, positioning_y, width);
             } else {
                 self.collect_inline(child, None, &mut atoms, &mut pending_space, true);
             }
         }
         if !atoms.is_empty() {
-            y = self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
+            y = self.layout_inline_atoms(
+                &atoms,
+                x + left_float_width,
+                y,
+                (width - left_float_width - right_float_width).max(0.0),
+                style.text_align,
+                style.line_height,
+            );
         }
-        y
+        y.max(float_bottom)
     }
 
     fn layout_flex(
+        &mut self,
+        node: &NodeRef,
+        x: f32,
+        y: f32,
+        width: f32,
+        style: &ComputedStyle,
+    ) -> f32 {
+        let has_direct_text = node.children.borrow().iter().any(
+            |child| matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()),
+        );
+        let element_children = node
+            .children
+            .borrow()
+            .iter()
+            .filter(|child| {
+                child.element().is_some()
+                    && self.styles.get(child).display != Display::None
+                    && self.styles.get(child).visibility
+                    && !style_collapses_overflow(self.styles.get(child), self.viewport)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if element_children.is_empty() || has_direct_text {
+            return self.layout_flattened_flex_content(node, x, y, width, style);
+        }
+
+        for child in element_children.iter().filter(|child| {
+            matches!(
+                self.styles.get(child).position,
+                Position::Absolute | Position::Fixed
+            )
+        }) {
+            self.layout_block(child, x, y, width);
+        }
+        let items = element_children
+            .into_iter()
+            .filter(|child| {
+                !matches!(
+                    self.styles.get(child).position,
+                    Position::Absolute | Position::Fixed
+                )
+            })
+            .map(|child| {
+                let child_style = self.styles.get(&child).clone();
+                FlexItem {
+                    basis: self.flex_item_basis(&child, &child_style, width),
+                    grow: child_style.flex_grow,
+                    shrink: child_style.flex_shrink,
+                    margin_start_auto: child_style.margin.left == Length::Auto,
+                    margin_end_auto: child_style.margin.right == Length::Auto,
+                    node: child,
+                }
+            })
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            return y;
+        }
+
+        match style.flex_direction {
+            FlexDirection::Column => self.layout_flex_column(&items, x, y, width, style),
+            FlexDirection::Row => self.layout_flex_rows(&items, x, y, width, style),
+        }
+    }
+
+    fn layout_flattened_flex_content(
         &mut self,
         node: &NodeRef,
         x: f32,
@@ -400,6 +563,401 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             style.text_align
         };
         self.layout_inline_atoms(&atoms, x, y, width, alignment, style.line_height)
+    }
+
+    fn flex_item_basis(
+        &mut self,
+        node: &NodeRef,
+        style: &ComputedStyle,
+        available_width: f32,
+    ) -> f32 {
+        let margin = style.margin.resolve(available_width, style.font_size);
+        let border = style.border_width.resolve(available_width, style.font_size);
+        let padding = style.padding.resolve(available_width, style.font_size);
+        let insets = border.horizontal() + padding.horizontal();
+        let specified = if style.flex_basis != Length::Auto {
+            resolve_outer_size(
+                style.flex_basis,
+                available_width,
+                style.font_size,
+                insets,
+                style.box_sizing,
+            )
+        } else {
+            resolve_outer_size(
+                style.width,
+                available_width,
+                style.font_size,
+                insets,
+                style.box_sizing,
+            )
+        };
+        let mut atoms = Vec::new();
+        let mut pending_space = false;
+        for child in node.children.borrow().iter() {
+            self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
+        }
+        let mut intrinsic_width = 0.0_f32;
+        let mut current_line = 0.0_f32;
+        let mut line_start = true;
+        for atom in &atoms {
+            if matches!(atom, InlineAtom::Break) {
+                intrinsic_width = intrinsic_width.max(current_line);
+                current_line = 0.0;
+                line_start = true;
+            } else {
+                current_line += self.measure_atom(atom, line_start).width;
+                line_start = false;
+            }
+        }
+        intrinsic_width = intrinsic_width.max(current_line);
+        let mut basis =
+            specified.unwrap_or(intrinsic_width + insets).max(0.0) + margin.horizontal();
+        if let Some(minimum) = resolve_outer_size(
+            style.min_width,
+            available_width,
+            style.font_size,
+            insets,
+            style.box_sizing,
+        ) {
+            basis = basis.max(minimum + margin.horizontal());
+        }
+        if let Some(maximum) = resolve_outer_size(
+            style.max_width,
+            available_width,
+            style.font_size,
+            insets,
+            style.box_sizing,
+        ) {
+            basis = basis.min(maximum + margin.horizontal());
+        }
+        basis
+    }
+
+    fn layout_flex_column(
+        &mut self,
+        items: &[FlexItem],
+        x: f32,
+        mut y: f32,
+        width: f32,
+        style: &ComputedStyle,
+    ) -> f32 {
+        let gap = style
+            .grid_row_gap
+            .resolve(width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        for (index, item) in items.iter().enumerate() {
+            y = self.layout_flex_item(&item.node, x, y, width).bottom;
+            if index + 1 < items.len() {
+                y += gap;
+            }
+        }
+        y
+    }
+
+    fn layout_flex_rows(
+        &mut self,
+        items: &[FlexItem],
+        x: f32,
+        y: f32,
+        width: f32,
+        style: &ComputedStyle,
+    ) -> f32 {
+        let gap = style
+            .grid_column_gap
+            .resolve(width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let mut lines = Vec::<Vec<FlexItem>>::new();
+        let mut current = Vec::new();
+        let mut current_width = 0.0_f32;
+        for item in items {
+            let next_width = if current.is_empty() {
+                item.basis
+            } else {
+                current_width + gap + item.basis
+            };
+            if style.flex_wrap && !current.is_empty() && next_width > width {
+                lines.push(std::mem::take(&mut current));
+                current_width = 0.0;
+            }
+            if !current.is_empty() {
+                current_width += gap;
+            }
+            current_width += item.basis;
+            current.push(item.clone());
+        }
+        if !current.is_empty() {
+            lines.push(current);
+        }
+
+        let row_gap = style
+            .grid_row_gap
+            .resolve(width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let mut cursor_y = y;
+        let line_count = lines.len();
+        for (index, line) in lines.iter().enumerate() {
+            cursor_y = self.layout_flex_row_line(line, x, cursor_y, width, gap, style);
+            if index + 1 < line_count {
+                cursor_y += row_gap;
+            }
+        }
+        cursor_y
+    }
+
+    fn layout_flex_row_line(
+        &mut self,
+        items: &[FlexItem],
+        x: f32,
+        y: f32,
+        width: f32,
+        base_gap: f32,
+        style: &ComputedStyle,
+    ) -> f32 {
+        let gap_width = base_gap * items.len().saturating_sub(1) as f32;
+        let mut sizes = items.iter().map(|item| item.basis).collect::<Vec<_>>();
+        let basis_sum = sizes.iter().sum::<f32>();
+        let free = width - gap_width - basis_sum;
+        if free > 0.0 {
+            let total_grow = items.iter().map(|item| item.grow).sum::<f32>();
+            if total_grow > 0.0 {
+                for (size, item) in sizes.iter_mut().zip(items) {
+                    *size += free * item.grow / total_grow;
+                }
+            }
+        } else if free < 0.0 {
+            let total_shrink = items
+                .iter()
+                .map(|item| item.shrink * item.basis)
+                .sum::<f32>();
+            if total_shrink > 0.0 {
+                for (size, item) in sizes.iter_mut().zip(items) {
+                    let shrink = -free * item.shrink * item.basis / total_shrink;
+                    *size = (*size - shrink).max(1.0);
+                }
+            }
+        }
+
+        let unused = (width - gap_width - sizes.iter().sum::<f32>()).max(0.0);
+        let automatic_margin_count = items
+            .iter()
+            .map(|item| item.margin_start_auto as usize + item.margin_end_auto as usize)
+            .sum::<usize>();
+        let automatic_margin = if automatic_margin_count > 0 {
+            unused / automatic_margin_count as f32
+        } else {
+            0.0
+        };
+        let justify_space = if automatic_margin_count > 0 {
+            0.0
+        } else {
+            unused
+        };
+        let (offset, extra_gap) = match style.justify_content {
+            JustifyContent::End => (justify_space, 0.0),
+            JustifyContent::Center => (justify_space / 2.0, 0.0),
+            JustifyContent::SpaceBetween if items.len() > 1 => {
+                (0.0, justify_space / (items.len() - 1) as f32)
+            }
+            JustifyContent::SpaceAround => {
+                let share = justify_space / items.len() as f32;
+                (share / 2.0, share)
+            }
+            JustifyContent::SpaceEvenly => {
+                let share = justify_space / (items.len() + 1) as f32;
+                (share, share)
+            }
+            _ => (0.0, 0.0),
+        };
+
+        let mut cursor_x = x + offset;
+        let mut painted = Vec::with_capacity(items.len());
+        let mut row_height = 0.0_f32;
+        for (index, (item, item_width)) in items.iter().zip(sizes).enumerate() {
+            if item.margin_start_auto {
+                cursor_x += automatic_margin;
+            }
+            let output_start = self.output.items.len();
+            let metrics = self.layout_flex_item(&item.node, cursor_x, y, item_width.max(1.0));
+            let output_end = self.output.items.len();
+            let item_height = (metrics.bottom - y).max(0.0);
+            row_height = row_height.max(item_height);
+            painted.push((output_start, output_end, item_height));
+            cursor_x += item_width;
+            if item.margin_end_auto {
+                cursor_x += automatic_margin;
+            }
+            if index + 1 < items.len() {
+                cursor_x += base_gap + extra_gap;
+            }
+        }
+
+        let cross_size = resolve_height_value(style.height, self.viewport, style.font_size)
+            .unwrap_or(row_height)
+            .max(row_height);
+        for (start, end, item_height) in painted {
+            let offset_y = match style.align_items {
+                AlignItems::Center => (cross_size - item_height) / 2.0,
+                AlignItems::End => cross_size - item_height,
+                AlignItems::Stretch | AlignItems::Start => 0.0,
+            };
+            if offset_y > 0.0 {
+                translate_display_items(&mut self.output.items[start..end], 0.0, offset_y);
+            }
+        }
+        y + cross_size
+    }
+
+    fn layout_flex_item(&mut self, node: &NodeRef, x: f32, y: f32, width: f32) -> BlockMetrics {
+        let tag = node.tag_name().unwrap_or_default();
+        if !matches!(
+            tag,
+            "img" | "image" | "input" | "textarea" | "button" | "svg"
+        ) {
+            return self.layout_block(node, x, y, width);
+        }
+
+        let mut style = self.styles.get(node).clone();
+        let margin = style.margin.resolve(width, style.font_size);
+        let border = style.border_width.resolve(width, style.font_size);
+        let padding = style.padding.resolve(width, style.font_size);
+        let border_box_width = (width - margin.horizontal()).max(1.0);
+        style.width = Length::Px(if style.box_sizing == BoxSizing::BorderBox {
+            border_box_width
+        } else {
+            (border_box_width - border.horizontal() - padding.horizontal()).max(1.0)
+        });
+
+        let mut atoms = Vec::new();
+        match tag {
+            "img" | "image" => self.collect_image(node, &style, None, &mut atoms),
+            "input" | "textarea" => self.collect_input(node, &style, &mut atoms),
+            "button" => self.collect_button(node, &style, &mut atoms),
+            "svg" => self.collect_svg(node, &style, &mut atoms),
+            _ => {}
+        }
+        let bottom =
+            self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
+        BlockMetrics { bottom }
+    }
+
+    fn layout_grid(
+        &mut self,
+        node: &NodeRef,
+        x: f32,
+        y: f32,
+        width: f32,
+        style: &ComputedStyle,
+    ) -> f32 {
+        let mut column_tracks = parse_grid_tracks(&style.grid_template_columns);
+        if column_tracks.is_empty() {
+            column_tracks.push(GridTrack::Fraction(1.0));
+        }
+        let column_gap = style
+            .grid_column_gap
+            .resolve(width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let row_gap = style
+            .grid_row_gap
+            .resolve(width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let column_widths =
+            resolve_grid_columns(&column_tracks, width, column_gap, style.font_size);
+        let column_count = column_widths.len().max(1);
+
+        let mut placements = Vec::new();
+        let mut automatic_index = 0_usize;
+        for child in node.children.borrow().iter() {
+            if child.element().is_none() {
+                continue;
+            }
+            let child_style = self.styles.get(child);
+            if child_style.display == Display::None || !child_style.visibility {
+                continue;
+            }
+
+            let explicit_column = child_style.grid_column_start.map(|line| line - 1);
+            let explicit_row = child_style.grid_row_start.map(|line| line - 1);
+            let mut column = explicit_column.unwrap_or(automatic_index % column_count);
+            let row = explicit_row.unwrap_or_else(|| {
+                if explicit_column.is_some() {
+                    automatic_index / column_count
+                } else {
+                    let automatic_row = automatic_index / column_count;
+                    automatic_index += 1;
+                    automatic_row
+                }
+            });
+            if explicit_row.is_some() && explicit_column.is_none() {
+                column = 0;
+            }
+            column = column.min(column_count - 1);
+
+            let column_end = child_style
+                .grid_column_end
+                .map(|line| line.saturating_sub(1))
+                .filter(|end| *end > column)
+                .unwrap_or(column + 1)
+                .min(column_count);
+            let row_end = child_style
+                .grid_row_end
+                .map(|line| line.saturating_sub(1))
+                .filter(|end| *end > row)
+                .unwrap_or(row + 1);
+            placements.push(GridItemPlacement {
+                node: child.clone(),
+                column,
+                column_end,
+                row,
+                row_end,
+            });
+        }
+
+        let row_tracks = parse_grid_tracks(&style.grid_template_rows);
+        let row_count = placements
+            .iter()
+            .map(|placement| placement.row_end)
+            .max()
+            .unwrap_or(0)
+            .max(row_tracks.len());
+        if row_count == 0 {
+            return y;
+        }
+
+        let mut cursor_y = y;
+        for row in 0..row_count {
+            let track_height = row_tracks
+                .get(row)
+                .map(|track| resolve_grid_row_minimum(track, self.viewport.height, style.font_size))
+                .unwrap_or(0.0);
+            let mut natural_height = 0.0_f32;
+            for placement in placements.iter().filter(|placement| placement.row == row) {
+                let cell_x = x
+                    + column_widths[..placement.column].iter().sum::<f32>()
+                    + column_gap * placement.column as f32;
+                let cell_width = column_widths[placement.column..placement.column_end]
+                    .iter()
+                    .sum::<f32>()
+                    + column_gap * placement.column_end.saturating_sub(placement.column + 1) as f32;
+                let metrics = self.layout_block(&placement.node, cell_x, cursor_y, cell_width);
+                let child_style = self.styles.get(&placement.node);
+                if !matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                    let span = placement.row_end.saturating_sub(placement.row).max(1) as f32;
+                    natural_height =
+                        natural_height.max((metrics.bottom - cursor_y).max(0.0) / span);
+                }
+            }
+            cursor_y += track_height.max(natural_height);
+            if row + 1 < row_count {
+                cursor_y += row_gap;
+            }
+        }
+        cursor_y
     }
 
     fn layout_table(
@@ -469,32 +1027,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "img" | "image" => self.collect_image(node, style, link, output),
                     "input" | "textarea" => self.collect_input(node, style, output),
                     "button" => self.collect_button(node, style, output),
-                    "svg" => {
-                        let width =
-                            element_length(node, "width", style.width, 24.0, style.font_size);
-                        let height =
-                            element_length(node, "height", style.height, 24.0, style.font_size);
-                        let key = inline_svg_key(node);
-                        if self.page.images.contains_key(&key) {
-                            let margin = style.margin.resolve(self.viewport.width, style.font_size);
-                            let padding =
-                                style.padding.resolve(self.viewport.width, style.font_size);
-                            output.push(InlineAtom::Image {
-                                url: key,
-                                alt: node.attr("aria-label").unwrap_or_default(),
-                                width: width + margin.horizontal() + padding.horizontal(),
-                                height: height + margin.vertical() + padding.vertical(),
-                                inset_x: margin.left + padding.left,
-                                inset_y: margin.top + padding.top,
-                                image_width: width,
-                                image_height: height,
-                            });
-                        } else {
-                            output.push(InlineAtom::Placeholder { width, height });
-                        }
-                    }
+                    "svg" => self.collect_svg(node, style, output),
                     _ => {
-                        if style.display == Display::InlineBlock {
+                        if style.display == Display::InlineBlock
+                            || style.margin != super::css::Edges::ZERO
+                            || style.padding != super::css::Edges::ZERO
+                            || style.border_width != super::css::Edges::ZERO
+                            || style.background_color.alpha > 0
+                        {
                             if *pending_space {
                                 output.push(text_atom(" ".into(), style, link.clone()));
                                 *pending_space = false;
@@ -559,11 +1099,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         _link: Option<String>,
         output: &mut Vec<InlineAtom>,
     ) {
-        let Some(url) = node
-            .attr("src")
-            .or_else(|| node.attr("href"))
-            .and_then(|src| resolve_url(&self.page.source_url, &src))
-        else {
+        let Some(url) = self.page.image_url(node) else {
             return;
         };
         let intrinsic = self.page.images.get(&url);
@@ -594,6 +1130,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         output.push(InlineAtom::Image {
             url,
             alt: node.attr("alt").unwrap_or_default(),
+            tint: None,
             width: width + margin.horizontal() + padding.horizontal() + border.horizontal(),
             height: height + margin.vertical() + padding.vertical() + border.vertical(),
             inset_x: margin.left + padding.left + border.left,
@@ -601,6 +1138,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             image_width: width,
             image_height: height,
         });
+    }
+
+    fn collect_svg(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
+        let width = element_length(node, "width", style.width, 24.0, style.font_size);
+        let height = element_length(node, "height", style.height, 24.0, style.font_size);
+        let key = inline_svg_key(node);
+        if self.page.images.contains_key(&key) {
+            let margin = style.margin.resolve(self.viewport.width, style.font_size);
+            let padding = style.padding.resolve(self.viewport.width, style.font_size);
+            output.push(InlineAtom::Image {
+                url: key,
+                alt: node.attr("aria-label").unwrap_or_default(),
+                tint: svg_uses_current_color(node).then_some(style.color),
+                width: width + margin.horizontal() + padding.horizontal(),
+                height: height + margin.vertical() + padding.vertical(),
+                inset_x: margin.left + padding.left,
+                inset_y: margin.top + padding.top,
+                image_width: width,
+                image_height: height,
+            });
+        } else {
+            output.push(InlineAtom::Placeholder { width, height });
+        }
     }
 
     fn collect_input(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
@@ -697,6 +1257,25 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     .or_else(|| node.attr("title"))
                     .unwrap_or_default(),
                 form_id: nearest_form(node).map(|form| node_id(&form)),
+                background_color: self.effective_background_color(node),
+                text_color: style.color,
+                border_color: style.border_color,
+                border_width: [border.top, border.right, border.bottom, border.left],
+                border_radius: resolve_border_radius(
+                    style.border_radius,
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    },
+                    style.font_size,
+                ),
+                padding: [padding.top, padding.right, padding.bottom, padding.left],
+                font: FontSpec::from_style(style),
+                icon_url: None,
+                icon_width: 0.0,
+                icon_height: 0.0,
             },
             width: width + margin.horizontal(),
             height: height + margin.vertical(),
@@ -709,16 +1288,65 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
     fn collect_button(&self, node: &NodeRef, style: &ComputedStyle, output: &mut Vec<InlineAtom>) {
         let label = node.text_content().trim().to_string();
-        let width = style
+        let icon = Node::descendants(node)
+            .skip(1)
+            .find(|descendant| descendant.tag_name() == Some("svg"))
+            .and_then(|svg| {
+                let key = inline_svg_key(&svg);
+                let image = self.page.images.get(&key)?;
+                let icon_style = self.styles.get(&svg);
+                Some((
+                    key,
+                    element_length(
+                        &svg,
+                        "width",
+                        icon_style.width,
+                        image.width as f32,
+                        icon_style.font_size,
+                    )
+                    .max(1.0),
+                    element_length(
+                        &svg,
+                        "height",
+                        icon_style.height,
+                        image.height as f32,
+                        icon_style.font_size,
+                    )
+                    .max(1.0),
+                ))
+            });
+        let content_width = style
             .width
             .resolve(self.viewport.width, style.font_size)
             .unwrap_or_else(|| {
-                (label.chars().count() as f32 * style.font_size * 0.58 + 22.0).max(70.0)
+                if label.is_empty() {
+                    icon.as_ref().map(|(_, width, _)| *width).unwrap_or(70.0)
+                } else {
+                    (label.chars().count() as f32 * style.font_size * 0.58 + 22.0).max(70.0)
+                }
             });
-        let height = style
-            .height
-            .resolve(self.viewport.height, style.font_size)
-            .unwrap_or(style.line_height + 10.0);
+        let content_height = resolve_height_value(style.height, self.viewport, style.font_size)
+            .unwrap_or_else(|| {
+                icon.as_ref()
+                    .map(|(_, _, height)| *height)
+                    .unwrap_or(style.line_height + 10.0)
+                    .max(style.line_height)
+            });
+        let margin = style.margin.resolve(self.viewport.width, style.font_size);
+        let padding = style.padding.resolve(self.viewport.width, style.font_size);
+        let border = style
+            .border_width
+            .resolve(self.viewport.width, style.font_size);
+        let width = if style.box_sizing == BoxSizing::BorderBox {
+            content_width
+        } else {
+            content_width + padding.horizontal() + border.horizontal()
+        };
+        let height = if style.box_sizing == BoxSizing::BorderBox {
+            content_height
+        } else {
+            content_height + padding.vertical() + border.vertical()
+        };
         output.push(InlineAtom::Control {
             spec: ControlSpec {
                 node_id: node_id(node),
@@ -732,14 +1360,45 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 value: node.attr("value").unwrap_or(label),
                 placeholder: String::new(),
                 form_id: nearest_form(node).map(|form| node_id(&form)),
+                background_color: self.effective_background_color(node),
+                text_color: style.color,
+                border_color: style.border_color,
+                border_width: [border.top, border.right, border.bottom, border.left],
+                border_radius: resolve_border_radius(
+                    style.border_radius,
+                    RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    },
+                    style.font_size,
+                ),
+                padding: [padding.top, padding.right, padding.bottom, padding.left],
+                font: FontSpec::from_style(style),
+                icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
+                icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
+                icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
             },
-            width,
-            height,
-            inset_x: 0.0,
-            inset_y: 0.0,
+            width: width + margin.horizontal(),
+            height: height + margin.vertical(),
+            inset_x: margin.left,
+            inset_y: margin.top,
             control_width: width,
             control_height: height,
         });
+    }
+
+    fn effective_background_color(&self, node: &NodeRef) -> Color {
+        let mut candidate = Some(node.clone());
+        while let Some(current) = candidate {
+            let color = self.styles.get(&current).background_color;
+            if color.alpha > 0 {
+                return color;
+            }
+            candidate = current.parent();
+        }
+        self.output.background
     }
 
     fn layout_inline_atoms(
@@ -907,22 +1566,32 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             border_box_width = border_box_width.min(maximum);
         }
 
-        let mut border_box_height = resolve_outer_size(
+        let mut border_box_height = resolve_content_height(
             style.height,
-            self.viewport.height,
+            self.viewport,
             style.font_size,
             vertical_insets,
             style.box_sizing,
         )
+        .map(|height| height + vertical_insets)
         .unwrap_or(children_height + vertical_insets);
-        if let Some(minimum) = resolve_outer_size(
+        if let Some(minimum) = resolve_content_height(
             style.min_height,
-            self.viewport.height,
+            self.viewport,
             style.font_size,
             vertical_insets,
             style.box_sizing,
         ) {
-            border_box_height = border_box_height.max(minimum);
+            border_box_height = border_box_height.max(minimum + vertical_insets);
+        }
+        if let Some(maximum) = resolve_content_height(
+            style.max_height,
+            self.viewport,
+            style.font_size,
+            vertical_insets,
+            style.box_sizing,
+        ) {
+            border_box_height = border_box_height.min(maximum + vertical_insets);
         }
 
         InlineBoxMetrics {
@@ -987,6 +1656,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 inset_y,
                 image_width,
                 image_height,
+                tint,
                 ..
             } => self.output.items.push(DisplayItem::Image {
                 rect: RectF {
@@ -997,6 +1667,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 },
                 url: url.clone(),
                 alt: alt.clone(),
+                tint: *tint,
             }),
             InlineAtom::Control {
                 spec,
@@ -1013,6 +1684,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: *control_width,
                     height: *control_height,
                 };
+                if spec.background_color.alpha > 0 {
+                    self.output.items.push(DisplayItem::SolidRect {
+                        rect: spec.rect,
+                        color: spec.background_color,
+                        radius: spec.border_radius,
+                    });
+                }
+                if spec.border_width.iter().any(|width| *width > 0.0) {
+                    self.output.items.push(DisplayItem::BorderRect {
+                        rect: spec.rect,
+                        widths: spec.border_width,
+                        color: spec.border_color,
+                        radius: spec.border_radius,
+                    });
+                }
                 self.output.items.push(DisplayItem::Control(spec));
             }
             InlineAtom::InlineBox { children, style } => {
@@ -1025,11 +1711,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: metrics.border_box_width,
                     height: metrics.border_box_height,
                 };
+                let radius =
+                    resolve_border_radius(style.border_radius, border_rect, style.font_size);
                 if style.background_color.alpha > 0 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
                         color: style.background_color,
-                        radius: style.border_radius,
+                        radius,
                     });
                 }
                 if metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0 {
@@ -1042,7 +1730,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             metrics.border.left,
                         ],
                         color: style.border_color,
-                        radius: style.border_radius,
+                        radius,
                     });
                 }
                 let content_x = border_x + metrics.border.left + metrics.padding.left;
@@ -1089,6 +1777,7 @@ enum InlineAtom {
     Image {
         url: String,
         alt: String,
+        tint: Option<Color>,
         width: f32,
         height: f32,
         inset_x: f32,
@@ -1132,6 +1821,230 @@ struct InlineBoxMetrics {
     border_box_width: f32,
     border_box_height: f32,
     children_width: f32,
+}
+
+#[derive(Debug, Clone)]
+enum GridTrack {
+    Auto,
+    Fixed(Length),
+    Fraction(f32),
+    MinMax(Box<GridTrack>, Box<GridTrack>),
+}
+
+struct GridItemPlacement {
+    node: NodeRef,
+    column: usize,
+    column_end: usize,
+    row: usize,
+    row_end: usize,
+}
+
+#[derive(Clone)]
+struct FlexItem {
+    node: NodeRef,
+    basis: f32,
+    grow: f32,
+    shrink: f32,
+    margin_start_auto: bool,
+    margin_end_auto: bool,
+}
+
+fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
+    for item in items {
+        let rect = match item {
+            DisplayItem::SolidRect { rect, .. }
+            | DisplayItem::BorderRect { rect, .. }
+            | DisplayItem::Text { rect, .. }
+            | DisplayItem::Image { rect, .. } => rect,
+            DisplayItem::Control(spec) => &mut spec.rect,
+        };
+        rect.x += offset_x;
+        rect.y += offset_y;
+    }
+}
+
+fn parse_grid_tracks(input: &str) -> Vec<GridTrack> {
+    let mut tracks = Vec::new();
+    for token in grid_track_tokens(input) {
+        if let Some(arguments) = token
+            .strip_prefix("repeat(")
+            .and_then(|value| value.strip_suffix(')'))
+            && let Some((count, repeated)) = split_grid_once(arguments, ',')
+        {
+            let repetitions = count.trim().parse::<usize>().unwrap_or(1).clamp(1, 64);
+            let repeated_tracks = parse_grid_tracks(repeated);
+            for _ in 0..repetitions {
+                tracks.extend(repeated_tracks.iter().cloned());
+            }
+        } else if let Some(track) = parse_grid_track(token) {
+            tracks.push(track);
+        }
+    }
+    tracks
+}
+
+fn grid_track_tokens(input: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut cursor = 0;
+    let bytes = input.as_bytes();
+    while cursor < bytes.len() {
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() {
+            break;
+        }
+        if bytes[cursor] == b'['
+            && let Some(end) = input[cursor + 1..].find(']')
+        {
+            cursor += end + 2;
+            continue;
+        }
+
+        let start = cursor;
+        let mut depth = 0_i32;
+        while cursor < bytes.len() {
+            match bytes[cursor] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth = (depth - 1).max(0);
+                    cursor += 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                byte if byte.is_ascii_whitespace() && depth == 0 => break,
+                _ => {}
+            }
+            cursor += 1;
+        }
+        if start < cursor {
+            tokens.push(input[start..cursor].trim());
+        }
+    }
+    tokens
+}
+
+fn parse_grid_track(token: &str) -> Option<GridTrack> {
+    let token = token.trim();
+    if token.is_empty() || token == "none" || token.starts_with('[') {
+        return None;
+    }
+    if matches!(token, "auto" | "min-content" | "max-content") {
+        return Some(GridTrack::Auto);
+    }
+    if let Some(fraction) = token.strip_suffix("fr") {
+        return Some(GridTrack::Fraction(
+            fraction.trim().parse::<f32>().unwrap_or(1.0).max(0.0),
+        ));
+    }
+    if let Some(arguments) = token
+        .strip_prefix("minmax(")
+        .and_then(|value| value.strip_suffix(')'))
+        && let Some((minimum, maximum)) = split_grid_once(arguments, ',')
+    {
+        return Some(GridTrack::MinMax(
+            Box::new(parse_grid_track(minimum).unwrap_or(GridTrack::Auto)),
+            Box::new(parse_grid_track(maximum).unwrap_or(GridTrack::Auto)),
+        ));
+    }
+    if let Some(argument) = token
+        .strip_prefix("fit-content(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return parse_length(argument).map(GridTrack::Fixed);
+    }
+    parse_length(token).map(GridTrack::Fixed)
+}
+
+fn split_grid_once(input: &str, delimiter: char) -> Option<(&str, &str)> {
+    let mut depth = 0_i32;
+    for (index, character) in input.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth = (depth - 1).max(0),
+            candidate if candidate == delimiter && depth == 0 => {
+                return Some((&input[..index], &input[index + character.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn resolve_grid_columns(
+    tracks: &[GridTrack],
+    available_width: f32,
+    gap: f32,
+    font_size: f32,
+) -> Vec<f32> {
+    let gap_width = gap * tracks.len().saturating_sub(1) as f32;
+    let available_tracks = (available_width - gap_width).max(0.0);
+    let mut sizes = Vec::with_capacity(tracks.len());
+    let mut flex_factors = Vec::with_capacity(tracks.len());
+    let mut automatic = Vec::with_capacity(tracks.len());
+    for track in tracks {
+        let (base, flex, is_auto) = grid_track_metrics(track, available_tracks, font_size);
+        sizes.push(base);
+        flex_factors.push(flex);
+        automatic.push(is_auto);
+    }
+
+    let remaining = (available_tracks - sizes.iter().sum::<f32>()).max(0.0);
+    let total_flex = flex_factors.iter().sum::<f32>();
+    if total_flex > 0.0 {
+        for (size, flex) in sizes.iter_mut().zip(flex_factors) {
+            *size += remaining * flex / total_flex;
+        }
+    } else {
+        let automatic_count = automatic.iter().filter(|is_auto| **is_auto).count();
+        if automatic_count > 0 {
+            let share = remaining / automatic_count as f32;
+            for (size, is_auto) in sizes.iter_mut().zip(automatic) {
+                if is_auto {
+                    *size += share;
+                }
+            }
+        }
+    }
+    sizes
+}
+
+fn grid_track_metrics(track: &GridTrack, basis: f32, font_size: f32) -> (f32, f32, bool) {
+    match track {
+        GridTrack::Auto => (0.0, 0.0, true),
+        GridTrack::Fixed(length) => (
+            length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
+            0.0,
+            false,
+        ),
+        GridTrack::Fraction(fraction) => (0.0, *fraction, false),
+        GridTrack::MinMax(minimum, maximum) => {
+            let (minimum, _, _) = grid_track_metrics(minimum, basis, font_size);
+            match maximum.as_ref() {
+                GridTrack::Fraction(fraction) => (minimum, *fraction, false),
+                GridTrack::Fixed(length) => (
+                    minimum.max(length.resolve(basis, font_size).unwrap_or(minimum)),
+                    0.0,
+                    false,
+                ),
+                GridTrack::Auto => (minimum, 0.0, true),
+                GridTrack::MinMax(_, _) => (minimum, 0.0, true),
+            }
+        }
+    }
+}
+
+fn resolve_grid_row_minimum(track: &GridTrack, basis: f32, font_size: f32) -> f32 {
+    match track {
+        GridTrack::Auto | GridTrack::Fraction(_) => 0.0,
+        GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
+        GridTrack::MinMax(minimum, maximum) => match maximum.as_ref() {
+            GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
+            _ => resolve_grid_row_minimum(minimum, basis, font_size),
+        },
+    }
 }
 
 impl InlineBoxMetrics {
@@ -1208,12 +2121,35 @@ fn text_atom(text: String, style: &ComputedStyle, link: Option<String>) -> Inlin
 fn is_block_level(display: Display) -> bool {
     matches!(
         display,
-        Display::Block | Display::Flex | Display::Table | Display::TableRow | Display::TableCell
+        Display::Block
+            | Display::Flex
+            | Display::Grid
+            | Display::Table
+            | Display::TableRow
+            | Display::TableCell
     )
+}
+
+fn resolve_border_radius(radius: Length, rect: RectF, font_size: f32) -> f32 {
+    let basis = rect.width.min(rect.height).max(0.0);
+    radius
+        .resolve(basis, font_size)
+        .unwrap_or(0.0)
+        .clamp(0.0, basis / 2.0)
 }
 
 fn node_id(node: &NodeRef) -> usize {
     Rc::as_ptr(node) as usize
+}
+
+fn svg_uses_current_color(node: &NodeRef) -> bool {
+    Node::descendants(node).any(|descendant| {
+        ["fill", "stroke", "style"].iter().any(|attribute| {
+            descendant
+                .attr(attribute)
+                .is_some_and(|value| value.to_ascii_lowercase().contains("currentcolor"))
+        })
+    })
 }
 
 fn resolve_outer_size(
@@ -1231,19 +2167,33 @@ fn resolve_outer_size(
         })
 }
 
-fn resolve_content_size(
+fn resolve_content_height(
     length: Length,
-    basis: f32,
+    viewport: RectF,
     font_size: f32,
     insets: f32,
     box_sizing: BoxSizing,
 ) -> Option<f32> {
-    length
-        .resolve(basis, font_size)
-        .map(|size| match box_sizing {
-            BoxSizing::ContentBox => size,
-            BoxSizing::BorderBox => (size - insets).max(0.0),
-        })
+    resolve_height_value(length, viewport, font_size).map(|size| match box_sizing {
+        BoxSizing::ContentBox => size,
+        BoxSizing::BorderBox => (size - insets).max(0.0),
+    })
+}
+
+fn resolve_height_value(length: Length, viewport: RectF, font_size: f32) -> Option<f32> {
+    match length {
+        Length::Auto | Length::Percent(_) => None,
+        Length::Px(value) => Some(value),
+        Length::Em(value) => Some(value * font_size),
+        Length::Vh(value) => Some(viewport.height * value / 100.0),
+        Length::Vw(value) => Some(viewport.width * value / 100.0),
+    }
+}
+
+fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -> bool {
+    style.overflow_hidden
+        && resolve_height_value(style.max_height, viewport, style.font_size)
+            .is_some_and(|height| height <= 0.0)
 }
 
 fn element_length(
@@ -1429,6 +2379,145 @@ mod tests {
     }
 
     #[test]
+    fn places_explicit_grid_items_across_fractional_and_fixed_tracks() {
+        let page = Page::parse(
+            r#"
+                <style>
+                    body { margin: 0 }
+                    #container { display: flex }
+                    .grid { display: grid; width: 900px;
+                            grid-template-columns: 1fr 1fr 300px }
+                    .main { grid-area: 1 / 1 / 2 / 3; height: 40px; background: #ff0000 }
+                    .side { grid-area: 1 / 3 / 2 / 4; height: 60px; background: #0000ff }
+                </style>
+                <div id="container"><div class="grid">
+                    <main class="main"></main><aside class="side"></aside>
+                </div></div>
+            "#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 900.0, 600.0, &mut measurer);
+        let main = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(255, 0, 0) => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let side = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 0, 255) => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            main,
+            RectF {
+                x: 0.0,
+                y: 0.0,
+                width: 600.0,
+                height: 40.0
+            }
+        );
+        assert_eq!(
+            side,
+            RectF {
+                x: 600.0,
+                y: 0.0,
+                width: 300.0,
+                height: 60.0
+            }
+        );
+    }
+
+    #[test]
+    fn resolves_percentage_radius_against_the_finished_box() {
+        let page = Page::parse(
+            r#"<style>body{margin:0}.pill{width:100px;height:40px;background:red;border-radius:50%}</style>
+               <div class="pill"></div>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        let radius = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::SolidRect { radius, .. } => Some(*radius),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(radius, 20.0);
+    }
+
+    #[test]
+    fn centers_flex_items_with_automatic_inline_margins() {
+        let page = Page::parse(
+            r#"<style>
+                body { margin: 0 }
+                .row { display: flex; width: 300px }
+                .item { width: 100px; height: 20px; margin: 0 auto; background: red }
+               </style><div class="row"><div class="item"></div></div>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        let item = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(255, 0, 0) => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(item.x, 100.0);
+    }
+
+    #[test]
+    fn treats_indefinite_percentage_heights_as_auto_and_hides_zero_max_height_overflow() {
+        let page = Page::parse(
+            r#"<style>
+                body { margin: 0 }
+                .column { display: flex; flex-direction: column; width: 200px }
+                .indefinite { height: 100%; background: red }
+                .collapsed { max-height: 0; overflow: hidden }
+                .after { height: 20px; background: blue }
+               </style><div class="column">
+                 <div class="indefinite"></div>
+                 <div class="collapsed">must not paint</div>
+                 <div class="after"></div>
+               </div>"#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 300.0, 200.0, &mut measurer);
+        let after = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 0, 255) => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(after.y, 0.0);
+        assert!(!output.items.iter().any(
+            |item| matches!(item, DisplayItem::Text { text, .. } if text.contains("must not paint"))
+        ));
+    }
+
+    #[test]
     fn preserves_textarea_semantics_for_native_controls() {
         let page = Page::parse(
             r#"<form action="/search"><textarea name="q" rows="1">hello</textarea></form>"#,
@@ -1447,5 +2536,30 @@ mod tests {
         assert_eq!(control.kind, ControlKind::TextArea);
         assert_eq!(control.name, "q");
         assert_eq!(control.value, "hello");
+    }
+
+    #[test]
+    fn renders_noscript_fallback_when_script_execution_is_unavailable() {
+        let page = Page::parse(
+            r#"
+                <script>script-only text</script>
+                <noscript>
+                    <style>div { display:none }</style>
+                    <div style="display:block">Script-free fallback</div>
+                </noscript>
+            "#,
+            "https://example.com/",
+        );
+        let mut measurer = FixedMeasurer;
+        let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+        let text = output
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                DisplayItem::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text, "Script-free fallback");
     }
 }

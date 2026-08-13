@@ -151,7 +151,7 @@ foreach ($url in $Urls) {
 
 $null = $markdown.AppendLine('## Scope warning')
 $null = $markdown.AppendLine()
-$null = $markdown.AppendLine('The prototype owns HTML, CSS, layout, images/SVG, forms, and painting, but does not yet implement JavaScript, canvas, media, accessibility, or site isolation. Chromium executes the complete web platform. Treat performance results as exploratory until the measured page path is feature-equivalent.')
+$null = $markdown.AppendLine('Breeze owns HTML, CSS, layout, images/SVG, webfonts, forms, a subset JavaScript runtime, and painting. Breeze page-ready is recorded after its first owned layout/paint; webfonts and non-render-blocking async scripts are outside that critical path. Chromium page-ready is Page.loadEventFired and Chromium executes the complete web platform. Canvas, media, accessibility, site isolation, and substantial web-platform coverage remain incomplete, so treat results as exploratory until the measured path is feature-equivalent.')
 
 $records | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $resultDirectory 'raw-results.json') -Encoding UTF8
 $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $resultDirectory 'summary.json') -Encoding UTF8

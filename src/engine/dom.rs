@@ -1,9 +1,13 @@
 use html5ever::Attribute;
 use html5ever::ExpandedName;
+use html5ever::LocalName;
+use html5ever::ParseOpts;
 use html5ever::QualName;
 use html5ever::interface::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
+use html5ever::ns;
 use html5ever::parse_document;
 use html5ever::tendril::{StrTendril, TendrilSink};
+use html5ever::tree_builder::TreeBuilderOpts;
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -120,6 +124,132 @@ impl Node {
             stack: vec![root.clone()],
         }
     }
+
+    pub fn create_element(tag_name: &str) -> NodeRef {
+        Node::new(NodeData::Element(ElementData {
+            name: QualName::new(
+                None,
+                ns!(html),
+                LocalName::from(tag_name.to_ascii_lowercase()),
+            ),
+            attrs: RefCell::new(Vec::new()),
+            template_contents: RefCell::new(None),
+            mathml_annotation_xml_integration_point: false,
+        }))
+    }
+
+    pub fn create_text(contents: &str) -> NodeRef {
+        Node::new(NodeData::Text(RefCell::new(contents.to_string())))
+    }
+
+    pub fn create_comment(contents: &str) -> NodeRef {
+        Node::new(NodeData::Comment(contents.to_string()))
+    }
+
+    pub fn set_attr(&self, name: &str, value: &str) -> bool {
+        let Some(element) = self.element() else {
+            return false;
+        };
+        let mut attrs = element.attrs.borrow_mut();
+        if let Some(attribute) = attrs
+            .iter_mut()
+            .find(|attribute| attribute.name.local.as_ref().eq_ignore_ascii_case(name))
+        {
+            attribute.value = StrTendril::from(value);
+        } else {
+            attrs.push(Attribute {
+                name: QualName::new(None, ns!(), LocalName::from(name.to_ascii_lowercase())),
+                value: StrTendril::from(value),
+            });
+        }
+        true
+    }
+
+    pub fn remove_attr(&self, name: &str) -> bool {
+        let Some(element) = self.element() else {
+            return false;
+        };
+        let mut attrs = element.attrs.borrow_mut();
+        let original_len = attrs.len();
+        attrs.retain(|attribute| !attribute.name.local.as_ref().eq_ignore_ascii_case(name));
+        attrs.len() != original_len
+    }
+
+    pub fn append_child(parent: &NodeRef, child: NodeRef) -> bool {
+        if Rc::ptr_eq(parent, &child)
+            || std::iter::successors(Some(parent.clone()), |node| node.parent())
+                .any(|ancestor| Rc::ptr_eq(&ancestor, &child))
+        {
+            return false;
+        }
+        remove_from_parent(&child);
+        append_node(parent, child);
+        true
+    }
+
+    pub fn insert_before(parent: &NodeRef, child: NodeRef, reference: &NodeRef) -> bool {
+        let Some((reference_parent, mut index)) = parent_and_index(reference) else {
+            return false;
+        };
+        if !Rc::ptr_eq(parent, &reference_parent)
+            || Rc::ptr_eq(parent, &child)
+            || std::iter::successors(Some(parent.clone()), |node| node.parent())
+                .any(|ancestor| Rc::ptr_eq(&ancestor, &child))
+        {
+            return false;
+        }
+        if let Some((old_parent, old_index)) = parent_and_index(&child)
+            && Rc::ptr_eq(&old_parent, parent)
+            && old_index < index
+        {
+            index -= 1;
+        }
+        remove_from_parent(&child);
+        child.parent.set(Some(Rc::downgrade(parent)));
+        parent.children.borrow_mut().insert(index, child);
+        true
+    }
+
+    pub fn remove_child(parent: &NodeRef, child: &NodeRef) -> bool {
+        let Some((actual_parent, _)) = parent_and_index(child) else {
+            return false;
+        };
+        if !Rc::ptr_eq(parent, &actual_parent) {
+            return false;
+        }
+        remove_from_parent(child);
+        true
+    }
+
+    pub fn remove_from_parent(node: &NodeRef) {
+        remove_from_parent(node);
+    }
+
+    pub fn set_text_content(node: &NodeRef, contents: &str) {
+        if let NodeData::Text(text) = &node.data {
+            *text.borrow_mut() = contents.to_string();
+            return;
+        }
+        clear_children(node);
+        if !contents.is_empty() {
+            append_node(node, Node::create_text(contents));
+        }
+    }
+
+    pub fn replace_inner_html(node: &NodeRef, html: &str, scripting_enabled: bool) {
+        let wrapped = format!("<!doctype html><body>{html}</body>");
+        let fragment = parse_with_scripting(&wrapped, scripting_enabled);
+        let Some(body) = fragment.elements_named("body").next() else {
+            clear_children(node);
+            return;
+        };
+        let children = body.children.borrow().clone();
+        clear_children(node);
+        for child in children {
+            remove_from_parent(&child);
+            append_node(node, child);
+        }
+    }
 }
 
 pub struct Descendants {
@@ -155,7 +285,21 @@ impl Default for Dom {
 }
 
 pub fn parse(html: &str) -> Dom {
-    parse_document(Dom::default(), Default::default()).one(html)
+    parse_with_scripting(html, false)
+}
+
+pub fn parse_with_scripting(html: &str, scripting_enabled: bool) -> Dom {
+    parse_document(
+        Dom::default(),
+        ParseOpts {
+            tree_builder: TreeBuilderOpts {
+                scripting_enabled,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .one(html)
 }
 
 impl Dom {
@@ -382,6 +526,12 @@ fn remove_from_parent(target: &NodeRef) {
     }
 }
 
+fn clear_children(node: &NodeRef) {
+    for child in node.children.borrow_mut().drain(..) {
+        child.parent.set(None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,5 +575,29 @@ mod tests {
             expanded_name!(html "p")
         );
         assert_eq!(paragraph.element().unwrap().name.local, local_name!("p"));
+    }
+
+    #[test]
+    fn parses_noscript_content_when_scripting_is_unavailable() {
+        let dom = parse("<body><noscript><p>Script-free fallback</p></noscript></body>");
+        let fallback = dom.elements_named("p").next().unwrap();
+        assert_eq!(fallback.text_content(), "Script-free fallback");
+    }
+
+    #[test]
+    fn exposes_dom_mutations_needed_by_script_bindings() {
+        let dom = parse("<main id=app><span>old</span></main>");
+        let main = dom.elements_named("main").next().unwrap();
+        let paragraph = Node::create_element("p");
+        paragraph.set_attr("class", "message");
+        Node::set_text_content(&paragraph, "new");
+        assert!(Node::append_child(&main, paragraph.clone()));
+        assert_eq!(paragraph.parent().unwrap().tag_name(), Some("main"));
+        assert_eq!(paragraph.attr("class").as_deref(), Some("message"));
+        assert_eq!(main.text_content(), "oldnew");
+
+        Node::replace_inner_html(&main, "<strong>replaced</strong>", true);
+        assert_eq!(main.text_content(), "replaced");
+        assert_eq!(main.children.borrow()[0].tag_name(), Some("strong"));
     }
 }

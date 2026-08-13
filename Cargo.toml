@@ -6,11 +6,16 @@ description = "A performance-first browser engine MVP"
 license = "MIT"
 
 [dependencies]
+boa_engine = { version = "0.21.1", default-features = false }
 cssparser = "0.37.0"
 encoding_rs = "0.8.35"
+flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 html5ever = "0.39.0"
 image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
 resvg = { version = "0.48.1", default-features = false }
+
+[patch.crates-io]
+boa_engine = { path = "vendor/boa_engine" }
 
 [lib]
 name = "better_web_browser"
@@ -24,5 +29,5 @@ path = "src/main.rs"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 strip = "symbols"
