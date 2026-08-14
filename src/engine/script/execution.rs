@@ -116,7 +116,7 @@ pub(super) fn execute_inner(
         return outcome;
     }
 
-    if let Err(error) = context.eval(Source::from_bytes(BROWSER_BOOTSTRAP)) {
+    if let Err(error) = context.eval(Source::from_bytes(super::bootstrap::BROWSER_BOOTSTRAP)) {
         outcome
             .errors
             .push(format!("initialize browser bindings: {error}"));

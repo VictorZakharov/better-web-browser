@@ -278,10 +278,3 @@
         }
         return null;
     }
-    Object.defineProperties(HTMLElement.prototype, {
-        onchange: { configurable: true, writable: true, value: null },
-        onerror: { configurable: true, writable: true, value: null },
-        oninput: { configurable: true, writable: true, value: null },
-        oninvalid: { configurable: true, writable: true, value: null }
-    });
-

@@ -20,7 +20,7 @@ Current page support includes:
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and webfonts
-- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, events, startup timers, dynamically inserted classic scripts, navigation, storage, and cookies
+- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, startup timers, dynamically inserted classic scripts, navigation, storage, and cookies
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - Links, history, reload, scrolling, and background networking
@@ -88,7 +88,7 @@ verification without putting a browser window on the desktop.
 
 ### Web-platform regression suite
 
-A pinned, curated 24-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
+A pinned, curated 30-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
 URLs, and the CSS cascade. Upstream fixtures stay in a separate sparse WPT checkout; after preparing
 that checkout, the suite runs offline with one hidden command:
 

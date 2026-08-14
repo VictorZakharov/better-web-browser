@@ -104,6 +104,7 @@
         get offsetHeight() { return 0; }
         getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON() { return this; } }; }
     }
+    installEventHandlerAttributes(Element.prototype);
 
     const dataPropertyName = attribute => attribute.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
     const dataAttributeName = property => {
