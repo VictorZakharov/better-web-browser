@@ -44,16 +44,16 @@ Performance claims are valid only when the exercised page path is feature-equiva
 
 ### Current benchmark snapshot
 
-Three alternating hidden release runs of `https://www.neolisk.blog/` on 2026-08-13, with a 2-second settle period, produced these medians:
+Six runs per browser, collected as two alternating three-run hidden release batches against a [representative public blog page](https://www.neolisk.blog/) on 2026-08-14 with a 2-second settle period, produced these combined medians:
 
 | Metric | Breeze | Chromium | Result |
 |---|---:|---:|---:|
-| Window ready | 11.7 ms | 192.7 ms | Breeze 16.42x faster |
-| Process start to page ready | 495.0 ms | 846.5 ms | Breeze 1.71x faster |
-| Navigation | 481.2 ms | 517.1 ms | Breeze 1.07x faster |
-| Working set | 91.9 MiB | 607.4 MiB | Breeze 6.61x smaller |
-| Private memory | 78.2 MiB | 395.1 MiB | Breeze 5.05x smaller |
-| CPU time | 625.0 ms | 3,968.8 ms | Breeze 6.35x lower |
+| Window ready | 11.0 ms | 186.7 ms | Breeze 17.04x faster |
+| Process start to page ready | 494.9 ms | 757.5 ms | Breeze 1.53x faster |
+| Navigation | 484.0 ms | 448.2 ms | Chromium 1.08x faster |
+| Working set | 91.7 MiB | 604.3 MiB | Breeze 6.59x smaller |
+| Private memory | 78.1 MiB | 387.9 MiB | Breeze 4.97x smaller |
+| CPU time | 570.3 ms | 3,929.7 ms | Breeze 6.89x lower |
 | Processes | 1 | 10 | Breeze uses 10x fewer |
 
 Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event and implements substantially more of the web platform. Treat this as a reproducible development snapshot, not a universal or feature-equivalent browser claim.
@@ -98,7 +98,7 @@ verification without putting a browser window on the desktop.
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
 
-Neolisk's blog is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
+The public blog page used above is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
 
 As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **158 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
 
