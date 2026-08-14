@@ -33,6 +33,12 @@ credential store; ambient operating-system credentials must not bypass `Credenti
 TLS and certificate verification remain entirely inside WinHTTP. Project code must not disable,
 replace, or reproduce those checks.
 
+The renderer process boundary keeps both Fetch policy and WinHTTP in the trusted browser process.
+An untrusted renderer submits a bounded fetch intent; the browser reconstructs `FetchRequest` from
+the active document and applies origin, credentials, header, redirect, cookie, CORS, and body policy
+before any transport call. See
+[ADR 0001](architecture/0001-renderer-process-boundary.md) for process ownership and IPC rules.
+
 ## Request policies
 
 | Context | Default mode | Credentials | Redirects | Response visibility |
