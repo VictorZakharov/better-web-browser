@@ -21,7 +21,7 @@ $fileCeilings = @{
     'src/engine/script.rs'                  = 80
     'src/engine/script/execution.rs'        = 453
     'src/engine/script/host_call.rs'        = 422
-    'src/windows_app.rs'                    = 1955
+    'src/windows_app.rs'                    = 1176
     'src/winhttp.rs'                        = 760
 }
 
