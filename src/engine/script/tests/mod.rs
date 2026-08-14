@@ -17,4 +17,5 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
 }
 
 mod bindings;
+mod mutations;
 mod tasks;

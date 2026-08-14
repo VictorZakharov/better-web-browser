@@ -332,11 +332,7 @@ pub(super) fn host_call(
         "innerHtmlAppend" => {
             let html = argument_string(args, 2, context)?;
             let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                let holder = Node::create_element_for(&state.document, "div");
-                Node::replace_inner_html(&holder, &html, true);
-                for child in holder.children.borrow().clone() {
-                    Node::append_child(&node, child);
-                }
+                append_html_fragment(&state.document, &node, &html);
                 state.register_subtree(&node);
                 true
             } else {
