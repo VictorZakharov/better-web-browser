@@ -14,6 +14,36 @@ on:
   pull_request:
 
 jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      run_windows: ${{ steps.classify.outputs.run_windows }}
+      markdown_only: ${{ steps.classify.outputs.markdown_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Test change classifier
+        shell: pwsh
+        run: ./scripts/test-classify-ci-changes.ps1
+      - name: Decide whether Windows workers are required
+        id: classify
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $parameters = @{ GitHubOutputPath = $env:GITHUB_OUTPUT }
+          if ($env:EVENT_NAME -eq 'pull_request') {
+            $parameters.BaseSha = $env:BASE_SHA
+            $parameters.HeadSha = $env:HEAD_SHA
+          } else {
+            $parameters.ForceFull = $true
+          }
+          ./scripts/classify-ci-changes.ps1 @parameters
+
   linear-history:
     name: Linear PR history
     if: github.event_name == 'pull_request'
@@ -31,6 +61,8 @@ jobs:
 
   source:
     name: Source and formatting
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -46,6 +78,8 @@ jobs:
 
   lint:
     name: Lint
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -70,6 +104,8 @@ jobs:
 
   test:
     name: Test
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -94,6 +130,8 @@ jobs:
 
   wpt:
     name: Curated WPT
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -124,6 +162,7 @@ jobs:
     name: windows
     if: ${{ always() }}
     needs:
+      - changes
       - source
       - lint
       - test
@@ -133,11 +172,34 @@ jobs:
       - name: Require every Windows worker
         shell: bash
         env:
+          CLASSIFICATION_RESULT: ${{ needs.changes.result }}
+          RUN_WINDOWS: ${{ needs.changes.outputs.run_windows }}
+          MARKDOWN_ONLY: ${{ needs.changes.outputs.markdown_only }}
           SOURCE_RESULT: ${{ needs.source.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           WPT_RESULT: ${{ needs.wpt.result }}
         run: |
+          if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
+            echo "Change classification did not succeed: $CLASSIFICATION_RESULT"
+            exit 1
+          fi
+
+          if [[ "$RUN_WINDOWS" == "false" && "$MARKDOWN_ONLY" == "true" ]]; then
+            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" ]]; then
+              echo "Markdown-only pull request: Windows workers were safely skipped."
+              exit 0
+            fi
+            echo "Markdown-only classification had unexpected worker results."
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT"
+            exit 1
+          fi
+
+          if [[ "$RUN_WINDOWS" != "true" || "$MARKDOWN_ONLY" != "false" ]]; then
+            echo "Invalid change-classification outputs: run_windows='$RUN_WINDOWS', markdown_only='$MARKDOWN_ONLY'"
+            exit 1
+          fi
+
           if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" ]]; then
             echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT"
             exit 1
