@@ -26,8 +26,8 @@
 
 - Keep cohesive hand-written source modules at or below 400 lines when practical; 500 lines is the hard limit for new files.
 - Run `./scripts/check-source-size.ps1` before committing. Existing oversized files have frozen ceilings and must shrink as they are split; do not raise a ceiling to accommodate new code.
-- Prioritize extracting the remaining frequently edited oversized file (`src/engine/page.rs`) before adding another subsystem to it.
-- Keep `src/windows_app.rs` and `src/engine/script.rs` as small facades; extend their responsibility-based submodules and split any above-target module before allowing a frozen facade ceiling to grow.
+- Keep `src/engine/css.rs`, `src/engine/dom.rs`, `src/engine/layout.rs`, `src/engine/page.rs`, `src/windows_app.rs`, `src/engine/script.rs`, and `src/winhttp.rs` as small facades; extend their responsibility-based submodules instead of moving implementation back into the coordinators.
+- Treat files reported above the 400-line target as the next refactor queue. Split high-churn production modules before substantial expansion, and keep low-churn adapters or tests cohesive when a further split would obscure ownership.
 - Split by ownership or responsibility, not arbitrary line ranges. Keep a small coordinating module and move tests, platform adapters, bindings, parsing, or lifecycle policy behind focused interfaces.
 
 ## Automated browser execution
