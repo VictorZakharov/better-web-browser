@@ -97,6 +97,17 @@
             this.ports = Object.freeze([...ports]);
         }
     }
+    class ErrorEvent extends Event {
+        constructor(type, init = {}) {
+            super(type, init);
+            init = init == null ? {} : Object(init);
+            this.message = init.message === undefined ? '' : String(init.message);
+            this.filename = init.filename === undefined ? '' : String(init.filename);
+            this.lineno = Number(init.lineno) || 0;
+            this.colno = Number(init.colno) || 0;
+            this.error = init.error === undefined ? null : init.error;
+        }
+    }
     class ToggleEvent extends Event {
         constructor(type, init = {}) {
             super(type, init);

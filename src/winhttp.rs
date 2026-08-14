@@ -6,7 +6,7 @@ mod ffi;
 mod text;
 
 pub use client::{HttpClient, HttpResponse, get};
-pub use text::decode_text;
+pub use text::{DecodedText, decode_document, decode_text};
 
 #[cfg(test)]
 use crate::navigation::ParsedUrl;

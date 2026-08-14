@@ -81,10 +81,14 @@ impl BrowserState {
                     ) = loop {
                         let final_url = response.final_url.clone();
                         let status = response.status;
-                        let html =
-                            winhttp::decode_text(&response.body, response.content_type.as_deref());
+                        let decoded = winhttp::decode_document(
+                            &response.body,
+                            response.content_type.as_deref(),
+                        );
+                        let html = decoded.text;
                         let html_parse_started = Instant::now();
                         let mut rendered_page = Page::parse_scripted(&html, &final_url);
+                        rendered_page.character_set = decoded.encoding.to_string();
                         html_parse_time += html_parse_started.elapsed();
 
                         if navigation_count < 5

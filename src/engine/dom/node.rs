@@ -10,8 +10,9 @@ pub type NodeRef = Rc<Node>;
 
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// A stable, opaque node identity composed of a document namespace and local sequence number.
-/// Values are never reused during the process lifetime and can cross an IPC boundary as a `u128`.
+/// A stable, opaque node identity composed of its allocation namespace and local sequence number.
+/// The namespace remains stable when DOM adoption changes `ownerDocument`; values are never reused
+/// during the process lifetime and can cross an IPC boundary as a `u128`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId {
     document: u64,
@@ -162,12 +163,18 @@ impl Node {
     }
 
     pub(super) fn mark_mutated(&self) {
-        let version = self.identity.bump_mutation_version();
-        self.subtree_mutation_version.set(version);
+        let mut ancestors = Vec::new();
+        let mut root_identity = Rc::clone(&self.identity);
         let mut ancestor = self.parent();
         while let Some(node) = ancestor {
-            node.subtree_mutation_version.set(version);
+            root_identity = Rc::clone(&node.identity);
             ancestor = node.parent();
+            ancestors.push(node);
+        }
+        let version = root_identity.bump_mutation_version();
+        self.subtree_mutation_version.set(version);
+        for node in ancestors {
+            node.subtree_mutation_version.set(version);
         }
     }
 

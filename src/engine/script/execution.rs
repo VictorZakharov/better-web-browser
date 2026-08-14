@@ -318,7 +318,7 @@ fn evaluate_script(
     }
 
     let script_started = Instant::now();
-    let succeeded = match context.eval(Source::from_bytes(&script.code)) {
+    let succeeded = match mutation_host::eval_with_writes(context, host, &script.code) {
         Ok(_) => {
             outcome.executed += 1;
             host.borrow_mut().executed += 1;

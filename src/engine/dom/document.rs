@@ -60,9 +60,6 @@ impl Dom {
     /// Resolves an identifier only while its node remains in this document tree.
     /// Detached nodes retain their identity but are deliberately absent until reinserted.
     pub fn find_node(&self, wanted: NodeId) -> Option<NodeRef> {
-        if wanted.document() != self.identity.document {
-            return None;
-        }
         let mut stack = vec![self.document.clone()];
         while let Some(node) = stack.pop() {
             if node.id() == wanted {

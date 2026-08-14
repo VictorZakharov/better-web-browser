@@ -144,18 +144,22 @@ fn replacement_documents_use_distinct_serializable_namespaces() {
 }
 
 #[test]
-fn rejects_cross_document_insertion_until_explicit_adoption_exists() {
+fn cross_document_insertion_moves_the_node_without_changing_its_identity() {
     let first = parse("<main></main>");
     let second = parse("<span>foreign</span>");
     let main = first.elements_named("main").next().unwrap();
     let foreign = second.elements_named("span").next().unwrap();
     let foreign_id = foreign.id();
 
-    assert!(!Node::append_child(&main, foreign.clone()));
-    assert!(foreign.parent().is_some());
+    assert!(Node::append_child(&main, foreign.clone()));
+    assert_eq!(foreign.parent().unwrap().id(), main.id());
     assert_eq!(foreign.id(), foreign_id);
-    assert!(first.find_node(foreign_id).is_none());
-    assert!(second.find_node(foreign_id).is_some());
+    assert!(first.find_node(foreign_id).is_some());
+    assert!(second.find_node(foreign_id).is_none());
+
+    let insertion_version = first.mutation_version();
+    foreign.set_attr("data-adopted", "yes");
+    assert!(first.mutation_version() > insertion_version);
 }
 
 #[test]

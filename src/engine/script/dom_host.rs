@@ -109,6 +109,72 @@ pub(super) fn dom_host_call(
                     .unwrap_or_default(),
             )
         }
+        "cloneNode" => {
+            let source = state.node(argument_id(args, 1));
+            let deep = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
+            let clone = source.map(|source| {
+                let owner = state.document_for(&source);
+                let is_document = owner
+                    .as_ref()
+                    .is_some_and(|document| document.id() == source.id());
+                if is_document {
+                    let html = state.is_html_document_for(&source);
+                    let clone = Node::clone_document(&source, deep);
+                    state.register_document(clone.clone(), html);
+                    clone
+                } else {
+                    let owner = owner.unwrap_or_else(|| source.clone());
+                    let clone = Node::clone_for(&owner, &source, deep);
+                    state.register_subtree(&clone);
+                    clone
+                }
+            });
+            JsValue::from(clone.map(|node| state.id_for(&node)).unwrap_or_default())
+        }
+        "importNode" => {
+            let owner = state.node(argument_id(args, 1));
+            let source = state.node(argument_id(args, 2));
+            let deep = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
+            let clone = owner.zip(source).and_then(|(owner, source)| {
+                if matches!(source.data, NodeData::Document)
+                    && state
+                        .document_for(&source)
+                        .is_some_and(|document| document.id() == source.id())
+                {
+                    return None;
+                }
+                Some(Node::clone_for(&owner, &source, deep))
+            });
+            if let Some(clone) = clone.as_ref() {
+                state.register_subtree(clone);
+            }
+            JsValue::from(clone.map(|node| state.id_for(&node)).unwrap_or_default())
+        }
+        "createDocument" => {
+            let namespace = argument_string(args, 1, context)?;
+            let qualified_name = argument_string(args, 2, context)?;
+            JsValue::from(create_document(state, &namespace, &qualified_name))
+        }
+        "createHtmlDocument" => {
+            let title = argument_string(args, 1, context)?;
+            JsValue::from(create_html_document(state, &title))
+        }
+        "isPrimaryDocument" => {
+            let primary = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| node.id() == state.document.id());
+            JsValue::from(primary)
+        }
+        "documentCharacterSet" => {
+            let primary = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| node.id() == state.document.id());
+            js_string(if primary {
+                state.document_character_set.clone()
+            } else {
+                "UTF-8".to_string()
+            })
+        }
         "doctype" => {
             let doctype = state.node(argument_id(args, 1)).and_then(|document| {
                 document
@@ -141,6 +207,31 @@ pub(super) fn dom_host_call(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+fn create_document(state: &mut HostState, namespace: &str, qualified_name: &str) -> u32 {
+    let document = Node::create_document();
+    if !qualified_name.is_empty() {
+        let root = Node::create_element_ns_for(&document, namespace, qualified_name);
+        Node::append_child(&document, root);
+    }
+    state.register_document(document, false)
+}
+
+fn create_html_document(state: &mut HostState, title: &str) -> u32 {
+    let document = Node::create_document();
+    let html = Node::create_element_ns_for(&document, HTML_NAMESPACE, "html");
+    let head = Node::create_element_ns_for(&document, HTML_NAMESPACE, "head");
+    if !title.is_empty() {
+        let title_element = Node::create_element_ns_for(&document, HTML_NAMESPACE, "title");
+        Node::append_child(&title_element, Node::create_text_for(&document, title));
+        Node::append_child(&head, title_element);
+    }
+    let body = Node::create_element_ns_for(&document, HTML_NAMESPACE, "body");
+    Node::append_child(&html, head);
+    Node::append_child(&html, body);
+    Node::append_child(&document, html);
+    state.register_document(document, true)
 }
 
 fn node_type(state: &HostState, node: Option<&NodeRef>) -> u8 {

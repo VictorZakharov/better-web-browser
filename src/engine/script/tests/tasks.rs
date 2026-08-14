@@ -325,3 +325,32 @@ fn exposes_a_same_origin_iframe_browsing_context() {
         "yes"
     );
 }
+
+#[test]
+fn mutation_observers_and_reported_microtask_exceptions_share_the_job_queue() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+            const order = [];
+            const text = document.createTextNode('');
+            new MutationObserver(() => order.push('mutation'))
+                .observe(text, { characterData: true });
+            text.data = 'changed';
+            queueMicrotask(() => order.push('microtask'));
+            queueMicrotask(() => document.body.setAttribute('data-order', order.join(',')));
+
+            const expected = new Error('reported');
+            addEventListener('error', event => {
+                if (event instanceof ErrorEvent && event.error === expected)
+                    document.body.setAttribute('data-error', 'same');
+            });
+            queueMicrotask(() => { throw expected; });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(
+        body.attr("data-order").as_deref(),
+        Some("mutation,microtask")
+    );
+    assert_eq!(body.attr("data-error").as_deref(), Some("same"));
+}

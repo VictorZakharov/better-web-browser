@@ -30,17 +30,18 @@ impl ParsedUrl {
         if scheme != "http" && scheme != "https" {
             return Err(UrlError(format!("unsupported URL scheme: {scheme}")));
         }
-        if remainder.is_empty() || remainder.chars().any(char::is_whitespace) {
-            return Err(UrlError(
-                "URL contains an invalid host or whitespace".into(),
-            ));
+        if remainder.is_empty() {
+            return Err(UrlError("URL host is missing".into()));
         }
 
         let authority_end = remainder.find(['/', '?']).unwrap_or(remainder.len());
         let authority = &remainder[..authority_end];
-        if authority.is_empty() || authority.contains('@') {
+        if authority.is_empty()
+            || authority.contains('@')
+            || authority.chars().any(char::is_whitespace)
+        {
             return Err(UrlError(
-                "URL host is missing or contains credentials".into(),
+                "URL host is missing, contains credentials, or contains whitespace".into(),
             ));
         }
 
@@ -110,7 +111,11 @@ impl ParsedUrl {
     }
 
     pub fn canonical(&self) -> String {
-        format!("{}{}", self.origin(), self.path_and_query)
+        format!(
+            "{}{}",
+            self.origin(),
+            serialize_path_and_query(&self.path_and_query)
+        )
     }
 }
 
@@ -178,7 +183,12 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
             .unwrap_or_else(|| "/".into());
         format!("{directory}{reference}")
     };
-    Some(format!("{}{}", base.origin(), normalize_path(&path)))
+    let normalized = normalize_path(&path);
+    Some(format!(
+        "{}{}",
+        base.origin(),
+        serialize_path_and_query(&normalized)
+    ))
 }
 
 /// Resolves a subresource reference, including embedded `data:` resources.
@@ -219,6 +229,38 @@ fn normalize_path(path_and_query: &str) -> String {
         normalized.push_str(query);
     }
     normalized
+}
+
+fn serialize_path_and_query(path_and_query: &str) -> String {
+    let (path, query) = path_and_query
+        .split_once('?')
+        .map(|(path, query)| (path, Some(query)))
+        .unwrap_or((path_and_query, None));
+    let mut serialized = percent_encode_url_part(path, b"?^`{}");
+    if let Some(query) = query {
+        serialized.push('?');
+        serialized.push_str(&percent_encode_url_part(query, b"'"));
+    }
+    serialized
+}
+
+fn percent_encode_url_part(value: &str, extra: &[u8]) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        let encode = byte <= b' '
+            || byte > b'~'
+            || matches!(byte, b'"' | b'#' | b'<' | b'>')
+            || extra.contains(&byte);
+        if encode {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        } else {
+            encoded.push(byte as char);
+        }
+    }
+    encoded
 }
 
 pub fn encode_www_form_component(input: &str) -> String {
@@ -275,6 +317,18 @@ mod tests {
         assert_eq!(
             resolve_url(base, "/root").unwrap(),
             "https://example.com/root"
+        );
+    }
+
+    #[test]
+    fn serializes_unicode_and_spaces_in_relative_url_queries() {
+        assert_eq!(
+            resolve_url(
+                "https://example.com/page",
+                "?a=b&notin=\u{2209}\u{00ac}&;& &"
+            )
+            .as_deref(),
+            Some("https://example.com/page?a=b&notin=%E2%88%89%C2%AC&;&%20&")
         );
     }
 
