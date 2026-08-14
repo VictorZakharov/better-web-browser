@@ -11,6 +11,7 @@ pub(super) struct StoredCookie {
     pub(super) path: String,
     pub(super) secure: bool,
     pub(super) host_only: bool,
+    pub(super) http_only: bool,
 }
 
 impl HttpClient {
@@ -19,22 +20,51 @@ impl HttpClient {
         let Some((cookie, expired)) = parse_cookie(&parsed, assignment) else {
             return Ok(());
         };
+        self.store_cookie(cookie, expired, false)
+    }
+
+    pub(super) fn store_response_cookie(
+        &self,
+        response_url: &str,
+        set_cookie: &str,
+    ) -> Result<(), String> {
+        let parsed = ParsedUrl::parse(response_url).map_err(|error| error.to_string())?;
+        let Some((cookie, expired)) = parse_cookie_internal(&parsed, set_cookie, true) else {
+            return Ok(());
+        };
+        self.store_cookie(cookie, expired, true)
+    }
+
+    fn store_cookie(
+        &self,
+        cookie: StoredCookie,
+        expired: bool,
+        from_http: bool,
+    ) -> Result<(), String> {
         let mut cookies = self
             .cookies
             .lock()
             .map_err(|_| "HTTP cookie jar is unavailable".to_string())?;
-        cookies.retain(|stored| {
-            stored.name != cookie.name
-                || stored.domain != cookie.domain
-                || stored.path != cookie.path
-        });
+        let same_cookie = |stored: &StoredCookie| {
+            stored.name == cookie.name
+                && stored.domain == cookie.domain
+                && stored.path == cookie.path
+        };
+        if !from_http
+            && cookies
+                .iter()
+                .any(|stored| same_cookie(stored) && stored.http_only)
+        {
+            return Ok(());
+        }
+        cookies.retain(|stored| !same_cookie(stored));
         if !expired {
             cookies.push(cookie);
         }
         Ok(())
     }
 
-    pub(super) fn cookie_header(&self, parsed: &ParsedUrl) -> Result<Option<String>, String> {
+    pub(super) fn cookie_header_value(&self, parsed: &ParsedUrl) -> Result<Option<String>, String> {
         let cookies = self
             .cookies
             .lock()
@@ -47,18 +77,43 @@ impl HttpClient {
         if matching.is_empty() {
             return Ok(None);
         }
-        Ok(Some(format!(
-            "Cookie: {}\r\n",
+        Ok(Some(
             matching
                 .into_iter()
                 .map(|cookie| format!("{}={}", cookie.name, cookie.value))
                 .collect::<Vec<_>>()
-                .join("; ")
-        )))
+                .join("; "),
+        ))
+    }
+
+    pub fn document_cookie_header(&self, document_url: &str) -> Result<String, String> {
+        let parsed = ParsedUrl::parse(document_url).map_err(|error| error.to_string())?;
+        let cookies = self
+            .cookies
+            .lock()
+            .map_err(|_| "HTTP cookie jar is unavailable".to_string())?;
+        let mut matching = cookies
+            .iter()
+            .filter(|cookie| !cookie.http_only && cookie_matches(cookie, &parsed))
+            .collect::<Vec<_>>();
+        matching.sort_unstable_by_key(|cookie| std::cmp::Reverse(cookie.path.len()));
+        Ok(matching
+            .into_iter()
+            .map(|cookie| format!("{}={}", cookie.name, cookie.value))
+            .collect::<Vec<_>>()
+            .join("; "))
     }
 }
 
 pub(super) fn parse_cookie(parsed: &ParsedUrl, assignment: &str) -> Option<(StoredCookie, bool)> {
+    parse_cookie_internal(parsed, assignment, false)
+}
+
+fn parse_cookie_internal(
+    parsed: &ParsedUrl,
+    assignment: &str,
+    from_http: bool,
+) -> Option<(StoredCookie, bool)> {
     let mut parts = assignment.split(';');
     let (name, value) = parts.next()?.trim().split_once('=')?;
     let name = name.trim();
@@ -79,6 +134,7 @@ pub(super) fn parse_cookie(parsed: &ParsedUrl, assignment: &str) -> Option<(Stor
     let mut host_only = true;
     let mut path = default_cookie_path(&parsed.path_and_query);
     let mut secure = false;
+    let mut http_only = false;
     let mut expired = false;
     for attribute in parts {
         let attribute = attribute.trim();
@@ -103,11 +159,20 @@ pub(super) fn parse_cookie(parsed: &ParsedUrl, assignment: &str) -> Option<(Stor
             }
         } else if attribute_name.eq_ignore_ascii_case("secure") {
             secure = true;
+        } else if attribute_name.eq_ignore_ascii_case("httponly") {
+            if !from_http {
+                return None;
+            }
+            http_only = true;
         } else if attribute_name.eq_ignore_ascii_case("max-age") {
             expired = attribute_value
                 .and_then(|value| value.parse::<i64>().ok())
                 .is_some_and(|seconds| seconds <= 0);
         }
+    }
+
+    if secure && parsed.scheme != "https" {
+        return None;
     }
 
     Some((
@@ -118,6 +183,7 @@ pub(super) fn parse_cookie(parsed: &ParsedUrl, assignment: &str) -> Option<(Stor
             path,
             secure,
             host_only,
+            http_only,
         },
         expired,
     ))

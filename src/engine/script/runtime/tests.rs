@@ -5,6 +5,27 @@ use std::rc::Rc;
 use std::time::Duration;
 
 #[test]
+fn initializes_document_cookie_from_the_network_cookie_jar() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><div></div><script>
+            document.querySelector('div').textContent = document.cookie;
+        </script></body>"#,
+        true,
+    );
+    let scripts = script_inputs(&dom);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_document_cookie_header("theme=dark; session=visible");
+
+    let outcome = runtime.execute_initial(&scripts);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "session=visible; theme=dark"
+    );
+}
+
+#[test]
 fn retained_runtime_executes_post_load_work_in_the_same_realm() {
     let dom = dom::parse_with_scripting(
         r#"<body><div id="status">waiting</div><script>

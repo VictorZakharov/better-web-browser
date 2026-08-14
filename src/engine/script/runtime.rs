@@ -117,6 +117,12 @@ impl ScriptRuntime {
         self.context.is_some()
     }
 
+    pub fn set_document_cookie_header(&mut self, cookie_header: &str) {
+        self.host
+            .borrow_mut()
+            .replace_cookies_from_header(cookie_header);
+    }
+
     pub fn advance_time_with_loader(
         &mut self,
         advance: Duration,

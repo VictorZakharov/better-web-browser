@@ -23,7 +23,15 @@ impl Page {
         &mut self,
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
-        self.start_script_phase(true, Some(dynamic_script_loader))
+        self.start_first_paint_script_runtime_with_loader_and_cookies(dynamic_script_loader, "")
+    }
+
+    pub fn start_first_paint_script_runtime_with_loader_and_cookies(
+        &mut self,
+        dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
+        cookie_header: &str,
+    ) -> (Option<ScriptRuntime>, ScriptOutcome) {
+        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header)
     }
 
     fn execute_script_phase(
@@ -31,7 +39,7 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        self.start_script_phase(first_paint_only, dynamic_script_loader)
+        self.start_script_phase(first_paint_only, dynamic_script_loader, "")
             .1
     }
 
@@ -39,6 +47,7 @@ impl Page {
         &mut self,
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
+        cookie_header: &str,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
         self.cached_styles = None;
         let inputs = self
@@ -64,6 +73,7 @@ impl Page {
                 &self.source_url,
                 &self.character_set,
             );
+            runtime.set_document_cookie_header(cookie_header);
             let outcome = runtime.execute_initial_with_loader(&inputs, dynamic_script_loader);
             (runtime.is_active().then_some(runtime), outcome)
         };

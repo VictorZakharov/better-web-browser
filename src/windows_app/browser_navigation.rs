@@ -1,6 +1,8 @@
 //! Omnibox navigation, history traversal, and network-load dispatch.
 
+use super::resources::{ResourceLoadContext, load_page_resources};
 use super::*;
+use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
 
 pub(super) enum HistoryMode {
     Push,
@@ -22,6 +24,8 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
+        self.document_fetch.abort();
+        self.document_fetch = FetchController::new();
         self.cancel_script_runtime();
         if self.loading {
             self.generation = self.generation.wrapping_add(1);
@@ -55,6 +59,7 @@ impl BrowserState {
         let window_value = self.window as isize;
         let metrics = Arc::clone(&self.metrics);
         let http_client = Arc::clone(&self.http_client);
+        let fetch_signal = self.document_fetch.signal();
         let navigation_thread = std::thread::Builder::new()
             .name("breeze-navigation".into())
             .stack_size(16 * 1024 * 1024)
@@ -63,11 +68,11 @@ impl BrowserState {
                 let started = Instant::now();
                 let result = (|| -> Result<LoadedPage, String> {
                     let client = http_client;
-                    let mut response = client.get(&url)?;
+                    let mut response = fetch_navigation(&client, &url, &fetch_signal)?;
                     let mut network_time = started.elapsed();
                     let mut bytes = response.body.len() as u64;
                     let mut resource_budget = PAGE_RESOURCE_BUDGET;
-                    let mut visited = HashSet::from([response.final_url.clone()]);
+                    let mut visited = HashSet::from([response.final_url().as_str().to_string()]);
                     let mut navigation_count = 0;
                     let mut html_parse_time = Duration::ZERO;
                     let mut resource_processing_time = Duration::ZERO;
@@ -79,11 +84,11 @@ impl BrowserState {
                         loaded_resources,
                         remaining_resource_budget,
                     ) = loop {
-                        let final_url = response.final_url.clone();
-                        let status = response.status;
+                        let final_url = response.final_url().as_str().to_string();
+                        let status = u32::from(response.status);
                         let decoded = winhttp::decode_document(
-                            &response.body,
-                            response.content_type.as_deref(),
+                            response.body.as_bytes(),
+                            response.content_type(),
                         );
                         let html = decoded.text;
                         let html_parse_started = Instant::now();
@@ -96,11 +101,12 @@ impl BrowserState {
                             && visited.insert(refresh_url.clone())
                         {
                             let refresh_started = Instant::now();
-                            let refresh_response = client.get(&refresh_url);
+                            let refresh_response =
+                                fetch_navigation(&client, &refresh_url, &fetch_signal);
                             network_time += refresh_started.elapsed();
                             if let Ok(next_response) = refresh_response {
                                 bytes += next_response.body.len() as u64;
-                                visited.insert(next_response.final_url.clone());
+                                visited.insert(next_response.final_url().as_str().to_string());
                                 response = next_response;
                                 navigation_count += 1;
                                 continue;
@@ -109,13 +115,16 @@ impl BrowserState {
 
                         let mut loaded_resources = HashSet::new();
                         load_page_resources(
-                            &client,
                             &mut rendered_page,
-                            &mut loaded_resources,
-                            &mut resource_budget,
-                            &mut bytes,
-                            &mut network_time,
-                            &mut resource_processing_time,
+                            ResourceLoadContext {
+                                client: &client,
+                                signal: &fetch_signal,
+                                loaded: &mut loaded_resources,
+                                resource_budget: &mut resource_budget,
+                                bytes: &mut bytes,
+                                network_time: &mut network_time,
+                                processing_time: &mut resource_processing_time,
+                            },
                         );
                         break (
                             rendered_page,
@@ -190,4 +199,15 @@ impl BrowserState {
         );
         EnableWindow(self.controls.reload, (!self.history.is_empty()) as i32);
     }
+}
+
+fn fetch_navigation(
+    client: &winhttp::HttpClient,
+    url: &str,
+    signal: &FetchSignal,
+) -> Result<winhttp::HttpResponse, String> {
+    let request = FetchRequest::navigation(url)
+        .map_err(|error| error.to_string())?
+        .with_signal(signal.clone());
+    client.fetch(request).map_err(|error| error.to_string())
 }

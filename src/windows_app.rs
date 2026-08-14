@@ -34,7 +34,7 @@ use reader_layout::layout_document;
 use rendering_resources::{
     DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps, WebFontResources,
 };
-use resources::{DeferredResourcesMessage, load_page_resources};
+use resources::DeferredResourcesMessage;
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
 use window_dispatch::{chrome_control_proc, main_window_proc};

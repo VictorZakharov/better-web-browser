@@ -1,24 +1,20 @@
-//! Public HTTP client facade and bounded WinHTTP request transport.
+//! Public HTTP client facade and one-hop bounded WinHTTP transport.
 
 use super::cookies::StoredCookie;
 use super::ffi::*;
 use crate::branding::USER_AGENT;
+use crate::fetch::{Body, FetchError, FetchRequest, FetchResponse, FetchUrl, HeaderList};
 use crate::navigation::ParsedUrl;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 
-pub struct HttpResponse {
-    pub body: Vec<u8>,
-    pub final_url: String,
-    pub status: u32,
-    pub content_type: Option<String>,
-}
+pub type HttpResponse = FetchResponse;
 
-impl HttpResponse {
-    pub fn is_success(&self) -> bool {
-        (200..=299).contains(&self.status)
-    }
+pub(super) struct TransportResponse {
+    pub status: u16,
+    pub headers: HeaderList,
+    pub body: Body,
 }
 
 pub struct HttpClient {
@@ -37,7 +33,6 @@ impl HttpClient {
         let session = InternetHandle::new(unsafe {
             WinHttpOpen(agent.as_ptr(), access_type, null(), null(), 0)
         })?;
-
         unsafe {
             WinHttpSetTimeouts(session.0, 10_000, 10_000, 15_000, 30_000);
         }
@@ -49,14 +44,23 @@ impl HttpClient {
     }
 
     pub fn get(&self, url: &str) -> Result<HttpResponse, String> {
-        let parsed = ParsedUrl::parse(url).map_err(|error| error.to_string())?;
-        self.get_parsed(url, &parsed)
+        let request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
+        self.fetch(request).map_err(|error| error.to_string())
     }
 
-    fn get_parsed(&self, url: &str, parsed: &ParsedUrl) -> Result<HttpResponse, String> {
-        let connection = self.connection(parsed)?;
-
-        let verb = wide("GET");
+    pub(super) fn send_once(
+        &self,
+        url: &FetchUrl,
+        method: &str,
+        headers: &HeaderList,
+        request_body: Option<&Body>,
+        response_body_limit: usize,
+        signal: &crate::fetch::FetchSignal,
+    ) -> Result<TransportResponse, FetchError> {
+        signal.check()?;
+        let parsed = url.parsed();
+        let connection = self.connection(parsed).map_err(FetchError::network)?;
+        let verb = wide(method);
         let object = wide(&parsed.path_and_query);
         let accept = wide(ACCEPT_TYPES);
         let accept_types = [accept.as_ptr(), null()];
@@ -75,50 +79,61 @@ impl HttpClient {
                 accept_types.as_ptr(),
                 flags,
             )
+        })
+        .map_err(FetchError::network)?;
+
+        configure_request(request.0)?;
+        let wire_headers = headers.to_wire_string();
+        let wire_headers = wide(&wire_headers);
+        let body = request_body.map(Body::as_bytes).unwrap_or_default();
+        let header_length = u32::try_from(wire_headers.len().saturating_sub(1)).map_err(|_| {
+            FetchError::new(
+                crate::fetch::FetchErrorKind::InvalidRequest,
+                "request headers exceed the WinHTTP size limit",
+            )
         })?;
-
-        let mut decompression = WINHTTP_DECOMPRESSION_FLAG_GZIP
-            | WINHTTP_DECOMPRESSION_FLAG_DEFLATE
-            | WINHTTP_DECOMPRESSION_FLAG_BROTLI;
-        unsafe {
-            WinHttpSetOption(
-                request.0,
-                WINHTTP_OPTION_DECOMPRESSION,
-                (&mut decompression as *mut u32).cast(),
-                size_of::<u32>() as u32,
-            );
-        }
-
-        let mut request_headers = "Accept-Language: en-CA,en;q=0.9\r\n".to_string();
-        if let Some(cookie_header) = self.cookie_header(parsed)? {
-            request_headers.push_str(&cookie_header);
-        }
-        let request_headers = wide(&request_headers);
+        let body_length = u32::try_from(body.len()).map_err(|_| {
+            FetchError::new(
+                crate::fetch::FetchErrorKind::InvalidRequest,
+                "request body exceeds the WinHTTP size limit",
+            )
+        })?;
+        let body_pointer = if body.is_empty() {
+            null_mut()
+        } else {
+            body.as_ptr().cast_mut().cast()
+        };
+        signal.check()?;
         check(
             unsafe {
                 WinHttpSendRequest(
                     request.0,
-                    request_headers.as_ptr(),
-                    request_headers.len().saturating_sub(1) as u32,
-                    null_mut(),
-                    0,
-                    0,
+                    wire_headers.as_ptr(),
+                    header_length,
+                    body_pointer,
+                    body_length,
+                    body_length,
                     0,
                 )
             },
             "send request",
-        )?;
+        )
+        .map_err(FetchError::network)?;
+        signal.check()?;
         check(
             unsafe { WinHttpReceiveResponse(request.0, null_mut()) },
             "receive response",
-        )?;
+        )
+        .map_err(FetchError::network)?;
+        signal.check()?;
 
-        let status = query_status(request.0)?;
-        let final_url = query_final_url(request.0).unwrap_or_else(|| url.to_string());
-        let content_type = query_header_string(request.0, WINHTTP_QUERY_CONTENT_TYPE);
-        let mut body = Vec::with_capacity(32 * 1024);
+        let status = query_status(request.0).map_err(FetchError::network)? as u16;
+        let headers =
+            parse_response_headers(&query_raw_headers(request.0).map_err(FetchError::network)?)?;
+        let mut body = Body::empty(response_body_limit);
         let mut buffer = [0_u8; 16 * 1024];
         loop {
+            signal.check()?;
             let mut bytes_read = 0_u32;
             check(
                 unsafe {
@@ -130,24 +145,17 @@ impl HttpClient {
                     )
                 },
                 "read response",
-            )?;
+            )
+            .map_err(FetchError::network)?;
             if bytes_read == 0 {
                 break;
             }
-            if body.len() + bytes_read as usize > MAX_RESPONSE_BYTES {
-                return Err(format!(
-                    "document exceeds the MVP limit of {} MiB",
-                    MAX_RESPONSE_BYTES / 1024 / 1024
-                ));
-            }
-            body.extend_from_slice(&buffer[..bytes_read as usize]);
+            body.push(&buffer[..bytes_read as usize])?;
         }
-
-        Ok(HttpResponse {
-            body,
-            final_url,
+        Ok(TransportResponse {
             status,
-            content_type,
+            headers,
+            body,
         })
     }
 
@@ -160,7 +168,6 @@ impl HttpClient {
         if let Some(connection) = connections.get(&key) {
             return Ok(Arc::clone(connection));
         }
-
         let host = wide(&parsed.host);
         let connection = Arc::new(InternetHandle::new(unsafe {
             WinHttpConnect(self.session.0, host.as_ptr(), parsed.port, 0)
@@ -168,6 +175,48 @@ impl HttpClient {
         connections.insert(key, Arc::clone(&connection));
         Ok(connection)
     }
+}
+
+fn configure_request(request: HInternet) -> Result<(), FetchError> {
+    // Authentication must remain policy-controlled too; Breeze has no HTTP-auth credential store
+    // yet, so allowing WinHTTP to select ambient credentials would violate CredentialsMode.
+    let mut disabled =
+        WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_AUTHENTICATION;
+    let mut decompression = WINHTTP_DECOMPRESSION_FLAG_GZIP
+        | WINHTTP_DECOMPRESSION_FLAG_DEFLATE
+        | WINHTTP_DECOMPRESSION_FLAG_BROTLI;
+    check(
+        unsafe {
+            WinHttpSetOption(
+                request,
+                WINHTTP_OPTION_DISABLE_FEATURE,
+                (&mut disabled as *mut u32).cast(),
+                size_of::<u32>() as u32,
+            )
+        },
+        "disable automatic redirects, cookies, and authentication",
+    )
+    .map_err(FetchError::network)?;
+    unsafe {
+        WinHttpSetOption(
+            request,
+            WINHTTP_OPTION_DECOMPRESSION,
+            (&mut decompression as *mut u32).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
+    Ok(())
+}
+
+fn parse_response_headers(raw: &str) -> Result<HeaderList, FetchError> {
+    let mut headers = HeaderList::new();
+    for line in raw.lines().skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        headers.append(name, value)?;
+    }
+    Ok(headers)
 }
 
 pub fn get(url: &str) -> Result<HttpResponse, String> {

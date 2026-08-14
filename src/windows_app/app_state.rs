@@ -4,6 +4,7 @@ use super::browser_navigation::HistoryMode;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
 use super::*;
+use better_web_browser::fetch::FetchController;
 
 pub(super) struct BrowserState {
     pub(super) instance: Hinstance,
@@ -43,6 +44,7 @@ pub(super) struct BrowserState {
     pub(super) benchmark: Option<BenchmarkRun>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
+    pub(super) document_fetch: FetchController,
     pub(super) task_window: Hwnd,
     pub(super) last_layout_tree_time: Duration,
     pub(super) last_layout_finalize_time: Duration,
@@ -98,6 +100,7 @@ impl BrowserState {
             benchmark: options.benchmark,
             metrics,
             http_client,
+            document_fetch: FetchController::new(),
             task_window: null_mut(),
             last_layout_tree_time: Duration::ZERO,
             last_layout_finalize_time: Duration::ZERO,
@@ -204,6 +207,7 @@ impl BrowserState {
 impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
+            self.document_fetch.abort();
             self.cancel_script_runtime();
             if !self.content_brush.is_null() {
                 DeleteObject(self.content_brush);

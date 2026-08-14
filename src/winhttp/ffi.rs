@@ -11,14 +11,16 @@ pub(super) const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 pub(super) const WINHTTP_ACCESS_TYPE_NO_PROXY: u32 = 1;
 pub(super) const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
 pub(super) const WINHTTP_QUERY_STATUS_CODE: u32 = 19;
-pub(super) const WINHTTP_QUERY_CONTENT_TYPE: u32 = 1;
+pub(super) const WINHTTP_QUERY_RAW_HEADERS_CRLF: u32 = 22;
 pub(super) const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;
-pub(super) const WINHTTP_OPTION_URL: u32 = 34;
 pub(super) const WINHTTP_OPTION_DECOMPRESSION: u32 = 118;
+pub(super) const WINHTTP_OPTION_DISABLE_FEATURE: u32 = 63;
+pub(super) const WINHTTP_DISABLE_COOKIES: u32 = 1;
+pub(super) const WINHTTP_DISABLE_REDIRECTS: u32 = 2;
+pub(super) const WINHTTP_DISABLE_AUTHENTICATION: u32 = 4;
 pub(super) const WINHTTP_DECOMPRESSION_FLAG_GZIP: u32 = 1;
 pub(super) const WINHTTP_DECOMPRESSION_FLAG_DEFLATE: u32 = 2;
 pub(super) const WINHTTP_DECOMPRESSION_FLAG_BROTLI: u32 = 4;
-pub(super) const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 pub(super) const ACCEPT_TYPES: &str =
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
 
@@ -77,12 +79,6 @@ unsafe extern "system" {
         buffer: *mut c_void,
         buffer_length: *mut u32,
         index: *mut u32,
-    ) -> i32;
-    fn WinHttpQueryOption(
-        internet: HInternet,
-        option: u32,
-        buffer: *mut c_void,
-        buffer_length: *mut u32,
     ) -> i32;
     pub(super) fn WinHttpReadData(
         request: HInternet,
@@ -147,60 +143,40 @@ pub(super) fn query_status(request: HInternet) -> Result<u32, String> {
     Ok(status)
 }
 
-pub(super) fn query_final_url(request: HInternet) -> Option<String> {
+pub(super) fn query_raw_headers(request: HInternet) -> Result<String, String> {
     let mut bytes = 0_u32;
     unsafe {
-        WinHttpQueryOption(request, WINHTTP_OPTION_URL, null_mut(), &mut bytes);
-    }
-    if bytes < 2 {
-        return None;
-    }
-    let mut buffer = vec![0_u16; (bytes as usize).div_ceil(2)];
-    if unsafe {
-        WinHttpQueryOption(
-            request,
-            WINHTTP_OPTION_URL,
-            buffer.as_mut_ptr().cast(),
-            &mut bytes,
-        )
-    } == 0
-    {
-        return None;
-    }
-    let length = buffer
-        .iter()
-        .position(|unit| *unit == 0)
-        .unwrap_or(buffer.len());
-    Some(String::from_utf16_lossy(&buffer[..length]))
-}
-
-pub(super) fn query_header_string(request: HInternet, query: u32) -> Option<String> {
-    let mut bytes = 0_u32;
-    unsafe {
-        WinHttpQueryHeaders(request, query, null(), null_mut(), &mut bytes, null_mut());
-    }
-    if bytes < 2 {
-        return None;
-    }
-    let mut buffer = vec![0_u16; (bytes as usize).div_ceil(2)];
-    if unsafe {
         WinHttpQueryHeaders(
             request,
-            query,
+            WINHTTP_QUERY_RAW_HEADERS_CRLF,
             null(),
-            buffer.as_mut_ptr().cast(),
+            null_mut(),
             &mut bytes,
             null_mut(),
-        )
-    } == 0
-    {
-        return None;
+        );
     }
+    if bytes < 2 {
+        return Ok(String::new());
+    }
+    let mut buffer = vec![0_u16; (bytes as usize).div_ceil(2)];
+    check(
+        unsafe {
+            WinHttpQueryHeaders(
+                request,
+                WINHTTP_QUERY_RAW_HEADERS_CRLF,
+                null(),
+                buffer.as_mut_ptr().cast(),
+                &mut bytes,
+                null_mut(),
+            )
+        },
+        "read response headers",
+    )?;
     let length = buffer
         .iter()
         .position(|unit| *unit == 0)
         .unwrap_or(buffer.len());
-    Some(String::from_utf16_lossy(&buffer[..length]))
+    Ok(String::from_utf16_lossy(&buffer[..length]))
 }
 
 pub(super) fn check(success: i32, operation: &str) -> Result<(), String> {

@@ -1,7 +1,9 @@
 //! Commits a loaded document and establishes its first-paint runtime state.
 
 use super::browser_navigation::HistoryMode;
+use super::resources::{ResourceLoadContext, fetch_document_resource, load_page_resources};
 use super::*;
+use better_web_browser::fetch::RequestDestination;
 
 pub(super) struct LoadedPage {
     pub page: Page,
@@ -58,15 +60,29 @@ impl BrowserState {
         self.scroll_y = 0;
 
         let client = Arc::clone(&self.http_client);
+        let fetch_signal = self.document_fetch.signal();
+        let document_url = page.final_url.clone();
         let mut total_bytes = page.bytes;
         let mut additional_network_time = Duration::ZERO;
         let mut additional_processing_time = Duration::ZERO;
         let mut resource_budget = self.page_resource_budget;
+        let (initial_cookie_header, cookie_error) =
+            match client.document_cookie_header(&page.final_url) {
+                Ok(header) => (header, None),
+                Err(error) => (String::new(), Some(error)),
+            };
         let script_started = Instant::now();
         let (mut runtime, mut script_outcome) = {
             let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
                 let request_started = Instant::now();
-                let response = client.get(url);
+                let response = fetch_document_resource(
+                    &client,
+                    &fetch_signal,
+                    &document_url,
+                    url,
+                    RequestDestination::Script,
+                )
+                .map_err(|error| error.to_string());
                 additional_network_time += request_started.elapsed();
                 let response = response?;
                 if !response.is_success() {
@@ -77,15 +93,23 @@ impl BrowserState {
                     return Err("page resource budget was exhausted".into());
                 }
                 let processing_started = Instant::now();
-                let code = winhttp::decode_text(&response.body, response.content_type.as_deref());
+                let code = winhttp::decode_text(response.body.as_bytes(), response.content_type());
                 additional_processing_time += processing_started.elapsed();
                 total_bytes += size;
                 resource_budget -= size;
                 Ok(code)
             };
             self.page
-                .start_first_paint_script_runtime_with_loader(&mut dynamic_script_loader)
+                .start_first_paint_script_runtime_with_loader_and_cookies(
+                    &mut dynamic_script_loader,
+                    &initial_cookie_header,
+                )
         };
+        if let Some(error) = cookie_error {
+            script_outcome
+                .errors
+                .push(format!("document.cookie initialization: {error}"));
+        }
         let script_time = script_started
             .elapsed()
             .saturating_sub(additional_network_time);
@@ -116,13 +140,16 @@ impl BrowserState {
                 .refresh_resources(self.current_style_viewport_width());
             style_refresh_time += style_refresh_started.elapsed();
             load_page_resources(
-                &client,
                 &mut self.page,
-                &mut self.loaded_page_resources,
-                &mut resource_budget,
-                &mut total_bytes,
-                &mut additional_network_time,
-                &mut additional_processing_time,
+                ResourceLoadContext {
+                    client: &client,
+                    signal: &fetch_signal,
+                    loaded: &mut self.loaded_page_resources,
+                    resource_budget: &mut resource_budget,
+                    bytes: &mut total_bytes,
+                    network_time: &mut additional_network_time,
+                    processing_time: &mut additional_processing_time,
+                },
             );
         }
         self.page_resource_budget = resource_budget;
