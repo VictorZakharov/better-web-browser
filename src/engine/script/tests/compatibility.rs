@@ -77,6 +77,77 @@ fn exposes_namespace_aware_nodes_fragments_and_html_interfaces() {
 }
 
 #[test]
+fn documents_clone_and_import_nodes_with_the_target_documents_semantics() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body><table id="fixture"><tbody><tr><td id="target">text</td></tr></tbody></table>
+        <div id="status">no</div><script>
+            const xmlDocument = document.implementation.createDocument(
+                'http://www.w3.org/1999/xhtml', 'foo:div', null);
+            const imported = document.importNode(xmlDocument.documentElement, true);
+            const documentClone = document.cloneNode(true);
+            const newDocument = new Document();
+            const clonedRoot = document.documentElement.cloneNode(true);
+            const appendedRoot = newDocument.appendChild(clonedRoot);
+            const htmlDocument = document.implementation.createHTMLDocument('copy');
+            htmlDocument.body.appendChild(document.getElementById('fixture').cloneNode(true));
+            const checks = [
+                ['xml-view', xmlDocument.defaultView === null],
+                ['xml-tag', xmlDocument.documentElement.tagName === 'foo:div'],
+                ['import-owner', imported.ownerDocument === document],
+                ['import-tag', imported.tagName === 'FOO:DIV'],
+                ['clone-view', documentClone.defaultView === null],
+                ['clone-tree', documentClone.getElementById('target').textContent === 'text'],
+                ['new-identity', appendedRoot === clonedRoot],
+                ['new-owner', newDocument.documentElement.ownerDocument === newDocument],
+                ['new-tree', newDocument.getElementById('target').textContent === 'text'],
+                ['html-title', htmlDocument.title === 'copy'],
+                ['html-tree', htmlDocument.getElementById('target').textContent === 'text']
+            ];
+            const failures = checks.filter(([, passed]) => !passed).map(([name]) => name);
+            document.getElementById('status').textContent = failures.join(',') || 'yes';
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div")
+            .find(|node| node.attr("id").as_deref() == Some("status"))
+            .unwrap()
+            .text_content(),
+        "yes"
+    );
+}
+
+#[test]
+fn document_write_preserves_one_tokenizer_stream_and_url_serialization() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body>
+        <div><a href='?notin=&notin;&not;&;& &'>Link</a><p>Text: &notin;&not;</p></div>
+        <script>
+            const markup = "<div><a href='?notin=&notin;&not;&;& &'>Link</a><p>Text: &notin;&not;</p></div>";
+            for (let index = 0; index < markup.length; index++) document.write(markup.charAt(index));
+        </script>
+        <p id="status">no</p><script>
+            const divs = document.getElementsByTagName('div');
+            const writtenHref = divs[1].firstChild.href;
+            const query = writtenHref.substring(writtenHref.indexOf('?'));
+            if (divs.length === 2 && divs[1].childNodes.length === 2 &&
+                query === '?notin=%E2%88%89%C2%AC&;&%20&' &&
+                divs[1].lastChild.textContent === 'Text: \u2209\u00AC') {
+                document.getElementById('status').textContent = 'yes';
+            }
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("p")
+            .find(|node| node.attr("id").as_deref() == Some("status"))
+            .unwrap()
+            .text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn window_named_access_and_cssom_use_the_computed_cascade() {
     let (dom, outcome) = execute_html(
         r#"<!doctype html><style>

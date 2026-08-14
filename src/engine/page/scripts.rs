@@ -59,7 +59,11 @@ impl Page {
         let (runtime, mut outcome) = if inputs.is_empty() && !retains_non_blocking_scripts {
             (None, ScriptOutcome::default())
         } else {
-            let mut runtime = ScriptRuntime::new(self.dom.document.clone(), &self.source_url);
+            let mut runtime = ScriptRuntime::new_with_character_set(
+                self.dom.document.clone(),
+                &self.source_url,
+                &self.character_set,
+            );
             let outcome = runtime.execute_initial_with_loader(&inputs, dynamic_script_loader);
             (runtime.is_active().then_some(runtime), outcome)
         };

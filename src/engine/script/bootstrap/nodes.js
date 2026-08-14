@@ -19,8 +19,11 @@
         get childElementCount() { return this.children.length; }
         get textContent() { return host('textGet', this.__id); }
         set textContent(value) {
+            const characterData = this.nodeType === 3;
+            const oldValue = characterData ? this.textContent : null;
             const namedAccessChanged = this.isConnected && this.firstElementChild !== null;
             host('textSet', this.__id, value == null ? '' : String(value));
+            queueMutationRecord(this, characterData ? 'characterData' : 'childList', { oldValue });
             if (namedAccessChanged) refreshWindowNamedProperties();
         }
         get isConnected() {
@@ -72,6 +75,7 @@
         hasChildNodes() { return !!this.firstChild; }
         querySelector(selector) { return wrap(host('query', this.__id, String(selector))); }
         querySelectorAll(selector) { return list(host('queryAll', this.__id, String(selector))); }
+        cloneNode(deep = false) { return wrap(host('cloneNode', this.__id, !!deep)); }
     }
 
     class Text extends Node {

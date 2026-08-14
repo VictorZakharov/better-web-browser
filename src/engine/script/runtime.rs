@@ -20,7 +20,19 @@ pub struct ScriptRuntime {
 
 impl ScriptRuntime {
     pub fn new(document: NodeRef, document_url: &str) -> Self {
-        let host = Rc::new(RefCell::new(HostState::new(document, document_url)));
+        Self::new_with_character_set(document, document_url, "UTF-8")
+    }
+
+    pub(crate) fn new_with_character_set(
+        document: NodeRef,
+        document_url: &str,
+        character_set: &str,
+    ) -> Self {
+        let host = Rc::new(RefCell::new(HostState::new(
+            document,
+            document_url,
+            character_set,
+        )));
         let mut context = Box::new(Context::default());
         context.insert_data(HostStateLink(Rc::downgrade(&host)));
         Self {
@@ -142,6 +154,7 @@ impl ScriptRuntime {
         let mut host = self.host.borrow_mut();
         host.timers.clear();
         host.timer_handles.clear();
+        host.pending_document_write.clear();
         host.pending_dynamic_scripts.clear();
     }
 

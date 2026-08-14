@@ -15,9 +15,17 @@
     };
     windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
+    const reportGlobalException = error => {
+        const message = error?.message === undefined ? String(error) : String(error.message);
+        const event = new ErrorEvent('error', { cancelable: true, message, error });
+        if (windowObject.dispatchEvent(event)) host('console', 'error', 'Uncaught microtask exception: ' + message);
+    };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
-        Promise.resolve().then(() => callback());
+        Promise.resolve().then(() => {
+            try { callback(); }
+            catch (error) { reportGlobalException(error); }
+        });
     };
     windowObject.__runTimer = id => {
         const timer = timers.get(Number(id));
@@ -139,7 +147,87 @@
             return element;
         }
     };
-    windowObject.MutationObserver = class { constructor(callback) { this.callback = callback; } observe() {} disconnect() {} takeRecords() { return []; } };
+    const mutationRegistrations = new WeakMap();
+    const pendingMutationObservers = new Set();
+    let mutationObserverMicrotaskQueued = false;
+    const queueMutationObserverMicrotask = () => {
+        if (mutationObserverMicrotaskQueued) return;
+        mutationObserverMicrotaskQueued = true;
+        Promise.resolve().then(() => {
+            mutationObserverMicrotaskQueued = false;
+            const notify = [...pendingMutationObservers];
+            pendingMutationObservers.clear();
+            for (const observer of notify) {
+                const records = observer.takeRecords();
+                if (!records.length) continue;
+                try { observer.callback.call(observer, records, observer); }
+                catch (error) { reportGlobalException(error); }
+            }
+        });
+    };
+    const queueMutationRecord = (target, type, details = {}) => {
+        for (let node = target; node; node = node.parentNode) {
+            const registrations = mutationRegistrations.get(node);
+            if (!registrations) continue;
+            for (const [observer, options] of registrations) {
+                if (node !== target && !options.subtree) continue;
+                if (type === 'characterData' && !options.characterData) continue;
+                if (type === 'attributes' && !options.attributes) continue;
+                if (type === 'childList' && !options.childList) continue;
+                observer.records.push({
+                    type,
+                    target,
+                    addedNodes: details.addedNodes || [],
+                    removedNodes: details.removedNodes || [],
+                    previousSibling: details.previousSibling || null,
+                    nextSibling: details.nextSibling || null,
+                    attributeName: details.attributeName || null,
+                    attributeNamespace: null,
+                    oldValue: (type === 'characterData' && options.characterDataOldValue) ||
+                        (type === 'attributes' && options.attributeOldValue) ? details.oldValue ?? null : null
+                });
+                pendingMutationObservers.add(observer);
+            }
+        }
+        if (pendingMutationObservers.size) queueMutationObserverMicrotask();
+    };
+    windowObject.MutationObserver = class MutationObserver {
+        constructor(callback) {
+            if (typeof callback !== 'function') throw new TypeError('MutationObserver requires a callback');
+            this.callback = callback;
+            this.records = [];
+            this.targets = new Set();
+        }
+        observe(target, options = {}) {
+            if (!(target instanceof Node)) throw new TypeError('MutationObserver target must be a Node');
+            options = Object(options);
+            const normalized = {
+                childList: !!options.childList,
+                subtree: !!options.subtree,
+                attributes: options.attributes === undefined
+                    ? options.attributeOldValue !== undefined || options.attributeFilter !== undefined
+                    : !!options.attributes,
+                attributeOldValue: !!options.attributeOldValue,
+                characterData: options.characterData === undefined
+                    ? options.characterDataOldValue !== undefined
+                    : !!options.characterData,
+                characterDataOldValue: !!options.characterDataOldValue
+            };
+            if (!normalized.childList && !normalized.attributes && !normalized.characterData)
+                throw new TypeError('MutationObserver options must select at least one mutation type');
+            let registrations = mutationRegistrations.get(target);
+            if (!registrations) mutationRegistrations.set(target, registrations = new Map());
+            registrations.set(this, normalized);
+            this.targets.add(target);
+        }
+        disconnect() {
+            for (const target of this.targets) mutationRegistrations.get(target)?.delete(this);
+            this.targets.clear();
+            this.records.length = 0;
+            pendingMutationObservers.delete(this);
+        }
+        takeRecords() { return this.records.splice(0); }
+    };
     windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
     windowObject.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} };
     windowObject.fetch = () => Promise.reject(new TypeError('fetch is not implemented yet'));

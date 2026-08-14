@@ -357,7 +357,8 @@ fn error_response(status: u16, message: &str) -> Response {
 
 fn content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|extension| extension.to_str()) {
-        Some("html" | "htm") => "text/html; charset=utf-8",
+        // Do not override fixture BOM/meta encoding with an injected HTTP charset.
+        Some("html" | "htm") => "text/html",
         Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("json") => "application/json",

@@ -105,7 +105,9 @@ impl BrowserState {
             }
             runtime = None;
             let fallback_parse_started = Instant::now();
+            let character_set = self.page.character_set.clone();
             self.page = Page::parse(&page.html, &page.final_url);
+            self.page.character_set = character_set;
             page.html_parse_time += fallback_parse_started.elapsed();
             self.loaded_page_resources.clear();
         } else {

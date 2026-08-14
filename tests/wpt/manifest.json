@@ -15,14 +15,12 @@
     {
       "path": "html/syntax/parsing/meta-inhead-insertion-mode.html",
       "area": "HTML parsing",
-      "expected": "fail",
-      "reason": "The DOM binding currently exposes a fixed UTF-8 characterSet."
+      "expected": "pass"
     },
     {
       "path": "html/syntax/parsing/ambiguous-ampersand.html",
       "area": "HTML parsing",
-      "expected": "fail",
-      "reason": "Entity handling through document.write and innerHTML is incomplete."
+      "expected": "pass"
     },
     {
       "path": "html/syntax/parsing/adoption_agency_check_the_end_tag_name.html",
@@ -37,8 +35,7 @@
     {
       "path": "dom/nodes/Element-tagName.html",
       "area": "DOM",
-      "expected": "fail",
-      "reason": "DOMImplementation.createDocument() and Document.importNode() are incomplete."
+      "expected": "pass"
     },
     {
       "path": "dom/nodes/Node-nodeName.html",
@@ -63,8 +60,7 @@
     {
       "path": "dom/events/Event-dispatch-bubbles-false.html",
       "area": "DOM events",
-      "expected": "fail",
-      "reason": "Live document chains pass; cloneNode(), constructible Document, and DOMImplementation.createHTMLDocument() are incomplete."
+      "expected": "pass"
     },
     {
       "path": "dom/events/Event-dispatch-order-at-target.html",
@@ -109,14 +105,12 @@
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask.window.js",
       "area": "Event loop",
-      "expected": "timeout",
-      "reason": "The placeholder MutationObserver never delivers the callback awaited by this test."
+      "expected": "pass"
     },
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask-exceptions.any.js",
       "area": "Event loop",
-      "expected": "timeout",
-      "reason": "The global error event awaited after a microtask exception is not dispatched."
+      "expected": "pass"
     },
     {
       "path": "url/url-tojson.any.js",

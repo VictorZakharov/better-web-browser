@@ -11,8 +11,10 @@ pub(super) struct PendingDynamicScript {
 pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) document_url: String,
+    pub(super) document_character_set: String,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
+    pub(super) owner_documents: HashMap<NodeId, u64>,
     pub(super) document_roots: HashMap<u64, NodeRef>,
     pub(super) html_documents: HashSet<u64>,
     pub(super) next_node_id: u32,
@@ -23,6 +25,7 @@ pub(super) struct HostState {
     pub(super) cookie_updates: Vec<String>,
     pub(super) executed: usize,
     pub(super) diagnostics: Vec<String>,
+    pub(super) pending_document_write: String,
     pub(super) pending_dynamic_scripts: Vec<PendingDynamicScript>,
     pub(super) started_dynamic_scripts: HashSet<NodeId>,
     pub(super) timers: EventLoopScheduler<u32>,
@@ -37,13 +40,15 @@ pub(super) struct HostState {
 pub(super) struct HostStateLink(pub(super) Weak<RefCell<HostState>>);
 
 impl HostState {
-    pub(super) fn new(document: NodeRef, document_url: &str) -> Self {
+    pub(super) fn new(document: NodeRef, document_url: &str, character_set: &str) -> Self {
         let document_identity = document.id().document();
         let mut state = Self {
             document,
             document_url: document_url.to_string(),
+            document_character_set: character_set.to_string(),
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
+            owner_documents: HashMap::new(),
             document_roots: HashMap::new(),
             html_documents: HashSet::new(),
             next_node_id: 1,
@@ -54,6 +59,7 @@ impl HostState {
             cookie_updates: Vec::new(),
             executed: 0,
             diagnostics: Vec::new(),
+            pending_document_write: String::new(),
             pending_dynamic_scripts: Vec::new(),
             started_dynamic_scripts: HashSet::new(),
             timers: EventLoopScheduler::new(),
@@ -86,11 +92,39 @@ impl HostState {
     }
 
     pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
-        self.document_roots.get(&node.id().document()).cloned()
+        self.document_roots
+            .get(&self.owner_document_identity(node))
+            .cloned()
     }
 
     pub(super) fn is_html_document_for(&self, node: &NodeRef) -> bool {
-        self.html_documents.contains(&node.id().document())
+        self.html_documents
+            .contains(&self.owner_document_identity(node))
+    }
+
+    pub(super) fn register_document(&mut self, document: NodeRef, html: bool) -> u32 {
+        let identity = document.id().document();
+        self.document_roots.insert(identity, document.clone());
+        if html {
+            self.html_documents.insert(identity);
+        }
+        self.register_subtree(&document);
+        self.id_for(&document)
+    }
+
+    pub(super) fn adopt_subtree(&mut self, parent: &NodeRef, child: &NodeRef) {
+        let owner_identity = self.owner_document_identity(parent);
+        let mut stack = vec![child.clone()];
+        while let Some(node) = stack.pop() {
+            self.owner_documents.insert(node.id(), owner_identity);
+            stack.extend(node.children.borrow().iter().rev().cloned());
+            if let Some(contents) = node
+                .element()
+                .and_then(|element| element.template_contents.borrow().clone())
+            {
+                stack.push(contents);
+            }
+        }
     }
 
     pub(super) fn computed_style_property(
@@ -130,8 +164,13 @@ impl HostState {
     }
 
     pub(super) fn register_subtree(&mut self, root: &NodeRef) {
+        let owner_identity = root
+            .parent()
+            .map(|parent| self.owner_document_identity(&parent))
+            .unwrap_or_else(|| self.owner_document_identity(root));
         let mut stack = vec![root.clone()];
         while let Some(node) = stack.pop() {
+            self.owner_documents.insert(node.id(), owner_identity);
             self.id_for(&node);
             stack.extend(node.children.borrow().iter().rev().cloned());
             if let Some(contents) = node
@@ -141,6 +180,13 @@ impl HostState {
                 stack.push(contents);
             }
         }
+    }
+
+    fn owner_document_identity(&self, node: &NodeRef) -> u64 {
+        self.owner_documents
+            .get(&node.id())
+            .copied()
+            .unwrap_or_else(|| node.id().document())
     }
 
     pub(super) fn resolved_url(&self, reference: &str) -> String {

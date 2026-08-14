@@ -120,8 +120,7 @@ impl Node {
     }
 
     pub fn append_child(parent: &NodeRef, child: NodeRef) -> bool {
-        if parent.id().document() != child.id().document()
-            || parent.id() == child.id()
+        if parent.id() == child.id()
             || std::iter::successors(Some(parent.clone()), |node| node.parent())
                 .any(|ancestor| ancestor.id() == child.id())
         {
@@ -136,8 +135,7 @@ impl Node {
         let Some((reference_parent, mut index)) = parent_and_index(reference) else {
             return false;
         };
-        if parent.id().document() != child.id().document()
-            || parent.id() != reference_parent.id()
+        if parent.id() != reference_parent.id()
             || parent.id() == child.id()
             || std::iter::successors(Some(parent.clone()), |node| node.parent())
                 .any(|ancestor| ancestor.id() == child.id())

@@ -24,6 +24,25 @@ fn honors_http_charset_before_meta() {
 }
 
 #[test]
+fn reports_the_selected_document_encoding_and_prefers_charset_attribute() {
+    let decoded = decode_document(
+        br#"<title>The word charset is not metadata</title>
+            <meta http-equiv="Content-Type" content="text/html; charset=koi8-r"
+                  charset="iso-8859-15">"#,
+        Some("text/html"),
+    );
+
+    assert_eq!(decoded.encoding, "ISO-8859-15");
+    assert!(decoded.text.contains("The word charset"));
+
+    let header = decode_document(
+        b"<meta charset=iso-8859-15>",
+        Some("text/html; charset=koi8-r"),
+    );
+    assert_eq!(header.encoding, "KOI8-R");
+}
+
+#[test]
 fn parses_and_scopes_javascript_cookies() {
     let origin = ParsedUrl::parse("https://www.google.com/search?q=test").unwrap();
     let (cookie, expired) = parse_cookie(

@@ -96,8 +96,8 @@ report; omit them during normal measurements.
 
 A pinned, curated 30-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
 URLs, and the CSS cascade. Upstream fixtures stay in a separate sparse WPT checkout; after preparing
-that checkout, the suite runs offline with one hidden command. At the pinned revision, 24 cases pass;
-four remaining failures and two timeouts have explicit expectations and compatibility reasons:
+that checkout, the suite runs offline with one hidden command. All 30 cases pass at the pinned
+revision, with no expected-failure or timeout allowances:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt

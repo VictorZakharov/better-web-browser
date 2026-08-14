@@ -39,9 +39,20 @@
             : HTMLUnknownElement;
     };
 
+    class DOMImplementation {
+        createDocument(namespace, qualifiedName, doctype = null) {
+            if (doctype !== null) throw new DOMException('DocumentType insertion is not implemented', 'NotSupportedError');
+            return wrap(host('createDocument', namespace == null ? '' : String(namespace), String(qualifiedName)));
+        }
+        createHTMLDocument(title = '') { return wrap(host('createHtmlDocument', String(title))); }
+    }
+
+    let documentWriteRefreshQueued = false;
+
     class Document extends Node {
-        constructor(id) {
-            super(id);
+        constructor(id = 0) {
+            super(Number(id) || host('createDocument', '', ''));
+            cache.set(this.__id, this);
             this.readyState = 'loading';
             this.activeElement = null;
             this._currentScript = null;
@@ -53,6 +64,12 @@
         createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
         createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
         createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
+        importNode(node, deep = false) {
+            if (!(node instanceof Node)) throw new TypeError('importNode requires a Node');
+            const imported = wrap(host('importNode', this.__id, node.__id, !!deep));
+            if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
+            return imported;
+        }
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
@@ -64,7 +81,7 @@
         getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
         getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
         getElementsByName(name) { return this.querySelectorAll('[name="' + String(name).replace(/"/g, '\\"') + '"]'); }
-        get documentElement() { return this.querySelector('html'); }
+        get documentElement() { return this.children[0] || null; }
         get doctype() { return wrap(host('doctype', this.__id)); }
         get head() { return this.querySelector('head'); }
         get body() { return this.querySelector('body'); }
@@ -78,18 +95,25 @@
         get documentURI() { return this.URL; }
         get baseURI() { return this.querySelector('base')?.href || this.URL; }
         get currentScript() { return this._currentScript; }
-        get defaultView() { return windowObject; }
+        get defaultView() { return host('isPrimaryDocument', this.__id) ? windowObject : null; }
+        get implementation() { return this.__implementation ||= new DOMImplementation(); }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
         write(...parts) {
-            host('innerHtmlAppend', (this.body || this.documentElement).__id, parts.join(''));
-            refreshWindowNamedProperties();
+            host('documentWrite', parts.join(''));
+            if (!documentWriteRefreshQueued) {
+                documentWriteRefreshQueued = true;
+                Promise.resolve().then(() => {
+                    documentWriteRefreshQueued = false;
+                    refreshWindowNamedProperties();
+                });
+            }
         }
         writeln(...parts) { this.write(parts.join('') + '\n'); }
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }
         get compatMode() { return 'CSS1Compat'; }
-        get characterSet() { return 'UTF-8'; }
+        get characterSet() { return host('documentCharacterSet', this.__id); }
         get contentType() { return 'text/html'; }
         get cookie() { return host('cookieGet'); }
         set cookie(value) { host('cookieSet', String(value)); }
@@ -157,9 +181,11 @@
     windowObject.Comment = Comment;
     windowObject.DocumentType = DocumentType;
     windowObject.DocumentFragment = DocumentFragment;
+    windowObject.DOMImplementation = DOMImplementation;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;
     windowObject.MessageEvent = MessageEvent;
+    windowObject.ErrorEvent = ErrorEvent;
     windowObject.ToggleEvent = ToggleEvent;
     windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
