@@ -1,0 +1,52 @@
+#data
+<table><tr>
+#errors
+(1,7): unexpected-start-tag
+#document-fragment
+table
+#document
+| <tbody>
+|   <tr>
+
+#data
+<textarea><option>
+#errors
+1:19: ERROR: Premature end of file. Currently open tags: html, textarea.
+#document-fragment
+select
+#document
+| <textarea>
+|   "<option>"
+
+#data
+<g></path>X
+#errors
+10: End tag “path” did not match the name of the current open element (“g”).
+11: End of file seen and there were open elements.
+#document-fragment
+svg path
+#document
+| <svg g>
+|   "X"
+
+#data
+<div></div>
+#errors
+#document-fragment
+math ms
+#document
+| <div>
+
+#data
+<template><form><input name="q"></form><div>second</div></template>
+#errors
+#document-fragment
+template
+#document
+| <template>
+|   content
+|     <form>
+|       <input>
+|         name="q"
+|     <div>
+|       "second"
