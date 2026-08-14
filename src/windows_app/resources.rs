@@ -2,6 +2,8 @@
 
 use super::*;
 
+const MAX_PARALLEL_DEFERRED_FETCHES: usize = 4;
+
 pub(super) fn load_page_resources(
     client: &winhttp::HttpClient,
     page: &mut Page,
@@ -114,13 +116,17 @@ pub(super) struct DeferredResourcesMessage {
 }
 
 impl BrowserState {
-    pub(super) fn unloaded_font_resources(&self) -> Vec<PageResource> {
+    pub(super) fn unloaded_deferred_resources(&self) -> Vec<PageResource> {
         self.page
             .resources
             .iter()
             .filter(|resource| {
-                matches!(resource, PageResource::Font { .. })
-                    && !self.loaded_page_resources.contains(*resource)
+                let deferred = match resource {
+                    PageResource::Image { url } => !self.page.images.contains_key(url),
+                    PageResource::Font { .. } => true,
+                    _ => false,
+                };
+                deferred && !self.loaded_page_resources.contains(*resource)
             })
             .cloned()
             .collect()
@@ -133,30 +139,46 @@ impl BrowserState {
         let generation = self.generation;
         let window = self.window as isize;
         let http_client = Arc::clone(&self.http_client);
+        let resource_budget = self.page_resource_budget;
         std::thread::spawn(move || {
             let client = http_client;
-            let loaded = std::thread::scope(|scope| {
-                let client = &client;
-                let requests = resources
-                    .into_iter()
-                    .map(|resource| {
-                        scope.spawn(move || {
-                            let response = client.get(page_resource_url(&resource));
-                            (resource, response)
+            let mut loaded = Vec::new();
+            let mut remaining_budget = resource_budget;
+            for batch in resources.chunks(MAX_PARALLEL_DEFERRED_FETCHES) {
+                let fetched = std::thread::scope(|scope| {
+                    let requests = batch
+                        .iter()
+                        .cloned()
+                        .map(|resource| {
+                            let client = &client;
+                            scope.spawn(move || {
+                                let response = client.get(page_resource_url(&resource));
+                                (resource, response)
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>();
-                requests
-                    .into_iter()
-                    .filter_map(|request| request.join().ok())
-                    .filter_map(|(resource, response)| {
-                        response
-                            .ok()
-                            .filter(winhttp::HttpResponse::is_success)
-                            .map(|response| (resource, response.body))
-                    })
-                    .collect::<Vec<_>>()
-            });
+                        .collect::<Vec<_>>();
+                    requests
+                        .into_iter()
+                        .filter_map(|request| request.join().ok())
+                        .filter_map(|(resource, response)| {
+                            response
+                                .ok()
+                                .filter(winhttp::HttpResponse::is_success)
+                                .map(|response| (resource, response.body))
+                        })
+                        .collect::<Vec<_>>()
+                });
+                for (resource, body) in fetched {
+                    let size = body.len() as u64;
+                    if size <= remaining_budget {
+                        remaining_budget -= size;
+                        loaded.push((resource, body));
+                    }
+                }
+                if remaining_budget == 0 {
+                    break;
+                }
+            }
             let message = Box::new(DeferredResourcesMessage { generation, loaded });
             let pointer = Box::into_raw(message);
             if unsafe {
@@ -178,12 +200,14 @@ impl BrowserState {
             return;
         }
         let mut changed = false;
+        let mut fonts_changed = false;
         for (resource, body) in message.loaded {
             let size = body.len() as u64;
             if size > self.page_resource_budget {
                 continue;
             }
             let installed = match &resource {
+                PageResource::Image { url } => self.page.add_image(url.clone(), &body).is_ok(),
                 PageResource::Font {
                     url,
                     family,
@@ -196,18 +220,22 @@ impl BrowserState {
                 _ => false,
             };
             if installed {
+                let is_font = matches!(resource, PageResource::Font { .. });
                 self.page_resource_budget -= size;
                 self.loaded_page_resources.insert(resource);
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.bytes += size;
                 }
                 changed = true;
+                fonts_changed |= is_font;
             }
         }
         if changed {
-            self.web_fonts.clear();
-            self.web_fonts.register(&self.page.fonts);
-            self.dynamic_fonts.clear();
+            if fonts_changed {
+                self.web_fonts.clear();
+                self.web_fonts.register(&self.page.fonts);
+                self.dynamic_fonts.clear();
+            }
             self.rebuild_layout();
             InvalidateRect(self.window, null(), 0);
         }

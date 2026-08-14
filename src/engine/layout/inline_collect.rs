@@ -10,7 +10,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         honor_block_boundaries: bool,
     ) {
         let style = self.styles.get(node);
-        if style.display == Display::None || !style.visibility {
+        if style.display == Display::None
+            || !style.visibility
+            || style_collapses_overflow(style, self.viewport)
+        {
             return;
         }
         match &node.data {
@@ -44,6 +47,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             || style.border_width != Edges::ZERO
                             || style.background_color.alpha > 0
                             || style.background_image.is_some()
+                            || style.mask_image.is_some()
                         {
                             if *pending_space {
                                 output.push(text_atom(" ".into(), style, link.clone()));

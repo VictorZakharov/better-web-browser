@@ -44,7 +44,7 @@ Performance claims are valid only when the exercised page path is feature-equiva
 
 ### Current benchmark snapshot
 
-Six runs per browser, collected as two alternating three-run hidden release batches against a [representative public blog page](https://www.neolisk.blog/) on 2026-08-14 with a 2-second settle period, produced these combined medians:
+Six runs per browser, collected as two alternating three-run hidden release batches against a representative public blog page on 2026-08-14 with a 2-second settle period, produced these combined medians:
 
 | Metric | Breeze | Chromium | Result |
 |---|---:|---:|---:|
@@ -80,11 +80,17 @@ cargo build --release
   --benchmark https://example.org/ `
   --output result.json `
   --screenshot result.png `
+  --scroll-samples 12 `
+  --window-width 1920 `
+  --window-height 1080 `
+  --diagnostic-selector '#main' `
   --settle-ms 2000
 ```
 
 Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
-verification without putting a browser window on the desktop.
+verification without putting a browser window on the desktop. Repeatable `--diagnostic-selector`
+options add bounded computed-style, resource-decode, and native-control geometry facts to the JSON
+report; omit them during normal measurements.
 
 ### Web-platform regression suite
 

@@ -53,6 +53,10 @@ pub(super) fn parse_rule_list(
             if media_matches(prelude, viewport_width) {
                 parse_rule_list(body, base_url, viewport_width, next_order, output);
             }
+        } else if prelude.starts_with("@supports") {
+            if supports::supports_matches(prelude) {
+                parse_rule_list(body, base_url, viewport_width, next_order, output);
+            }
         } else if !prelude.starts_with('@') {
             let declarations = parse_declarations(body);
             for selector_text in split_css_top_level(prelude, ',') {

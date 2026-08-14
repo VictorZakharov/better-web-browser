@@ -118,16 +118,21 @@ fn requests_only_webfont_faces_used_by_computed_styles() {
 #[test]
 fn discovers_background_images_from_computed_styles() {
     let mut page = Page::parse(
-        r#"<a class="logo"></a>"#,
+        r#"<a class="logo"></a><span class="icon"></span>"#,
         "https://example.com/articles/page.html",
     );
     page.add_stylesheet_from(
         "https://cdn.example/css/site.css",
-        ".logo { background: no-repeat center url(../images/logo.svg) }".into(),
+        ".logo { background: no-repeat center url(../images/logo.svg) }
+         .icon { mask-image: url(../images/menu.svg) }"
+            .into(),
     );
     page.refresh_resources(800.0);
     assert!(page.resources.contains(&PageResource::Image {
         url: "https://cdn.example/images/logo.svg".into()
+    }));
+    assert!(page.resources.contains(&PageResource::Image {
+        url: "https://cdn.example/images/menu.svg".into()
     }));
 }
 
@@ -156,6 +161,26 @@ fn rasterizes_external_svg_images() {
         .unwrap();
     let image = &page.images["https://example.com/logo.svg"];
     assert_eq!((image.width, image.height), (20, 10));
+    assert!(image.bgra.chunks_exact(4).any(|pixel| pixel[3] != 0));
+}
+
+#[test]
+fn decodes_embedded_css_mask_images_without_networking() {
+    let mut page = Page::parse(r#"<span class="icon"></span>"#, "https://example.com/");
+    page.add_stylesheet(
+        ".icon { mask-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22%3E%3Cpath d=%22M0 0h5v10H0z%22/%3E%3C/svg%3E') }".into(),
+    );
+    page.refresh_resources(800.0);
+
+    let mask = page
+        .style(800.0)
+        .get(&page.dom.elements_named("span").next().unwrap())
+        .mask_image
+        .clone()
+        .unwrap();
+    let image = &page.images[&mask];
+    assert_eq!((image.width, image.height), (10, 10));
+    assert!(image.bgra.chunks_exact(4).any(|pixel| pixel[3] == 0));
     assert!(image.bgra.chunks_exact(4).any(|pixel| pixel[3] != 0));
 }
 
@@ -241,7 +266,11 @@ fn keeps_async_scripts_off_the_first_paint_path() {
     let application = PageResource::Script {
         url: "https://example.com/application.js".into(),
     };
+    let hero = PageResource::Image {
+        url: "https://example.com/hero.png".into(),
+    };
     assert!(!page.resource_blocks_first_paint(&analytics));
+    assert!(!page.resource_blocks_first_paint(&hero));
     assert!(page.resource_blocks_first_paint(&application));
 
     page.add_script(

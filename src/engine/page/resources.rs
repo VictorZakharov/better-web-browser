@@ -2,7 +2,7 @@ use super::{MAX_IMAGES, PageResource, PageScript};
 use crate::engine::css::{media_matches, parse_length};
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
-use crate::navigation::resolve_url;
+use crate::navigation::{resolve_resource_url, resolve_url};
 use std::collections::HashSet;
 
 const MAX_STYLESHEETS: usize = 16;
@@ -111,7 +111,7 @@ pub(super) fn resolve_image_url(
         .or_else(|| responsive_source(node, viewport_width))
         .or_else(|| node.attr("src"))
         .or_else(|| node.attr("href"))?;
-    resolve_url(base_url, source.trim())
+    resolve_resource_url(base_url, source.trim())
 }
 
 fn picture_source(node: &NodeRef, viewport_width: f32) -> Option<String> {

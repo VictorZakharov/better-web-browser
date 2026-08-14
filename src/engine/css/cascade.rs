@@ -1,11 +1,13 @@
 //! Style-set construction, cascade ordering, and presentational hints.
 
+use super::rule_index::RuleIndex;
 use super::*;
 
 #[derive(Debug, Default)]
 pub struct StyleSet {
     pub styles: HashMap<NodeId, ComputedStyle>,
     rules: Vec<Rule>,
+    rule_index: RuleIndex,
     document_base_url: String,
 }
 
@@ -60,9 +62,11 @@ impl StyleSet {
                 &mut rules,
             );
         }
+        let rule_index = RuleIndex::new(&rules);
         let mut set = Self {
             styles: HashMap::new(),
             rules,
+            rule_index,
             document_base_url: document_base_url.to_string(),
         };
         set.compute_subtree(document, None);
@@ -73,6 +77,16 @@ impl StyleSet {
         self.styles
             .get(&node_id(node))
             .expect("style should exist for every DOM node")
+    }
+
+    /// Uses the engine selector parser for opt-in inspection and future DOM query APIs.
+    pub fn query_selector_all(&self, dom: &Dom, input: &str) -> Option<Vec<NodeRef>> {
+        let selector = parse_selector(input.trim())?;
+        Some(
+            dom::Node::descendants(&dom.document)
+                .filter(|node| selector_matches(&selector, node))
+                .collect(),
+        )
     }
 
     fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
@@ -88,8 +102,10 @@ impl StyleSet {
         apply_user_agent_defaults(node, &mut style);
 
         let mut matching = self
-            .rules
-            .iter()
+            .rule_index
+            .candidates(node)
+            .into_iter()
+            .filter_map(|index| self.rules.get(index))
             .filter(|rule| selector_matches(&rule.selector, node))
             .collect::<Vec<_>>();
         matching.sort_by(|left, right| {

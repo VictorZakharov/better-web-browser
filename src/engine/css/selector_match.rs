@@ -24,10 +24,33 @@ pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
                 }
                 false
             }
+            Combinator::AdjacentSibling => previous_element_siblings(node)
+                .next()
+                .is_some_and(|sibling| matches_at(selector, index - 1, &sibling)),
+            Combinator::GeneralSibling => previous_element_siblings(node)
+                .any(|sibling| matches_at(selector, index - 1, &sibling)),
         }
     }
 
     matches_at(selector, selector.compounds.len() - 1, node)
+}
+
+fn previous_element_siblings(node: &NodeRef) -> impl Iterator<Item = NodeRef> {
+    let siblings = node
+        .parent()
+        .map(|parent| parent.children.borrow().clone())
+        .unwrap_or_default();
+    let index = siblings
+        .iter()
+        .position(|sibling| sibling.id() == node.id())
+        .unwrap_or(0);
+    siblings[..index]
+        .iter()
+        .rev()
+        .filter(|sibling| sibling.element().is_some())
+        .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> bool {
@@ -68,6 +91,12 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     {
         return false;
     }
+    if selector.requires_enabled && (!is_disableable(node) || is_disabled(node)) {
+        return false;
+    }
+    if selector.requires_disabled && (!is_disableable(node) || !is_disabled(node)) {
+        return false;
+    }
     if selector.requires_first_child {
         let Some(parent) = node.parent() else {
             return false;
@@ -94,6 +123,27 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
             .iter()
             .any(|simple| simple_selector_matches(simple, node))
     })
+}
+
+fn is_disableable(node: &NodeRef) -> bool {
+    matches!(
+        node.tag_name(),
+        Some("button" | "fieldset" | "input" | "optgroup" | "option" | "select" | "textarea")
+    )
+}
+
+fn is_disabled(node: &NodeRef) -> bool {
+    if node.attr("disabled").is_some() {
+        return true;
+    }
+    let mut ancestor = node.parent();
+    while let Some(candidate) = ancestor {
+        if candidate.tag_name() == Some("fieldset") && candidate.attr("disabled").is_some() {
+            return true;
+        }
+        ancestor = candidate.parent();
+    }
+    false
 }
 
 pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -> bool {
@@ -145,5 +195,35 @@ pub(super) fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) ->
         AttributeOperator::Prefix => actual.starts_with(expected),
         AttributeOperator::Suffix => actual.ends_with(expected),
         AttributeOperator::Substring => actual.contains(expected),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_adjacent_and_general_element_siblings() {
+        let dom = dom::parse("<i></i>text<b id='one'></b><b id='two'></b>");
+        let two = dom
+            .find_node(dom.elements_named("b").nth(1).unwrap().id())
+            .unwrap();
+        assert!(selector_matches(&parse_selector("b + b").unwrap(), &two));
+        assert!(selector_matches(&parse_selector("i ~ b").unwrap(), &two));
+        assert!(!selector_matches(&parse_selector("i + b").unwrap(), &two));
+    }
+
+    #[test]
+    fn matches_enabled_and_disabled_form_controls() {
+        let dom = dom::parse("<button id=on></button><button id=off disabled></button>");
+        let buttons = dom.elements_named("button").collect::<Vec<_>>();
+        assert!(selector_matches(
+            &parse_selector("button:enabled").unwrap(),
+            &buttons[0]
+        ));
+        assert!(selector_matches(
+            &parse_selector("button:disabled").unwrap(),
+            &buttons[1]
+        ));
     }
 }

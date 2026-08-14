@@ -181,6 +181,19 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     Some(format!("{}{}", base.origin(), normalize_path(&path)))
 }
 
+/// Resolves a subresource reference, including embedded `data:` resources.
+/// Navigations deliberately continue to reject `data:` URLs in [`resolve_url`].
+pub fn resolve_resource_url(base: &str, reference: &str) -> Option<String> {
+    let reference = reference.trim();
+    if reference
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("data:"))
+    {
+        return Some(reference.to_string());
+    }
+    resolve_url(base, reference)
+}
+
 fn normalize_path(path_and_query: &str) -> String {
     let (path, query) = path_and_query
         .split_once('?')
@@ -262,6 +275,16 @@ mod tests {
         assert_eq!(
             resolve_url(base, "/root").unwrap(),
             "https://example.com/root"
+        );
+    }
+
+    #[test]
+    fn permits_data_urls_only_for_subresources() {
+        let embedded = "data:image/svg+xml,%3Csvg/%3E";
+        assert_eq!(resolve_url("https://example.com/", embedded), None);
+        assert_eq!(
+            resolve_resource_url("https://example.com/", embedded).as_deref(),
+            Some(embedded)
         );
     }
 }

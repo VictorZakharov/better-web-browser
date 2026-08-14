@@ -153,9 +153,32 @@ impl HostState {
         }
     }
 
-    pub(super) fn record_mutation(&mut self) {
+    pub(super) fn record_mutation(&mut self, target: Option<&NodeRef>) {
+        let requires_render = target.is_some_and(|target| self.mutation_requires_render(target));
+        self.record_mutation_with_render(requires_render);
+    }
+
+    pub(super) fn record_mutation_with_render(&mut self, requires_render: bool) {
         self.mutation_count += 1;
-        self.timers.request_render();
+        if requires_render {
+            self.timers.request_render();
+        }
+    }
+
+    pub(super) fn mutation_requires_render(&self, target: &NodeRef) -> bool {
+        let mut current = Some(target.clone());
+        let mut connected = false;
+        while let Some(node) = current {
+            if node.tag_name() == Some("script") {
+                return false;
+            }
+            if node.id() == self.document.id() {
+                connected = true;
+                break;
+            }
+            current = node.parent();
+        }
+        connected
     }
 
     pub(super) fn schedule_timer(&mut self, id: u32, delay: Duration, repeat: bool) {

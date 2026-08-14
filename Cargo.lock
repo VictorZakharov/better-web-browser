@@ -48,6 +48,7 @@ dependencies = [
  "boa_engine",
  "boa_gc",
  "cssparser",
+ "data-url",
  "encoding_rs",
  "flate2",
  "html5ever",

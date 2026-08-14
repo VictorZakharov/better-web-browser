@@ -65,14 +65,20 @@ pub(super) fn selector_tokens(input: &str) -> Vec<SelectorToken> {
             ')' => depth = (depth - 1).max(0),
             '[' => in_attribute += 1,
             ']' => in_attribute = (in_attribute - 1).max(0),
-            '>' if depth == 0 && in_attribute == 0 => {
+            '>' | '+' | '~' if depth == 0 && in_attribute == 0 => {
                 if start < index {
                     let text = input[start..index].trim();
                     if !text.is_empty() {
                         tokens.push(SelectorToken::Compound(text.to_string()));
                     }
                 }
-                tokens.push(SelectorToken::Combinator(Combinator::Child));
+                let combinator = match character {
+                    '>' => Combinator::Child,
+                    '+' => Combinator::AdjacentSibling,
+                    '~' => Combinator::GeneralSibling,
+                    _ => unreachable!(),
+                };
+                tokens.push(SelectorToken::Combinator(combinator));
                 start = index + character.len_utf8();
                 pending_space = false;
             }
@@ -183,6 +189,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "link" | "any-link" => compound.requires_link = true,
                         "first-child" => compound.requires_first_child = true,
                         "root" => compound.requires_root = true,
+                        "enabled" => compound.requires_enabled = true,
+                        "disabled" => compound.requires_disabled = true,
                         "hover" | "active" | "focus" | "visited" | "focus-visible" => {
                             compound.never_matches = true
                         }

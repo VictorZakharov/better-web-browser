@@ -1,5 +1,6 @@
 //! Commits a loaded document and establishes its first-paint runtime state.
 
+use super::browser_navigation::HistoryMode;
 use super::*;
 
 pub(super) struct LoadedPage {
@@ -190,7 +191,7 @@ impl BrowserState {
         self.record_initial_layout_metrics(layout_started, layout_build_time, paint_time);
         self.install_script_runtime(runtime);
         self.begin_async_scripts();
-        let deferred_resources = self.unloaded_font_resources();
+        let deferred_resources = self.unloaded_deferred_resources();
         self.schedule_benchmark_finish();
         self.begin_deferred_resources(deferred_resources);
     }

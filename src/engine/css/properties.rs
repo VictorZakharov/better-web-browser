@@ -31,6 +31,9 @@ pub(super) fn apply_declaration(
             "background-image" => style
                 .background_image
                 .clone_from(&inherited.background_image),
+            "mask-image" | "-webkit-mask-image" => {
+                style.mask_image.clone_from(&inherited.mask_image)
+            }
             "background-repeat" => {
                 style.background_repeat_x = inherited.background_repeat_x;
                 style.background_repeat_y = inherited.background_repeat_y;
@@ -92,6 +95,9 @@ pub(super) fn apply_declaration(
             }
         }
         "background-image" => style.background_image = parse_background_image(value, base_url),
+        "mask-image" | "-webkit-mask-image" => {
+            style.mask_image = parse_background_image(value, base_url)
+        }
         "background-repeat" => assign_background_repeat(style, value),
         "background-position" => {
             if let Some((x, y)) = parse_background_position(value) {
@@ -268,6 +274,16 @@ pub(super) fn apply_declaration(
             } else {
                 BoxSizing::ContentBox
             }
+        }
+        "list-style" | "list-style-type" => {
+            style.list_style_type = if value
+                .split_ascii_whitespace()
+                .any(|token| token.eq_ignore_ascii_case("none"))
+            {
+                ListStyleType::None
+            } else {
+                ListStyleType::Disc
+            };
         }
         "grid-template-columns" | "-ms-grid-columns" => {
             style.grid_template_columns = value.to_string()

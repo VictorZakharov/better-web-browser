@@ -1,3 +1,6 @@
+mod positioned;
+mod replaced;
+
 use super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -13,6 +16,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return BlockMetrics { bottom: y };
         }
         let block_control = input_control_data(node);
+        let block_image = self.block_image(node);
 
         let margins = style.margin.resolve(containing_width, style.font_size);
         let borders = style
@@ -28,7 +32,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             horizontal_insets,
             style.box_sizing,
         )
-        .unwrap_or(available_width);
+        .unwrap_or_else(|| {
+            block_image.as_ref().map_or(available_width, |image| {
+                image.outer_width(node, &style, horizontal_insets)
+            })
+        });
         if let Some(maximum) = resolve_outer_size(
             style.max_width,
             containing_width,
@@ -49,60 +57,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         border_box_width = border_box_width.max(0.0);
 
-        let auto_left = style.margin.left == Length::Auto;
-        let auto_right = style.margin.right == Length::Auto;
-        let mut x = containing_x + margins.left;
-        if auto_left && auto_right && border_box_width < containing_width {
-            x = containing_x + (containing_width - border_box_width) / 2.0;
-        } else if style.float == Float::Right || auto_left {
-            x = containing_x + containing_width - border_box_width - margins.right;
-        }
-
-        let mut border_y = y + margins.top;
-        if matches!(style.position, Position::Absolute | Position::Fixed) {
-            let (positioning_x, positioning_y, positioning_width, positioning_height) =
-                if style.position == Position::Fixed {
-                    (
-                        self.viewport.x,
-                        self.viewport.y,
-                        self.viewport.width,
-                        self.viewport.height,
-                    )
-                } else {
-                    (containing_x, y, containing_width, self.viewport.height)
-                };
-            let left = style.left.resolve(positioning_width, style.font_size);
-            let right = style.right.resolve(positioning_width, style.font_size);
-            if let Some(left) = left {
-                x = positioning_x + left;
-                if right.is_some()
-                    && auto_left
-                    && auto_right
-                    && border_box_width < positioning_width
-                {
-                    x = positioning_x + (positioning_width - border_box_width) / 2.0;
-                }
-            } else if let Some(right) = right {
-                x = positioning_x + positioning_width - border_box_width - right;
-            }
-            if let Some(top) = style.top.resolve(positioning_height, style.font_size) {
-                border_y = positioning_y + top;
-            } else if let Some(bottom) = style.bottom.resolve(positioning_height, style.font_size) {
-                border_y = positioning_y + positioning_height - bottom;
-            }
-        } else if style.position == Position::Relative {
-            if let Some(left) = style.left.resolve(containing_width, style.font_size) {
-                x += left;
-            } else if let Some(right) = style.right.resolve(containing_width, style.font_size) {
-                x -= right;
-            }
-            if let Some(top) = style.top.resolve(self.viewport.height, style.font_size) {
-                border_y += top;
-            } else if let Some(bottom) = style.bottom.resolve(self.viewport.height, style.font_size)
-            {
-                border_y -= bottom;
-            }
-        }
+        let (x, border_y) = self.resolve_block_position(
+            &style,
+            containing_x,
+            y,
+            containing_width,
+            margins,
+            border_box_width,
+        );
 
         let content_x = x + borders.left + padding.left;
         let content_y = border_y + borders.top + padding.top;
@@ -131,7 +93,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             vertical_insets,
             style.box_sizing,
         );
-        let background_index = if style.background_color.alpha > 0 {
+        let block_image_height = block_image
+            .as_ref()
+            .map(|image| image.content_height(node, &style, content_width));
+        let background_index = if style.background_color.alpha > 0 && style.mask_image.is_none() {
             let index = self.output.items.len();
             self.output.items.push(DisplayItem::SolidRect {
                 rect: RectF {
@@ -163,12 +128,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
             index
         });
+        let mask_image_index = style.mask_image.as_ref().map(|url| {
+            let index = self.output.items.len();
+            self.output.items.push(DisplayItem::Image {
+                rect: RectF {
+                    x,
+                    y: border_y,
+                    width: border_box_width,
+                    height: 0.0,
+                },
+                url: url.clone(),
+                alt: String::new(),
+                tint: Some(style.background_color),
+            });
+            index
+        });
 
-        let collapsed = style.overflow_hidden && maximum_height.is_some_and(|height| height <= 0.0);
+        let collapsed = style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
             content_y
         } else if let Some((kind, _)) = block_control.as_ref() {
             content_y + default_control_content_height(node, kind, &style)
+        } else if let Some(height) = block_image_height {
+            content_y + height
         } else {
             match style.display {
                 Display::Flex => {
@@ -219,6 +201,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         {
             *clip_rect = rect;
             *target_tile = tile_rect;
+        }
+        if let Some(index) = mask_image_index
+            && let DisplayItem::Image { rect: target, .. } = &mut self.output.items[index]
+        {
+            *target = rect;
+        }
+        if let Some(image) = block_image {
+            image.paint(
+                node,
+                &mut self.output,
+                RectF {
+                    x: content_x,
+                    y: content_y,
+                    width: content_width,
+                    height: content_height,
+                },
+            );
         }
         if style.border_color.alpha > 0 && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
         {
@@ -292,7 +291,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut left_float_width = 0.0_f32;
         let mut right_float_width = 0.0_f32;
         let mut float_bottom = y;
-        if node.tag_name() == Some("li") {
+        if node.tag_name() == Some("li") && style.list_style_type != ListStyleType::None {
             atoms.push(InlineAtom::Text {
                 text: "• ".into(),
                 font: FontSpec::from_style(style),
@@ -303,6 +302,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
         }
         for child in node.children.borrow().iter() {
+            if y >= float_bottom {
+                left_float_width = 0.0;
+                right_float_width = 0.0;
+                float_bottom = y;
+            }
             let child_style = self.styles.get(child);
             if is_block_level(child_style.display)
                 && child_style.float != Float::None
@@ -339,8 +343,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     atoms.clear();
                     pending_space = false;
                 }
-                y = y.max(float_bottom);
-                y = self.layout_block(child, x, y, width).bottom;
+                if y >= float_bottom {
+                    left_float_width = 0.0;
+                    right_float_width = 0.0;
+                }
+                let child_width = (width - left_float_width - right_float_width).max(0.0);
+                y = self
+                    .layout_block(child, x + left_float_width, y, child_width)
+                    .bottom;
             } else if is_block_level(child_style.display) {
                 self.layout_block(child, x, positioning_y, width);
             } else {

@@ -1,3 +1,4 @@
+mod refresh;
 mod resources;
 mod scripts;
 mod svg;
@@ -5,17 +6,20 @@ mod svg;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
-use super::css::{Display, StyleSet};
-use super::dom::{self, Dom, Node, NodeRef};
-use super::font::{WebFont, WebFontFace, decode_web_font, discover_font_faces};
+use super::css::StyleSet;
+use super::dom::{self, Dom, NodeRef};
+use super::font::{WebFont, WebFontFace, decode_web_font};
 use super::script::{self, ScriptInput, ScriptOutcome, ScriptRuntime};
 use crate::navigation::resolve_url;
+use data_url::DataUrl;
 use image::ImageReader;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Cursor;
 
 const MAX_DECODED_IMAGE_PIXELS: u64 = 32 * 1024 * 1024;
+const MAX_EMBEDDED_IMAGE_URL_BYTES: usize = 8 * 1024 * 1024;
 const MAX_IMAGES: usize = 64;
+const MAX_STYLE_IMAGES: usize = 64;
 const MAX_INLINE_SVGS: usize = 64;
 const MAX_WEB_FONTS: usize = 16;
 
@@ -97,7 +101,7 @@ impl Page {
             }
         }
 
-        Self {
+        let mut page = Self {
             dom,
             title,
             source_url: source_url.to_string(),
@@ -110,7 +114,9 @@ impl Page {
             images,
             fonts: Vec::new(),
             responsive_viewport_width,
-        }
+        };
+        page.install_embedded_images();
+        page
     }
 
     pub fn add_stylesheet(&mut self, css: String) {
@@ -154,116 +160,6 @@ impl Page {
         for script in &mut self.scripts {
             if script.source_url == url && script.code.is_none() {
                 script.code = Some(code.clone());
-            }
-        }
-    }
-
-    pub fn resource_blocks_first_paint(&self, resource: &PageResource) -> bool {
-        match resource {
-            PageResource::Script { url } => self
-                .scripts
-                .iter()
-                .any(|script| script.source_url.as_str() == url && script.blocks_first_paint),
-            PageResource::Font { .. } => false,
-            _ => true,
-        }
-    }
-
-    pub fn refresh_resources(&mut self, viewport_width: f32) {
-        self.base_url = document_base_url(&self.dom, &self.source_url);
-        self.responsive_viewport_width = viewport_width.max(1.0);
-        let (resources, _) =
-            discover_resources(&self.dom, &self.base_url, self.responsive_viewport_width);
-        for resource in resources {
-            if !matches!(resource, PageResource::Script { .. })
-                && !self.resources.contains(&resource)
-            {
-                self.resources.push(resource);
-            }
-        }
-        let mut available_faces = Vec::new();
-        for (source_url, css) in &self.stylesheet_sources {
-            available_faces.extend(discover_font_faces(css, source_url));
-        }
-        let styles = StyleSet::from_sources(
-            &self.dom,
-            &self.base_url,
-            &self.stylesheet_sources,
-            viewport_width.max(1.0),
-        );
-        let mut known_images = self
-            .resources
-            .iter()
-            .filter_map(|resource| match resource {
-                PageResource::Image { url } => Some(url.clone()),
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-        let mut requested_faces = Vec::<(String, u16, bool)>::new();
-        for node in Node::descendants(&self.dom.document) {
-            let style = styles.get(&node);
-            if style.display == Display::None || !style.visibility {
-                continue;
-            }
-            if known_images.len() < MAX_IMAGES
-                && let Some(url) = style.background_image.as_ref()
-                && known_images.insert(url.clone())
-            {
-                self.resources
-                    .push(PageResource::Image { url: url.clone() });
-            }
-            let family = style
-                .font_family
-                .split(',')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .trim_matches(['\'', '"'])
-                .to_ascii_lowercase();
-            if !family.is_empty()
-                && !requested_faces.iter().any(|(requested, weight, italic)| {
-                    requested == &family && *weight == style.font_weight && *italic == style.italic
-                })
-            {
-                requested_faces.push((family, style.font_weight, style.italic));
-            }
-        }
-        let mut selected_faces = Vec::<WebFontFace>::new();
-        for (family, weight, italic) in requested_faces {
-            let Some(face) = available_faces
-                .iter()
-                .filter(|face| face.family.eq_ignore_ascii_case(&family))
-                .min_by_key(|face| {
-                    (
-                        u8::from(face.italic != italic),
-                        face.weight.abs_diff(weight),
-                    )
-                })
-            else {
-                continue;
-            };
-            if !selected_faces.contains(face) {
-                selected_faces.push(face.clone());
-            }
-        }
-        for face in selected_faces.into_iter().take(MAX_WEB_FONTS) {
-            let resource = PageResource::Font {
-                url: face.url,
-                family: face.family,
-                weight: face.weight,
-                italic: face.italic,
-            };
-            if !self.resources.contains(&resource) {
-                self.resources.push(resource);
-            }
-        }
-        self.cached_styles = Some((viewport_width.max(1.0), styles));
-        for svg in self.dom.elements_named("svg").take(MAX_INLINE_SVGS) {
-            let key = inline_svg_key(&svg);
-            if !self.images.contains_key(&key)
-                && let Ok(image) = decode_inline_svg(&svg)
-            {
-                self.images.insert(key, image);
             }
         }
     }
@@ -317,6 +213,27 @@ impl Page {
         Ok(())
     }
 
+    pub(super) fn install_embedded_images(&mut self) {
+        let urls = self
+            .resources
+            .iter()
+            .filter_map(|resource| match resource {
+                PageResource::Image { url }
+                    if url.starts_with("data:") && !self.images.contains_key(url) =>
+                {
+                    Some(url.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for url in urls {
+            let Ok(bytes) = decode_embedded_image(&url) else {
+                continue;
+            };
+            let _ = self.add_image(url, &bytes);
+        }
+    }
+
     pub fn style(&self, viewport_width: f32) -> StyleSet {
         StyleSet::from_sources(
             &self.dom,
@@ -333,9 +250,23 @@ impl Page {
             .map(|(_, styles)| styles)
     }
 
-    pub(crate) fn image_url(&self, node: &NodeRef) -> Option<String> {
+    pub fn image_url(&self, node: &NodeRef) -> Option<String> {
         resolve_image_url(node, &self.base_url, self.responsive_viewport_width)
     }
+}
+
+fn decode_embedded_image(url: &str) -> Result<Vec<u8>, String> {
+    if url.len() > MAX_EMBEDDED_IMAGE_URL_BYTES {
+        return Err("embedded image URL is too large".into());
+    }
+    let data = DataUrl::process(url).map_err(|error| error.to_string())?;
+    if data.mime_type().type_ != "image" {
+        return Err("embedded resource is not an image".into());
+    }
+    let (bytes, _) = data
+        .decode_to_vec()
+        .map_err(|error| format!("decode embedded image: {error:?}"))?;
+    Ok(bytes)
 }
 
 fn parse_immediate_refresh_target(content: &str) -> Option<&str> {

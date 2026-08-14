@@ -235,6 +235,12 @@ pub enum BoxSizing {
     BorderBox,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListStyleType {
+    None,
+    Disc,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BackgroundSize {
     Auto,
@@ -251,6 +257,7 @@ pub struct ComputedStyle {
     pub color: Color,
     pub background_color: Color,
     pub background_image: Option<String>,
+    pub mask_image: Option<String>,
     pub background_repeat_x: bool,
     pub background_repeat_y: bool,
     pub background_position_x: Length,
@@ -292,6 +299,7 @@ pub struct ComputedStyle {
     pub flex_shrink: f32,
     pub flex_basis: Length,
     pub box_sizing: BoxSizing,
+    pub list_style_type: ListStyleType,
     pub grid_template_columns: String,
     pub grid_template_rows: String,
     pub grid_template_areas: String,
@@ -314,6 +322,7 @@ impl ComputedStyle {
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
             background_image: None,
+            mask_image: None,
             background_repeat_x: true,
             background_repeat_y: true,
             background_position_x: Length::Percent(0.0),
@@ -355,6 +364,7 @@ impl ComputedStyle {
             flex_shrink: 1.0,
             flex_basis: Length::Auto,
             box_sizing: BoxSizing::ContentBox,
+            list_style_type: ListStyleType::Disc,
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),
             grid_template_areas: String::new(),
@@ -380,6 +390,7 @@ impl ComputedStyle {
             style.line_height = parent.line_height;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
+            style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }

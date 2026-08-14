@@ -1,6 +1,7 @@
 //! CSS shorthand expansion and property-specific parsing helpers.
 
 use super::*;
+use crate::navigation::resolve_resource_url;
 
 pub(super) fn apply_background_shorthand(style: &mut ComputedStyle, value: &str, base_url: &str) {
     style.background_color = Color::TRANSPARENT;
@@ -47,7 +48,7 @@ pub(super) fn parse_background_image(value: &str, base_url: &str) -> Option<Stri
             if base_url.is_empty() {
                 return Some(url.to_string());
             }
-            return resolve_url(base_url, url);
+            return resolve_resource_url(base_url, url);
         }
         if parser.next_including_whitespace_and_comments().is_err() {
             break;

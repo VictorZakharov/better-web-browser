@@ -17,6 +17,7 @@ mod dom_host;
 mod execution;
 mod host_call;
 mod host_state;
+mod mutation_host;
 mod runtime;
 mod style_host;
 

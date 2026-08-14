@@ -29,8 +29,8 @@ pub use model::{
 
 use super::css::{
     AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
-    Float, JustifyContent, Length, Position, ResolvedEdges, StyleSet, TextAlign, WhiteSpace,
-    parse_length,
+    Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, StyleSet, TextAlign,
+    WhiteSpace, parse_length,
 };
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};

@@ -79,3 +79,19 @@ pub(super) fn media_condition_matches(condition: &str, viewport_width: f32) -> b
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn applies_all_media_type_with_a_minimum_width() {
+        assert!(media_matches("@media all and (min-width: 640px)", 1088.0));
+        let dom = dom::parse(
+            "<style>.logo{display:none}@media all and (min-width:640px){.logo{display:block}}</style><img class=logo>",
+        );
+        let styles = StyleSet::from_dom(&dom, &[], 1088.0);
+        let logo = dom.elements_named("img").next().unwrap();
+        assert_eq!(styles.get(&logo).display, Display::Block);
+    }
+}
