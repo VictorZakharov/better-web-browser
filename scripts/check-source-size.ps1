@@ -19,7 +19,7 @@ $legacyCeilings = @{
     'src/engine/layout.rs'    = 3405
     'src/engine/scheduler.rs' = 518
     'src/engine/script.rs'    = 1444
-    'src/windows_app.rs'      = 2854
+    'src/windows_app.rs'      = 1955
     'src/winhttp.rs'          = 760
 }
 
