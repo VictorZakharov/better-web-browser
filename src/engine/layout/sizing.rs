@@ -154,9 +154,21 @@ pub(super) fn resolve_height_value(length: Length, viewport: RectF, font_size: f
 }
 
 pub(super) fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -> bool {
-    style.overflow_hidden
-        && resolve_height_value(style.max_height, viewport, style.font_size)
-            .is_some_and(|height| height <= 0.0)
+    if !style.overflow_hidden {
+        return false;
+    }
+    if resolve_height_value(style.max_height, viewport, style.font_size)
+        .is_some_and(|height| height <= 0.0)
+    {
+        return true;
+    }
+    matches!(style.position, Position::Absolute | Position::Fixed)
+        && style
+            .width
+            .resolve(viewport.width, style.font_size)
+            .is_some_and(|width| width <= 1.0)
+        && resolve_height_value(style.height, viewport, style.font_size)
+            .is_some_and(|height| height <= 1.0)
 }
 
 pub(super) fn element_length(

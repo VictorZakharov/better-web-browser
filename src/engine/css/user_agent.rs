@@ -6,8 +6,10 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
     match tag {
         "html" | "body" | "address" | "article" | "aside" | "blockquote" | "center" | "details"
         | "dialog" | "div" | "dl" | "fieldset" | "figcaption" | "figure" | "footer" | "form"
-        | "header" | "hgroup" | "hr" | "main" | "nav" | "ol" | "p" | "pre" | "section"
-        | "summary" | "ul" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Display::Block,
+        | "dd" | "dt" | "header" | "hgroup" | "hr" | "li" | "main" | "menu" | "nav" | "ol"
+        | "p" | "pre" | "section" | "summary" | "ul" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+            Display::Block
+        }
         "table" => Display::Table,
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,

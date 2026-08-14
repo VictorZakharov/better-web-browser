@@ -1,113 +1,10 @@
-use super::paint_primitives::draw_text_in_rect;
+mod diagnostics;
+mod options;
+
+use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
 
-pub(super) struct LaunchOptions {
-    pub(super) startup_url: Option<String>,
-    pub(super) open_task_manager: bool,
-    pub(super) benchmark: Option<BenchmarkRun>,
-}
-
-impl LaunchOptions {
-    pub(super) fn parse(process_started: Instant) -> Result<Self, String> {
-        let mut arguments = std::env::args().skip(1);
-        let mut startup_url = None;
-        let mut open_task_manager = false;
-        let mut benchmark_url = None;
-        let mut output = None;
-        let mut screenshot = None;
-        let mut settle_ms = 2_000_u64;
-
-        while let Some(argument) = arguments.next() {
-            match argument.as_str() {
-                "--benchmark" => {
-                    benchmark_url = Some(
-                        arguments
-                            .next()
-                            .ok_or_else(|| "--benchmark requires a URL".to_string())?,
-                    );
-                }
-                "--output" => {
-                    output = Some(PathBuf::from(
-                        arguments
-                            .next()
-                            .ok_or_else(|| "--output requires a path".to_string())?,
-                    ));
-                }
-                "--screenshot" => {
-                    screenshot = Some(PathBuf::from(
-                        arguments
-                            .next()
-                            .ok_or_else(|| "--screenshot requires a path".to_string())?,
-                    ));
-                }
-                "--settle-ms" => {
-                    settle_ms = arguments
-                        .next()
-                        .ok_or_else(|| "--settle-ms requires a number".to_string())?
-                        .parse::<u64>()
-                        .map_err(|_| "--settle-ms must be a number".to_string())?
-                        .clamp(100, 60_000);
-                }
-                "--task-manager" => open_task_manager = true,
-                option if option.starts_with('-') => {
-                    return Err(format!("unknown option: {option}"));
-                }
-                url => startup_url = Some(url.to_string()),
-            }
-        }
-
-        let benchmark = if let Some(url) = benchmark_url {
-            let output = output
-                .ok_or_else(|| "benchmark mode requires --output <result.json>".to_string())?;
-            startup_url = Some(url.clone());
-            Some(BenchmarkRun {
-                requested_url: url,
-                output,
-                settle: Duration::from_millis(settle_ms),
-                process_started,
-                initial_cpu_ticks: process_cpu_ticks().unwrap_or(0),
-                window_ready: Duration::ZERO,
-                navigation_started: None,
-                page_ready: Duration::ZERO,
-                network_time: Duration::ZERO,
-                parse_time: Duration::ZERO,
-                html_parse_time: Duration::ZERO,
-                resource_processing_time: Duration::ZERO,
-                script_time: Duration::ZERO,
-                style_refresh_time: Duration::ZERO,
-                layout_time: Duration::ZERO,
-                layout_build_time: Duration::ZERO,
-                layout_tree_time: Duration::ZERO,
-                layout_finalize_time: Duration::ZERO,
-                text_measure_count: 0,
-                paint_time: Duration::ZERO,
-                status: 0,
-                bytes: 0,
-                final_url: String::new(),
-                error: None,
-                script_executed: 0,
-                script_mutations: 0,
-                script_errors: Vec::new(),
-                script_console: Vec::new(),
-                script_diagnostics: Vec::new(),
-                script_runtime_stopped: false,
-                finish_scheduled: false,
-                screenshot,
-            })
-        } else {
-            if screenshot.is_some() {
-                return Err("--screenshot requires --benchmark".to_string());
-            }
-            None
-        };
-
-        Ok(Self {
-            startup_url,
-            open_task_manager,
-            benchmark,
-        })
-    }
-}
+pub(super) use options::LaunchOptions;
 
 pub(super) struct BenchmarkRun {
     pub(super) requested_url: String,
@@ -142,6 +39,64 @@ pub(super) struct BenchmarkRun {
     pub(super) script_runtime_stopped: bool,
     pub(super) finish_scheduled: bool,
     pub(super) screenshot: Option<PathBuf>,
+    pub(super) scroll_samples: usize,
+    pub(super) diagnostic_selectors: Vec<String>,
+    pub(super) window_width_dip: i32,
+    pub(super) window_height_dip: i32,
+}
+
+impl BenchmarkRun {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        requested_url: String,
+        output: PathBuf,
+        screenshot: Option<PathBuf>,
+        settle: Duration,
+        scroll_samples: usize,
+        diagnostic_selectors: Vec<String>,
+        window_width_dip: i32,
+        window_height_dip: i32,
+        process_started: Instant,
+    ) -> Self {
+        Self {
+            requested_url,
+            output,
+            settle,
+            process_started,
+            initial_cpu_ticks: process_cpu_ticks().unwrap_or(0),
+            window_ready: Duration::ZERO,
+            navigation_started: None,
+            page_ready: Duration::ZERO,
+            network_time: Duration::ZERO,
+            parse_time: Duration::ZERO,
+            html_parse_time: Duration::ZERO,
+            resource_processing_time: Duration::ZERO,
+            script_time: Duration::ZERO,
+            style_refresh_time: Duration::ZERO,
+            layout_time: Duration::ZERO,
+            layout_build_time: Duration::ZERO,
+            layout_tree_time: Duration::ZERO,
+            layout_finalize_time: Duration::ZERO,
+            text_measure_count: 0,
+            paint_time: Duration::ZERO,
+            status: 0,
+            bytes: 0,
+            final_url: String::new(),
+            error: None,
+            script_executed: 0,
+            script_mutations: 0,
+            script_errors: Vec::new(),
+            script_console: Vec::new(),
+            script_diagnostics: Vec::new(),
+            script_runtime_stopped: false,
+            finish_scheduled: false,
+            screenshot,
+            scroll_samples,
+            diagnostic_selectors,
+            window_width_dip,
+            window_height_dip,
+        }
+    }
 }
 
 impl BrowserState {
@@ -164,6 +119,18 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn finish_benchmark(&mut self) {
+        let scroll_sample_count = self
+            .benchmark
+            .as_ref()
+            .map(|benchmark| benchmark.scroll_samples)
+            .unwrap_or(0);
+        let scroll_paint = match self.measure_scroll_paints(scroll_sample_count) {
+            Ok(metrics) => metrics,
+            Err(error) => {
+                self.set_status(&format!("Failed to measure scrolling: {error}"));
+                ScrollPaintMetrics::default()
+            }
+        };
         let Some(benchmark) = self.benchmark.as_ref() else {
             return;
         };
@@ -172,6 +139,13 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let viewport_width = client.right.max(1) as f32 / self.page_scale();
         let viewport_height = self.viewport_height().max(1) as f32 / self.page_scale();
+        let style_viewport_width = if self.media_viewport_width > 0.0 {
+            self.media_viewport_width
+        } else {
+            viewport_width
+        };
+        let diagnostics =
+            diagnostics::collect(self, &benchmark.diagnostic_selectors, style_viewport_width);
         let memory = process_memory();
         let elapsed = benchmark.process_started.elapsed();
         let cpu_ticks = process_cpu_ticks()
@@ -249,6 +223,9 @@ impl BrowserState {
                 "  \"layout_finalize_ms\": {:.3},\n",
                 "  \"text_measure_count\": {},\n",
                 "  \"paint_ms\": {:.3},\n",
+                "  \"scroll_paint_samples\": {},\n",
+                "  \"average_scroll_paint_ms\": {:.3},\n",
+                "  \"maximum_scroll_paint_ms\": {:.3},\n",
                 "  \"settle_ms\": {},\n",
                 "  \"working_set_bytes\": {},\n",
                 "  \"private_bytes\": {},\n",
@@ -263,6 +240,7 @@ impl BrowserState {
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
+                "  \"diagnostics\": {},\n",
                 "  \"retained_draw_items\": {}\n",
                 "}}\n"
             ),
@@ -292,6 +270,9 @@ impl BrowserState {
             benchmark.layout_finalize_time.as_secs_f64() * 1_000.0,
             benchmark.text_measure_count,
             benchmark.paint_time.as_secs_f64() * 1_000.0,
+            scroll_paint.samples,
+            scroll_paint.average.as_secs_f64() * 1_000.0,
+            scroll_paint.maximum.as_secs_f64() * 1_000.0,
             benchmark.settle.as_millis(),
             memory.working_set,
             memory.private_usage,
@@ -305,6 +286,7 @@ impl BrowserState {
             script_console,
             script_diagnostics,
             benchmark.script_runtime_stopped,
+            diagnostics,
             metrics.retained_draw_items,
         );
         let write_result = benchmark
@@ -323,106 +305,5 @@ impl BrowserState {
             self.set_status(&format!("Failed to capture benchmark: {error}"));
         }
         DestroyWindow(self.window);
-    }
-
-    pub(super) unsafe fn capture_screenshot(
-        &mut self,
-        path: &std::path::Path,
-    ) -> Result<(), String> {
-        let mut client: Rect = std::mem::zeroed();
-        if GetClientRect(self.window, &mut client) == 0 {
-            return Err(last_error("measure benchmark capture"));
-        }
-        let width = client.right.max(1);
-        let height = client.bottom.max(1);
-        let byte_len = usize::try_from(width)
-            .ok()
-            .and_then(|width| {
-                usize::try_from(height)
-                    .ok()
-                    .and_then(|height| width.checked_mul(height))
-            })
-            .and_then(|pixels| pixels.checked_mul(4))
-            .ok_or_else(|| "benchmark capture is too large".to_string())?;
-
-        let window_dc = GetDC(self.window);
-        if window_dc.is_null() {
-            return Err(last_error("open benchmark capture surface"));
-        }
-        let memory_dc = CreateCompatibleDC(window_dc);
-        if memory_dc.is_null() {
-            ReleaseDC(self.window, window_dc);
-            return Err(last_error("create benchmark capture surface"));
-        }
-        let info = BitmapInfo {
-            header: BitmapInfoHeader {
-                size: size_of::<BitmapInfoHeader>() as u32,
-                width,
-                height: -height,
-                planes: 1,
-                bit_count: 32,
-                compression: 0,
-                size_image: byte_len.min(u32::MAX as usize) as u32,
-                x_pixels_per_meter: 0,
-                y_pixels_per_meter: 0,
-                colors_used: 0,
-                colors_important: 0,
-            },
-            colors: [0],
-        };
-        let mut pixels = null_mut();
-        let bitmap = CreateDIBSection(window_dc, &info, DIB_RGB_COLORS, &mut pixels, null_mut(), 0);
-        if bitmap.is_null() || pixels.is_null() {
-            DeleteDC(memory_dc);
-            ReleaseDC(self.window, window_dc);
-            return Err(last_error("allocate benchmark capture bitmap"));
-        }
-
-        let previous = SelectObject(memory_dc, bitmap);
-        self.paint_surface(memory_dc, &client);
-        if let Some(fonts) = self.fonts.as_ref() {
-            SelectObject(memory_dc, fonts.ui);
-            SetTextColor(memory_dc, CHROME_THEME.text);
-            SetBkMode(memory_dc, TRANSPARENT);
-            let mut address_rect = self
-                .chrome
-                .address_frame
-                .inset(self.scale(16), self.scale(1));
-            let address = window_text(self.controls.address);
-            draw_text_in_rect(
-                memory_dc,
-                &address,
-                &mut address_rect,
-                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-            );
-        }
-        let bgra = std::slice::from_raw_parts(pixels.cast::<u8>(), byte_len);
-        let mut rgba = Vec::with_capacity(byte_len);
-        for pixel in bgra.chunks_exact(4) {
-            rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]);
-        }
-
-        if !previous.is_null() {
-            SelectObject(memory_dc, previous);
-        }
-        DeleteObject(bitmap);
-        DeleteDC(memory_dc);
-        ReleaseDC(self.window, window_dc);
-
-        if let Some(parent) = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-        {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| format!("create screenshot directory: {error}"))?;
-        }
-        image::save_buffer(
-            path,
-            &rgba,
-            width as u32,
-            height as u32,
-            image::ColorType::Rgba8,
-        )
-        .map_err(|error| format!("write screenshot: {error}"))
     }
 }

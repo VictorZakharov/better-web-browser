@@ -225,7 +225,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         style: &ComputedStyle,
         output: &mut Vec<InlineAtom>,
     ) {
-        let label = node.text_content().trim().to_string();
+        let label = self.visible_control_label(node);
         let mut icon = Node::descendants(node)
             .skip(1)
             .find(|descendant| descendant.tag_name() == Some("svg"))
@@ -252,7 +252,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     )
                     .max(1.0),
                 ))
-            });
+            })
+            .or_else(|| self.control_mask_icon(node));
         let content_width = style
             .width
             .resolve(self.viewport.width, style.font_size)
@@ -333,5 +334,57 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             control_width: width,
             control_height: height,
         });
+    }
+
+    fn visible_control_label(&self, node: &NodeRef) -> String {
+        fn append<M: TextMeasurer>(
+            engine: &LayoutEngine<'_, M>,
+            node: &NodeRef,
+            text: &mut String,
+        ) {
+            let style = engine.styles.get(node);
+            if style.display == Display::None
+                || !style.visibility
+                || style_collapses_overflow(style, engine.viewport)
+            {
+                return;
+            }
+            if let NodeData::Text(value) = &node.data {
+                text.push_str(&value.borrow());
+                return;
+            }
+            for child in node.children.borrow().iter() {
+                append(engine, child, text);
+            }
+        }
+
+        let mut label = String::new();
+        append(self, node, &mut label);
+        label.trim().to_string()
+    }
+
+    fn control_mask_icon(&self, node: &NodeRef) -> Option<(String, f32, f32)> {
+        Node::descendants(node).skip(1).find_map(|descendant| {
+            let style = self.styles.get(&descendant);
+            let url = style.mask_image.as_ref()?;
+            let image = self.page.images.get(url)?;
+            Some((
+                url.clone(),
+                element_length(
+                    &descendant,
+                    "width",
+                    style.width,
+                    image.width as f32,
+                    style.font_size,
+                ),
+                element_length(
+                    &descendant,
+                    "height",
+                    style.height,
+                    image.height as f32,
+                    style.font_size,
+                ),
+            ))
+        })
     }
 }

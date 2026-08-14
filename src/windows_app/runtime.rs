@@ -6,6 +6,7 @@
 //! - <https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-settimer>
 //! - <https://learn.microsoft.com/windows/win32/winmsg/wm-timer>
 
+use super::browser_navigation::HistoryMode;
 use super::*;
 const USER_TIMER_MINIMUM_MS: u128 = 10;
 const USER_TIMER_MAXIMUM_MS: u128 = 0x7fff_ffff;
@@ -190,7 +191,7 @@ impl BrowserState {
             return;
         }
         if outcome.render_requested {
-            let deferred_resources = self.unloaded_font_resources();
+            let deferred_resources = self.unloaded_deferred_resources();
             self.begin_deferred_resources(deferred_resources);
         }
         self.schedule_script_runtime_wakeup();

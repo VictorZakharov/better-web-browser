@@ -3,12 +3,14 @@
 mod app_state;
 mod async_scripts;
 mod benchmark;
+mod benchmark_capture;
 mod browser_navigation;
 mod chrome_controls;
 mod chrome_paint;
 mod document_activation;
 mod document_navigation;
 mod page_controls;
+mod paint_index;
 mod paint_primitives;
 mod painting;
 mod platform;
@@ -22,13 +24,10 @@ mod task_manager;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
-
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
-use browser_navigation::HistoryMode;
 use chrome_controls::{ChromeLayout, Controls};
 use document_activation::{LoadMessage, LoadedPage};
-use page_controls::PageControlWindow;
 use platform::*;
 use process_metrics::{process_cpu_ticks, process_memory};
 use reader_layout::layout_document;
@@ -77,6 +76,7 @@ pub fn run() -> Result<(), String> {
 
         let options = LaunchOptions::parse(process_started)?;
         let benchmark_is_hidden = options.benchmark.is_some();
+        let (window_width_dip, window_height_dip) = options.window_dimensions();
         let metrics = Arc::new(BrowserMetrics::default());
         let state = Box::new(BrowserState::new(instance, metrics, options)?);
         let state_pointer = Box::into_raw(state);
@@ -93,8 +93,8 @@ pub fn run() -> Result<(), String> {
             window_style,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            scale_dip(DEFAULT_WINDOW_WIDTH_DIP, initial_dpi),
-            scale_dip(DEFAULT_WINDOW_HEIGHT_DIP, initial_dpi),
+            scale_dip(window_width_dip, initial_dpi),
+            scale_dip(window_height_dip, initial_dpi),
             null_mut(),
             null_mut(),
             instance,

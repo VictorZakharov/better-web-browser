@@ -22,6 +22,10 @@ pub(super) fn host_call(
     if let Some(value) = super::style_host::style_host_call(&operation, args, context, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::mutation_host::mutation_host_call(&operation, args, context, state)?
+    {
+        return Ok(value);
+    }
 
     match operation.as_str() {
         "parent" => {
@@ -64,83 +68,6 @@ pub(super) fn host_call(
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &children, true)))
         }
-        "appendChild" => {
-            let parent = state.node(argument_id(args, 1));
-            let child = state.node(argument_id(args, 2));
-            let changed = parent
-                .zip(child.clone())
-                .is_some_and(|(parent, child)| Node::append_child(&parent, child));
-            if changed {
-                state.record_mutation();
-                if let (Some(parent), Some(child)) = (
-                    state.node(argument_id(args, 1)),
-                    state.node(argument_id(args, 2)),
-                ) {
-                    state.diagnose(format!(
-                        "append {} to {}",
-                        node_label(&child),
-                        node_label(&parent)
-                    ));
-                    state.queue_dynamic_script(&child);
-                }
-            }
-            Ok(JsValue::from(if changed {
-                child.map(|node| state.id_for(&node)).unwrap_or_default()
-            } else {
-                0
-            }))
-        }
-        "insertBefore" => {
-            let parent = state.node(argument_id(args, 1));
-            let child = state.node(argument_id(args, 2));
-            let reference_id = argument_id(args, 3);
-            let changed = if reference_id == 0 {
-                parent
-                    .zip(child.clone())
-                    .is_some_and(|(parent, child)| Node::append_child(&parent, child))
-            } else {
-                let reference = state.node(reference_id);
-                parent.zip(child.clone()).zip(reference).is_some_and(
-                    |((parent, child), reference)| Node::insert_before(&parent, child, &reference),
-                )
-            };
-            if changed {
-                state.record_mutation();
-                state.diagnose("insert node before sibling".into());
-                if let Some(child) = child.as_ref() {
-                    state.queue_dynamic_script(child);
-                }
-            }
-            Ok(JsValue::from(if changed {
-                child.map(|node| state.id_for(&node)).unwrap_or_default()
-            } else {
-                0
-            }))
-        }
-        "removeChild" => {
-            let parent = state.node(argument_id(args, 1));
-            let child = state.node(argument_id(args, 2));
-            let changed = parent
-                .zip(child)
-                .is_some_and(|(parent, child)| Node::remove_child(&parent, &child));
-            if changed {
-                state.record_mutation();
-                state.diagnose("remove child node".into());
-            }
-            Ok(JsValue::from(changed))
-        }
-        "remove" => {
-            let node = state.node(argument_id(args, 1));
-            let changed = node.as_ref().is_some_and(|node| node.parent().is_some());
-            if let Some(node) = node {
-                Node::remove_from_parent(&node);
-            }
-            if changed {
-                state.record_mutation();
-                state.diagnose("remove node".into());
-            }
-            Ok(JsValue::from(changed))
-        }
         "textGet" => {
             let value = state
                 .node(argument_id(args, 1))
@@ -148,59 +75,12 @@ pub(super) fn host_call(
                 .unwrap_or_default();
             Ok(js_string(value))
         }
-        "textSet" => {
-            let contents = argument_string(args, 2, context)?;
-            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                Node::set_text_content(&node, &contents);
-                state.register_subtree(&node);
-                true
-            } else {
-                false
-            };
-            if changed {
-                state.record_mutation();
-                if let Some(node) = state.node(argument_id(args, 1)) {
-                    state.diagnose(format!("set textContent on {}", node_label(&node)));
-                }
-            }
-            Ok(JsValue::from(changed))
-        }
         "attrGet" => {
             let name = argument_string(args, 2, context)?;
             let value = state
                 .node(argument_id(args, 1))
                 .and_then(|node| node.attr(&name));
             Ok(value.map_or_else(JsValue::null, js_string))
-        }
-        "attrSet" => {
-            let name = argument_string(args, 2, context)?;
-            let value = argument_string(args, 3, context)?;
-            let changed = state
-                .node(argument_id(args, 1))
-                .is_some_and(|node| node.set_attr(&name, &value));
-            if changed {
-                state.record_mutation();
-                if let Some(node) = state.node(argument_id(args, 1)) {
-                    state.diagnose(format!("set {} on {}", name, node_label(&node)));
-                    if name.eq_ignore_ascii_case("src") {
-                        state.queue_dynamic_script(&node);
-                    }
-                }
-            }
-            Ok(JsValue::from(changed))
-        }
-        "attrRemove" => {
-            let name = argument_string(args, 2, context)?;
-            let changed = state
-                .node(argument_id(args, 1))
-                .is_some_and(|node| node.remove_attr(&name));
-            if changed {
-                state.record_mutation();
-                if let Some(node) = state.node(argument_id(args, 1)) {
-                    state.diagnose(format!("remove {} from {}", name, node_label(&node)));
-                }
-            }
-            Ok(JsValue::from(changed))
         }
         "attrHas" => {
             let name = argument_string(args, 2, context)?;
@@ -232,40 +112,6 @@ pub(super) fn host_call(
                 .map(|node| serialize_children(&node))
                 .unwrap_or_default();
             Ok(js_string(value))
-        }
-        "innerHtmlSet" => {
-            let html = argument_string(args, 2, context)?;
-            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                Node::replace_inner_html(&node, &html, true);
-                state.register_subtree(&node);
-                true
-            } else {
-                false
-            };
-            if changed {
-                state.record_mutation();
-                if let Some(node) = state.node(argument_id(args, 1)) {
-                    state.diagnose(format!("replace innerHTML of {}", node_label(&node)));
-                }
-            }
-            Ok(JsValue::from(changed))
-        }
-        "innerHtmlAppend" => {
-            let html = argument_string(args, 2, context)?;
-            let changed = if let Some(node) = state.node(argument_id(args, 1)) {
-                append_html_fragment(&state.document, &node, &html);
-                state.register_subtree(&node);
-                true
-            } else {
-                false
-            };
-            if changed {
-                state.record_mutation();
-                if let Some(node) = state.node(argument_id(args, 1)) {
-                    state.diagnose(format!("append innerHTML to {}", node_label(&node)));
-                }
-            }
-            Ok(JsValue::from(changed))
         }
         "query" => {
             let selector = argument_string(args, 2, context)?;

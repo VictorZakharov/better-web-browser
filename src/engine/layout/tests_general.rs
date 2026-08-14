@@ -79,6 +79,31 @@ fn evaluates_media_queries_against_the_style_viewport() {
 }
 
 #[test]
+fn block_text_flows_beside_an_active_float() {
+    let page = Page::parse(
+        r#"<style>
+            body, p { margin: 0 }
+            aside { float: right; width: 200px; height: 300px; background: #ccc }
+        </style>
+        <aside></aside><p>Lead paragraph beside the floated panel.</p>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+    let lead = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Text { rect, text, .. } if text.contains("Lead") => Some(*rect),
+            _ => None,
+        })
+        .unwrap();
+
+    assert!(lead.y < 50.0, "{lead:?}");
+    assert!(lead.right() <= 600.0, "{lead:?}");
+}
+
+#[test]
 fn centers_explicitly_sized_background_images_in_block_boxes() {
     let mut page = Page::parse(
         r#"<style>

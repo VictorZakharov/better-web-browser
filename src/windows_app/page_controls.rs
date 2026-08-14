@@ -1,5 +1,6 @@
 //! Native form-control creation, positioning, state preservation, and activation.
 
+use super::browser_navigation::HistoryMode;
 use super::*;
 
 pub(super) struct PageControlWindow {

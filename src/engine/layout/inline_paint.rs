@@ -130,7 +130,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 };
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
-                if style.background_color.alpha > 0 {
+                if style.background_color.alpha > 0 && style.mask_image.is_none() {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
                         color: style
@@ -148,6 +148,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         url: url.clone(),
                         repeat_x: style.background_repeat_x,
                         repeat_y: style.background_repeat_y,
+                    });
+                }
+                if let Some(url) = style.mask_image.as_ref() {
+                    self.output.items.push(DisplayItem::Image {
+                        rect: border_rect,
+                        url: url.clone(),
+                        alt: String::new(),
+                        tint: Some(style.background_color),
                     });
                 }
                 if style.border_color.alpha > 0

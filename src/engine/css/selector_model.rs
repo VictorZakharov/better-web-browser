@@ -1,6 +1,6 @@
 //! Internal selector representation and specificity ordering.
 
-use super::*;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone)]
 pub(super) struct Selector {
@@ -20,6 +20,8 @@ pub(super) struct CompoundSelector {
     pub(super) requires_link: bool,
     pub(super) requires_first_child: bool,
     pub(super) requires_root: bool,
+    pub(super) requires_enabled: bool,
+    pub(super) requires_disabled: bool,
     pub(super) never_matches: bool,
 }
 
@@ -53,6 +55,8 @@ pub(super) enum SimpleSelector {
 pub(super) enum Combinator {
     Descendant,
     Child,
+    AdjacentSibling,
+    GeneralSibling,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

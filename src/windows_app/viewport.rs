@@ -1,5 +1,7 @@
 //! Page/reader layout, scrolling, and content hit testing.
 
+use super::browser_navigation::HistoryMode;
+use super::paint_index::PaintIndex;
 use super::*;
 
 pub(super) struct DrawItem {
@@ -53,12 +55,14 @@ impl BrowserState {
                     style_viewport_width,
                     &mut measurer,
                 );
+                self.paint_index.rebuild(&self.page_layout.items);
                 self.last_text_measure_count = measurer.calls;
                 self.content_height = (self.page_layout.content_height * scale).ceil() as i32;
                 self.metrics
                     .set_retained_draw_items(self.page_layout.items.len());
             }
             Surface::Reader => {
+                self.paint_index = PaintIndex::default();
                 let Some(fonts) = self.fonts.as_ref() else {
                     ReleaseDC(self.window, dc);
                     return;

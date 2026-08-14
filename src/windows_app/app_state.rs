@@ -1,5 +1,8 @@
 //! Browser-window ownership and application lifecycle state.
 
+use super::browser_navigation::HistoryMode;
+use super::page_controls::PageControlWindow;
+use super::paint_index::PaintIndex;
 use super::*;
 
 pub(super) struct BrowserState {
@@ -25,6 +28,7 @@ pub(super) struct BrowserState {
     pub(super) reader_url: String,
     pub(super) draw_items: Vec<DrawItem>,
     pub(super) page_layout: LayoutOutput,
+    pub(super) paint_index: PaintIndex,
     pub(super) page_controls: Vec<PageControlWindow>,
     pub(super) surface: Surface,
     pub(super) content_height: i32,
@@ -79,6 +83,7 @@ impl BrowserState {
             reader_url: HOME_URL.to_string(),
             draw_items: Vec::new(),
             page_layout: LayoutOutput::default(),
+            paint_index: PaintIndex::default(),
             page_controls: Vec::new(),
             surface: Surface::Page,
             content_height: 0,

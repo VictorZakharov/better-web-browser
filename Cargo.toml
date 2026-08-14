@@ -9,6 +9,7 @@ license = "MIT"
 boa_engine = { version = "0.21.1", default-features = false, features = ["annex-b"] }
 boa_gc = "0.21.1"
 cssparser = "0.37.0"
+data-url = "0.3.2"
 encoding_rs = "0.8.35"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 html5ever = "0.39.0"

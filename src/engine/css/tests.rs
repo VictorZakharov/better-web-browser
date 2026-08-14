@@ -94,6 +94,23 @@ fn resolves_background_images_against_the_stylesheet_url() {
 }
 
 #[test]
+fn resolves_standard_and_prefixed_mask_images() {
+    let dom = dom::parse(r#"<span class="icon"></span>"#);
+    let stylesheets = vec![(
+        "https://cdn.example/assets/css/icons.css".to_string(),
+        ".icon { -webkit-mask-image: url('../menu.svg'); mask-image: url('../menu.svg') }"
+            .to_string(),
+    )];
+    let styles = StyleSet::from_sources(&dom, "https://example.com/", &stylesheets, 1000.0);
+    let icon = dom.elements_named("span").next().unwrap();
+
+    assert_eq!(
+        styles.get(&icon).mask_image.as_deref(),
+        Some("https://cdn.example/assets/menu.svg")
+    );
+}
+
+#[test]
 fn matches_descendants_children_compounds_and_not() {
     let dom = dom::parse(
         r#"<style>
@@ -159,6 +176,62 @@ fn applies_media_width_queries() {
     let body = dom.elements_named("body").next().unwrap();
     assert_eq!(narrow.get(&body).color, Color::rgb(0, 128, 0));
     assert_eq!(wide.get(&body).color, Color::BLACK);
+}
+
+#[test]
+fn applies_calculated_media_breakpoints_to_responsive_sidebar_rules() {
+    let dom = dom::parse(
+        r#"<style>
+            .client-js .pinned { display: none }
+            @media screen and (max-width: calc(1120px - 1px)) {
+                .client-js .pinned { display: none }
+            }
+            @media screen and (min-width: 1120px) {
+                .client-js.feature-pinned .column .pinned { display: block }
+            }
+        </style>
+        <html class="client-js feature-pinned">
+            <body><aside class="column"><nav class="pinned">Contents</nav></aside></body>
+        </html>"#,
+    );
+    let pinned = dom.elements_named("nav").next().unwrap();
+
+    assert_eq!(
+        StyleSet::from_dom(&dom, &[], 1118.0).get(&pinned).display,
+        Display::None
+    );
+    assert_eq!(
+        StyleSet::from_dom(&dom, &[], 1868.0).get(&pinned).display,
+        Display::Block
+    );
+}
+
+#[test]
+fn evaluates_css_supports_against_implemented_property_values() {
+    let dom = dom::parse(
+        r#"<style>
+            .grid { display: none }
+            @supports (display: grid) { .grid { display: block } }
+            @supports (position: sticky) { .sticky { display: none } }
+            @supports (display: grid) and (position: sticky) { .compound { display: none } }
+            @supports not (position: sticky) { .negated { display: none } }
+        </style>
+        <div class="grid"></div><div class="sticky"></div>
+        <div class="compound"></div><div class="negated"></div>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1200.0);
+    let display = |class| {
+        let node = dom
+            .elements_named("div")
+            .find(|node| node.has_class(class))
+            .unwrap();
+        styles.get(&node).display
+    };
+
+    assert_eq!(display("grid"), Display::Block);
+    assert_eq!(display("sticky"), Display::Block);
+    assert_eq!(display("compound"), Display::Block);
+    assert_eq!(display("negated"), Display::None);
 }
 
 #[test]
@@ -243,6 +316,16 @@ fn honors_explicit_inheritance_after_user_agent_defaults() {
     assert_eq!(style.width, Length::Px(80.0));
     assert_eq!(style.max_width, Length::Px(90.0));
     assert_eq!(style.background_color, Color::rgb(0x21, 0x21, 0x21));
+}
+
+#[test]
+fn gives_html_list_items_block_level_user_agent_layout() {
+    let dom = dom::parse("<ul><li>first</li><li>second</li></ul>");
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+
+    for item in dom.elements_named("li") {
+        assert_eq!(styles.get(&item).display, Display::Block);
+    }
 }
 
 #[test]
