@@ -14,15 +14,16 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 # baseline and must only move downward as modules split. Small coordinator ceilings stay frozen too.
 $fileCeilings = @{
     'src/document.rs'                       = 518
-    'src/engine/css.rs'                     = 2856
-    'src/engine/dom.rs'                     = 986
-    'src/engine/layout.rs'                  = 3405
+    'src/engine/css.rs'                     = 51
+    'src/engine/dom.rs'                     = 12
+    'src/engine/layout.rs'                  = 48
+    'src/engine/page.rs'                    = 358
     'src/engine/scheduler.rs'               = 518
     'src/engine/script.rs'                  = 80
     'src/engine/script/execution.rs'        = 453
     'src/engine/script/host_call.rs'        = 422
     'src/windows_app.rs'                    = 191
-    'src/winhttp.rs'                        = 760
+    'src/winhttp.rs'                        = 19
 }
 
 $sourceRoots = @('src', 'tests', 'benchmarks', 'scripts')
