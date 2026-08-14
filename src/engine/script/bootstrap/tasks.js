@@ -15,7 +15,10 @@
     };
     windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
-    windowObject.queueMicrotask = callback => Promise.resolve().then(callback);
+    windowObject.queueMicrotask = callback => {
+        if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
+        Promise.resolve().then(() => callback());
+    };
     windowObject.__runTimer = id => {
         const timer = timers.get(Number(id));
         if (!timer) return false;
@@ -25,25 +28,68 @@
         return true;
     };
 
+    const formUrlDecode = value => decodeURIComponent(String(value).replace(/\+/g, ' '));
+    const formUrlEncode = value => encodeURIComponent(String(value))
+        .replace(/[!'()~]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())
+        .replace(/%20/g, '+');
     class URLSearchParams {
         constructor(init = '') {
-            this.values = [];
-            const source = String(init).replace(/^\?/, '');
-            if (source) for (const part of source.split('&')) {
-                const [key, value = ''] = part.split('=');
-                this.values.push([decodeURIComponent(key.replace(/\+/g, ' ')), decodeURIComponent(value.replace(/\+/g, ' '))]);
+            this._entries = [];
+            if (typeof init === 'string') {
+                const source = init.replace(/^\?/, '');
+                if (source) for (const part of source.split('&')) {
+                    const split = part.indexOf('=');
+                    const key = split < 0 ? part : part.slice(0, split);
+                    const value = split < 0 ? '' : part.slice(split + 1);
+                    this._entries.push([formUrlDecode(key), formUrlDecode(value)]);
+                }
+            } else if (init != null && typeof init[Symbol.iterator] === 'function') {
+                for (const pair of init) {
+                    const values = [...pair];
+                    if (values.length !== 2) throw new TypeError('URLSearchParams pairs must contain two items');
+                    this.append(values[0], values[1]);
+                }
+            } else if (init != null) {
+                for (const key of Object.keys(Object(init))) this.append(key, init[key]);
             }
         }
-        append(key, value) { this.values.push([String(key), String(value)]); }
-        set(key, value) { this.delete(key); this.append(key, value); }
-        get(key) { return this.values.find(entry => entry[0] === String(key))?.[1] ?? null; }
-        getAll(key) { return this.values.filter(entry => entry[0] === String(key)).map(entry => entry[1]); }
-        has(key) { return this.values.some(entry => entry[0] === String(key)); }
-        delete(key) { key = String(key); this.values = this.values.filter(entry => entry[0] !== key); }
-        toString() { return this.values.map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(value)).join('&'); }
-        entries() { return this.values[Symbol.iterator](); }
-        keys() { return this.values.map(entry => entry[0])[Symbol.iterator](); }
-        values() { return this.values.map(entry => entry[1])[Symbol.iterator](); }
+        get size() { return this._entries.length; }
+        append(key, value) { this._entries.push([String(key), String(value)]); }
+        set(key, value) {
+            key = String(key);
+            value = String(value);
+            let replaced = false;
+            this._entries = this._entries.filter(entry => {
+                if (entry[0] !== key) return true;
+                if (replaced) return false;
+                entry[1] = value;
+                replaced = true;
+                return true;
+            });
+            if (!replaced) this._entries.push([key, value]);
+        }
+        get(key) { return this._entries.find(entry => entry[0] === String(key))?.[1] ?? null; }
+        getAll(key) { return this._entries.filter(entry => entry[0] === String(key)).map(entry => entry[1]); }
+        has(key, value = undefined) {
+            key = String(key);
+            return value === undefined
+                ? this._entries.some(entry => entry[0] === key)
+                : this._entries.some(entry => entry[0] === key && entry[1] === String(value));
+        }
+        delete(key, value = undefined) {
+            key = String(key);
+            this._entries = value === undefined
+                ? this._entries.filter(entry => entry[0] !== key)
+                : this._entries.filter(entry => entry[0] !== key || entry[1] !== String(value));
+        }
+        sort() { this._entries.sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0); }
+        forEach(callback, thisArg = undefined) {
+            for (const [key, value] of this._entries) callback.call(thisArg, value, key, this);
+        }
+        toString() { return this._entries.map(([key, value]) => formUrlEncode(key) + '=' + formUrlEncode(value)).join('&'); }
+        entries() { return this._entries[Symbol.iterator](); }
+        keys() { return this._entries.map(entry => entry[0])[Symbol.iterator](); }
+        values() { return this._entries.map(entry => entry[1])[Symbol.iterator](); }
         [Symbol.iterator]() { return this.entries(); }
     }
     windowObject.URLSearchParams = URLSearchParams;
@@ -64,8 +110,7 @@
     const computedStyleProxy = element => new Proxy({
         getPropertyValue(name) {
             name = String(name).toLowerCase();
-            const inline = element?.style?.getPropertyValue(name) || '';
-            return inline || (element ? host('uaStyle', element.__id, name) : '');
+            return element ? host('computedStyle', element.__id, name) : '';
         },
         get cssText() { return ''; }
     }, {
@@ -121,6 +166,7 @@
     };
 
     windowObject.__wrap = wrap;
+    refreshWindowNamedProperties();
     windowObject.__finishDocument = () => {
         document.readyState = 'interactive';
         document.dispatchEvent(new Event('DOMContentLoaded'));

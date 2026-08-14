@@ -16,78 +16,14 @@ pub(super) fn host_call(
     let mut host = host.borrow_mut();
     let state = &mut *host;
 
+    if let Some(value) = super::dom_host::dom_host_call(&operation, args, context, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::style_host::style_host_call(&operation, args, context, state)? {
+        return Ok(value);
+    }
+
     match operation.as_str() {
-        "document" => {
-            let document = state.document.clone();
-            Ok(JsValue::from(state.id_for(&document)))
-        }
-        "nodeType" => {
-            let kind = state
-                .node(argument_id(args, 1))
-                .map(|node| match node.data {
-                    NodeData::Element(_) => 1,
-                    NodeData::Text(_) => 3,
-                    NodeData::Comment(_) => 8,
-                    NodeData::Document if node.id() == state.document.id() => 9,
-                    NodeData::Document => 11,
-                    NodeData::Doctype { .. } => 10,
-                    NodeData::ProcessingInstruction { .. } => 7,
-                })
-                .unwrap_or_default();
-            Ok(JsValue::from(kind))
-        }
-        "tagName" => {
-            let value = state
-                .node(argument_id(args, 1))
-                .and_then(|node| {
-                    node.tag_name().map(|tag| {
-                        if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml") {
-                            tag.to_ascii_uppercase()
-                        } else {
-                            tag.to_string()
-                        }
-                    })
-                })
-                .unwrap_or_default();
-            Ok(js_string(value))
-        }
-        "localName" => {
-            let value = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.tag_name().map(str::to_string))
-                .unwrap_or_default();
-            Ok(js_string(value))
-        }
-        "namespaceUri" => {
-            let value = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.namespace_uri().map(str::to_string));
-            Ok(value.map_or_else(JsValue::null, js_string))
-        }
-        "templateContent" => {
-            let contents = state.node(argument_id(args, 1)).and_then(|node| {
-                node.element()
-                    .and_then(|element| element.template_contents.borrow().clone())
-            });
-            Ok(JsValue::from(
-                contents.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
-        }
-        "uaStyle" => {
-            let property = argument_string(args, 2, context)?.to_ascii_lowercase();
-            let value = state
-                .node(argument_id(args, 1))
-                .and_then(|node| {
-                    if property == "display" && is_hidden_by_html_rendering(&node) {
-                        Some("none")
-                    } else {
-                        node.tag_name()
-                            .and_then(|tag| user_agent_style_property(tag, &property))
-                    }
-                })
-                .unwrap_or_default();
-            Ok(js_string(value.to_string()))
-        }
         "parent" => {
             let parent = state
                 .node(argument_id(args, 1))
@@ -127,21 +63,6 @@ pub(super) fn host_call(
                 .map(|node| node.children.borrow().clone())
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &children, true)))
-        }
-        "createElement" => {
-            let tag_name = argument_string(args, 1, context)?;
-            let node = Node::create_element_for(&state.document, &tag_name);
-            Ok(JsValue::from(state.id_for(&node)))
-        }
-        "createText" => {
-            let contents = argument_string(args, 1, context)?;
-            let node = Node::create_text_for(&state.document, &contents);
-            Ok(JsValue::from(state.id_for(&node)))
-        }
-        "createComment" => {
-            let contents = argument_string(args, 1, context)?;
-            let node = Node::create_comment_for(&state.document, &contents);
-            Ok(JsValue::from(state.id_for(&node)))
         }
         "appendChild" => {
             let parent = state.node(argument_id(args, 1));
@@ -362,15 +283,6 @@ pub(super) fn host_call(
                 .map(|root| query_selector_all(&root, &selector))
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &nodes, false)))
-        }
-        "byId" => {
-            let wanted = argument_string(args, 1, context)?;
-            let root = state.document.clone();
-            let node = Node::descendants(&root)
-                .find(|node| node.attr("id").as_deref() == Some(wanted.as_str()));
-            Ok(JsValue::from(
-                node.map(|node| state.id_for(&node)).unwrap_or_default(),
-            ))
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
         "cookieGet" => Ok(js_string(state.cookie_header())),

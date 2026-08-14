@@ -21,10 +21,10 @@
         });
     }
     const cache = new Map();
+    let refreshWindowNamedProperties = () => {};
     const list = value => {
         if (!value) return [];
         const result = value.split(',').filter(Boolean).map(id => wrap(Number(id)));
         result.item = index => result[index] || null;
         return result;
     };
-

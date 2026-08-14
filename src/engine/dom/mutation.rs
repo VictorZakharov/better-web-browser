@@ -4,7 +4,7 @@ use super::document::Dom;
 use super::node::{ElementData, Node, NodeData, NodeIdAllocator, NodeRef};
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::tree_builder::TreeBuilderOpts;
-use html5ever::{Attribute, LocalName, ParseOpts, QualName, ns, parse_fragment};
+use html5ever::{Attribute, LocalName, Namespace, ParseOpts, Prefix, QualName, ns, parse_fragment};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -15,6 +15,31 @@ impl Node {
 
     pub fn create_element_for(owner: &NodeRef, tag_name: &str) -> NodeRef {
         Self::create_element_in(Rc::clone(&owner.identity), tag_name)
+    }
+
+    pub fn create_element_ns_for(
+        owner: &NodeRef,
+        namespace: &str,
+        qualified_name: &str,
+    ) -> NodeRef {
+        let (prefix, local_name) = qualified_name
+            .split_once(':')
+            .map_or((None, qualified_name), |(prefix, local_name)| {
+                (Some(Prefix::from(prefix)), local_name)
+            });
+        let namespace = Namespace::from(namespace);
+        let template_contents = (namespace == ns!(html)
+            && local_name.eq_ignore_ascii_case("template"))
+        .then(|| Node::new_in(Rc::clone(&owner.identity), NodeData::Document));
+        Node::new_in(
+            Rc::clone(&owner.identity),
+            NodeData::Element(ElementData {
+                name: QualName::new(prefix, namespace, LocalName::from(local_name)),
+                attrs: RefCell::new(Vec::new()),
+                template_contents: RefCell::new(template_contents),
+                mathml_annotation_xml_integration_point: false,
+            }),
+        )
     }
 
     fn create_element_in(identity: Rc<NodeIdAllocator>, tag_name: &str) -> NodeRef {
@@ -52,6 +77,10 @@ impl Node {
             Rc::clone(&owner.identity),
             NodeData::Comment(contents.to_string()),
         )
+    }
+
+    pub fn create_document_fragment_for(owner: &NodeRef) -> NodeRef {
+        Node::new_in(Rc::clone(&owner.identity), NodeData::Document)
     }
 
     pub fn set_attr(&self, name: &str, value: &str) -> bool {
