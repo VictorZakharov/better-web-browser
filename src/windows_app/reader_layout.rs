@@ -205,3 +205,18 @@ pub(super) fn words_with_spacing(text: &str) -> Vec<(&str, bool)> {
     }
     words
 }
+
+#[cfg(test)]
+mod tests {
+    use super::words_with_spacing;
+
+    #[test]
+    fn tracks_original_word_spacing() {
+        assert_eq!(
+            words_with_spacing("hello   world"),
+            vec![("hello", false), ("world", true)]
+        );
+        assert_eq!(words_with_spacing("joined"), vec![("joined", false)]);
+        assert_eq!(words_with_spacing("  leading"), vec![("leading", true)]);
+    }
+}

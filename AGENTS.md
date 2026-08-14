@@ -15,6 +15,7 @@
 - Keep every pull-request branch linear. Rebase onto `origin/main` when it moves; do not merge `main` or another branch into the topic branch. CI's `Linear PR history` check rejects merge commits introduced by a pull request.
 - Keep commits reviewable and scoped to one logical batch. Before pushing, run the relevant local checks plus `./scripts/check-source-size.ps1` and `cargo fmt --all -- --check`.
 - Push the topic branch, open a pull request, and wait for all required checks. Only the user may merge pull requests; never run `gh pr merge` or enable auto-merge. Stop at "ready to merge" and provide the pull-request link.
+- In this Windows workspace, an escalated `gh pr create` can fail when its internal Git process sees the repository as owned by the sandbox identity. Create PRs with the fully qualified GitHub API endpoint (`gh api repos/VictorZakharov/better-web-browser/pulls --method POST ...`) so no local repository inference is needed; do not mutate the user's global `safe.directory` configuration as a workaround.
 - Merge pull requests with GitHub's merge-commit method only. Squash merging and rebase merging are disabled for this repository.
 - Preserve the required check names `windows` and `Linear PR history` when editing CI. The `windows` gate aggregates the parallel source/format, lint, and test workers; coordinate any intentional rename with branch protection.
 - Optimize CI for wall-clock feedback. Independent checks may spend additional standard hosted-runner minutes in parallel; do not serialize them merely to minimize total runner usage. Preserve the compiler-level sccache configuration and Cargo registry caches, and measure end-to-end timing after material CI changes. Do not cache `target` directly: checkout timestamps make that ineffective for the vendored Boa path dependency.
@@ -25,8 +26,8 @@
 
 - Keep cohesive hand-written source modules at or below 400 lines when practical; 500 lines is the hard limit for new files.
 - Run `./scripts/check-source-size.ps1` before committing. Existing oversized files have frozen ceilings and must shrink as they are split; do not raise a ceiling to accommodate new code.
-- Prioritize extracting the remaining frequently edited oversized files (`src/windows_app.rs` and `src/engine/page.rs`) before adding another subsystem to them.
-- Keep `src/engine/script.rs` as a small facade; extend its responsibility-based submodules and split any above-target module before allowing its frozen ceiling to grow.
+- Prioritize extracting the remaining frequently edited oversized file (`src/engine/page.rs`) before adding another subsystem to it.
+- Keep `src/windows_app.rs` and `src/engine/script.rs` as small facades; extend their responsibility-based submodules and split any above-target module before allowing a frozen facade ceiling to grow.
 - Split by ownership or responsibility, not arbitrary line ranges. Keep a small coordinating module and move tests, platform adapters, bindings, parsing, or lifecycle policy behind focused interfaces.
 
 ## Automated browser execution
