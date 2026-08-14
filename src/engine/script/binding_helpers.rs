@@ -47,6 +47,16 @@ pub(super) fn node_label(node: &NodeRef) -> String {
     }
 }
 
+pub(super) fn append_html_fragment(document: &NodeRef, target: &NodeRef, html: &str) {
+    let holder = Node::create_element_for(document, "div");
+    Node::replace_inner_html(&holder, html, true);
+    // Release the immutable child-list guard before append_child detaches from that same list.
+    let children = holder.children.borrow().clone();
+    for child in children {
+        Node::append_child(target, child);
+    }
+}
+
 pub(super) fn join_node_ids(
     state: &mut HostState,
     nodes: &[NodeRef],

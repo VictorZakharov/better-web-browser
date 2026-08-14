@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "suite": "Breeze curated Web Platform Tests",
+  "upstream": {
+    "repository": "https://github.com/web-platform-tests/wpt.git",
+    "revision": "f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476",
+    "license": "BSD-3-Clause"
+  },
+  "tests": [
+    {
+      "path": "html/syntax/parsing/empty-doctype-ids.html",
+      "area": "HTML parsing",
+      "expected": "pass"
+    },
+    {
+      "path": "html/syntax/parsing/meta-inhead-insertion-mode.html",
+      "area": "HTML parsing",
+      "expected": "fail",
+      "reason": "The DOM binding currently exposes a fixed UTF-8 characterSet."
+    },
+    {
+      "path": "html/syntax/parsing/ambiguous-ampersand.html",
+      "area": "HTML parsing",
+      "expected": "fail",
+      "reason": "Entity handling through document.write and innerHTML is incomplete."
+    },
+    {
+      "path": "html/syntax/parsing/adoption_agency_check_the_end_tag_name.html",
+      "area": "HTML parsing",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/nodes/Element-childElementCount-nochild.html",
+      "area": "DOM",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/nodes/Element-tagName.html",
+      "area": "DOM",
+      "expected": "fail",
+      "reason": "createElementNS does not yet retain non-HTML namespaces."
+    },
+    {
+      "path": "dom/nodes/Node-nodeName.html",
+      "area": "DOM",
+      "expected": "fail",
+      "reason": "Namespace-aware elements, DocumentType, and DocumentFragment bindings are incomplete."
+    },
+    {
+      "path": "dom/nodes/Document-getElementById.html",
+      "area": "DOM",
+      "expected": "fail",
+      "reason": "Empty-ID behavior and several HTML element interface bindings are incomplete."
+    },
+    {
+      "path": "dom/events/Event-type.html",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/Event-defaultPrevented.html",
+      "area": "DOM events",
+      "expected": "fail",
+      "reason": "Legacy event cancellation properties are incomplete."
+    },
+    {
+      "path": "dom/events/Event-dispatch-bubbles-false.html",
+      "area": "DOM events",
+      "expected": "fail",
+      "reason": "The event dispatcher does not yet implement capture and propagation phases."
+    },
+    {
+      "path": "dom/events/Event-dispatch-order-at-target.html",
+      "area": "DOM events",
+      "expected": "fail",
+      "reason": "Capture and bubble listener ordering at the target is not implemented."
+    },
+    {
+      "path": "html/webappapis/microtask-queuing/queue-microtask.any.js",
+      "area": "Event loop",
+      "expected": "fail",
+      "reason": "queueMicrotask argument validation and exception reporting are incomplete."
+    },
+    {
+      "path": "html/webappapis/microtask-queuing/queue-microtask.window.js",
+      "area": "Event loop",
+      "expected": "timeout",
+      "reason": "The placeholder MutationObserver never delivers the callback awaited by this test."
+    },
+    {
+      "path": "html/webappapis/microtask-queuing/queue-microtask-exceptions.any.js",
+      "area": "Event loop",
+      "expected": "timeout",
+      "reason": "The global error event awaited after a microtask exception is not dispatched."
+    },
+    {
+      "path": "url/url-tojson.any.js",
+      "area": "URL",
+      "expected": "pass"
+    },
+    {
+      "path": "url/urlsearchparams-get.any.js",
+      "area": "URL",
+      "expected": "pass"
+    },
+    {
+      "path": "url/urlsearchparams-append.any.js",
+      "area": "URL",
+      "expected": "pass"
+    },
+    {
+      "path": "url/urlsearchparams-has.any.js",
+      "area": "URL",
+      "expected": "fail",
+      "reason": "URLSearchParams.has does not yet support its optional value argument."
+    },
+    {
+      "path": "url/urlsearchparams-set.any.js",
+      "area": "URL",
+      "expected": "fail",
+      "reason": "URLSearchParams encoding and replacement semantics are incomplete."
+    },
+    {
+      "path": "css/css-cascade/inline-style-background.html",
+      "area": "CSS cascade",
+      "expected": "fail",
+      "reason": "Window named access for the test element ID is not implemented."
+    },
+    {
+      "path": "css/css-cascade/important-vs-inline-001.html",
+      "area": "CSS cascade",
+      "expected": "fail",
+      "reason": "Window named access for element IDs is missing before the cascade assertions run."
+    },
+    {
+      "path": "css/css-cascade/important-vs-inline-002.html",
+      "area": "CSS cascade",
+      "expected": "fail",
+      "reason": "Window named access for element IDs is missing before the cascade assertions run."
+    },
+    {
+      "path": "css/css-cascade/inherit-initial.html",
+      "area": "CSS cascade",
+      "expected": "fail",
+      "reason": "Computed inheritance and initial-value resolution are incomplete."
+    }
+  ]
+}

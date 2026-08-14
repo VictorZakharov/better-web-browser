@@ -6,7 +6,12 @@ mod windows_app;
 #[cfg(target_os = "windows")]
 fn main() {
     if let Err(error) = windows_app::run() {
-        windows_app::show_fatal_error(&error);
+        if std::env::args().any(|argument| argument == "--benchmark") {
+            eprintln!("{error}");
+            std::process::exit(1);
+        } else {
+            windows_app::show_fatal_error(&error);
+        }
     }
 }
 

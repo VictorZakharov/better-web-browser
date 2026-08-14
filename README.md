@@ -86,6 +86,21 @@ cargo build --release
 Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
 verification without putting a browser window on the desktop.
 
+### Web-platform regression suite
+
+A pinned, curated 24-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
+URLs, and the CSS cascade. Upstream fixtures stay in a separate sparse WPT checkout; after preparing
+that checkout, the suite runs offline with one hidden command:
+
+```powershell
+.\scripts\checkout-wpt.ps1 -Destination ..\wpt
+.\scripts\run-wpt.ps1 -WptRoot ..\wpt
+```
+
+The runner emits `target/wpt/report.json` and fails on regressions, crashes, changed failure modes,
+and unexpected passes. See [tests/wpt/README.md](tests/wpt/README.md) for provenance, licensing,
+expectation policy, filtering, and the exact execution contract.
+
 ## Honest current limitations
 
 - Windows-only native shell

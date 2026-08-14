@@ -92,6 +92,34 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
+  wpt:
+    name: Curated WPT
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.17.0
+      - name: Restore Cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-registry-wpt-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-registry-wpt-
+      - name: Prepare pinned WPT fixtures
+        shell: pwsh
+        run: ./scripts/checkout-wpt.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
+      - name: Run curated WPT suite headlessly
+        shell: pwsh
+        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt')
+
   windows:
     name: windows
     if: ${{ always() }}
@@ -99,6 +127,7 @@ jobs:
       - source
       - lint
       - test
+      - wpt
     runs-on: ubuntu-latest
     steps:
       - name: Require every Windows worker
@@ -107,8 +136,9 @@ jobs:
           SOURCE_RESULT: ${{ needs.source.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          WPT_RESULT: ${{ needs.wpt.result }}
         run: |
-          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT"
+          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" ]]; then
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT"
             exit 1
           fi
