@@ -1,0 +1,41 @@
+#data
+<body><noscript><p>Fallback</p></noscript><p>Live</p>
+#errors
+The noscript body is raw text when scripting is enabled.
+#script-on
+#document
+| <html>
+|   <head>
+|   <body>
+|     <noscript>
+|       "<p>Fallback</p>"
+|     <p>
+|       "Live"
+
+#data
+<body><noscript><p>Fallback</p></noscript><p>Live</p>
+#errors
+#script-off
+#document
+| <html>
+|   <head>
+|   <body>
+|     <noscript>
+|       <p>
+|         "Fallback"
+|     <p>
+|       "Live"
+
+#data
+<body><p ID=first id=second class=test title=>x
+#errors
+Duplicate id is ignored and the missing title value becomes empty.
+#document
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       class="test"
+|       id="first"
+|       title=""
+|       "x"

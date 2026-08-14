@@ -108,6 +108,19 @@ The runner emits `target/wpt/report.json` and fails on regressions, crashes, cha
 and unexpected passes. See [tests/wpt/README.md](tests/wpt/README.md) for provenance, licensing,
 expectation policy, filtering, and the exact execution contract.
 
+A second in-repository parser suite runs selected WPT tree-construction fixtures directly against
+the engine-owned DOM. It covers implied elements, foster parenting, adoption-agency repair,
+templates, foreign namespaces, both `noscript` modes, malformed attributes, fragment contexts, and
+deep malformed-input safety:
+
+```powershell
+cargo test --test html_parser_conformance
+```
+
+See [tests/html-parser/README.md](tests/html-parser/README.md) for the pinned upstream revision,
+fixture provenance, structural serialization contract, and intentionally unsupported error-count
+comparison.
+
 ## Honest current limitations
 
 - Windows-only native shell

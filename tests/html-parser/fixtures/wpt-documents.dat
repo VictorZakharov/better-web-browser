@@ -1,0 +1,101 @@
+#data
+<!doctype html><p>foo<div>bar<p>baz
+#errors
+(1,35): expected-closing-tag-but-got-eof
+#document
+| <!DOCTYPE html>
+| <html>
+|   <head>
+|   <body>
+|     <p>
+|       "foo"
+|     <div>
+|       "bar"
+|       <p>
+|         "baz"
+
+#data
+<table><colgroup></html>foo
+#errors
+(1,7): expected-doctype-but-got-start-tag
+(1,24): unexpected-end-tag
+(1,27): foster-parenting-character-in-table
+(1,27): foster-parenting-character-in-table
+(1,27): foster-parenting-character-in-table
+(1,27): eof-in-table
+#document
+| <html>
+|   <head>
+|   <body>
+|     "foo"
+|     <table>
+|       <colgroup>
+
+#data
+<b>1<i>2<p>3</b>4
+#errors
+(1,3): expected-doctype-but-got-start-tag
+(1,16): adoption-agency-1.3
+(1,17): expected-closing-tag-but-got-eof
+#document
+| <html>
+|   <head>
+|   <body>
+|     <b>
+|       "1"
+|       <i>
+|         "2"
+|     <i>
+|       <p>
+|         <b>
+|           "3"
+|         "4"
+
+#data
+<body><template><em>Hello</em></template>
+#errors
+no doctype
+#document
+| <html>
+|   <head>
+|   <body>
+|     <template>
+|       content
+|         <em>
+|           "Hello"
+
+#data
+<body><table><tr><td><svg><td><foreignObject><span></td>Foo
+#errors
+(1,6): expected-doctype-but-got-start-tag
+(1,56): unexpected-end-tag
+(1,60): foster-parenting-character
+(1,60): foster-parenting-character
+(1,60): foster-parenting-character
+(1,60): expected-closing-tag-but-got-eof
+#document
+| <html>
+|   <head>
+|   <body>
+|     "Foo"
+|     <table>
+|       <tbody>
+|         <tr>
+|           <td>
+|             <svg svg>
+|               <svg td>
+|                 <svg foreignObject>
+|                   <span>
+
+#data
+<head><noscript><style>XXX</style></noscript>
+#errors
+Line: 1 Col: 6 Unexpected start tag (head). Expected DOCTYPE.
+#script-off
+#document
+| <html>
+|   <head>
+|     <noscript>
+|       <style>
+|         "XXX"
+|   <body>
