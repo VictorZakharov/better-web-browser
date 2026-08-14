@@ -40,8 +40,8 @@ use std::collections::HashMap;
 use engine::{BlockMetrics, LayoutEngine};
 use forms::*;
 use model::{
-    CachedAtomMeasurement, FlexItem, GridItemPlacement, GridTrack, InlineAtom, InlineBoxMetrics,
-    MeasuredAtom,
+    CachedAtomMeasurement, FlexItem, GridAreaBounds, GridItemPlacement, GridTemplateAreas,
+    GridTrack, InlineAtom, InlineBoxMetrics, MeasuredAtom,
 };
 use sizing::*;
 use tracks::*;
