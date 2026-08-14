@@ -17,6 +17,7 @@ $fileCeilings = @{
     'src/engine/css.rs'                     = 2856
     'src/engine/dom.rs'                     = 986
     'src/engine/layout.rs'                  = 3405
+    'src/engine/page.rs'                    = 358
     'src/engine/scheduler.rs'               = 518
     'src/engine/script.rs'                  = 80
     'src/engine/script/execution.rs'        = 453
