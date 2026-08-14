@@ -61,6 +61,8 @@ Breeze page-ready is recorded after its first owned layout and paint; Chromium u
 
 ## Architecture
 
+The current single-process data flow is:
+
 ```text
 URL/history -> Fetch policy -> WinHTTP -> charset decode -> HTML5 DOM
                        |                          |-> JavaScript/DOM mutation
@@ -73,6 +75,9 @@ URL/history -> Fetch policy -> WinHTTP -> charset decode -> HTML5 DOM
 The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
 The networking boundary and its standards/platform ownership are documented in
 [docs/fetch-pipeline.md](docs/fetch-pipeline.md).
+The accepted renderer isolation boundary, threat model, IPC contract, and staged Windows migration
+are documented in
+[ADR 0001](docs/architecture/0001-renderer-process-boundary.md).
 
 ## Verification
 
