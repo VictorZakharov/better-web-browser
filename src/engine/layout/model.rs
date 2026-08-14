@@ -256,6 +256,20 @@ pub(super) struct GridItemPlacement {
     pub(super) row_end: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct GridAreaBounds {
+    pub(super) row: usize,
+    pub(super) row_end: usize,
+    pub(super) column: usize,
+    pub(super) column_end: usize,
+}
+
+pub(super) struct GridTemplateAreas {
+    pub(super) row_count: usize,
+    pub(super) column_count: usize,
+    pub(super) areas: HashMap<String, GridAreaBounds>,
+}
+
 #[derive(Clone)]
 pub(super) struct FlexItem {
     pub(super) node: NodeRef,

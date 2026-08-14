@@ -9,9 +9,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         style: &ComputedStyle,
     ) -> f32 {
+        let template = parse_grid_template_areas(&style.grid_template_areas);
         let mut column_tracks = parse_grid_tracks(&style.grid_template_columns);
+        if let Some(template) = &template {
+            column_tracks.resize(template.column_count, GridTrack::Auto);
+        }
         if column_tracks.is_empty() {
             column_tracks.push(GridTrack::Fraction(1.0));
+        }
+        let mut row_tracks = parse_grid_tracks(&style.grid_template_rows);
+        if let Some(template) = &template {
+            row_tracks.resize(template.row_count, GridTrack::Auto);
         }
         let column_gap = style
             .grid_column_gap
@@ -38,8 +46,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
 
-            let explicit_column = child_style.grid_column_start.map(|line| line - 1);
-            let explicit_row = child_style.grid_row_start.map(|line| line - 1);
+            let named_area = child_style
+                .grid_area_name
+                .as_ref()
+                .and_then(|name| template.as_ref()?.areas.get(name));
+            let explicit_column = named_area
+                .map(|area| area.column)
+                .or_else(|| child_style.grid_column_start.map(|line| line - 1));
+            let explicit_row = named_area
+                .map(|area| area.row)
+                .or_else(|| child_style.grid_row_start.map(|line| line - 1));
             let mut column = explicit_column.unwrap_or(automatic_index % column_count);
             let row = explicit_row.unwrap_or_else(|| {
                 if explicit_column.is_some() {
@@ -55,15 +71,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             column = column.min(column_count - 1);
 
-            let column_end = child_style
-                .grid_column_end
-                .map(|line| line.saturating_sub(1))
+            let column_end = named_area
+                .map(|area| area.column_end)
+                .or_else(|| {
+                    child_style
+                        .grid_column_end
+                        .map(|line| line.saturating_sub(1))
+                })
                 .filter(|end| *end > column)
                 .unwrap_or(column + 1)
                 .min(column_count);
-            let row_end = child_style
-                .grid_row_end
-                .map(|line| line.saturating_sub(1))
+            let row_end = named_area
+                .map(|area| area.row_end)
+                .or_else(|| child_style.grid_row_end.map(|line| line.saturating_sub(1)))
                 .filter(|end| *end > row)
                 .unwrap_or(row + 1);
             placements.push(GridItemPlacement {
@@ -75,7 +95,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
         }
 
-        let row_tracks = parse_grid_tracks(&style.grid_template_rows);
         let row_count = placements
             .iter()
             .map(|placement| placement.row_end)

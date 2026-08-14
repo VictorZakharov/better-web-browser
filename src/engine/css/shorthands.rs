@@ -209,8 +209,34 @@ pub(super) fn assign_grid_axis(start: &mut Option<usize>, end: &mut Option<usize
     *end = parts.next().and_then(parse_grid_line);
 }
 
+pub(super) fn assign_grid_template(style: &mut ComputedStyle, value: &str) {
+    let Some((rows, columns)) = split_css_once(value, '/') else {
+        style.grid_template_rows = value.trim().to_string();
+        style.grid_template_columns.clear();
+        style.grid_template_areas.clear();
+        return;
+    };
+    let rows = rows.trim();
+    style.grid_template_rows = rows.to_string();
+    style.grid_template_columns = columns.trim().to_string();
+    style.grid_template_areas = if rows.contains('\'') || rows.contains('"') {
+        rows.to_string()
+    } else {
+        String::new()
+    };
+}
+
 pub(super) fn assign_grid_area(style: &mut ComputedStyle, value: &str) {
     let parts = value.split('/').map(str::trim).collect::<Vec<_>>();
+    style.grid_area_name = None;
+    style.grid_row_start = None;
+    style.grid_column_start = None;
+    style.grid_row_end = None;
+    style.grid_column_end = None;
+    if parts.len() == 1 && parse_grid_line(parts[0]).is_none() && parts[0] != "auto" {
+        style.grid_area_name = Some(parts[0].to_string());
+        return;
+    }
     if parts.len() == 4 {
         style.grid_row_start = parse_grid_line(parts[0]);
         style.grid_column_start = parse_grid_line(parts[1]);

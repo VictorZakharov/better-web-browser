@@ -273,6 +273,8 @@ pub(super) fn apply_declaration(
             style.grid_template_columns = value.to_string()
         }
         "grid-template-rows" | "-ms-grid-rows" => style.grid_template_rows = value.to_string(),
+        "grid-template-areas" => style.grid_template_areas = value.to_string(),
+        "grid-template" => assign_grid_template(style, value),
         "column-gap" | "grid-column-gap" => assign_length(&mut style.grid_column_gap, value),
         "row-gap" | "grid-row-gap" => assign_length(&mut style.grid_row_gap, value),
         "gap" | "grid-gap" => assign_grid_gap(style, value),
