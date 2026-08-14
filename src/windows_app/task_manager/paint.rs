@@ -1,5 +1,8 @@
+use super::super::paint_primitives::{
+    fill_color_rect, fill_color_shape, paint_rounded_panel, paint_text,
+};
 use super::super::platform::*;
-use super::super::{fill_color_rect, fill_color_shape, paint_rounded_panel, paint_text, rgb};
+use super::super::rgb;
 use super::{TaskManagerFonts, TaskManagerState};
 use better_web_browser::branding::PRODUCT_NAME;
 use std::ptr::null_mut;

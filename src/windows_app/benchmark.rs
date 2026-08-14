@@ -1,3 +1,4 @@
+use super::paint_primitives::draw_text_in_rect;
 use super::*;
 
 pub(super) struct LaunchOptions {
