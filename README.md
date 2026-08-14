@@ -44,16 +44,16 @@ Performance claims are valid only when the exercised page path is feature-equiva
 
 ### Current benchmark snapshot
 
-Three alternating hidden release runs of `https://www.neolisk.blog/` on 2026-08-13, with a 2-second settle period, produced these medians:
+Six runs per browser, collected as two alternating three-run hidden release batches of `https://www.neolisk.blog/` on 2026-08-14 with a 2-second settle period, produced these combined medians:
 
 | Metric | Breeze | Chromium | Result |
 |---|---:|---:|---:|
-| Window ready | 11.7 ms | 192.7 ms | Breeze 16.42x faster |
-| Process start to page ready | 495.0 ms | 846.5 ms | Breeze 1.71x faster |
-| Navigation | 481.2 ms | 517.1 ms | Breeze 1.07x faster |
-| Working set | 91.9 MiB | 607.4 MiB | Breeze 6.61x smaller |
-| Private memory | 78.2 MiB | 395.1 MiB | Breeze 5.05x smaller |
-| CPU time | 625.0 ms | 3,968.8 ms | Breeze 6.35x lower |
+| Window ready | 11.0 ms | 186.7 ms | Breeze 17.04x faster |
+| Process start to page ready | 494.9 ms | 757.5 ms | Breeze 1.53x faster |
+| Navigation | 484.0 ms | 448.2 ms | Chromium 1.08x faster |
+| Working set | 91.7 MiB | 604.3 MiB | Breeze 6.59x smaller |
+| Private memory | 78.1 MiB | 387.9 MiB | Breeze 4.97x smaller |
+| CPU time | 570.3 ms | 3,929.7 ms | Breeze 6.89x lower |
 | Processes | 1 | 10 | Breeze uses 10x fewer |
 
 Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event and implements substantially more of the web platform. Treat this as a reproducible development snapshot, not a universal or feature-equivalent browser claim.
