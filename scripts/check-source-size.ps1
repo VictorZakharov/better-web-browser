@@ -10,17 +10,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
-# Existing large files are technical debt, not precedent. These ceilings match the reduced
-# baseline at the time the guard was introduced and must only move downward as modules split.
-$legacyCeilings = @{
-    'src/document.rs'         = 518
-    'src/engine/css.rs'       = 2856
-    'src/engine/dom.rs'       = 986
-    'src/engine/layout.rs'    = 3405
-    'src/engine/scheduler.rs' = 518
-    'src/engine/script.rs'    = 1444
-    'src/windows_app.rs'      = 1955
-    'src/winhttp.rs'          = 760
+# Files above the target are technical debt, not precedent. These ceilings freeze each reduced
+# baseline and must only move downward as modules split. Small coordinator ceilings stay frozen too.
+$fileCeilings = @{
+    'src/document.rs'                       = 518
+    'src/engine/css.rs'                     = 2856
+    'src/engine/dom.rs'                     = 986
+    'src/engine/layout.rs'                  = 3405
+    'src/engine/scheduler.rs'               = 518
+    'src/engine/script.rs'                  = 80
+    'src/engine/script/execution.rs'        = 453
+    'src/engine/script/host_call.rs'        = 422
+    'src/windows_app.rs'                    = 1955
+    'src/winhttp.rs'                        = 760
 }
 
 $sourceRoots = @('src', 'tests', 'benchmarks', 'scripts')
@@ -40,8 +42,8 @@ foreach ($sourceRoot in $sourceRoots) {
         $relativePath = $file.FullName.Substring($repoRoot.Length)
         $relativePath = $relativePath.TrimStart([char[]]@('\', '/')).Replace('\', '/')
         $lineCount = @(Get-Content -LiteralPath $file.FullName).Count
-        $ceiling = if ($legacyCeilings.ContainsKey($relativePath)) {
-            $legacyCeilings[$relativePath]
+        $ceiling = if ($fileCeilings.ContainsKey($relativePath)) {
+            $fileCeilings[$relativePath]
         } else {
             $MaximumLines
         }

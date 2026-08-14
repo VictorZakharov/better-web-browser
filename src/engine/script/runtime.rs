@@ -1,5 +1,10 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
+use super::execution::{
+    append_timer_summary, execute_additional_inner, execute_inner, finish_host,
+    inactive_runtime_outcome, lifecycle_error, panic_detail, settle_timer_slice,
+    stopped_runtime_outcome,
+};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
