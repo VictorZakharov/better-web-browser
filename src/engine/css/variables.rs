@@ -45,6 +45,7 @@ pub(super) fn apply_resolved_declaration(
     let resolved = Declaration {
         name: declaration.name.clone(),
         value,
+        important: declaration.important,
     };
     apply_declaration(style, &resolved, parent, base_url);
 }

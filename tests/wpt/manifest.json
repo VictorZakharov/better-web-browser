@@ -38,19 +38,17 @@
       "path": "dom/nodes/Element-tagName.html",
       "area": "DOM",
       "expected": "fail",
-      "reason": "createElementNS does not yet retain non-HTML namespaces."
+      "reason": "DOMImplementation.createDocument() and Document.importNode() are incomplete."
     },
     {
       "path": "dom/nodes/Node-nodeName.html",
       "area": "DOM",
-      "expected": "fail",
-      "reason": "Namespace-aware elements, DocumentType, and DocumentFragment bindings are incomplete."
+      "expected": "pass"
     },
     {
       "path": "dom/nodes/Document-getElementById.html",
       "area": "DOM",
-      "expected": "fail",
-      "reason": "Empty-ID behavior and several HTML element interface bindings are incomplete."
+      "expected": "pass"
     },
     {
       "path": "dom/events/Event-type.html",
@@ -106,8 +104,7 @@
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask.any.js",
       "area": "Event loop",
-      "expected": "fail",
-      "reason": "queueMicrotask argument validation and exception reporting are incomplete."
+      "expected": "pass"
     },
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask.window.js",
@@ -139,38 +136,32 @@
     {
       "path": "url/urlsearchparams-has.any.js",
       "area": "URL",
-      "expected": "fail",
-      "reason": "URLSearchParams.has does not yet support its optional value argument."
+      "expected": "pass"
     },
     {
       "path": "url/urlsearchparams-set.any.js",
       "area": "URL",
-      "expected": "fail",
-      "reason": "URLSearchParams encoding and replacement semantics are incomplete."
+      "expected": "pass"
     },
     {
       "path": "css/css-cascade/inline-style-background.html",
       "area": "CSS cascade",
-      "expected": "fail",
-      "reason": "Window named access for the test element ID is not implemented."
+      "expected": "pass"
     },
     {
       "path": "css/css-cascade/important-vs-inline-001.html",
       "area": "CSS cascade",
-      "expected": "fail",
-      "reason": "Window named access for element IDs is missing before the cascade assertions run."
+      "expected": "pass"
     },
     {
       "path": "css/css-cascade/important-vs-inline-002.html",
       "area": "CSS cascade",
-      "expected": "fail",
-      "reason": "Window named access for element IDs is missing before the cascade assertions run."
+      "expected": "pass"
     },
     {
       "path": "css/css-cascade/inherit-initial.html",
       "area": "CSS cascade",
-      "expected": "fail",
-      "reason": "Computed inheritance and initial-value resolution are incomplete."
+      "expected": "pass"
     }
   ]
 }

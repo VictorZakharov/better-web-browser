@@ -13,6 +13,8 @@ pub(super) struct HostState {
     pub(super) document_url: String,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
+    pub(super) document_roots: HashMap<u64, NodeRef>,
+    pub(super) html_documents: HashSet<u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
     pub(super) console: Vec<String>,
@@ -25,6 +27,7 @@ pub(super) struct HostState {
     pub(super) started_dynamic_scripts: HashSet<NodeId>,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
+    pub(super) computed_styles: Option<(u64, StyleSet)>,
 }
 
 /// A Boa context owns only a weak link to native document state. If an evaluator panic requires
@@ -35,11 +38,14 @@ pub(super) struct HostStateLink(pub(super) Weak<RefCell<HostState>>);
 
 impl HostState {
     pub(super) fn new(document: NodeRef, document_url: &str) -> Self {
+        let document_identity = document.id().document();
         let mut state = Self {
             document,
             document_url: document_url.to_string(),
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
+            document_roots: HashMap::new(),
+            html_documents: HashSet::new(),
             next_node_id: 1,
             mutation_count: 0,
             console: Vec::new(),
@@ -52,8 +58,13 @@ impl HostState {
             started_dynamic_scripts: HashSet::new(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
+            computed_styles: None,
         };
         let document = state.document.clone();
+        state
+            .document_roots
+            .insert(document_identity, document.clone());
+        state.html_documents.insert(document_identity);
         state.register_subtree(&document);
         state
     }
@@ -72,6 +83,50 @@ impl HostState {
 
     pub(super) fn node(&self, id: u32) -> Option<NodeRef> {
         self.nodes.get(&id).cloned()
+    }
+
+    pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
+        self.document_roots.get(&node.id().document()).cloned()
+    }
+
+    pub(super) fn is_html_document_for(&self, node: &NodeRef) -> bool {
+        self.html_documents.contains(&node.id().document())
+    }
+
+    pub(super) fn computed_style_property(
+        &mut self,
+        node: &NodeRef,
+        property: &str,
+    ) -> Option<String> {
+        let version = self.document.document_mutation_version();
+        if self
+            .computed_styles
+            .as_ref()
+            .is_none_or(|(cached_version, _)| *cached_version != version)
+        {
+            // Script execution currently owns inline style sources. External sheets remain in the
+            // page resource layer and can be supplied here once those lifetimes are unified.
+            let styles = StyleSet::from_document(&self.document, &self.document_url, &[], 1024.0);
+            self.computed_styles = Some((version, styles));
+        }
+        if let Some(value) = self
+            .computed_styles
+            .as_ref()
+            .and_then(|(_, styles)| styles.styles.get(&node.id()))
+            .and_then(|style| resolved_property_value(style, property))
+        {
+            return Some(value);
+        }
+
+        let mut root = node.clone();
+        while let Some(parent) = root.parent() {
+            root = parent;
+        }
+        let styles = StyleSet::from_document(&root, &self.document_url, &[], 1024.0);
+        styles
+            .styles
+            .get(&node.id())
+            .and_then(|style| resolved_property_value(style, property))
     }
 
     pub(super) fn register_subtree(&mut self, root: &NodeRef) {

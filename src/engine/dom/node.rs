@@ -182,6 +182,15 @@ impl Node {
         self.element().map(|element| element.name.local.as_ref())
     }
 
+    pub fn qualified_name(&self) -> Option<String> {
+        self.element().map(|element| {
+            element.name.prefix.as_ref().map_or_else(
+                || element.name.local.to_string(),
+                |prefix| format!("{prefix}:{}", element.name.local),
+            )
+        })
+    }
+
     pub fn namespace_uri(&self) -> Option<&str> {
         self.element().map(|element| element.name.ns.as_ref())
     }

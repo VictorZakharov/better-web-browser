@@ -29,6 +29,22 @@ fn cascades_specificity_and_inline_styles() {
 }
 
 #[test]
+fn important_author_rules_beat_normal_inline_styles() {
+    let dom = dom::parse(
+        r#"<style>
+                .outer { opacity: 0.5 !important; font-size: 18px !important; line-height: 2em; }
+               </style><p class="outer" style="opacity: 1; font-size: 36px">hello</p>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    let paragraph = dom.elements_named("p").next().unwrap();
+    let style = styles.get(&paragraph);
+
+    assert_eq!(style.opacity, 0.5);
+    assert_eq!(style.font_size, 18.0);
+    assert_eq!(style.line_height, 36.0);
+}
+
+#[test]
 fn resolves_author_relative_font_sizes_against_the_parent() {
     let dom = dom::parse(
         r#"<style>

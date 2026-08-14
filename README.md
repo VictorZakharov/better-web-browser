@@ -90,7 +90,8 @@ verification without putting a browser window on the desktop.
 
 A pinned, curated 30-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
 URLs, and the CSS cascade. Upstream fixtures stay in a separate sparse WPT checkout; after preparing
-that checkout, the suite runs offline with one hidden command:
+that checkout, the suite runs offline with one hidden command. At the pinned revision, 24 cases pass;
+four remaining failures and two timeouts have explicit expectations and compatibility reasons:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt

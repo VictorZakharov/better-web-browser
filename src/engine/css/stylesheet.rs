@@ -14,6 +14,7 @@ pub(super) struct Rule {
 pub(super) struct Declaration {
     pub(super) name: String,
     pub(super) value: String,
+    pub(super) important: bool,
 }
 
 pub(super) fn parse_stylesheet(
@@ -95,13 +96,24 @@ pub(super) fn parse_declarations(body: &str) -> Vec<Declaration> {
             } else {
                 name.to_ascii_lowercase()
             };
-            let value = value
-                .trim()
-                .strip_suffix("!important")
-                .unwrap_or(value.trim())
-                .trim()
-                .to_string();
-            (!name.is_empty() && !value.is_empty()).then_some(Declaration { name, value })
+            let (value, important) = split_important_annotation(value);
+            (!name.is_empty() && !value.is_empty()).then_some(Declaration {
+                name,
+                value: value.to_string(),
+                important,
+            })
         })
         .collect()
+}
+
+fn split_important_annotation(value: &str) -> (&str, bool) {
+    let value = value.trim();
+    let Some(bang) = value.rfind('!') else {
+        return (value, false);
+    };
+    if value[bang + 1..].trim().eq_ignore_ascii_case("important") {
+        (value[..bang].trim_end(), true)
+    } else {
+        (value, false)
+    }
 }

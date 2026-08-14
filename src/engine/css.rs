@@ -1,6 +1,7 @@
 //! CSS facade for values, parsing, selector matching, cascade, and media evaluation.
 
 mod cascade;
+mod cssom;
 mod media;
 mod properties;
 mod selector_match;
@@ -20,10 +21,9 @@ pub use values::{
     Float, JustifyContent, Length, Position, ResolvedEdges, TextAlign, WhiteSpace,
 };
 
+pub(crate) use cssom::resolved_property_value;
 pub(crate) use media::media_matches;
-#[allow(unused_imports)]
-pub(crate) use user_agent::user_agent_display;
-pub(crate) use user_agent::{is_hidden_by_html_rendering, user_agent_style_property};
+pub(crate) use user_agent::is_hidden_by_html_rendering;
 pub(crate) use value_parser::parse_length;
 
 use super::dom::{self, Dom, NodeId, NodeRef};

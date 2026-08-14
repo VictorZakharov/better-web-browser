@@ -2,7 +2,7 @@
         get tagName() { return host('tagName', this.__id); }
         get localName() { return host('localName', this.__id); }
         get namespaceURI() { return host('namespaceUri', this.__id); }
-        get prefix() { return null; }
+        get prefix() { return host('prefix', this.__id); }
         get id() { return this.getAttribute('id') || ''; }
         set id(value) { this.setAttribute('id', value); }
         get className() { return this.getAttribute('class') || ''; }
@@ -10,11 +10,32 @@
         get classList() { return this.__classList ||= new DOMTokenList(this, 'class'); }
         get style() { return this.__style ||= styleProxy(this); }
         get innerHTML() { return host('innerHtmlGet', this.__id); }
-        set innerHTML(value) { host('innerHtmlSet', this.__id, value == null ? '' : String(value)); }
+        set innerHTML(value) {
+            host('innerHtmlSet', this.__id, value == null ? '' : String(value));
+            if (this.isConnected) refreshWindowNamedProperties();
+        }
         get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
+        set outerHTML(value) {
+            const parent = this.parentNode;
+            if (!parent) return;
+            const holder = document.createElement('div');
+            holder.innerHTML = value == null ? '' : String(value);
+            for (const child of [...holder.childNodes]) parent.insertBefore(child, this);
+            parent.removeChild(this);
+        }
         getAttribute(name) { return host('attrGet', this.__id, String(name)); }
-        setAttribute(name, value) { host('attrSet', this.__id, String(name), String(value)); }
-        removeAttribute(name) { host('attrRemove', this.__id, String(name)); }
+        setAttribute(name, value) {
+            name = String(name);
+            host('attrSet', this.__id, name, String(value));
+            if (this.isConnected && (name.toLowerCase() === 'id' || name.toLowerCase() === 'name'))
+                refreshWindowNamedProperties();
+        }
+        removeAttribute(name) {
+            name = String(name);
+            host('attrRemove', this.__id, name);
+            if (this.isConnected && (name.toLowerCase() === 'id' || name.toLowerCase() === 'name'))
+                refreshWindowNamedProperties();
+        }
         hasAttribute(name) { return host('attrHas', this.__id, String(name)); }
         toggleAttribute(name, force) {
             const present = this.hasAttribute(name);
@@ -51,7 +72,10 @@
         getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
         insertAdjacentHTML(position, html) {
             position = String(position).toLowerCase();
-            if (position === 'beforeend') host('innerHtmlAppend', this.__id, String(html));
+            if (position === 'beforeend') {
+                host('innerHtmlAppend', this.__id, String(html));
+                if (this.isConnected) refreshWindowNamedProperties();
+            }
             else if (position === 'afterbegin') this.innerHTML = String(html) + this.innerHTML;
             else if (position === 'beforebegin' && this.parentNode) {
                 const holder = document.createElement('div'); holder.innerHTML = String(html);
@@ -144,6 +168,7 @@
     class HTMLElement extends Element {
         get dataset() { return this.__dataset ||= datasetFor(this); }
     }
+    class HTMLDivElement extends HTMLElement {}
     Object.defineProperties(HTMLElement.prototype, {
         translate: {
             configurable: true,

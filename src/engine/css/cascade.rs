@@ -15,7 +15,7 @@ impl StyleSet {
             .iter()
             .map(|stylesheet| (String::new(), stylesheet.clone()))
             .collect::<Vec<_>>();
-        Self::from_sources(dom, "", &sources, viewport_width)
+        Self::from_document(&dom.document, "", &sources, viewport_width)
     }
 
     pub(crate) fn from_sources(
@@ -24,9 +24,25 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
     ) -> Self {
+        Self::from_document(
+            &dom.document,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+        )
+    }
+
+    pub(crate) fn from_document(
+        document: &NodeRef,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        viewport_width: f32,
+    ) -> Self {
         let mut rules = Vec::new();
         let mut next_order = 0_u32;
-        for style_element in dom.elements_named("style") {
+        for style_element in
+            dom::Node::descendants(document).filter(|node| node.tag_name() == Some("style"))
+        {
             parse_stylesheet(
                 &style_element.text_content(),
                 document_base_url,
@@ -49,7 +65,7 @@ impl StyleSet {
             rules,
             document_base_url: document_base_url.to_string(),
         };
-        set.compute_subtree(&dom.document, None);
+        set.compute_subtree(document, None);
         set
     }
 
@@ -87,18 +103,40 @@ impl StyleSet {
             .map(|inline| parse_declarations(&inline))
             .unwrap_or_default();
 
-        for rule in &matching {
-            apply_custom_properties(&mut style, &rule.declarations, parent);
+        // CSS Cascade places every important author declaration above every normal author
+        // declaration. Inline declarations retain their higher specificity within each group.
+        // https://drafts.csswg.org/css-cascade/#importance
+        let mut cascaded = Vec::new();
+        for important in [false, true] {
+            for rule in &matching {
+                cascaded.extend(
+                    rule.declarations
+                        .iter()
+                        .filter(|declaration| declaration.important == important)
+                        .map(|declaration| (declaration, rule.base_url.as_str())),
+                );
+            }
+            cascaded.extend(
+                inline_declarations
+                    .iter()
+                    .filter(|declaration| declaration.important == important)
+                    .map(|declaration| (declaration, self.document_base_url.as_str())),
+            );
         }
-        apply_custom_properties(&mut style, &inline_declarations, parent);
 
-        for rule in matching {
-            for declaration in &rule.declarations {
-                apply_resolved_declaration(&mut style, declaration, parent, &rule.base_url);
+        for &(declaration, _) in &cascaded {
+            apply_custom_properties(&mut style, std::slice::from_ref(declaration), parent);
+        }
+        for &(declaration, base_url) in &cascaded {
+            if declaration.name != "line-height" {
+                apply_resolved_declaration(&mut style, declaration, parent, base_url);
             }
         }
-        for declaration in &inline_declarations {
-            apply_resolved_declaration(&mut style, declaration, parent, &self.document_base_url);
+        // line-height depends on the winning font-size, independent of declaration source order.
+        for &(declaration, base_url) in &cascaded {
+            if declaration.name == "line-height" {
+                apply_resolved_declaration(&mut style, declaration, parent, base_url);
+            }
         }
         apply_presentational_hints(node, &mut style);
         if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {

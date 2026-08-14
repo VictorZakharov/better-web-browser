@@ -4,13 +4,8 @@
             this.__id = id;
         }
         get nodeType() { return host('nodeType', this.__id); }
-        get nodeName() {
-            return this.nodeType === 1 ? host('tagName', this.__id) :
-                this.nodeType === 9 ? '#document' :
-                this.nodeType === 11 ? '#document-fragment' :
-                this.nodeType === 3 ? '#text' : '#comment';
-        }
-        get ownerDocument() { return this.nodeType === 9 ? null : document; }
+        get nodeName() { return host('nodeName', this.__id); }
+        get ownerDocument() { return wrap(host('ownerDocument', this.__id)); }
         get parentNode() { return wrap(host('parent', this.__id)); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }
         get firstChild() { return wrap(host('firstChild', this.__id)); }
@@ -23,7 +18,11 @@
         get lastElementChild() { const children = this.children; return children[children.length - 1] || null; }
         get childElementCount() { return this.children.length; }
         get textContent() { return host('textGet', this.__id); }
-        set textContent(value) { host('textSet', this.__id, value == null ? '' : String(value)); }
+        set textContent(value) {
+            const namedAccessChanged = this.isConnected && this.firstElementChild !== null;
+            host('textSet', this.__id, value == null ? '' : String(value));
+            if (namedAccessChanged) refreshWindowNamedProperties();
+        }
         get isConnected() {
             let node = this;
             while (node) {
@@ -34,7 +33,9 @@
         }
         appendChild(child) {
             if (!(child instanceof Node)) throw new TypeError('appendChild requires a Node');
-            return wrap(host('appendChild', this.__id, child.__id));
+            const inserted = wrap(host('appendChild', this.__id, child.__id));
+            if (inserted && this.isConnected) refreshWindowNamedProperties();
+            return inserted;
         }
         append(...items) {
             for (const item of items) this.appendChild(item instanceof Node ? item : document.createTextNode(String(item)));
@@ -50,13 +51,20 @@
         insertBefore(child, reference) {
             if (!(child instanceof Node)) throw new TypeError('insertBefore requires a Node');
             if (reference != null && !(reference instanceof Node)) throw new TypeError('reference must be a Node');
-            return wrap(host('insertBefore', this.__id, child.__id, reference?.__id || 0));
+            const inserted = wrap(host('insertBefore', this.__id, child.__id, reference?.__id || 0));
+            if (inserted && this.isConnected) refreshWindowNamedProperties();
+            return inserted;
         }
         removeChild(child) {
+            const namedAccessChanged = this.isConnected;
             if (!(child instanceof Node) || !host('removeChild', this.__id, child.__id)) throw new Error('node is not a child');
+            if (namedAccessChanged) refreshWindowNamedProperties();
             return child;
         }
-        remove() { host('remove', this.__id); }
+        remove() {
+            const namedAccessChanged = this.isConnected;
+            if (host('remove', this.__id) && namedAccessChanged) refreshWindowNamedProperties();
+        }
         contains(other) {
             for (let node = other; node; node = node.parentNode) if (node === this) return true;
             return false;
@@ -75,6 +83,7 @@
     }
 
     class Comment extends Text {}
+    class DocumentType extends Node {}
     class DocumentFragment extends Node {}
 
     class DOMTokenList {

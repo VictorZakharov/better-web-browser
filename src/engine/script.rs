@@ -1,4 +1,4 @@
-use super::css::{is_hidden_by_html_rendering, user_agent_style_property};
+use super::css::{StyleSet, resolved_property_value};
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
 use crate::navigation::resolve_url;
@@ -13,10 +13,12 @@ use std::time::{Duration, Instant};
 
 mod binding_helpers;
 mod bootstrap;
+mod dom_host;
 mod execution;
 mod host_call;
 mod host_state;
 mod runtime;
+mod style_host;
 
 pub use execution::{execute, execute_with_loader};
 use host_call::host_call;

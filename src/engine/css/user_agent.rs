@@ -18,15 +18,6 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
     }
 }
 
-pub(crate) fn user_agent_style_property(tag: &str, property: &str) -> Option<&'static str> {
-    match property {
-        "display" => Some(user_agent_display(tag).css_keyword()),
-        "background-color" if tag == "mark" => Some("rgb(255, 255, 0)"),
-        "color" if tag == "mark" => Some("rgb(0, 0, 0)"),
-        _ => None,
-    }
-}
-
 pub(crate) fn is_hidden_by_html_rendering(node: &NodeRef) -> bool {
     if node.tag_name() == Some("dialog") && node.attr("open").is_none() {
         return true;

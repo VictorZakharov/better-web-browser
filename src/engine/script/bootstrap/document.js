@@ -11,6 +11,7 @@
         'param plaintext rb rtc shadow spacer strike tt xmp'
     ).split(/\s+/));
     const htmlElementConstructor = localName => {
+        if (localName === 'div') return HTMLDivElement;
         if (localName === 'time') return HTMLTimeElement;
         if (localName === 'data') return HTMLDataElement;
         if (localName === 'a') return HTMLAnchorElement;
@@ -45,10 +46,13 @@
             this.activeElement = null;
             this._currentScript = null;
         }
-        createElement(name) { return wrap(host('createElement', String(name))); }
-        createElementNS(_namespace, name) { return this.createElement(name); }
-        createTextNode(text) { return wrap(host('createText', String(text))); }
-        createComment(text) { return wrap(host('createComment', String(text))); }
+        createElement(name) { return wrap(host('createElement', this.__id, String(name))); }
+        createElementNS(namespace, name) {
+            return wrap(host('createElementNS', this.__id, namespace == null ? '' : String(namespace), String(name)));
+        }
+        createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
+        createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
+        createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
@@ -56,11 +60,12 @@
             event.__initialized = false;
             return event;
         }
-        getElementById(id) { return wrap(host('byId', String(id))); }
+        getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
         getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
         getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
         getElementsByName(name) { return this.querySelectorAll('[name="' + String(name).replace(/"/g, '\\"') + '"]'); }
         get documentElement() { return this.querySelector('html'); }
+        get doctype() { return wrap(host('doctype', this.__id)); }
         get head() { return this.querySelector('head'); }
         get body() { return this.querySelector('body'); }
         get title() { return this.querySelector('title')?.textContent || ''; }
@@ -75,7 +80,10 @@
         get currentScript() { return this._currentScript; }
         get defaultView() { return windowObject; }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
-        write(...parts) { host('innerHtmlAppend', (this.body || this.documentElement).__id, parts.join('')); }
+        write(...parts) {
+            host('innerHtmlAppend', (this.body || this.documentElement).__id, parts.join(''));
+            refreshWindowNamedProperties();
+        }
         writeln(...parts) { this.write(parts.join('') + '\n'); }
         hasFocus() { return true; }
         get hidden() { return false; }
@@ -98,10 +106,11 @@
         else if (type === 1) {
             const namespace = host('namespaceUri', id);
             const Constructor = namespace === htmlNamespace
-                ? htmlElementConstructor(host('localName', id))
+                ? htmlElementConstructor(host('localName', id).toLowerCase())
                 : Element;
             node = new Constructor(id);
         }
+        else if (type === 10) node = new DocumentType(id);
         else if (type === 11) node = new DocumentFragment(id);
         else node = type === 8 ? new Comment(id) : new Text(id);
         cache.set(id, node);
@@ -119,6 +128,7 @@
     windowObject.Node = Node;
     windowObject.Element = Element;
     windowObject.HTMLElement = HTMLElement;
+    windowObject.HTMLDivElement = HTMLDivElement;
     windowObject.HTMLUnknownElement = HTMLUnknownElement;
     windowObject.HTMLTimeElement = HTMLTimeElement;
     windowObject.HTMLDataElement = HTMLDataElement;
@@ -144,6 +154,8 @@
     windowObject.HTMLFormElement = HTMLFormElement;
     windowObject.Document = Document;
     windowObject.Text = Text;
+    windowObject.Comment = Comment;
+    windowObject.DocumentType = DocumentType;
     windowObject.DocumentFragment = DocumentFragment;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;
@@ -158,6 +170,25 @@
     windowObject.addEventListener = windowEvents.addEventListener.bind(windowEvents);
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
+
+    const installedWindowNames = new Map();
+    refreshWindowNamedProperties = () => {
+        const names = new Set(JSON.parse(host('namedPropertyNames')));
+        for (const [name, getter] of installedWindowNames) {
+            if (names.has(name)) continue;
+            if (Object.getOwnPropertyDescriptor(windowObject, name)?.get === getter) delete windowObject[name];
+            installedWindowNames.delete(name);
+        }
+        for (const name of names) {
+            if (name in windowObject) continue;
+            const getter = () => {
+                const objects = list(host('namedProperty', name));
+                return objects.length > 1 ? objects : objects[0];
+            };
+            Object.defineProperty(windowObject, name, { configurable: true, enumerable: true, get: getter });
+            installedWindowNames.set(name, getter);
+        }
+    };
 
     const iframeWindow = isolatedIframeWindow || windowObject;
     const iframeEvents = new EventTarget();
