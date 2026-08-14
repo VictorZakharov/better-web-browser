@@ -32,11 +32,16 @@ After the fixtures exist, all 24 curated cases run with one offline command:
 ```
 
 Use `-Filter "DOM events"` for a single area or a path substring. Use `-SkipBuild` only after both
-release binaries are current. The command starts a loopback-only static server and launches a fresh
-hidden Breeze benchmark process per case. JavaScript `.any.js` and `.window.js` files run in a
-generated Window test page. This first curated set intentionally avoids WPT server substitutions,
-special hostnames, and support files; expanding beyond that contract should use the official WPT
-server rather than ad-hoc emulation.
+release binaries are current. `-Jobs 4` runs four isolated hidden processes concurrently. The
+command starts a loopback-only static server and launches a fresh hidden Breeze benchmark process
+per case. JavaScript `.any.js` and `.window.js` files run in a generated Window test page. This first
+curated set intentionally avoids WPT server substitutions, special hostnames, and support files;
+expanding beyond that contract should use the official WPT server rather than ad-hoc emulation.
+
+CI passes `-BuildProfile debug -Jobs 4`: conformance is not a performance measurement, and benchmark
+processes launched by this runner request an explicitly sized headless UI-thread stack so large
+standards harnesses remain safe in unoptimized builds. Normal local runs remain sequential release
+builds, and unrelated performance benchmarks keep the browser's ordinary main-thread path.
 
 The console reports each case and `target/wpt/report.json` records the pinned revision, harness
 subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `pass`, `fail`,

@@ -46,6 +46,7 @@ pub(crate) fn run(browser: &Path, url: &str, settle_ms: u64, timeout_ms: u64) ->
             "--settle-ms",
             &settle_ms.to_string(),
         ])
+        .env("BREEZE_HEADLESS_LARGE_STACK", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr_file));
     configure_hidden(&mut command);

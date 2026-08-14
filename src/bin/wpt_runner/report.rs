@@ -199,18 +199,24 @@ pub(crate) struct RunReport {
     execution_context: String,
     settle_ms: u64,
     timeout_ms: u64,
+    jobs: usize,
     pub(crate) summary: Summary,
     tests: Vec<CaseResult>,
+}
+
+pub(crate) struct RunConfiguration<'a> {
+    pub(crate) browser: &'a Path,
+    pub(crate) manifest: &'a Path,
+    pub(crate) settle_ms: u64,
+    pub(crate) timeout_ms: u64,
+    pub(crate) jobs: usize,
 }
 
 impl RunReport {
     pub(crate) fn new(
         suite: String,
         upstream: Upstream,
-        browser: &Path,
-        manifest: &Path,
-        settle_ms: u64,
-        timeout_ms: u64,
+        configuration: RunConfiguration<'_>,
         tests: Vec<CaseResult>,
     ) -> Self {
         Self {
@@ -221,11 +227,12 @@ impl RunReport {
                 .unwrap_or_default()
                 .as_millis(),
             upstream,
-            browser: browser.display().to_string(),
-            manifest: manifest.display().to_string(),
+            browser: configuration.browser.display().to_string(),
+            manifest: configuration.manifest.display().to_string(),
             execution_context: "window".to_string(),
-            settle_ms,
-            timeout_ms,
+            settle_ms: configuration.settle_ms,
+            timeout_ms: configuration.timeout_ms,
+            jobs: configuration.jobs,
             summary: Summary::from_results(&tests),
             tests,
         }

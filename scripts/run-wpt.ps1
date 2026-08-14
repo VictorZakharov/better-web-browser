@@ -3,6 +3,10 @@ param(
     [string] $WptRoot = $env:BREEZE_WPT_ROOT,
     [string] $Output,
     [string] $Filter,
+    [ValidateSet('release', 'debug')]
+    [string] $BuildProfile = 'release',
+    [ValidateRange(1, 16)]
+    [int] $Jobs = 1,
     [switch] $SkipBuild
 )
 
@@ -18,16 +22,23 @@ if ([string]::IsNullOrWhiteSpace($Output)) {
 Push-Location $repoRoot
 try {
     if (-not $SkipBuild) {
-        & cargo build --release --bin better-web-browser --bin wpt-runner
+        [string[]] $profileArguments = if ($BuildProfile -eq 'release') {
+            @('--release')
+        } else {
+            @()
+        }
+        & cargo build @profileArguments --bin better-web-browser --bin wpt-runner
         if ($LASTEXITCODE -ne 0) { throw 'Could not build the WPT runner and Breeze.' }
     }
 
-    $runner = Join-Path $repoRoot 'target\release\wpt-runner.exe'
-    $browser = Join-Path $repoRoot 'target\release\better-web-browser.exe'
+    $binaryDirectory = Join-Path $repoRoot "target\$BuildProfile"
+    $runner = Join-Path $binaryDirectory 'wpt-runner.exe'
+    $browser = Join-Path $binaryDirectory 'better-web-browser.exe'
     $arguments = @(
         '--wpt-root', $WptRoot,
         '--browser', $browser,
-        '--output', $Output
+        '--output', $Output,
+        '--jobs', $Jobs
     )
     if (-not [string]::IsNullOrWhiteSpace($Filter)) {
         $arguments += @('--filter', $Filter)

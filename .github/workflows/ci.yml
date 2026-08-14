@@ -118,7 +118,7 @@ jobs:
         run: ./scripts/checkout-wpt.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
       - name: Run curated WPT suite headlessly
         shell: pwsh
-        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt')
+        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 4
 
   windows:
     name: windows

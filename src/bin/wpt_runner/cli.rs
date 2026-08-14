@@ -10,6 +10,7 @@ pub(crate) struct Cli {
     pub(crate) output: PathBuf,
     pub(crate) settle_ms: u64,
     pub(crate) timeout_ms: u64,
+    pub(crate) jobs: usize,
     pub(crate) filter: Option<String>,
 }
 
@@ -27,6 +28,7 @@ impl Cli {
         let mut output = repo_root.join("target/wpt/report.json");
         let mut settle_ms = DEFAULT_SETTLE_MS;
         let mut timeout_ms = DEFAULT_TIMEOUT_MS;
+        let mut jobs = 1_usize;
         let mut filter = None;
         let mut arguments = std::env::args().skip(1);
 
@@ -41,6 +43,10 @@ impl Cli {
                 }
                 "--timeout-ms" => {
                     timeout_ms = number_value(&mut arguments, "--timeout-ms")?;
+                }
+                "--jobs" => {
+                    jobs = usize::try_from(number_value(&mut arguments, "--jobs")?)
+                        .map_err(|_| "--jobs is too large".to_string())?;
                 }
                 "--filter" => filter = Some(text_value(&mut arguments, "--filter")?),
                 "--help" | "-h" => {
@@ -63,6 +69,9 @@ impl Cli {
         if timeout_ms <= settle_ms {
             return Err("--timeout-ms must be greater than --settle-ms".to_string());
         }
+        if !(1..=16).contains(&jobs) {
+            return Err("--jobs must be between 1 and 16".to_string());
+        }
 
         Ok(Some(Self {
             wpt_root,
@@ -71,6 +80,7 @@ impl Cli {
             output,
             settle_ms,
             timeout_ms,
+            jobs,
             filter,
         }))
     }
@@ -84,6 +94,7 @@ impl Cli {
            --output <file>       Machine-readable JSON report\n\
            --settle-ms <number>  Hidden-browser settle period (default: 1500)\n\
            --timeout-ms <number> Per-test process timeout (default: 20000)\n\
+           --jobs <number>       Concurrent hidden browser processes (default: 1)\n\
            --filter <text>       Run cases whose path or area contains text\n\
            -h, --help            Show this help"
     }
