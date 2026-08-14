@@ -12,6 +12,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 mod binding_helpers;
+mod bootstrap;
 mod execution;
 mod host_call;
 mod host_state;
@@ -64,16 +65,6 @@ pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {
             | "application/ecmascript"
     )
 }
-
-// These responsibility-based chunks are concatenated before Boa parses the bootstrap IIFE.
-const BROWSER_BOOTSTRAP: &str = concat!(
-    include_str!("script/bootstrap/core.js"),
-    include_str!("script/bootstrap/elements.js"),
-    include_str!("script/bootstrap/forms.js"),
-    include_str!("script/bootstrap/document.js"),
-    include_str!("script/bootstrap/platform.js"),
-    include_str!("script/bootstrap/tasks.js"),
-);
 
 #[cfg(test)]
 #[path = "script/tests/mod.rs"]

@@ -50,13 +50,10 @@
         createTextNode(text) { return wrap(host('createText', String(text))); }
         createComment(text) { return wrap(host('createComment', String(text))); }
         createEvent(type) {
-            const event = new Event('');
-            event.initEvent = function(name, bubbles = false, cancelable = false) {
-                this.type = String(name); this.bubbles = !!bubbles; this.cancelable = !!cancelable;
-            };
-            event.initCustomEvent = function(name, bubbles = false, cancelable = false, detail = null) {
-                this.initEvent(name, bubbles, cancelable); this.detail = detail;
-            };
+            const interfaceName = String(type).toLowerCase();
+            const event = interfaceName === 'customevent' ? new CustomEvent('') :
+                interfaceName === 'messageevent' ? new MessageEvent('') : new Event('');
+            event.__initialized = false;
             return event;
         }
         getElementById(id) { return wrap(host('byId', String(id))); }
@@ -89,6 +86,7 @@
         get cookie() { return host('cookieGet'); }
         set cookie(value) { host('cookieSet', String(value)); }
     }
+    installEventHandlerAttributes(Document.prototype);
 
     function wrap(id) {
         id = Number(id) || 0;
@@ -156,14 +154,14 @@
     windowObject.DOMTokenList = DOMTokenList;
     windowObject.DOMStringMap = DOMStringMap;
     windowObject.CSSStyleDeclaration = CSSStyleDeclaration;
-    Object.defineProperty(windowEvents, '__eventTargetProxy', { value: windowObject });
+    installEventTargetProxy(windowEvents, windowObject);
     windowObject.addEventListener = windowEvents.addEventListener.bind(windowEvents);
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
 
     const iframeWindow = isolatedIframeWindow || windowObject;
     const iframeEvents = new EventTarget();
-    Object.defineProperty(iframeEvents, '__eventTargetProxy', { value: iframeWindow });
+    installEventTargetProxy(iframeEvents, iframeWindow);
     iframeWindow.addEventListener = iframeEvents.addEventListener.bind(iframeEvents);
     iframeWindow.removeEventListener = iframeEvents.removeEventListener.bind(iframeEvents);
     iframeWindow.dispatchEvent = iframeEvents.dispatchEvent.bind(iframeEvents);

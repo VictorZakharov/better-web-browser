@@ -98,13 +98,15 @@
     windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
     windowObject.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} };
     windowObject.fetch = () => Promise.reject(new TypeError('fetch is not implemented yet'));
-    windowObject.XMLHttpRequest = class XMLHttpRequest extends EventTarget {
+    class XMLHttpRequest extends EventTarget {
         constructor() { super(); this.readyState = 0; this.status = 0; this.responseText = ''; }
         open(method, url) { this.method = method; this.url = host('resolveUrl', String(url)); this.readyState = 1; }
         setRequestHeader() {}
         send() { this.readyState = 4; this.dispatchEvent(new Event('error')); this.dispatchEvent(new Event('readystatechange')); }
         abort() {}
-    };
+    }
+    installEventHandlerAttributes(XMLHttpRequest.prototype);
+    windowObject.XMLHttpRequest = XMLHttpRequest;
     windowObject.crypto = {
         getRandomValues(array) {
             for (let index = 0; index < array.length; index++) array[index] = Math.floor(Math.random() * 256);

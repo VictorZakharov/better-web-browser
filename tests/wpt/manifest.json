@@ -60,20 +60,48 @@
     {
       "path": "dom/events/Event-defaultPrevented.html",
       "area": "DOM events",
-      "expected": "fail",
-      "reason": "Legacy event cancellation properties are incomplete."
+      "expected": "pass"
     },
     {
       "path": "dom/events/Event-dispatch-bubbles-false.html",
       "area": "DOM events",
       "expected": "fail",
-      "reason": "The event dispatcher does not yet implement capture and propagation phases."
+      "reason": "Live document chains pass; cloneNode(), constructible Document, and DOMImplementation.createHTMLDocument() are incomplete."
     },
     {
       "path": "dom/events/Event-dispatch-order-at-target.html",
       "area": "DOM events",
-      "expected": "fail",
-      "reason": "Capture and bubble listener ordering at the target is not implemented."
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/AddEventListenerOptions-once.any.js",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/AddEventListenerOptions-passive.any.js",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/Event-dispatch-handlers-changed.html",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/Event-stopImmediatePropagation.html",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/Event-dispatch-propagation-stopped.html",
+      "area": "DOM events",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/events/EventTarget-add-remove-listener.any.js",
+      "area": "DOM events",
+      "expected": "pass"
     },
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask.any.js",
