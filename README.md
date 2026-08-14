@@ -23,6 +23,7 @@ Current page support includes:
 - A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, startup timers, dynamically inserted classic scripts, navigation, storage, and cookies
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
+- A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
 - Links, history, reload, scrolling, and background networking
 
 ## Task manager
@@ -61,14 +62,17 @@ Breeze page-ready is recorded after its first owned layout and paint; Chromium u
 ## Architecture
 
 ```text
-URL/history -> WinHTTP -> charset decode -> HTML5 DOM
-                                      |-> JavaScript/DOM mutation
-                                      |-> CSS cascade
-                                      |-> resource discovery/decode
-                                      `-> box layout -> display list -> Win32/GDI paint
+URL/history -> Fetch policy -> WinHTTP -> charset decode -> HTML5 DOM
+                       |                          |-> JavaScript/DOM mutation
+                       |                          |-> CSS cascade
+                       |                          |-> resource discovery/decode
+                       |                          `-> box layout -> display list -> Win32/GDI paint
+                       `-> origin/CORS/cookies/redirects/cancellation
 ```
 
 The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
+The networking boundary and its standards/platform ownership are documented in
+[docs/fetch-pipeline.md](docs/fetch-pipeline.md).
 
 ## Verification
 
@@ -124,7 +128,7 @@ comparison.
 ## Honest current limitations
 
 - Windows-only native shell
-- JavaScript and cookies implement only an early subset; fetch/XHR, modules, workers, and much of the browser API surface remain incomplete
+- JavaScript and cookies implement only an early subset; the Fetch policy foundation exists, but the JavaScript `fetch`/XHR APIs, modules, workers, and much of the browser API surface remain incomplete
 - The JavaScript realm is retained on the document's UI thread for timer and script-completion tasks, but fetch/XHR, user-input task dispatch, and other event-loop sources remain incomplete
 - JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
 - Canvas, media, downloads, tabs, accessibility, text selection, and site isolation are not implemented yet

@@ -1,18 +1,30 @@
 //! Deferred page-resource loading and UI-thread installation.
 
 use super::*;
+use better_web_browser::fetch::{FetchRequest, FetchSignal, RequestDestination};
 
 const MAX_PARALLEL_DEFERRED_FETCHES: usize = 4;
 
-pub(super) fn load_page_resources(
-    client: &winhttp::HttpClient,
-    page: &mut Page,
-    loaded: &mut HashSet<PageResource>,
-    resource_budget: &mut u64,
-    bytes: &mut u64,
-    network_time: &mut Duration,
-    resource_processing_time: &mut Duration,
-) {
+pub(super) struct ResourceLoadContext<'a> {
+    pub client: &'a winhttp::HttpClient,
+    pub signal: &'a FetchSignal,
+    pub loaded: &'a mut HashSet<PageResource>,
+    pub resource_budget: &'a mut u64,
+    pub bytes: &'a mut u64,
+    pub network_time: &'a mut Duration,
+    pub processing_time: &'a mut Duration,
+}
+
+pub(super) fn load_page_resources(page: &mut Page, context: ResourceLoadContext<'_>) {
+    let ResourceLoadContext {
+        client,
+        signal,
+        loaded,
+        resource_budget,
+        bytes,
+        network_time,
+        processing_time: resource_processing_time,
+    } = context;
     const MAX_PARALLEL_FETCHES: usize = 24;
     let resources = page
         .resources
@@ -22,6 +34,7 @@ pub(super) fn load_page_resources(
         })
         .cloned()
         .collect::<Vec<_>>();
+    let document_url = page.source_url.clone();
 
     for batch in resources.chunks(MAX_PARALLEL_FETCHES) {
         if *resource_budget == 0 {
@@ -35,13 +48,28 @@ pub(super) fn load_page_resources(
         let responses = std::thread::scope(|scope| {
             let requests = batch
                 .iter()
-                .map(|resource| scope.spawn(move || client.get(page_resource_url(resource))))
+                .map(|resource| {
+                    let signal = signal.clone();
+                    let document_url = &document_url;
+                    scope.spawn(move || {
+                        fetch_document_resource(
+                            client,
+                            &signal,
+                            document_url,
+                            page_resource_url(resource),
+                            page_resource_destination(resource),
+                        )
+                    })
+                })
                 .collect::<Vec<_>>();
             requests
                 .into_iter()
                 .map(|request| {
                     request.join().unwrap_or_else(|_| {
-                        Err("resource request worker terminated unexpectedly".into())
+                        Err(better_web_browser::fetch::FetchError::new(
+                            better_web_browser::fetch::FetchErrorKind::Network,
+                            "resource request worker terminated unexpectedly",
+                        ))
                     })
                 })
                 .collect::<Vec<_>>()
@@ -65,15 +93,17 @@ pub(super) fn load_page_resources(
                 PageResource::Stylesheet { url } => {
                     page.add_stylesheet_from(
                         &url,
-                        winhttp::decode_text(&response.body, response.content_type.as_deref()),
+                        winhttp::decode_text(response.body.as_bytes(), response.content_type()),
                     );
                     true
                 }
-                PageResource::Image { url } => page.add_image(url, &response.body).is_ok(),
+                PageResource::Image { url } => {
+                    page.add_image(url, response.body.as_bytes()).is_ok()
+                }
                 PageResource::Script { url } => {
                     page.add_script(
                         &url,
-                        winhttp::decode_text(&response.body, response.content_type.as_deref()),
+                        winhttp::decode_text(response.body.as_bytes(), response.content_type()),
                     );
                     true
                 }
@@ -83,7 +113,7 @@ pub(super) fn load_page_resources(
                     weight,
                     italic,
                 } => page
-                    .add_font(url, family, weight, italic, &response.body)
+                    .add_font(url, family, weight, italic, response.body.as_bytes())
                     .is_ok(),
             };
             if retained {
@@ -108,6 +138,27 @@ fn page_resource_url(resource: &PageResource) -> &str {
         | PageResource::Script { url }
         | PageResource::Font { url, .. } => url,
     }
+}
+
+fn page_resource_destination(resource: &PageResource) -> RequestDestination {
+    match resource {
+        PageResource::Stylesheet { .. } => RequestDestination::Style,
+        PageResource::Image { .. } => RequestDestination::Image,
+        PageResource::Script { .. } => RequestDestination::Script,
+        PageResource::Font { .. } => RequestDestination::Font,
+    }
+}
+
+pub(super) fn fetch_document_resource(
+    client: &winhttp::HttpClient,
+    signal: &FetchSignal,
+    document_url: &str,
+    url: &str,
+    destination: RequestDestination,
+) -> Result<winhttp::HttpResponse, better_web_browser::fetch::FetchError> {
+    let request =
+        FetchRequest::subresource(url, document_url, destination)?.with_signal(signal.clone());
+    client.fetch(request)
 }
 
 pub(super) struct DeferredResourcesMessage {
@@ -139,6 +190,8 @@ impl BrowserState {
         let generation = self.generation;
         let window = self.window as isize;
         let http_client = Arc::clone(&self.http_client);
+        let fetch_signal = self.document_fetch.signal();
+        let document_url = self.page.source_url.clone();
         let resource_budget = self.page_resource_budget;
         std::thread::spawn(move || {
             let client = http_client;
@@ -151,8 +204,16 @@ impl BrowserState {
                         .cloned()
                         .map(|resource| {
                             let client = &client;
+                            let signal = fetch_signal.clone();
+                            let document_url = &document_url;
                             scope.spawn(move || {
-                                let response = client.get(page_resource_url(&resource));
+                                let response = fetch_document_resource(
+                                    client,
+                                    &signal,
+                                    document_url,
+                                    page_resource_url(&resource),
+                                    page_resource_destination(&resource),
+                                );
                                 (resource, response)
                             })
                         })
@@ -164,7 +225,7 @@ impl BrowserState {
                             response
                                 .ok()
                                 .filter(winhttp::HttpResponse::is_success)
-                                .map(|response| (resource, response.body))
+                                .map(|response| (resource, response.body.into_bytes()))
                         })
                         .collect::<Vec<_>>()
                 });

@@ -1,6 +1,12 @@
 use super::*;
+use crate::navigation::ParsedUrl;
+use crate::winhttp::cookies::{cookie_matches, parse_cookie};
+use crate::winhttp::ffi::{ACCEPT_TYPES, WINHTTP_ACCESS_TYPE_NO_PROXY};
 use std::io::{Read, Write};
 use std::net::TcpListener;
+
+mod fetch_pipeline;
+mod support;
 
 #[test]
 fn decodes_utf_boms() {
@@ -73,6 +79,14 @@ fn rejects_cookie_header_injection_and_foreign_domains() {
     let origin = ParsedUrl::parse("https://www.google.com/").unwrap();
     assert!(parse_cookie(&origin, "safe=value\r\nX-Evil: yes").is_none());
     assert!(parse_cookie(&origin, "safe=value; Domain=example.com").is_none());
+    assert!(parse_cookie(&origin, "hidden=value; HttpOnly").is_none());
+    assert!(
+        parse_cookie(
+            &ParsedUrl::parse("http://www.google.com/").unwrap(),
+            "secure=value; Secure"
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -101,7 +115,7 @@ fn sends_javascript_cookies_on_the_next_http_request() {
     client
         .set_cookie(&url, "bridge=proof-token; Path=/")
         .unwrap();
-    assert_eq!(client.get(&url).unwrap().body, b"ok");
+    assert_eq!(client.get(&url).unwrap().body.as_bytes(), b"ok");
     let request = receiver.join().unwrap();
     assert!(
         request.contains("Cookie: bridge=proof-token\r\n"),
@@ -148,6 +162,6 @@ fn returns_http_error_responses_with_their_body() {
     receiver.join().unwrap();
     assert_eq!(response.status, 429);
     assert!(!response.is_success());
-    assert_eq!(response.content_type.as_deref(), Some("text/html"));
-    assert_eq!(response.body, b"<h1>Try again later</h1>");
+    assert_eq!(response.content_type(), Some("text/html"));
+    assert_eq!(response.body.as_bytes(), b"<h1>Try again later</h1>");
 }

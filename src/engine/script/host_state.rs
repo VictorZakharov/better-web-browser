@@ -329,6 +329,20 @@ impl HostState {
             .join("; ")
     }
 
+    pub(super) fn replace_cookies_from_header(&mut self, cookie_header: &str) {
+        self.cookies.clear();
+        for pair in cookie_header.split(';').map(str::trim) {
+            let Some((name, value)) = pair.split_once('=') else {
+                continue;
+            };
+            let name = name.trim();
+            if !name.is_empty() {
+                self.cookies
+                    .insert(name.to_string(), value.trim().to_string());
+            }
+        }
+    }
+
     pub(super) fn set_cookie(&mut self, assignment: String) {
         let Some(pair) = assignment.split(';').next().map(str::trim) else {
             return;

@@ -1,7 +1,9 @@
 //! Non-render-blocking external classic-script fetch and delivery.
 
+use super::resources::fetch_document_resource;
 use super::*;
 use better_web_browser::engine::script::ScriptInput;
+use better_web_browser::fetch::{FetchSignal, RequestDestination};
 
 // WinHTTP bounds each response at 16 MiB. Keep the in-flight set small so a hostile page cannot
 // multiply that per-response allowance into hundreds of transient MiB before UI-thread budgeting.
@@ -57,6 +59,8 @@ impl BrowserState {
         let generation = self.generation;
         let window = self.window as isize;
         let client = Arc::clone(&self.http_client);
+        let fetch_signal = self.document_fetch.signal();
+        let document_url = self.page.source_url.clone();
         let worker = std::thread::Builder::new()
             .name("breeze-async-scripts".into())
             .spawn(move || {
@@ -64,8 +68,16 @@ impl BrowserState {
                     std::thread::scope(|scope| {
                         for request in batch.iter().cloned() {
                             let client = Arc::clone(&client);
+                            let signal = fetch_signal.clone();
+                            let document_url = &document_url;
                             scope.spawn(move || {
-                                let message = fetch_async_script(&client, generation, request);
+                                let message = fetch_async_script(
+                                    &client,
+                                    &signal,
+                                    document_url,
+                                    generation,
+                                    request,
+                                );
                                 post_async_script(window as Hwnd, message);
                             });
                         }
@@ -122,6 +134,9 @@ impl BrowserState {
         }
 
         let client = Arc::clone(&self.http_client);
+        let fetch_signal = self.document_fetch.signal();
+        let document_url = self.page.source_url.clone();
+        let cookie_header = client.document_cookie_header(&document_url);
         let advance = self.take_script_runtime_elapsed();
         let mut dynamic_network_time = Duration::ZERO;
         let mut dynamic_processing_time = Duration::ZERO;
@@ -130,9 +145,19 @@ impl BrowserState {
             let Some(runtime) = self.script_runtime.as_mut() else {
                 return;
             };
+            if let Ok(header) = &cookie_header {
+                runtime.set_document_cookie_header(header);
+            }
             let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
                 let request_started = Instant::now();
-                let response = client.get(url);
+                let response = fetch_document_resource(
+                    &client,
+                    &fetch_signal,
+                    &document_url,
+                    url,
+                    RequestDestination::Script,
+                )
+                .map_err(|error| error.to_string());
                 dynamic_network_time += request_started.elapsed();
                 let response = response?;
                 if !response.is_success() {
@@ -143,7 +168,7 @@ impl BrowserState {
                     return Err("page resource budget was exhausted".into());
                 }
                 let processing_started = Instant::now();
-                let code = winhttp::decode_text(&response.body, response.content_type.as_deref());
+                let code = winhttp::decode_text(response.body.as_bytes(), response.content_type());
                 dynamic_processing_time += processing_started.elapsed();
                 additional_bytes += size;
                 resource_budget -= size;
@@ -165,6 +190,11 @@ impl BrowserState {
                 );
             }
         }
+        if let Err(error) = cookie_header {
+            outcome
+                .errors
+                .push(format!("document.cookie refresh: {error}"));
+        }
         let script_time = script_started
             .elapsed()
             .saturating_sub(dynamic_network_time);
@@ -183,11 +213,20 @@ impl BrowserState {
 
 fn fetch_async_script(
     client: &winhttp::HttpClient,
+    signal: &FetchSignal,
+    document_url: &str,
     generation: u64,
     request: AsyncScriptRequest,
 ) -> AsyncScriptMessage {
     let request_started = Instant::now();
-    let response = client.get(&request.source_url);
+    let response = fetch_document_resource(
+        client,
+        signal,
+        document_url,
+        &request.source_url,
+        RequestDestination::Script,
+    )
+    .map_err(|error| error.to_string());
     let network_time = request_started.elapsed();
     let processing_started = Instant::now();
     let result = response.and_then(|response| {
@@ -196,7 +235,7 @@ fn fetch_async_script(
         }
         Ok(FetchedAsyncScript {
             bytes: response.body.len() as u64,
-            code: winhttp::decode_text(&response.body, response.content_type.as_deref()),
+            code: winhttp::decode_text(response.body.as_bytes(), response.content_type()),
         })
     });
     AsyncScriptMessage {

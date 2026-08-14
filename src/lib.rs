@@ -1,6 +1,7 @@
 pub mod branding;
 pub mod document;
 pub mod engine;
+pub mod fetch;
 pub mod metrics;
 pub mod navigation;
 

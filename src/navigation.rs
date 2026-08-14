@@ -1,4 +1,5 @@
 use std::fmt;
+use url::{Host, Url, form_urlencoded};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedUrl {
@@ -22,70 +23,31 @@ impl std::error::Error for UrlError {}
 impl ParsedUrl {
     pub fn parse(input: &str) -> Result<Self, UrlError> {
         let input = input.trim();
-        let without_fragment = input.split('#').next().unwrap_or(input);
-        let (scheme, remainder) = without_fragment
-            .split_once("://")
-            .ok_or_else(|| UrlError("URL must include http:// or https://".into()))?;
-        let scheme = scheme.to_ascii_lowercase();
+        let mut parsed = Url::parse(input).map_err(|error| UrlError(error.to_string()))?;
+        let scheme = parsed.scheme().to_ascii_lowercase();
         if scheme != "http" && scheme != "https" {
             return Err(UrlError(format!("unsupported URL scheme: {scheme}")));
         }
-        if remainder.is_empty() {
-            return Err(UrlError("URL host is missing".into()));
-        }
-
-        let authority_end = remainder.find(['/', '?']).unwrap_or(remainder.len());
-        let authority = &remainder[..authority_end];
-        if authority.is_empty()
-            || authority.contains('@')
-            || authority.chars().any(char::is_whitespace)
-        {
+        if !parsed.username().is_empty() || parsed.password().is_some() {
             return Err(UrlError(
-                "URL host is missing, contains credentials, or contains whitespace".into(),
+                "URL credentials are not accepted in browser addresses".into(),
             ));
         }
-
-        let default_port = if scheme == "https" { 443 } else { 80 };
-        let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
-            let closing = bracketed
-                .find(']')
-                .ok_or_else(|| UrlError("invalid IPv6 host".into()))?;
-            let host = &bracketed[..closing];
-            let suffix = &bracketed[closing + 1..];
-            let port = if suffix.is_empty() {
-                default_port
-            } else {
-                suffix
-                    .strip_prefix(':')
-                    .ok_or_else(|| UrlError("invalid IPv6 port".into()))?
-                    .parse::<u16>()
-                    .map_err(|_| UrlError("invalid URL port".into()))?
-            };
-            (host.to_string(), port)
-        } else if let Some((host, candidate_port)) = authority.rsplit_once(':') {
-            if host.contains(':') {
-                return Err(UrlError("IPv6 hosts must use brackets".into()));
-            }
-            let port = candidate_port
-                .parse::<u16>()
-                .map_err(|_| UrlError("invalid URL port".into()))?;
-            (host.to_string(), port)
-        } else {
-            (authority.to_string(), default_port)
+        let host = match parsed.host() {
+            Some(Host::Domain(host)) => host.to_string(),
+            Some(Host::Ipv4(host)) => host.to_string(),
+            Some(Host::Ipv6(host)) => host.to_string(),
+            None => return Err(UrlError("URL host is missing".into())),
         };
-
-        if host.is_empty() {
-            return Err(UrlError("URL host is missing".into()));
+        let port = parsed
+            .port_or_known_default()
+            .ok_or_else(|| UrlError("URL port is missing".into()))?;
+        parsed.set_fragment(None);
+        let mut path_and_query = parsed.path().to_string();
+        if let Some(query) = parsed.query() {
+            path_and_query.push('?');
+            path_and_query.push_str(query);
         }
-
-        let remainder = &remainder[authority_end..];
-        let path_and_query = if remainder.is_empty() {
-            "/".to_string()
-        } else if remainder.starts_with('?') {
-            format!("/{remainder}")
-        } else {
-            remainder.to_string()
-        };
 
         Ok(Self {
             scheme,
@@ -111,11 +73,7 @@ impl ParsedUrl {
     }
 
     pub fn canonical(&self) -> String {
-        format!(
-            "{}{}",
-            self.origin(),
-            serialize_path_and_query(&self.path_and_query)
-        )
+        format!("{}{}", self.origin(), self.path_and_query)
     }
 }
 
@@ -155,40 +113,15 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     {
         return None;
     }
-    if lowered.starts_with("http://") || lowered.starts_with("https://") {
-        return ParsedUrl::parse(reference).ok().map(|url| url.canonical());
+    let base = Url::parse(base).ok()?;
+    let resolved = base.join(reference).ok()?;
+    if !matches!(resolved.scheme(), "http" | "https")
+        || !resolved.username().is_empty()
+        || resolved.password().is_some()
+    {
+        return None;
     }
-
-    let base = ParsedUrl::parse(base).ok()?;
-    if reference.starts_with("//") {
-        return ParsedUrl::parse(&format!("{}:{reference}", base.scheme))
-            .ok()
-            .map(|url| url.canonical());
-    }
-    if reference.starts_with('#') {
-        return Some(format!("{}{}", base.canonical(), reference));
-    }
-
-    let reference = reference.split('#').next().unwrap_or(reference);
-    let path = if reference.starts_with('/') {
-        reference.to_string()
-    } else if reference.starts_with('?') {
-        let current_path = base.path_and_query.split('?').next().unwrap_or("/");
-        format!("{current_path}{reference}")
-    } else {
-        let current_path = base.path_and_query.split('?').next().unwrap_or("/");
-        let directory = current_path
-            .rsplit_once('/')
-            .map(|(directory, _)| format!("{directory}/"))
-            .unwrap_or_else(|| "/".into());
-        format!("{directory}{reference}")
-    };
-    let normalized = normalize_path(&path);
-    Some(format!(
-        "{}{}",
-        base.origin(),
-        serialize_path_and_query(&normalized)
-    ))
+    Some(resolved.to_string())
 }
 
 /// Resolves a subresource reference, including embedded `data:` resources.
@@ -204,82 +137,12 @@ pub fn resolve_resource_url(base: &str, reference: &str) -> Option<String> {
     resolve_url(base, reference)
 }
 
-fn normalize_path(path_and_query: &str) -> String {
-    let (path, query) = path_and_query
-        .split_once('?')
-        .map(|(path, query)| (path, Some(query)))
-        .unwrap_or((path_and_query, None));
-    let trailing_slash = path.ends_with('/');
-    let mut segments = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop();
-            }
-            other => segments.push(other),
-        }
-    }
-    let mut normalized = format!("/{}", segments.join("/"));
-    if trailing_slash && normalized != "/" {
-        normalized.push('/');
-    }
-    if let Some(query) = query {
-        normalized.push('?');
-        normalized.push_str(query);
-    }
-    normalized
-}
-
-fn serialize_path_and_query(path_and_query: &str) -> String {
-    let (path, query) = path_and_query
-        .split_once('?')
-        .map(|(path, query)| (path, Some(query)))
-        .unwrap_or((path_and_query, None));
-    let mut serialized = percent_encode_url_part(path, b"?^`{}");
-    if let Some(query) = query {
-        serialized.push('?');
-        serialized.push_str(&percent_encode_url_part(query, b"'"));
-    }
-    serialized
-}
-
-fn percent_encode_url_part(value: &str, extra: &[u8]) -> String {
-    let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        let encode = byte <= b' '
-            || byte > b'~'
-            || matches!(byte, b'"' | b'#' | b'<' | b'>')
-            || extra.contains(&byte);
-        if encode {
-            const HEX: &[u8; 16] = b"0123456789ABCDEF";
-            encoded.push('%');
-            encoded.push(HEX[(byte >> 4) as usize] as char);
-            encoded.push(HEX[(byte & 0x0f) as usize] as char);
-        } else {
-            encoded.push(byte as char);
-        }
-    }
-    encoded
-}
-
 pub fn encode_www_form_component(input: &str) -> String {
-    let mut encoded = String::with_capacity(input.len());
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(byte as char)
-            }
-            b' ' => encoded.push('+'),
-            other => {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                encoded.push('%');
-                encoded.push(HEX[(other >> 4) as usize] as char);
-                encoded.push(HEX[(other & 0x0f) as usize] as char);
-            }
-        }
-    }
-    encoded
+    form_urlencoded::Serializer::new(String::new())
+        .append_pair("", input)
+        .finish()
+        .trim_start_matches('=')
+        .to_string()
 }
 
 #[cfg(test)]
