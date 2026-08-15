@@ -2,6 +2,9 @@
 
 `compare.ps1` builds Breeze and a separately supplied Chromium reference harness, runs both with fresh hidden processes, and generates raw JSON plus a median-based Markdown report.
 
+Breeze memory, CPU, and process-count fields aggregate its browser process and any live sandboxed
+renderer, matching the reference harness's process-tree accounting.
+
 ```powershell
 .\benchmarks\compare.ps1 `
   -Urls https://example.org/,https://www.rust-lang.org/ `

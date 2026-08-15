@@ -147,10 +147,42 @@ impl BrowserState {
         let diagnostics =
             diagnostics::collect(self, &benchmark.diagnostic_selectors, style_viewport_width);
         let memory = process_memory();
+        let renderer_registry = self
+            .renderer_registry
+            .lock()
+            .map(|registry| registry.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let renderer_snapshots: Vec<_> = renderer_registry
+            .renderers
+            .iter()
+            .filter(|renderer| {
+                matches!(
+                    renderer.phase,
+                    renderer_lifecycle::RendererLifecyclePhase::Running
+                        | renderer_lifecycle::RendererLifecyclePhase::Unresponsive
+                )
+            })
+            .filter_map(|renderer| renderer.snapshot.as_ref())
+            .collect();
+        let renderer_working_set = renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+            total.saturating_add(snapshot.working_set)
+        });
+        let renderer_private_memory = renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+            total.saturating_add(snapshot.private_memory)
+        });
+        let renderer_peak_working_set =
+            renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+                total.saturating_add(snapshot.peak_working_set)
+            });
+        let renderer_cpu_ticks = renderer_snapshots.iter().fold(0_u64, |total, snapshot| {
+            total.saturating_add(snapshot.cpu_ticks)
+        });
+        let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
-        let cpu_ticks = process_cpu_ticks()
+        let browser_cpu_ticks = process_cpu_ticks()
             .unwrap_or(benchmark.initial_cpu_ticks)
             .saturating_sub(benchmark.initial_cpu_ticks);
+        let cpu_ticks = browser_cpu_ticks.saturating_add(renderer_cpu_ticks);
         let cpu_seconds = cpu_ticks as f64 / 10_000_000.0;
         let processors = std::thread::available_parallelism()
             .map(|count| count.get())
@@ -230,9 +262,14 @@ impl BrowserState {
                 "  \"working_set_bytes\": {},\n",
                 "  \"private_bytes\": {},\n",
                 "  \"peak_working_set_bytes\": {},\n",
+                "  \"browser_working_set_bytes\": {},\n",
+                "  \"renderer_working_set_bytes\": {},\n",
+                "  \"renderer_private_bytes\": {},\n",
+                "  \"renderer_peak_working_set_bytes\": {},\n",
+                "  \"renderer_cpu_time_ms\": {:.3},\n",
                 "  \"cpu_time_ms\": {:.3},\n",
                 "  \"average_cpu_percent\": {:.3},\n",
-                "  \"process_count\": 1,\n",
+                "  \"process_count\": {},\n",
                 "  \"downloaded_bytes\": {},\n",
                 "  \"javascript_scripts_executed\": {},\n",
                 "  \"javascript_dom_mutations\": {},\n",
@@ -274,11 +311,19 @@ impl BrowserState {
             scroll_paint.average.as_secs_f64() * 1_000.0,
             scroll_paint.maximum.as_secs_f64() * 1_000.0,
             benchmark.settle.as_millis(),
+            memory.working_set.saturating_add(renderer_working_set),
+            memory.private_usage.saturating_add(renderer_private_memory),
+            memory
+                .peak_working_set
+                .saturating_add(renderer_peak_working_set),
             memory.working_set,
-            memory.private_usage,
-            memory.peak_working_set,
+            renderer_working_set,
+            renderer_private_memory,
+            renderer_peak_working_set,
+            renderer_cpu_ticks as f64 / 10_000.0,
             cpu_seconds * 1_000.0,
             average_cpu,
+            process_count,
             metrics.bytes_downloaded,
             benchmark.script_executed,
             benchmark.script_mutations,

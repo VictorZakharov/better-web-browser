@@ -76,6 +76,15 @@ fn hidden_browser_repaints_after_a_post_load_timer() {
         report.contains("\"javascript_errors\": []"),
         "hidden run reported JavaScript errors:\n{report}"
     );
+    assert_eq!(
+        json_integer(&report, "process_count"),
+        Some(2),
+        "hidden browser did not account for its renderer:\n{report}"
+    );
+    assert!(
+        json_integer(&report, "renderer_working_set_bytes").is_some_and(|bytes| bytes > 0),
+        "hidden browser did not report renderer memory:\n{report}"
+    );
     assert!(
         json_integer(&report, "javascript_dom_mutations").is_some_and(|count| count >= 3),
         "post-load mutations were not recorded:\n{report}"

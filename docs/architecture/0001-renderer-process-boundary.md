@@ -1,6 +1,6 @@
 # ADR 0001: Renderer process isolation boundary
 
-- Status: Accepted; implementation is staged
+- Status: Accepted; Stage 2 process spike implemented
 - Date: 2026-08-14
 - Tracking issue: [#6](https://github.com/VictorZakharov/better-web-browser/issues/6)
 
@@ -417,6 +417,20 @@ avoid a mixed state that is described as secure before its boundary is enforced.
   abort, Job kill-on-browser-close, child-launch denial, direct-network denial, and recovery to a
   browser-owned crash surface.
 - Record renderer PID, exit reason, memory, CPU, and restart count in task-manager diagnostics.
+
+Implemented on 2026-08-14. Browser startup launches the capability-free child on a background
+thread, and a dedicated broker owns blocking IPC, heartbeats, process accounting, shutdown, and Job
+termination. The UI thread only polls typed lifecycle events; Task Manager reads a browser-owned
+renderer registry and presents browser/renderer ownership as a process tree. Additional browsing
+contexts become sibling renderer rows rather than requiring fixed UI panels. After an abnormal
+exit, the browser remains interactive and Reload starts a replacement session.
+
+This stage still sends no document, URL, response, cookie, script, style, image, font, or display
+data to the child. The page engine remains in the browser process until later migration stages. The
+Stage 2 child inherits the browser environment, matching Microsoft's AppContainer launch sample;
+that is acceptable only while it receives no hostile input. Before remote bytes cross the boundary,
+launch must use an audited minimal environment block so renderer code cannot inspect browser
+credentials or configuration stored in environment variables.
 
 ### Stage 3: Broker navigation, Fetch, cookies, and storage
 

@@ -3,8 +3,11 @@
 use super::browser_navigation::HistoryMode;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
+use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
 use super::*;
 use better_web_browser::fetch::FetchController;
+use better_web_browser::renderer_process::RendererSession;
+use std::sync::{Mutex, mpsc};
 
 pub(super) struct BrowserState {
     pub(super) instance: Hinstance,
@@ -46,6 +49,11 @@ pub(super) struct BrowserState {
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) document_fetch: FetchController,
     pub(super) task_window: Hwnd,
+    pub(super) renderer_session: Option<RendererSession>,
+    pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
+    pub(super) renderer_launch_pending: bool,
+    pub(super) renderer_started_once: bool,
+    pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) last_layout_tree_time: Duration,
     pub(super) last_layout_finalize_time: Duration,
     pub(super) last_text_measure_count: usize,
@@ -102,6 +110,11 @@ impl BrowserState {
             http_client,
             document_fetch: FetchController::new(),
             task_window: null_mut(),
+            renderer_session: None,
+            renderer_launch_receiver: None,
+            renderer_launch_pending: false,
+            renderer_started_once: false,
+            renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             last_layout_tree_time: Duration::ZERO,
             last_layout_finalize_time: Duration::ZERO,
             last_text_measure_count: 0,
@@ -115,6 +128,7 @@ impl BrowserState {
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.window_ready = benchmark.process_started.elapsed();
         }
+        self.start_renderer();
         if self.open_task_manager_on_start {
             self.open_task_manager();
         }
@@ -197,6 +211,7 @@ impl BrowserState {
             self.instance,
             self.dpi,
             Arc::clone(&self.metrics),
+            Arc::clone(&self.renderer_registry),
         ) {
             Ok(window) => self.task_window = window,
             Err(error) => self.set_status(&error),
@@ -209,6 +224,8 @@ impl Drop for BrowserState {
         unsafe {
             self.document_fetch.abort();
             self.cancel_script_runtime();
+            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+            self.renderer_session.take();
             if !self.content_brush.is_null() {
                 DeleteObject(self.content_brush);
             }

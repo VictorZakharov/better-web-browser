@@ -16,6 +16,7 @@ mod painting;
 mod platform;
 mod process_metrics;
 mod reader_layout;
+mod renderer_lifecycle;
 mod rendering_resources;
 mod resources;
 mod runtime;
@@ -26,19 +27,6 @@ mod win32_helpers;
 mod window_dispatch;
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
-use chrome_controls::{ChromeLayout, Controls};
-use document_activation::{LoadMessage, LoadedPage};
-use platform::*;
-use process_metrics::{process_cpu_ticks, process_memory};
-use reader_layout::layout_document;
-use rendering_resources::{
-    DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps, WebFontResources,
-};
-use resources::DeferredResourcesMessage;
-use viewport::{DrawItem, Surface};
-use win32_helpers::*;
-use window_dispatch::{chrome_control_proc, main_window_proc};
-
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
@@ -48,12 +36,24 @@ use better_web_browser::engine::{
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
 use better_web_browser::winhttp;
+use chrome_controls::{ChromeLayout, Controls};
+use document_activation::{LoadMessage, LoadedPage};
+use platform::*;
+use process_metrics::{process_cpu_ticks, process_memory};
+use reader_layout::layout_document;
+use rendering_resources::{
+    DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps, WebFontResources,
+};
+use resources::DeferredResourcesMessage;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use viewport::{DrawItem, Surface};
+use win32_helpers::*;
+use window_dispatch::{chrome_control_proc, main_window_proc};
 
 pub fn run() -> Result<(), String> {
     unsafe {

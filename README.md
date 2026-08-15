@@ -24,11 +24,15 @@ Current page support includes:
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
+- A capability-free Windows AppContainer renderer lifecycle with bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics; this Stage 2 child handles lifecycle messages only and does not yet receive page bytes
 - Links, history, reload, scrolling, and background networking
 
 ## Task manager
 
-Click **Task manager**. Its modeless popup refreshes every second and reports normalized CPU use, working/private/peak memory, handles, uptime, network activity, parsing time, and retained display items.
+Click **Task manager**. Its modeless popup refreshes every second and shows a process tree rooted at
+the privileged browser, with one child row per renderer context. Rows report CPU, working/private
+memory, handles, uptime, lifecycle state, restarts, and exit diagnostics; document-engine activity
+is reported separately.
 
 ## Chromium comparison
 
@@ -49,19 +53,23 @@ Six runs per browser, collected as two alternating three-run hidden release batc
 
 | Metric | Breeze | Chromium | Result |
 |---|---:|---:|---:|
-| Window ready | 11.0 ms | 186.7 ms | Breeze 17.04x faster |
-| Process start to page ready | 494.9 ms | 757.5 ms | Breeze 1.53x faster |
-| Navigation | 484.0 ms | 448.2 ms | Chromium 1.08x faster |
-| Working set | 91.7 MiB | 604.3 MiB | Breeze 6.59x smaller |
-| Private memory | 78.1 MiB | 387.9 MiB | Breeze 4.97x smaller |
-| CPU time | 570.3 ms | 3,929.7 ms | Breeze 6.89x lower |
-| Processes | 1 | 10 | Breeze uses 10x fewer |
+| Window ready | 13.7 ms | 198.7 ms | Breeze 14.52x faster |
+| Process start to page ready | 420.0 ms | 775.6 ms | Breeze 1.85x faster |
+| Navigation | 407.2 ms | 436.0 ms | Breeze 1.07x faster |
+| Working set | 97.2 MiB | 609.3 MiB | Breeze 6.27x smaller |
+| Private memory | 76.5 MiB | 392.1 MiB | Breeze 5.12x smaller |
+| CPU time | 523.4 ms | 3,976.6 ms | Breeze 7.60x lower |
+| Processes | 2 | 10 | Breeze uses 5x fewer |
 
-Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event and implements substantially more of the web platform. Treat this as a reproducible development snapshot, not a universal or feature-equivalent browser claim.
+Breeze memory and CPU totals include both its browser process and the live lifecycle-only renderer.
+Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event
+and implements substantially more of the web platform. Treat this as a reproducible development
+snapshot, not a universal or feature-equivalent browser claim.
 
 ## Architecture
 
-The current single-process data flow is:
+The current page-engine data flow remains in the browser process while the lifecycle-only renderer
+boundary is exercised separately:
 
 ```text
 URL/history -> Fetch policy -> WinHTTP -> charset decode -> HTML5 DOM

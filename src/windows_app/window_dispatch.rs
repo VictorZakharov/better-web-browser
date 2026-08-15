@@ -159,6 +159,10 @@ pub(super) unsafe extern "system" fn main_window_proc(
             state.pump_script_runtime();
             0
         }
+        WM_TIMER if wparam == ID_RENDERER_MONITOR_TIMER => {
+            state.poll_renderer();
+            0
+        }
         WM_APP_CHROME_INVALIDATE => {
             let toolbar = Rect {
                 left: 0,
@@ -182,6 +186,10 @@ pub(super) unsafe extern "system" fn main_window_proc(
         WM_APP_ASYNC_SCRIPT => {
             let message = Box::from_raw(lparam as *mut async_scripts::AsyncScriptMessage);
             state.finish_async_script(*message);
+            0
+        }
+        WM_APP_RENDERER_LAUNCHED => {
+            state.finish_renderer_launch();
             0
         }
         WM_APP_TASK_CLOSED => {
