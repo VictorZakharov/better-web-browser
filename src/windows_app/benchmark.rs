@@ -6,6 +6,9 @@ use super::*;
 
 pub(super) use options::LaunchOptions;
 
+const RENDERER_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const RENDERER_WAIT_TIMEOUT: Duration = Duration::from_secs(6);
+
 pub(super) struct BenchmarkRun {
     pub(super) requested_url: String,
     pub(super) output: PathBuf,
@@ -38,6 +41,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_diagnostics: Vec<String>,
     pub(super) script_runtime_stopped: bool,
     pub(super) finish_scheduled: bool,
+    pub(super) renderer_wait_deadline: Option<Instant>,
     pub(super) screenshot: Option<PathBuf>,
     pub(super) scroll_samples: usize,
     pub(super) diagnostic_selectors: Vec<String>,
@@ -90,6 +94,7 @@ impl BenchmarkRun {
             script_diagnostics: Vec::new(),
             script_runtime_stopped: false,
             finish_scheduled: false,
+            renderer_wait_deadline: None,
             screenshot,
             scroll_samples,
             diagnostic_selectors,
@@ -108,17 +113,28 @@ impl BrowserState {
             return;
         }
         benchmark.finish_scheduled = true;
-        let delay = benchmark.settle;
-        let window = self.window as isize;
-        std::thread::spawn(move || {
-            std::thread::sleep(delay);
-            unsafe {
-                PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
-            }
-        });
+        post_benchmark_finish(self.window, benchmark.settle);
     }
 
     pub(super) unsafe fn finish_benchmark(&mut self) {
+        // AppContainer profile creation can outlive a short page-settle period on
+        // cold hosts. Keep the window responsive while ensuring process metrics
+        // include a renderer launch that is still resolving.
+        self.finish_renderer_launch();
+        if self.renderer_launch_pending {
+            let now = Instant::now();
+            let should_wait = self.benchmark.as_mut().is_some_and(|benchmark| {
+                let deadline = benchmark
+                    .renderer_wait_deadline
+                    .get_or_insert(now + RENDERER_WAIT_TIMEOUT);
+                now < *deadline
+            });
+            if should_wait {
+                post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
+                return;
+            }
+        }
+
         let scroll_sample_count = self
             .benchmark
             .as_ref()
@@ -351,4 +367,14 @@ impl BrowserState {
         }
         DestroyWindow(self.window);
     }
+}
+
+fn post_benchmark_finish(window: Hwnd, delay: Duration) {
+    let window = window as isize;
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        unsafe {
+            PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
+        }
+    });
 }
