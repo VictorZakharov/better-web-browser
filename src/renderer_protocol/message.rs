@@ -1,0 +1,150 @@
+use super::ProtocolError;
+use std::fmt;
+
+pub const NONCE_LENGTH: usize = 32;
+const MAX_DIAGNOSTIC_LENGTH: usize = 16 * 1024;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Nonce([u8; NONCE_LENGTH]);
+
+impl Nonce {
+    pub const fn new(bytes: [u8; NONCE_LENGTH]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; NONCE_LENGTH] {
+        &self.0
+    }
+
+    pub fn to_hex(self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut text = String::with_capacity(NONCE_LENGTH * 2);
+        for byte in self.0 {
+            text.push(HEX[(byte >> 4) as usize] as char);
+            text.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+        text
+    }
+
+    pub fn from_hex(text: &str) -> Result<Self, ProtocolError> {
+        if text.len() != NONCE_LENGTH * 2 {
+            return Err(ProtocolError::InvalidPayload("nonce length"));
+        }
+        let mut bytes = [0_u8; NONCE_LENGTH];
+        for (index, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+            bytes[index] = (hex_digit(pair[0])? << 4) | hex_digit(pair[1])?;
+        }
+        Ok(Self(bytes))
+    }
+}
+
+impl fmt::Debug for Nonce {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Nonce([redacted])")
+    }
+}
+
+fn hex_digit(byte: u8) -> Result<u8, ProtocolError> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(ProtocolError::InvalidPayload("nonce encoding")),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RendererSessionId(u64);
+
+impl RendererSessionId {
+    pub fn new(value: u64) -> Result<Self, ProtocolError> {
+        (value != 0)
+            .then_some(Self(value))
+            .ok_or(ProtocolError::InvalidPayload("zero renderer session"))
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RendererLimits {
+    pub max_control_payload: u32,
+    pub max_frame_payload: u32,
+    pub heartbeat_millis: u32,
+}
+
+impl Default for RendererLimits {
+    fn default() -> Self {
+        Self {
+            max_control_payload: super::MAX_CONTROL_PAYLOAD as u32,
+            max_frame_payload: super::MAX_FRAME_PAYLOAD as u32,
+            heartbeat_millis: 1_000,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContainmentReport {
+    pub app_container: bool,
+    pub no_console_window: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BrowserMessage {
+    Hello {
+        nonce: Nonce,
+        limits: RendererLimits,
+    },
+    Ping(u64),
+    Shutdown,
+    ProtocolFailure(String),
+    Test(TestCommand),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TestCommand {
+    Crash,
+    Hang,
+    WriteMalformedFrame,
+    ProbeRestrictions { loopback_port: u16 },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RendererMessage {
+    Ready {
+        nonce: Nonce,
+        containment: ContainmentReport,
+    },
+    Pong(u64),
+    ShutdownComplete,
+    Diagnostic(RendererDiagnostic),
+    Restrictions(RestrictionReport),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RendererDiagnostic {
+    pub code: u16,
+    pub text: String,
+}
+
+impl RendererDiagnostic {
+    pub fn new(code: u16, text: impl Into<String>) -> Result<Self, ProtocolError> {
+        let text = text.into();
+        if text.len() > MAX_DIAGNOSTIC_LENGTH {
+            return Err(ProtocolError::InvalidPayload("diagnostic length"));
+        }
+        Ok(Self { code, text })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestrictionReport {
+    pub child_launch_denied: bool,
+    pub loopback_denied: bool,
+    pub internet_denied: bool,
+    pub child_error: i32,
+    pub loopback_error: i32,
+    pub internet_error: i32,
+}

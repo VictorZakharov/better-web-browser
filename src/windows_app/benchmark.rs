@@ -6,6 +6,9 @@ use super::*;
 
 pub(super) use options::LaunchOptions;
 
+const RENDERER_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const RENDERER_WAIT_TIMEOUT: Duration = Duration::from_secs(6);
+
 pub(super) struct BenchmarkRun {
     pub(super) requested_url: String,
     pub(super) output: PathBuf,
@@ -38,6 +41,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_diagnostics: Vec<String>,
     pub(super) script_runtime_stopped: bool,
     pub(super) finish_scheduled: bool,
+    pub(super) renderer_wait_deadline: Option<Instant>,
     pub(super) screenshot: Option<PathBuf>,
     pub(super) scroll_samples: usize,
     pub(super) diagnostic_selectors: Vec<String>,
@@ -90,6 +94,7 @@ impl BenchmarkRun {
             script_diagnostics: Vec::new(),
             script_runtime_stopped: false,
             finish_scheduled: false,
+            renderer_wait_deadline: None,
             screenshot,
             scroll_samples,
             diagnostic_selectors,
@@ -108,17 +113,28 @@ impl BrowserState {
             return;
         }
         benchmark.finish_scheduled = true;
-        let delay = benchmark.settle;
-        let window = self.window as isize;
-        std::thread::spawn(move || {
-            std::thread::sleep(delay);
-            unsafe {
-                PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
-            }
-        });
+        post_benchmark_finish(self.window, benchmark.settle);
     }
 
     pub(super) unsafe fn finish_benchmark(&mut self) {
+        // AppContainer profile creation can outlive a short page-settle period on
+        // cold hosts. Keep the window responsive while ensuring process metrics
+        // include a renderer launch that is still resolving.
+        self.finish_renderer_launch();
+        if self.renderer_launch_pending {
+            let now = Instant::now();
+            let should_wait = self.benchmark.as_mut().is_some_and(|benchmark| {
+                let deadline = benchmark
+                    .renderer_wait_deadline
+                    .get_or_insert(now + RENDERER_WAIT_TIMEOUT);
+                now < *deadline
+            });
+            if should_wait {
+                post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
+                return;
+            }
+        }
+
         let scroll_sample_count = self
             .benchmark
             .as_ref()
@@ -147,10 +163,42 @@ impl BrowserState {
         let diagnostics =
             diagnostics::collect(self, &benchmark.diagnostic_selectors, style_viewport_width);
         let memory = process_memory();
+        let renderer_registry = self
+            .renderer_registry
+            .lock()
+            .map(|registry| registry.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let renderer_snapshots: Vec<_> = renderer_registry
+            .renderers
+            .iter()
+            .filter(|renderer| {
+                matches!(
+                    renderer.phase,
+                    renderer_lifecycle::RendererLifecyclePhase::Running
+                        | renderer_lifecycle::RendererLifecyclePhase::Unresponsive
+                )
+            })
+            .filter_map(|renderer| renderer.snapshot.as_ref())
+            .collect();
+        let renderer_working_set = renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+            total.saturating_add(snapshot.working_set)
+        });
+        let renderer_private_memory = renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+            total.saturating_add(snapshot.private_memory)
+        });
+        let renderer_peak_working_set =
+            renderer_snapshots.iter().fold(0_usize, |total, snapshot| {
+                total.saturating_add(snapshot.peak_working_set)
+            });
+        let renderer_cpu_ticks = renderer_snapshots.iter().fold(0_u64, |total, snapshot| {
+            total.saturating_add(snapshot.cpu_ticks)
+        });
+        let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
-        let cpu_ticks = process_cpu_ticks()
+        let browser_cpu_ticks = process_cpu_ticks()
             .unwrap_or(benchmark.initial_cpu_ticks)
             .saturating_sub(benchmark.initial_cpu_ticks);
+        let cpu_ticks = browser_cpu_ticks.saturating_add(renderer_cpu_ticks);
         let cpu_seconds = cpu_ticks as f64 / 10_000_000.0;
         let processors = std::thread::available_parallelism()
             .map(|count| count.get())
@@ -230,9 +278,14 @@ impl BrowserState {
                 "  \"working_set_bytes\": {},\n",
                 "  \"private_bytes\": {},\n",
                 "  \"peak_working_set_bytes\": {},\n",
+                "  \"browser_working_set_bytes\": {},\n",
+                "  \"renderer_working_set_bytes\": {},\n",
+                "  \"renderer_private_bytes\": {},\n",
+                "  \"renderer_peak_working_set_bytes\": {},\n",
+                "  \"renderer_cpu_time_ms\": {:.3},\n",
                 "  \"cpu_time_ms\": {:.3},\n",
                 "  \"average_cpu_percent\": {:.3},\n",
-                "  \"process_count\": 1,\n",
+                "  \"process_count\": {},\n",
                 "  \"downloaded_bytes\": {},\n",
                 "  \"javascript_scripts_executed\": {},\n",
                 "  \"javascript_dom_mutations\": {},\n",
@@ -274,11 +327,19 @@ impl BrowserState {
             scroll_paint.average.as_secs_f64() * 1_000.0,
             scroll_paint.maximum.as_secs_f64() * 1_000.0,
             benchmark.settle.as_millis(),
+            memory.working_set.saturating_add(renderer_working_set),
+            memory.private_usage.saturating_add(renderer_private_memory),
+            memory
+                .peak_working_set
+                .saturating_add(renderer_peak_working_set),
             memory.working_set,
-            memory.private_usage,
-            memory.peak_working_set,
+            renderer_working_set,
+            renderer_private_memory,
+            renderer_peak_working_set,
+            renderer_cpu_ticks as f64 / 10_000.0,
             cpu_seconds * 1_000.0,
             average_cpu,
+            process_count,
             metrics.bytes_downloaded,
             benchmark.script_executed,
             benchmark.script_mutations,
@@ -306,4 +367,14 @@ impl BrowserState {
         }
         DestroyWindow(self.window);
     }
+}
+
+fn post_benchmark_finish(window: Hwnd, delay: Duration) {
+    let window = window as isize;
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        unsafe {
+            PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
+        }
+    });
 }

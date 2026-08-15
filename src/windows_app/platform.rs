@@ -59,6 +59,7 @@ pub(super) const WM_APP_BENCHMARK_FINISH: u32 = WM_APP + 3;
 pub(super) const WM_APP_CHROME_INVALIDATE: u32 = WM_APP + 4;
 pub(super) const WM_APP_DEFERRED_RESOURCES: u32 = WM_APP + 5;
 pub(super) const WM_APP_ASYNC_SCRIPT: u32 = WM_APP + 6;
+pub(super) const WM_APP_RENDERER_LAUNCHED: u32 = WM_APP + 7;
 
 pub(super) const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 pub(super) const WS_VISIBLE: u32 = 0x1000_0000;
@@ -120,6 +121,7 @@ pub(super) const ID_TASK_MANAGER: usize = 1006;
 pub(super) const ID_READER: usize = 1007;
 pub(super) const ID_PAGE_CONTROL_BASE: usize = 2000;
 pub(super) const ID_SCRIPT_RUNTIME_TIMER: usize = 1;
+pub(super) const ID_RENDERER_MONITOR_TIMER: usize = 2;
 pub(super) const PAGE_RESOURCE_BUDGET: u64 = 32 * 1024 * 1024;
 pub(super) const MAX_POST_LOAD_TIMER_CALLBACKS: usize = 128;
 

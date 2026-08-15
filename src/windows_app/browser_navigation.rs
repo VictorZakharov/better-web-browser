@@ -186,6 +186,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reload(&mut self) {
+        self.start_renderer();
         if let Some(url) = self.history.get(self.history_index).cloned() {
             self.begin_navigation(url, HistoryMode::Existing);
         }

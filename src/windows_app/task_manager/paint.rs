@@ -89,7 +89,7 @@ impl TaskManagerState {
             dc,
             fonts.small,
             CHROME_THEME.muted_text,
-            &format!("{PRODUCT_NAME} · one owned browser process"),
+            &format!("{PRODUCT_NAME} · browser with capability-free renderers"),
             Rect {
                 left: margin,
                 top: self.scale(38),
@@ -128,7 +128,7 @@ impl TaskManagerState {
             dc,
             fonts.heading,
             rgb(27, 112, 73),
-            "LIVE",
+            &self.view.process_summary,
             Rect {
                 left: live.left + self.scale(24),
                 top: live.top,
@@ -157,7 +157,7 @@ impl TaskManagerState {
             dc,
             fonts.heading,
             CHROME_THEME.muted_text,
-            "CPU USAGE",
+            "TOTAL CPU USAGE",
             Rect {
                 left: hero.left + self.scale(16),
                 top: hero.top + self.scale(10),
@@ -228,69 +228,18 @@ impl TaskManagerState {
                 right: hero.right - self.scale(14),
                 bottom: hero.bottom - self.scale(15),
             },
-            "WORKING SET",
+            "TOTAL WORKING SET",
             &self.view.working_set,
         );
 
-        let process = Rect {
-            left: margin,
-            top: hero.bottom + gap,
-            right: (client.right - margin).max(margin + 1),
-            bottom: hero.bottom + gap + self.scale(82),
-        };
-        paint_rounded_panel(
-            dc,
-            &process,
-            CHROME_THEME.card,
-            CHROME_THEME.border,
-            self.scale(12) as f32,
-            self.scale(1).max(1),
-        );
-        paint_text(
-            dc,
-            fonts.heading,
-            CHROME_THEME.muted_text,
-            "BROWSER PROCESS",
-            Rect {
-                left: process.left + self.scale(16),
-                top: process.top + self.scale(8),
-                right: process.right - self.scale(16),
-                bottom: process.top + self.scale(27),
-            },
-            DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-        );
-        let handles_and_uptime = format!("{} · {}", self.view.handles, self.view.uptime);
-        let process_values = [
-            ("PRIVATE MEMORY", self.view.private_memory.as_str()),
-            ("PEAK WORKING SET", self.view.peak_working_set.as_str()),
-            ("HANDLES · UPTIME", handles_and_uptime.as_str()),
-        ];
-        let third = process.width() / 3;
-        for (index, (label, value)) in process_values.iter().enumerate() {
-            let left = process.left + third * index as i32;
-            self.paint_metric_cell(
-                dc,
-                fonts,
-                Rect {
-                    left: left + self.scale(16),
-                    top: process.top + self.scale(29),
-                    right: if index == 2 {
-                        process.right - self.scale(12)
-                    } else {
-                        left + third - self.scale(8)
-                    },
-                    bottom: process.bottom - self.scale(8),
-                },
-                label,
-                value,
-            );
-        }
+        let process_bottom =
+            self.paint_process_tree(dc, fonts, hero.bottom + gap, margin, client.right);
 
         let engine = Rect {
             left: margin,
-            top: process.bottom + gap,
+            top: process_bottom + gap,
             right: (client.right - margin).max(margin + 1),
-            bottom: (client.bottom - self.scale(16)).max(process.bottom + gap + self.scale(90)),
+            bottom: (client.bottom - self.scale(16)).max(process_bottom + gap + self.scale(90)),
         };
         paint_rounded_panel(
             dc,
@@ -352,7 +301,7 @@ impl TaskManagerState {
         }
     }
 
-    unsafe fn paint_metric_cell(
+    pub(super) unsafe fn paint_metric_cell(
         &self,
         dc: Hdc,
         fonts: &TaskManagerFonts,
