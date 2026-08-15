@@ -5,7 +5,14 @@ mod windows_app;
 
 #[cfg(target_os = "windows")]
 fn main() {
-    let benchmark = std::env::args().any(|argument| argument == "--benchmark");
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(result) = better_web_browser::renderer_process::run_child_from_args(&arguments) {
+        if result.is_err() {
+            std::process::exit(70);
+        }
+        return;
+    }
+    let benchmark = arguments.iter().any(|argument| argument == "--benchmark");
     let large_headless_stack =
         benchmark && std::env::var_os("BREEZE_HEADLESS_LARGE_STACK").is_some();
     let result = if large_headless_stack {

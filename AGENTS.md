@@ -39,3 +39,4 @@
 - Breeze runs must use its hidden benchmark/capture modes. Do not launch the interactive browser executable for automated checks.
 - If any code path can open a browser window, stop and fix that path before running it. A visible launch is allowed only when the user explicitly requests one.
 - Keep repeated and long-running browser checks headless even when a single manual check might seem harmless; unexpected windows disrupt the user's desktop.
+- Run `cargo test --test renderer_process` as the normal Windows user (an escalated shell in Codex), while preserving its `CREATE_NO_WINDOW` launch path. The filesystem-sandbox identity cannot access the user's AppContainer profile and produces a false profile-open failure.
