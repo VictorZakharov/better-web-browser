@@ -47,6 +47,7 @@ impl NodeId {
 pub(super) struct NodeIdAllocator {
     pub(super) document: u64,
     next_local: Cell<u64>,
+    allocated_nodes: Cell<usize>,
     pub(super) mutation_version: Cell<u64>,
 }
 
@@ -60,11 +61,18 @@ impl NodeIdAllocator {
         Rc::new(Self {
             document,
             next_local: Cell::new(1),
+            allocated_nodes: Cell::new(0),
             mutation_version: Cell::new(0),
         })
     }
 
     fn allocate(&self) -> NodeId {
+        self.allocated_nodes.set(
+            self.allocated_nodes
+                .get()
+                .checked_add(1)
+                .expect("DOM allocation counter exhausted"),
+        );
         let local = self.next_local.get();
         self.next_local.set(
             local
@@ -75,6 +83,10 @@ impl NodeIdAllocator {
             document: self.document,
             local,
         }
+    }
+
+    pub(super) fn allocated_nodes(&self) -> usize {
+        self.allocated_nodes.get()
     }
 
     fn bump_mutation_version(&self) -> u64 {

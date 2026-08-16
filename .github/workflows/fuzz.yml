@@ -1,0 +1,56 @@
+name: Fuzz
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fuzz.yml"
+      - "fuzz/**"
+      - "scripts/run-fuzz-smoke.ps1"
+      - "src/fuzzing.rs"
+      - "src/limits.rs"
+      - "tests/hostile_input.rs"
+  workflow_dispatch:
+    inputs:
+      seconds_per_target:
+        description: Seconds to run each fuzz target
+        required: false
+        default: "30"
+  schedule:
+    - cron: "17 4 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  libfuzzer:
+    name: Six hostile-input targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned nightly toolchain
+        run: rustup toolchain install nightly-2026-08-15 --profile minimal
+      - name: Restore Cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+          key: linux-fuzz-registry-v1-${{ hashFiles('fuzz/Cargo.lock') }}
+          restore-keys: linux-fuzz-registry-v1-
+      - name: Install pinned cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Run bounded fuzz campaign
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_SECONDS: ${{ inputs.seconds_per_target }}
+        run: |
+          $seconds = if ($env:REQUESTED_SECONDS) {
+            [int]$env:REQUESTED_SECONDS
+          } elseif ($env:EVENT_NAME -eq 'schedule') {
+            30
+          } else {
+            5
+          }
+          ./scripts/run-fuzz-smoke.ps1 -LibFuzzer -Seconds $seconds

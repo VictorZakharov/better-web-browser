@@ -1,5 +1,6 @@
 use super::{DecodedImage, MAX_DECODED_IMAGE_PIXELS};
 use crate::engine::dom::{NodeData, NodeRef};
+use crate::limits::MAX_SVG_SOURCE_BYTES;
 
 pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
     format!("inline-svg:{:032x}", node.id().to_wire())
@@ -18,6 +19,11 @@ pub(super) fn looks_like_svg(bytes: &[u8]) -> bool {
 }
 
 pub(super) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImage, String> {
+    if source.len() > MAX_SVG_SOURCE_BYTES {
+        return Err(format!(
+            "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"
+        ));
+    }
     let options = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(source, &options)
         .map_err(|error| format!("parse {description}: {error}"))?;

@@ -16,7 +16,15 @@ fn options() -> RendererLaunchOptions {
     let mut options = RendererLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
     options.test_mode = true;
     options.heartbeat_interval = Duration::from_millis(50);
+    options.unresponsive_timeout = Duration::from_secs(2);
+    options.unresponsive_kill_timeout = Duration::from_millis(500);
+    options
+}
+
+fn hung_task_options() -> RendererLaunchOptions {
+    let mut options = options();
     options.unresponsive_timeout = Duration::from_millis(300);
+    options.unresponsive_kill_timeout = Duration::from_millis(150);
     options
 }
 
@@ -139,11 +147,11 @@ fn startup_faults_fail_closed_within_the_deadline() {
 }
 
 #[test]
-fn hang_is_detected_and_job_close_terminates_the_renderer() {
+fn hung_task_is_detected_and_terminated_without_blocking_the_browser() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let session = RendererSession::launch(options()).expect("launch renderer");
+    let session = RendererSession::launch(hung_task_options()).expect("launch renderer");
     session.send_test_command(TestCommand::Hang).unwrap();
     loop {
         if matches!(
@@ -153,10 +161,12 @@ fn hang_is_detected_and_job_close_terminates_the_renderer() {
             break;
         }
     }
-    assert_eq!(session.snapshot().state, RendererState::Unresponsive);
-    session.close_job_for_test().expect("close renderer Job");
     let exit = session.wait_for_exit(Duration::from_secs(3)).unwrap();
-    assert_eq!(exit.reason, RendererExitReason::Terminated);
+    assert_eq!(exit.reason, RendererExitReason::TaskBudgetExceeded);
+    let surface = exit
+        .crash_surface()
+        .expect("recoverable task-budget surface");
+    assert!(surface.can_reload);
 }
 
 fn process_handle_count() -> u32 {

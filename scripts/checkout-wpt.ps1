@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)]
     [string] $Destination,
 
-    [string] $Manifest = (Join-Path $PSScriptRoot '..\tests\wpt\manifest.json')
+    [string] $Manifest = (Join-Path $PSScriptRoot '..\tests\wpt\manifest.json'),
+
+    [switch] $VerifyOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,7 +34,24 @@ if (Test-Path -LiteralPath $destinationPath) {
     if ($LASTEXITCODE -ne 0 -or $origin -ne $repository) {
         throw "The existing checkout origin is not $repository"
     }
+    if ($VerifyOnly) {
+        $head = (& git -C $destinationPath rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or $head -ne $revision) {
+            throw "The cached WPT checkout is not at pinned revision $revision."
+        }
+        foreach ($requiredPath in $requiredPaths) {
+            if (-not (Test-Path -LiteralPath (Join-Path $destinationPath $requiredPath))) {
+                throw "The cached WPT checkout is missing $requiredPath."
+            }
+        }
+        Write-Output "Verified cached external WPT checkout at $destinationPath"
+        Write-Output "Pinned revision: $revision"
+        return
+    }
 } else {
+    if ($VerifyOnly) {
+        throw "The cached WPT checkout does not exist: $destinationPath"
+    }
     & git clone --filter=blob:none --no-checkout $repository $destinationPath
     if ($LASTEXITCODE -ne 0) { throw 'Could not clone the WPT repository.' }
 }

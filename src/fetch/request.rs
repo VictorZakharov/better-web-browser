@@ -1,6 +1,7 @@
 //! Request state and policy-specific constructors.
 
 use super::{Body, FetchError, FetchErrorKind, FetchSignal, FetchUrl, HeaderList, Origin};
+use crate::limits::MAX_RESPONSE_BODY_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestContext {
@@ -79,7 +80,7 @@ impl FetchRequest {
             origin: None,
             referrer: Referrer::NoReferrer,
             signal: FetchSignal::default(),
-            response_body_limit: 16 * 1024 * 1024,
+            response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
     }
 
@@ -107,7 +108,7 @@ impl FetchRequest {
             origin: Some(document.origin()),
             referrer: Referrer::Url(document),
             signal: FetchSignal::default(),
-            response_body_limit: 16 * 1024 * 1024,
+            response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
     }
 
@@ -126,7 +127,7 @@ impl FetchRequest {
             origin: Some(document.origin()),
             referrer: Referrer::Url(document),
             signal: FetchSignal::default(),
-            response_body_limit: 16 * 1024 * 1024,
+            response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
     }
 

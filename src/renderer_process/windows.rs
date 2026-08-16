@@ -4,6 +4,7 @@ pub(super) use metrics::{
     ProcessSample, exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 
+use crate::limits::RENDERER_MEMORY_LIMIT_BYTES;
 use crate::renderer_protocol::Nonce;
 use std::io;
 use std::mem::size_of;
@@ -37,7 +38,6 @@ const PROFILE_DISPLAY_NAME: &str = "Breeze renderer";
 const PROFILE_DESCRIPTION: &str = "Capability-free renderer process for Breeze";
 const HRESULT_ALREADY_EXISTS: i32 = 0x8007_00B7_u32 as i32;
 const HRESULT_FILE_NOT_FOUND: i32 = 0x8007_0002_u32 as i32;
-const RENDERER_MEMORY_LIMIT: usize = 1024 * 1024 * 1024;
 
 pub(super) fn last_error(operation: &str) -> String {
     format!("{operation}: {}", io::Error::last_os_error())
@@ -188,8 +188,8 @@ pub(super) fn create_renderer_job() -> Result<OwnedHandle, String> {
         | JOB_OBJECT_LIMIT_PROCESS_MEMORY
         | JOB_OBJECT_LIMIT_JOB_MEMORY;
     limits.BasicLimitInformation.ActiveProcessLimit = 1;
-    limits.ProcessMemoryLimit = RENDERER_MEMORY_LIMIT;
-    limits.JobMemoryLimit = RENDERER_MEMORY_LIMIT;
+    limits.ProcessMemoryLimit = RENDERER_MEMORY_LIMIT_BYTES;
+    limits.JobMemoryLimit = RENDERER_MEMORY_LIMIT_BYTES;
     let result = unsafe {
         SetInformationJobObject(
             raw(&handle),

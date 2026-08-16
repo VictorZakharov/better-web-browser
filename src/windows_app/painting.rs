@@ -18,6 +18,11 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let width = client.right.max(1);
         let height = client.bottom.max(1);
+        let dirty = if paint.paint.width() > 0 && paint.paint.height() > 0 {
+            paint.paint
+        } else {
+            client
+        };
         let memory_dc = CreateCompatibleDC(window_dc);
         let bitmap = if memory_dc.is_null() {
             null_mut()
@@ -27,8 +32,19 @@ impl BrowserState {
 
         if !memory_dc.is_null() && !bitmap.is_null() {
             let previous = SelectObject(memory_dc, bitmap);
-            self.paint_surface(memory_dc, &client);
-            BitBlt(window_dc, 0, 0, width, height, memory_dc, 0, 0, SRCCOPY);
+            IntersectClipRect(memory_dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
+            self.paint_surface(memory_dc, &client, &dirty);
+            BitBlt(
+                window_dc,
+                dirty.left,
+                dirty.top,
+                dirty.width(),
+                dirty.height(),
+                memory_dc,
+                dirty.left,
+                dirty.top,
+                SRCCOPY,
+            );
             if !previous.is_null() {
                 SelectObject(memory_dc, previous);
             }
@@ -38,12 +54,12 @@ impl BrowserState {
             if !memory_dc.is_null() {
                 DeleteDC(memory_dc);
             }
-            self.paint_surface(window_dc, &client);
+            self.paint_surface(window_dc, &client, &dirty);
         }
         EndPaint(self.window, &paint);
     }
 
-    pub(super) unsafe fn paint_surface(&mut self, dc: Hdc, client: &Rect) {
+    pub(super) unsafe fn paint_surface(&mut self, dc: Hdc, client: &Rect, dirty: &Rect) {
         let toolbar_height = self.toolbar_height();
         let scale = self.page_scale();
         let content = Rect {
@@ -65,8 +81,10 @@ impl BrowserState {
         IntersectClipRect(dc, content.left, content.top, content.right, content.bottom);
         match self.surface {
             Surface::Page => {
-                let visible_top = self.scroll_y as f32 / scale;
-                let visible_bottom = (self.scroll_y + content.height()).max(0) as f32 / scale;
+                let dirty_content_top = (dirty.top - toolbar_height).max(0);
+                let dirty_content_bottom = (dirty.bottom - toolbar_height).max(0);
+                let visible_top = (self.scroll_y + dirty_content_top) as f32 / scale;
+                let visible_bottom = (self.scroll_y + dirty_content_bottom) as f32 / scale;
                 for range in self.paint_index.visible_ranges(visible_top, visible_bottom) {
                     for item in &self.page_layout.items[range] {
                         match item {

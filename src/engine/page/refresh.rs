@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::css::Display;
 use crate::engine::dom::Node;
 use crate::engine::font::discover_font_faces;
+use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
 impl Page {
@@ -16,7 +17,18 @@ impl Page {
         }
     }
 
-    pub fn refresh_resources(&mut self, viewport_width: f32) {
+    pub fn refresh_resources(&mut self, viewport_width: f32) -> StyleRefreshStats {
+        self.refresh_resources_after_invalidation(
+            viewport_width,
+            &RenderInvalidation::full(self.dom.document.id()),
+        )
+    }
+
+    pub fn refresh_resources_after_invalidation(
+        &mut self,
+        viewport_width: f32,
+        invalidation: &RenderInvalidation,
+    ) -> StyleRefreshStats {
         self.base_url = document_base_url(&self.dom, &self.source_url);
         self.responsive_viewport_width = viewport_width.max(1.0);
         let (resources, _) =
@@ -32,12 +44,55 @@ impl Page {
         for (source_url, css) in &self.stylesheet_sources {
             available_faces.extend(discover_font_faces(css, source_url));
         }
-        let styles = StyleSet::from_sources(
-            &self.dom,
-            &self.base_url,
-            &self.stylesheet_sources,
-            viewport_width.max(1.0),
-        );
+        let viewport_width = viewport_width.max(1.0);
+        let invalidated_nodes = invalidation
+            .root
+            .and_then(|root| self.dom.find_node(root))
+            .map(|root| Node::descendants(&root).count())
+            .unwrap_or_else(|| Node::descendants(&self.dom.document).count());
+        let cached = self.cached_styles.take();
+        let (styles, style_stats) = match cached {
+            Some((cached_width, mut styles))
+                if !invalidation.rebuild_style_rules
+                    && (cached_width - viewport_width).abs() < 0.5 =>
+            {
+                let stats = if invalidation.impact.affects_style() {
+                    let root = invalidation
+                        .root
+                        .and_then(|root| self.dom.find_node(root))
+                        .unwrap_or_else(|| self.dom.document.clone());
+                    styles.refresh_subtree(&self.dom.document, &root, &invalidation.removed_nodes)
+                } else {
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: styles.styles.len(),
+                        ..StyleRefreshStats::default()
+                    }
+                };
+                (styles, stats)
+            }
+            _ => {
+                let styles = StyleSet::from_sources(
+                    &self.dom,
+                    &self.base_url,
+                    &self.stylesheet_sources,
+                    viewport_width,
+                );
+                let count = styles.styles.len();
+                (
+                    styles,
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: count,
+                        recomputed_styles: count,
+                        changed_styles: count,
+                        layout_changed: true,
+                        full_rebuild: true,
+                        ..StyleRefreshStats::default()
+                    },
+                )
+            }
+        };
         let mut known_images = self
             .resources
             .iter()
@@ -87,8 +142,9 @@ impl Page {
         }
         self.install_embedded_images();
         self.add_requested_fonts(available_faces, requested_faces);
-        self.cached_styles = Some((viewport_width.max(1.0), styles));
+        self.cached_styles = Some((viewport_width, styles));
         self.refresh_inline_svgs();
+        style_stats
     }
 
     fn add_requested_fonts(

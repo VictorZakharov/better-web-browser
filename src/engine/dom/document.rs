@@ -1,6 +1,8 @@
 //! Document ownership, parsing entry points, and document-level queries.
 
+use super::budget::enforce;
 use super::node::{Node, NodeData, NodeId, NodeIdAllocator, NodeRef};
+use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
 use html5ever::interface::tree_builder::QuirksMode;
 use html5ever::tendril::TendrilSink;
 use html5ever::tree_builder::TreeBuilderOpts;
@@ -39,8 +41,12 @@ pub fn parse(html: &str) -> Dom {
 }
 
 pub fn parse_with_scripting(html: &str, scripting_enabled: bool) -> Dom {
-    parse_document(
-        Dom::default(),
+    let sink = Dom::default();
+    let identity = Rc::clone(&sink.identity);
+    let start_nodes = identity.allocated_nodes();
+    let (html, input_truncated) = bounded_utf8_prefix(html, MAX_HTML_INPUT_BYTES);
+    let mut parser = parse_document(
+        sink,
         ParseOpts {
             tree_builder: TreeBuilderOpts {
                 scripting_enabled,
@@ -48,8 +54,45 @@ pub fn parse_with_scripting(html: &str, scripting_enabled: bool) -> Dom {
             },
             ..Default::default()
         },
-    )
-    .one(html)
+    );
+    let mut cursor = 0_usize;
+    let mut nodes_truncated = false;
+    while cursor < html.len() {
+        let end = chunk_end(html, cursor);
+        parser.process(html[cursor..end].into());
+        cursor = end;
+        if identity.allocated_nodes().saturating_sub(start_nodes) >= MAX_DOM_NODES {
+            nodes_truncated = cursor < html.len();
+            break;
+        }
+    }
+    let dom = parser.finish();
+    if input_truncated {
+        dom.errors.borrow_mut().push(format!(
+            "safety limit: HTML input was truncated at {MAX_HTML_INPUT_BYTES} bytes"
+        ));
+    }
+    if nodes_truncated {
+        dom.errors.borrow_mut().push(format!(
+            "safety limit: HTML parsing stopped at {MAX_DOM_NODES} allocated nodes"
+        ));
+    }
+    let report = enforce(&dom);
+    if report.removed_nodes > 0 || report.depth_limited {
+        dom.errors.borrow_mut().push(format!(
+            "safety limit: DOM was truncated to {MAX_DOM_NODES} nodes and depth {MAX_DOM_DEPTH}",
+            MAX_DOM_DEPTH = crate::limits::MAX_DOM_DEPTH,
+        ));
+    }
+    dom
+}
+
+pub(super) fn chunk_end(input: &str, start: usize) -> usize {
+    let mut end = start.saturating_add(4 * 1024).min(input.len());
+    while !input.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
 }
 
 impl Dom {

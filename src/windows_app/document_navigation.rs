@@ -1,8 +1,7 @@
 //! Bounded navigation-chain state for script-requested document replacements.
 
+use better_web_browser::limits::MAX_SCRIPT_NAVIGATIONS;
 use std::collections::HashSet;
-
-const MAX_SCRIPT_NAVIGATIONS: usize = 5;
 
 #[derive(Debug, Default)]
 pub(super) struct ScriptNavigationGuard {

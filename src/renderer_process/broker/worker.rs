@@ -232,6 +232,18 @@ impl Broker {
             self.shared().state = RendererState::Unresponsive;
             let _ = self.resources().events.send(RendererEvent::Unresponsive);
         }
+        let task_budget = self
+            .resources()
+            .options
+            .unresponsive_timeout
+            .saturating_add(self.resources().options.unresponsive_kill_timeout);
+        if now.saturating_duration_since(self.shared().last_pong) >= task_budget
+            && self.shared().state == RendererState::Unresponsive
+            && self.exit_reason.is_none()
+        {
+            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded);
+            self.terminate_job(74);
+        }
     }
 
     fn send_heartbeat(&mut self) {

@@ -24,9 +24,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Test change classifier
-        shell: pwsh
-        run: ./scripts/test-classify-ci-changes.ps1
       - name: Decide whether Windows workers are required
         id: classify
         shell: pwsh
@@ -73,6 +70,9 @@ jobs:
       - name: Enforce source-file size
         shell: pwsh
         run: ./scripts/check-source-size.ps1
+      - name: Test change classifier
+        shell: pwsh
+        run: ./scripts/test-classify-ci-changes.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -95,10 +95,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: windows-cargo-registry-lint-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-lint-
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-registry-v2-
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
@@ -121,12 +121,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: windows-cargo-registry-test-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-test-
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-registry-v2-
       - name: Test
-        run: cargo test --all-targets
+        run: >-
+          cargo test --lib --bin better-web-browser
+          --test hostile_input --test html_parser_conformance
+          --test live_runtime --test renderer_process
 
   wpt:
     name: Curated WPT
@@ -147,13 +150,24 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: windows-cargo-registry-wpt-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-wpt-
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-registry-v2-
+      - name: Restore pinned WPT fixtures
+        id: wpt-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}\wpt
+          key: windows-wpt-${{ hashFiles('tests/wpt/manifest.json') }}
       - name: Prepare pinned WPT fixtures
         shell: pwsh
-        run: ./scripts/checkout-wpt.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
+        run: >-
+          ./scripts/checkout-wpt.ps1
+          -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
+          -VerifyOnly:('${{ steps.wpt-cache.outputs.cache-hit }}' -eq 'true')
+      - name: Test WPT runner
+        run: cargo test --bin wpt-runner
       - name: Run curated WPT suite headlessly
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 4

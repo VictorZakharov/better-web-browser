@@ -2,11 +2,9 @@ use super::{MAX_IMAGES, PageResource, PageScript};
 use crate::engine::css::{media_matches, parse_length};
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
+use crate::limits::{MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS};
 use crate::navigation::{resolve_resource_url, resolve_url};
 use std::collections::HashSet;
-
-const MAX_STYLESHEETS: usize = 16;
-const MAX_SCRIPTS: usize = 64;
 
 pub(super) fn document_base_url(dom: &Dom, source_url: &str) -> String {
     dom.elements_named("base")

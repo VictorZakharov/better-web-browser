@@ -7,9 +7,7 @@ use crate::fetch::{
     cors_filtered_headers, is_cors_safelisted_request_header, needs_cors_check, needs_preflight,
     validate_cors_response, validate_preflight_response,
 };
-
-const MAX_REDIRECTS: usize = 20;
-const PREFLIGHT_BODY_LIMIT: usize = 64 * 1024;
+use crate::limits::{MAX_PREFLIGHT_BODY_BYTES, MAX_REDIRECTS};
 
 impl HttpClient {
     pub fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
@@ -102,7 +100,7 @@ impl HttpClient {
             "OPTIONS",
             &headers,
             None,
-            PREFLIGHT_BODY_LIMIT,
+            MAX_PREFLIGHT_BODY_BYTES,
             &request.signal,
         )?;
         if !(200..=299).contains(&response.status) {

@@ -1,6 +1,5 @@
+use crate::limits::MAX_RENDERED_TEXT_BYTES;
 use crate::navigation::resolve_url;
-
-const MAX_RENDERED_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {

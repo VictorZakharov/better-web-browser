@@ -1,0 +1,62 @@
+[package]
+name = "better-web-browser-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+description = "Coverage-guided hostile-input targets for Breeze"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+better-web-browser = { path = ".." }
+libfuzzer-sys = "=0.4.13"
+
+[patch.crates-io]
+boa_engine = { path = "../vendor/boa_engine" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "html_document"
+path = "fuzz_targets/html_document.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_fragment"
+path = "fuzz_targets/html_fragment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_stylesheet"
+path = "fuzz_targets/css_stylesheet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_resolution"
+path = "fuzz_targets/url_resolution.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dom_mutations"
+path = "fuzz_targets/dom_mutations.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "javascript_host_bindings"
+path = "fuzz_targets/javascript_host_bindings.rs"
+test = false
+doc = false
+bench = false

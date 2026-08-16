@@ -1,5 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-
 mod app_state;
 mod async_scripts;
 mod benchmark;
@@ -9,6 +8,7 @@ mod chrome_controls;
 mod chrome_paint;
 mod document_activation;
 mod document_navigation;
+mod layout_damage;
 mod page_controls;
 mod paint_index;
 mod paint_primitives;
@@ -30,8 +30,9 @@ use benchmark::{BenchmarkRun, LaunchOptions};
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
-    ControlKind, DecodedImage, DisplayItem, FontSpec, LayoutOutput, Page, PageResource,
-    ScriptOutcome, ScriptRuntime, TextMeasurer, WebFont, layout_page_with_style_viewport,
+    ControlKind, DecodedImage, DisplayItem, DisplayListDamage, FontSpec, LayoutOutput, Page,
+    PageResource, ScriptOutcome, ScriptRuntime, StyleRefreshStats, TextMeasurer, WebFont,
+    layout_page_with_style_viewport,
 };
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
@@ -54,7 +55,6 @@ use std::time::{Duration, Instant};
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
 use window_dispatch::{chrome_control_proc, main_window_proc};
-
 pub fn run() -> Result<(), String> {
     unsafe {
         let process_started = Instant::now();

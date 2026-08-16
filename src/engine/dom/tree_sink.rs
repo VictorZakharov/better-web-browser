@@ -3,6 +3,7 @@
 use super::document::Dom;
 use super::mutation::{append_node, append_to_existing_text, parent_and_index, remove_from_parent};
 use super::node::{ElementData, Node, NodeData, NodeRef};
+use crate::limits::MAX_HTML_PARSE_ERRORS;
 use html5ever::interface::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
 use html5ever::tendril::StrTendril;
 use html5ever::{Attribute, ExpandedName, QualName};
@@ -25,7 +26,10 @@ impl TreeSink for Dom {
     }
 
     fn parse_error(&self, message: Cow<'static, str>) {
-        self.errors.borrow_mut().push(message.into_owned());
+        let mut errors = self.errors.borrow_mut();
+        if errors.len() < MAX_HTML_PARSE_ERRORS {
+            errors.push(message.into_owned());
+        }
     }
 
     fn get_document(&self) -> Self::Handle {

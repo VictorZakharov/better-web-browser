@@ -1,7 +1,6 @@
 //! Script evaluation and bounded event-loop settlement for an owned document realm.
 
 use super::*;
-
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
 }
@@ -24,7 +23,6 @@ fn execute_impl(
     if scripts.is_empty() {
         return ScriptOutcome::default();
     }
-
     ScriptRuntime::new(document, document_url)
         .execute_initial_with_loader(scripts, dynamic_script_loader)
 }
@@ -123,6 +121,7 @@ pub(super) fn execute_inner(
         return outcome;
     }
 
+    host.borrow_mut().begin_task();
     for script in scripts {
         if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -133,7 +132,6 @@ pub(super) fn execute_inner(
             break;
         }
         *total_bytes += script.code.len();
-
         evaluate_script(context, host, &mut outcome, script, false);
         drain_dynamic_scripts(
             context,
@@ -190,6 +188,7 @@ pub(super) fn execute_additional_inner(
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
+    host.borrow_mut().begin_task();
     for script in scripts {
         if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -282,6 +281,7 @@ pub(super) fn settle_timer_slice(
             break;
         };
 
+        host.borrow_mut().begin_task();
         let invocation = format!("__runTimer({timer_id});");
         if let Err(error) = context.eval(Source::from_bytes(&invocation)) {
             outcome
@@ -414,7 +414,6 @@ fn drain_dynamic_scripts(
         }
     }
 }
-
 const IFRAME_REALM_BOOTSTRAP: &str = r#"
 globalThis.window = globalThis;
 globalThis.self = globalThis;
@@ -449,5 +448,6 @@ pub(super) fn finish_host(
     outcome.navigation_url = state.navigation_url.take();
     outcome.cookie_updates.append(&mut state.cookie_updates);
     outcome.render_requested = state.timers.take_render_request();
+    outcome.invalidation = state.pending_invalidation.take(outcome.mutation_count);
     outcome
 }

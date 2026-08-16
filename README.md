@@ -13,6 +13,11 @@ cargo run --release
 cargo run --release -- https://www.google.com/
 ```
 
+For a faster optimized edit/build loop, use `cargo run --profile performance`. This profile keeps
+optimization enabled but trades release LTO and single-unit code generation for incremental,
+parallel compilation. Reproducible performance claims and distributable binaries always use the
+canonical `release` profile.
+
 The normal page surface is always the default. **Reader** is an explicit optional feature; navigating or reloading returns to the normal page surface.
 
 Current page support includes:
@@ -86,12 +91,15 @@ The networking boundary and its standards/platform ownership are documented in
 The accepted renderer isolation boundary, threat model, IPC contract, and staged Windows migration
 are documented in
 [ADR 0001](docs/architecture/0001-renderer-process-boundary.md).
+Central hostile-input budgets, decoder preflights, renderer termination behavior, and the fuzzing
+contract are documented in [docs/security-and-fuzzing.md](docs/security-and-fuzzing.md).
 
 ## Verification
 
 ```powershell
 cargo test --all-targets
 cargo build --release
+./scripts/run-fuzz-smoke.ps1
 
 .\target\release\better-web-browser.exe `
   --benchmark https://example.org/ `
@@ -137,6 +145,10 @@ cargo test --test html_parser_conformance
 See [tests/html-parser/README.md](tests/html-parser/README.md) for the pinned upstream revision,
 fixture provenance, structural serialization contract, and intentionally unsupported error-count
 comparison.
+
+The hostile-input suite deterministically replays the committed HTML, fragment, CSS, URL, DOM, and
+JavaScript-host fuzz corpora on stable Windows. Coverage-guided runs use the separate pinned fuzz
+workspace and scheduled Linux workflow; see [fuzz/README.md](fuzz/README.md).
 
 ## Honest current limitations
 

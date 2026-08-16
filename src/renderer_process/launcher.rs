@@ -1,6 +1,10 @@
 use super::windows::{
     AppContainerSid, LaunchAttributes, PipeSet, create_renderer_job, last_error, random_nonce, raw,
 };
+use crate::limits::{
+    RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT, RENDERER_STARTUP_TIMEOUT,
+    RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
+};
 use crate::renderer_protocol::{Nonce, RendererSessionId};
 use std::fs::File;
 use std::mem::size_of;
@@ -33,6 +37,7 @@ pub struct RendererLaunchOptions {
     pub shutdown_timeout: Duration,
     pub heartbeat_interval: Duration,
     pub unresponsive_timeout: Duration,
+    pub unresponsive_kill_timeout: Duration,
     pub test_mode: bool,
     pub startup_fault: Option<StartupFault>,
 }
@@ -41,10 +46,11 @@ impl RendererLaunchOptions {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
             executable: executable.into(),
-            startup_timeout: Duration::from_secs(5),
-            shutdown_timeout: Duration::from_secs(2),
-            heartbeat_interval: Duration::from_secs(1),
-            unresponsive_timeout: Duration::from_secs(10),
+            startup_timeout: RENDERER_STARTUP_TIMEOUT,
+            shutdown_timeout: RENDERER_SHUTDOWN_TIMEOUT,
+            heartbeat_interval: RENDERER_HEARTBEAT_INTERVAL,
+            unresponsive_timeout: RENDERER_UNRESPONSIVE_TIMEOUT,
+            unresponsive_kill_timeout: RENDERER_UNRESPONSIVE_KILL_TIMEOUT,
             test_mode: false,
             startup_fault: None,
         }

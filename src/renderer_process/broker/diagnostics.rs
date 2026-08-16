@@ -9,6 +9,7 @@ pub enum RendererExitReason {
     Crash,
     ProtocolFailure(String),
     ShutdownTimeout,
+    TaskBudgetExceeded,
     Terminated,
 }
 
@@ -36,6 +37,9 @@ impl RendererExit {
                 format!("violated the IPC protocol: {error}")
             }
             RendererExitReason::ShutdownTimeout => "did not shut down in time".to_string(),
+            RendererExitReason::TaskBudgetExceeded => {
+                "exceeded its unresponsive-task budget".to_string()
+            }
             RendererExitReason::Terminated => "was terminated by the browser".to_string(),
         };
         Some(RendererCrashSurface {
