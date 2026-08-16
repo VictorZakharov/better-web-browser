@@ -106,16 +106,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: library
-            arguments: --lib
-          - suite: Windows app
-            arguments: --bin better-web-browser
-          - suite: integration
-            arguments: --test hostile_input --test html_parser_conformance --test live_runtime
-          - suite: renderer process
-            arguments: --test renderer_process
-          - suite: WPT runner
-            arguments: --bin wpt-runner
+          - suite: core
+            arguments: --lib --bin wpt-runner
+          - suite: Windows integration
+            arguments: >-
+              --bin better-web-browser
+              --test hostile_input --test html_parser_conformance
+              --test live_runtime --test renderer_process
     steps:
       - uses: actions/checkout@v7
       - name: Configure compiler cache

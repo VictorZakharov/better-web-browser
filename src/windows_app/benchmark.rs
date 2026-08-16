@@ -148,6 +148,16 @@ impl BrowserState {
         let renderer_cpu_ticks = renderer_snapshots.iter().fold(0_u64, |total, snapshot| {
             total.saturating_add(snapshot.cpu_ticks)
         });
+        let renderer_launch_errors = format!(
+            "[{}]",
+            renderer_registry
+                .renderers
+                .iter()
+                .filter_map(|renderer| renderer.launch_error.as_deref())
+                .map(json_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
         let browser_cpu_ticks = process_cpu_ticks()
@@ -253,6 +263,7 @@ impl BrowserState {
                 "  \"full_layout_rebuilds\": {},\n",
                 "  \"display_items_invalidated\": {},\n",
                 "  \"full_paint_repaints\": {},\n",
+                "  \"renderer_launch_errors\": {},\n",
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
@@ -316,6 +327,7 @@ impl BrowserState {
             benchmark.full_layout_rebuilds,
             benchmark.display_items_invalidated,
             benchmark.full_paint_repaints,
+            renderer_launch_errors,
             script_errors,
             script_console,
             script_diagnostics,

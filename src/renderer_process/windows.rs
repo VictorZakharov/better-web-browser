@@ -10,7 +10,9 @@ use std::io;
 use std::mem::size_of;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr::{null, null_mut};
-use windows_sys::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation};
+use windows_sys::Win32::Foundation::{
+    HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+};
 use windows_sys::Win32::Security::Cryptography::{
     BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
 };
@@ -26,16 +28,19 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
-    DeleteProcThreadAttributeList, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-    PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
-    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, UpdateProcThreadAttribute,
+    CreateMutexW, DeleteProcThreadAttributeList, InitializeProcThreadAttributeList,
+    LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+    ReleaseMutex, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_CHILD_PROCESS_RESTRICTED;
 
 const PROFILE_NAME: &str = "VictorZakharov.Breeze.Renderer";
 const PROFILE_DISPLAY_NAME: &str = "Breeze renderer";
 const PROFILE_DESCRIPTION: &str = "Capability-free renderer process for Breeze";
+const PROFILE_CREATION_MUTEX: &str = "Local\\VictorZakharov.Breeze.Renderer.ProfileCreation";
+const PROFILE_CREATION_TIMEOUT_MS: u32 = 10_000;
 const HRESULT_ALREADY_EXISTS: i32 = 0x8007_00B7_u32 as i32;
 const HRESULT_FILE_NOT_FOUND: i32 = 0x8007_0002_u32 as i32;
 
@@ -64,6 +69,9 @@ pub(super) struct AppContainerSid(PSID);
 
 impl AppContainerSid {
     pub(super) fn create_or_open() -> Result<Self, String> {
+        // Profile creation is per user, while several browser processes may start together. Keep
+        // stale-profile recovery from deleting a profile that another process is still creating.
+        let _profile_creation_lock = ProfileCreationLock::acquire()?;
         let name = wide(PROFILE_NAME);
         let display = wide(PROFILE_DISPLAY_NAME);
         let description = wide(PROFILE_DESCRIPTION);
@@ -116,6 +124,34 @@ impl AppContainerSid {
             Capabilities: null_mut(),
             CapabilityCount: 0,
             Reserved: 0,
+        }
+    }
+}
+
+struct ProfileCreationLock {
+    handle: OwnedHandle,
+}
+
+impl ProfileCreationLock {
+    fn acquire() -> Result<Self, String> {
+        let name = wide(PROFILE_CREATION_MUTEX);
+        let handle = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
+        if handle.is_null() {
+            return Err(last_error("create renderer profile mutex"));
+        }
+        let handle = unsafe { owned(handle) };
+        match unsafe { WaitForSingleObject(raw(&handle), PROFILE_CREATION_TIMEOUT_MS) } {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Self { handle }),
+            WAIT_TIMEOUT => Err("wait for renderer profile creation: timed out".into()),
+            _ => Err(last_error("wait for renderer profile creation")),
+        }
+    }
+}
+
+impl Drop for ProfileCreationLock {
+    fn drop(&mut self) {
+        unsafe {
+            ReleaseMutex(raw(&self.handle));
         }
     }
 }
