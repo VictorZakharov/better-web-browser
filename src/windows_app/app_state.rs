@@ -1,62 +1,32 @@
 //! Browser-window ownership and application lifecycle state.
 
 use super::browser_navigation::HistoryMode;
-use super::page_controls::PageControlWindow;
-use super::paint_index::PaintIndex;
 use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
+use super::tab_state::{BrowserTab, ClosedTab};
+use super::tabs::{RecentlyClosedTabs, TabCollection, TabId};
 use super::*;
-use better_web_browser::fetch::FetchController;
-use better_web_browser::renderer_process::RendererSession;
-use std::sync::{Mutex, mpsc};
+use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
 
 pub(super) struct BrowserState {
     pub(super) instance: Hinstance,
     pub(super) window: Hwnd,
     pub(super) controls: Controls,
     pub(super) fonts: Option<Fonts>,
-    pub(super) dynamic_fonts: DynamicFonts,
-    pub(super) web_fonts: WebFontResources,
-    pub(super) image_bitmaps: ImageBitmaps,
     pub(super) content_brush: Hbrush,
     pub(super) omnibox_brush: Hbrush,
     pub(super) dpi: u32,
     pub(super) chrome: ChromeLayout,
-    pub(super) status_text: String,
-    pub(super) page: Page,
-    pub(super) script_runtime: Option<ScriptRuntime>,
-    pub(super) script_runtime_clock: Option<Instant>,
-    pub(super) loaded_page_resources: HashSet<PageResource>,
-    pub(super) page_resource_budget: u64,
-    pub(super) document: Option<Document>,
-    pub(super) reader_html: String,
-    pub(super) reader_url: String,
-    pub(super) draw_items: Vec<DrawItem>,
-    pub(super) page_layout: LayoutOutput,
-    pub(super) paint_index: PaintIndex,
-    pub(super) page_controls: Vec<PageControlWindow>,
-    pub(super) surface: Surface,
-    pub(super) content_height: i32,
-    pub(super) scroll_y: i32,
-    pub(super) history: Vec<String>,
-    pub(super) history_index: usize,
-    pub(super) script_navigation: document_navigation::ScriptNavigationGuard,
-    pub(super) generation: u64,
-    pub(super) loading: bool,
+    pub(super) processing_background_tab: bool,
+    pub(super) tabs: TabCollection<BrowserTab>,
+    pub(super) recently_closed_tabs: RecentlyClosedTabs<ClosedTab>,
     pub(super) startup_url: Option<String>,
     pub(super) open_task_manager_on_start: bool,
     pub(super) benchmark: Option<BenchmarkRun>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
-    pub(super) document_fetch: FetchController,
     pub(super) task_window: Hwnd,
-    pub(super) renderer_session: Option<RendererSession>,
-    pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
-    pub(super) renderer_launch_pending: bool,
-    pub(super) renderer_started_once: bool,
     pub(super) renderer_registry: SharedRendererRegistry,
-    pub(super) last_layout_tree_time: Duration,
-    pub(super) last_layout_finalize_time: Duration,
-    pub(super) last_text_measure_count: usize,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
 }
@@ -67,57 +37,27 @@ impl BrowserState {
         metrics: Arc<BrowserMetrics>,
         options: LaunchOptions,
     ) -> Result<Self, String> {
-        let home = parse_html(HOME_HTML, HOME_URL);
-        let page = Page::parse(HOME_HTML, HOME_URL);
         let http_client = Arc::new(winhttp::HttpClient::new()?);
+        let tabs = TabCollection::new(BrowserTab::new(TabId::first()));
         Ok(Self {
             instance,
             window: null_mut(),
             controls: Controls::default(),
             fonts: None,
-            dynamic_fonts: DynamicFonts::default(),
-            web_fonts: WebFontResources::default(),
-            image_bitmaps: ImageBitmaps::default(),
             content_brush: unsafe { CreateSolidBrush(rgb(250, 250, 248)) },
             omnibox_brush: unsafe { CreateSolidBrush(CHROME_THEME.field) },
             dpi: DEFAULT_DPI,
             chrome: ChromeLayout::default(),
-            status_text: "Ready".to_string(),
-            page,
-            script_runtime: None,
-            script_runtime_clock: None,
-            loaded_page_resources: HashSet::new(),
-            page_resource_budget: PAGE_RESOURCE_BUDGET,
-            document: Some(home),
-            reader_html: HOME_HTML.to_string(),
-            reader_url: HOME_URL.to_string(),
-            draw_items: Vec::new(),
-            page_layout: LayoutOutput::default(),
-            paint_index: PaintIndex::default(),
-            page_controls: Vec::new(),
-            surface: Surface::Page,
-            content_height: 0,
-            scroll_y: 0,
-            history: Vec::new(),
-            history_index: 0,
-            script_navigation: document_navigation::ScriptNavigationGuard::default(),
-            generation: 0,
-            loading: false,
+            processing_background_tab: false,
+            tabs,
+            recently_closed_tabs: RecentlyClosedTabs::new(),
             startup_url: options.startup_url,
             open_task_manager_on_start: options.open_task_manager,
             benchmark: options.benchmark,
             metrics,
             http_client,
-            document_fetch: FetchController::new(),
             task_window: null_mut(),
-            renderer_session: None,
-            renderer_launch_receiver: None,
-            renderer_launch_pending: false,
-            renderer_started_once: false,
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
-            last_layout_tree_time: Duration::ZERO,
-            last_layout_finalize_time: Duration::ZERO,
-            last_text_measure_count: 0,
             media_viewport_width: 0.0,
             outer_window_width: 0,
         })
@@ -192,7 +132,7 @@ impl BrowserState {
     pub(super) unsafe fn set_status(&mut self, status: &str) {
         self.status_text.clear();
         self.status_text.push_str(status);
-        if !self.window.is_null() {
+        if !self.processing_background_tab && !self.window.is_null() {
             InvalidateRect(self.window, &self.chrome.status, 0);
             let toolbar = Rect {
                 left: 0,
@@ -216,6 +156,20 @@ impl BrowserState {
             Ok(window) => self.task_window = window,
             Err(error) => self.set_status(&error),
         }
+    }
+}
+
+impl Deref for BrowserState {
+    type Target = BrowserTab;
+
+    fn deref(&self) -> &Self::Target {
+        self.tabs.active()
+    }
+}
+
+impl DerefMut for BrowserState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tabs.active_mut()
     }
 }
 

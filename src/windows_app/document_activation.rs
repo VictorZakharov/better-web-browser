@@ -56,7 +56,9 @@ impl BrowserState {
         self.reader_url = page.final_url.clone();
         self.script_navigation.record_committed(&page.final_url);
         self.surface = Surface::Page;
-        set_window_text(self.controls.reader, "Reader");
+        if !self.processing_background_tab {
+            set_window_text(self.controls.reader, "Reader");
+        }
         self.scroll_y = 0;
 
         let client = Arc::clone(&self.http_client);
@@ -136,15 +138,16 @@ impl BrowserState {
             self.loaded_page_resources.clear();
         } else {
             let style_refresh_started = Instant::now();
-            self.page
-                .refresh_resources(self.current_style_viewport_width());
+            let viewport_width = self.current_style_viewport_width();
+            let tab = self.tabs.active_mut();
+            tab.page.refresh_resources(viewport_width);
             style_refresh_time += style_refresh_started.elapsed();
             load_page_resources(
-                &mut self.page,
+                &mut tab.page,
                 ResourceLoadContext {
                     client: &client,
                     signal: &fetch_signal,
-                    loaded: &mut self.loaded_page_resources,
+                    loaded: &mut tab.loaded_page_resources,
                     resource_budget: &mut resource_budget,
                     bytes: &mut total_bytes,
                     network_time: &mut additional_network_time,
@@ -168,15 +171,20 @@ impl BrowserState {
             return;
         }
 
-        self.web_fonts.register(&self.page.fonts);
-        if let Some(current) = self.history.get_mut(self.history_index) {
-            *current = page.final_url.clone();
+        {
+            let tab = self.tabs.active_mut();
+            tab.web_fonts.register(&tab.page.fonts);
+            let history_index = tab.history_index;
+            if let Some(current) = tab.history.get_mut(history_index) {
+                *current = page.final_url.clone();
+            }
         }
-        set_window_text(self.controls.address, &page.final_url);
-        set_window_text(
-            self.window,
-            &format!("{} \u{2014} {PRODUCT_NAME}", self.page.title),
-        );
+        self.omnibox_text.clone_from(&page.final_url);
+        if !self.processing_background_tab {
+            set_window_text(self.controls.address, &page.final_url);
+        }
+        let page_title = self.page.title.clone();
+        self.update_active_tab_title(&page_title);
         let layout_started = Instant::now();
         self.rebuild_layout();
         let layout_build_time = layout_started.elapsed();
@@ -213,10 +221,14 @@ impl BrowserState {
             format_duration(page.parse_time),
             script_status
         ));
-        let paint_started = Instant::now();
-        InvalidateRect(self.window, null(), 0);
-        UpdateWindow(self.window);
-        let paint_time = paint_started.elapsed();
+        let paint_time = if self.processing_background_tab {
+            Duration::ZERO
+        } else {
+            let paint_started = Instant::now();
+            InvalidateRect(self.window, null(), 0);
+            UpdateWindow(self.window);
+            paint_started.elapsed()
+        };
         self.record_initial_layout_metrics(layout_started, layout_build_time, paint_time);
         self.install_script_runtime(runtime);
         self.begin_async_scripts();

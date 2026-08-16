@@ -1,5 +1,6 @@
-//! Nonblocking ownership of the sandboxed renderer lifecycle.
+//! Nonblocking ownership of one sandboxed renderer lifecycle per browser tab.
 
+use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::renderer_process::{
     RendererEvent, RendererExit, RendererLaunchOptions, RendererSession, RendererSnapshot,
@@ -8,7 +9,6 @@ use better_web_browser::renderer_process::{
 use std::sync::{Arc, Mutex, mpsc};
 
 const RENDERER_MONITOR_INTERVAL_MS: u32 = 250;
-const PRIMARY_RENDERER_CONTEXT_ID: u64 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RendererLifecyclePhase {
@@ -22,6 +22,7 @@ pub(super) enum RendererLifecyclePhase {
 #[derive(Clone, Debug)]
 pub(super) struct RendererTaskStatus {
     pub(super) context_id: u64,
+    pub(super) tab_title: String,
     pub(super) phase: RendererLifecyclePhase,
     pub(super) snapshot: Option<RendererSnapshot>,
     pub(super) restart_count: u32,
@@ -31,9 +32,10 @@ pub(super) struct RendererTaskStatus {
 }
 
 impl RendererTaskStatus {
-    fn starting(context_id: u64) -> Self {
+    pub(super) fn starting(context_id: u64, tab_title: String) -> Self {
         Self {
             context_id,
+            tab_title,
             phase: RendererLifecyclePhase::Starting,
             snapshot: None,
             restart_count: 0,
@@ -52,24 +54,32 @@ pub(super) struct RendererTaskRegistry {
 impl Default for RendererTaskRegistry {
     fn default() -> Self {
         Self {
-            renderers: vec![RendererTaskStatus::starting(PRIMARY_RENDERER_CONTEXT_ID)],
+            renderers: vec![RendererTaskStatus::starting(1, "New Tab".into())],
         }
     }
 }
 
 impl RendererTaskRegistry {
-    fn renderer_mut(&mut self, context_id: u64) -> &mut RendererTaskStatus {
+    fn renderer_mut(&mut self, context_id: u64, title: &str) -> &mut RendererTaskStatus {
         if let Some(index) = self
             .renderers
             .iter()
             .position(|renderer| renderer.context_id == context_id)
         {
-            &mut self.renderers[index]
+            let renderer = &mut self.renderers[index];
+            renderer.tab_title.clear();
+            renderer.tab_title.push_str(title);
+            renderer
         } else {
             self.renderers
-                .push(RendererTaskStatus::starting(context_id));
+                .push(RendererTaskStatus::starting(context_id, title.into()));
             self.renderers.last_mut().expect("renderer was appended")
         }
+    }
+
+    fn remove(&mut self, context_id: u64) {
+        self.renderers
+            .retain(|renderer| renderer.context_id != context_id);
     }
 }
 
@@ -77,11 +87,21 @@ pub(super) type SharedRendererRegistry = Arc<Mutex<RendererTaskRegistry>>;
 
 impl BrowserState {
     pub(super) unsafe fn start_renderer(&mut self) {
-        if self.renderer_launch_pending || self.renderer_session.is_some() {
-            return;
-        }
-        self.renderer_launch_pending = true;
-        self.update_renderer_status(|status| {
+        self.start_renderer_for(self.tabs.active_id());
+    }
+
+    pub(super) unsafe fn start_renderer_for(&mut self, id: TabId) {
+        let title = {
+            let Some(tab) = self.tabs.get_mut(id) else {
+                return;
+            };
+            if tab.renderer_launch_pending || tab.renderer_session.is_some() {
+                return;
+            }
+            tab.renderer_launch_pending = true;
+            tab.title.clone()
+        };
+        self.update_renderer_status(id, &title, |status| {
             status.phase = RendererLifecyclePhase::Starting;
             status.snapshot = None;
             status.launch_error = None;
@@ -91,55 +111,85 @@ impl BrowserState {
         let window = self.window as usize;
         let (sender, receiver) = mpsc::channel();
         let spawn = std::thread::Builder::new()
-            .name("breeze-renderer-launch".into())
+            .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result =
                     RendererLaunchOptions::current_executable().and_then(RendererSession::launch);
                 if sender.send(result).is_ok() {
-                    unsafe { PostMessageW(window as Hwnd, WM_APP_RENDERER_LAUNCHED, 0, 0) };
+                    unsafe {
+                        PostMessageW(
+                            window as Hwnd,
+                            WM_APP_RENDERER_LAUNCHED,
+                            id.get() as usize,
+                            0,
+                        )
+                    };
                 }
             });
         match spawn {
-            Ok(_) => self.renderer_launch_receiver = Some(receiver),
+            Ok(_) => {
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.renderer_launch_receiver = Some(receiver);
+                }
+            }
             Err(error) => {
-                self.record_renderer_launch_failure(format!("start renderer launcher: {error}"));
+                self.record_renderer_launch_failure(
+                    id,
+                    format!("start renderer launcher: {error}"),
+                );
             }
         }
     }
 
-    pub(super) unsafe fn finish_renderer_launch(&mut self) {
-        let Some(receiver) = self.renderer_launch_receiver.take() else {
+    pub(super) unsafe fn finish_renderer_launch(&mut self, id: TabId) {
+        let receiver = self
+            .tabs
+            .get_mut(id)
+            .and_then(|tab| tab.renderer_launch_receiver.take());
+        let Some(receiver) = receiver else {
             return;
         };
         let result = match receiver.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => {
-                self.renderer_launch_receiver = Some(receiver);
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.renderer_launch_receiver = Some(receiver);
+                }
                 return;
             }
             Err(mpsc::TryRecvError::Disconnected) => {
                 Err("renderer launcher exited without a result".into())
             }
         };
-        self.renderer_launch_pending = false;
+        if let Some(tab) = self.tabs.get_mut(id) {
+            tab.renderer_launch_pending = false;
+        }
         let session = match result {
             Ok(session) => session,
             Err(error) => {
-                self.record_renderer_launch_failure(error);
+                self.record_renderer_launch_failure(id, error);
                 return;
             }
         };
         let snapshot = session.snapshot();
-        self.update_renderer_status(|status| {
-            if self.renderer_started_once {
+        let (title, restarted) = {
+            let Some(tab) = self.tabs.get_mut(id) else {
+                return;
+            };
+            let restarted = tab.renderer_started_once;
+            tab.renderer_started_once = true;
+            tab.renderer_session = Some(session);
+            tab.crashed = false;
+            (tab.title.clone(), restarted)
+        };
+        self.update_renderer_status(id, &title, |status| {
+            if restarted {
                 status.restart_count = status.restart_count.saturating_add(1);
             }
             status.phase = RendererLifecyclePhase::Running;
             status.snapshot = Some(snapshot);
             status.launch_error = None;
         });
-        self.renderer_started_once = true;
-        self.renderer_session = Some(session);
         if SetTimer(
             self.window,
             ID_RENDERER_MONITOR_TIMER,
@@ -147,26 +197,47 @@ impl BrowserState {
             null(),
         ) == 0
         {
-            self.renderer_session.take();
-            self.record_renderer_launch_failure(last_error("start renderer monitor"));
+            if let Some(tab) = self.tabs.get_mut(id) {
+                tab.renderer_session.take();
+            }
+            self.record_renderer_launch_failure(id, last_error("start renderer monitor"));
         }
     }
 
-    pub(super) unsafe fn poll_renderer(&mut self) {
-        let (snapshot, events) = {
-            let Some(session) = self.renderer_session.as_ref() else {
-                KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-                return;
-            };
-            let snapshot = session.snapshot();
-            let mut events = Vec::new();
-            while let Ok(Some(event)) = session.try_event() {
-                events.push(event);
-            }
-            (snapshot, events)
-        };
+    pub(super) unsafe fn poll_renderers(&mut self) {
+        let ids = self
+            .tabs
+            .iter()
+            .map(IdentifiedTab::tab_id)
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.poll_renderer(id);
+        }
+        let has_live_or_pending = self.tabs.iter().any(|tab| {
+            tab.renderer_session.is_some()
+                || tab.renderer_launch_pending
+                || tab.renderer_launch_receiver.is_some()
+        });
+        if !has_live_or_pending {
+            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+        }
+    }
 
-        self.update_renderer_status(|status| {
+    unsafe fn poll_renderer(&mut self, id: TabId) {
+        let snapshot_and_events = self.tabs.get_mut(id).and_then(|tab| {
+            tab.renderer_session.as_ref().map(|session| {
+                let snapshot = session.snapshot();
+                let mut events = Vec::new();
+                while let Ok(Some(event)) = session.try_event() {
+                    events.push(event);
+                }
+                (tab.title.clone(), snapshot, events)
+            })
+        });
+        let Some((title, snapshot, events)) = snapshot_and_events else {
+            return;
+        };
+        self.update_renderer_status(id, &title, |status| {
             status.phase = match snapshot.state {
                 RendererState::Running => RendererLifecyclePhase::Running,
                 RendererState::Unresponsive => RendererLifecyclePhase::Unresponsive,
@@ -179,12 +250,12 @@ impl BrowserState {
         for event in events {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
-                    self.update_renderer_status(|status| {
+                    self.update_renderer_status(id, &title, |status| {
                         status.last_diagnostic = Some(format!("{code}: {text}"));
                     });
                 }
                 RendererEvent::Unresponsive => {
-                    self.update_renderer_status(|status| {
+                    self.update_renderer_status(id, &title, |status| {
                         status.phase = RendererLifecyclePhase::Unresponsive;
                     });
                 }
@@ -194,38 +265,84 @@ impl BrowserState {
 
         if let Some(exit) = exit {
             let crash_surface = exit.crash_surface();
-            self.update_renderer_status(|status| {
+            self.update_renderer_status(id, &title, |status| {
                 status.phase = RendererLifecyclePhase::Exited;
                 status.last_exit = Some(exit);
             });
-            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-            self.renderer_session.take();
-            if let Some(surface) = crash_surface {
-                self.set_status(&format!(
+            let status = crash_surface.map(|surface| {
+                format!(
                     "{}: {}. Reload to restart the renderer.",
                     surface.title, surface.detail
-                ));
+                )
+            });
+            if let Some(tab) = self.tabs.get_mut(id) {
+                tab.renderer_session.take();
+                tab.crashed = true;
+                if let Some(status) = status.as_ref() {
+                    tab.status_text.clone_from(status);
+                }
+            }
+            if self.tabs.active_id() == id
+                && let Some(status) = status
+            {
+                self.set_status(&status);
             }
         }
     }
 
-    fn update_renderer_status(&self, update: impl FnOnce(&mut RendererTaskStatus)) {
+    pub(super) fn register_renderer_tab(&self, id: TabId) {
+        let title = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == id)
+            .map(|tab| tab.title.as_str())
+            .unwrap_or("New Tab");
+        self.update_renderer_status(id, title, |_| {});
+    }
+
+    pub(super) fn remove_renderer_tab(&self, id: TabId) {
         let mut registry = self
             .renderer_registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        update(registry.renderer_mut(PRIMARY_RENDERER_CONTEXT_ID));
+        registry.remove(id.get());
     }
 
-    unsafe fn record_renderer_launch_failure(&mut self, error: String) {
-        self.renderer_launch_receiver = None;
-        self.renderer_launch_pending = false;
-        self.update_renderer_status(|status| {
+    pub(super) fn update_renderer_tab_title(&self, id: TabId, title: &str) {
+        self.update_renderer_status(id, title, |_| {});
+    }
+
+    fn update_renderer_status(
+        &self,
+        id: TabId,
+        title: &str,
+        update: impl FnOnce(&mut RendererTaskStatus),
+    ) {
+        let mut registry = self
+            .renderer_registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        update(registry.renderer_mut(id.get(), title));
+    }
+
+    unsafe fn record_renderer_launch_failure(&mut self, id: TabId, error: String) {
+        let title = if let Some(tab) = self.tabs.get_mut(id) {
+            tab.renderer_launch_receiver = None;
+            tab.renderer_launch_pending = false;
+            tab.crashed = true;
+            tab.status_text = format!("Renderer unavailable: {error}");
+            tab.title.clone()
+        } else {
+            return;
+        };
+        self.update_renderer_status(id, &title, |status| {
             status.phase = RendererLifecyclePhase::LaunchFailed;
             status.snapshot = None;
             status.launch_error = Some(error.clone());
         });
-        self.set_status(&format!("Renderer unavailable: {error}"));
+        if self.tabs.active_id() == id {
+            self.set_status(&format!("Renderer unavailable: {error}"));
+        }
     }
 }
 
@@ -236,12 +353,13 @@ mod tests {
     #[test]
     fn registry_keeps_renderer_context_rows_independent() {
         let mut registry = RendererTaskRegistry::default();
-        registry.renderer_mut(2).restart_count = 3;
+        registry.renderer_mut(2, "Second tab").restart_count = 3;
 
         assert_eq!(registry.renderers.len(), 2);
         assert_eq!(registry.renderers[0].context_id, 1);
         assert_eq!(registry.renderers[0].restart_count, 0);
         assert_eq!(registry.renderers[1].context_id, 2);
+        assert_eq!(registry.renderers[1].tab_title, "Second tab");
         assert_eq!(registry.renderers[1].restart_count, 3);
     }
 }

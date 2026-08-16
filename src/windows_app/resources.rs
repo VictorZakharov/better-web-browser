@@ -182,6 +182,7 @@ impl BrowserState {
             return;
         }
         let generation = self.generation;
+        let tab_id = self.id;
         let window = self.window as isize;
         let http_client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
@@ -240,7 +241,7 @@ impl BrowserState {
                 PostMessageW(
                     window as Hwnd,
                     WM_APP_DEFERRED_RESOURCES,
-                    0,
+                    tab_id.get() as usize,
                     pointer as isize,
                 )
             } == 0
@@ -287,9 +288,10 @@ impl BrowserState {
         }
         if changed {
             if fonts_changed {
-                self.web_fonts.clear();
-                self.web_fonts.register(&self.page.fonts);
-                self.dynamic_fonts.clear();
+                let tab = self.tabs.active_mut();
+                tab.web_fonts.clear();
+                tab.web_fonts.register(&tab.page.fonts);
+                tab.dynamic_fonts.clear();
             }
             self.rebuild_layout();
             InvalidateRect(self.window, null(), 0);

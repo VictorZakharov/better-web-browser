@@ -80,6 +80,7 @@ unsafe extern "system" {
     -> i32;
     pub(in crate::windows_app) fn SetFocus(window: Hwnd) -> Hwnd;
     pub(in crate::windows_app) fn GetFocus() -> Hwnd;
+    pub(in crate::windows_app) fn GetKeyState(virtual_key: i32) -> i16;
     pub(in crate::windows_app) fn GetParent(window: Hwnd) -> Hwnd;
     pub(in crate::windows_app) fn GetDlgCtrlID(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn DestroyWindow(window: Hwnd) -> i32;

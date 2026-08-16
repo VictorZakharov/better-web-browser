@@ -21,6 +21,10 @@ mod rendering_resources;
 mod resources;
 mod runtime;
 mod runtime_metrics;
+mod tab_management;
+mod tab_paint;
+mod tab_state;
+mod tabs;
 mod task_manager;
 mod viewport;
 mod win32_helpers;
@@ -54,7 +58,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
-use window_dispatch::{chrome_control_proc, main_window_proc};
+use window_dispatch::{chrome_control_proc, dispatch_browser_input, main_window_proc};
 pub fn run() -> Result<(), String> {
     unsafe {
         let process_started = Instant::now();
@@ -123,29 +127,8 @@ pub fn run() -> Result<(), String> {
             if result < 0 {
                 return Err(last_error("read window message"));
             }
-            if message.message == WM_KEYDOWN && message.wparam == VK_RETURN {
-                let control_id = GetDlgCtrlID(message.hwnd);
-                let parent = GetParent(message.hwnd);
-                if control_id == ID_ADDRESS as i32 && !parent.is_null() {
-                    SendMessageW(parent, WM_COMMAND, ID_GO, 0);
-                    continue;
-                } else if control_id >= ID_PAGE_CONTROL_BASE as i32 && !parent.is_null() {
-                    let state =
-                        (GetWindowLongPtrW(parent, GWLP_USERDATA) as *mut BrowserState).as_ref();
-                    let index = control_id as usize - ID_PAGE_CONTROL_BASE;
-                    let is_textarea = state
-                        .and_then(|state| state.page_controls.get(index))
-                        .is_some_and(|control| control.spec.kind == ControlKind::TextArea);
-                    if !is_textarea {
-                        SendMessageW(
-                            parent,
-                            WM_COMMAND,
-                            control_id as usize,
-                            message.hwnd as isize,
-                        );
-                        continue;
-                    }
-                }
+            if dispatch_browser_input(&message, window, &mut *state_pointer) {
+                continue;
             }
             TranslateMessage(&message);
             DispatchMessageW(&message);

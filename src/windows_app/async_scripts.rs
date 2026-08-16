@@ -1,6 +1,7 @@
 //! Non-render-blocking external classic-script fetch and delivery.
 
 use super::resources::fetch_document_resource;
+use super::tabs::TabId;
 use super::*;
 use better_web_browser::engine::script::ScriptInput;
 use better_web_browser::fetch::{FetchSignal, RequestDestination};
@@ -57,6 +58,7 @@ impl BrowserState {
         }
 
         let generation = self.generation;
+        let tab_id = self.id;
         let window = self.window as isize;
         let client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
@@ -78,7 +80,7 @@ impl BrowserState {
                                     generation,
                                     request,
                                 );
-                                post_async_script(window as Hwnd, message);
+                                post_async_script(window as Hwnd, tab_id, message);
                             });
                         }
                     });
@@ -250,9 +252,17 @@ fn fetch_async_script(
     }
 }
 
-fn post_async_script(window: Hwnd, message: AsyncScriptMessage) {
+fn post_async_script(window: Hwnd, tab_id: TabId, message: AsyncScriptMessage) {
     let pointer = Box::into_raw(Box::new(message));
-    if unsafe { PostMessageW(window, WM_APP_ASYNC_SCRIPT, 0, pointer as isize) } == 0 {
+    if unsafe {
+        PostMessageW(
+            window,
+            WM_APP_ASYNC_SCRIPT,
+            tab_id.get() as usize,
+            pointer as isize,
+        )
+    } == 0
+    {
         unsafe { drop(Box::from_raw(pointer)) };
     }
 }

@@ -33,12 +33,14 @@ Current page support includes:
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
 - A capability-free Windows AppContainer renderer lifecycle with bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics; this Stage 2 child handles lifecycle messages only and does not yet receive page bytes
+- Browser-owned multi-tab contexts with independent live documents, history, scrolling, script realms, fetch cancellation, native-control focus, and one lifecycle renderer per tab
+- Desktop tab workflows including Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
 - Links, history, reload, scrolling, and background networking
 
 ## Task manager
 
 Click **Task manager**. Its modeless popup refreshes every second and shows a process tree rooted at
-the privileged browser, with one child row per renderer context. Rows report CPU, working/private
+the privileged browser, with one child row per stable tab/renderer context. Rows report CPU, working/private
 memory, handles, uptime, lifecycle state, restarts, and exit diagnostics; document-engine activity
 is reported separately.
 
