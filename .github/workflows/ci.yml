@@ -63,10 +63,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Select stable Rust
-        run: |
-          rustup update stable
-          rustup default stable
       - name: Enforce source-file size
         shell: pwsh
         run: ./scripts/check-source-size.ps1
@@ -83,10 +79,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Select stable Rust
-        run: |
-          rustup update stable
-          rustup default stable
       - name: Configure compiler cache
         uses: mozilla-actions/sccache-action@v0.0.11
         with:
@@ -106,16 +98,26 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
   test:
-    name: Test
+    name: Test (${{ matrix.suite }})
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: library
+            arguments: --lib
+          - suite: Windows app
+            arguments: --bin better-web-browser
+          - suite: integration
+            arguments: --test hostile_input --test html_parser_conformance --test live_runtime
+          - suite: renderer process
+            arguments: --test renderer_process
+          - suite: WPT runner
+            arguments: --bin wpt-runner
     steps:
       - uses: actions/checkout@v7
-      - name: Select stable Rust
-        run: |
-          rustup update stable
-          rustup default stable
       - name: Configure compiler cache
         uses: mozilla-actions/sccache-action@v0.0.11
         with:
@@ -132,10 +134,7 @@ jobs:
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
       - name: Test
-        run: >-
-          cargo test --lib --bin better-web-browser
-          --test hostile_input --test html_parser_conformance
-          --test live_runtime --test renderer_process
+        run: cargo test ${{ matrix.arguments }}
 
   wpt:
     name: Curated WPT
@@ -144,10 +143,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Select stable Rust
-        run: |
-          rustup update stable
-          rustup default stable
       - name: Configure compiler cache
         uses: mozilla-actions/sccache-action@v0.0.11
         with:
@@ -175,8 +170,6 @@ jobs:
           ./scripts/checkout-wpt.ps1
           -Destination (Join-Path $env:RUNNER_TEMP 'wpt')
           -VerifyOnly:('${{ steps.wpt-cache.outputs.cache-hit }}' -eq 'true')
-      - name: Test WPT runner
-        run: cargo test --bin wpt-runner
       - name: Run curated WPT suite headlessly
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
