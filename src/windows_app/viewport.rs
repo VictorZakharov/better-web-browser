@@ -22,16 +22,17 @@ pub(super) enum Surface {
 }
 
 impl BrowserState {
-    pub(super) unsafe fn rebuild_layout(&mut self) {
+    pub(super) unsafe fn rebuild_layout(&mut self) -> DisplayListDamage {
         let layout_started = Instant::now();
         let mut client: Rect = std::mem::zeroed();
         GetClientRect(self.window, &mut client);
         let dc = GetDC(self.window);
         if dc.is_null() {
-            return;
+            return DisplayListDamage::full(self.page_layout.items.len());
         }
         self.last_text_measure_count = 0;
         SetBkMode(dc, TRANSPARENT);
+        let mut damage = DisplayListDamage::full(self.page_layout.items.len());
         match self.surface {
             Surface::Page => {
                 let scale = self.page_scale();
@@ -48,13 +49,15 @@ impl BrowserState {
                 } else {
                     viewport_width
                 };
-                self.page_layout = layout_page_with_style_viewport(
+                let next_layout = layout_page_with_style_viewport(
                     &self.page,
                     viewport_width,
                     viewport_height,
                     style_viewport_width,
                     &mut measurer,
                 );
+                damage = DisplayListDamage::between(&self.page_layout, &next_layout);
+                self.page_layout = next_layout;
                 self.paint_index.rebuild(&self.page_layout.items);
                 self.last_text_measure_count = measurer.calls;
                 self.content_height = (self.page_layout.content_height * scale).ceil() as i32;
@@ -65,7 +68,7 @@ impl BrowserState {
                 self.paint_index = PaintIndex::default();
                 let Some(fonts) = self.fonts.as_ref() else {
                     ReleaseDC(self.window, dc);
-                    return;
+                    return damage;
                 };
                 let content_margin = self.scale(CONTENT_MARGIN_DIP);
                 let available = (client.right - content_margin * 2).max(self.scale(220));
@@ -73,7 +76,7 @@ impl BrowserState {
                 let left = ((client.right - reading_width) / 2).max(content_margin);
                 let Some(document) = self.document.as_ref() else {
                     ReleaseDC(self.window, dc);
-                    return;
+                    return damage;
                 };
                 let (items, height) = layout_document(dc, fonts, document, left, reading_width);
                 self.draw_items = items;
@@ -89,6 +92,7 @@ impl BrowserState {
         self.last_layout_finalize_time = layout_started
             .elapsed()
             .saturating_sub(self.last_layout_tree_time);
+        damage
     }
 
     pub(super) unsafe fn toggle_reader(&mut self) {

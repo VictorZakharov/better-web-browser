@@ -14,13 +14,21 @@ const FIXTURE_HTML: &str = r#"<!doctype html>
   html, body { margin: 0; background: rgb(16, 32, 48); }
   #state { width: 100%; height: 600px; background: rgb(34, 51, 68); color: white; }
 </style>
-<div id="state">initial</div>
+<section id="mutable"><div id="state">initial</div></section>
+<aside id="stable">
+  <p>stable 01</p><p>stable 02</p><p>stable 03</p><p>stable 04</p>
+  <p>stable 05</p><p>stable 06</p><p>stable 07</p><p>stable 08</p>
+  <p>stable 09</p><p>stable 10</p><p>stable 11</p><p>stable 12</p>
+  <p>stable 13</p><p>stable 14</p><p>stable 15</p><p>stable 16</p>
+</aside>
 <script>
   setTimeout(() => {
     const state = document.getElementById('state');
+    for (let mutation = 0; mutation < 32; mutation++) {
+      state.setAttribute('data-mutation', String(mutation));
+    }
     state.textContent = 'live runtime updated';
     state.style.backgroundColor = 'rgb(17, 170, 34)';
-    document.title = 'runtime updated';
   }, 1750);
 </script>"#;
 const NAVIGATING_HTML: &str = r#"<!doctype html>
@@ -86,8 +94,36 @@ fn hidden_browser_repaints_after_a_post_load_timer() {
         "hidden browser did not report renderer memory:\n{report}"
     );
     assert!(
-        json_integer(&report, "javascript_dom_mutations").is_some_and(|count| count >= 3),
+        json_integer(&report, "javascript_dom_mutations").is_some_and(|count| count >= 34),
         "post-load mutations were not recorded:\n{report}"
+    );
+    assert_eq!(
+        json_integer(&report, "render_checkpoints"),
+        Some(1),
+        "one task produced more than one rendering update:\n{report}"
+    );
+    assert!(
+        json_integer(&report, "render_mutations_coalesced").is_some_and(|count| count >= 34),
+        "the rendering checkpoint did not coalesce repeated mutations:\n{report}"
+    );
+    let recomputed = json_integer(&report, "style_nodes_recomputed").unwrap_or(u64::MAX);
+    let full_rebuild =
+        json_integer(&report, "style_nodes_full_rebuild_equivalent").unwrap_or_default();
+    assert!(
+        recomputed < full_rebuild,
+        "incremental style refresh did not beat a full rebuild ({recomputed}/{full_rebuild}):\n{report}"
+    );
+    assert_eq!(json_integer(&report, "full_style_rebuilds"), Some(0));
+    let invalidated_items = json_integer(&report, "display_items_invalidated").unwrap_or(u64::MAX);
+    let retained_items = json_integer(&report, "retained_draw_items").unwrap_or_default();
+    assert!(
+        invalidated_items < retained_items,
+        "incremental paint did not beat a full repaint ({invalidated_items}/{retained_items}):\n{report}"
+    );
+    assert_eq!(
+        json_integer(&report, "full_paint_repaints"),
+        Some(0),
+        "the localized mutation unexpectedly triggered a full repaint:\n{report}"
     );
 
     let capture = image::open(&artifacts.screenshot)

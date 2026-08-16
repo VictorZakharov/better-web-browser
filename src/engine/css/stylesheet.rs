@@ -1,6 +1,10 @@
 //! Stylesheet rule and declaration parsing.
 
 use super::*;
+use crate::limits::{
+    MAX_CSS_DECLARATIONS_PER_RULE, MAX_CSS_NESTING_DEPTH, MAX_CSS_RULES, MAX_CSS_SOURCE_BYTES,
+    bounded_utf8_prefix,
+};
 
 #[derive(Debug)]
 pub(super) struct Rule {
@@ -24,8 +28,9 @@ pub(super) fn parse_stylesheet(
     next_order: &mut u32,
     output: &mut Vec<Rule>,
 ) {
+    let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
     let css = strip_comments(css);
-    parse_rule_list(&css, base_url, viewport_width, next_order, output);
+    parse_rule_list(&css, base_url, viewport_width, next_order, output, 0);
 }
 
 pub(super) fn parse_rule_list(
@@ -34,9 +39,13 @@ pub(super) fn parse_rule_list(
     viewport_width: f32,
     next_order: &mut u32,
     output: &mut Vec<Rule>,
+    nesting_depth: usize,
 ) {
+    if nesting_depth >= MAX_CSS_NESTING_DEPTH || output.len() >= MAX_CSS_RULES {
+        return;
+    }
     let mut cursor = 0;
-    while cursor < css.len() {
+    while cursor < css.len() && output.len() < MAX_CSS_RULES {
         cursor = skip_css_whitespace(css, cursor);
         if cursor >= css.len() {
             break;
@@ -51,15 +60,32 @@ pub(super) fn parse_rule_list(
         let body = &css[open + 1..close];
         if prelude.starts_with("@media") {
             if media_matches(prelude, viewport_width) {
-                parse_rule_list(body, base_url, viewport_width, next_order, output);
+                parse_rule_list(
+                    body,
+                    base_url,
+                    viewport_width,
+                    next_order,
+                    output,
+                    nesting_depth + 1,
+                );
             }
         } else if prelude.starts_with("@supports") {
             if supports::supports_matches(prelude) {
-                parse_rule_list(body, base_url, viewport_width, next_order, output);
+                parse_rule_list(
+                    body,
+                    base_url,
+                    viewport_width,
+                    next_order,
+                    output,
+                    nesting_depth + 1,
+                );
             }
         } else if !prelude.starts_with('@') {
             let declarations = parse_declarations(body);
             for selector_text in split_css_top_level(prelude, ',') {
+                if output.len() >= MAX_CSS_RULES {
+                    break;
+                }
                 if let Some(selector) = parse_selector(selector_text.trim()) {
                     output.push(Rule {
                         selector,
@@ -107,6 +133,7 @@ pub(super) fn parse_declarations(body: &str) -> Vec<Declaration> {
                 important,
             })
         })
+        .take(MAX_CSS_DECLARATIONS_PER_RULE)
         .collect()
 }
 

@@ -1,3 +1,4 @@
+use crate::limits::MAX_URL_BYTES;
 use std::fmt;
 use url::{Host, Url, form_urlencoded};
 
@@ -22,6 +23,11 @@ impl std::error::Error for UrlError {}
 
 impl ParsedUrl {
     pub fn parse(input: &str) -> Result<Self, UrlError> {
+        if input.len() > MAX_URL_BYTES {
+            return Err(UrlError(format!(
+                "URL exceeds the {MAX_URL_BYTES}-byte limit"
+            )));
+        }
         let input = input.trim();
         let mut parsed = Url::parse(input).map_err(|error| UrlError(error.to_string()))?;
         let scheme = parsed.scheme().to_ascii_lowercase();
@@ -49,12 +55,18 @@ impl ParsedUrl {
             path_and_query.push_str(query);
         }
 
-        Ok(Self {
+        let result = Self {
             scheme,
             host,
             port,
             path_and_query,
-        })
+        };
+        if result.canonical().len() > MAX_URL_BYTES {
+            return Err(UrlError(format!(
+                "canonical URL exceeds the {MAX_URL_BYTES}-byte limit"
+            )));
+        }
+        Ok(result)
     }
 
     pub fn origin(&self) -> String {
@@ -78,6 +90,11 @@ impl ParsedUrl {
 }
 
 pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
+    if input.len() > MAX_URL_BYTES {
+        return Err(UrlError(format!(
+            "address exceeds the {MAX_URL_BYTES}-byte limit"
+        )));
+    }
     let input = input.trim();
     if input.is_empty() {
         return Err(UrlError("enter an address or search".into()));
@@ -90,10 +107,16 @@ pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
     let looks_like_search = input.chars().any(char::is_whitespace)
         || (!input.contains('.') && !input.starts_with("localhost") && !input.contains(':'));
     if looks_like_search {
-        return Ok(format!(
+        let search = format!(
             "https://duckduckgo.com/html/?q={}",
             encode_www_form_component(input)
-        ));
+        );
+        if search.len() > MAX_URL_BYTES {
+            return Err(UrlError(format!(
+                "search URL exceeds the {MAX_URL_BYTES}-byte limit"
+            )));
+        }
+        return Ok(search);
     }
 
     let candidate = format!("https://{input}");
@@ -101,6 +124,9 @@ pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
 }
 
 pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
+    if base.len() > MAX_URL_BYTES || reference.len() > MAX_URL_BYTES {
+        return None;
+    }
     let reference = reference.trim();
     if reference.is_empty() {
         return Some(base.to_string());
@@ -121,12 +147,16 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     {
         return None;
     }
-    Some(resolved.to_string())
+    let serialized = resolved.to_string();
+    (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
 }
 
 /// Resolves a subresource reference, including embedded `data:` resources.
 /// Navigations deliberately continue to reject `data:` URLs in [`resolve_url`].
 pub fn resolve_resource_url(base: &str, reference: &str) -> Option<String> {
+    if base.len() > MAX_URL_BYTES || reference.len() > MAX_EMBEDDED_RESOURCE_URL_BYTES {
+        return None;
+    }
     let reference = reference.trim();
     if reference
         .get(..5)
@@ -136,6 +166,8 @@ pub fn resolve_resource_url(base: &str, reference: &str) -> Option<String> {
     }
     resolve_url(base, reference)
 }
+
+const MAX_EMBEDDED_RESOURCE_URL_BYTES: usize = crate::limits::MAX_EMBEDDED_IMAGE_URL_BYTES;
 
 pub fn encode_www_form_component(input: &str) -> String {
     form_urlencoded::Serializer::new(String::new())
@@ -203,5 +235,21 @@ mod tests {
             resolve_resource_url("https://example.com/", embedded).as_deref(),
             Some(embedded)
         );
+    }
+
+    #[test]
+    fn rejects_oversized_urls_before_parsing_or_encoding() {
+        let oversized = "a".repeat(MAX_URL_BYTES + 1);
+        assert!(normalize_user_input(&oversized).is_err());
+        assert!(ParsedUrl::parse(&format!("https://example.com/{oversized}")).is_err());
+        assert_eq!(resolve_url("https://example.com/", &oversized), None);
+    }
+
+    #[test]
+    fn rejects_resolution_and_search_expansion_beyond_the_url_budget() {
+        let reference = format!("/{}", "é".repeat(MAX_URL_BYTES / 3));
+        assert!(resolve_url("https://example.com/", &reference).is_none());
+        let query = format!("{} search", "é".repeat(MAX_URL_BYTES / 3));
+        assert!(normalize_user_input(&query).is_err());
     }
 }

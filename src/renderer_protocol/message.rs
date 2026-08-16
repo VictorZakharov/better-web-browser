@@ -1,8 +1,8 @@
 use super::ProtocolError;
+use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use std::fmt;
 
 pub const NONCE_LENGTH: usize = 32;
-const MAX_DIAGNOSTIC_LENGTH: usize = 16 * 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Nonce([u8; NONCE_LENGTH]);
@@ -80,7 +80,7 @@ impl Default for RendererLimits {
         Self {
             max_control_payload: super::MAX_CONTROL_PAYLOAD as u32,
             max_frame_payload: super::MAX_FRAME_PAYLOAD as u32,
-            heartbeat_millis: 1_000,
+            heartbeat_millis: RENDERER_HEARTBEAT_INTERVAL.as_millis() as u32,
         }
     }
 }
@@ -132,7 +132,7 @@ pub struct RendererDiagnostic {
 impl RendererDiagnostic {
     pub fn new(code: u16, text: impl Into<String>) -> Result<Self, ProtocolError> {
         let text = text.into();
-        if text.len() > MAX_DIAGNOSTIC_LENGTH {
+        if text.len() > MAX_RENDERER_DIAGNOSTIC_BYTES {
             return Err(ProtocolError::InvalidPayload("diagnostic length"));
         }
         Ok(Self { code, text })

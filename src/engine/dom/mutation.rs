@@ -1,7 +1,10 @@
 //! Node creation and tree/attribute mutation operations.
 
+use super::budget::enforce;
 use super::document::Dom;
+use super::document::chunk_end;
 use super::node::{ElementData, Node, NodeData, NodeIdAllocator, NodeRef};
+use crate::limits::{MAX_DOM_DEPTH, MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::tree_builder::TreeBuilderOpts;
 use html5ever::{Attribute, LocalName, Namespace, ParseOpts, Prefix, QualName, ns, parse_fragment};
@@ -123,6 +126,7 @@ impl Node {
         if parent.id() == child.id()
             || std::iter::successors(Some(parent.clone()), |node| node.parent())
                 .any(|ancestor| ancestor.id() == child.id())
+            || !within_depth_budget(parent, &child)
         {
             return false;
         }
@@ -139,6 +143,7 @@ impl Node {
             || parent.id() == child.id()
             || std::iter::successors(Some(parent.clone()), |node| node.parent())
                 .any(|ancestor| ancestor.id() == child.id())
+            || !within_depth_budget(parent, &child)
         {
             return false;
         }
@@ -178,7 +183,7 @@ impl Node {
         }
         clear_children(node);
         if !contents.is_empty() {
-            append_node(node, Node::create_text_for(node, contents));
+            let _ = Node::append_child(node, Node::create_text_for(node, contents));
         }
     }
 
@@ -192,8 +197,12 @@ impl Node {
             .borrow()
             .clone()
             .unwrap_or_else(|| node.clone());
-        let fragment = parse_fragment(
-            Dom::with_identity(Rc::clone(&node.identity)),
+        let sink = Dom::with_identity(Rc::clone(&node.identity));
+        let identity = Rc::clone(&sink.identity);
+        let start_nodes = identity.allocated_nodes();
+        let (html, _) = bounded_utf8_prefix(html, MAX_HTML_INPUT_BYTES);
+        let mut parser = parse_fragment(
+            sink,
             ParseOpts {
                 tree_builder: TreeBuilderOpts {
                     scripting_enabled,
@@ -204,8 +213,18 @@ impl Node {
             context.name.clone(),
             context.attrs.borrow().clone(),
             scripting_enabled,
-        )
-        .one(html);
+        );
+        let mut cursor = 0_usize;
+        while cursor < html.len() {
+            let end = chunk_end(html, cursor);
+            parser.process(html[cursor..end].into());
+            cursor = end;
+            if identity.allocated_nodes().saturating_sub(start_nodes) >= MAX_DOM_NODES {
+                break;
+            }
+        }
+        let fragment = parser.finish();
+        enforce(&fragment);
         let children = fragment
             .document
             .children
@@ -216,9 +235,43 @@ impl Node {
         clear_children(&target);
         for child in children {
             remove_from_parent(&child);
-            append_node(&target, child);
+            let _ = Node::append_child(&target, child);
         }
     }
+}
+
+fn within_depth_budget(parent: &NodeRef, child: &NodeRef) -> bool {
+    let parent_depth = std::iter::successors(parent.parent(), |node| node.parent()).count();
+    parent_depth
+        .saturating_add(1)
+        .saturating_add(subtree_height(child))
+        <= MAX_DOM_DEPTH
+}
+
+fn subtree_height(root: &NodeRef) -> usize {
+    let mut maximum = 0_usize;
+    let mut stack = vec![(root.clone(), 0_usize)];
+    while let Some((node, depth)) = stack.pop() {
+        maximum = maximum.max(depth);
+        stack.extend(
+            node.children
+                .borrow()
+                .iter()
+                .rev()
+                .cloned()
+                .map(|child| (child, depth + 1)),
+        );
+        if let Some(template) = node
+            .element()
+            .and_then(|element| element.template_contents.borrow().clone())
+        {
+            stack.push((template, depth + 1));
+        }
+        if maximum >= MAX_DOM_DEPTH {
+            break;
+        }
+    }
+    maximum
 }
 
 pub(super) fn append_node(parent: &NodeRef, child: NodeRef) {

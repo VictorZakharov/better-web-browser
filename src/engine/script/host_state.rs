@@ -19,6 +19,7 @@ pub(super) struct HostState {
     pub(super) html_documents: HashSet<u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
+    pub(super) task_mutation_count: usize,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
     pub(super) cookies: HashMap<String, String>,
@@ -31,6 +32,7 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
 
 /// A Boa context owns only a weak link to native document state. If an evaluator panic requires
@@ -53,6 +55,7 @@ impl HostState {
             html_documents: HashSet::new(),
             next_node_id: 1,
             mutation_count: 0,
+            task_mutation_count: 0,
             console: Vec::new(),
             navigation_url: None,
             cookies: HashMap::new(),
@@ -65,6 +68,7 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            pending_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
         state
@@ -80,6 +84,12 @@ impl HostState {
         if let Some(id) = self.node_ids.get(&node_id) {
             return *id;
         }
+        if self.nodes.len() >= MAX_DOM_NODES {
+            self.diagnose(format!(
+                "DOM node registry reached the {MAX_DOM_NODES}-node limit"
+            ));
+            return 0;
+        }
         let id = self.next_node_id;
         self.next_node_id = self.next_node_id.saturating_add(1);
         self.node_ids.insert(node_id, id);
@@ -89,6 +99,18 @@ impl HostState {
 
     pub(super) fn node(&self, id: u32) -> Option<NodeRef> {
         self.nodes.get(&id).cloned()
+    }
+
+    pub(super) fn ensure_node_capacity(&self, additional: usize) -> JsResult<()> {
+        if self.nodes.len().saturating_add(additional) <= MAX_DOM_NODES {
+            Ok(())
+        } else {
+            Err(JsNativeError::range()
+                .with_message(format!(
+                    "DOM node budget of {MAX_DOM_NODES} would be exceeded"
+                ))
+                .into())
+        }
     }
 
     pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
@@ -127,42 +149,6 @@ impl HostState {
         }
     }
 
-    pub(super) fn computed_style_property(
-        &mut self,
-        node: &NodeRef,
-        property: &str,
-    ) -> Option<String> {
-        let version = self.document.document_mutation_version();
-        if self
-            .computed_styles
-            .as_ref()
-            .is_none_or(|(cached_version, _)| *cached_version != version)
-        {
-            // Script execution currently owns inline style sources. External sheets remain in the
-            // page resource layer and can be supplied here once those lifetimes are unified.
-            let styles = StyleSet::from_document(&self.document, &self.document_url, &[], 1024.0);
-            self.computed_styles = Some((version, styles));
-        }
-        if let Some(value) = self
-            .computed_styles
-            .as_ref()
-            .and_then(|(_, styles)| styles.styles.get(&node.id()))
-            .and_then(|style| resolved_property_value(style, property))
-        {
-            return Some(value);
-        }
-
-        let mut root = node.clone();
-        while let Some(parent) = root.parent() {
-            root = parent;
-        }
-        let styles = StyleSet::from_document(&root, &self.document_url, &[], 1024.0);
-        styles
-            .styles
-            .get(&node.id())
-            .and_then(|style| resolved_property_value(style, property))
-    }
-
     pub(super) fn register_subtree(&mut self, root: &NodeRef) {
         let owner_identity = root
             .parent()
@@ -199,16 +185,36 @@ impl HostState {
         }
     }
 
-    pub(super) fn record_mutation(&mut self, target: Option<&NodeRef>) {
+    pub(super) fn record_mutation(&mut self, target: Option<&NodeRef>, kind: MutationKind<'_>) {
         let requires_render = target.is_some_and(|target| self.mutation_requires_render(target));
-        self.record_mutation_with_render(requires_render);
+        self.record_mutation_with_render(target, kind, requires_render);
     }
 
-    pub(super) fn record_mutation_with_render(&mut self, requires_render: bool) {
+    pub(super) fn record_mutation_with_render(
+        &mut self,
+        target: Option<&NodeRef>,
+        kind: MutationKind<'_>,
+        requires_render: bool,
+    ) {
         self.mutation_count += 1;
+        self.task_mutation_count += 1;
         if requires_render {
+            self.pending_invalidation
+                .record(&self.document, target, kind);
             self.timers.request_render();
         }
+    }
+
+    pub(super) fn begin_task(&mut self) {
+        self.task_mutation_count = 0;
+    }
+
+    pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
+        self.pending_invalidation.extend(target);
+    }
+
+    pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
+        self.pending_invalidation.record_removed_subtree(root);
     }
 
     pub(super) fn mutation_requires_render(&self, target: &NodeRef) -> bool {

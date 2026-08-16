@@ -28,7 +28,7 @@ impl BrowserState {
             let started = Instant::now();
             {
                 let surface = OffscreenSurface::new(self)?;
-                self.paint_surface(surface.dc, &surface.client);
+                self.paint_surface(surface.dc, &surface.client, &surface.client);
             }
             let elapsed = started.elapsed();
             total += elapsed;
@@ -47,7 +47,7 @@ impl BrowserState {
         path: &std::path::Path,
     ) -> Result<(), String> {
         let surface = OffscreenSurface::new(self)?;
-        self.paint_surface(surface.dc, &surface.client);
+        self.paint_surface(surface.dc, &surface.client, &surface.client);
         if let Some(fonts) = self.fonts.as_ref() {
             SelectObject(surface.dc, fonts.ui);
             SetTextColor(surface.dc, CHROME_THEME.text);

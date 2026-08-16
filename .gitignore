@@ -1,4 +1,7 @@
 /target/
 /benchmark-results/
+/fuzz/artifacts/
+/fuzz/coverage/
+/fuzz/target/
 /CONTEXT_TRANSFER.md
 *.pdb

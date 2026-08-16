@@ -1,4 +1,5 @@
 use super::*;
+use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
 
 #[test]
 fn drains_short_timers_before_layout() {
@@ -171,12 +172,59 @@ fn dom_mutations_request_one_render_checkpoint() {
     assert!(mutating.errors.is_empty(), "{:?}", mutating.errors);
     assert_eq!(mutating.mutation_count, 2);
     assert!(mutating.render_requested);
+    assert_eq!(mutating.invalidation.mutation_count, 2);
+    assert!(mutating.invalidation.impact.affects_style());
+    assert!(mutating.invalidation.impact.affects_layout());
 
     let (_, non_mutating) =
         execute_html(r#"<script>setTimeout(() => console.log('ready'), 0);</script>"#);
     assert!(non_mutating.errors.is_empty(), "{:?}", non_mutating.errors);
     assert_eq!(non_mutating.mutation_count, 0);
     assert!(!non_mutating.render_requested);
+}
+
+#[test]
+fn dom_mutation_budget_is_enforced_per_event_loop_task() {
+    let (_, runaway) = execute_html(&format!(
+        r#"<body><script>
+            for (let i = 0; i < {}; i++) document.body.setAttribute('data-i', String(i));
+        </script></body>"#,
+        MAX_DOM_MUTATIONS_PER_TASK + 1
+    ));
+    assert!(
+        runaway
+            .errors
+            .iter()
+            .any(|error| error.contains("DOM mutation task budget exceeded")),
+        "{:?}",
+        runaway.errors
+    );
+    assert_eq!(runaway.mutation_count, MAX_DOM_MUTATIONS_PER_TASK);
+
+    let per_timer = MAX_DOM_MUTATIONS_PER_TASK * 3 / 5;
+    let (dom, bounded) = execute_html(&format!(
+        r#"<body><script>
+            setTimeout(() => {{
+                for (let i = 0; i < {per_timer}; i++)
+                    document.body.setAttribute('data-first', String(i));
+            }}, 0);
+            setTimeout(() => {{
+                for (let i = 0; i < {per_timer}; i++)
+                    document.body.setAttribute('data-second', String(i));
+                document.body.setAttribute('data-complete', 'yes');
+            }}, 0);
+        </script></body>"#
+    ));
+    assert!(bounded.errors.is_empty(), "{:?}", bounded.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-complete")
+            .as_deref(),
+        Some("yes")
+    );
+    assert!(bounded.mutation_count > MAX_DOM_MUTATIONS_PER_TASK);
 }
 
 #[test]
@@ -197,6 +245,23 @@ fn detached_nodes_and_script_cleanup_do_not_request_rendering() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.mutation_count, 4);
     assert!(!outcome.render_requested);
+}
+
+#[test]
+fn inserting_a_style_element_requests_a_full_rule_refresh() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+            setTimeout(() => {
+                const style = document.createElement('style');
+                style.textContent = 'body { color: #123456 }';
+                document.head.appendChild(style);
+            }, 0);
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.render_requested);
+    assert!(outcome.invalidation.rebuild_style_rules);
 }
 
 #[test]

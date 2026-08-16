@@ -90,23 +90,17 @@ pub(super) fn load_page_resources(page: &mut Page, context: ResourceLoadContext<
             }
 
             let retained = match resource {
-                PageResource::Stylesheet { url } => {
-                    page.add_stylesheet_from(
-                        &url,
-                        winhttp::decode_text(response.body.as_bytes(), response.content_type()),
-                    );
-                    true
-                }
+                PageResource::Stylesheet { url } => page.add_stylesheet_from(
+                    &url,
+                    winhttp::decode_text(response.body.as_bytes(), response.content_type()),
+                ),
                 PageResource::Image { url } => {
                     page.add_image(url, response.body.as_bytes()).is_ok()
                 }
-                PageResource::Script { url } => {
-                    page.add_script(
-                        &url,
-                        winhttp::decode_text(response.body.as_bytes(), response.content_type()),
-                    );
-                    true
-                }
+                PageResource::Script { url } => page.add_script(
+                    &url,
+                    winhttp::decode_text(response.body.as_bytes(), response.content_type()),
+                ),
                 PageResource::Font {
                     url,
                     family,

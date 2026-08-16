@@ -27,5 +27,17 @@ unmodified cases from web-platform-tests.
 The applicable license text is preserved in
 [tests/html-parser/LICENSE-WPT.md](tests/html-parser/LICENSE-WPT.md).
 
+## Fuzz-development tooling
+
+The optional `fuzz` workspace uses the following development-only tools; neither is linked into the
+browser's release binaries:
+
+- `cargo-fuzz` 0.13.2, <https://github.com/rust-fuzz/cargo-fuzz>, MIT OR Apache-2.0
+- `libfuzzer-sys` 0.4.13, <https://github.com/rust-fuzz/libfuzzer>,
+  (MIT OR Apache-2.0) AND NCSA
+
+Their versions are pinned by the workflow, fuzz manifest, and `fuzz/Cargo.lock`. All committed fuzz
+corpus inputs were authored for this repository and are provided under the repository's MIT license.
+
 Other Rust dependencies are resolved through Cargo and retain their respective
 licenses. Their exact versions are recorded in `Cargo.lock`.

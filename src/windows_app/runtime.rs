@@ -163,10 +163,13 @@ impl BrowserState {
         }
 
         let mut style_refresh_time = Duration::ZERO;
+        let mut render_metrics = None;
         if outcome.render_requested && !outcome.runtime_stopped {
             let style_refresh_started = Instant::now();
-            self.page
-                .refresh_resources(self.current_style_viewport_width());
+            let style = self.page.refresh_resources_after_invalidation(
+                self.current_style_viewport_width(),
+                &outcome.invalidation,
+            );
             style_refresh_time += style_refresh_started.elapsed();
             load_page_resources(
                 &mut self.page,
@@ -188,19 +191,15 @@ impl BrowserState {
                 self.window,
                 &format!("{} \u{2014} {PRODUCT_NAME}", self.page.title),
             );
-            self.rebuild_layout();
-            InvalidateRect(self.window, null(), 0);
+            let damage = self.rebuild_layout();
+            self.invalidate_layout_damage(damage);
+            let metrics = super::runtime_metrics::RenderCheckpointMetrics { style, damage };
+            outcome.diagnostics.push(metrics.diagnostic(&outcome));
+            render_metrics = Some(metrics);
         }
 
         self.page_resource_budget = work.resource_budget;
-        self.record_post_load_script_outcome(
-            &outcome,
-            work.script_time,
-            style_refresh_time,
-            work.network_time,
-            work.processing_time,
-            work.bytes,
-        );
+        self.record_post_load_script_outcome(&outcome, &work, style_refresh_time, render_metrics);
 
         if outcome.runtime_stopped {
             self.cancel_script_runtime();

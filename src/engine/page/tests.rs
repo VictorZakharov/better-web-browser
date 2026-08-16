@@ -1,5 +1,7 @@
 use super::*;
 
+mod invalidation;
+
 #[test]
 fn discovers_and_resolves_page_resources() {
     let page = Page::parse(

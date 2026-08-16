@@ -1,0 +1,1 @@
+https://example.test/a/b?name=café#frag ../路径?q=🌬

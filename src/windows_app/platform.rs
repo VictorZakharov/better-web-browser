@@ -122,8 +122,7 @@ pub(super) const ID_READER: usize = 1007;
 pub(super) const ID_PAGE_CONTROL_BASE: usize = 2000;
 pub(super) const ID_SCRIPT_RUNTIME_TIMER: usize = 1;
 pub(super) const ID_RENDERER_MONITOR_TIMER: usize = 2;
-pub(super) const PAGE_RESOURCE_BUDGET: u64 = 32 * 1024 * 1024;
-pub(super) const MAX_POST_LOAD_TIMER_CALLBACKS: usize = 128;
+pub(super) use better_web_browser::limits::{MAX_POST_LOAD_TIMER_CALLBACKS, PAGE_RESOURCE_BUDGET};
 
 pub(super) const DEFAULT_DPI: u32 = 96;
 pub(super) const DEFAULT_WINDOW_WIDTH_DIP: i32 = 1120;

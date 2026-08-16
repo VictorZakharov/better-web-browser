@@ -1,4 +1,5 @@
 mod diagnostics;
+mod initialization;
 mod options;
 
 use super::benchmark_capture::ScrollPaintMetrics;
@@ -36,6 +37,15 @@ pub(super) struct BenchmarkRun {
     pub(super) error: Option<String>,
     pub(super) script_executed: usize,
     pub(super) script_mutations: usize,
+    pub(super) render_checkpoints: usize,
+    pub(super) render_mutations: usize,
+    pub(super) invalidated_nodes: usize,
+    pub(super) style_nodes_recomputed: usize,
+    pub(super) style_nodes_full_rebuild: usize,
+    pub(super) full_style_rebuilds: usize,
+    pub(super) full_layout_rebuilds: usize,
+    pub(super) display_items_invalidated: usize,
+    pub(super) full_paint_repaints: usize,
     pub(super) script_errors: Vec<String>,
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
@@ -47,61 +57,6 @@ pub(super) struct BenchmarkRun {
     pub(super) diagnostic_selectors: Vec<String>,
     pub(super) window_width_dip: i32,
     pub(super) window_height_dip: i32,
-}
-
-impl BenchmarkRun {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        requested_url: String,
-        output: PathBuf,
-        screenshot: Option<PathBuf>,
-        settle: Duration,
-        scroll_samples: usize,
-        diagnostic_selectors: Vec<String>,
-        window_width_dip: i32,
-        window_height_dip: i32,
-        process_started: Instant,
-    ) -> Self {
-        Self {
-            requested_url,
-            output,
-            settle,
-            process_started,
-            initial_cpu_ticks: process_cpu_ticks().unwrap_or(0),
-            window_ready: Duration::ZERO,
-            navigation_started: None,
-            page_ready: Duration::ZERO,
-            network_time: Duration::ZERO,
-            parse_time: Duration::ZERO,
-            html_parse_time: Duration::ZERO,
-            resource_processing_time: Duration::ZERO,
-            script_time: Duration::ZERO,
-            style_refresh_time: Duration::ZERO,
-            layout_time: Duration::ZERO,
-            layout_build_time: Duration::ZERO,
-            layout_tree_time: Duration::ZERO,
-            layout_finalize_time: Duration::ZERO,
-            text_measure_count: 0,
-            paint_time: Duration::ZERO,
-            status: 0,
-            bytes: 0,
-            final_url: String::new(),
-            error: None,
-            script_executed: 0,
-            script_mutations: 0,
-            script_errors: Vec::new(),
-            script_console: Vec::new(),
-            script_diagnostics: Vec::new(),
-            script_runtime_stopped: false,
-            finish_scheduled: false,
-            renderer_wait_deadline: None,
-            screenshot,
-            scroll_samples,
-            diagnostic_selectors,
-            window_width_dip,
-            window_height_dip,
-        }
-    }
 }
 
 impl BrowserState {
@@ -193,6 +148,16 @@ impl BrowserState {
         let renderer_cpu_ticks = renderer_snapshots.iter().fold(0_u64, |total, snapshot| {
             total.saturating_add(snapshot.cpu_ticks)
         });
+        let renderer_launch_errors = format!(
+            "[{}]",
+            renderer_registry
+                .renderers
+                .iter()
+                .filter_map(|renderer| renderer.launch_error.as_deref())
+                .map(json_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
         let browser_cpu_ticks = process_cpu_ticks()
@@ -289,6 +254,16 @@ impl BrowserState {
                 "  \"downloaded_bytes\": {},\n",
                 "  \"javascript_scripts_executed\": {},\n",
                 "  \"javascript_dom_mutations\": {},\n",
+                "  \"render_checkpoints\": {},\n",
+                "  \"render_mutations_coalesced\": {},\n",
+                "  \"invalidated_dom_nodes\": {},\n",
+                "  \"style_nodes_recomputed\": {},\n",
+                "  \"style_nodes_full_rebuild_equivalent\": {},\n",
+                "  \"full_style_rebuilds\": {},\n",
+                "  \"full_layout_rebuilds\": {},\n",
+                "  \"display_items_invalidated\": {},\n",
+                "  \"full_paint_repaints\": {},\n",
+                "  \"renderer_launch_errors\": {},\n",
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
@@ -343,6 +318,16 @@ impl BrowserState {
             metrics.bytes_downloaded,
             benchmark.script_executed,
             benchmark.script_mutations,
+            benchmark.render_checkpoints,
+            benchmark.render_mutations,
+            benchmark.invalidated_nodes,
+            benchmark.style_nodes_recomputed,
+            benchmark.style_nodes_full_rebuild,
+            benchmark.full_style_rebuilds,
+            benchmark.full_layout_rebuilds,
+            benchmark.display_items_invalidated,
+            benchmark.full_paint_repaints,
+            renderer_launch_errors,
             script_errors,
             script_console,
             script_diagnostics,

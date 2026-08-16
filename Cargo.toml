@@ -54,3 +54,11 @@ lto = "thin"
 codegen-units = 1
 panic = "unwind"
 strip = "symbols"
+
+# Optimized local iteration without release LTO's whole-crate rebuild cost. Published binaries and
+# benchmark claims continue to use `release`; this profile favors edit/build feedback.
+[profile.performance]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

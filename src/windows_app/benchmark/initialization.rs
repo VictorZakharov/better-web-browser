@@ -1,0 +1,67 @@
+//! Benchmark state initialization kept separate from report collection.
+
+use super::*;
+
+impl BenchmarkRun {
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::windows_app) fn new(
+        requested_url: String,
+        output: PathBuf,
+        screenshot: Option<PathBuf>,
+        settle: Duration,
+        scroll_samples: usize,
+        diagnostic_selectors: Vec<String>,
+        window_width_dip: i32,
+        window_height_dip: i32,
+        process_started: Instant,
+    ) -> Self {
+        Self {
+            requested_url,
+            output,
+            settle,
+            process_started,
+            initial_cpu_ticks: process_cpu_ticks().unwrap_or(0),
+            window_ready: Duration::ZERO,
+            navigation_started: None,
+            page_ready: Duration::ZERO,
+            network_time: Duration::ZERO,
+            parse_time: Duration::ZERO,
+            html_parse_time: Duration::ZERO,
+            resource_processing_time: Duration::ZERO,
+            script_time: Duration::ZERO,
+            style_refresh_time: Duration::ZERO,
+            layout_time: Duration::ZERO,
+            layout_build_time: Duration::ZERO,
+            layout_tree_time: Duration::ZERO,
+            layout_finalize_time: Duration::ZERO,
+            text_measure_count: 0,
+            paint_time: Duration::ZERO,
+            status: 0,
+            bytes: 0,
+            final_url: String::new(),
+            error: None,
+            script_executed: 0,
+            script_mutations: 0,
+            render_checkpoints: 0,
+            render_mutations: 0,
+            invalidated_nodes: 0,
+            style_nodes_recomputed: 0,
+            style_nodes_full_rebuild: 0,
+            full_style_rebuilds: 0,
+            full_layout_rebuilds: 0,
+            display_items_invalidated: 0,
+            full_paint_repaints: 0,
+            script_errors: Vec::new(),
+            script_console: Vec::new(),
+            script_diagnostics: Vec::new(),
+            script_runtime_stopped: false,
+            finish_scheduled: false,
+            renderer_wait_deadline: None,
+            screenshot,
+            scroll_samples,
+            diagnostic_selectors,
+            window_width_dip,
+            window_height_dip,
+        }
+    }
+}

@@ -1,6 +1,7 @@
 mod html_parser_support;
 
 use better_web_browser::engine::dom::{Node, parse_with_scripting};
+use better_web_browser::limits::MAX_DOM_DEPTH;
 use html_parser_support::{Fixture, parse_fixtures, serialize_document, serialize_fragment};
 
 const WPT_DOCUMENT_FIXTURES: &str = include_str!("html-parser/fixtures/wpt-documents.dat");
@@ -33,8 +34,14 @@ fn deeply_nested_malformed_input_remains_finite_and_acyclic() {
     let serialized = serialize_document(&dom.document)
         .expect("deep malformed document should remain a finite tree");
 
-    assert!(serialized.contains("\"end\""));
-    assert!(serialized.lines().count() < 4_100);
+    assert!(!serialized.contains("\"end\""));
+    assert!(serialized.lines().count() <= MAX_DOM_DEPTH + 8);
+    assert!(
+        dom.errors
+            .borrow()
+            .iter()
+            .any(|error| error.starts_with("safety limit:"))
+    );
 }
 
 fn run_fixtures(suite: &str, source: &str, fragments_only: bool) {

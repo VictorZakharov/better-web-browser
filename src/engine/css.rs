@@ -1,6 +1,7 @@
 //! CSS facade for values, parsing, selector matching, cascade, and media evaluation.
 
 mod cascade;
+mod change;
 mod cssom;
 mod media;
 mod properties;
@@ -17,20 +18,17 @@ mod value_parser;
 mod values;
 mod variables;
 
-pub use cascade::StyleSet;
+pub use cascade::{StyleRefreshStats, StyleSet};
 pub use values::{
     AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
     Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, TextAlign, WhiteSpace,
 };
 
-pub(crate) use cssom::resolved_property_value;
-pub(crate) use media::media_matches;
-pub(crate) use user_agent::is_hidden_by_html_rendering;
-pub(crate) use value_parser::parse_length;
-
 use super::dom::{self, Dom, NodeId, NodeRef};
+pub(crate) use cssom::resolved_property_value;
 use cssparser::color::{parse_hash_color, parse_named_color};
 use cssparser::{Parser, ParserInput, ToCss, Token};
+pub(crate) use media::media_matches;
 use properties::apply_declaration;
 use selector_match::selector_matches;
 use selector_model::*;
@@ -41,6 +39,8 @@ use std::sync::Arc;
 use stylesheet::{Declaration, Rule, parse_declarations, parse_stylesheet};
 use syntax::*;
 use user_agent::apply_user_agent_defaults;
+pub(crate) use user_agent::is_hidden_by_html_rendering;
+pub(crate) use value_parser::parse_length;
 use value_parser::{consume_identifier, parse_color};
 use variables::{apply_custom_properties, apply_resolved_declaration};
 

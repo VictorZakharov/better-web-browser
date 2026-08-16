@@ -137,6 +137,7 @@ impl BrowserState {
         let fetch_signal = self.document_fetch.signal();
         let document_url = self.page.source_url.clone();
         let cookie_header = client.document_cookie_header(&document_url);
+        let document_root = self.page.dom.document.id();
         let advance = self.take_script_runtime_elapsed();
         let mut dynamic_network_time = Duration::ZERO;
         let mut dynamic_processing_time = Duration::ZERO;
@@ -181,12 +182,14 @@ impl BrowserState {
                     MAX_POST_LOAD_TIMER_CALLBACKS,
                     Some(&mut dynamic_script_loader),
                 ),
+                document_root,
             );
             if !outcome.runtime_stopped && outcome.navigation_url.is_none() && !inputs.is_empty() {
                 merge_script_outcome(
                     &mut outcome,
                     runtime
                         .execute_additional_with_loader(&inputs, Some(&mut dynamic_script_loader)),
+                    document_root,
                 );
             }
         }
@@ -254,7 +257,21 @@ fn post_async_script(window: Hwnd, message: AsyncScriptMessage) {
     }
 }
 
-fn merge_script_outcome(target: &mut ScriptOutcome, mut source: ScriptOutcome) {
+fn merge_script_outcome(
+    target: &mut ScriptOutcome,
+    mut source: ScriptOutcome,
+    document_root: better_web_browser::engine::dom::NodeId,
+) {
+    if source.render_requested && source.invalidation.is_empty() {
+        source.diagnostics.push(
+            "render request had no invalidation root; using the full-document fallback".into(),
+        );
+        source.invalidation =
+            better_web_browser::engine::invalidation::RenderInvalidation::full(document_root);
+    }
+    target
+        .invalidation
+        .merge_conservatively(source.invalidation, document_root);
     target.executed += source.executed;
     target.mutation_count += source.mutation_count;
     target.errors.append(&mut source.errors);

@@ -3,6 +3,17 @@
 use super::rule_index::RuleIndex;
 use super::*;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StyleRefreshStats {
+    pub invalidated_nodes: usize,
+    pub total_styles: usize,
+    pub recomputed_styles: usize,
+    pub changed_styles: usize,
+    pub removed_styles: usize,
+    pub layout_changed: bool,
+    pub full_rebuild: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct StyleSet {
     pub styles: HashMap<NodeId, ComputedStyle>,
@@ -89,11 +100,62 @@ impl StyleSet {
         )
     }
 
+    pub(crate) fn refresh_subtree(
+        &mut self,
+        document: &NodeRef,
+        requested_root: &NodeRef,
+        removed_nodes: &[NodeId],
+    ) -> StyleRefreshStats {
+        let root = if is_descendant_of(requested_root, document) {
+            requested_root.clone()
+        } else {
+            document.clone()
+        };
+        let parent_style = root
+            .parent()
+            .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
+        let mut stats = StyleRefreshStats::default();
+        self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
+
+        stats.removed_styles = removed_nodes
+            .iter()
+            .filter(|node| self.styles.remove(node).is_some())
+            .count();
+        stats.total_styles = self.styles.len();
+        stats
+    }
+
     fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
         let style = self.compute_style(node, parent);
         self.styles.insert(node_id(node), style.clone());
         for child in node.children.borrow().iter() {
             self.compute_subtree(child, Some(&style));
+        }
+    }
+
+    fn recompute_subtree(
+        &mut self,
+        node: &NodeRef,
+        parent: Option<&ComputedStyle>,
+        stats: &mut StyleRefreshStats,
+    ) {
+        let style = self.compute_style(node, parent);
+        stats.invalidated_nodes += 1;
+        stats.recomputed_styles += 1;
+        match self.styles.get(&node_id(node)) {
+            Some(previous) if previous != &style => {
+                stats.changed_styles += 1;
+                stats.layout_changed |= !previous.layout_equivalent(&style);
+            }
+            None => {
+                stats.changed_styles += 1;
+                stats.layout_changed = true;
+            }
+            _ => {}
+        }
+        self.styles.insert(node_id(node), style.clone());
+        for child in node.children.borrow().iter() {
+            self.recompute_subtree(child, Some(&style), stats);
         }
     }
 
@@ -161,6 +223,11 @@ impl StyleSet {
         style.line_height = style.line_height.max(style.font_size);
         style
     }
+}
+
+fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
+    std::iter::successors(Some(node.clone()), |current| current.parent())
+        .any(|current| current.id() == ancestor.id())
 }
 
 fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedStyle) {

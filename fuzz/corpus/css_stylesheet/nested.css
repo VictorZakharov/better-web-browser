@@ -1,0 +1,1 @@
+@media (min-width: 1px) { @supports (display: grid) { .a:is(.b, :not(.c)) { --x: calc(1px + var(--y, 2%)); width: var(--x); } } }

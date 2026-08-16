@@ -1,9 +1,7 @@
+use crate::limits::{MAX_FONT_BYTES, MAX_FONT_TABLES};
 use crate::navigation::resolve_url;
 use flate2::read::ZlibDecoder;
 use std::io::Read;
-
-const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
-const MAX_FONT_TABLES: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WebFontFace {
@@ -63,6 +61,11 @@ pub fn discover_font_faces(css: &str, stylesheet_url: &str) -> Vec<WebFontFace> 
 }
 
 pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, String> {
+    if bytes.len() > MAX_FONT_BYTES {
+        return Err(format!(
+            "webfont source exceeds the {MAX_FONT_BYTES}-byte limit"
+        ));
+    }
     let sfnt = match bytes.get(..4) {
         Some(b"wOFF") => decode_woff(bytes)?,
         Some(b"wOF2") => return Err("WOFF2 fonts are not supported yet".into()),
