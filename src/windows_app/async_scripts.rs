@@ -1,5 +1,6 @@
 //! Non-render-blocking external classic-script fetch and delivery.
 
+use super::browser_app::TabMessageRouter;
 use super::resources::fetch_document_resource;
 use super::tabs::TabId;
 use super::*;
@@ -59,7 +60,7 @@ impl BrowserState {
 
         let generation = self.generation;
         let tab_id = self.id;
-        let window = self.window as isize;
+        let tab_router = self.app.tab_router.clone();
         let client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
         let document_url = self.page.source_url.clone();
@@ -72,6 +73,7 @@ impl BrowserState {
                             let client = Arc::clone(&client);
                             let signal = fetch_signal.clone();
                             let document_url = &document_url;
+                            let tab_router = tab_router.clone();
                             scope.spawn(move || {
                                 let message = fetch_async_script(
                                     &client,
@@ -80,7 +82,7 @@ impl BrowserState {
                                     generation,
                                     request,
                                 );
-                                post_async_script(window as Hwnd, tab_id, message);
+                                post_async_script(&tab_router, tab_id, message);
                             });
                         }
                     });
@@ -252,17 +254,17 @@ fn fetch_async_script(
     }
 }
 
-fn post_async_script(window: Hwnd, tab_id: TabId, message: AsyncScriptMessage) {
+fn post_async_script(tab_router: &TabMessageRouter, tab_id: TabId, message: AsyncScriptMessage) {
     let pointer = Box::into_raw(Box::new(message));
-    if unsafe {
+    let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {
         PostMessageW(
-            window,
+            window as Hwnd,
             WM_APP_ASYNC_SCRIPT,
             tab_id.get() as usize,
             pointer as isize,
-        )
-    } == 0
-    {
+        ) != 0
+    });
+    if !posted {
         unsafe { drop(Box::from_raw(pointer)) };
     }
 }

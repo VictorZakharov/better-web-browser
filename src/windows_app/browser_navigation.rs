@@ -86,7 +86,7 @@ impl BrowserState {
             InvalidateRect(self.window, null(), 0);
         }
 
-        let window_value = self.window as isize;
+        let tab_router = self.app.tab_router.clone();
         let metrics = Arc::clone(&self.metrics);
         let http_client = Arc::clone(&self.http_client);
         let navigation_thread = std::thread::Builder::new()
@@ -185,16 +185,15 @@ impl BrowserState {
                 }
                 let message = Box::new(LoadMessage { generation, result });
                 let pointer = Box::into_raw(message);
-                let window = window_value as Hwnd;
-                if unsafe {
+                let posted = tab_router.destination(id).is_some_and(|window| unsafe {
                     PostMessageW(
-                        window,
+                        window as Hwnd,
                         WM_APP_PAGE_LOADED,
                         id.get() as usize,
                         pointer as isize,
-                    )
-                } == 0
-                {
+                    ) != 0
+                });
+                if !posted {
                     unsafe {
                         drop(Box::from_raw(pointer));
                     }

@@ -1,14 +1,17 @@
 //! Browser-window ownership and application lifecycle state.
 
+use super::browser_app::BrowserApplication;
 use super::browser_navigation::HistoryMode;
-use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
-use super::tab_state::{BrowserTab, ClosedTab};
-use super::tabs::{RecentlyClosedTabs, TabCollection, TabId};
+use super::renderer_lifecycle::SharedRendererRegistry;
+use super::tab_drag::TabDragGesture;
+use super::tab_state::BrowserTab;
+use super::tabs::{TabCollection, TabId};
 use super::*;
 use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
+use std::rc::Rc;
 
 pub(super) struct BrowserState {
+    pub(super) app: Rc<BrowserApplication>,
     pub(super) instance: Hinstance,
     pub(super) window: Hwnd,
     pub(super) controls: Controls,
@@ -18,29 +21,49 @@ pub(super) struct BrowserState {
     pub(super) dpi: u32,
     pub(super) chrome: ChromeLayout,
     pub(super) processing_background_tab: bool,
+    pub(super) tab_drag: Option<TabDragGesture>,
+    pub(super) tab_drop_index: Option<usize>,
+    pub(super) hovered_tab: Option<TabId>,
     pub(super) tabs: TabCollection<BrowserTab>,
-    pub(super) recently_closed_tabs: RecentlyClosedTabs<ClosedTab>,
     pub(super) startup_url: Option<String>,
     pub(super) open_task_manager_on_start: bool,
     pub(super) benchmark: Option<BenchmarkRun>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) task_window: Hwnd,
+    pub(super) tab_search_window: Hwnd,
+    pub(super) tab_search_edit: Hwnd,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
 }
 
 impl BrowserState {
-    pub(super) fn new(
-        instance: Hinstance,
-        metrics: Arc<BrowserMetrics>,
-        options: LaunchOptions,
-    ) -> Result<Self, String> {
-        let http_client = Arc::new(winhttp::HttpClient::new()?);
+    pub(super) fn new(app: Rc<BrowserApplication>, options: LaunchOptions) -> Result<Self, String> {
         let tabs = TabCollection::new(BrowserTab::new(TabId::first()));
-        Ok(Self {
-            instance,
+        Ok(Self::with_tabs(app, tabs, options))
+    }
+
+    pub(super) fn detached_placeholder(app: Rc<BrowserApplication>) -> Self {
+        let tabs = TabCollection::new(BrowserTab::new(TabId::allocate()));
+        Self::with_tabs(
+            app,
+            tabs,
+            LaunchOptions {
+                startup_url: None,
+                open_task_manager: false,
+                benchmark: None,
+            },
+        )
+    }
+
+    fn with_tabs(
+        app: Rc<BrowserApplication>,
+        tabs: TabCollection<BrowserTab>,
+        options: LaunchOptions,
+    ) -> Self {
+        Self {
+            instance: app.instance,
             window: null_mut(),
             controls: Controls::default(),
             fonts: None,
@@ -49,18 +72,23 @@ impl BrowserState {
             dpi: DEFAULT_DPI,
             chrome: ChromeLayout::default(),
             processing_background_tab: false,
+            tab_drag: None,
+            tab_drop_index: None,
+            hovered_tab: None,
             tabs,
-            recently_closed_tabs: RecentlyClosedTabs::new(),
             startup_url: options.startup_url,
             open_task_manager_on_start: options.open_task_manager,
             benchmark: options.benchmark,
-            metrics,
-            http_client,
+            metrics: Arc::clone(&app.metrics),
+            http_client: Arc::clone(&app.http_client),
             task_window: null_mut(),
-            renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
+            tab_search_window: null_mut(),
+            tab_search_edit: null_mut(),
+            renderer_registry: Arc::clone(&app.renderer_registry),
             media_viewport_width: 0.0,
             outer_window_width: 0,
-        })
+            app,
+        }
     }
 
     pub(super) unsafe fn complete_startup(&mut self) {
@@ -77,6 +105,16 @@ impl BrowserState {
         } else {
             SetFocus(self.controls.address);
         }
+    }
+
+    pub(super) unsafe fn complete_detached_startup(&mut self) {
+        self.reset_media_viewport_width();
+        let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
+        for id in ids {
+            self.start_renderer_for(id);
+        }
+        self.ensure_renderer_monitoring();
+        self.restore_active_tab_ui();
     }
 
     pub(super) fn scale(&self, dip: i32) -> i32 {
@@ -176,10 +214,12 @@ impl DerefMut for BrowserState {
 impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
-            self.document_fetch.abort();
-            self.cancel_script_runtime();
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-            self.renderer_session.take();
+            let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
+            for id in ids {
+                self.app.tab_router.unbind(id);
+                self.remove_renderer_tab(id);
+            }
             if !self.content_brush.is_null() {
                 DeleteObject(self.content_brush);
             }

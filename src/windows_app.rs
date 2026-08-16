@@ -3,7 +3,9 @@ mod app_state;
 mod async_scripts;
 mod benchmark;
 mod benchmark_capture;
+mod browser_app;
 mod browser_navigation;
+mod browser_window;
 mod chrome_controls;
 mod chrome_paint;
 mod document_activation;
@@ -21,8 +23,10 @@ mod rendering_resources;
 mod resources;
 mod runtime;
 mod runtime_metrics;
+mod tab_drag;
 mod tab_management;
 mod tab_paint;
+mod tab_search;
 mod tab_state;
 mod tabs;
 mod task_manager;
@@ -41,6 +45,8 @@ use better_web_browser::engine::{
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
 use better_web_browser::winhttp;
+use browser_app::BrowserApplication;
+use browser_window::{BrowserWindowPlacement, create_browser_window};
 use chrome_controls::{ChromeLayout, Controls};
 use document_activation::{LoadMessage, LoadedPage};
 use platform::*;
@@ -54,6 +60,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use viewport::{DrawItem, Surface};
@@ -77,46 +84,31 @@ pub fn run() -> Result<(), String> {
             task_manager::window_proc,
             COLOR_WINDOW,
         )?;
+        register_class(
+            instance,
+            TAB_SEARCH_CLASS,
+            tab_search::window_proc,
+            COLOR_WINDOW,
+        )?;
 
         let options = LaunchOptions::parse(process_started)?;
         let benchmark_is_hidden = options.benchmark.is_some();
         let (window_width_dip, window_height_dip) = options.window_dimensions();
         let metrics = Arc::new(BrowserMetrics::default());
-        let state = Box::new(BrowserState::new(instance, metrics, options)?);
-        let state_pointer = Box::into_raw(state);
-        let class = wide(MAIN_CLASS);
-        let title = wide(PRODUCT_NAME);
-        let window_style = WS_OVERLAPPEDWINDOW
-            | WS_VSCROLL
-            | WS_CLIPCHILDREN
-            | if benchmark_is_hidden { 0 } else { WS_VISIBLE };
-        let window = CreateWindowExW(
-            0,
-            class.as_ptr(),
-            title.as_ptr(),
-            window_style,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            scale_dip(window_width_dip, initial_dpi),
-            scale_dip(window_height_dip, initial_dpi),
-            null_mut(),
-            null_mut(),
-            instance,
-            state_pointer.cast(),
-        );
-        if window.is_null() {
-            return Err(last_error("create browser window"));
-        }
-
-        ShowWindow(
-            window,
-            if benchmark_is_hidden {
-                SW_HIDE
-            } else {
-                SW_SHOW
-            },
-        );
-        UpdateWindow(window);
+        let app = BrowserApplication::new(instance, metrics)?;
+        let state = BrowserState::new(Rc::clone(&app), options)?;
+        let window = create_browser_window(
+            state,
+            BrowserWindowPlacement::initial(
+                window_width_dip,
+                window_height_dip,
+                initial_dpi,
+                !benchmark_is_hidden,
+            ),
+        )?;
+        let state_pointer = app
+            .state_pointer(window)
+            .ok_or_else(|| "browser window did not retain its state".to_string())?;
         (*state_pointer).complete_startup();
         let mut message: Msg = std::mem::zeroed();
         loop {
@@ -127,7 +119,9 @@ pub fn run() -> Result<(), String> {
             if result < 0 {
                 return Err(last_error("read window message"));
             }
-            if dispatch_browser_input(&message, window, &mut *state_pointer) {
+            if let Some((browser_window, state_pointer)) = app.browser_for_message(message.hwnd)
+                && dispatch_browser_input(&message, browser_window, &mut *state_pointer)
+            {
                 continue;
             }
             TranslateMessage(&message);

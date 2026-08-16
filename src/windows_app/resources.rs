@@ -183,7 +183,7 @@ impl BrowserState {
         }
         let generation = self.generation;
         let tab_id = self.id;
-        let window = self.window as isize;
+        let tab_router = self.app.tab_router.clone();
         let http_client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
         let document_url = self.page.source_url.clone();
@@ -237,15 +237,15 @@ impl BrowserState {
             }
             let message = Box::new(DeferredResourcesMessage { generation, loaded });
             let pointer = Box::into_raw(message);
-            if unsafe {
+            let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {
                 PostMessageW(
                     window as Hwnd,
                     WM_APP_DEFERRED_RESOURCES,
                     tab_id.get() as usize,
                     pointer as isize,
-                )
-            } == 0
-            {
+                ) != 0
+            });
+            if !posted {
                 unsafe { drop(Box::from_raw(pointer)) };
             }
         });

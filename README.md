@@ -33,8 +33,8 @@ Current page support includes:
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
 - A capability-free Windows AppContainer renderer lifecycle with bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics; this Stage 2 child handles lifecycle messages only and does not yet receive page bytes
-- Browser-owned multi-tab contexts with independent live documents, history, scrolling, script realms, fetch cancellation, native-control focus, and one lifecycle renderer per tab
-- Desktop tab workflows including Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
+- Browser-owned multi-tab contexts with independent live documents, history, scrolling, script realms, native-control focus, in-flight completion routing, and one lifecycle renderer per tab
+- Desktop tab workflows including Ctrl/Shift multi-selection, ordered drag/reorder, detach/redock across windows, searchable open/recent tabs, Ctrl+N/Ctrl+Shift+W, Ctrl+Shift+A, Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+Shift+PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
 - Links, history, reload, scrolling, and background networking
 
 ## Task manager
@@ -161,7 +161,7 @@ workspace and scheduled Linux workflow; see [fuzz/README.md](fuzz/README.md).
 - JavaScript and cookies implement only an early subset; the Fetch policy foundation exists, but the JavaScript `fetch`/XHR APIs, modules, workers, and much of the browser API surface remain incomplete
 - The JavaScript realm is retained on the document's UI thread for timer and script-completion tasks, but fetch/XHR, user-input task dispatch, and other event-loop sources remain incomplete
 - JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
-- Canvas, media, downloads, tabs, accessibility, text selection, and site isolation are not implemented yet
+- Canvas, media, downloads, accessibility, text selection, tab-session persistence, and site isolation are not implemented yet
 - CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
 - External classic `async` scripts execute on arrival without delaying page-ready, but their fetch currently starts after first paint instead of overlapping HTML parsing; `defer` scheduling is not yet modeled separately
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity

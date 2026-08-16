@@ -14,6 +14,16 @@ impl BrowserState {
             bottom: self.toolbar_height(),
         };
         fill_color_rect(dc, &toolbar, CHROME_THEME.toolbar);
+        fill_color_rect(
+            dc,
+            &Rect {
+                left: 0,
+                top: 0,
+                right: client.right,
+                bottom: self.scale(TAB_STRIP_HEIGHT_DIP),
+            },
+            CHROME_THEME.tab_strip,
+        );
         let hairline = self.scale(1).max(1);
         fill_color_rect(
             dc,

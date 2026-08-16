@@ -8,7 +8,10 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+
+static NEXT_CLOSED_TAB_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(super) struct BrowserTab {
     pub(super) id: TabId,
@@ -132,7 +135,9 @@ pub(super) enum TabFocus {
     PageControl(NodeId),
 }
 
+#[derive(Clone)]
 pub(super) struct ClosedTab {
+    pub(super) id: u64,
     pub(super) title: String,
     pub(super) history: Vec<String>,
     pub(super) history_index: usize,
@@ -141,10 +146,20 @@ pub(super) struct ClosedTab {
 impl From<&BrowserTab> for ClosedTab {
     fn from(tab: &BrowserTab) -> Self {
         Self {
+            id: NEXT_CLOSED_TAB_ID.fetch_add(1, Ordering::Relaxed),
             title: tab.title.clone(),
             history: tab.history.clone(),
             history_index: tab.history_index,
         }
+    }
+}
+
+impl ClosedTab {
+    pub(super) fn current_url(&self) -> Option<&str> {
+        self.history
+            .get(self.history_index)
+            .map(String::as_str)
+            .filter(|url| !url.is_empty())
     }
 }
 

@@ -1,6 +1,7 @@
 //! Stable tab identity, ordering, shortcuts, and tab-strip hit testing.
 
 mod collection;
+mod selection;
 mod shortcuts;
 mod strip;
 

@@ -36,6 +36,7 @@ impl BrowserState {
                 return;
             }
         };
+        self.app.tab_router.bind(id, self.window);
         self.register_renderer_tab(id);
         self.start_renderer_for(id);
         if foreground {
@@ -53,7 +54,7 @@ impl BrowserState {
             return;
         }
         self.suspend_active_tab_ui();
-        self.tabs.activate(id);
+        self.tabs.activate_exclusive(id);
         self.restore_active_tab_ui();
     }
 
@@ -90,6 +91,7 @@ impl BrowserState {
         }
         if self.tabs.active_id() != id {
             if let Some(tab) = self.tabs.remove(id) {
+                self.app.tab_router.unbind(tab.id);
                 self.remove_renderer_tab(tab.id);
                 self.remember_closed_tab(ClosedTab::from(&tab));
                 drop(tab);
@@ -100,11 +102,13 @@ impl BrowserState {
         self.suspend_active_tab_ui();
         let tab = if self.tabs.len() == 1 {
             let (replacement_id, removed) = self.tabs.replace_active(BrowserTab::new);
+            self.app.tab_router.bind(replacement_id, self.window);
             self.register_renderer_tab(replacement_id);
             removed
         } else {
             self.tabs.remove_active()
         };
+        self.app.tab_router.unbind(tab.id);
         self.remove_renderer_tab(tab.id);
         self.remember_closed_tab(ClosedTab::from(&tab));
         drop(tab);
@@ -113,20 +117,25 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reopen_closed_tab(&mut self) {
-        let Some(closed) = self.recently_closed_tabs.pop() else {
+        let Some(closed) = self.app.pop_closed_tab() else {
             return;
         };
+        self.restore_closed_tab(closed);
+    }
+
+    pub(super) unsafe fn restore_closed_tab(&mut self, closed: ClosedTab) {
         self.suspend_active_tab_ui();
         let added = self.tabs.add(true, BrowserTab::new);
         let id = match added {
             Ok(id) => id,
             Err(_) => {
-                self.recently_closed_tabs.push(closed);
+                self.app.remember_closed_tab(closed);
                 self.restore_active_tab_ui();
                 self.set_status(&format!("At most {} tabs can be open", tabs::MAX_OPEN_TABS));
                 return;
             }
         };
+        self.app.tab_router.bind(id, self.window);
         let url = {
             let tab = self.tabs.active_mut();
             tab.title = closed.title;
@@ -145,10 +154,10 @@ impl BrowserState {
     }
 
     fn remember_closed_tab(&mut self, closed: ClosedTab) {
-        self.recently_closed_tabs.push(closed);
+        self.app.remember_closed_tab(closed);
     }
 
-    unsafe fn suspend_active_tab_ui(&mut self) {
+    pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
         self.omnibox_text = window_text(self.controls.address);
         KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
         let focused = GetFocus();
@@ -171,7 +180,7 @@ impl BrowserState {
         }
     }
 
-    unsafe fn restore_active_tab_ui(&mut self) {
+    pub(super) unsafe fn restore_active_tab_ui(&mut self) {
         set_window_text(self.controls.address, &self.omnibox_text);
         set_window_text(
             self.controls.reader,
@@ -221,11 +230,18 @@ impl BrowserState {
 
     pub(super) unsafe fn handle_shortcut(&mut self, shortcut: BrowserShortcut) {
         match shortcut {
+            BrowserShortcut::NewWindow => self.open_browser_window(),
             BrowserShortcut::NewTab => self.new_tab(),
+            BrowserShortcut::CloseWindow => {
+                PostMessageW(self.window, WM_CLOSE, 0, 0);
+            }
             BrowserShortcut::CloseTab => self.close_tab(self.tabs.active_id()),
             BrowserShortcut::ReopenClosedTab => self.reopen_closed_tab(),
+            BrowserShortcut::SearchTabs => self.toggle_tab_search(),
             BrowserShortcut::NextTab => self.activate_relative_tab(true),
             BrowserShortcut::PreviousTab => self.activate_relative_tab(false),
+            BrowserShortcut::MoveTabsLeft => self.move_selected_tabs(false),
+            BrowserShortcut::MoveTabsRight => self.move_selected_tabs(true),
             BrowserShortcut::ActivatePosition(position) => self.activate_tab_position(position),
             BrowserShortcut::ActivateLast => self.activate_last_tab(),
             BrowserShortcut::FocusAddress => {
@@ -249,6 +265,7 @@ impl BrowserState {
             TabStripHit::Activate(id) => self.activate_tab(id),
             TabStripHit::Close(id) => self.close_tab(id),
             TabStripHit::NewTab => self.new_tab(),
+            TabStripHit::SearchTabs => self.toggle_tab_search(),
         }
         true
     }

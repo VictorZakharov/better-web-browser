@@ -7,11 +7,16 @@ pub(in crate::windows_app) struct KeyModifiers {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::windows_app) enum BrowserShortcut {
+    NewWindow,
     NewTab,
+    CloseWindow,
     CloseTab,
     ReopenClosedTab,
+    SearchTabs,
     NextTab,
     PreviousTab,
+    MoveTabsLeft,
+    MoveTabsRight,
     ActivatePosition(usize),
     ActivateLast,
     FocusAddress,
@@ -34,6 +39,8 @@ pub(in crate::windows_app) fn shortcut_for_key(
     const VK_8: usize = b'8' as usize;
     const VK_9: usize = b'9' as usize;
     const VK_L: usize = b'L' as usize;
+    const VK_N: usize = b'N' as usize;
+    const VK_A: usize = b'A' as usize;
     const VK_R: usize = b'R' as usize;
     const VK_T: usize = b'T' as usize;
     const VK_W: usize = b'W' as usize;
@@ -50,12 +57,17 @@ pub(in crate::windows_app) fn shortcut_for_key(
     }
     if modifiers.control && !modifiers.alt {
         return match key {
+            VK_A if modifiers.shift => Some(BrowserShortcut::SearchTabs),
             VK_T if modifiers.shift => Some(BrowserShortcut::ReopenClosedTab),
             VK_T => Some(BrowserShortcut::NewTab),
-            VK_W if !modifiers.shift => Some(BrowserShortcut::CloseTab),
+            VK_N if !modifiers.shift => Some(BrowserShortcut::NewWindow),
+            VK_W if modifiers.shift => Some(BrowserShortcut::CloseWindow),
+            VK_W => Some(BrowserShortcut::CloseTab),
             VK_L => Some(BrowserShortcut::FocusAddress),
             VK_R => Some(BrowserShortcut::Reload),
             VK_TAB if modifiers.shift => Some(BrowserShortcut::PreviousTab),
+            VK_NEXT if modifiers.shift => Some(BrowserShortcut::MoveTabsRight),
+            VK_PRIOR if modifiers.shift => Some(BrowserShortcut::MoveTabsLeft),
             VK_TAB | VK_NEXT => Some(BrowserShortcut::NextTab),
             VK_PRIOR => Some(BrowserShortcut::PreviousTab),
             VK_1..=VK_8 => Some(BrowserShortcut::ActivatePosition(key - b'0' as usize)),
@@ -88,6 +100,10 @@ mod tests {
         assert_eq!(
             shortcut_for_key(b'T' as usize, control_shift),
             Some(BrowserShortcut::ReopenClosedTab)
+        );
+        assert_eq!(
+            shortcut_for_key(b'A' as usize, control_shift),
+            Some(BrowserShortcut::SearchTabs)
         );
         assert_eq!(
             shortcut_for_key(b'7' as usize, control),
@@ -127,6 +143,21 @@ mod tests {
             shortcut_for_key(0x74, KeyModifiers::default()),
             Some(BrowserShortcut::Reload)
         );
-        assert_eq!(shortcut_for_key(b'W' as usize, control_shift), None);
+        assert_eq!(
+            shortcut_for_key(b'W' as usize, control_shift),
+            Some(BrowserShortcut::CloseWindow)
+        );
+        assert_eq!(
+            shortcut_for_key(b'N' as usize, control),
+            Some(BrowserShortcut::NewWindow)
+        );
+        assert_eq!(
+            shortcut_for_key(0x21, control_shift),
+            Some(BrowserShortcut::MoveTabsLeft)
+        );
+        assert_eq!(
+            shortcut_for_key(0x22, control_shift),
+            Some(BrowserShortcut::MoveTabsRight)
+        );
     }
 }

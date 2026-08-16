@@ -86,6 +86,24 @@ impl RendererTaskRegistry {
 pub(super) type SharedRendererRegistry = Arc<Mutex<RendererTaskRegistry>>;
 
 impl BrowserState {
+    pub(super) unsafe fn ensure_renderer_monitoring(&mut self) {
+        let needs_monitor = self.tabs.iter().any(|tab| {
+            tab.renderer_session.is_some()
+                || tab.renderer_launch_pending
+                || tab.renderer_launch_receiver.is_some()
+        });
+        if needs_monitor {
+            SetTimer(
+                self.window,
+                ID_RENDERER_MONITOR_TIMER,
+                RENDERER_MONITOR_INTERVAL_MS,
+                null(),
+            );
+        } else {
+            KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+        }
+    }
+
     pub(super) unsafe fn start_renderer(&mut self) {
         self.start_renderer_for(self.tabs.active_id());
     }
@@ -108,22 +126,24 @@ impl BrowserState {
             status.last_diagnostic = None;
         });
 
-        let window = self.window as usize;
+        let tab_router = self.app.tab_router.clone();
         let (sender, receiver) = mpsc::channel();
         let spawn = std::thread::Builder::new()
             .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result =
                     RendererLaunchOptions::current_executable().and_then(RendererSession::launch);
-                if sender.send(result).is_ok() {
+                if sender.send(result).is_ok()
+                    && let Some(window) = tab_router.destination(id)
+                {
                     unsafe {
                         PostMessageW(
                             window as Hwnd,
                             WM_APP_RENDERER_LAUNCHED,
                             id.get() as usize,
                             0,
-                        )
-                    };
+                        );
+                    }
                 }
             });
         match spawn {
