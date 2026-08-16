@@ -44,7 +44,8 @@ Six deterministic entry points exercise the highest-risk owned boundaries:
 The target implementations are shared between libFuzzer and `tests/hostile_input.rs`. Stable Windows
 CI replays every committed seed on each source pull request; the scheduled/manual Linux workflow
 runs true coverage-guided libFuzzer campaigns with Rust nightly 2026-08-15, `cargo-fuzz` 0.13.2, and
-`libfuzzer-sys` 0.4.13. See `fuzz/README.md` for exact commands.
+`libfuzzer-sys` 0.4.13. Each input has a five-second timeout and each target has a 1 GiB RSS limit;
+either boundary is a failing finding. See `fuzz/README.md` for exact commands.
 
 Checked-in seeds are authored for this repository. A discovered crash or hang is not considered
 fixed until its minimized input is committed to the corresponding corpus and succeeds under stable

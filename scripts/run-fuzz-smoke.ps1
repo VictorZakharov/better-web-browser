@@ -7,6 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $toolchain = 'nightly-2026-08-15'
+$inputTimeoutSeconds = 5
+$rssLimitMb = 1024
 $targets = @(
     'html_document',
     'html_fragment',
@@ -27,6 +29,7 @@ if (-not $IsLinux) {
 }
 
 foreach ($target in $targets) {
-    & cargo "+$toolchain" fuzz run $target "fuzz/corpus/$target" -- "-max_total_time=$Seconds"
+    & cargo "+$toolchain" fuzz run $target "fuzz/corpus/$target" -- `
+        "-max_total_time=$Seconds" "-timeout=$inputTimeoutSeconds" "-rss_limit_mb=$rssLimitMb"
     if ($LASTEXITCODE -ne 0) { throw "Fuzz target failed: $target" }
 }

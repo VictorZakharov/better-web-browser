@@ -37,6 +37,10 @@ fn committed_fuzz_corpus_replays_without_panics() {
             include_bytes!("../fuzz/corpus/css_stylesheet/recovery.css"),
         ),
         (
+            fuzzing::css_stylesheet,
+            include_bytes!("../fuzz/corpus/css_stylesheet/utf8-attribute-boundary.css"),
+        ),
+        (
             fuzzing::url_resolution,
             include_bytes!("../fuzz/corpus/url_resolution/unicode.txt"),
         ),

@@ -38,7 +38,14 @@ jobs:
             ~/.cargo/registry/index
           key: linux-fuzz-registry-v1-${{ hashFiles('fuzz/Cargo.lock') }}
           restore-keys: linux-fuzz-registry-v1-
+      - name: Restore pinned cargo-fuzz executable
+        id: cargo-fuzz-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-0.13.2
       - name: Install pinned cargo-fuzz
+        if: steps.cargo-fuzz-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-fuzz --version 0.13.2 --locked
       - name: Run bounded fuzz campaign
         shell: pwsh

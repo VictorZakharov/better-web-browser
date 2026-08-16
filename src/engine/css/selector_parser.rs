@@ -215,13 +215,13 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
 pub(super) fn parse_attribute_selector(input: &str) -> Option<AttributeSelector> {
     let mut expression = input.trim();
     let mut case_insensitive = false;
-    if expression.len() >= 2 {
-        let suffix = &expression[expression.len() - 2..];
-        if suffix.eq_ignore_ascii_case(" i") {
-            case_insensitive = true;
-            expression = expression[..expression.len() - 2].trim_end();
-        } else if suffix.eq_ignore_ascii_case(" s") {
-            expression = expression[..expression.len() - 2].trim_end();
+    if let Some((modifier_start, modifier)) = expression.char_indices().next_back() {
+        let prefix = &expression[..modifier_start];
+        if matches!(modifier, 'i' | 'I' | 's' | 'S')
+            && prefix.chars().next_back().is_some_and(char::is_whitespace)
+        {
+            case_insensitive = matches!(modifier, 'i' | 'I');
+            expression = prefix.trim_end();
         }
     }
 
@@ -292,5 +292,32 @@ pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specific
             tags: 1,
             ..Specificity::default()
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fuzz_regression_non_ascii_attribute_suffix_does_not_panic() {
+        let attribute = parse_attribute_selector("data-value=\"x\"�").unwrap();
+
+        assert_eq!(attribute.name, "data-value");
+        assert!(!attribute.case_insensitive);
+    }
+
+    #[test]
+    fn attribute_modifiers_accept_css_whitespace_without_byte_slicing() {
+        assert!(
+            parse_attribute_selector("data-value=\"x\"\tI")
+                .unwrap()
+                .case_insensitive
+        );
+        assert!(
+            !parse_attribute_selector("data-value=\"x\"\nS")
+                .unwrap()
+                .case_insensitive
+        );
     }
 }
