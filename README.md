@@ -18,6 +18,9 @@ optimization enabled but trades release LTO and single-unit code generation for 
 parallel compilation. Reproducible performance claims and distributable binaries always use the
 canonical `release` profile.
 
+The local rebuild and GitHub Actions timing methodology, latest measurements, and remaining CI
+critical path are recorded in [docs/build-performance.md](docs/build-performance.md).
+
 The normal page surface is always the default. **Reader** is an explicit optional feature; navigating or reloading returns to the normal page surface.
 
 Current page support includes:
