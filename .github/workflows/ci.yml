@@ -97,8 +97,11 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-v2-
+            ~/.cargo/registry/src
+          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-registry-v3-
+            windows-cargo-registry-v2-
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
@@ -123,8 +126,11 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-v2-
+            ~/.cargo/registry/src
+          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-registry-v3-
+            windows-cargo-registry-v2-
       - name: Test
         run: >-
           cargo test --lib --bin better-web-browser
@@ -152,8 +158,11 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-          key: windows-cargo-registry-v2-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-cargo-registry-v2-
+            ~/.cargo/registry/src
+          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-registry-v3-
+            windows-cargo-registry-v2-
       - name: Restore pinned WPT fixtures
         id: wpt-cache
         uses: actions/cache@v6
@@ -170,7 +179,7 @@ jobs:
         run: cargo test --bin wpt-runner
       - name: Run curated WPT suite headlessly
         shell: pwsh
-        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 4
+        run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
 
   windows:
     name: windows
