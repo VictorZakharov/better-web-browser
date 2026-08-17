@@ -59,23 +59,41 @@ fn hidden_contained_renderer_handshakes_pings_and_shuts_down() {
 }
 
 #[test]
-fn concurrent_tab_renderers_remain_independent() {
+fn crashed_tab_renderer_preserves_its_sibling_and_can_be_reloaded() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut first = RendererSession::launch(options()).expect("launch first tab renderer");
+    let first = RendererSession::launch(options()).expect("launch first tab renderer");
     let mut second = RendererSession::launch(options()).expect("launch second tab renderer");
     let first_snapshot = first.snapshot();
     let second_snapshot = second.snapshot();
     assert_ne!(first_snapshot.process_id, second_snapshot.process_id);
     assert_ne!(first_snapshot.session_id, second_snapshot.session_id);
 
-    second.shutdown().expect("shutdown second tab renderer");
-    first
+    first.send_test_command(TestCommand::Crash).unwrap();
+    let crash = first.wait_for_exit(Duration::from_secs(3)).unwrap();
+    assert_eq!(crash.reason, RendererExitReason::Crash);
+    let surface = crash
+        .crash_surface()
+        .expect("browser-owned crashed-tab surface");
+    assert!(surface.can_reload);
+    assert!(surface.detail.contains("crashed"));
+    drop(first);
+
+    second
         .ping(Duration::from_secs(1))
-        .expect("first tab renderer remains responsive");
-    assert_eq!(first.snapshot().state, RendererState::Running);
-    first.shutdown().expect("shutdown first tab renderer");
+        .expect("sibling tab renderer remains responsive");
+    assert_eq!(second.snapshot().state, RendererState::Running);
+
+    let mut replacement = RendererSession::launch(options()).expect("reload crashed tab renderer");
+    replacement
+        .ping(Duration::from_secs(1))
+        .expect("replacement renderer is responsive");
+    assert_ne!(replacement.snapshot().process_id, first_snapshot.process_id);
+    replacement
+        .shutdown()
+        .expect("shutdown replacement renderer");
+    second.shutdown().expect("shutdown sibling tab renderer");
 }
 
 #[test]

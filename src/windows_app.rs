@@ -12,6 +12,7 @@ mod document_activation;
 mod document_navigation;
 mod layout_damage;
 mod page_controls;
+mod page_crash;
 mod paint_index;
 mod paint_primitives;
 mod painting;

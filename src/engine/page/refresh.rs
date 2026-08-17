@@ -51,7 +51,7 @@ impl Page {
             .map(|root| Node::descendants(&root).count())
             .unwrap_or_else(|| Node::descendants(&self.dom.document).count());
         let cached = self.cached_styles.take();
-        let (styles, style_stats) = match cached {
+        let (mut styles, style_stats) = match cached {
             Some((cached_width, mut styles))
                 if !invalidation.rebuild_style_rules
                     && (cached_width - viewport_width).abs() < 0.5 =>
@@ -104,7 +104,12 @@ impl Page {
         let mut requested_faces = Vec::<(String, u16, bool)>::new();
         let mut discovered_style_images = 0_usize;
         for node in Node::descendants(&self.dom.document) {
-            let style = styles.get(&node);
+            // Dynamic DOM work can connect a previously detached subtree at a rendering
+            // checkpoint. Hydrate any missing ancestor chain defensively instead of letting a
+            // stale incremental root turn untrusted page input into a browser-process panic.
+            let Some(style) = styles.computed_style_for_node(&node) else {
+                continue;
+            };
             if style.display == Display::None || !style.visibility {
                 continue;
             }

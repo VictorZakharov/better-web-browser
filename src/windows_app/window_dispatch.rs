@@ -6,6 +6,7 @@ use super::tabs::{KeyModifiers, TabId, TabStripHit};
 use super::*;
 use input::reroute_tab_message;
 pub(super) use input::{chrome_control_proc, dispatch_browser_input};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub(super) unsafe extern "system" fn main_window_proc(
     window: Hwnd,
@@ -32,6 +33,41 @@ pub(super) unsafe extern "system" fn main_window_proc(
     }
     let state = &mut *state_pointer;
 
+    if matches!(message, WM_CREATE | WM_CLOSE | WM_DESTROY | WM_NCDESTROY) {
+        return dispatch_window_message(state_pointer, state, window, message, wparam, lparam);
+    }
+    match catch_unwind(AssertUnwindSafe(|| {
+        dispatch_window_message(state_pointer, state, window, message, wparam, lparam)
+    })) {
+        Ok(result) => result,
+        Err(payload) => {
+            let id = if matches!(
+                message,
+                WM_APP_PAGE_LOADED
+                    | WM_APP_DEFERRED_RESOURCES
+                    | WM_APP_ASYNC_SCRIPT
+                    | WM_APP_SCRIPT_FETCH
+                    | WM_APP_WORKER_EVENT
+                    | WM_APP_RENDERER_LAUNCHED
+            ) {
+                TabId::from_message(wparam).unwrap_or_else(|| state.tabs.active_id())
+            } else {
+                state.tabs.active_id()
+            };
+            state.contain_page_engine_failure(id, super::page_crash::panic_detail(payload));
+            0
+        }
+    }
+}
+
+unsafe fn dispatch_window_message(
+    state_pointer: *mut BrowserState,
+    state: &mut BrowserState,
+    window: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+) -> Lresult {
     match message {
         WM_CREATE => {
             if state.create_controls().is_err() {

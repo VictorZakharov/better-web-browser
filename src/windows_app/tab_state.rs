@@ -126,6 +126,33 @@ impl BrowserTab {
             .map(String::as_str)
             .filter(|url| !url.is_empty())
     }
+
+    pub(super) fn mark_crashed(&mut self, status: String) {
+        self.generation = self.generation.wrapping_add(1);
+        self.loading = false;
+        self.crashed = true;
+        self.status_text = status;
+        self.document_fetch.abort();
+        for (_, controller) in self.script_fetches.drain() {
+            controller.abort();
+        }
+        self.queued_script_fetches.clear();
+        self.pending_async_scripts.clear();
+        for (_, worker) in self.workers.drain() {
+            worker.terminate();
+        }
+        if let Some(mut runtime) = self.script_runtime.take() {
+            runtime.cancel_document();
+        }
+        self.script_runtime_clock = None;
+        self.post_load_script_not_before = None;
+        self.page_controls.clear();
+        if let Some(session) = self.renderer_session.take() {
+            session.terminate_in_background();
+        }
+        self.renderer_launch_receiver.take();
+        self.renderer_launch_pending = false;
+    }
 }
 
 impl IdentifiedTab for BrowserTab {
@@ -148,7 +175,9 @@ impl Drop for BrowserTab {
         if let Some(mut runtime) = self.script_runtime.take() {
             runtime.cancel_document();
         }
-        self.renderer_session.take();
+        if let Some(session) = self.renderer_session.take() {
+            session.terminate_in_background();
+        }
         self.renderer_launch_receiver.take();
     }
 }
@@ -218,5 +247,30 @@ mod tests {
         tabs.activate(second);
         assert_eq!(tabs.active().current_url(), Some("https://second.example/"));
         assert_eq!(tabs.active().scroll_y, 17);
+    }
+
+    #[test]
+    fn crashing_one_tab_cancels_only_its_page_state() {
+        let mut tabs = TabCollection::new(BrowserTab::new(TabId::first()));
+        tabs.active_mut().loading = true;
+        let sibling = tabs.add(true, BrowserTab::new).unwrap();
+        tabs.active_mut()
+            .history
+            .push("https://sibling.example/".into());
+
+        tabs.activate(TabId::first());
+        tabs.active_mut()
+            .mark_crashed("Renderer crashed. Reload to try again.".into());
+
+        assert!(tabs.active().crashed);
+        assert!(!tabs.active().loading);
+        assert!(tabs.active().script_runtime.is_none());
+        assert!(tabs.active().status_text.contains("Reload"));
+        tabs.activate(sibling);
+        assert!(!tabs.active().crashed);
+        assert_eq!(
+            tabs.active().current_url(),
+            Some("https://sibling.example/")
+        );
     }
 }

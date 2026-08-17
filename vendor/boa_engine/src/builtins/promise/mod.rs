@@ -2266,15 +2266,15 @@ fn new_promise_reaction_job(
                 }
             },
             //   e. Else, let handlerResult be Completion(HostCallJobCallback(handler, undefined, « argument »)).
-            Some(handler) => context
-                .host_hooks()
-                .call_job_callback(
+            Some(handler) => match context.host_hooks().call_job_callback(
                     handler,
                     &JsValue::undefined(),
                     std::slice::from_ref(&argument),
                     context,
-                )
-                .map_err(|e| e.to_opaque(context)),
+                ) {
+                    Ok(value) => Ok(value),
+                    Err(error) => Err(error.into_opaque(context)?),
+                },
         };
 
         match promise_capability {
@@ -2356,7 +2356,7 @@ fn new_promise_resolve_thenable_job(
 
         //    c. If thenCallResult is an abrupt completion, then
         if let Err(value) = then_call_result {
-            let value = value.to_opaque(context);
+            let value = value.into_opaque(context)?;
             //    i. Return ? Call(resolvingFunctions.[[Reject]], undefined, « thenCallResult.[[Value]] »).
             return resolving_functions
                 .reject

@@ -360,6 +360,7 @@ impl BrowserState {
         }
         self.tabs.activate(id);
         self.processing_background_tab = true;
+        self.background_tab_origin = Some(original);
         process(self);
         KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
         for control in &self.page_controls {
@@ -367,6 +368,7 @@ impl BrowserState {
         }
         self.tabs.activate(original);
         self.processing_background_tab = false;
+        self.background_tab_origin = None;
         let retained_items = match self.surface {
             Surface::Page => self.page_layout.items.len(),
             Surface::Reader => self.draw_items.len(),

@@ -348,7 +348,7 @@ fn exposes_legacy_substr_for_web_compatibility() {
 }
 
 #[test]
-fn contains_evaluator_panics_in_promise_jobs() {
+fn propagates_uncatchable_runtime_limits_from_promise_jobs() {
     let (_, outcome) = execute_html(
         r#"<script>
             Promise.resolve().then(() => { for (;;) {} });
@@ -358,12 +358,11 @@ fn contains_evaluator_panics_in_promise_jobs() {
         outcome
             .errors
             .iter()
-            .any(|error| error.contains("stopped safely")
-                || error.contains("maximum number of iteration loops")),
+            .any(|error| error.contains("loop iteration limit")),
         "{:?}",
         outcome.errors
     );
-    assert!(outcome.runtime_stopped);
+    assert!(!outcome.runtime_stopped);
 }
 
 #[test]

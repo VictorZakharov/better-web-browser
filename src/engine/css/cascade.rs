@@ -170,10 +170,21 @@ impl StyleSet {
     }
 
     fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
-        let style = self.compute_style(node, parent);
-        self.styles.insert(node_id(node), style.clone());
-        for child in node.children.borrow().iter() {
-            self.compute_subtree(child, Some(&style));
+        let root = node_id(node);
+        let mut pending = vec![node.clone()];
+        while let Some(node) = pending.pop() {
+            let style = if node_id(&node) == root {
+                self.compute_style(&node, parent)
+            } else {
+                let parent = node.parent().expect("connected subtree child has a parent");
+                let parent_style = self
+                    .styles
+                    .get(&node_id(&parent))
+                    .expect("parent style is computed before its children");
+                self.compute_style(&node, Some(parent_style))
+            };
+            self.styles.insert(node_id(&node), style);
+            pending.extend(node.children.borrow().iter().rev().cloned());
         }
     }
 
@@ -183,23 +194,34 @@ impl StyleSet {
         parent: Option<&ComputedStyle>,
         stats: &mut StyleRefreshStats,
     ) {
-        let style = self.compute_style(node, parent);
-        stats.invalidated_nodes += 1;
-        stats.recomputed_styles += 1;
-        match self.styles.get(&node_id(node)) {
-            Some(previous) if previous != &style => {
-                stats.changed_styles += 1;
-                stats.layout_changed |= !previous.layout_equivalent(&style);
+        let root = node_id(node);
+        let mut pending = vec![node.clone()];
+        while let Some(node) = pending.pop() {
+            let style = if node_id(&node) == root {
+                self.compute_style(&node, parent)
+            } else {
+                let parent = node.parent().expect("connected subtree child has a parent");
+                let parent_style = self
+                    .styles
+                    .get(&node_id(&parent))
+                    .expect("parent style is recomputed before its children");
+                self.compute_style(&node, Some(parent_style))
+            };
+            stats.invalidated_nodes += 1;
+            stats.recomputed_styles += 1;
+            match self.styles.get(&node_id(&node)) {
+                Some(previous) if previous != &style => {
+                    stats.changed_styles += 1;
+                    stats.layout_changed |= !previous.layout_equivalent(&style);
+                }
+                None => {
+                    stats.changed_styles += 1;
+                    stats.layout_changed = true;
+                }
+                _ => {}
             }
-            None => {
-                stats.changed_styles += 1;
-                stats.layout_changed = true;
-            }
-            _ => {}
-        }
-        self.styles.insert(node_id(node), style.clone());
-        for child in node.children.borrow().iter() {
-            self.recompute_subtree(child, Some(&style), stats);
+            self.styles.insert(node_id(&node), style);
+            pending.extend(node.children.borrow().iter().rev().cloned());
         }
     }
 
@@ -335,4 +357,38 @@ fn parse_html_length(value: &str) -> Option<Length> {
 
 fn node_id(node: &NodeRef) -> NodeId {
     node.id()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::limits::MAX_DOM_DEPTH;
+
+    #[test]
+    fn computes_the_bounded_maximum_dom_depth_without_recursive_style_walks() {
+        let mut html = String::from("<main>");
+        for _ in 0..MAX_DOM_DEPTH + 32 {
+            html.push_str("<div>");
+        }
+        for _ in 0..MAX_DOM_DEPTH + 32 {
+            html.push_str("</div>");
+        }
+        let dom = dom::parse(&html);
+        let node_count = Node::descendants(&dom.document).count();
+        let styles = StyleSet::from_dom(&dom, &[], 800.0);
+
+        assert_eq!(styles.styles.len(), node_count);
+    }
+
+    #[test]
+    fn lazily_hydrates_a_newly_connected_subtree() {
+        let dom = dom::parse("<main></main>");
+        let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+        let main = dom.elements_named("main").next().unwrap();
+        let child = Node::create_element_for(&dom.document, "section");
+        assert!(Node::append_child(&main, child.clone()));
+
+        assert!(styles.computed_style_for_node(&child).is_some());
+        assert!(styles.styles.contains_key(&child.id()));
+    }
 }
