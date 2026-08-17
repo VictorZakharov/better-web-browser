@@ -249,6 +249,7 @@ fn script_inputs(dom: &dom::Dom) -> Vec<ScriptInput> {
             source_url: "https://example.com/#inline".into(),
             code: node.text_content(),
             node,
+            kind: crate::engine::script::ScriptKind::Classic,
             finish_lifecycle: true,
         })
         .collect()
@@ -264,6 +265,7 @@ fn input(
         node: node.clone(),
         source_url: format!("https://example.com/{source}"),
         code: code.into(),
+        kind: crate::engine::script::ScriptKind::Classic,
         finish_lifecycle,
     }
 }

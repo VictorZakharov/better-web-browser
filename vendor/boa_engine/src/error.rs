@@ -1,7 +1,7 @@
 //! Error-related types and conversions.
 
 use crate::{
-    Context, JsString, JsValue,
+    Context, JsResult, JsString, JsValue,
     builtins::{
         Array,
         error::{Error, ErrorKind},
@@ -377,6 +377,17 @@ impl JsError {
             Repr::Native(e) => e.to_opaque(context).into(),
             Repr::Opaque(v) => v.clone(),
         }
+    }
+
+    /// Converts a catchable error to its opaque JavaScript value.
+    ///
+    /// Runtime-limit errors are engine control flow and must propagate to the Rust caller instead
+    /// of becoming catchable JavaScript exceptions. This mirrors Boa's post-0.21 error API.
+    pub(crate) fn into_opaque(self, context: &mut Context) -> JsResult<JsValue> {
+        if !self.is_catchable() {
+            return Err(self);
+        }
+        Ok(self.to_opaque(context))
     }
 
     /// Unwraps the inner error if this contains a native error.

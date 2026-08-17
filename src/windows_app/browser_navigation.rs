@@ -44,6 +44,13 @@ impl BrowserState {
             };
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
+            for (_, controller) in tab.script_fetches.drain() {
+                controller.abort();
+            }
+            tab.queued_script_fetches.clear();
+            for (_, worker) in tab.workers.drain() {
+                worker.terminate();
+            }
             if let Some(mut runtime) = tab.script_runtime.take() {
                 runtime.cancel_document();
             }

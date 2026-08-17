@@ -28,7 +28,8 @@ Current page support includes:
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and webfonts
-- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, startup timers, dynamically inserted classic scripts, navigation, storage, and cookies
+- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, storage, and cookies
+- JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
@@ -139,9 +140,9 @@ quiet period.
 
 ### Web-platform regression suite
 
-A pinned, curated 30-case Web Platform Test suite covers HTML parsing, DOM, events, event-loop ordering,
-URLs, and the CSS cascade. Upstream fixtures stay in a separate sparse WPT checkout; after preparing
-that checkout, the suite runs offline with one hidden command. All 30 cases pass at the pinned
+A pinned, curated 70-case Web Platform Test suite covers HTML parsing, DOM, events, abort signals,
+event-loop ordering, URLs, Web IDL, Fetch, XHR, modules, and the CSS cascade. Upstream fixtures stay
+in a separate sparse WPT checkout; after preparing that checkout, the suite runs offline with one hidden command. All 70 cases pass at the pinned
 revision, with no expected-failure or timeout allowances:
 
 ```powershell
@@ -173,14 +174,17 @@ workspace and scheduled Linux workflow; see [fuzz/README.md](fuzz/README.md).
 ## Honest current limitations
 
 - Windows-only native shell
-- JavaScript and cookies implement only an early subset; the Fetch policy foundation exists, but the JavaScript `fetch`/XHR APIs, modules, workers, and much of the browser API surface remain incomplete
-- The JavaScript realm is retained on the document's UI thread for timer and script-completion tasks, but fetch/XHR, user-input task dispatch, and other event-loop sources remain incomplete
+- The JavaScript networking core now includes RFC-oriented cookies, Fetch/XHR, body streams, static module graphs with top-level await, and dedicated classic/module workers; progressive network-to-JavaScript streaming, dynamic imports/import maps, Shared/Service Workers, and much of the wider browser API surface remain incomplete
+- The JavaScript realm is retained on the document's UI thread for timer, script, Fetch/XHR, and worker-completion tasks, but user-input task dispatch and many other HTML event-loop task sources remain incomplete
 - JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
 - Canvas, media, downloads, accessibility, text selection, tab-session persistence, and site isolation are not implemented yet
 - CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
 - External classic `async` scripts execute on arrival without delaying page-ready, but their fetch currently starts after first paint instead of overlapping HTML parsing; `defer` scheduling is not yet modeled separately
 - Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
 - No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
+
+See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
+implemented contracts, ownership model, standards references, and narrower remaining boundaries.
 
 The public blog page used above is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
 

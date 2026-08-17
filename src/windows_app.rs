@@ -12,6 +12,7 @@ mod document_activation;
 mod document_navigation;
 mod layout_damage;
 mod page_controls;
+mod page_crash;
 mod paint_index;
 mod paint_primitives;
 mod painting;
@@ -24,6 +25,8 @@ mod rendering_resources;
 mod resources;
 mod runtime;
 mod runtime_metrics;
+mod script_fetches;
+mod script_mime;
 mod scrolling;
 mod tab_drag;
 mod tab_management;
@@ -35,14 +38,16 @@ mod task_manager;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
+mod worker_threads;
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
     ControlKind, DecodedImage, DisplayItem, DisplayListDamage, FontSpec, LayoutOutput, Page,
-    PageResource, ScriptOutcome, ScriptRuntime, StyleRefreshStats, TextMeasurer, WebFont,
-    layout_page_with_style_viewport,
+    PageResource, ScriptFetchAction, ScriptOutcome, ScriptRuntime, ScriptWorkerAction,
+    StyleRefreshStats, TextMeasurer, WebFont, WorkerRuntime, WorkerRuntimeOutcome,
+    WorkerSourceLoader, layout_page_with_style_viewport,
 };
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};

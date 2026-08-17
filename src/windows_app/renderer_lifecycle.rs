@@ -296,10 +296,10 @@ impl BrowserState {
                 )
             });
             if let Some(tab) = self.tabs.get_mut(id) {
-                tab.renderer_session.take();
-                tab.crashed = true;
                 if let Some(status) = status.as_ref() {
-                    tab.status_text.clone_from(status);
+                    tab.mark_crashed(status.clone());
+                } else {
+                    tab.renderer_session.take();
                 }
             }
             if self.tabs.active_id() == id
@@ -347,10 +347,9 @@ impl BrowserState {
 
     unsafe fn record_renderer_launch_failure(&mut self, id: TabId, error: String) {
         let title = if let Some(tab) = self.tabs.get_mut(id) {
-            tab.renderer_launch_receiver = None;
-            tab.renderer_launch_pending = false;
-            tab.crashed = true;
-            tab.status_text = format!("Renderer unavailable: {error}");
+            tab.mark_crashed(format!(
+                "Renderer unavailable: {error}. Reload to try again."
+            ));
             tab.title.clone()
         } else {
             return;

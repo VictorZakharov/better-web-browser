@@ -211,6 +211,22 @@ impl RendererSession {
             .map_err(|_| "renderer broker has exited".to_string())
     }
 
+    /// Requests immediate renderer termination without waiting on the caller's thread.
+    ///
+    /// Browser UI recovery paths use this instead of `Drop`, whose graceful shutdown wait is
+    /// intentionally bounded but can still take several seconds for an unresponsive renderer.
+    pub fn terminate_in_background(mut self) {
+        let _ = self.commands.send(worker::BrokerCommand::Terminate);
+        let Some(worker) = self.worker.take() else {
+            return;
+        };
+        let _ = std::thread::Builder::new()
+            .name("breeze-renderer-reaper".into())
+            .spawn(move || {
+                let _ = worker.join();
+            });
+    }
+
     #[doc(hidden)]
     pub fn close_job_for_test(&self) -> Result<(), String> {
         let (reply, response) = mpsc::channel();

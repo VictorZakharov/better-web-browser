@@ -91,6 +91,14 @@ impl FixtureResponse {
             delay,
         }
     }
+
+    pub(super) fn json(body: &'static str) -> Self {
+        Self {
+            content_type: "application/json; charset=utf-8",
+            body,
+            delay: Duration::ZERO,
+        }
+    }
 }
 
 pub(super) fn serve_parallel_fixtures(

@@ -8,6 +8,33 @@ fn status_after_script(body: &str) -> String {
 }
 
 #[test]
+fn dom_exception_exposes_web_idl_legacy_codes_and_constants() {
+    let status = status_after_script(
+        r#"<script>
+            const syntax = new DOMException('bad input', 'SyntaxError');
+            const modern = new DOMException('not allowed', 'NotAllowedError');
+            Object.defineProperty(syntax, 'name', { value: 'WrongDocumentError' });
+            const getter = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name').get;
+            let brandCheck = '';
+            try { getter.call({}); } catch (error) { brandCheck = error.name; }
+            document.getElementById('status').textContent = [
+                syntax.name, syntax.message, syntax.code, syntax instanceof Error,
+                Object.prototype.toString.call(syntax), syntax.hasOwnProperty('message'),
+                modern.code, DOMException.SYNTAX_ERR,
+                DOMException.prototype.SECURITY_ERR,
+                Object.getOwnPropertyDescriptor(DOMException, 'SYNTAX_ERR').writable,
+                Object.getOwnPropertyDescriptor(window, 'DOMException').enumerable,
+                brandCheck,
+            ].join('|');
+        </script>"#,
+    );
+    assert_eq!(
+        status,
+        "WrongDocumentError|bad input|12|true|[object DOMException]|false|0|12|18|false|false|TypeError"
+    );
+}
+
+#[test]
 fn dispatches_capture_target_and_bubble_phases_with_current_targets() {
     let status = status_after_script(
         r#"<div id="outer"><div id="parent"><button id="target"></button></div></div>

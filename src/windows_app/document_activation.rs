@@ -1,9 +1,8 @@
 //! Commits a loaded document and establishes its first-paint runtime state.
 
 use super::browser_navigation::HistoryMode;
-use super::resources::{ResourceLoadContext, fetch_document_resource, load_page_resources};
+use super::resources::{ResourceLoadContext, fetch_script_source, load_page_resources};
 use super::*;
-use better_web_browser::fetch::RequestDestination;
 
 pub(super) struct LoadedPage {
     pub page: Page,
@@ -75,16 +74,11 @@ impl BrowserState {
             };
         let script_started = Instant::now();
         let (mut runtime, mut script_outcome) = {
-            let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
+            let mut dynamic_script_loader = |url: &str, kind| -> Result<String, String> {
                 let request_started = Instant::now();
-                let response = fetch_document_resource(
-                    &client,
-                    &fetch_signal,
-                    &document_url,
-                    url,
-                    RequestDestination::Script,
-                )
-                .map_err(|error| error.to_string());
+                let response =
+                    fetch_script_source(&client, &fetch_signal, &document_url, url, kind)
+                        .map_err(|error| error.to_string());
                 additional_network_time += request_started.elapsed();
                 let response = response?;
                 if !response.is_success() {
@@ -238,7 +232,11 @@ impl BrowserState {
                     .is_some_and(|benchmark| benchmark.early_scroll.is_some()),
             );
         }
+        let fetch_actions = std::mem::take(&mut script_outcome.fetch_actions);
+        let worker_actions = std::mem::take(&mut script_outcome.worker_actions);
         self.install_script_runtime(runtime);
+        self.apply_script_fetch_actions(fetch_actions);
+        self.apply_worker_actions(worker_actions);
         self.begin_async_scripts();
         let deferred_resources = self.unloaded_deferred_resources();
         self.begin_deferred_resources(deferred_resources);

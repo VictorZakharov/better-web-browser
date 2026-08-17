@@ -89,6 +89,43 @@ impl BrowserState {
             bottom: (client.bottom - self.status_height()).max(toolbar_height),
         };
         let tab = self.tabs.active_mut();
+        if tab.crashed {
+            FillRect(dc, &content, content_brush);
+            SetBkMode(dc, TRANSPARENT);
+            if let Some(fonts) = fonts {
+                let left = content.left + (48.0 * scale).round() as i32;
+                let top = content.top + (96.0 * scale).round() as i32;
+                let mut heading = Rect {
+                    left,
+                    top,
+                    right: content.right - (48.0 * scale).round() as i32,
+                    bottom: top + (52.0 * scale).round() as i32,
+                };
+                SelectObject(dc, fonts.heading2);
+                SetTextColor(dc, rgb(160, 36, 36));
+                draw_text_in_rect(
+                    dc,
+                    "This page stopped",
+                    &mut heading,
+                    DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                );
+                let mut detail = Rect {
+                    top: heading.bottom + (12.0 * scale).round() as i32,
+                    bottom: heading.bottom + (52.0 * scale).round() as i32,
+                    ..heading
+                };
+                SelectObject(dc, fonts.body);
+                SetTextColor(dc, CHROME_THEME.text);
+                draw_text_in_rect(
+                    dc,
+                    &tab.status_text,
+                    &mut detail,
+                    DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+                );
+            }
+            self.paint_chrome(dc, client);
+            return;
+        }
         match tab.surface {
             Surface::Page => {
                 fill_color_rect(dc, &content, tab.page_layout.background.to_colorref())

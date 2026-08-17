@@ -1,5 +1,6 @@
 // These responsibility-based chunks share one IIFE and are concatenated before Boa parses them.
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
+    include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/core.js"),
     include_str!("bootstrap/events.js"),
     include_str!("bootstrap/nodes.js"),
@@ -8,4 +9,12 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/document.js"),
     include_str!("bootstrap/platform.js"),
     include_str!("bootstrap/tasks.js"),
+    include_str!("bootstrap/streams.js"),
+    include_str!("bootstrap/network_data.js"),
+    include_str!("bootstrap/network_body.js"),
+    include_str!("bootstrap/network_types.js"),
+    include_str!("bootstrap/network_fetch.js"),
+    include_str!("bootstrap/network_xhr.js"),
+    include_str!("bootstrap/structured_clone.js"),
+    include_str!("bootstrap/workers.js"),
 );

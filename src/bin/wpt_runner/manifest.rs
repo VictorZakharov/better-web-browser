@@ -40,7 +40,7 @@ pub(crate) struct TestCase {
 
 impl TestCase {
     pub(crate) fn needs_wrapper(&self) -> bool {
-        self.path.ends_with(".any.js") || self.path.ends_with(".window.js")
+        self.path.ends_with(".js")
     }
 }
 
@@ -100,6 +100,8 @@ impl Manifest {
 
         let mut required = vec!["resources/testharness.js".to_string()];
         required.extend(tests.iter().map(|test| test.path.clone()));
+        required.sort();
+        required.dedup();
         for relative in &required {
             let path = root.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
             if !path.is_file() {
@@ -157,24 +159,25 @@ impl Manifest {
     }
 }
 
-fn validate_test(test: &TestCase) -> Result<(), String> {
-    let path = Path::new(&test.path);
-    if test.path.contains('\\')
+fn validate_fixture_path(value: &str) -> Result<(), String> {
+    let path = Path::new(value);
+    if value.contains('\\')
         || path.is_absolute()
         || path
             .components()
             .any(|part| !matches!(part, Component::Normal(_)))
-        || !test
-            .path
+        || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"/-_.".contains(&byte))
     {
-        return Err(format!("unsafe or unsupported WPT path: {}", test.path));
+        return Err(format!("unsafe or unsupported WPT fixture path: {value}"));
     }
-    if !(test.path.ends_with(".html")
-        || test.path.ends_with(".htm")
-        || test.path.ends_with(".any.js")
-        || test.path.ends_with(".window.js"))
+    Ok(())
+}
+
+fn validate_test(test: &TestCase) -> Result<(), String> {
+    validate_fixture_path(&test.path)?;
+    if !(test.path.ends_with(".html") || test.path.ends_with(".htm") || test.path.ends_with(".js"))
     {
         return Err(format!("unsupported WPT test type: {}", test.path));
     }
@@ -246,6 +249,7 @@ mod tests {
     #[test]
     fn recognizes_javascript_wrappers() {
         assert!(case("url/a.any.js", ExpectedStatus::Pass, None).needs_wrapper());
+        assert!(case("fetch/cloned-any.js", ExpectedStatus::Pass, None).needs_wrapper());
         assert!(!case("dom/a.html", ExpectedStatus::Pass, None).needs_wrapper());
     }
 }

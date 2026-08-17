@@ -9,6 +9,7 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
             source_url: "https://example.com/#inline".into(),
             code: node.text_content(),
             node,
+            kind: ScriptKind::Classic,
             finish_lifecycle: true,
         })
         .collect::<Vec<_>>();
@@ -19,5 +20,9 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
 mod bindings;
 mod compatibility;
 mod events;
+mod modules;
 mod mutations;
+mod network;
+mod network_body;
 mod tasks;
+mod workers;

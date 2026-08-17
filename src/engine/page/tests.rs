@@ -237,7 +237,8 @@ fn discovers_external_scripts_and_executes_dom_mutations() {
         "https://example.com/start",
     );
     assert!(page.resources.contains(&PageResource::Script {
-        url: "https://example.com/library.js".into()
+        url: "https://example.com/library.js".into(),
+        kind: ScriptKind::Classic,
     }));
     page.add_script(
         "https://example.com/library.js",
@@ -253,6 +254,23 @@ fn discovers_external_scripts_and_executes_dom_mutations() {
 }
 
 #[test]
+fn discovers_module_scripts_as_cors_fetched_deferred_scripts() {
+    let page = Page::parse_scripted(
+        r#"<script type="module" src="/app.js"></script>
+            <script type="application/json">{"ignored":true}</script>"#,
+        "https://example.com/start",
+    );
+
+    assert_eq!(page.scripts.len(), 1);
+    assert_eq!(page.scripts[0].kind, ScriptKind::Module);
+    assert!(page.scripts[0].blocks_first_paint);
+    assert!(page.resources.contains(&PageResource::Script {
+        url: "https://example.com/app.js".into(),
+        kind: ScriptKind::Module,
+    }));
+}
+
+#[test]
 fn keeps_async_scripts_off_the_first_paint_path() {
     let mut page = Page::parse_scripted(
         r#"
@@ -264,9 +282,11 @@ fn keeps_async_scripts_off_the_first_paint_path() {
     );
     let analytics = PageResource::Script {
         url: "https://example.com/analytics.js".into(),
+        kind: ScriptKind::Classic,
     };
     let application = PageResource::Script {
         url: "https://example.com/application.js".into(),
+        kind: ScriptKind::Classic,
     };
     let hero = PageResource::Image {
         url: "https://example.com/hero.png".into(),
@@ -311,7 +331,8 @@ fn retained_first_paint_runtime_mutates_the_same_page_after_load() {
             "#,
         "https://example.com/",
     );
-    let mut unused_loader = |_url: &str| Err("unexpected dynamic script".to_string());
+    let mut unused_loader =
+        |_url: &str, _kind: ScriptKind| Err("unexpected dynamic script".to_string());
     let (runtime, initial) = page.start_first_paint_script_runtime_with_loader(&mut unused_loader);
     let mut runtime = runtime.expect("a loaded script should retain its realm");
 
@@ -349,7 +370,8 @@ fn async_only_page_retains_an_empty_realm_for_later_execution() {
         r#"<body><div id="status">initial</div><script async src="later.js"></script>"#,
         "https://example.com/",
     );
-    let mut unused_loader = |_url: &str| Err("unexpected dynamic script".to_string());
+    let mut unused_loader =
+        |_url: &str, _kind: ScriptKind| Err("unexpected dynamic script".to_string());
     let (runtime, initial) = page.start_first_paint_script_runtime_with_loader(&mut unused_loader);
 
     assert!(initial.errors.is_empty(), "{:?}", initial.errors);
@@ -360,6 +382,7 @@ fn async_only_page_retains_an_empty_realm_for_later_execution() {
         node: script.node.clone(),
         source_url: script.source_url.clone(),
         code: "document.body.textContent = document.readyState;".into(),
+        kind: super::super::script::ScriptKind::Classic,
         finish_lifecycle: false,
     };
     let outcome = runtime.execute_additional_with_loader(&[later], None);

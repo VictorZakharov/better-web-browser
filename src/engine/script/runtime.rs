@@ -1,9 +1,11 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
+use super::dynamic_scripts::drain_dynamic_scripts;
 use super::execution::{
-    append_timer_summary, execute_additional_inner, execute_inner, finish_host,
-    inactive_runtime_outcome, lifecycle_error, panic_detail, settle_timer_slice,
-    stopped_runtime_outcome,
+    append_timer_summary, execute_additional_inner, execute_inner, settle_timer_slice,
+};
+use super::runtime_guard::{
+    finish_host, inactive_runtime_outcome, lifecycle_error, panic_detail, stopped_runtime_outcome,
 };
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -28,12 +30,19 @@ impl ScriptRuntime {
         document_url: &str,
         character_set: &str,
     ) -> Self {
+        let module_loader = Rc::new(super::module_loader::WebModuleLoader::new());
         let host = Rc::new(RefCell::new(HostState::new(
             document,
             document_url,
             character_set,
+            Rc::clone(&module_loader),
         )));
-        let mut context = Box::new(Context::default());
+        let mut context = Box::new(
+            Context::builder()
+                .module_loader(module_loader)
+                .build()
+                .expect("the default JavaScript context configuration is valid"),
+        );
         context.insert_data(HostStateLink(Rc::downgrade(&host)));
         Self {
             context: Some(context),
@@ -169,6 +178,78 @@ impl ScriptRuntime {
         self.finish_guarded_run(result)
     }
 
+    /// Delivers one asynchronous Fetch result into this document's retained realm.
+    pub fn complete_fetch_with_loader(
+        &mut self,
+        id: u32,
+        result: Result<crate::fetch::FetchResponse, crate::fetch::FetchError>,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let mut outcome = ScriptOutcome::default();
+            if let Err(error) = super::network::deliver_completion(context, id, result) {
+                outcome
+                    .errors
+                    .push(format!("Fetch completion callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            drain_dynamic_scripts(
+                context,
+                &host,
+                &mut outcome,
+                &mut dynamic_script_loader,
+                &mut self.total_script_bytes,
+            );
+            append_timer_summary(&host, &mut outcome);
+            outcome
+        }));
+        self.finish_guarded_run(result)
+    }
+
+    /// Delivers a dedicated-worker message or error into this document's retained realm.
+    pub fn complete_worker_event_with_loader(
+        &mut self,
+        id: u32,
+        event: Result<String, String>,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let mut outcome = ScriptOutcome::default();
+            if let Err(error) = super::workers::deliver_worker_event(context, id, event) {
+                outcome
+                    .errors
+                    .push(format!("Worker event callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            drain_dynamic_scripts(
+                context,
+                &host,
+                &mut outcome,
+                &mut dynamic_script_loader,
+                &mut self.total_script_bytes,
+            );
+            append_timer_summary(&host, &mut outcome);
+            outcome
+        }));
+        self.finish_guarded_run(result)
+    }
+
     /// Cancels queued work and tears down the document's healthy JavaScript context.
     pub fn cancel_document(&mut self) {
         self.context.take();
@@ -177,6 +258,11 @@ impl ScriptRuntime {
         host.timer_handles.clear();
         host.pending_document_write.clear();
         host.pending_dynamic_scripts.clear();
+        host.pending_module_evaluations.clear();
+        host.completed_module_evaluations.clear();
+        host.pending_fetch_actions.clear();
+        host.pending_worker_actions.clear();
+        host.module_loader.clear();
     }
 
     fn finish_guarded_run(

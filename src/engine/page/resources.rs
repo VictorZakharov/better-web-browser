@@ -62,21 +62,29 @@ pub(super) fn discover_resources(
             continue;
         }
         let script_type = node.attr("type").unwrap_or_default();
-        if !script::is_classic_javascript_type(&script_type) {
+        let kind = if script_type.trim().eq_ignore_ascii_case("module") {
+            script::ScriptKind::Module
+        } else if script::is_classic_javascript_type(&script_type) {
+            script::ScriptKind::Classic
+        } else {
             continue;
-        }
+        };
         if let Some(url) = node
             .attr("src")
             .and_then(|source| resolve_url(base_url, &source))
         {
             let blocks_first_paint = node.attr("async").is_none();
-            if seen_script_urls.insert(url.clone()) {
-                resources.push(PageResource::Script { url: url.clone() });
+            if seen_script_urls.insert((url.clone(), kind)) {
+                resources.push(PageResource::Script {
+                    url: url.clone(),
+                    kind,
+                });
             }
             scripts.push(PageScript {
                 node,
                 source_url: url,
                 code: None,
+                kind,
                 blocks_first_paint,
             });
         } else {
@@ -86,6 +94,7 @@ pub(super) fn discover_resources(
                 node,
                 source_url,
                 code: Some(code),
+                kind,
                 blocks_first_paint: true,
             });
         }

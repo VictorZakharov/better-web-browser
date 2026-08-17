@@ -17,8 +17,8 @@ pub use cancellation::{FetchController, FetchSignal};
 pub use error::{FetchError, FetchErrorKind};
 pub use headers::{Header, HeaderList};
 pub use request::{
-    CredentialsMode, FetchRequest, RedirectMode, Referrer, RequestContext, RequestDestination,
-    RequestMode,
+    CredentialsMode, FetchRequest, RedirectMode, Referrer, ReferrerPolicy, RequestCache,
+    RequestContext, RequestDestination, RequestMode,
 };
 pub use response::{FetchResponse, ResponseType};
 pub use url::{FetchUrl, Origin};

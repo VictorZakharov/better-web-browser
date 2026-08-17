@@ -10,6 +10,7 @@ pub(super) type HInternet = *mut c_void;
 pub(super) const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 pub(super) const WINHTTP_ACCESS_TYPE_NO_PROXY: u32 = 1;
 pub(super) const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
+pub(super) const WINHTTP_FLAG_REFRESH: u32 = 0x0000_0100;
 pub(super) const WINHTTP_QUERY_STATUS_CODE: u32 = 19;
 pub(super) const WINHTTP_QUERY_RAW_HEADERS_CRLF: u32 = 22;
 pub(super) const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;

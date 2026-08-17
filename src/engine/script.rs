@@ -20,60 +20,39 @@ use std::time::{Duration, Instant};
 mod binding_helpers;
 mod bootstrap;
 mod dom_host;
+mod dynamic_scripts;
 mod execution;
 mod host_call;
 mod host_profiling;
 mod host_state;
+mod module_evaluation;
+mod module_lifecycle;
+mod module_loader;
 mod mutation_host;
+mod network;
 mod render_invalidation;
 mod runtime;
+mod runtime_guard;
 mod style_cache;
 mod style_host;
+mod types;
+mod worker_bootstrap;
+mod worker_host;
+mod worker_module;
+mod worker_runtime;
+mod workers;
 
 pub use execution::{execute, execute_with_loader};
 use host_call::host_call;
 use host_state::{HostState, HostStateLink};
+pub use network::ScriptFetchAction;
 pub use runtime::ScriptRuntime;
-
-// This makes the former effective startup horizon explicit. The JavaScript shim used to advance
-// 200 ms while dispatching lifecycle events plus five 250 ms settlement slices. Lifecycle dispatch
-// no longer runs timer tasks reentrantly, so use six slices for a clear 1.5 second virtual budget.
-const STARTUP_TIMER_PASSES: usize = 6;
-const STARTUP_TIMER_SLICE: Duration = Duration::from_millis(250);
-
-pub type DynamicScriptLoader<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
-
-#[derive(Debug, Clone)]
-pub struct ScriptInput {
-    pub node: NodeRef,
-    pub source_url: String,
-    pub code: String,
-    pub finish_lifecycle: bool,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ScriptOutcome {
-    pub executed: usize,
-    pub mutation_count: usize,
-    pub errors: Vec<String>,
-    pub console: Vec<String>,
-    pub diagnostics: Vec<String>,
-    pub navigation_url: Option<String>,
-    pub cookie_updates: Vec<String>,
-    pub runtime_stopped: bool,
-    pub render_requested: bool,
-    pub invalidation: RenderInvalidation,
-}
-
-pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {
-    matches!(
-        script_type.trim().to_ascii_lowercase().as_str(),
-        "" | "text/javascript"
-            | "application/javascript"
-            | "text/ecmascript"
-            | "application/ecmascript"
-    )
-}
+pub(crate) use types::is_classic_javascript_type;
+pub use types::{DynamicScriptLoader, ScriptInput, ScriptKind, ScriptOutcome};
+use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
+pub use worker_host::WorkerSourceLoader;
+pub use worker_runtime::{WorkerRuntime, WorkerRuntimeOutcome};
+pub use workers::ScriptWorkerAction;
 
 #[cfg(test)]
 #[path = "script/tests/mod.rs"]

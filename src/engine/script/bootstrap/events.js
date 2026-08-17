@@ -1,3 +1,9 @@
+    const trustedEvents = new WeakSet();
+    const markTrusted = event => { trustedEvents.add(event); return event; };
+    Object.defineProperty(globalThis, '__markTrustedEvent', {
+        value: markTrusted, configurable: true,
+    });
+
     class Event {
         constructor(type, init = {}) {
             init = init == null ? {} : Object(init);
@@ -26,7 +32,7 @@
         get cancelable() { return this.__cancelable; }
         get composed() { return this.__composed; }
         get defaultPrevented() { return this.__canceled; }
-        get isTrusted() { return false; }
+        get isTrusted() { return trustedEvents.has(this); }
         get cancelBubble() { return this.__stopped; }
         set cancelBubble(value) { if (value) this.stopPropagation(); }
         get returnValue() { return !this.__canceled; }
@@ -116,14 +122,6 @@
             this.source = init?.source === undefined ? null : init.source;
         }
     }
-    class DOMException extends Error {
-        constructor(message = '', name = 'Error') {
-            super(String(message));
-            this.name = String(name);
-            this.code = 0;
-        }
-    }
-
     const listenerStore = new WeakMap();
     const eventHandlerStore = new WeakMap();
     const proxyStorage = new WeakMap();

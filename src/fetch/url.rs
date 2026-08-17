@@ -1,7 +1,8 @@
 //! Fetch URL and tuple-origin types backed by the WHATWG-oriented `url` crate.
 
 use super::{FetchError, FetchErrorKind};
-use crate::navigation::{ParsedUrl, resolve_url};
+use crate::limits::MAX_URL_BYTES;
+use crate::navigation::{ParsedUrl, resolve_web_url};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -25,21 +26,64 @@ enum OriginKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchUrl {
     serialized: String,
-    parsed: ParsedUrl,
+    kind: FetchUrlKind,
+    origin: Origin,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FetchUrlKind {
+    Network(ParsedUrl),
+    Data,
 }
 
 impl FetchUrl {
     pub fn parse(input: &str) -> Result<Self, FetchError> {
-        let parsed = ParsedUrl::parse(input)
+        if input.len() > MAX_URL_BYTES {
+            return Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                format!("URL exceeds the {MAX_URL_BYTES}-byte limit"),
+            ));
+        }
+        let input = input.trim();
+        let parsed_url = ::url::Url::parse(input)
             .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
-        Ok(Self {
-            serialized: parsed.canonical(),
-            parsed,
-        })
+        match parsed_url.scheme() {
+            "http" | "https" => {
+                let parsed = ParsedUrl::parse(input).map_err(|error| {
+                    FetchError::new(FetchErrorKind::InvalidRequest, error.to_string())
+                })?;
+                let origin = tuple_origin(&parsed);
+                Ok(Self {
+                    serialized: parsed.canonical(),
+                    kind: FetchUrlKind::Network(parsed),
+                    origin,
+                })
+            }
+            "data" => {
+                let mut parsed_url = parsed_url;
+                parsed_url.set_fragment(None);
+                let serialized = parsed_url.to_string();
+                if serialized.len() > MAX_URL_BYTES {
+                    return Err(FetchError::new(
+                        FetchErrorKind::InvalidRequest,
+                        format!("canonical URL exceeds the {MAX_URL_BYTES}-byte limit"),
+                    ));
+                }
+                Ok(Self {
+                    serialized,
+                    kind: FetchUrlKind::Data,
+                    origin: Origin::opaque(),
+                })
+            }
+            scheme => Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                format!("unsupported Fetch URL scheme: {scheme}"),
+            )),
+        }
     }
 
     pub fn resolve(&self, reference: &str) -> Result<Self, FetchError> {
-        let resolved = resolve_url(self.as_str(), reference).ok_or_else(|| {
+        let resolved = resolve_web_url(self.as_str(), reference).ok_or_else(|| {
             FetchError::new(
                 FetchErrorKind::InvalidRequest,
                 format!("could not resolve URL reference: {reference}"),
@@ -52,22 +96,33 @@ impl FetchUrl {
         &self.serialized
     }
 
-    pub fn parsed(&self) -> &ParsedUrl {
-        &self.parsed
-    }
-
-    pub fn origin(&self) -> Origin {
-        Origin {
-            kind: OriginKind::Tuple {
-                scheme: self.parsed.scheme.clone(),
-                host: self.parsed.host.to_ascii_lowercase(),
-                port: self.parsed.port,
-            },
+    pub fn parsed(&self) -> Option<&ParsedUrl> {
+        match &self.kind {
+            FetchUrlKind::Network(parsed) => Some(parsed),
+            FetchUrlKind::Data => None,
         }
     }
 
+    pub fn is_data(&self) -> bool {
+        matches!(self.kind, FetchUrlKind::Data)
+    }
+
+    pub fn origin(&self) -> Origin {
+        self.origin.clone()
+    }
+
     pub fn is_secure(&self) -> bool {
-        self.parsed.scheme == "https"
+        self.parsed().is_some_and(|parsed| parsed.scheme == "https")
+    }
+}
+
+fn tuple_origin(parsed: &ParsedUrl) -> Origin {
+    Origin {
+        kind: OriginKind::Tuple {
+            scheme: parsed.scheme.clone(),
+            host: parsed.host.to_ascii_lowercase(),
+            port: parsed.port,
+        },
     }
 }
 
@@ -91,6 +146,10 @@ impl Origin {
 
     pub fn is_same_origin(&self, other: &Self) -> bool {
         self == other
+    }
+
+    pub fn is_secure(&self) -> bool {
+        matches!(&self.kind, OriginKind::Tuple { scheme, .. } if scheme == "https")
     }
 
     pub fn opaque() -> Self {
@@ -132,5 +191,19 @@ mod tests {
         assert!(first.is_same_origin(&clone));
         assert!(!first.is_same_origin(&second));
         assert_eq!(first.serialize(), "null");
+    }
+
+    #[test]
+    fn data_urls_have_stable_opaque_origins_and_drop_fragments() {
+        let url = FetchUrl::parse("data:text/plain,hello#fragment").unwrap();
+        let clone = url.clone();
+        assert!(url.is_data());
+        assert!(url.parsed().is_none());
+        assert_eq!(url.as_str(), "data:text/plain,hello");
+        assert!(url.origin().is_same_origin(&clone.origin()));
+        assert!(
+            !url.origin()
+                .is_same_origin(&FetchUrl::parse("data:text/plain,hello").unwrap().origin())
+        );
     }
 }

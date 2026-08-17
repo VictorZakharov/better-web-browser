@@ -59,6 +59,7 @@ impl Page {
                     node: script.node.clone(),
                     source_url: script.source_url.clone(),
                     code: code.clone(),
+                    kind: script.kind,
                     finish_lifecycle: true,
                 })
             })

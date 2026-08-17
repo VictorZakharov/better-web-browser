@@ -1,0 +1,59 @@
+//! Runtime failure containment and host-outcome collection.
+
+use super::*;
+
+pub(super) fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown evaluator panic".to_string())
+}
+
+pub(super) fn stopped_runtime_outcome(detail: String) -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec![format!(
+            "JavaScript runtime was stopped safely after an evaluator failure: {detail}"
+        )],
+        runtime_stopped: true,
+        ..ScriptOutcome::default()
+    }
+}
+
+pub(super) fn inactive_runtime_outcome() -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec!["JavaScript runtime is inactive because its document was cancelled".into()],
+        runtime_stopped: true,
+        ..ScriptOutcome::default()
+    }
+}
+
+pub(super) fn lifecycle_error(message: &str) -> ScriptOutcome {
+    ScriptOutcome {
+        errors: vec![format!("JavaScript runtime lifecycle: {message}")],
+        ..ScriptOutcome::default()
+    }
+}
+
+pub(super) fn finish_host(
+    mut outcome: ScriptOutcome,
+    host: &Rc<RefCell<HostState>>,
+) -> ScriptOutcome {
+    let mut state = host.borrow_mut();
+    outcome.mutation_count = std::mem::take(&mut state.mutation_count);
+    outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
+    outcome.console.append(&mut state.console);
+    outcome.diagnostics.append(&mut state.diagnostics);
+    state.append_host_call_diagnostics(&mut outcome.diagnostics);
+    outcome.navigation_url = state.navigation_url.take();
+    outcome.cookie_updates.append(&mut state.cookie_updates);
+    outcome
+        .fetch_actions
+        .append(&mut state.pending_fetch_actions);
+    outcome
+        .worker_actions
+        .append(&mut state.pending_worker_actions);
+    outcome.render_requested = state.timers.take_render_request();
+    outcome.invalidation = state.pending_invalidation.take(outcome.mutation_count);
+    outcome
+}

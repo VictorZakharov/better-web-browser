@@ -53,7 +53,12 @@ mod tests {
             .elements_named("p")
             .find(|node| node.attr("class").as_deref() == Some("target"))
             .unwrap();
-        let mut state = HostState::new(dom.document.clone(), "https://example.com/", "UTF-8");
+        let mut state = HostState::new(
+            dom.document.clone(),
+            "https://example.com/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
 
         assert_eq!(
             state.computed_style_property(&target, "color").as_deref(),
