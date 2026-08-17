@@ -1,6 +1,6 @@
 # ADR 0001: Renderer process isolation boundary
 
-- Status: Accepted; Stage 2 process spike implemented
+- Status: Accepted; remote-page renderer path implemented, with site/frame isolation still pending
 - Date: 2026-08-14
 - Tracking issue: [#6](https://github.com/VictorZakharov/better-web-browser/issues/6)
 
@@ -25,11 +25,12 @@ is allowed to parse remote content.
 
 ## Context
 
-The current Windows application keeps the full page realm in `BrowserState` on the UI process:
-`Page`, `ScriptRuntime`, style and layout output, decoded resources, native page controls, history,
-the cookie-owning `HttpClient`, and the document `FetchController`. Navigation, resource, and async
-script workers post heap pointers through private `WM_APP_*` messages. Those pointers are valid only
-because every participant is currently in one address space; they are not an IPC design.
+At the time this ADR was accepted, the Windows application kept the full page realm in
+`BrowserState` and passed heap pointers through private `WM_APP_*` messages. The migration described
+below has since removed that privileged fallback for remote pages: `Page`, `ScriptRuntime`, DOM,
+style/layout state, decoded resources, Workers, and Reader extraction now live in the tab renderer.
+The browser retains the Win32 shell, history, network and cookie authority, native controls, and
+validated presentation painting.
 
 Three completed foundations make a process boundary practical:
 
@@ -70,8 +71,8 @@ Windows process ID.
   reloads the last committed URL only after an explicit user action.
 - It does not promise protocol compatibility between separately installed Breeze versions. Browser
   and renderer are the same build and reject an incompatible protocol during startup.
-- The process-launch spike is not allowed to parse remote content and is not described as a sandbox
-  until AppContainer and broker tests are active.
+- This boundary does not make Breeze safe for sensitive browsing by itself; protocol and painter
+  validation remain security-sensitive and the browser has not received an independent audit.
 
 ## Trust model
 
@@ -99,7 +100,7 @@ renderer-to-browser message. A renderer is assumed to become fully compromised.
 | Renderer floods messages or requests | Per-session queue, byte, rate, and outstanding-operation limits with backpressure |
 | Stale work mutates a replacement document | Every document-owned message carries the renderer session and `DocumentId`; cancelled IDs cannot be reused |
 | Renderer crashes or hangs | Dedicated broker I/O, process/job monitoring, browser-owned error surface, bounded shutdown |
-| Decoder exploit crosses the boundary | HTML/CSS/script/image/SVG/webfont decoding moves into the renderer before remote content is enabled there |
+| Decoder exploit crosses the boundary | HTML/CSS/script/image/SVG/webfont decoding runs in the capability-free renderer |
 | Presentation attacks the browser painter | Validate command count, finite geometry, buffer lengths, resource IDs, control count, and viewport clipping |
 | Renderer abuses Fetch as a confused deputy | Browser reconstructs requests from allowed intent fields and applies origin, credentials, redirect, CORS, cookie, and body policies |
 | Another local process connects to IPC | Only explicitly inherited anonymous-pipe handles; no discoverable endpoint name |
@@ -343,10 +344,9 @@ The browser treats process exit, broken pipe, invalid framing, and fatal decode 
 ### Unresponsive renderer
 
 The broker's pipe and process monitors are independent from both the renderer event loop and the UI
-thread. Missing progress for ten seconds marks the page unresponsive and exposes a terminate action;
-it does not freeze chrome or history. Interactive mode does not kill a renderer solely because a
-legitimate script ran for ten seconds. Hidden automation applies its documented 30-second hard
-deadline so CI cannot hang indefinitely. Issue #10 will add cooperative script/task interruption.
+thread. Missing progress for ten seconds marks the page unresponsive; a further two-second grace
+period terminates the renderer Job, while chrome, history, and sibling tabs remain available.
+Hidden automation also has an outer deterministic deadline so CI cannot hang indefinitely.
 
 ### Navigation cancellation
 
@@ -374,6 +374,8 @@ Before processing remote content, a renderer launch must apply all required cont
 - Set `PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY` to
   `PROCESS_CREATION_CHILD_PROCESS_RESTRICTED` even though the Job also constrains descendants.
 - Use `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` so only the two renderer pipe ends are inherited.
+- Build an explicit, case-insensitively sorted environment block from the audited Windows bootstrap
+  allowlist plus drive-current-directory entries; reject every non-allowlisted child variable.
 - Apply compatible creation-time mitigations for DEP, ASLR, strict handle checks, extension-point
   disabling, CFG, image loading, and dynamic code. Each policy needs a launch test on supported
   Windows versions; unsupported optional hardening is reported, while failure of AppContainer, Job,
@@ -396,6 +398,8 @@ avoid a mixed state that is described as secure before its boundary is enforced.
 - Keep the current application single-process.
 - Make new features follow the target ownership even while calls are still in-process.
 
+Completed.
+
 ### Stage 1: Introduce an in-process protocol seam
 
 - Add focused `renderer_protocol` ID, message, limits, codec, and state-machine modules with malformed
@@ -407,30 +411,25 @@ avoid a mixed state that is described as secure before its boundary is enforced.
 - Benchmark message construction and display-list serialization before choosing further bulk
   transport optimizations.
 
+Completed. The checked codec uses fixed framing, typed IDs, monotonic sequences, explicit versions,
+bounded allocations, and owned payloads.
+
 ### Stage 2: Process-launch and crash-recovery spike ([#33](https://github.com/VictorZakharov/better-web-browser/issues/33))
 
 - Add a hidden `--renderer-process` mode to the existing executable.
 - Launch a capability-free AppContainer child with explicit inherited pipes, Job limits, child
-  restriction, and compatible mitigations. It handles only `Hello`, `Ping`, `Shutdown`, and a
-  test-only crash command; it receives no remote page bytes.
+  restriction, compatible mitigations, and an explicit environment allowlist. The initial spike
+  handled only lifecycle and test messages before later stages admitted remote bytes.
 - Add hidden integration tests for handshake, clean exit, startup timeout, malformed frame, forced
   abort, Job kill-on-browser-close, child-launch denial, direct-network denial, and recovery to a
   browser-owned crash surface.
 - Record renderer PID, exit reason, memory, CPU, and restart count in task-manager diagnostics.
 
-Implemented on 2026-08-14. Browser startup launches the capability-free child on a background
-thread, and a dedicated broker owns blocking IPC, heartbeats, process accounting, shutdown, and Job
-termination. The UI thread only polls typed lifecycle events; Task Manager reads a browser-owned
-renderer registry and presents browser/renderer ownership as a process tree. Additional browsing
-contexts become sibling renderer rows rather than requiring fixed UI panels. After an abnormal
-exit, the browser remains interactive and Reload starts a replacement session.
-
-This stage still sends no document, URL, response, cookie, script, style, image, font, or display
-data to the child. The page engine remains in the browser process until later migration stages. The
-Stage 2 child inherits the browser environment, matching Microsoft's AppContainer launch sample;
-that is acceptable only while it receives no hostile input. Before remote bytes cross the boundary,
-launch must use an audited minimal environment block so renderer code cannot inspect browser
-credentials or configuration stored in environment variables.
+Completed on 2026-08-14 and subsequently hardened. A dedicated broker owns blocking IPC,
+heartbeats, process accounting, shutdown, and Job termination. The UI thread consumes typed events;
+Task Manager presents the browser and per-tab renderers as a process tree. Abnormal exit preserves
+the browser and sibling tabs, and Reload starts a replacement process with fresh session and
+document identities.
 
 ### Stage 3: Broker navigation, Fetch, cookies, and storage
 
@@ -441,6 +440,11 @@ credentials or configuration stored in environment variables.
 - Run loopback-only integration tests proving that a renderer cannot bypass origin, credential,
   CORS, redirect, cookie, or response-body policy.
 
+The navigation and Fetch policy, request reconstruction, CORS/redirect/credential enforcement,
+bounded body transfer, cancellation, and cookie snapshot/update path are implemented. Progressive
+network-to-JavaScript streaming and browser-owned persistent storage snapshots remain follow-up
+work.
+
 ### Stage 4: Move the document engine and decoders
 
 - Move HTML/CSS parsing, DOM, Boa, scheduler, style/layout, Reader extraction, and remote decoders to
@@ -449,12 +453,22 @@ credentials or configuration stored in environment variables.
 - Serialize display-list and semantic-control updates; validate them before browser presentation.
 - Preserve the full rebuild fallback while incremental invalidation from issue #8 is adopted.
 
+Remote-document decoding, HTML/CSS parsing, DOM, Boa, scheduler, style/layout, Reader extraction,
+image/SVG/webfont decoding, dedicated Workers, and immutable presentation construction now run in
+the renderer. The privileged in-process page-engine fallback has been removed. GDI text measurement
+inside the renderer and browser-side final text painting remain migration constraints; final
+renderer-owned text raster output is not implemented.
+
 ### Stage 5: Make one renderer per top-level context the default
 
 - Route native input, viewport, focus, lifecycle, and presentation through IPC.
 - Enable crash/error surfaces, reload, cancellation, and task-manager controls in normal builds.
 - Remove the old in-process document execution path after hidden browser, WPT, visual, performance,
   hostile-input, and crash-recovery suites pass.
+
+One renderer per live tab is the default, and crash/error surfaces, reload, cancellation, and Task
+Manager integration are active. Browser-to-renderer user-input/event dispatch is still incomplete,
+so this stage is not fully closed.
 
 ### Stage 6: Evolve allocation policy
 
@@ -463,19 +477,21 @@ credentials or configuration stored in environment variables.
   security requirements.
 - Treat full site isolation and shared-memory/GPU transport as separate reviewed decisions.
 
-## Process-launch follow-up acceptance
+## Current containment acceptance
 
-The Stage 2 spike tracked by [#33](https://github.com/VictorZakharov/better-web-browser/issues/33)
-is deliberately small but executable. Its follow-up is complete only when:
+The production renderer boundary is accepted only while these executable invariants remain true:
 
 - every automated launch is hidden and uses `CREATE_NO_WINDOW`;
-- the browser supplies an explicit executable path and an allowlist of exactly two inherited handles;
+- the browser supplies an explicit executable path, an allowlist of exactly two inherited handles,
+  and an audited allowlist-only environment block;
 - a successful nonce/version handshake completes within five seconds;
 - AppContainer has no network capability, direct loopback/Internet attempts fail, and broker IPC
   still works;
 - the renderer cannot create a child process or outlive the browser Job;
-- forced renderer abort leaves browser chrome responsive, cancels renderer work, records the exit,
-  and shows a browser-owned recoverable error surface;
+- renderer abort, access violation, OOM termination, and native stack overflow each leave browser
+  chrome and a sibling renderer responsive, record the exit, and show a browser-owned recoverable
+  error surface;
+- reload after a fatal exit creates a fresh process ID, renderer session, and document identity;
 - malformed and oversized frames terminate only the renderer session;
 - clean shutdown and timeout paths leak no process or pipe handles; and
 - all tests run without visible browser or console windows.

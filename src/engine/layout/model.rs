@@ -129,7 +129,7 @@ pub enum DisplayItem {
     Control(Box<ControlSpec>),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LayoutOutput {
     pub items: Vec<DisplayItem>,
     pub content_height: f32,

@@ -2,8 +2,8 @@ mod payload;
 
 use self::payload::{decode_browser, decode_renderer, encode_browser, encode_renderer};
 use super::{
-    BrowserMessage, HEADER_LENGTH, MAGIC, MAX_CONTROL_PAYLOAD, PROTOCOL_MAJOR, PROTOCOL_MINOR,
-    RendererMessage, RendererSessionId,
+    BrowserMessage, HEADER_LENGTH, MAGIC, MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD, PROTOCOL_MAJOR,
+    PROTOCOL_MINOR, RendererMessage, RendererSessionId,
 };
 use std::fmt;
 use std::io::{Read, Write};
@@ -96,7 +96,7 @@ impl<W: Write> FrameWriter<W> {
     }
 
     fn write_frame(&mut self, kind: u16, payload: &[u8]) -> Result<(), ProtocolError> {
-        if payload.len() > MAX_CONTROL_PAYLOAD {
+        if payload.len() > payload_limit(kind) {
             return Err(ProtocolError::PayloadTooLarge(payload.len() as u32));
         }
         let sequence = self.next_sequence;
@@ -132,12 +132,12 @@ impl<R: Read> FrameReader<R> {
             inner,
             session,
             next_sequence: 1,
-            max_payload: MAX_CONTROL_PAYLOAD,
+            max_payload: MAX_FRAME_PAYLOAD,
         }
     }
 
     pub fn with_max_payload(mut self, maximum: usize) -> Self {
-        self.max_payload = maximum.min(MAX_CONTROL_PAYLOAD);
+        self.max_payload = maximum.min(MAX_FRAME_PAYLOAD);
         self
     }
 
@@ -175,7 +175,7 @@ impl<R: Read> FrameReader<R> {
             return Err(ProtocolError::ReservedFlags(flags));
         }
         let payload_length = get_u32(&header[12..16]);
-        if payload_length as usize > self.max_payload {
+        if payload_length as usize > self.max_payload.min(payload_limit(kind)) {
             return Err(ProtocolError::PayloadTooLarge(payload_length));
         }
         let session = get_u64(&header[16..24]);
@@ -210,9 +210,48 @@ enum Direction {
 impl Direction {
     fn allows(self, kind: u16) -> bool {
         match self {
-            Self::Browser => matches!(kind, 1 | 3 | 5 | 7 | 0x8001),
-            Self::Renderer => matches!(kind, 2 | 4 | 6 | 8 | 0x8002),
+            Self::Browser => matches!(
+                kind,
+                1 | 3
+                    | 5
+                    | 7
+                    | 0x0101
+                    | 0x0103
+                    | 0x0105
+                    | 0x0111
+                    | 0x0113
+                    | 0x0115
+                    | 0x0121
+                    | 0x0123
+                    | 0x0125
+                    | 0x8001
+            ),
+            Self::Renderer => matches!(
+                kind,
+                2 | 4
+                    | 6
+                    | 8
+                    | 0x0102
+                    | 0x0104
+                    | 0x0106
+                    | 0x0108
+                    | 0x0112
+                    | 0x0114
+                    | 0x0116
+                    | 0x0118
+                    | 0x011a
+                    | 0x011c
+                    | 0x8002
+            ),
         }
+    }
+}
+
+fn payload_limit(kind: u16) -> usize {
+    match kind {
+        // Document, request, response, and presentation body chunks are the only bulk frames.
+        0x0103 | 0x0106 | 0x0113 | 0x0114 => MAX_FRAME_PAYLOAD,
+        _ => MAX_CONTROL_PAYLOAD,
     }
 }
 

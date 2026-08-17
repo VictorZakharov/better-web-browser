@@ -51,7 +51,7 @@ pub struct PageScript {
     pub blocks_first_paint: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DecodedImage {
     pub width: u32,
     pub height: u32,

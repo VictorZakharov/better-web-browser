@@ -159,7 +159,7 @@ impl BrowserState {
 
     pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
         self.omnibox_text = window_text(self.controls.address);
-        KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         let focused = GetFocus();
         self.focus = if focused == self.controls.address {
             TabFocus::Address
@@ -307,49 +307,20 @@ impl BrowserState {
         self.process_for_tab(id, |state| state.finish_navigation(message));
     }
 
-    pub(super) unsafe fn route_resource_message(
+    pub(super) unsafe fn route_renderer_fetch_completion(
         &mut self,
         id: TabId,
-        message: DeferredResourcesMessage,
+        completion: renderer_fetch::RendererFetchCompletion,
     ) {
-        self.process_for_tab(id, |state| state.finish_deferred_resources(message));
+        self.process_for_tab(id, |state| {
+            state.finish_renderer_fetch_completion(completion)
+        });
     }
 
-    pub(super) unsafe fn route_async_script_message(
-        &mut self,
-        id: TabId,
-        message: async_scripts::AsyncScriptMessage,
-    ) {
-        if self.should_defer_script_work() {
-            if let Some(tab) = self.tabs.get_mut(id) {
-                tab.pending_async_scripts.push_back(message);
-            }
-            self.schedule_script_runtime_wakeup();
-            return;
-        }
-        self.process_for_tab(id, |state| state.finish_async_script(message));
-    }
-
-    pub(super) unsafe fn route_script_fetch_message(
-        &mut self,
-        id: TabId,
-        message: script_fetches::ScriptFetchMessage,
-    ) {
-        self.process_for_tab(id, |state| state.finish_script_fetch(message));
-    }
-
-    pub(super) unsafe fn route_worker_event_message(
-        &mut self,
-        id: TabId,
-        message: worker_threads::WorkerEventMessage,
-    ) {
-        self.process_for_tab(id, |state| state.finish_worker_event(message));
-    }
-
-    // Boa realms and GDI layout remain UI-thread-owned. Select a background tab
-    // internally to reuse the normal commit path, suppress its shared UI, then
-    // restore the visible tab before Windows can dispatch another message.
-    unsafe fn process_for_tab(&mut self, id: TabId, process: impl FnOnce(&mut Self)) {
+    // Presentation installation still reuses the active-tab UI helpers. Select a background tab
+    // internally, suppress shared Win32 controls, then restore the visible tab before dispatching
+    // another window message; hostile Page/DOM/Boa state remains in that tab's renderer process.
+    pub(super) unsafe fn process_for_tab(&mut self, id: TabId, process: impl FnOnce(&mut Self)) {
         if !self.tabs.contains(id) {
             return;
         }
@@ -362,7 +333,7 @@ impl BrowserState {
         self.processing_background_tab = true;
         self.background_tab_origin = Some(original);
         process(self);
-        KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         for control in &self.page_controls {
             ShowWindow(control.window, SW_HIDE);
         }

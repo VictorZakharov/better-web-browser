@@ -24,6 +24,7 @@ const FIXTURE_HTML: &str = r#"<!doctype html>
   <p>stable 13</p><p>stable 14</p><p>stable 15</p><p>stable 16</p>
 </aside>
 <script>
+  setTimeout(() => { console.log('post-load console-only task'); }, 1600);
   setTimeout(() => {
     const state = document.getElementById('state');
     for (let mutation = 0; mutation < 32; mutation++) {
@@ -103,6 +104,10 @@ fn hidden_browser_repaints_after_a_post_load_timer() {
     assert!(
         report.contains("\"javascript_errors\": []"),
         "hidden run reported JavaScript errors:\n{report}"
+    );
+    assert!(
+        report.contains("post-load console-only task"),
+        "console-only timer outcome was lost at the renderer boundary:\n{report}"
     );
     assert_eq!(
         json_integer(&report, "process_count"),

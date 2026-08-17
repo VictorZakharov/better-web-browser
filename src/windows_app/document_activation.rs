@@ -1,21 +1,27 @@
-//! Commits a loaded document and establishes its first-paint runtime state.
+//! Commits browser-fetched bytes to the page-owning renderer and installs validated output.
 
 use super::browser_navigation::HistoryMode;
-use super::resources::{ResourceLoadContext, fetch_script_source, load_page_resources};
 use super::*;
+use better_web_browser::renderer_protocol::{
+    DocumentId, DocumentStart, PresentedViewport, RendererPresentation,
+};
 
 pub(super) struct LoadedPage {
-    pub page: Page,
-    pub html: String,
-    pub final_url: String,
-    pub status: u32,
-    pub bytes: u64,
-    pub network_time: Duration,
-    pub parse_time: Duration,
-    pub html_parse_time: Duration,
-    pub resource_processing_time: Duration,
-    pub loaded_resources: HashSet<PageResource>,
-    pub remaining_resource_budget: u64,
+    pub(super) body: Vec<u8>,
+    pub(super) final_url: String,
+    pub(super) status: u16,
+    pub(super) content_type: String,
+    pub(super) cookie_header: String,
+    pub(super) bytes: u64,
+    pub(super) network_time: Duration,
+}
+
+#[derive(Default)]
+pub(super) struct RendererLoadMetrics {
+    pub(super) final_url: String,
+    pub(super) status: u16,
+    pub(super) bytes: u64,
+    pub(super) network_time: Duration,
 }
 
 pub(super) struct LoadMessage {
@@ -28,10 +34,13 @@ impl BrowserState {
         if message.generation != self.generation {
             return;
         }
-        self.loading = false;
         match message.result {
-            Ok(page) => self.activate_loaded_page(page),
+            Ok(page) => {
+                self.tabs.active_mut().pending_renderer_page = Some(page);
+                self.submit_pending_renderer_document();
+            }
             Err(error) => {
+                self.loading = false;
                 self.set_status(&format!("Load failed: {error}"));
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.error = Some(error);
@@ -42,203 +51,260 @@ impl BrowserState {
         }
     }
 
-    unsafe fn activate_loaded_page(&mut self, mut page: LoadedPage) {
-        self.destroy_page_controls();
-        self.image_bitmaps.clear();
-        self.dynamic_fonts.clear();
-        self.web_fonts.clear();
-        self.page = page.page;
-        self.loaded_page_resources = std::mem::take(&mut page.loaded_resources);
-        self.page_resource_budget = page.remaining_resource_budget;
-        self.document = None;
-        self.reader_html = page.html.clone();
-        self.reader_url = page.final_url.clone();
-        self.script_navigation.record_committed(&page.final_url);
-        self.surface = Surface::Page;
-        if !self.processing_background_tab {
-            set_window_text(self.controls.reader, "Reader");
-        }
-        self.scroll_y = 0;
+    pub(super) unsafe fn submit_pending_renderer_document_for(&mut self, id: tabs::TabId) {
+        self.process_for_tab(id, |state| state.submit_pending_renderer_document());
+    }
 
-        let client = Arc::clone(&self.http_client);
-        let fetch_signal = self.document_fetch.signal();
-        let document_url = page.final_url.clone();
-        let mut total_bytes = page.bytes;
-        let mut additional_network_time = Duration::ZERO;
-        let mut additional_processing_time = Duration::ZERO;
-        let mut resource_budget = self.page_resource_budget;
-        let (initial_cookie_header, cookie_error) =
-            match client.document_cookie_header(&page.final_url) {
-                Ok(header) => (header, None),
-                Err(error) => (String::new(), Some(error)),
-            };
-        let script_started = Instant::now();
-        let (mut runtime, mut script_outcome) = {
-            let mut dynamic_script_loader = |url: &str, kind| -> Result<String, String> {
-                let request_started = Instant::now();
-                let response =
-                    fetch_script_source(&client, &fetch_signal, &document_url, url, kind)
-                        .map_err(|error| error.to_string());
-                additional_network_time += request_started.elapsed();
-                let response = response?;
-                if !response.is_success() {
-                    return Err(format!("server returned HTTP {}", response.status));
-                }
-                let size = response.body.len() as u64;
-                if size > resource_budget {
-                    return Err("page resource budget was exhausted".into());
-                }
-                let processing_started = Instant::now();
-                let code = winhttp::decode_text(response.body.as_bytes(), response.content_type());
-                additional_processing_time += processing_started.elapsed();
-                total_bytes += size;
-                resource_budget -= size;
-                Ok(code)
-            };
-            self.page
-                .start_first_paint_script_runtime_with_loader_and_cookies(
-                    &mut dynamic_script_loader,
-                    &initial_cookie_header,
-                )
+    unsafe fn submit_pending_renderer_document(&mut self) {
+        let Some(page) = self.pending_renderer_page.take() else {
+            return;
         };
-        if let Some(error) = cookie_error {
-            script_outcome
-                .errors
-                .push(format!("document.cookie initialization: {error}"));
-        }
-        let script_time = script_started
-            .elapsed()
-            .saturating_sub(additional_network_time);
-
-        for cookie in &script_outcome.cookie_updates {
-            if let Err(error) = client.set_cookie(&page.final_url, cookie) {
-                script_outcome
-                    .errors
-                    .push(format!("document.cookie: {error}"));
+        let Some(session) = self.renderer_session.as_ref() else {
+            self.pending_renderer_page = Some(page);
+            self.start_renderer_for(self.id);
+            return;
+        };
+        let document = match DocumentId::new(self.generation) {
+            Ok(document) => document,
+            Err(error) => {
+                self.loading = false;
+                self.set_status(&format!("Renderer document rejected: {error}"));
+                return;
+            }
+        };
+        let body_length = match u32::try_from(page.body.len()) {
+            Ok(length) => length,
+            Err(_) => {
+                self.loading = false;
+                self.set_status("Renderer document exceeded the IPC byte limit");
+                return;
+            }
+        };
+        let start = DocumentStart {
+            document,
+            url: page.final_url.clone(),
+            status: page.status,
+            content_type: page.content_type,
+            cookie_header: page.cookie_header,
+            body_length,
+            viewport: self.renderer_viewport(),
+        };
+        let metrics = RendererLoadMetrics {
+            final_url: page.final_url,
+            status: page.status,
+            bytes: page.bytes,
+            network_time: page.network_time,
+        };
+        match session.load_document(start, page.body) {
+            Ok(()) => {
+                self.reader_url.clone_from(&metrics.final_url);
+                self.renderer_document = Some(document);
+                self.renderer_revision = 0;
+                self.renderer_load_metrics = Some(metrics);
+                self.renderer_next_timer = None;
+                self.renderer_runtime_clock = Some(Instant::now());
+                self.renderer_work_pending = true;
+                self.status_text = "Rendering in the isolated page process …".into();
+                if !self.processing_background_tab {
+                    self.set_status("Rendering in the isolated page process …");
+                }
+            }
+            Err(error) => {
+                self.loading = false;
+                self.contain_page_engine_failure(
+                    self.id,
+                    format!("could not transfer the document to its renderer: {error}"),
+                );
             }
         }
+    }
 
-        let mut style_refresh_time = Duration::ZERO;
-        if script_outcome.runtime_stopped {
-            if let Some(runtime) = runtime.as_mut() {
-                runtime.cancel_document();
-            }
-            runtime = None;
-            let fallback_parse_started = Instant::now();
-            let character_set = self.page.character_set.clone();
-            self.page = Page::parse(&page.html, &page.final_url);
-            self.page.character_set = character_set;
-            page.html_parse_time += fallback_parse_started.elapsed();
-            self.loaded_page_resources.clear();
-        } else {
-            let style_refresh_started = Instant::now();
-            let viewport_width = self.current_style_viewport_width();
-            let tab = self.tabs.active_mut();
-            tab.page.refresh_resources(viewport_width);
-            style_refresh_time += style_refresh_started.elapsed();
-            load_page_resources(
-                &mut tab.page,
-                ResourceLoadContext {
-                    client: &client,
-                    signal: &fetch_signal,
-                    loaded: &mut tab.loaded_page_resources,
-                    resource_budget: &mut resource_budget,
-                    bytes: &mut total_bytes,
-                    network_time: &mut additional_network_time,
-                    processing_time: &mut additional_processing_time,
-                },
-            );
+    pub(super) unsafe fn renderer_viewport(&self) -> PresentedViewport {
+        let mut client: Rect = std::mem::zeroed();
+        GetClientRect(self.window, &mut client);
+        let scale = self.page_scale();
+        let width = client.right.max(1) as f32 / scale;
+        PresentedViewport {
+            width,
+            height: self.viewport_height().max(1) as f32 / scale,
+            style_width: if self.media_viewport_width > 0.0 {
+                self.media_viewport_width
+            } else {
+                width
+            },
+            dpi: self.dpi,
         }
-        self.page_resource_budget = resource_budget;
-        page.bytes = total_bytes;
-        page.network_time += additional_network_time;
-        page.resource_processing_time += additional_processing_time;
+    }
 
-        if let Some(navigation_url) = script_outcome.navigation_url.clone()
-            && navigation_url != page.final_url
-            && self.allow_script_navigation(&navigation_url)
+    pub(super) unsafe fn activate_renderer_presentation(
+        &mut self,
+        mut presentation: RendererPresentation,
+    ) {
+        if self.renderer_document != Some(presentation.document)
+            || presentation.revision <= self.renderer_revision
         {
-            if let Some(runtime) = runtime.as_mut() {
-                runtime.cancel_document();
+            return;
+        }
+        let first_presentation = self.renderer_revision == 0;
+        self.renderer_revision = presentation.revision;
+
+        for cookie in &presentation.runtime.cookie_updates {
+            if let Err(error) = self.http_client.set_cookie(&presentation.final_url, cookie) {
+                self.status_text = format!("document.cookie update failed: {error}");
             }
-            self.begin_navigation(navigation_url, HistoryMode::Script);
+        }
+        if let Some(url) = presentation.runtime.navigation_url.as_deref()
+            && url != presentation.final_url
+            && self.allow_script_navigation(url)
+        {
+            self.begin_navigation(url.to_string(), HistoryMode::Script);
             return;
         }
 
-        {
-            let tab = self.tabs.active_mut();
-            tab.web_fonts.register(&tab.page.fonts);
-            let history_index = tab.history_index;
-            if let Some(current) = tab.history.get_mut(history_index) {
-                *current = page.final_url.clone();
-            }
+        self.destroy_page_controls();
+        let previous_layout = std::mem::take(&mut self.page_layout);
+        self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
+        let damage = DisplayListDamage::between(&previous_layout, &self.page_layout);
+        let retained_items = self.page_layout.items.clone();
+        self.paint_index.rebuild(&retained_items);
+        self.content_height = (self.page_layout.content_height * self.page_scale()).ceil() as i32;
+        if first_presentation {
+            self.presented_images.clear();
         }
-        self.omnibox_text.clone_from(&page.final_url);
-        if !self.processing_background_tab {
-            set_window_text(self.controls.address, &page.final_url);
+        for image in std::mem::take(&mut presentation.images) {
+            self.presented_images.insert(image.url, image.image);
         }
-        let page_title = self.page.title.clone();
-        self.update_active_tab_title(&page_title);
-        let layout_started = Instant::now();
-        self.rebuild_layout();
-        let layout_build_time = layout_started.elapsed();
-        self.record_initial_script_metrics(
-            super::runtime_metrics::InitialPageMetrics {
-                final_url: &page.final_url,
-                status: page.status,
-                bytes: page.bytes,
-                network_time: page.network_time,
-                parse_time: page.parse_time,
-                html_parse_time: page.html_parse_time,
-                resource_processing_time: page.resource_processing_time,
-                script_time,
-                style_refresh_time,
-            },
-            &script_outcome,
-        );
+        self.image_bitmaps.clear();
+        self.reader_url.clone_from(&presentation.final_url);
+        self.surface = Surface::Page;
+        self.scroll_y = self.scroll_y.min(self.content_height.max(0));
+        self.layout_dirty = false;
+        self.loading = false;
+        self.crashed = false;
+        self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
+        self.renderer_runtime_clock = Some(Instant::now());
+        self.renderer_work_pending = false;
 
-        let script_status = if script_outcome.executed == 0 && script_outcome.errors.is_empty() {
+        let history_index = self.history_index;
+        if let Some(current) = self.history.get_mut(history_index) {
+            current.clone_from(&presentation.final_url);
+        }
+        self.script_navigation
+            .record_committed(&presentation.final_url);
+        self.omnibox_text.clone_from(&presentation.final_url);
+        if !self.processing_background_tab {
+            set_window_text(self.controls.address, &presentation.final_url);
+            set_window_text(self.controls.reader, "Reader");
+        }
+        self.update_active_tab_title(&presentation.title);
+        self.update_scrollbar();
+        self.recreate_page_controls();
+
+        self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
+        let error_count = presentation.runtime.errors.len();
+        let script_status = if presentation.runtime.scripts_executed == 0 && error_count == 0 {
             String::new()
         } else {
             format!(
-                "  \u{2022}  JS {} / {} mutations / {} errors",
-                script_outcome.executed,
-                script_outcome.mutation_count,
-                script_outcome.errors.len()
+                "  •  JS {} / {} mutations / {error_count} errors",
+                presentation.runtime.scripts_executed, presentation.runtime.dom_mutations
             )
         };
         self.set_status(&format!(
-            "HTTP {}  \u{2022}  {}  \u{2022}  network {}  \u{2022}  parse {}{}",
-            page.status,
-            format_bytes(page.bytes),
-            format_duration(page.network_time),
-            format_duration(page.parse_time),
-            script_status
+            "HTTP {}  •  isolated renderer{script_status}",
+            presentation.status
         ));
-        let paint_time = if self.processing_background_tab {
-            Duration::ZERO
-        } else {
+
+        if !self.processing_background_tab {
             let paint_started = Instant::now();
             InvalidateRect(self.window, null(), 0);
             UpdateWindow(self.window);
-            paint_started.elapsed()
-        };
-        self.record_initial_layout_metrics(layout_started, layout_build_time, paint_time);
-        self.schedule_benchmark_finish();
-        if let Some(runtime) = runtime.as_mut() {
-            runtime.set_host_call_profiling(
-                self.benchmark
-                    .as_ref()
-                    .is_some_and(|benchmark| benchmark.early_scroll.is_some()),
-            );
+            if first_presentation && let Some(benchmark) = self.benchmark.as_mut() {
+                benchmark.paint_time = paint_started.elapsed();
+            }
         }
-        let fetch_actions = std::mem::take(&mut script_outcome.fetch_actions);
-        let worker_actions = std::mem::take(&mut script_outcome.worker_actions);
-        self.install_script_runtime(runtime);
-        self.apply_script_fetch_actions(fetch_actions);
-        self.apply_worker_actions(worker_actions);
-        self.begin_async_scripts();
-        let deferred_resources = self.unloaded_deferred_resources();
-        self.begin_deferred_resources(deferred_resources);
+        self.schedule_script_runtime_wakeup();
+        if first_presentation {
+            self.schedule_benchmark_finish();
+        }
+        self.document = Some(presentation.reader);
+    }
+
+    fn record_renderer_presentation_metrics(
+        &mut self,
+        presentation: &RendererPresentation,
+        damage: DisplayListDamage,
+        first: bool,
+    ) {
+        let script_time = Duration::from_micros(presentation.load.script_micros);
+        let style_time = Duration::from_micros(presentation.load.style_micros);
+        let layout_time = Duration::from_micros(presentation.load.layout_micros);
+        self.record_performance_activity(PerformanceActivity::Script, script_time);
+        self.record_performance_activity(PerformanceActivity::Style, style_time);
+        self.record_performance_activity(PerformanceActivity::Layout, layout_time);
+        let load = first.then(|| self.renderer_load_metrics.take()).flatten();
+        let Some(benchmark) = self.benchmark.as_mut() else {
+            return;
+        };
+        if let Some(load) = load {
+            benchmark.final_url = presentation.final_url.clone();
+            benchmark.status = u32::from(load.status);
+            benchmark.bytes = load.bytes;
+            benchmark.network_time = load.network_time;
+            benchmark.parse_time = Duration::from_micros(presentation.load.parse_micros);
+            benchmark.html_parse_time = Duration::from_micros(presentation.load.html_parse_micros);
+            benchmark.resource_processing_time =
+                Duration::from_micros(presentation.load.resource_processing_micros);
+            benchmark.page_ready = benchmark.process_started.elapsed();
+        }
+        benchmark.script_time += script_time;
+        benchmark.style_refresh_time += style_time;
+        benchmark.layout_time += layout_time;
+        benchmark.layout_build_time += layout_time;
+        benchmark.layout_tree_time += layout_time;
+        benchmark.text_measure_count = benchmark
+            .text_measure_count
+            .saturating_add(presentation.load.text_measure_count as usize);
+        benchmark.script_executed = benchmark
+            .script_executed
+            .saturating_add(presentation.runtime.scripts_executed as usize);
+        benchmark.script_mutations = benchmark
+            .script_mutations
+            .saturating_add(presentation.runtime.dom_mutations as usize);
+        benchmark
+            .script_errors
+            .extend(presentation.runtime.errors.iter().cloned());
+        benchmark
+            .script_console
+            .extend(presentation.runtime.console.iter().cloned());
+        benchmark
+            .script_diagnostics
+            .extend(presentation.runtime.diagnostics.iter().cloned());
+        benchmark.script_runtime_stopped |= presentation.runtime.runtime_stopped;
+        if !first && presentation.runtime.render_requested {
+            benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
+            benchmark.render_mutations = benchmark
+                .render_mutations
+                .saturating_add(presentation.runtime.dom_mutations as usize);
+            benchmark.invalidated_nodes = benchmark
+                .invalidated_nodes
+                .saturating_add(presentation.style.invalidated_nodes as usize);
+            benchmark.style_nodes_recomputed = benchmark
+                .style_nodes_recomputed
+                .saturating_add(presentation.style.recomputed_styles as usize);
+            benchmark.style_nodes_full_rebuild = benchmark
+                .style_nodes_full_rebuild
+                .saturating_add(presentation.style.total_styles as usize);
+            benchmark.full_style_rebuilds = benchmark
+                .full_style_rebuilds
+                .saturating_add(usize::from(presentation.style.full_rebuild));
+            benchmark.full_layout_rebuilds = benchmark.full_layout_rebuilds.saturating_add(1);
+            benchmark.display_items_invalidated = benchmark
+                .display_items_invalidated
+                .saturating_add(damage.changed_items);
+            benchmark.full_paint_repaints = benchmark
+                .full_paint_repaints
+                .saturating_add(usize::from(damage.full_repaint));
+        }
     }
 }

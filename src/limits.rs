@@ -47,6 +47,8 @@ pub const MAX_PAGE_SCRIPTS: usize = 64;
 
 pub const MAX_CONTROL_PAYLOAD: usize = 256 * 1024;
 pub const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
+/// Maximum validated immutable presentation retained by the browser for one revision.
+pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;
 pub const RENDERER_MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 pub const RENDERER_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);

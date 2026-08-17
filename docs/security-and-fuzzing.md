@@ -27,8 +27,10 @@ review can audit the complete policy without hunting through parsers and platfor
 
 Network response limits apply to bytes delivered by the WinHTTP transport after its protocol
 processing. Image, SVG, and font consumers enforce their own tighter decoded-form budgets as a
-second boundary. The current page engine still runs in the browser process while renderer migration
-continues; the renderer containment guarantees apply to the capability-free lifecycle child today.
+second boundary. Remote-document decoding, parsing, JavaScript/DOM, style/layout, Workers, and
+resource decoding run in the capability-free per-tab renderer. The browser validates bounded Fetch
+intents and immutable presentation output, retains network/cookie and OS authority, and contains a
+fatal renderer exit to that tab.
 
 ## Fuzz targets
 

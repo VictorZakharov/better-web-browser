@@ -11,6 +11,12 @@ fn encoded_browser(message: &BrowserMessage) -> Vec<u8> {
     writer.into_inner()
 }
 
+fn encoded_renderer(message: &RendererMessage) -> Vec<u8> {
+    let mut writer = FrameWriter::new(Vec::new(), session());
+    writer.send_renderer(message).unwrap();
+    writer.into_inner()
+}
+
 #[test]
 fn browser_messages_round_trip() {
     let messages = [
@@ -21,6 +27,12 @@ fn browser_messages_round_trip() {
         BrowserMessage::Ping(42),
         BrowserMessage::Shutdown,
         BrowserMessage::ProtocolFailure("bad frame".into()),
+        BrowserMessage::Test(TestCommand::Crash),
+        BrowserMessage::Test(TestCommand::AccessViolation),
+        BrowserMessage::Test(TestCommand::OutOfMemory),
+        BrowserMessage::Test(TestCommand::StackOverflow),
+        BrowserMessage::Test(TestCommand::Hang),
+        BrowserMessage::Test(TestCommand::WriteMalformedFrame),
         BrowserMessage::Test(TestCommand::ProbeRestrictions {
             loopback_port: 8080,
         }),
@@ -52,6 +64,7 @@ fn renderer_messages_round_trip() {
             containment: ContainmentReport {
                 app_container: true,
                 no_console_window: true,
+                minimal_environment: true,
             },
         },
         RendererMessage::Pong(9),
@@ -66,6 +79,32 @@ fn renderer_messages_round_trip() {
     }
     let mut reader = FrameReader::new(Cursor::new(bytes), session());
     for expected in messages {
+        assert_eq!(reader.read_renderer().unwrap(), expected);
+    }
+}
+
+#[test]
+fn document_clock_messages_round_trip() {
+    let document = DocumentId::new(11).unwrap();
+    let browser = BrowserMessage::AdvanceTime {
+        document,
+        elapsed_micros: 12_345,
+        max_callbacks: 1,
+    };
+    let mut reader = FrameReader::new(Cursor::new(encoded_browser(&browser)), session());
+    assert_eq!(reader.read_browser().unwrap(), browser);
+
+    for expected in [
+        RendererMessage::TimeAdvanced {
+            document,
+            next_timer_micros: Some(7_500),
+        },
+        RendererMessage::TimeAdvanced {
+            document,
+            next_timer_micros: None,
+        },
+    ] {
+        let mut reader = FrameReader::new(Cursor::new(encoded_renderer(&expected)), session());
         assert_eq!(reader.read_renderer().unwrap(), expected);
     }
 }
@@ -143,6 +182,7 @@ fn rejects_invalid_boolean_and_utf8_payloads() {
             containment: ContainmentReport {
                 app_container: true,
                 no_console_window: true,
+                minimal_environment: true,
             },
         })
         .unwrap();
@@ -150,6 +190,16 @@ fn rejects_invalid_boolean_and_utf8_payloads() {
     assert!(matches!(
         FrameReader::new(Cursor::new(ready), session()).read_renderer(),
         Err(ProtocolError::InvalidPayload("boolean"))
+    ));
+
+    let mut advanced = encoded_renderer(&RendererMessage::TimeAdvanced {
+        document: DocumentId::new(1).unwrap(),
+        next_timer_micros: Some(10),
+    });
+    advanced[HEADER_LENGTH + 8] = 2;
+    assert!(matches!(
+        FrameReader::new(Cursor::new(advanced), session()).read_renderer(),
+        Err(ProtocolError::InvalidPayload("wire boolean"))
     ));
 
     let mut text = encoded_browser(&BrowserMessage::ProtocolFailure("ok".into()));

@@ -1,4 +1,8 @@
 use super::ProtocolError;
+use super::document::{
+    DocumentId, DocumentStart, FetchRequestHead, FetchResponseHead, PresentedViewport,
+    TransferChunk,
+};
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use std::fmt;
 
@@ -89,9 +93,10 @@ impl Default for RendererLimits {
 pub struct ContainmentReport {
     pub app_container: bool,
     pub no_console_window: bool,
+    pub minimal_environment: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BrowserMessage {
     Hello {
         nonce: Nonce,
@@ -100,18 +105,37 @@ pub enum BrowserMessage {
     Ping(u64),
     Shutdown,
     ProtocolFailure(String),
+    BeginDocument(DocumentStart),
+    DocumentChunk(TransferChunk),
+    EndDocument(DocumentId),
+    FetchResponseStart(FetchResponseHead),
+    FetchResponseChunk(TransferChunk),
+    FetchResponseEnd(u64),
+    AdvanceTime {
+        document: DocumentId,
+        elapsed_micros: u64,
+        max_callbacks: u32,
+    },
+    ViewportChanged {
+        document: DocumentId,
+        viewport: PresentedViewport,
+    },
+    CancelDocument(DocumentId),
     Test(TestCommand),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TestCommand {
     Crash,
+    AccessViolation,
+    OutOfMemory,
+    StackOverflow,
     Hang,
     WriteMalformedFrame,
     ProbeRestrictions { loopback_port: u16 },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RendererMessage {
     Ready {
         nonce: Nonce,
@@ -120,6 +144,39 @@ pub enum RendererMessage {
     Pong(u64),
     ShutdownComplete,
     Diagnostic(RendererDiagnostic),
+    FetchBatchStart {
+        document: DocumentId,
+        batch_id: u64,
+        request_count: u32,
+    },
+    FetchRequestStart {
+        batch_id: u64,
+        request: FetchRequestHead,
+    },
+    FetchRequestChunk(TransferChunk),
+    FetchRequestEnd(u64),
+    PresentationStart {
+        document: DocumentId,
+        revision: u64,
+        total_length: u32,
+    },
+    PresentationChunk(TransferChunk),
+    PresentationEnd {
+        document: DocumentId,
+        revision: u64,
+    },
+    TimeAdvanced {
+        document: DocumentId,
+        next_timer_micros: Option<u64>,
+    },
+    DocumentFailed {
+        document: DocumentId,
+        detail: String,
+    },
+    NavigationRequested {
+        document: DocumentId,
+        url: String,
+    },
     Restrictions(RestrictionReport),
 }
 

@@ -1,5 +1,6 @@
-//! Bounded navigation-chain state for script-requested document replacements.
+//! Bounded navigation-chain state for renderer-requested document replacements.
 
+use super::BrowserState;
 use better_web_browser::limits::MAX_SCRIPT_NAVIGATIONS;
 use std::collections::HashSet;
 
@@ -29,6 +30,18 @@ impl ScriptNavigationGuard {
         }
         self.followed += 1;
         Ok(())
+    }
+}
+
+impl BrowserState {
+    pub(super) unsafe fn allow_script_navigation(&mut self, target: &str) -> bool {
+        match self.script_navigation.allow(target) {
+            Ok(()) => true,
+            Err(error) => {
+                self.set_status(&format!("Script navigation blocked: {error}"));
+                false
+            }
+        }
     }
 }
 

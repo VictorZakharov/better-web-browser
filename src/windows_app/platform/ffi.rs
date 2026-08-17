@@ -174,13 +174,6 @@ unsafe extern "system" {
         pitch_and_family: u32,
         face: *const u16,
     ) -> Hfont;
-    pub(in crate::windows_app) fn AddFontMemResourceEx(
-        font: *const c_void,
-        size: u32,
-        reserved: *mut c_void,
-        count: *mut u32,
-    ) -> Handle;
-    pub(in crate::windows_app) fn RemoveFontMemResourceEx(font: Handle) -> i32;
     pub(in crate::windows_app) fn SelectObject(dc: Hdc, object: Hgdiobj) -> Hgdiobj;
     pub(in crate::windows_app) fn DeleteObject(object: Hgdiobj) -> i32;
     pub(in crate::windows_app) fn SetTextColor(dc: Hdc, color: u32) -> u32;

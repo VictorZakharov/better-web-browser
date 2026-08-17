@@ -26,6 +26,23 @@ pub(super) enum Surface {
 
 impl BrowserState {
     pub(super) unsafe fn rebuild_layout(&mut self) -> DisplayListDamage {
+        if let Some(document) = self.renderer_document {
+            let viewport = self.renderer_viewport();
+            let result = self
+                .renderer_session
+                .as_ref()
+                .ok_or_else(|| "renderer session is unavailable".to_string())
+                .and_then(|session| session.update_viewport(document, viewport));
+            self.layout_dirty = false;
+            self.renderer_work_pending = result.is_ok();
+            if let Err(error) = result {
+                self.contain_page_engine_failure(
+                    self.id,
+                    format!("could not resize the isolated document: {error}"),
+                );
+            }
+            return DisplayListDamage::default();
+        }
         let layout_started = Instant::now();
         let mut client: Rect = std::mem::zeroed();
         GetClientRect(self.window, &mut client);
@@ -106,9 +123,6 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn toggle_reader(&mut self) {
-        if self.surface == Surface::Page && self.document.is_none() {
-            self.document = Some(parse_html(&self.reader_html, &self.reader_url));
-        }
         self.surface = match self.surface {
             Surface::Page => Surface::Reader,
             Surface::Reader => Surface::Page,

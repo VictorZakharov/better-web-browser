@@ -6,8 +6,10 @@ mod worker;
 use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, wait_for_process};
 use crate::renderer_protocol::{
-    BrowserMessage, ContainmentReport, FrameReader, FrameWriter, ProtocolError, RendererLimits,
-    RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
+    BrowserFetchResponse, BrowserMessage, ContainmentReport, DocumentId, DocumentStart,
+    FrameReader, FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest,
+    RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
+    TestCommand,
 };
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -40,7 +42,24 @@ pub struct RendererSnapshot {
 
 #[derive(Clone, Debug)]
 pub enum RendererEvent {
-    Diagnostic { code: u16, text: String },
+    Diagnostic {
+        code: u16,
+        text: String,
+    },
+    FetchBatch(Vec<RendererFetchRequest>),
+    Presentation(Box<RendererPresentation>),
+    TimeAdvanced {
+        document: DocumentId,
+        next_timer_micros: Option<u64>,
+    },
+    DocumentFailed {
+        document: DocumentId,
+        detail: String,
+    },
+    NavigationRequested {
+        document: DocumentId,
+        url: String,
+    },
     Unresponsive,
     Exited(RendererExit),
 }
@@ -178,6 +197,49 @@ impl RendererSession {
             .map_err(|_| "renderer broker has exited".to_string())
     }
 
+    pub fn load_document(&self, start: DocumentStart, body: Vec<u8>) -> Result<(), String> {
+        self.commands
+            .send(worker::BrokerCommand::LoadDocument { start, body })
+            .map_err(|_| "renderer broker has exited".to_string())
+    }
+
+    pub fn complete_fetch_batch(&self, responses: Vec<BrowserFetchResponse>) -> Result<(), String> {
+        self.commands
+            .send(worker::BrokerCommand::CompleteFetchBatch(responses))
+            .map_err(|_| "renderer broker has exited".to_string())
+    }
+
+    pub fn advance_time(
+        &self,
+        document: DocumentId,
+        elapsed: Duration,
+        max_callbacks: u32,
+    ) -> Result<(), String> {
+        self.commands
+            .send(worker::BrokerCommand::AdvanceTime {
+                document,
+                elapsed,
+                max_callbacks,
+            })
+            .map_err(|_| "renderer broker has exited".to_string())
+    }
+
+    pub fn update_viewport(
+        &self,
+        document: DocumentId,
+        viewport: PresentedViewport,
+    ) -> Result<(), String> {
+        self.commands
+            .send(worker::BrokerCommand::ViewportChanged { document, viewport })
+            .map_err(|_| "renderer broker has exited".to_string())
+    }
+
+    pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {
+        self.commands
+            .send(worker::BrokerCommand::CancelDocument(document))
+            .map_err(|_| "renderer broker has exited".to_string())
+    }
+
     pub fn wait_for_event(&self, timeout: Duration) -> Result<RendererEvent, String> {
         self.events
             .recv_timeout(timeout)
@@ -310,6 +372,9 @@ fn validate_ready(
     }
     if !containment.no_console_window {
         return Err("renderer unexpectedly owns a console window".into());
+    }
+    if !containment.minimal_environment {
+        return Err("renderer inherited an unsafe process environment".into());
     }
     Ok(())
 }
