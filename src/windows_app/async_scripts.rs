@@ -179,15 +179,9 @@ impl BrowserState {
                 resource_budget -= size;
                 Ok(code)
             };
-            merge_script_outcome(
-                &mut outcome,
-                runtime.advance_time_with_loader(
-                    advance,
-                    MAX_POST_LOAD_TIMER_CALLBACKS,
-                    Some(&mut dynamic_script_loader),
-                ),
-                document_root,
-            );
+            // The fetched script is a networking task. Make elapsed timers eligible, but leave
+            // each callback for a later event-loop turn with its own rendering opportunity.
+            runtime.elapse_time(advance);
             if !outcome.runtime_stopped && outcome.navigation_url.is_none() && !inputs.is_empty() {
                 merge_script_outcome(
                     &mut outcome,

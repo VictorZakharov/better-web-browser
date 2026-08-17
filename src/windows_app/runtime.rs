@@ -12,6 +12,17 @@ use super::*;
 use better_web_browser::fetch::RequestDestination;
 const USER_TIMER_MINIMUM_MS: u128 = 10;
 const USER_TIMER_MAXIMUM_MS: u128 = 0x7fff_ffff;
+// HTML performs rendering and user-interaction steps between event-loop tasks. A Win32 timer
+// wakeup therefore executes one JavaScript timer task instead of draining every overdue callback.
+// <https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model>
+pub(super) const TIMER_CALLBACKS_PER_WAKEUP: usize = 1;
+// Boa callbacks cannot be preempted safely, so keep low-priority post-load script tasks out of an
+// active scroll gesture and resume promptly once input becomes quiet.
+const SCROLL_QUIET_PERIOD: Duration = Duration::from_millis(100);
+// First paint must be followed by a real interaction opportunity. Boa's synchronous embedding API
+// cannot preempt a post-load task once it starts, so starting one in the same turn as first paint
+// can make an otherwise-ready page ignore the user's first wheel input for hundreds of milliseconds.
+const INITIAL_INTERACTION_GRACE: Duration = Duration::from_millis(750);
 
 pub(super) struct PostLoadScriptWork {
     pub script_time: Duration,
@@ -39,12 +50,17 @@ impl BrowserState {
             runtime.cancel_document();
         }
         self.script_runtime_clock = None;
+        self.post_load_script_not_before = None;
     }
 
     pub(super) unsafe fn install_script_runtime(&mut self, runtime: Option<ScriptRuntime>) {
         self.cancel_script_runtime();
         self.script_runtime = runtime;
-        self.script_runtime_clock = self.script_runtime.as_ref().map(|_| Instant::now());
+        let installed = self.script_runtime.as_ref().map(|_| Instant::now());
+        self.script_runtime_clock = installed;
+        self.post_load_script_not_before = installed
+            .filter(|_| self.benchmark.is_none())
+            .map(|now| now + INITIAL_INTERACTION_GRACE);
         self.schedule_script_runtime_wakeup();
     }
 
@@ -55,15 +71,25 @@ impl BrowserState {
         }
     }
 
-    unsafe fn schedule_script_runtime_wakeup(&mut self) {
+    pub(super) unsafe fn schedule_script_runtime_wakeup(&mut self) {
         KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
-        let next_delay = self
-            .script_runtime
-            .as_mut()
-            .and_then(ScriptRuntime::next_timer_delay);
+        let pending_async_script = self
+            .tabs
+            .iter()
+            .any(|tab| !tab.pending_async_scripts.is_empty());
+        let next_delay = if pending_async_script {
+            Some(Duration::ZERO)
+        } else {
+            self.script_runtime
+                .as_mut()
+                .and_then(ScriptRuntime::next_timer_delay)
+        };
         let Some(next_delay) = next_delay else {
             return;
         };
+        let next_delay = self
+            .remaining_scroll_quiet_period(Instant::now())
+            .map_or(next_delay, |quiet| next_delay.max(quiet));
         if SetTimer(
             self.window,
             ID_SCRIPT_RUNTIME_TIMER,
@@ -77,6 +103,21 @@ impl BrowserState {
 
     pub(super) unsafe fn pump_script_runtime(&mut self) {
         KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+        if self.remaining_scroll_quiet_period(Instant::now()).is_some() {
+            self.schedule_script_runtime_wakeup();
+            return;
+        }
+        let pending_async_script = self.tabs.iter_mut().find_map(|tab| {
+            let id = tab.id;
+            tab.pending_async_scripts
+                .pop_front()
+                .map(|message| (id, message))
+        });
+        if let Some((id, message)) = pending_async_script {
+            self.route_async_script_message(id, message);
+            self.schedule_script_runtime_wakeup();
+            return;
+        }
         let advance = self.take_script_runtime_elapsed();
         let client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
@@ -123,7 +164,7 @@ impl BrowserState {
             };
             runtime.advance_time_with_loader(
                 advance,
-                MAX_POST_LOAD_TIMER_CALLBACKS,
+                TIMER_CALLBACKS_PER_WAKEUP,
                 Some(&mut dynamic_script_loader),
             )
         };
@@ -154,6 +195,23 @@ impl BrowserState {
             .replace(now)
             .map(|previous| now.saturating_duration_since(previous))
             .unwrap_or_default()
+    }
+
+    pub(super) unsafe fn note_scroll_activity(&mut self) {
+        self.last_scroll_activity = Some(Instant::now());
+        self.schedule_script_runtime_wakeup();
+    }
+
+    pub(super) fn should_defer_script_work(&self) -> bool {
+        self.remaining_scroll_quiet_period(Instant::now()).is_some()
+    }
+
+    fn remaining_scroll_quiet_period(&self, now: Instant) -> Option<Duration> {
+        remaining_script_quiet_period(
+            self.last_scroll_activity,
+            self.post_load_script_not_before,
+            now,
+        )
     }
 
     pub(super) unsafe fn complete_post_load_script_task(
@@ -242,6 +300,28 @@ fn win32_timer_delay_ms(delay: Duration) -> u32 {
         .as_millis()
         .saturating_add(u128::from(!delay.subsec_nanos().is_multiple_of(1_000_000)));
     rounded_up.clamp(USER_TIMER_MINIMUM_MS, USER_TIMER_MAXIMUM_MS) as u32
+}
+
+fn remaining_quiet_period(
+    last_activity: Option<Instant>,
+    now: Instant,
+    quiet_period: Duration,
+) -> Option<Duration> {
+    last_activity
+        .and_then(|last| quiet_period.checked_sub(now.saturating_duration_since(last)))
+        .filter(|remaining| !remaining.is_zero())
+}
+
+fn remaining_script_quiet_period(
+    last_scroll_activity: Option<Instant>,
+    post_load_not_before: Option<Instant>,
+    now: Instant,
+) -> Option<Duration> {
+    let scroll = remaining_quiet_period(last_scroll_activity, now, SCROLL_QUIET_PERIOD);
+    let initial = post_load_not_before
+        .and_then(|deadline| deadline.checked_duration_since(now))
+        .filter(|remaining| !remaining.is_zero());
+    scroll.max(initial)
 }
 
 #[cfg(test)]

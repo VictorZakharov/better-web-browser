@@ -61,6 +61,8 @@ impl BrowserState {
         page: InitialPageMetrics<'_>,
         outcome: &ScriptOutcome,
     ) {
+        self.record_performance_activity(PerformanceActivity::Script, page.script_time);
+        self.record_performance_activity(PerformanceActivity::Style, page.style_refresh_time);
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
@@ -109,6 +111,8 @@ impl BrowserState {
         style_refresh_time: Duration,
         render: Option<RenderCheckpointMetrics>,
     ) {
+        self.record_performance_activity(PerformanceActivity::Script, work.script_time);
+        self.record_performance_activity(PerformanceActivity::Style, style_refresh_time);
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
@@ -129,6 +133,9 @@ impl BrowserState {
             .script_diagnostics
             .extend(outcome.diagnostics.iter().cloned());
         benchmark.script_runtime_stopped |= outcome.runtime_stopped;
+        benchmark.activity.script_time += work.script_time;
+        benchmark.activity.style_time += style_refresh_time;
+        benchmark.activity.script_tasks += 1;
         if let Some(render) = render {
             benchmark.render_checkpoints += 1;
             benchmark.render_mutations += outcome.invalidation.mutation_count;
@@ -139,6 +146,8 @@ impl BrowserState {
             benchmark.full_layout_rebuilds += 1;
             benchmark.display_items_invalidated += render.damage.changed_items;
             benchmark.full_paint_repaints += usize::from(render.damage.full_repaint);
+            benchmark.activity.invalidated_nodes += render.style.invalidated_nodes;
+            benchmark.activity.full_style_rebuilds += usize::from(render.style.full_rebuild);
         }
     }
 }

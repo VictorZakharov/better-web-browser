@@ -68,6 +68,7 @@ pub(super) const WM_APP_DEFERRED_RESOURCES: u32 = WM_APP + 5;
 pub(super) const WM_APP_ASYNC_SCRIPT: u32 = WM_APP + 6;
 pub(super) const WM_APP_RENDERER_LAUNCHED: u32 = WM_APP + 7;
 pub(super) const WM_APP_TAB_SEARCH_CLOSED: u32 = WM_APP + 8;
+pub(super) const WM_APP_EARLY_SCROLL_TICK: u32 = WM_APP + 9;
 
 pub(super) const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 pub(super) const WS_POPUP: u32 = 0x8000_0000;
@@ -143,7 +144,9 @@ pub(super) const ID_TAB_SEARCH_EDIT: usize = 1100;
 pub(super) const ID_PAGE_CONTROL_BASE: usize = 2000;
 pub(super) const ID_SCRIPT_RUNTIME_TIMER: usize = 1;
 pub(super) const ID_RENDERER_MONITOR_TIMER: usize = 2;
-pub(super) use better_web_browser::limits::{MAX_POST_LOAD_TIMER_CALLBACKS, PAGE_RESOURCE_BUDGET};
+pub(super) const ID_PERFORMANCE_MONITOR_TIMER: usize = 3;
+pub(super) const ID_SCROLL_ANIMATION_TIMER: usize = 4;
+pub(super) use better_web_browser::limits::PAGE_RESOURCE_BUDGET;
 
 pub(super) const DEFAULT_DPI: u32 = 96;
 pub(super) const DEFAULT_WINDOW_WIDTH_DIP: i32 = 1120;

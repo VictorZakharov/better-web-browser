@@ -5,6 +5,8 @@ use super::paint_index::PaintIndex;
 use super::tab_state::TabFocus;
 use super::*;
 
+const SW_INVALIDATE: u32 = 0x0002;
+
 pub(super) struct DrawItem {
     pub(super) x: i32,
     pub(super) y: i32,
@@ -99,6 +101,7 @@ impl BrowserState {
         let tab = self.tabs.active_mut();
         tab.last_layout_finalize_time = layout_finalize_time;
         tab.layout_dirty = false;
+        self.record_benchmark_layout(layout_started.elapsed(), damage);
         damage
     }
 
@@ -136,11 +139,73 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn scroll_to(&mut self, position: i32) {
+        self.cancel_scroll_animation();
+        self.commit_scroll_position(position);
+    }
+
+    pub(super) unsafe fn commit_scroll_position(&mut self, position: i32) {
+        self.note_scroll_activity();
+        let previous = self.scroll_y;
         self.scroll_y = position;
         self.clamp_scroll();
+        if self.scroll_y == previous {
+            return;
+        }
         self.update_scrollbar();
-        self.sync_page_control_positions();
-        InvalidateRect(self.window, null(), 0);
+        if !self.processing_background_tab {
+            if self
+                .benchmark
+                .as_ref()
+                .is_some_and(|benchmark| benchmark.early_scroll.is_some())
+            {
+                self.sync_page_control_positions();
+                // An invisible window has no paintable update region. Exercise the same retained
+                // display list through a bounded offscreen surface for the hidden trace.
+                if let Err(error) = self.paint_benchmark_frame()
+                    && let Some(benchmark) = self.benchmark.as_mut()
+                {
+                    benchmark
+                        .error
+                        .get_or_insert_with(|| format!("early-scroll paint failed: {error}"));
+                }
+            } else {
+                let mut client: Rect = std::mem::zeroed();
+                GetClientRect(self.window, &mut client);
+                let content = Rect {
+                    left: 0,
+                    top: self.toolbar_height(),
+                    right: client.right,
+                    bottom: (client.bottom - self.status_height()).max(self.toolbar_height()),
+                };
+                let delta = previous - self.scroll_y;
+                if delta.unsigned_abs() < content.height() as u32 {
+                    // Preserve pixels that remain visible and invalidate only the exposed strip.
+                    // <https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-scrollwindowex>
+                    ScrollWindowEx(
+                        self.window,
+                        0,
+                        delta,
+                        &content,
+                        &content,
+                        null_mut(),
+                        null_mut(),
+                        SW_INVALIDATE,
+                    );
+                } else {
+                    InvalidateRect(self.window, &content, 0);
+                }
+                // Move native form controls after shifting the parent's retained pixels. Moving
+                // them first lets their old/new invalidations participate in the bit scroll and
+                // can leave a stale control-shaped patch behind.
+                self.sync_page_control_positions();
+                // WM_PAINT is low priority. Commit this invalidated scroll frame before the next
+                // post-load task can occupy the UI thread.
+                // <https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-updatewindow>
+                UpdateWindow(self.window);
+            }
+        } else {
+            self.sync_page_control_positions();
+        }
     }
 
     pub(super) unsafe fn update_scrollbar(&self) {

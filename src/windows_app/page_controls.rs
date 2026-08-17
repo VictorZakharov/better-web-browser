@@ -139,6 +139,7 @@ impl BrowserState {
             });
         }
         self.sync_page_control_positions();
+        self.position_performance_window();
     }
 
     pub(super) unsafe fn sync_page_control_positions(&self) {

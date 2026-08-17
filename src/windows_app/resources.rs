@@ -255,8 +255,10 @@ impl BrowserState {
         if message.generation != self.generation {
             return;
         }
+        let processing_started = Instant::now();
         let mut changed = false;
         let mut fonts_changed = false;
+        let mut completions = 0_usize;
         for (resource, body) in message.loaded {
             let size = body.len() as u64;
             if size > self.page_resource_budget {
@@ -284,8 +286,10 @@ impl BrowserState {
                 }
                 changed = true;
                 fonts_changed |= is_font;
+                completions += 1;
             }
         }
+        self.record_benchmark_resource_completion(processing_started.elapsed(), completions);
         if changed {
             if fonts_changed {
                 let tab = self.tabs.active_mut();

@@ -3,11 +3,13 @@
 use super::document_navigation::ScriptNavigationGuard;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
+use super::scrolling::ScrollAnimation;
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
@@ -18,6 +20,7 @@ pub(super) struct BrowserTab {
     pub(super) title: String,
     pub(super) omnibox_text: String,
     pub(super) status_text: String,
+    pub(super) performance: TabPerformance,
     pub(super) focus: TabFocus,
     pub(super) dynamic_fonts: DynamicFonts,
     pub(super) web_fonts: WebFontResources,
@@ -25,6 +28,9 @@ pub(super) struct BrowserTab {
     pub(super) page: Page,
     pub(super) script_runtime: Option<ScriptRuntime>,
     pub(super) script_runtime_clock: Option<Instant>,
+    pub(super) post_load_script_not_before: Option<Instant>,
+    pub(super) pending_async_scripts: VecDeque<async_scripts::AsyncScriptMessage>,
+    pub(super) last_scroll_activity: Option<Instant>,
     pub(super) loaded_page_resources: HashSet<PageResource>,
     pub(super) page_resource_budget: u64,
     pub(super) document: Option<Document>,
@@ -37,6 +43,7 @@ pub(super) struct BrowserTab {
     pub(super) surface: Surface,
     pub(super) content_height: i32,
     pub(super) scroll_y: i32,
+    pub(super) scroll_animation: ScrollAnimation,
     pub(super) history: Vec<String>,
     pub(super) history_index: usize,
     pub(super) script_navigation: ScriptNavigationGuard,
@@ -64,6 +71,7 @@ impl BrowserTab {
             title: "New Tab".into(),
             omnibox_text: String::new(),
             status_text: "Ready".into(),
+            performance: TabPerformance::default(),
             focus: TabFocus::Address,
             dynamic_fonts: DynamicFonts::default(),
             web_fonts: WebFontResources::default(),
@@ -71,6 +79,9 @@ impl BrowserTab {
             page,
             script_runtime: None,
             script_runtime_clock: None,
+            post_load_script_not_before: None,
+            pending_async_scripts: VecDeque::new(),
+            last_scroll_activity: None,
             loaded_page_resources: HashSet::new(),
             page_resource_budget: PAGE_RESOURCE_BUDGET,
             document: Some(document),
@@ -83,6 +94,7 @@ impl BrowserTab {
             surface: Surface::Page,
             content_height: 0,
             scroll_y: 0,
+            scroll_animation: ScrollAnimation::default(),
             history: Vec::new(),
             history_index: 0,
             script_navigation: ScriptNavigationGuard::default(),

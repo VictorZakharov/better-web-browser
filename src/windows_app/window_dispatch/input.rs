@@ -45,6 +45,14 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
             state.handle_shortcut(shortcut);
             return true;
         }
+        if message.message == WM_KEYDOWN
+            && GetDlgCtrlID(message.hwnd) == ID_ADDRESS as i32
+            && is_select_all_shortcut(message.wparam, modifiers)
+        {
+            // EM_SETSEL documents (0, -1) as selecting all text in a Win32 edit control.
+            SendMessageW(message.hwnd, EM_SETSEL, 0, -1);
+            return true;
+        }
         if in_tab_search && state.handle_tab_search_key(message.wparam) {
             return true;
         }
@@ -114,4 +122,30 @@ pub(in crate::windows_app) unsafe extern "system" fn chrome_control_proc(
         _ => {}
     }
     DefSubclassProc(window, message, wparam, lparam)
+}
+
+fn is_select_all_shortcut(key: usize, modifiers: KeyModifiers) -> bool {
+    key == b'A' as usize && modifiers.control && !modifiers.shift && !modifiers.alt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn address_select_all_does_not_shadow_tab_search() {
+        let control = KeyModifiers {
+            control: true,
+            ..KeyModifiers::default()
+        };
+        assert!(is_select_all_shortcut(b'A' as usize, control));
+        assert!(!is_select_all_shortcut(
+            b'A' as usize,
+            KeyModifiers {
+                shift: true,
+                ..control
+            }
+        ));
+        assert!(!is_select_all_shortcut(b'B' as usize, control));
+    }
 }

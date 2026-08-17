@@ -16,8 +16,18 @@ pub(super) fn hidden_benchmark(
     artifacts: &TestArtifacts,
     settle_ms: u64,
 ) -> std::process::Child {
+    hidden_benchmark_with_args(url, artifacts, settle_ms, &[])
+}
+
+pub(super) fn hidden_benchmark_with_args(
+    url: &str,
+    artifacts: &TestArtifacts,
+    settle_ms: u64,
+    extra_arguments: &[&str],
+) -> std::process::Child {
     let settle_ms = settle_ms.to_string();
-    Command::new(env!("CARGO_BIN_EXE_better-web-browser"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_better-web-browser"));
+    command
         .args([
             "--benchmark",
             url,
@@ -28,6 +38,7 @@ pub(super) fn hidden_benchmark(
             "--settle-ms",
             &settle_ms,
         ])
+        .args(extra_arguments)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .expect("launch hidden Breeze benchmark")

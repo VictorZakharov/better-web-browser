@@ -80,6 +80,7 @@ impl BrowserState {
         self.update_history_buttons();
         self.render_dpi = self.dpi;
         self.resize_controls();
+        self.create_performance_window()?;
         self.rebuild_layout();
 
         Ok(())
@@ -225,5 +226,6 @@ impl BrowserState {
             right: width,
             bottom: height,
         };
+        self.position_performance_window();
     }
 }

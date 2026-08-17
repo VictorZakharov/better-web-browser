@@ -10,47 +10,56 @@ impl HostState {
     ) -> Option<String> {
         let version = self.document.document_mutation_version();
         let invalidation = self.pending_invalidation.snapshot(self.mutation_count);
-        match self.computed_styles.take() {
-            Some((cached_version, mut styles))
-                if cached_version != version
-                    && !invalidation.rebuild_style_rules
-                    && !invalidation.is_empty() =>
-            {
-                let root = invalidation
-                    .root
-                    .and_then(|wanted| {
-                        Node::descendants(&self.document).find(|node| node.id() == wanted)
-                    })
-                    .unwrap_or_else(|| self.document.clone());
-                styles.refresh_subtree(&self.document, &root, &invalidation.removed_nodes);
-                self.computed_styles = Some((version, styles));
+        let mut styles = match self.computed_styles.take() {
+            Some((cached_version, styles)) if cached_version == version => styles,
+            Some((_, mut styles)) if !invalidation.rebuild_style_rules => {
+                styles.clear_computed_styles();
+                styles
             }
-            Some(cached) if cached.0 == version => self.computed_styles = Some(cached),
             _ => {
                 // Script execution currently owns inline style sources. External sheets remain in
-                // the page resource layer until those lifetimes are unified.
-                let styles =
-                    StyleSet::from_document(&self.document, &self.document_url, &[], 1024.0);
-                self.computed_styles = Some((version, styles));
+                // the page resource layer until those lifetimes are unified. Compute only the
+                // requested node's ancestor chain; getComputedStyle must not cascade every node in
+                // a large document merely to inspect one feature-test element.
+                StyleSet::for_computed_style(&self.document, &self.document_url, &[], 1024.0)
             }
-        }
-        if let Some(value) = self
-            .computed_styles
-            .as_ref()
-            .and_then(|(_, styles)| styles.styles.get(&node.id()))
-            .and_then(|style| resolved_property_value(style, property))
-        {
-            return Some(value);
-        }
+        };
+        let value = styles
+            .computed_style_for_node(node)
+            .and_then(|style| resolved_property_value(style, property));
+        self.computed_styles = Some((version, styles));
+        value
+    }
+}
 
-        let mut root = node.clone();
-        while let Some(parent) = root.parent() {
-            root = parent;
-        }
-        let styles = StyleSet::from_document(&root, &self.document_url, &[], 1024.0);
-        styles
-            .styles
-            .get(&node.id())
-            .and_then(|style| resolved_property_value(style, property))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::dom;
+
+    #[test]
+    fn computed_style_cascades_only_the_requested_ancestor_chain() {
+        let markup = format!(
+            "<style>.target {{ color: #123456 }}</style><main>{}</main>",
+            (0..100)
+                .map(|index| format!(
+                    "<p class='{}'>{index}</p>",
+                    if index == 99 { "target" } else { "" }
+                ))
+                .collect::<String>()
+        );
+        let dom = dom::parse(&markup);
+        let target = dom
+            .elements_named("p")
+            .find(|node| node.attr("class").as_deref() == Some("target"))
+            .unwrap();
+        let mut state = HostState::new(dom.document.clone(), "https://example.com/", "UTF-8");
+
+        assert_eq!(
+            state.computed_style_property(&target, "color").as_deref(),
+            Some("rgb(18, 52, 86)")
+        );
+        let computed = &state.computed_styles.as_ref().unwrap().1.styles;
+        assert!(computed.len() < 10, "computed {} styles", computed.len());
     }
 }

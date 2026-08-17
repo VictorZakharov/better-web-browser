@@ -44,6 +44,15 @@ the privileged browser, with one child row per stable tab/renderer context. Rows
 memory, handles, uptime, lifecycle state, restarts, and exit diagnostics; document-engine activity
 is reported separately.
 
+## Performance monitor
+
+The bottom-right status-bar counter reports completed content frames for the current tab's active
+scroll animation. Click it to toggle a native rolling two-second monitor with FPS, p95 and maximum
+frame interval, long-frame count, and paint, JavaScript, style, layout, and resource-processing
+time. **Copy diagnostics** exports the URL, summaries, and raw frame-interval series as text for a
+bug report. A 250 ms display timer repaints only browser chrome and the monitor surface; those
+updates are excluded from the content-frame sequence and cannot inflate its FPS.
+
 ## Chromium comparison
 
 The comparison harness runs Breeze and a separately supplied Chromium reference as fresh hidden processes, then reports median timing, memory, CPU, and process counts.
@@ -120,7 +129,13 @@ cargo build --release
 Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
 verification without putting a browser window on the desktop. Repeatable `--diagnostic-selector`
 options add bounded computed-style, resource-decode, and native-control geometry facts to the JSON
-report; omit them during normal measurements.
+report; omit them during normal measurements. `--early-scroll-trace` starts at page-ready and
+drives a six-second, 16 ms scroll schedule through the same offscreen paint path. Its JSON report
+includes input-to-paint latency plus per-sample script, resource, style, layout, invalidation, and
+paint activity plus bounded native host-call timing, making post-load responsiveness regressions
+reproducible without visible UI. While scrolling remains active, Breeze gives input priority over
+post-load timer and async-script tasks; deferred work resumes one task at a time after a 100 ms
+quiet period.
 
 ### Web-platform regression suite
 

@@ -92,6 +92,10 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn DestroyWindow(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn IsWindow(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn SetForegroundWindow(window: Hwnd) -> i32;
+    pub(in crate::windows_app) fn OpenClipboard(owner: Hwnd) -> i32;
+    pub(in crate::windows_app) fn CloseClipboard() -> i32;
+    pub(in crate::windows_app) fn EmptyClipboard() -> i32;
+    pub(in crate::windows_app) fn SetClipboardData(format: u32, memory: Handle) -> Handle;
     pub(in crate::windows_app) fn EnableWindow(window: Hwnd, enabled: i32) -> i32;
     pub(in crate::windows_app) fn SetWindowPos(
         window: Hwnd,
@@ -122,6 +126,16 @@ unsafe extern "system" {
         window: Hwnd,
         bar: i32,
         info: *mut ScrollInfo,
+    ) -> i32;
+    pub(in crate::windows_app) fn ScrollWindowEx(
+        window: Hwnd,
+        delta_x: i32,
+        delta_y: i32,
+        scroll: *const Rect,
+        clip: *const Rect,
+        update_region: Hrgn,
+        update_rectangle: *mut Rect,
+        flags: u32,
     ) -> i32;
     pub(in crate::windows_app) fn MessageBoxW(
         window: Hwnd,
@@ -194,6 +208,12 @@ unsafe extern "system" {
         top: i32,
         right: i32,
         bottom: i32,
+    ) -> i32;
+    pub(in crate::windows_app) fn SetViewportOrgEx(
+        dc: Hdc,
+        x: i32,
+        y: i32,
+        previous: *mut Point,
     ) -> i32;
     pub(in crate::windows_app) fn CreateRoundRectRgn(
         left: i32,
@@ -283,6 +303,10 @@ unsafe extern "system" {
         user: *mut FileTime,
     ) -> i32;
     pub(in crate::windows_app) fn GetProcessHandleCount(process: Handle, count: *mut u32) -> i32;
+    pub(in crate::windows_app) fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
+    pub(in crate::windows_app) fn GlobalLock(memory: Handle) -> *mut c_void;
+    pub(in crate::windows_app) fn GlobalUnlock(memory: Handle) -> i32;
+    pub(in crate::windows_app) fn GlobalFree(memory: Handle) -> Handle;
 }
 
 #[link(name = "psapi")]
