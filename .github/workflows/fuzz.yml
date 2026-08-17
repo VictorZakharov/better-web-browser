@@ -1,14 +1,11 @@
 name: Fuzz
 
+env:
+  CARGO_INCREMENTAL: 0
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/fuzz.yml"
-      - "fuzz/**"
-      - "scripts/run-fuzz-smoke.ps1"
-      - "src/fuzzing.rs"
-      - "src/limits.rs"
-      - "tests/hostile_input.rs"
   workflow_dispatch:
     inputs:
       seconds_per_target:
@@ -21,23 +18,44 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   libfuzzer:
-    name: Six hostile-input targets
+    name: Fuzz (${{ matrix.target }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - html_document
+          - html_fragment
+          - css_stylesheet
+          - url_resolution
+          - dom_mutations
+          - javascript_host_bindings
     steps:
       - uses: actions/checkout@v7
       - name: Install pinned nightly toolchain
         run: rustup toolchain install nightly-2026-08-15 --profile minimal
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.17.0
       - name: Restore Cargo registry cache
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-          key: linux-fuzz-registry-v1-${{ hashFiles('fuzz/Cargo.lock') }}
-          restore-keys: linux-fuzz-registry-v1-
+            ~/.cargo/registry/src
+          key: linux-fuzz-registry-v2-${{ hashFiles('fuzz/Cargo.lock') }}
+          restore-keys: |
+            linux-fuzz-registry-v2-
+            linux-fuzz-registry-v1-
       - name: Restore pinned cargo-fuzz executable
         id: cargo-fuzz-cache
         uses: actions/cache@v6
@@ -47,17 +65,31 @@ jobs:
       - name: Install pinned cargo-fuzz
         if: steps.cargo-fuzz-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Build fuzz target
+        run: cargo +nightly-2026-08-15 fuzz build ${{ matrix.target }}
       - name: Run bounded fuzz campaign
         shell: pwsh
         env:
-          EVENT_NAME: ${{ github.event_name }}
           REQUESTED_SECONDS: ${{ inputs.seconds_per_target }}
         run: |
           $seconds = if ($env:REQUESTED_SECONDS) {
             [int]$env:REQUESTED_SECONDS
-          } elseif ($env:EVENT_NAME -eq 'schedule') {
-            30
           } else {
-            5
+            30
           }
-          ./scripts/run-fuzz-smoke.ps1 -LibFuzzer -Seconds $seconds
+          ./scripts/run-fuzz-smoke.ps1 `
+            -LibFuzzer `
+            -Target '${{ matrix.target }}' `
+            -Seconds $seconds `
+            -Quiet `
+            -LogDirectory (Join-Path $env:RUNNER_TEMP 'fuzz-logs')
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/fuzz-logs/*.log
+            fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14
