@@ -230,10 +230,17 @@ impl BrowserState {
             paint_started.elapsed()
         };
         self.record_initial_layout_metrics(layout_started, layout_build_time, paint_time);
+        self.schedule_benchmark_finish();
+        if let Some(runtime) = runtime.as_mut() {
+            runtime.set_host_call_profiling(
+                self.benchmark
+                    .as_ref()
+                    .is_some_and(|benchmark| benchmark.early_scroll.is_some()),
+            );
+        }
         self.install_script_runtime(runtime);
         self.begin_async_scripts();
         let deferred_resources = self.unloaded_deferred_resources();
-        self.schedule_benchmark_finish();
         self.begin_deferred_resources(deferred_resources);
     }
 }

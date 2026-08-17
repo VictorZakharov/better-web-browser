@@ -26,6 +26,7 @@ pub(super) struct HostState {
     pub(super) cookie_updates: Vec<String>,
     pub(super) executed: usize,
     pub(super) diagnostics: Vec<String>,
+    pub(super) host_call_profile: super::host_profiling::HostCallProfile,
     pub(super) pending_document_write: String,
     pub(super) pending_dynamic_scripts: Vec<PendingDynamicScript>,
     pub(super) started_dynamic_scripts: HashSet<NodeId>,
@@ -62,6 +63,7 @@ impl HostState {
             cookie_updates: Vec::new(),
             executed: 0,
             diagnostics: Vec::new(),
+            host_call_profile: super::host_profiling::HostCallProfile::default(),
             pending_document_write: String::new(),
             pending_dynamic_scripts: Vec::new(),
             started_dynamic_scripts: HashSet::new(),
@@ -183,6 +185,10 @@ impl HostState {
         if self.diagnostics.len() < 64 {
             self.diagnostics.push(message);
         }
+    }
+
+    pub(super) fn append_host_call_diagnostics(&mut self, diagnostics: &mut Vec<String>) {
+        diagnostics.extend(self.host_call_profile.take_diagnostics());
     }
 
     pub(super) fn record_mutation(&mut self, target: Option<&NodeRef>, kind: MutationKind<'_>) {

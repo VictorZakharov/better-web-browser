@@ -51,6 +51,22 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
     ) -> Self {
+        let mut set = Self::for_computed_style(
+            document,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+        );
+        set.compute_subtree(document, None);
+        set
+    }
+
+    pub(crate) fn for_computed_style(
+        document: &NodeRef,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        viewport_width: f32,
+    ) -> Self {
         let mut rules = Vec::new();
         let mut next_order = 0_u32;
         for style_element in
@@ -74,14 +90,36 @@ impl StyleSet {
             );
         }
         let rule_index = RuleIndex::new(&rules);
-        let mut set = Self {
+        Self {
             styles: HashMap::new(),
             rules,
             rule_index,
             document_base_url: document_base_url.to_string(),
-        };
-        set.compute_subtree(document, None);
-        set
+        }
+    }
+
+    pub(crate) fn clear_computed_styles(&mut self) {
+        self.styles.clear();
+    }
+
+    pub(crate) fn computed_style_for_node(&mut self, node: &NodeRef) -> Option<&ComputedStyle> {
+        if !self.styles.contains_key(&node_id(node)) {
+            let mut ancestors =
+                std::iter::successors(Some(node.clone()), |current| current.parent())
+                    .collect::<Vec<_>>();
+            ancestors.reverse();
+            let mut parent_style = None;
+            for ancestor in ancestors {
+                let style = self
+                    .styles
+                    .get(&node_id(&ancestor))
+                    .cloned()
+                    .unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
+                self.styles.insert(node_id(&ancestor), style.clone());
+                parent_style = Some(style);
+            }
+        }
+        self.styles.get(&node_id(node))
     }
 
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
@@ -117,8 +155,14 @@ impl StyleSet {
         let mut stats = StyleRefreshStats::default();
         self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
 
+        // A node may be removed and reinserted before the rendering checkpoint. Its identifier
+        // remains in the removal log, but its newly recomputed style must remain available.
+        let connected_nodes = Node::descendants(document)
+            .map(|node| node_id(&node))
+            .collect::<HashSet<_>>();
         stats.removed_styles = removed_nodes
             .iter()
+            .filter(|node| !connected_nodes.contains(node))
             .filter(|node| self.styles.remove(node).is_some())
             .count();
         stats.total_styles = self.styles.len();

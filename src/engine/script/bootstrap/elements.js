@@ -1,7 +1,7 @@
     class Element extends Node {
-        get tagName() { return host('tagName', this.__id); }
-        get localName() { return host('localName', this.__id); }
-        get namespaceURI() { return host('namespaceUri', this.__id); }
+        get tagName() { return this.__nodeName; }
+        get localName() { return this.__localName; }
+        get namespaceURI() { return this.__namespaceURI; }
         get prefix() { return host('prefix', this.__id); }
         get id() { return this.getAttribute('id') || ''; }
         set id(value) { this.setAttribute('id', value); }
@@ -231,8 +231,8 @@
         }
     }
     class HTMLDialogElement extends HTMLElement {
-        constructor(id) {
-            super(id);
+        constructor(id, ...metadata) {
+            super(id, ...metadata);
             this.returnValue = '';
             this.__isModal = false;
         }

@@ -50,8 +50,8 @@
     let documentWriteRefreshQueued = false;
 
     class Document extends Node {
-        constructor(id = 0) {
-            super(Number(id) || host('createDocument', '', ''));
+        constructor(id = 0, ...metadata) {
+            super(Number(id) || host('createDocument', '', ''), ...metadata);
             cache.set(this.__id, this);
             this.readyState = 'loading';
             this.activeElement = null;
@@ -124,19 +124,22 @@
         id = Number(id) || 0;
         if (!id) return null;
         if (cache.has(id)) return cache.get(id);
-        const type = host('nodeType', id);
+        const metadata = host('nodeMetadata', id).split('\u001f');
+        const type = Number(metadata[0]);
         let node;
-        if (type === 9) node = new Document(id);
+        if (type === 9) node = new Document(id, type, metadata[1], null, null);
         else if (type === 1) {
-            const namespace = host('namespaceUri', id);
+            const namespace = metadata[3] || null;
             const Constructor = namespace === htmlNamespace
-                ? htmlElementConstructor(host('localName', id).toLowerCase())
+                ? htmlElementConstructor(metadata[2].toLowerCase())
                 : Element;
-            node = new Constructor(id);
+            node = new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
         }
-        else if (type === 10) node = new DocumentType(id);
-        else if (type === 11) node = new DocumentFragment(id);
-        else node = type === 8 ? new Comment(id) : new Text(id);
+        else if (type === 10) node = new DocumentType(id, type, metadata[1], null, null);
+        else if (type === 11) node = new DocumentFragment(id, type, metadata[1], null, null);
+        else node = type === 8
+            ? new Comment(id, type, metadata[1], null, null)
+            : new Text(id, type, metadata[1], null, null);
         cache.set(id, node);
         return node;
     }

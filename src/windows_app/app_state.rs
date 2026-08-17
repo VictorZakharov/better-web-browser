@@ -33,6 +33,8 @@ pub(super) struct BrowserState {
     pub(super) task_window: Hwnd,
     pub(super) tab_search_window: Hwnd,
     pub(super) tab_search_edit: Hwnd,
+    pub(super) performance_window: Hwnd,
+    pub(super) performance_panel_visible: bool,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
@@ -84,6 +86,8 @@ impl BrowserState {
             task_window: null_mut(),
             tab_search_window: null_mut(),
             tab_search_edit: null_mut(),
+            performance_window: null_mut(),
+            performance_panel_visible: false,
             renderer_registry: Arc::clone(&app.renderer_registry),
             media_viewport_width: 0.0,
             outer_window_width: 0,
@@ -215,6 +219,8 @@ impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+            KillTimer(self.window, ID_PERFORMANCE_MONITOR_TIMER);
+            KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);
             let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
             for id in ids {
                 self.app.tab_router.unbind(id);

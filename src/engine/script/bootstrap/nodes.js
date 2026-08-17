@@ -1,10 +1,21 @@
     class Node extends EventTarget {
-        constructor(id) {
+        constructor(id, type, name, localName, namespaceURI) {
             super();
             this.__id = id;
+            if (type === undefined) {
+                const metadata = host('nodeMetadata', id).split('\u001f');
+                type = Number(metadata[0]);
+                name = metadata[1];
+                localName = metadata[2] || null;
+                namespaceURI = metadata[3] || null;
+            }
+            this.__nodeType = type;
+            this.__nodeName = name;
+            this.__localName = localName;
+            this.__namespaceURI = namespaceURI;
         }
-        get nodeType() { return host('nodeType', this.__id); }
-        get nodeName() { return host('nodeName', this.__id); }
+        get nodeType() { return this.__nodeType; }
+        get nodeName() { return this.__nodeName; }
         get ownerDocument() { return wrap(host('ownerDocument', this.__id)); }
         get parentNode() { return wrap(host('parent', this.__id)); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }

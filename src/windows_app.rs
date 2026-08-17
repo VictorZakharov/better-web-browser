@@ -15,6 +15,7 @@ mod page_controls;
 mod paint_index;
 mod paint_primitives;
 mod painting;
+mod performance_monitor;
 mod platform;
 mod process_metrics;
 mod reader_layout;
@@ -23,6 +24,7 @@ mod rendering_resources;
 mod resources;
 mod runtime;
 mod runtime_metrics;
+mod scrolling;
 mod tab_drag;
 mod tab_management;
 mod tab_paint;
@@ -49,6 +51,7 @@ use browser_app::BrowserApplication;
 use browser_window::{BrowserWindowPlacement, create_browser_window};
 use chrome_controls::{ChromeLayout, Controls};
 use document_activation::{LoadMessage, LoadedPage};
+use performance_monitor::{PerformanceActivity, TabPerformance};
 use platform::*;
 use process_metrics::{process_cpu_ticks, process_memory};
 use reader_layout::layout_document;
@@ -88,6 +91,12 @@ pub fn run() -> Result<(), String> {
             instance,
             TAB_SEARCH_CLASS,
             tab_search::window_proc,
+            COLOR_WINDOW,
+        )?;
+        register_class(
+            instance,
+            performance_monitor::CLASS_NAME,
+            performance_monitor::window_proc,
             COLOR_WINDOW,
         )?;
 

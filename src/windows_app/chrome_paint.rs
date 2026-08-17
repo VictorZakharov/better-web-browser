@@ -104,7 +104,7 @@ impl BrowserState {
         let mut text_rect = Rect {
             left: dot_left + dot_size + self.scale(9),
             top: self.chrome.status.top,
-            right: (self.chrome.status.right - self.scale(12)).max(1),
+            right: (self.performance_counter_rect().left - self.scale(8)).max(1),
             bottom: self.chrome.status.bottom,
         };
         draw_text_in_rect(
@@ -113,6 +113,7 @@ impl BrowserState {
             &mut text_rect,
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
+        self.paint_performance_counter(dc);
     }
 
     pub(super) unsafe fn paint_chrome_button(&self, item: &DrawItemStruct) {

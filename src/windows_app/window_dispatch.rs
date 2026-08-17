@@ -136,6 +136,14 @@ pub(super) unsafe extern "system" fn main_window_proc(
             state.poll_renderers();
             0
         }
+        WM_TIMER if wparam == ID_PERFORMANCE_MONITOR_TIMER => {
+            state.refresh_performance_monitor();
+            0
+        }
+        WM_TIMER if wparam == ID_SCROLL_ANIMATION_TIMER => {
+            state.tick_scroll_animation();
+            0
+        }
         WM_APP_CHROME_INVALIDATE => {
             let toolbar = Rect {
                 left: 0,
@@ -214,6 +222,10 @@ pub(super) unsafe extern "system" fn main_window_proc(
             state.finish_benchmark();
             0
         }
+        WM_APP_EARLY_SCROLL_TICK => {
+            state.handle_early_scroll_tick(wparam);
+            0
+        }
         WM_PAINT => {
             state.paint();
             0
@@ -221,7 +233,7 @@ pub(super) unsafe extern "system" fn main_window_proc(
         WM_ERASEBKGND => 1,
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16) as i16 as i32;
-            state.scroll_to(state.scroll_y - (delta / 120) * 126);
+            state.queue_wheel_scroll(delta);
             0
         }
         WM_MOUSEMOVE => {
@@ -259,6 +271,9 @@ pub(super) unsafe extern "system" fn main_window_proc(
         WM_LBUTTONUP => {
             let x = (lparam as u16) as i16 as i32;
             let y = ((lparam >> 16) as u16) as i16 as i32;
+            if state.toggle_performance_at(x, y) {
+                return 0;
+            }
             if state.finish_tab_pointer(Point { x, y }) {
                 return 0;
             }
@@ -289,6 +304,8 @@ pub(super) unsafe extern "system" fn main_window_proc(
             0
         }
         WM_DESTROY => {
+            KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
+            KillTimer(window, ID_SCROLL_ANIMATION_TIMER);
             if !state.tab_search_window.is_null() {
                 DestroyWindow(state.tab_search_window);
             }

@@ -11,6 +11,17 @@ pub(super) struct ScrollPaintMetrics {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn paint_benchmark_frame(&mut self) -> Result<Duration, String> {
+        let started = Instant::now();
+        {
+            let surface = OffscreenSurface::new(self)?;
+            self.paint_surface(surface.dc, &surface.client, &surface.client);
+        }
+        let elapsed = started.elapsed();
+        self.record_benchmark_paint(elapsed);
+        Ok(elapsed)
+    }
+
     pub(super) unsafe fn measure_scroll_paints(
         &mut self,
         sample_count: usize,

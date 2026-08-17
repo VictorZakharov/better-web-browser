@@ -91,28 +91,33 @@ pub(super) fn sibling_id(state: &mut HostState, arguments: &[JsValue], next: boo
     sibling.map(|node| state.id_for(&node)).unwrap_or_default()
 }
 
+pub(super) fn query_selector(root: &NodeRef, selector: &str) -> Option<NodeRef> {
+    let groups = selector_groups(selector);
+    Node::descendants(root).skip(1).find(|node| {
+        node.element().is_some() && groups.iter().any(|group| matches_selector(node, group))
+    })
+}
+
 pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef> {
-    let groups = selector
+    let groups = selector_groups(selector);
+    Node::descendants(root)
+        .skip(1)
+        .filter(|node| {
+            node.element().is_some() && groups.iter().any(|group| matches_selector(node, group))
+        })
+        .collect()
+}
+
+fn selector_groups(selector: &str) -> Vec<Vec<&str>> {
+    selector
         .split(',')
         .map(str::trim)
         .filter(|group| !group.is_empty())
-        .collect::<Vec<_>>();
-    let mut result: Vec<NodeRef> = Vec::new();
-    for node in Node::descendants(root).skip(1) {
-        if node.element().is_none() {
-            continue;
-        }
-        if groups.iter().any(|group| matches_selector(&node, group))
-            && !result.iter().any(|existing| existing.id() == node.id())
-        {
-            result.push(node);
-        }
-    }
-    result
+        .map(|group| group.split_ascii_whitespace().collect())
+        .collect()
 }
 
-fn matches_selector(node: &NodeRef, selector: &str) -> bool {
-    let parts = selector.split_ascii_whitespace().collect::<Vec<_>>();
+fn matches_selector(node: &NodeRef, parts: &[&str]) -> bool {
     let Some(last) = parts.last() else {
         return false;
     };
@@ -290,5 +295,23 @@ fn escape_html(value: &str, output: &mut String, attribute: bool) {
             '"' if attribute => output.push_str("&quot;"),
             character => output.push(character),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_stops_at_the_first_match_and_selector_lists_do_not_duplicate_nodes() {
+        let dom = crate::engine::dom::parse(
+            "<main><div id='first' class='match'></div><div class='match'></div></main>",
+        );
+        let first = query_selector(&dom.document, "div").unwrap();
+        let all = query_selector_all(&dom.document, "div, .match");
+
+        assert_eq!(first.attr("id").as_deref(), Some("first"));
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].id(), first.id());
     }
 }

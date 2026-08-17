@@ -435,7 +435,6 @@ if (typeof String.prototype.substr !== 'function') {
     });
 }
 "#;
-
 pub(super) fn finish_host(
     mut outcome: ScriptOutcome,
     host: &Rc<RefCell<HostState>>,
@@ -445,6 +444,7 @@ pub(super) fn finish_host(
     outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
     outcome.console.append(&mut state.console);
     outcome.diagnostics.append(&mut state.diagnostics);
+    state.append_host_call_diagnostics(&mut outcome.diagnostics);
     outcome.navigation_url = state.navigation_url.take();
     outcome.cookie_updates.append(&mut state.cookie_updates);
     outcome.render_requested = state.timers.take_render_request();

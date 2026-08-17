@@ -117,6 +117,38 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
 }
 
 #[test]
+fn keeps_style_for_a_node_reinserted_before_the_rendering_checkpoint() {
+    let mut page = Page::parse(
+        "<main id=branch><p id=target>text</p></main>",
+        "https://example.com/",
+    );
+    page.refresh_resources(800.0);
+    let branch = element_with_id(&page, "main", "branch");
+    let target = element_with_id(&page, "p", "target");
+
+    assert!(Node::remove_child(&branch, &target));
+    assert!(Node::append_child(&branch, target.clone()));
+    let stats = page.refresh_resources_after_invalidation(
+        800.0,
+        &RenderInvalidation {
+            root: Some(branch.id()),
+            impact: MutationKind::ChildList.impact(),
+            mutation_count: 2,
+            rebuild_style_rules: false,
+            removed_nodes: vec![target.id()],
+        },
+    );
+
+    assert_eq!(stats.removed_styles, 0);
+    assert!(
+        page.cached_style(800.0)
+            .unwrap()
+            .styles
+            .contains_key(&target.id())
+    );
+}
+
+#[test]
 fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
     let mut page = Page::parse(
         r#"<style>html,body,main,div{margin:0;padding:0}div{height:20px}

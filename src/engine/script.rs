@@ -22,6 +22,7 @@ mod bootstrap;
 mod dom_host;
 mod execution;
 mod host_call;
+mod host_profiling;
 mod host_state;
 mod mutation_host;
 mod render_invalidation;

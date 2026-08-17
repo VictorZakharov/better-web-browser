@@ -33,6 +33,7 @@ impl LaunchOptions {
         let mut screenshot = None;
         let mut settle_ms = 2_000_u64;
         let mut scroll_samples = 0_usize;
+        let mut early_scroll = false;
         let mut diagnostic_selectors = Vec::new();
         let mut window_width_dip = None;
         let mut window_height_dip = None;
@@ -50,6 +51,7 @@ impl LaunchOptions {
                 "--scroll-samples" => {
                     scroll_samples = number::<usize>(&mut arguments, &argument)?.clamp(1, 120);
                 }
+                "--early-scroll-trace" => early_scroll = true,
                 "--window-width" => {
                     window_width_dip =
                         Some(number::<i32>(&mut arguments, &argument)?.clamp(320, 7680));
@@ -84,6 +86,7 @@ impl LaunchOptions {
                 screenshot,
                 Duration::from_millis(settle_ms),
                 scroll_samples,
+                early_scroll,
                 diagnostic_selectors,
                 window_width_dip.unwrap_or(DEFAULT_WINDOW_WIDTH_DIP),
                 window_height_dip.unwrap_or(DEFAULT_WINDOW_HEIGHT_DIP),
@@ -95,6 +98,9 @@ impl LaunchOptions {
             }
             if scroll_samples > 0 {
                 return Err("--scroll-samples requires --benchmark".to_string());
+            }
+            if early_scroll {
+                return Err("--early-scroll-trace requires --benchmark".to_string());
             }
             if !diagnostic_selectors.is_empty() {
                 return Err("--diagnostic-selector requires --benchmark".to_string());
@@ -145,6 +151,7 @@ mod tests {
                 "1920",
                 "--window-height",
                 "1080",
+                "--early-scroll-trace",
                 "--diagnostic-selector",
                 "#main",
             ]
@@ -157,6 +164,7 @@ mod tests {
             (benchmark.window_width_dip, benchmark.window_height_dip),
             (1920, 1080)
         );
+        assert!(benchmark.early_scroll.is_some());
         assert_eq!(benchmark.diagnostic_selectors, ["#main"]);
     }
 }

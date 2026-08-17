@@ -16,18 +16,30 @@ pub(super) fn host_call(
     let mut host = host.borrow_mut();
     let state = &mut *host;
 
-    if let Some(value) = super::dom_host::dom_host_call(&operation, args, context, state)? {
+    let started = state.host_call_profile.start();
+    let result = dispatch_host_call(&operation, args, context, state);
+    state.host_call_profile.record(&operation, started);
+    result
+}
+
+fn dispatch_host_call(
+    operation: &str,
+    args: &[JsValue],
+    context: &mut Context,
+    state: &mut HostState,
+) -> JsResult<JsValue> {
+    if let Some(value) = super::dom_host::dom_host_call(operation, args, context, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::style_host::style_host_call(&operation, args, context, state)? {
+    if let Some(value) = super::style_host::style_host_call(operation, args, context, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::mutation_host::mutation_host_call(&operation, args, context, state)?
+    if let Some(value) = super::mutation_host::mutation_host_call(operation, args, context, state)?
     {
         return Ok(value);
     }
 
-    match operation.as_str() {
+    match operation {
         "parent" => {
             let parent = state
                 .node(argument_id(args, 1))
@@ -117,7 +129,7 @@ pub(super) fn host_call(
             let selector = argument_string(args, 2, context)?;
             let node = state
                 .node(argument_id(args, 1))
-                .and_then(|root| query_selector_all(&root, &selector).into_iter().next());
+                .and_then(|root| query_selector(&root, &selector));
             Ok(JsValue::from(
                 node.map(|node| state.id_for(&node)).unwrap_or_default(),
             ))

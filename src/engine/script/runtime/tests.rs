@@ -60,6 +60,32 @@ fn retained_runtime_executes_post_load_work_in_the_same_realm() {
 }
 
 #[test]
+fn elapsed_time_makes_a_timer_ready_without_running_its_task() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><div>waiting</div><script>
+            setTimeout(() => document.querySelector('div').textContent = 'done', 2000);
+        </script></body>"#,
+        true,
+    );
+    let scripts = script_inputs(&dom);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    assert!(runtime.execute_initial(&scripts).errors.is_empty());
+
+    runtime.elapse_time(Duration::from_millis(500));
+
+    assert_eq!(runtime.next_timer_delay(), Some(Duration::ZERO));
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "waiting"
+    );
+    assert!(runtime.advance_time(Duration::ZERO, 1).errors.is_empty());
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "done"
+    );
+}
+
+#[test]
 fn retained_runtime_executes_an_additional_script_in_the_same_realm() {
     let dom = dom::parse_with_scripting(
         r#"<body><div>waiting</div><script></script><script></script></body>"#,

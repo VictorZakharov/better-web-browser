@@ -113,6 +113,13 @@ impl ScriptRuntime {
             .map(|due| due.saturating_sub(now))
     }
 
+    /// Advances the realm clock without selecting a timer task for execution.
+    pub fn elapse_time(&mut self, advance: Duration) {
+        let mut host = self.host.borrow_mut();
+        let horizon = host.timers.now().saturating_add(advance);
+        host.timers.advance_to(horizon);
+    }
+
     pub fn is_active(&self) -> bool {
         self.context.is_some()
     }
@@ -121,6 +128,14 @@ impl ScriptRuntime {
         self.host
             .borrow_mut()
             .replace_cookies_from_header(cookie_header);
+    }
+
+    /// Enables bounded native bridge timing for diagnostics produced by subsequent tasks.
+    pub fn set_host_call_profiling(&mut self, enabled: bool) {
+        self.host
+            .borrow_mut()
+            .host_call_profile
+            .set_enabled(enabled);
     }
 
     pub fn advance_time_with_loader(

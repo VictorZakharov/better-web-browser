@@ -320,6 +320,13 @@ impl BrowserState {
         id: TabId,
         message: async_scripts::AsyncScriptMessage,
     ) {
+        if self.should_defer_script_work() {
+            if let Some(tab) = self.tabs.get_mut(id) {
+                tab.pending_async_scripts.push_back(message);
+            }
+            self.schedule_script_runtime_wakeup();
+            return;
+        }
         self.process_for_tab(id, |state| state.finish_async_script(message));
     }
 

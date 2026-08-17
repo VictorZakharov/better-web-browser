@@ -1,9 +1,11 @@
 mod diagnostics;
+mod early_scroll;
 mod initialization;
 mod options;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
+use early_scroll::{BenchmarkActivity, EarlyScrollTrace};
 
 pub(super) use options::LaunchOptions;
 
@@ -54,6 +56,8 @@ pub(super) struct BenchmarkRun {
     pub(super) renderer_wait_deadline: Option<Instant>,
     pub(super) screenshot: Option<PathBuf>,
     pub(super) scroll_samples: usize,
+    pub(super) early_scroll: Option<EarlyScrollTrace>,
+    pub(super) activity: BenchmarkActivity,
     pub(super) diagnostic_selectors: Vec<String>,
     pub(super) window_width_dip: i32,
     pub(super) window_height_dip: i32,
@@ -61,6 +65,13 @@ pub(super) struct BenchmarkRun {
 
 impl BrowserState {
     pub(super) unsafe fn schedule_benchmark_finish(&mut self) {
+        if self
+            .benchmark
+            .as_ref()
+            .is_some_and(|benchmark| benchmark.early_scroll.is_some())
+        {
+            self.note_scroll_activity();
+        }
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
@@ -68,7 +79,11 @@ impl BrowserState {
             return;
         }
         benchmark.finish_scheduled = true;
-        post_benchmark_finish(self.window, benchmark.settle);
+        if let Some(trace) = benchmark.early_scroll.as_mut() {
+            trace.schedule(self.window, benchmark.settle, benchmark.activity);
+        } else {
+            post_benchmark_finish(self.window, benchmark.settle);
+        }
     }
 
     pub(super) unsafe fn finish_benchmark(&mut self) {
@@ -211,6 +226,11 @@ impl BrowserState {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let early_scroll = benchmark
+            .early_scroll
+            .as_ref()
+            .map(EarlyScrollTrace::to_json)
+            .unwrap_or_else(|| "null".into());
         let json = format!(
             concat!(
                 "{{\n",
@@ -239,6 +259,7 @@ impl BrowserState {
                 "  \"scroll_paint_samples\": {},\n",
                 "  \"average_scroll_paint_ms\": {:.3},\n",
                 "  \"maximum_scroll_paint_ms\": {:.3},\n",
+                "  \"early_scroll_trace\": {},\n",
                 "  \"settle_ms\": {},\n",
                 "  \"working_set_bytes\": {},\n",
                 "  \"private_bytes\": {},\n",
@@ -301,6 +322,7 @@ impl BrowserState {
             scroll_paint.samples,
             scroll_paint.average.as_secs_f64() * 1_000.0,
             scroll_paint.maximum.as_secs_f64() * 1_000.0,
+            early_scroll,
             benchmark.settle.as_millis(),
             memory.working_set.saturating_add(renderer_working_set),
             memory.private_usage.saturating_add(renderer_private_memory),

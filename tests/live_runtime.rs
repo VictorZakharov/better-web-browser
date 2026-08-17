@@ -62,6 +62,24 @@ const STALE_ASYNC_HTML: &str = r#"<!doctype html>
 <script async src="/stale.js"></script>
 <script>setTimeout(() => { location.href = '/replacement'; }, 1600);</script>"#;
 const STALE_ASYNC_SCRIPT: &str = "document.body.style.backgroundColor = 'rgb(220, 20, 20)';";
+const EARLY_SCROLL_HTML: &str = r#"<!doctype html>
+<title>early scroll selector pressure</title>
+<style>
+  html, body { margin: 0; }
+  .row { height: 2px; }
+</style>
+<main id="rows"></main>
+<script>
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '<div class="row"></div>'.repeat(6000);
+</script>
+<script async src="/selector-pressure.js"></script>"#;
+const EARLY_SCROLL_SCRIPT: &str = r#"
+let matches = 0;
+for (let call = 0; call < 32; call++) {
+  if (document.querySelector('*')) matches++;
+}
+document.title = 'selector queries ' + matches;"#;
 
 #[test]
 fn hidden_browser_repaints_after_a_post_load_timer() {
@@ -250,5 +268,92 @@ fn navigation_discards_a_stale_async_script_completion() {
     assert_green_capture(
         &artifacts,
         "stale async completion repainted the replacement document",
+    );
+}
+
+#[test]
+fn early_scroll_stays_responsive_during_post_load_selector_queries() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+    let address = listener.local_addr().expect("read fixture address");
+    let server = thread::spawn(move || {
+        serve_parallel_fixtures(listener, 2, |request| {
+            if request.contains("GET /selector-pressure.js ") {
+                FixtureResponse::script(EARLY_SCROLL_SCRIPT, Duration::from_millis(1000))
+            } else {
+                FixtureResponse::html(EARLY_SCROLL_HTML)
+            }
+        })
+    });
+    let artifacts = TestArtifacts::new();
+    let url = format!("http://{address}/early-scroll");
+
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        100,
+        &[
+            "--early-scroll-trace",
+            "--window-width",
+            "1920",
+            "--window-height",
+            "1080",
+        ],
+    );
+    let status = wait_for_child(&mut child, Duration::from_secs(20));
+    server
+        .join()
+        .expect("fixture server panicked")
+        .expect("fixture server failed");
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+
+    let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
+    assert!(
+        report.contains("\"javascript_errors\": []"),
+        "selector fixture reported JavaScript errors:\n{report}"
+    );
+    let report_json: serde_json::Value =
+        serde_json::from_str(&report).expect("parse benchmark report");
+    let trace = &report_json["early_scroll_trace"];
+    let summary = &trace["summary"];
+    assert_eq!(
+        summary["meets_acceptance"].as_bool(),
+        Some(true),
+        "early-scroll acceptance thresholds regressed:\n{report}"
+    );
+    assert_eq!(
+        summary["scrolling_only_layout_rebuilds"].as_u64(),
+        Some(0),
+        "scrolling triggered a layout rebuild:\n{report}"
+    );
+    assert_eq!(
+        summary["scrolling_only_style_rebuilds"].as_u64(),
+        Some(0),
+        "scrolling triggered a style rebuild:\n{report}"
+    );
+    let script_tasks = trace["samples"]
+        .as_array()
+        .expect("early-scroll samples")
+        .iter()
+        .filter_map(|sample| sample["script_tasks"].as_u64())
+        .sum::<u64>();
+    assert_eq!(
+        script_tasks, 0,
+        "low-priority script work interrupted continuous scrolling:\n{report}"
+    );
+    assert!(
+        report_json["javascript_scripts_executed"]
+            .as_u64()
+            .is_some_and(|executed| executed >= 2),
+        "deferred selector pressure did not resume after scrolling:\n{report}"
+    );
+    let paint_count = trace["samples"]
+        .as_array()
+        .expect("early-scroll samples")
+        .iter()
+        .filter_map(|sample| sample["paint_count"].as_u64())
+        .sum::<u64>();
+    assert_eq!(
+        paint_count, 375,
+        "the hidden trace did not paint every scheduled frame:\n{report}"
     );
 }

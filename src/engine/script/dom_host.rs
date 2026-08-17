@@ -23,6 +23,12 @@ pub(super) fn dom_host_call(
                 .map(|node| node_name(state, &node))
                 .unwrap_or_default(),
         ),
+        "nodeMetadata" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .map(|node| node_metadata(state, &node))
+                .unwrap_or_default(),
+        ),
         "tagName" => js_string(
             state
                 .node(argument_id(args, 1))
@@ -290,6 +296,16 @@ fn node_name(state: &HostState, node: &NodeRef) -> String {
         NodeData::Doctype { name, .. } => name.clone(),
         NodeData::ProcessingInstruction { target, .. } => target.clone(),
     }
+}
+
+fn node_metadata(state: &HostState, node: &NodeRef) -> String {
+    format!(
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        node_type(state, Some(node)),
+        node_name(state, node),
+        node.tag_name().unwrap_or_default(),
+        node.namespace_uri().unwrap_or_default(),
+    )
 }
 
 fn is_document_root(state: &HostState, node: &NodeRef) -> bool {

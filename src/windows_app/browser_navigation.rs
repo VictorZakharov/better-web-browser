@@ -35,6 +35,9 @@ impl BrowserState {
         history_mode: HistoryMode,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
+        if is_active {
+            self.cancel_scroll_animation();
+        }
         let (generation, fetch_signal) = {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;
@@ -45,6 +48,11 @@ impl BrowserState {
                 runtime.cancel_document();
             }
             tab.script_runtime_clock = None;
+            tab.post_load_script_not_before = None;
+            tab.pending_async_scripts.clear();
+            tab.last_scroll_activity = None;
+            tab.performance = TabPerformance::default();
+            tab.scroll_animation = Default::default();
             if tab.loading {
                 tab.generation = tab.generation.wrapping_add(1);
             }
