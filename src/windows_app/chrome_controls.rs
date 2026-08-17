@@ -78,6 +78,7 @@ impl BrowserState {
         );
         SendMessageW(self.controls.address, EM_SETMARGINS, 0x0003, 0);
         self.update_history_buttons();
+        self.render_dpi = self.dpi;
         self.resize_controls();
         self.rebuild_layout();
 
@@ -93,11 +94,16 @@ impl BrowserState {
     ) -> Hwnd {
         let class = wide(class);
         let text = wide(text);
+        let visibility = if id >= ID_PAGE_CONTROL_BASE && self.processing_background_tab {
+            0
+        } else {
+            WS_VISIBLE
+        };
         CreateWindowExW(
             0,
             class.as_ptr(),
             text.as_ptr(),
-            WS_CHILD | WS_VISIBLE | extra_style,
+            WS_CHILD | visibility | extra_style,
             0,
             0,
             0,
@@ -117,7 +123,11 @@ impl BrowserState {
         let fonts = Fonts::create(dpi)?;
         self.dpi = dpi;
         self.fonts = Some(fonts);
-        self.dynamic_fonts.clear();
+        for tab in self.tabs.iter_mut() {
+            tab.dynamic_fonts.clear();
+            tab.render_dpi = dpi;
+            tab.layout_dirty = true;
+        }
 
         let interface_font = self.fonts.as_ref().unwrap().ui;
         for control in [
@@ -132,10 +142,6 @@ impl BrowserState {
             if !control.is_null() {
                 SendMessageW(control, WM_SETFONT, interface_font as usize, 1);
             }
-        }
-        let page_font = self.fonts.as_ref().unwrap().body;
-        for control in &self.page_controls {
-            SendMessageW(control.window, WM_SETFONT, page_font as usize, 1);
         }
         Ok(())
     }
@@ -152,7 +158,9 @@ impl BrowserState {
         let group_gap = self.scale(if very_compact { 5 } else { 9 });
         let control_height = self.scale(40);
         let nav_width = self.scale(if very_compact { 34 } else { 40 });
-        let top = ((self.toolbar_height() - control_height) / 2).max(0);
+        let navigation_top = self.scale(TAB_STRIP_HEIGHT_DIP);
+        let navigation_height = self.toolbar_height() - navigation_top;
+        let top = navigation_top + ((navigation_height - control_height) / 2).max(0);
 
         let mut left = margin;
         for control in [

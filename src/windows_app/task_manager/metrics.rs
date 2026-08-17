@@ -95,7 +95,7 @@ pub(super) fn renderer_process_row(
         .unwrap_or_else(|| ("—".into(), "—".into(), "—".into()));
     ProcessRowView {
         depth: 1,
-        name: format!("Renderer · Context {}", status.context_id),
+        name: format!("Tab {} · {}", status.context_id, status.tab_title),
         detail,
         note,
         cpu: format!("{cpu_percent:.1}%"),

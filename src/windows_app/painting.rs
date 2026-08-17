@@ -62,31 +62,36 @@ impl BrowserState {
     pub(super) unsafe fn paint_surface(&mut self, dc: Hdc, client: &Rect, dirty: &Rect) {
         let toolbar_height = self.toolbar_height();
         let scale = self.page_scale();
+        let dpi = self.dpi;
+        let benchmark_mode = self.benchmark.is_some();
+        let content_brush = self.content_brush;
+        let fonts = self.fonts.as_ref();
         let content = Rect {
             left: 0,
             top: toolbar_height,
             right: client.right,
             bottom: (client.bottom - self.status_height()).max(toolbar_height),
         };
-        match self.surface {
+        let tab = self.tabs.active_mut();
+        match tab.surface {
             Surface::Page => {
-                fill_color_rect(dc, &content, self.page_layout.background.to_colorref())
+                fill_color_rect(dc, &content, tab.page_layout.background.to_colorref())
             }
             Surface::Reader => {
-                FillRect(dc, &content, self.content_brush);
+                FillRect(dc, &content, content_brush);
             }
         }
         SetBkMode(dc, TRANSPARENT);
         let saved_dc = SaveDC(dc);
         IntersectClipRect(dc, content.left, content.top, content.right, content.bottom);
-        match self.surface {
+        match tab.surface {
             Surface::Page => {
                 let dirty_content_top = (dirty.top - toolbar_height).max(0);
                 let dirty_content_bottom = (dirty.bottom - toolbar_height).max(0);
-                let visible_top = (self.scroll_y + dirty_content_top) as f32 / scale;
-                let visible_bottom = (self.scroll_y + dirty_content_bottom) as f32 / scale;
-                for range in self.paint_index.visible_ranges(visible_top, visible_bottom) {
-                    for item in &self.page_layout.items[range] {
+                let visible_top = (tab.scroll_y + dirty_content_top) as f32 / scale;
+                let visible_bottom = (tab.scroll_y + dirty_content_bottom) as f32 / scale;
+                for range in tab.paint_index.visible_ranges(visible_top, visible_bottom) {
+                    for item in &tab.page_layout.items[range] {
                         match item {
                             DisplayItem::SolidRect {
                                 rect,
@@ -94,7 +99,7 @@ impl BrowserState {
                                 radius,
                             } => {
                                 let rectangle =
-                                    screen_rect(*rect, self.scroll_y, toolbar_height, scale);
+                                    screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
                                     fill_color_shape(
                                         dc,
@@ -111,7 +116,7 @@ impl BrowserState {
                                 radius,
                             } => {
                                 let rectangle =
-                                    screen_rect(*rect, self.scroll_y, toolbar_height, scale);
+                                    screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
                                     paint_border(
                                         dc,
@@ -129,14 +134,14 @@ impl BrowserState {
                                 color,
                                 ..
                             } => {
-                                let screen_y = toolbar_height + (rect.y * scale).round() as i32
-                                    - self.scroll_y;
+                                let screen_y =
+                                    toolbar_height + (rect.y * scale).round() as i32 - tab.scroll_y;
                                 if screen_y + ((rect.height * scale).ceil() as i32) < content.top
                                     || screen_y > content.bottom
                                 {
                                     continue;
                                 }
-                                let font_handle = self.dynamic_fonts.get_or_create(font, self.dpi);
+                                let font_handle = tab.dynamic_fonts.get_or_create(font, dpi);
                                 SelectObject(dc, font_handle);
                                 SetTextColor(dc, color.to_colorref());
                                 let text = wide_without_null(text);
@@ -154,23 +159,23 @@ impl BrowserState {
                                 alt,
                                 tint,
                             } => {
-                                let screen_y = toolbar_height + (rect.y * scale).round() as i32
-                                    - self.scroll_y;
+                                let screen_y =
+                                    toolbar_height + (rect.y * scale).round() as i32 - tab.scroll_y;
                                 if screen_y + ((rect.height * scale).ceil() as i32) < content.top
                                     || screen_y > content.bottom
                                 {
                                     continue;
                                 }
-                                if let Some(image) = self.page.images.get(url) {
+                                if let Some(image) = tab.page.images.get(url) {
                                     let bitmap = if let Some(color) = tint {
-                                        self.image_bitmaps.get_or_create_tinted(
+                                        tab.image_bitmaps.get_or_create_tinted(
                                             url,
                                             image,
                                             [color.red, color.green, color.blue, color.alpha],
                                             dc,
                                         )
                                     } else {
-                                        self.image_bitmaps.get_or_create(url, image, dc)
+                                        tab.image_bitmaps.get_or_create(url, image, dc)
                                     };
                                     if !bitmap.is_null() {
                                         paint_alpha_image(
@@ -178,7 +183,7 @@ impl BrowserState {
                                         );
                                     }
                                 } else if !alt.is_empty()
-                                    && let Some(fonts) = self.fonts.as_ref()
+                                    && let Some(fonts) = fonts
                                 {
                                     SelectObject(dc, fonts.body);
                                     SetTextColor(dc, rgb(70, 70, 70));
@@ -200,15 +205,15 @@ impl BrowserState {
                                 repeat_y,
                             } => {
                                 let clip =
-                                    screen_rect(*clip_rect, self.scroll_y, toolbar_height, scale);
+                                    screen_rect(*clip_rect, tab.scroll_y, toolbar_height, scale);
                                 if !intersects(&clip, &content)
                                     || tile_rect.width <= 0.0
                                     || tile_rect.height <= 0.0
                                 {
                                     continue;
                                 }
-                                if let Some(image) = self.page.images.get(url) {
-                                    let bitmap = self.image_bitmaps.get_or_create(url, image, dc);
+                                if let Some(image) = tab.page.images.get(url) {
+                                    let bitmap = tab.image_bitmaps.get_or_create(url, image, dc);
                                     if !bitmap.is_null() {
                                         paint_background_image(
                                             dc,
@@ -218,7 +223,7 @@ impl BrowserState {
                                             *tile_rect,
                                             *repeat_x,
                                             *repeat_y,
-                                            self.scroll_y,
+                                            tab.scroll_y,
                                             toolbar_height,
                                             scale,
                                         );
@@ -226,13 +231,9 @@ impl BrowserState {
                                 }
                             }
                             DisplayItem::Control(spec) => {
-                                if self.benchmark.is_some() {
-                                    let mut rectangle = screen_rect(
-                                        spec.rect,
-                                        self.scroll_y,
-                                        toolbar_height,
-                                        scale,
-                                    );
+                                if benchmark_mode {
+                                    let mut rectangle =
+                                        screen_rect(spec.rect, tab.scroll_y, toolbar_height, scale);
                                     if !intersects(&rectangle, &content) {
                                         continue;
                                     }
@@ -257,8 +258,7 @@ impl BrowserState {
                                         rectangle.right -= border_right + padding_right;
                                         rectangle.bottom -= border_bottom + padding_bottom;
                                     }
-                                    let font =
-                                        self.dynamic_fonts.get_or_create(&spec.font, self.dpi);
+                                    let font = tab.dynamic_fonts.get_or_create(&spec.font, dpi);
                                     SelectObject(dc, font);
                                     SetTextColor(
                                         dc,
@@ -268,7 +268,7 @@ impl BrowserState {
                                             spec.text_color.to_colorref()
                                         },
                                     );
-                                    let value = self
+                                    let value = tab
                                         .page_controls
                                         .iter()
                                         .find(|control| control.spec.node_id == spec.node_id)
@@ -302,9 +302,9 @@ impl BrowserState {
                 }
             }
             Surface::Reader => {
-                if let Some(fonts) = self.fonts.as_ref() {
-                    for item in &self.draw_items {
-                        let screen_y = toolbar_height + item.y - self.scroll_y;
+                if let Some(fonts) = fonts {
+                    for item in &tab.draw_items {
+                        let screen_y = toolbar_height + item.y - tab.scroll_y;
                         if screen_y + item.height < content.top || screen_y > content.bottom {
                             continue;
                         }

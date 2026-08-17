@@ -80,7 +80,14 @@ unsafe extern "system" {
     -> i32;
     pub(in crate::windows_app) fn SetFocus(window: Hwnd) -> Hwnd;
     pub(in crate::windows_app) fn GetFocus() -> Hwnd;
+    pub(in crate::windows_app) fn GetKeyState(virtual_key: i32) -> i16;
     pub(in crate::windows_app) fn GetParent(window: Hwnd) -> Hwnd;
+    pub(in crate::windows_app) fn GetAncestor(window: Hwnd, flags: u32) -> Hwnd;
+    pub(in crate::windows_app) fn WindowFromPoint(point: Point) -> Hwnd;
+    pub(in crate::windows_app) fn ClientToScreen(window: Hwnd, point: *mut Point) -> i32;
+    pub(in crate::windows_app) fn ScreenToClient(window: Hwnd, point: *mut Point) -> i32;
+    pub(in crate::windows_app) fn SetCapture(window: Hwnd) -> Hwnd;
+    pub(in crate::windows_app) fn ReleaseCapture() -> i32;
     pub(in crate::windows_app) fn GetDlgCtrlID(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn DestroyWindow(window: Hwnd) -> i32;
     pub(in crate::windows_app) fn IsWindow(window: Hwnd) -> i32;

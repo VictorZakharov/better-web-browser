@@ -1,126 +1,94 @@
 //! Browser-window ownership and application lifecycle state.
 
+use super::browser_app::BrowserApplication;
 use super::browser_navigation::HistoryMode;
-use super::page_controls::PageControlWindow;
-use super::paint_index::PaintIndex;
-use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
+use super::renderer_lifecycle::SharedRendererRegistry;
+use super::tab_drag::TabDragGesture;
+use super::tab_state::BrowserTab;
+use super::tabs::{TabCollection, TabId};
 use super::*;
-use better_web_browser::fetch::FetchController;
-use better_web_browser::renderer_process::RendererSession;
-use std::sync::{Mutex, mpsc};
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 pub(super) struct BrowserState {
+    pub(super) app: Rc<BrowserApplication>,
     pub(super) instance: Hinstance,
     pub(super) window: Hwnd,
     pub(super) controls: Controls,
     pub(super) fonts: Option<Fonts>,
-    pub(super) dynamic_fonts: DynamicFonts,
-    pub(super) web_fonts: WebFontResources,
-    pub(super) image_bitmaps: ImageBitmaps,
     pub(super) content_brush: Hbrush,
     pub(super) omnibox_brush: Hbrush,
     pub(super) dpi: u32,
     pub(super) chrome: ChromeLayout,
-    pub(super) status_text: String,
-    pub(super) page: Page,
-    pub(super) script_runtime: Option<ScriptRuntime>,
-    pub(super) script_runtime_clock: Option<Instant>,
-    pub(super) loaded_page_resources: HashSet<PageResource>,
-    pub(super) page_resource_budget: u64,
-    pub(super) document: Option<Document>,
-    pub(super) reader_html: String,
-    pub(super) reader_url: String,
-    pub(super) draw_items: Vec<DrawItem>,
-    pub(super) page_layout: LayoutOutput,
-    pub(super) paint_index: PaintIndex,
-    pub(super) page_controls: Vec<PageControlWindow>,
-    pub(super) surface: Surface,
-    pub(super) content_height: i32,
-    pub(super) scroll_y: i32,
-    pub(super) history: Vec<String>,
-    pub(super) history_index: usize,
-    pub(super) script_navigation: document_navigation::ScriptNavigationGuard,
-    pub(super) generation: u64,
-    pub(super) loading: bool,
+    pub(super) processing_background_tab: bool,
+    pub(super) tab_drag: Option<TabDragGesture>,
+    pub(super) tab_drop_index: Option<usize>,
+    pub(super) hovered_tab: Option<TabId>,
+    pub(super) tabs: TabCollection<BrowserTab>,
     pub(super) startup_url: Option<String>,
     pub(super) open_task_manager_on_start: bool,
     pub(super) benchmark: Option<BenchmarkRun>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
-    pub(super) document_fetch: FetchController,
     pub(super) task_window: Hwnd,
-    pub(super) renderer_session: Option<RendererSession>,
-    pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
-    pub(super) renderer_launch_pending: bool,
-    pub(super) renderer_started_once: bool,
+    pub(super) tab_search_window: Hwnd,
+    pub(super) tab_search_edit: Hwnd,
     pub(super) renderer_registry: SharedRendererRegistry,
-    pub(super) last_layout_tree_time: Duration,
-    pub(super) last_layout_finalize_time: Duration,
-    pub(super) last_text_measure_count: usize,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
 }
 
 impl BrowserState {
-    pub(super) fn new(
-        instance: Hinstance,
-        metrics: Arc<BrowserMetrics>,
+    pub(super) fn new(app: Rc<BrowserApplication>, options: LaunchOptions) -> Result<Self, String> {
+        let tabs = TabCollection::new(BrowserTab::new(TabId::first()));
+        Ok(Self::with_tabs(app, tabs, options))
+    }
+
+    pub(super) fn detached_placeholder(app: Rc<BrowserApplication>) -> Self {
+        let tabs = TabCollection::new(BrowserTab::new(TabId::allocate()));
+        Self::with_tabs(
+            app,
+            tabs,
+            LaunchOptions {
+                startup_url: None,
+                open_task_manager: false,
+                benchmark: None,
+            },
+        )
+    }
+
+    fn with_tabs(
+        app: Rc<BrowserApplication>,
+        tabs: TabCollection<BrowserTab>,
         options: LaunchOptions,
-    ) -> Result<Self, String> {
-        let home = parse_html(HOME_HTML, HOME_URL);
-        let page = Page::parse(HOME_HTML, HOME_URL);
-        let http_client = Arc::new(winhttp::HttpClient::new()?);
-        Ok(Self {
-            instance,
+    ) -> Self {
+        Self {
+            instance: app.instance,
             window: null_mut(),
             controls: Controls::default(),
             fonts: None,
-            dynamic_fonts: DynamicFonts::default(),
-            web_fonts: WebFontResources::default(),
-            image_bitmaps: ImageBitmaps::default(),
             content_brush: unsafe { CreateSolidBrush(rgb(250, 250, 248)) },
             omnibox_brush: unsafe { CreateSolidBrush(CHROME_THEME.field) },
             dpi: DEFAULT_DPI,
             chrome: ChromeLayout::default(),
-            status_text: "Ready".to_string(),
-            page,
-            script_runtime: None,
-            script_runtime_clock: None,
-            loaded_page_resources: HashSet::new(),
-            page_resource_budget: PAGE_RESOURCE_BUDGET,
-            document: Some(home),
-            reader_html: HOME_HTML.to_string(),
-            reader_url: HOME_URL.to_string(),
-            draw_items: Vec::new(),
-            page_layout: LayoutOutput::default(),
-            paint_index: PaintIndex::default(),
-            page_controls: Vec::new(),
-            surface: Surface::Page,
-            content_height: 0,
-            scroll_y: 0,
-            history: Vec::new(),
-            history_index: 0,
-            script_navigation: document_navigation::ScriptNavigationGuard::default(),
-            generation: 0,
-            loading: false,
+            processing_background_tab: false,
+            tab_drag: None,
+            tab_drop_index: None,
+            hovered_tab: None,
+            tabs,
             startup_url: options.startup_url,
             open_task_manager_on_start: options.open_task_manager,
             benchmark: options.benchmark,
-            metrics,
-            http_client,
-            document_fetch: FetchController::new(),
+            metrics: Arc::clone(&app.metrics),
+            http_client: Arc::clone(&app.http_client),
             task_window: null_mut(),
-            renderer_session: None,
-            renderer_launch_receiver: None,
-            renderer_launch_pending: false,
-            renderer_started_once: false,
-            renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
-            last_layout_tree_time: Duration::ZERO,
-            last_layout_finalize_time: Duration::ZERO,
-            last_text_measure_count: 0,
+            tab_search_window: null_mut(),
+            tab_search_edit: null_mut(),
+            renderer_registry: Arc::clone(&app.renderer_registry),
             media_viewport_width: 0.0,
             outer_window_width: 0,
-        })
+            app,
+        }
     }
 
     pub(super) unsafe fn complete_startup(&mut self) {
@@ -137,6 +105,16 @@ impl BrowserState {
         } else {
             SetFocus(self.controls.address);
         }
+    }
+
+    pub(super) unsafe fn complete_detached_startup(&mut self) {
+        self.reset_media_viewport_width();
+        let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
+        for id in ids {
+            self.start_renderer_for(id);
+        }
+        self.ensure_renderer_monitoring();
+        self.restore_active_tab_ui();
     }
 
     pub(super) fn scale(&self, dip: i32) -> i32 {
@@ -192,7 +170,7 @@ impl BrowserState {
     pub(super) unsafe fn set_status(&mut self, status: &str) {
         self.status_text.clear();
         self.status_text.push_str(status);
-        if !self.window.is_null() {
+        if !self.processing_background_tab && !self.window.is_null() {
             InvalidateRect(self.window, &self.chrome.status, 0);
             let toolbar = Rect {
                 left: 0,
@@ -219,13 +197,29 @@ impl BrowserState {
     }
 }
 
+impl Deref for BrowserState {
+    type Target = BrowserTab;
+
+    fn deref(&self) -> &Self::Target {
+        self.tabs.active()
+    }
+}
+
+impl DerefMut for BrowserState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.tabs.active_mut()
+    }
+}
+
 impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
-            self.document_fetch.abort();
-            self.cancel_script_runtime();
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
-            self.renderer_session.take();
+            let ids = self.tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
+            for id in ids {
+                self.app.tab_router.unbind(id);
+                self.remove_renderer_tab(id);
+            }
             if !self.content_brush.is_null() {
                 DeleteObject(self.content_brush);
             }

@@ -2,6 +2,7 @@
 
 use super::browser_navigation::HistoryMode;
 use super::paint_index::PaintIndex;
+use super::tab_state::TabFocus;
 use super::*;
 
 pub(super) struct DrawItem {
@@ -28,70 +29,76 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let dc = GetDC(self.window);
         if dc.is_null() {
-            return DisplayListDamage::full(self.page_layout.items.len());
+            return DisplayListDamage::full(self.tabs.active().page_layout.items.len());
         }
-        self.last_text_measure_count = 0;
+        let dpi = self.dpi;
+        let scale = self.page_scale();
+        let viewport_height = self.viewport_height() as f32 / scale;
+        let style_viewport_width = if self.media_viewport_width > 0.0 {
+            self.media_viewport_width
+        } else {
+            client.right.max(1) as f32 / scale
+        };
+        let metrics = Arc::clone(&self.metrics);
+        let fonts = self.fonts.as_ref();
+        let content_margin = scale_dip(CONTENT_MARGIN_DIP, dpi);
+        let available = (client.right - content_margin * 2).max(scale_dip(220, dpi));
+        let reading_width = available.min(scale_dip(MAX_READING_WIDTH_DIP, dpi));
         SetBkMode(dc, TRANSPARENT);
-        let mut damage = DisplayListDamage::full(self.page_layout.items.len());
-        match self.surface {
+        let mut damage = DisplayListDamage::full(self.tabs.active().page_layout.items.len());
+        let tab = self.tabs.active_mut();
+        tab.last_text_measure_count = 0;
+        match tab.surface {
             Surface::Page => {
-                let scale = self.page_scale();
                 let viewport_width = client.right.max(1) as f32 / scale;
-                let viewport_height = self.viewport_height() as f32 / scale;
                 let mut measurer = GdiTextMeasurer {
                     dc,
-                    fonts: &mut self.dynamic_fonts,
-                    dpi: self.dpi,
+                    fonts: &mut tab.dynamic_fonts,
+                    dpi,
                     calls: 0,
                 };
-                let style_viewport_width = if self.media_viewport_width > 0.0 {
-                    self.media_viewport_width
-                } else {
-                    viewport_width
-                };
                 let next_layout = layout_page_with_style_viewport(
-                    &self.page,
+                    &tab.page,
                     viewport_width,
                     viewport_height,
                     style_viewport_width,
                     &mut measurer,
                 );
-                damage = DisplayListDamage::between(&self.page_layout, &next_layout);
-                self.page_layout = next_layout;
-                self.paint_index.rebuild(&self.page_layout.items);
-                self.last_text_measure_count = measurer.calls;
-                self.content_height = (self.page_layout.content_height * scale).ceil() as i32;
-                self.metrics
-                    .set_retained_draw_items(self.page_layout.items.len());
+                let measure_calls = measurer.calls;
+                damage = DisplayListDamage::between(&tab.page_layout, &next_layout);
+                tab.page_layout = next_layout;
+                tab.paint_index.rebuild(&tab.page_layout.items);
+                tab.last_text_measure_count = measure_calls;
+                tab.content_height = (tab.page_layout.content_height * scale).ceil() as i32;
+                metrics.set_retained_draw_items(tab.page_layout.items.len());
             }
             Surface::Reader => {
-                self.paint_index = PaintIndex::default();
-                let Some(fonts) = self.fonts.as_ref() else {
+                tab.paint_index = PaintIndex::default();
+                let Some(fonts) = fonts else {
                     ReleaseDC(self.window, dc);
                     return damage;
                 };
-                let content_margin = self.scale(CONTENT_MARGIN_DIP);
-                let available = (client.right - content_margin * 2).max(self.scale(220));
-                let reading_width = available.min(self.scale(MAX_READING_WIDTH_DIP));
                 let left = ((client.right - reading_width) / 2).max(content_margin);
-                let Some(document) = self.document.as_ref() else {
+                let Some(document) = tab.document.as_ref() else {
                     ReleaseDC(self.window, dc);
                     return damage;
                 };
                 let (items, height) = layout_document(dc, fonts, document, left, reading_width);
-                self.draw_items = items;
-                self.content_height = height;
-                self.metrics.set_retained_draw_items(self.draw_items.len());
+                tab.draw_items = items;
+                tab.content_height = height;
+                metrics.set_retained_draw_items(tab.draw_items.len());
             }
         }
         ReleaseDC(self.window, dc);
-        self.last_layout_tree_time = layout_started.elapsed();
+        let layout_tree_time = layout_started.elapsed();
+        self.tabs.active_mut().last_layout_tree_time = layout_tree_time;
         self.clamp_scroll();
         self.update_scrollbar();
         self.recreate_page_controls();
-        self.last_layout_finalize_time = layout_started
-            .elapsed()
-            .saturating_sub(self.last_layout_tree_time);
+        let layout_finalize_time = layout_started.elapsed().saturating_sub(layout_tree_time);
+        let tab = self.tabs.active_mut();
+        tab.last_layout_finalize_time = layout_finalize_time;
+        tab.layout_dirty = false;
         damage
     }
 
@@ -137,6 +144,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn update_scrollbar(&self) {
+        if self.processing_background_tab {
+            return;
+        }
         let info = ScrollInfo {
             size: size_of::<ScrollInfo>() as u32,
             mask: SIF_RANGE | SIF_PAGE | SIF_POS,
@@ -176,7 +186,8 @@ impl BrowserState {
         self.scroll_to(target);
     }
 
-    pub(super) unsafe fn click_content(&mut self, x: i32, y: i32) {
+    pub(super) unsafe fn click_content(&mut self, x: i32, y: i32, background_tab: bool) {
+        self.focus = TabFocus::Content;
         let toolbar_height = self.toolbar_height();
         if y < toolbar_height || y > toolbar_height + self.viewport_height() {
             return;
@@ -216,7 +227,11 @@ impl BrowserState {
             }
         };
         if let Some(url) = url {
-            self.begin_navigation(url, HistoryMode::Push);
+            if background_tab {
+                self.open_url_in_new_tab(url, false);
+            } else {
+                self.begin_navigation(url, HistoryMode::Push);
+            }
         }
     }
 }

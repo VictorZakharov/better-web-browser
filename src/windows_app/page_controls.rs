@@ -9,16 +9,22 @@ pub(super) struct PageControlWindow {
     pub(super) brush: Hbrush,
 }
 
-impl BrowserState {
-    pub(super) unsafe fn destroy_page_controls(&mut self) {
-        for control in self.page_controls.drain(..) {
-            if !control.window.is_null() && IsWindow(control.window) != 0 {
-                DestroyWindow(control.window);
+impl Drop for PageControlWindow {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.window.is_null() && IsWindow(self.window) != 0 {
+                DestroyWindow(self.window);
             }
-            if !control.brush.is_null() {
-                DeleteObject(control.brush);
+            if !self.brush.is_null() {
+                DeleteObject(self.brush);
             }
         }
+    }
+}
+
+impl BrowserState {
+    pub(super) unsafe fn destroy_page_controls(&mut self) {
+        self.page_controls.clear();
     }
 
     pub(super) unsafe fn recreate_page_controls(&mut self) {
@@ -58,6 +64,7 @@ impl BrowserState {
                 _ => None,
             })
             .collect::<Vec<_>>();
+        let dpi = self.dpi;
         for (index, spec) in specs.into_iter().enumerate() {
             let id = ID_PAGE_CONTROL_BASE + index;
             let (class, style, text) = match spec.kind {
@@ -98,7 +105,7 @@ impl BrowserState {
             if window.is_null() {
                 continue;
             }
-            let font = self.dynamic_fonts.get_or_create(&spec.font, self.dpi);
+            let font = self.dynamic_fonts.get_or_create(&spec.font, dpi);
             SendMessageW(window, WM_SETFONT, font as usize, 1);
             if spec.kind == ControlKind::Select {
                 for option in &spec.options {
@@ -135,6 +142,12 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn sync_page_control_positions(&self) {
+        if self.processing_background_tab {
+            for control in &self.page_controls {
+                ShowWindow(control.window, SW_HIDE);
+            }
+            return;
+        }
         let viewport_height = self.viewport_height();
         let toolbar_height = self.toolbar_height();
         let scale = self.page_scale();

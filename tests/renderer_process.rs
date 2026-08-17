@@ -59,6 +59,26 @@ fn hidden_contained_renderer_handshakes_pings_and_shuts_down() {
 }
 
 #[test]
+fn concurrent_tab_renderers_remain_independent() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut first = RendererSession::launch(options()).expect("launch first tab renderer");
+    let mut second = RendererSession::launch(options()).expect("launch second tab renderer");
+    let first_snapshot = first.snapshot();
+    let second_snapshot = second.snapshot();
+    assert_ne!(first_snapshot.process_id, second_snapshot.process_id);
+    assert_ne!(first_snapshot.session_id, second_snapshot.session_id);
+
+    second.shutdown().expect("shutdown second tab renderer");
+    first
+        .ping(Duration::from_secs(1))
+        .expect("first tab renderer remains responsive");
+    assert_eq!(first.snapshot().state, RendererState::Running);
+    first.shutdown().expect("shutdown first tab renderer");
+}
+
+#[test]
 fn app_container_denies_children_loopback_and_internet() {
     let _serial = SERIAL
         .lock()

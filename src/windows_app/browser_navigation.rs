@@ -1,6 +1,7 @@
 //! Omnibox navigation, history traversal, and network-load dispatch.
 
 use super::resources::{ResourceLoadContext, load_page_resources};
+use super::tabs::TabId;
 use super::*;
 use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
 
@@ -24,42 +25,70 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
-        self.document_fetch.abort();
-        self.document_fetch = FetchController::new();
-        self.cancel_script_runtime();
-        if self.loading {
-            self.generation = self.generation.wrapping_add(1);
-        }
-        match history_mode {
-            HistoryMode::Push => {
-                self.script_navigation.reset(&url);
-                if self.history.get(self.history_index) != Some(&url) {
-                    if !self.history.is_empty() {
-                        self.history.truncate(self.history_index + 1);
-                    }
-                    self.history.push(url.clone());
-                    self.history_index = self.history.len() - 1;
-                }
-            }
-            HistoryMode::Existing => self.script_navigation.reset(&url),
-            HistoryMode::Script => {}
-        }
-        self.update_history_buttons();
-        self.generation = self.generation.wrapping_add(1);
-        let generation = self.generation;
-        self.loading = true;
-        if let Some(benchmark) = self.benchmark.as_mut()
-            && benchmark.navigation_started.is_none()
-        {
-            benchmark.navigation_started = Some(Instant::now());
-        }
-        set_window_text(self.controls.address, &url);
-        self.set_status(&format!("Loading {url} …"));
+        self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode);
+    }
 
-        let window_value = self.window as isize;
+    pub(super) unsafe fn begin_navigation_for_tab(
+        &mut self,
+        id: TabId,
+        url: String,
+        history_mode: HistoryMode,
+    ) {
+        let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
+        let (generation, fetch_signal) = {
+            let Some(tab) = self.tabs.get_mut(id) else {
+                return;
+            };
+            tab.document_fetch.abort();
+            tab.document_fetch = FetchController::new();
+            if let Some(mut runtime) = tab.script_runtime.take() {
+                runtime.cancel_document();
+            }
+            tab.script_runtime_clock = None;
+            if tab.loading {
+                tab.generation = tab.generation.wrapping_add(1);
+            }
+            match history_mode {
+                HistoryMode::Push => {
+                    tab.script_navigation.reset(&url);
+                    if tab.history.get(tab.history_index) != Some(&url) {
+                        if !tab.history.is_empty() {
+                            tab.history.truncate(tab.history_index + 1);
+                        }
+                        tab.history.push(url.clone());
+                        tab.history_index = tab.history.len() - 1;
+                    }
+                }
+                HistoryMode::Existing => tab.script_navigation.reset(&url),
+                HistoryMode::Script => {}
+            }
+            tab.generation = tab.generation.wrapping_add(1);
+            tab.loading = true;
+            tab.crashed = false;
+            tab.omnibox_text.clone_from(&url);
+            tab.title.clone_from(&url);
+            tab.status_text = format!("Loading {url} …");
+            (tab.generation, tab.document_fetch.signal())
+        };
+        self.update_renderer_tab_title(id, &url);
+        if is_active {
+            self.update_active_tab_title(&url);
+            KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+            self.update_history_buttons();
+            if let Some(benchmark) = self.benchmark.as_mut()
+                && benchmark.navigation_started.is_none()
+            {
+                benchmark.navigation_started = Some(Instant::now());
+            }
+            set_window_text(self.controls.address, &url);
+            self.set_status(&format!("Loading {url} …"));
+        } else {
+            InvalidateRect(self.window, null(), 0);
+        }
+
+        let tab_router = self.app.tab_router.clone();
         let metrics = Arc::clone(&self.metrics);
         let http_client = Arc::clone(&self.http_client);
-        let fetch_signal = self.document_fetch.signal();
         let navigation_thread = std::thread::Builder::new()
             .name("breeze-navigation".into())
             .stack_size(16 * 1024 * 1024)
@@ -156,16 +185,28 @@ impl BrowserState {
                 }
                 let message = Box::new(LoadMessage { generation, result });
                 let pointer = Box::into_raw(message);
-                let window = window_value as Hwnd;
-                if unsafe { PostMessageW(window, WM_APP_PAGE_LOADED, 0, pointer as isize) } == 0 {
+                let posted = tab_router.destination(id).is_some_and(|window| unsafe {
+                    PostMessageW(
+                        window as Hwnd,
+                        WM_APP_PAGE_LOADED,
+                        id.get() as usize,
+                        pointer as isize,
+                    ) != 0
+                });
+                if !posted {
                     unsafe {
                         drop(Box::from_raw(pointer));
                     }
                 }
             });
         if let Err(error) = navigation_thread {
-            self.loading = false;
-            self.set_status(&format!("Could not start navigation: {error}"));
+            if let Some(tab) = self.tabs.get_mut(id) {
+                tab.loading = false;
+                tab.status_text = format!("Could not start navigation: {error}");
+            }
+            if is_active {
+                self.set_status(&format!("Could not start navigation: {error}"));
+            }
         }
     }
 

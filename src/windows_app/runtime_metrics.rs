@@ -87,14 +87,17 @@ impl BrowserState {
         layout_build_time: Duration,
         paint_time: Duration,
     ) {
+        let layout_tree_time = self.tabs.active().last_layout_tree_time;
+        let layout_finalize_time = self.tabs.active().last_layout_finalize_time;
+        let text_measure_count = self.tabs.active().last_text_measure_count;
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
         benchmark.layout_time = layout_started.elapsed();
         benchmark.layout_build_time = layout_build_time;
-        benchmark.layout_tree_time = self.last_layout_tree_time;
-        benchmark.layout_finalize_time = self.last_layout_finalize_time;
-        benchmark.text_measure_count = self.last_text_measure_count;
+        benchmark.layout_tree_time = layout_tree_time;
+        benchmark.layout_finalize_time = layout_finalize_time;
+        benchmark.text_measure_count = text_measure_count;
         benchmark.paint_time = paint_time;
         benchmark.page_ready = benchmark.process_started.elapsed();
     }

@@ -75,7 +75,7 @@ impl BrowserState {
         // AppContainer profile creation can outlive a short page-settle period on
         // cold hosts. Keep the window responsive while ensuring process metrics
         // include a renderer launch that is still resolving.
-        self.finish_renderer_launch();
+        self.finish_renderer_launch(self.tabs.active_id());
         if self.renderer_launch_pending {
             let now = Instant::now();
             let should_wait = self.benchmark.as_mut().is_some_and(|benchmark| {

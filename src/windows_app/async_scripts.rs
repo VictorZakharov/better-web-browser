@@ -1,6 +1,8 @@
 //! Non-render-blocking external classic-script fetch and delivery.
 
+use super::browser_app::TabMessageRouter;
 use super::resources::fetch_document_resource;
+use super::tabs::TabId;
 use super::*;
 use better_web_browser::engine::script::ScriptInput;
 use better_web_browser::fetch::{FetchSignal, RequestDestination};
@@ -57,7 +59,8 @@ impl BrowserState {
         }
 
         let generation = self.generation;
-        let window = self.window as isize;
+        let tab_id = self.id;
+        let tab_router = self.app.tab_router.clone();
         let client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
         let document_url = self.page.source_url.clone();
@@ -70,6 +73,7 @@ impl BrowserState {
                             let client = Arc::clone(&client);
                             let signal = fetch_signal.clone();
                             let document_url = &document_url;
+                            let tab_router = tab_router.clone();
                             scope.spawn(move || {
                                 let message = fetch_async_script(
                                     &client,
@@ -78,7 +82,7 @@ impl BrowserState {
                                     generation,
                                     request,
                                 );
-                                post_async_script(window as Hwnd, message);
+                                post_async_script(&tab_router, tab_id, message);
                             });
                         }
                     });
@@ -250,9 +254,17 @@ fn fetch_async_script(
     }
 }
 
-fn post_async_script(window: Hwnd, message: AsyncScriptMessage) {
+fn post_async_script(tab_router: &TabMessageRouter, tab_id: TabId, message: AsyncScriptMessage) {
     let pointer = Box::into_raw(Box::new(message));
-    if unsafe { PostMessageW(window, WM_APP_ASYNC_SCRIPT, 0, pointer as isize) } == 0 {
+    let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {
+        PostMessageW(
+            window as Hwnd,
+            WM_APP_ASYNC_SCRIPT,
+            tab_id.get() as usize,
+            pointer as isize,
+        ) != 0
+    });
+    if !posted {
         unsafe { drop(Box::from_raw(pointer)) };
     }
 }

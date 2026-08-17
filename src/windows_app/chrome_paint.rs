@@ -14,6 +14,16 @@ impl BrowserState {
             bottom: self.toolbar_height(),
         };
         fill_color_rect(dc, &toolbar, CHROME_THEME.toolbar);
+        fill_color_rect(
+            dc,
+            &Rect {
+                left: 0,
+                top: 0,
+                right: client.right,
+                bottom: self.scale(TAB_STRIP_HEIGHT_DIP),
+            },
+            CHROME_THEME.tab_strip,
+        );
         let hairline = self.scale(1).max(1);
         fill_color_rect(
             dc,
@@ -25,6 +35,7 @@ impl BrowserState {
             },
             CHROME_THEME.border,
         );
+        self.paint_tab_strip(dc, client);
 
         let address_focused = GetFocus() == self.controls.address;
         paint_rounded_panel(
@@ -201,6 +212,9 @@ impl BrowserState {
         };
         let spec = control.spec.clone();
         let scale = self.page_scale();
+        let pressed_step = self.scale(1);
+        let dpi = self.dpi;
+        let tab = self.tabs.active_mut();
         let radius = spec.border_radius * scale;
         fill_color_shape(
             item.dc,
@@ -218,7 +232,7 @@ impl BrowserState {
             );
         }
         if item.item_state & ODS_FOCUS != 0 {
-            let focus_rect = item.item_rect.inset(self.scale(1), self.scale(1));
+            let focus_rect = item.item_rect.inset(pressed_step, pressed_step);
             paint_border(
                 item.dc,
                 &focus_rect,
@@ -230,9 +244,9 @@ impl BrowserState {
 
         if spec.label.is_empty()
             && let Some(icon_url) = spec.icon_url.as_deref()
-            && let Some(image) = self.page.images.get(icon_url)
+            && let Some(image) = tab.page.images.get(icon_url)
         {
-            let bitmap = self.image_bitmaps.get_or_create_tinted(
+            let bitmap = tab.image_bitmaps.get_or_create_tinted(
                 icon_url,
                 image,
                 [
@@ -264,7 +278,7 @@ impl BrowserState {
                 let width = (requested_width * fit).round().max(1.0) as i32;
                 let height = (requested_height * fit).round().max(1.0) as i32;
                 let pressed_offset = if item.item_state & ODS_SELECTED != 0 {
-                    self.scale(1)
+                    pressed_step
                 } else {
                     0
                 };
@@ -283,7 +297,7 @@ impl BrowserState {
             return;
         }
 
-        let font = self.dynamic_fonts.get_or_create(&spec.font, self.dpi);
+        let font = tab.dynamic_fonts.get_or_create(&spec.font, dpi);
         SelectObject(item.dc, font);
         SetBkMode(item.dc, TRANSPARENT);
         SetTextColor(item.dc, spec.text_color.to_colorref());

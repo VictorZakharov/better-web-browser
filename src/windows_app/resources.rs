@@ -182,7 +182,8 @@ impl BrowserState {
             return;
         }
         let generation = self.generation;
-        let window = self.window as isize;
+        let tab_id = self.id;
+        let tab_router = self.app.tab_router.clone();
         let http_client = Arc::clone(&self.http_client);
         let fetch_signal = self.document_fetch.signal();
         let document_url = self.page.source_url.clone();
@@ -236,15 +237,15 @@ impl BrowserState {
             }
             let message = Box::new(DeferredResourcesMessage { generation, loaded });
             let pointer = Box::into_raw(message);
-            if unsafe {
+            let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {
                 PostMessageW(
                     window as Hwnd,
                     WM_APP_DEFERRED_RESOURCES,
-                    0,
+                    tab_id.get() as usize,
                     pointer as isize,
-                )
-            } == 0
-            {
+                ) != 0
+            });
+            if !posted {
                 unsafe { drop(Box::from_raw(pointer)) };
             }
         });
@@ -287,9 +288,10 @@ impl BrowserState {
         }
         if changed {
             if fonts_changed {
-                self.web_fonts.clear();
-                self.web_fonts.register(&self.page.fonts);
-                self.dynamic_fonts.clear();
+                let tab = self.tabs.active_mut();
+                tab.web_fonts.clear();
+                tab.web_fonts.register(&tab.page.fonts);
+                tab.dynamic_fonts.clear();
             }
             self.rebuild_layout();
             InvalidateRect(self.window, null(), 0);

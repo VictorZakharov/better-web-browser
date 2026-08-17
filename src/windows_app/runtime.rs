@@ -48,6 +48,13 @@ impl BrowserState {
         self.schedule_script_runtime_wakeup();
     }
 
+    pub(super) unsafe fn resume_script_runtime(&mut self) {
+        if self.script_runtime.is_some() {
+            self.script_runtime_clock = Some(Instant::now());
+            self.schedule_script_runtime_wakeup();
+        }
+    }
+
     unsafe fn schedule_script_runtime_wakeup(&mut self) {
         KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
         let next_delay = self
@@ -166,31 +173,31 @@ impl BrowserState {
         let mut render_metrics = None;
         if outcome.render_requested && !outcome.runtime_stopped {
             let style_refresh_started = Instant::now();
-            let style = self.page.refresh_resources_after_invalidation(
-                self.current_style_viewport_width(),
-                &outcome.invalidation,
-            );
+            let viewport_width = self.current_style_viewport_width();
+            let fetch_signal = self.document_fetch.signal();
+            let tab = self.tabs.active_mut();
+            let style = tab
+                .page
+                .refresh_resources_after_invalidation(viewport_width, &outcome.invalidation);
             style_refresh_time += style_refresh_started.elapsed();
             load_page_resources(
-                &mut self.page,
+                &mut tab.page,
                 ResourceLoadContext {
                     client: &client,
-                    signal: &self.document_fetch.signal(),
-                    loaded: &mut self.loaded_page_resources,
+                    signal: &fetch_signal,
+                    loaded: &mut tab.loaded_page_resources,
                     resource_budget: &mut work.resource_budget,
                     bytes: &mut work.bytes,
                     network_time: &mut work.network_time,
                     processing_time: &mut work.processing_time,
                 },
             );
-            self.web_fonts.clear();
-            self.web_fonts.register(&self.page.fonts);
-            self.dynamic_fonts.clear();
-            self.page.title = self.page.dom.title();
-            set_window_text(
-                self.window,
-                &format!("{} \u{2014} {PRODUCT_NAME}", self.page.title),
-            );
+            tab.web_fonts.clear();
+            tab.web_fonts.register(&tab.page.fonts);
+            tab.dynamic_fonts.clear();
+            tab.page.title = tab.page.dom.title();
+            let page_title = tab.page.title.clone();
+            self.update_active_tab_title(&page_title);
             let damage = self.rebuild_layout();
             self.invalidate_layout_damage(damage);
             let metrics = super::runtime_metrics::RenderCheckpointMetrics { style, damage };

@@ -23,6 +23,7 @@ pub(super) type Lparam = isize;
 
 pub(super) const MAIN_CLASS: &str = "BetterWebBrowserMainWindow";
 pub(super) const TASK_CLASS: &str = "BetterWebBrowserTaskManagerWindow";
+pub(super) const TAB_SEARCH_CLASS: &str = "BetterWebBrowserTabSearchWindow";
 
 pub(super) const WM_CREATE: u32 = 0x0001;
 pub(super) const WM_DESTROY: u32 = 0x0002;
@@ -32,6 +33,7 @@ pub(super) const WM_KILLFOCUS: u32 = 0x0008;
 pub(super) const WM_PAINT: u32 = 0x000F;
 pub(super) const WM_CLOSE: u32 = 0x0010;
 pub(super) const WM_ERASEBKGND: u32 = 0x0014;
+pub(super) const WM_CANCELMODE: u32 = 0x001F;
 pub(super) const WM_GETMINMAXINFO: u32 = 0x0024;
 pub(super) const WM_DRAWITEM: u32 = 0x002B;
 pub(super) const WM_COMMAND: u32 = 0x0111;
@@ -39,9 +41,13 @@ pub(super) const WM_TIMER: u32 = 0x0113;
 pub(super) const WM_VSCROLL: u32 = 0x0115;
 pub(super) const WM_CTLCOLOREDIT: u32 = 0x0133;
 pub(super) const WM_KEYDOWN: u32 = 0x0100;
+pub(super) const WM_SYSKEYDOWN: u32 = 0x0104;
 pub(super) const WM_MOUSEMOVE: u32 = 0x0200;
+pub(super) const WM_LBUTTONDOWN: u32 = 0x0201;
 pub(super) const WM_MOUSEWHEEL: u32 = 0x020A;
 pub(super) const WM_LBUTTONUP: u32 = 0x0202;
+pub(super) const WM_MBUTTONUP: u32 = 0x0208;
+pub(super) const WM_CAPTURECHANGED: u32 = 0x0215;
 pub(super) const WM_MOUSELEAVE: u32 = 0x02A3;
 pub(super) const WM_DPICHANGED: u32 = 0x02E0;
 pub(super) const WM_NCCREATE: u32 = 0x0081;
@@ -49,6 +55,7 @@ pub(super) const WM_NCDESTROY: u32 = 0x0082;
 pub(super) const WM_SETFONT: u32 = 0x0030;
 pub(super) const EM_SETCUEBANNER: u32 = 0x1501;
 pub(super) const EM_SETMARGINS: u32 = 0x00D3;
+pub(super) const EM_SETSEL: u32 = 0x00B1;
 pub(super) const CB_ADDSTRING: u32 = 0x0143;
 pub(super) const CB_GETCURSEL: u32 = 0x0147;
 pub(super) const CB_SETCURSEL: u32 = 0x014E;
@@ -60,8 +67,11 @@ pub(super) const WM_APP_CHROME_INVALIDATE: u32 = WM_APP + 4;
 pub(super) const WM_APP_DEFERRED_RESOURCES: u32 = WM_APP + 5;
 pub(super) const WM_APP_ASYNC_SCRIPT: u32 = WM_APP + 6;
 pub(super) const WM_APP_RENDERER_LAUNCHED: u32 = WM_APP + 7;
+pub(super) const WM_APP_TAB_SEARCH_CLOSED: u32 = WM_APP + 8;
 
 pub(super) const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
+pub(super) const WS_POPUP: u32 = 0x8000_0000;
+pub(super) const WS_BORDER: u32 = 0x0080_0000;
 pub(super) const WS_VISIBLE: u32 = 0x1000_0000;
 pub(super) const WS_CHILD: u32 = 0x4000_0000;
 pub(super) const WS_TABSTOP: u32 = 0x0001_0000;
@@ -82,7 +92,17 @@ pub(super) const COLOR_WINDOW: usize = 5;
 pub(super) const IDC_ARROW: u16 = 32512;
 pub(super) const TRANSPARENT: i32 = 1;
 pub(super) const VK_RETURN: usize = 0x0D;
+pub(super) const VK_ESCAPE: usize = 0x1B;
+pub(super) const VK_UP: usize = 0x26;
+pub(super) const VK_DOWN: usize = 0x28;
+pub(super) const VK_SHIFT: i32 = 0x10;
+pub(super) const VK_CONTROL: i32 = 0x11;
+pub(super) const VK_MENU: i32 = 0x12;
+pub(super) const MK_CONTROL: usize = 0x0008;
+pub(super) const MK_SHIFT: usize = 0x0004;
+pub(super) const GA_ROOT: u32 = 2;
 pub(super) const TME_LEAVE: u32 = 0x0000_0002;
+pub(super) const EN_CHANGE: usize = 0x0300;
 
 pub(super) const ODS_SELECTED: u32 = 0x0001;
 pub(super) const ODS_DISABLED: u32 = 0x0004;
@@ -119,6 +139,7 @@ pub(super) const ID_ADDRESS: usize = 1004;
 pub(super) const ID_GO: usize = 1005;
 pub(super) const ID_TASK_MANAGER: usize = 1006;
 pub(super) const ID_READER: usize = 1007;
+pub(super) const ID_TAB_SEARCH_EDIT: usize = 1100;
 pub(super) const ID_PAGE_CONTROL_BASE: usize = 2000;
 pub(super) const ID_SCRIPT_RUNTIME_TIMER: usize = 1;
 pub(super) const ID_RENDERER_MONITOR_TIMER: usize = 2;
@@ -127,7 +148,8 @@ pub(super) use better_web_browser::limits::{MAX_POST_LOAD_TIMER_CALLBACKS, PAGE_
 pub(super) const DEFAULT_DPI: u32 = 96;
 pub(super) const DEFAULT_WINDOW_WIDTH_DIP: i32 = 1120;
 pub(super) const DEFAULT_WINDOW_HEIGHT_DIP: i32 = 780;
-pub(super) const TOOLBAR_HEIGHT_DIP: i32 = 64;
+pub(super) const TAB_STRIP_HEIGHT_DIP: i32 = 40;
+pub(super) const TOOLBAR_HEIGHT_DIP: i32 = 104;
 pub(super) const STATUS_HEIGHT_DIP: i32 = 30;
 pub(super) const CONTENT_MARGIN_DIP: i32 = 28;
 pub(super) const MAX_READING_WIDTH_DIP: i32 = 920;
@@ -137,6 +159,9 @@ pub(super) const RGN_DIFF: i32 = 4;
 
 #[derive(Clone, Copy)]
 pub(super) struct ChromeTheme {
+    pub(super) tab_strip: u32,
+    pub(super) tab_inactive: u32,
+    pub(super) tab_selected: u32,
     pub(super) toolbar: u32,
     pub(super) status: u32,
     pub(super) border: u32,
@@ -157,6 +182,9 @@ pub(super) struct ChromeTheme {
 }
 
 pub(super) const CHROME_THEME: ChromeTheme = ChromeTheme {
+    tab_strip: rgb(224, 229, 237),
+    tab_inactive: rgb(235, 239, 245),
+    tab_selected: rgb(215, 226, 244),
     toolbar: rgb(247, 249, 252),
     status: rgb(249, 250, 252),
     border: rgb(216, 222, 230),
