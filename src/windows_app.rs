@@ -1,6 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 mod app_state;
-mod async_scripts;
 mod benchmark;
 mod benchmark_capture;
 mod browser_app;
@@ -10,7 +9,6 @@ mod chrome_controls;
 mod chrome_paint;
 mod document_activation;
 mod document_navigation;
-mod layout_damage;
 mod page_controls;
 mod page_crash;
 mod paint_index;
@@ -20,13 +18,10 @@ mod performance_monitor;
 mod platform;
 mod process_metrics;
 mod reader_layout;
+mod renderer_fetch;
 mod renderer_lifecycle;
 mod rendering_resources;
-mod resources;
 mod runtime;
-mod runtime_metrics;
-mod script_fetches;
-mod script_mime;
 mod scrolling;
 mod tab_drag;
 mod tab_management;
@@ -38,16 +33,13 @@ mod task_manager;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
-mod worker_threads;
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};
 use better_web_browser::document::{BlockKind, Document, Span, parse_html};
 use better_web_browser::engine::{
     ControlKind, DecodedImage, DisplayItem, DisplayListDamage, FontSpec, LayoutOutput, Page,
-    PageResource, ScriptFetchAction, ScriptOutcome, ScriptRuntime, ScriptWorkerAction,
-    StyleRefreshStats, TextMeasurer, WebFont, WorkerRuntime, WorkerRuntimeOutcome,
-    WorkerSourceLoader, layout_page_with_style_viewport,
+    TextMeasurer, layout_page_with_style_viewport,
 };
 use better_web_browser::metrics::BrowserMetrics;
 use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
@@ -55,16 +47,13 @@ use better_web_browser::winhttp;
 use browser_app::BrowserApplication;
 use browser_window::{BrowserWindowPlacement, create_browser_window};
 use chrome_controls::{ChromeLayout, Controls};
-use document_activation::{LoadMessage, LoadedPage};
+use document_activation::{LoadMessage, LoadedPage, RendererLoadMetrics};
 use performance_monitor::{PerformanceActivity, TabPerformance};
 use platform::*;
 use process_metrics::{process_cpu_ticks, process_memory};
 use reader_layout::layout_document;
-use rendering_resources::{
-    DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps, WebFontResources,
-};
-use resources::DeferredResourcesMessage;
-use std::collections::{HashMap, HashSet};
+use rendering_resources::{DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps};
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};

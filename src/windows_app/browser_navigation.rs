@@ -1,6 +1,5 @@
 //! Omnibox navigation, history traversal, and network-load dispatch.
 
-use super::resources::{ResourceLoadContext, load_page_resources};
 use super::tabs::TabId;
 use super::*;
 use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
@@ -44,19 +43,18 @@ impl BrowserState {
             };
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
-            for (_, controller) in tab.script_fetches.drain() {
-                controller.abort();
+            if let (Some(session), Some(document)) =
+                (tab.renderer_session.as_ref(), tab.renderer_document)
+            {
+                let _ = session.cancel_document(document);
             }
-            tab.queued_script_fetches.clear();
-            for (_, worker) in tab.workers.drain() {
-                worker.terminate();
-            }
-            if let Some(mut runtime) = tab.script_runtime.take() {
-                runtime.cancel_document();
-            }
-            tab.script_runtime_clock = None;
-            tab.post_load_script_not_before = None;
-            tab.pending_async_scripts.clear();
+            tab.pending_renderer_page = None;
+            tab.renderer_document = None;
+            tab.renderer_revision = 0;
+            tab.renderer_load_metrics = None;
+            tab.renderer_next_timer = None;
+            tab.renderer_runtime_clock = None;
+            tab.renderer_work_pending = false;
             tab.last_scroll_activity = None;
             tab.performance = TabPerformance::default();
             tab.scroll_animation = Default::default();
@@ -85,10 +83,12 @@ impl BrowserState {
             tab.status_text = format!("Loading {url} …");
             (tab.generation, tab.document_fetch.signal())
         };
+        self.start_renderer_for(id);
+        self.ensure_renderer_monitoring();
         self.update_renderer_tab_title(id, &url);
         if is_active {
             self.update_active_tab_title(&url);
-            KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+            KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
             self.update_history_buttons();
             if let Some(benchmark) = self.benchmark.as_mut()
                 && benchmark.navigation_started.is_none()
@@ -112,87 +112,25 @@ impl BrowserState {
                 let started = Instant::now();
                 let result = (|| -> Result<LoadedPage, String> {
                     let client = http_client;
-                    let mut response = fetch_navigation(&client, &url, &fetch_signal)?;
-                    let mut network_time = started.elapsed();
-                    let mut bytes = response.body.len() as u64;
-                    let mut resource_budget = PAGE_RESOURCE_BUDGET;
-                    let mut visited = HashSet::from([response.final_url().as_str().to_string()]);
-                    let mut navigation_count = 0;
-                    let mut html_parse_time = Duration::ZERO;
-                    let mut resource_processing_time = Duration::ZERO;
-                    let (
-                        rendered_page,
-                        html,
-                        final_url,
-                        status,
-                        loaded_resources,
-                        remaining_resource_budget,
-                    ) = loop {
-                        let final_url = response.final_url().as_str().to_string();
-                        let status = u32::from(response.status);
-                        let decoded = winhttp::decode_document(
-                            response.body.as_bytes(),
-                            response.content_type(),
-                        );
-                        let html = decoded.text;
-                        let html_parse_started = Instant::now();
-                        let mut rendered_page = Page::parse_scripted(&html, &final_url);
-                        rendered_page.character_set = decoded.encoding.to_string();
-                        html_parse_time += html_parse_started.elapsed();
-
-                        if navigation_count < 5
-                            && let Some(refresh_url) = rendered_page.immediate_refresh_url()
-                            && visited.insert(refresh_url.clone())
-                        {
-                            let refresh_started = Instant::now();
-                            let refresh_response =
-                                fetch_navigation(&client, &refresh_url, &fetch_signal);
-                            network_time += refresh_started.elapsed();
-                            if let Ok(next_response) = refresh_response {
-                                bytes += next_response.body.len() as u64;
-                                visited.insert(next_response.final_url().as_str().to_string());
-                                response = next_response;
-                                navigation_count += 1;
-                                continue;
-                            }
-                        }
-
-                        let mut loaded_resources = HashSet::new();
-                        load_page_resources(
-                            &mut rendered_page,
-                            ResourceLoadContext {
-                                client: &client,
-                                signal: &fetch_signal,
-                                loaded: &mut loaded_resources,
-                                resource_budget: &mut resource_budget,
-                                bytes: &mut bytes,
-                                network_time: &mut network_time,
-                                processing_time: &mut resource_processing_time,
-                            },
-                        );
-                        break (
-                            rendered_page,
-                            html,
-                            final_url,
-                            status,
-                            loaded_resources,
-                            resource_budget,
-                        );
-                    };
-                    let parse_time = started.elapsed().saturating_sub(network_time);
-                    metrics.record_success(bytes, parse_time.as_micros() as u64);
+                    let response = fetch_navigation(&client, &url, &fetch_signal)?;
+                    let network_time = started.elapsed();
+                    let bytes = response.body.len() as u64;
+                    let final_url = response.final_url().as_str().to_string();
+                    let status = response.status;
+                    let content_type = response.content_type().unwrap_or_default().to_string();
+                    let cookie_header = client
+                        .document_cookie_header(&final_url)
+                        .map_err(|error| error.to_string())?;
+                    let body = response.body.into_bytes();
+                    metrics.record_success(bytes, 0);
                     Ok(LoadedPage {
-                        page: rendered_page,
-                        html,
+                        body,
                         final_url,
                         status,
+                        content_type,
+                        cookie_header,
                         bytes,
                         network_time,
-                        parse_time,
-                        html_parse_time,
-                        resource_processing_time,
-                        loaded_resources,
-                        remaining_resource_budget,
                     })
                 })();
                 if result.is_err() {

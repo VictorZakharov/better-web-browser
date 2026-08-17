@@ -9,6 +9,7 @@ use better_web_browser::renderer_process::{
 use std::sync::{Arc, Mutex, mpsc};
 
 const RENDERER_MONITOR_INTERVAL_MS: u32 = 250;
+const ACTIVE_RENDERER_MONITOR_INTERVAL_MS: u32 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RendererLifecyclePhase {
@@ -96,7 +97,7 @@ impl BrowserState {
             SetTimer(
                 self.window,
                 ID_RENDERER_MONITOR_TIMER,
-                RENDERER_MONITOR_INTERVAL_MS,
+                self.renderer_monitor_interval(),
                 null(),
             );
         } else {
@@ -213,7 +214,7 @@ impl BrowserState {
         if SetTimer(
             self.window,
             ID_RENDERER_MONITOR_TIMER,
-            RENDERER_MONITOR_INTERVAL_MS,
+            self.renderer_monitor_interval(),
             null(),
         ) == 0
         {
@@ -221,7 +222,9 @@ impl BrowserState {
                 tab.renderer_session.take();
             }
             self.record_renderer_launch_failure(id, last_error("start renderer monitor"));
+            return;
         }
+        self.submit_pending_renderer_document_for(id);
     }
 
     pub(super) unsafe fn poll_renderers(&mut self) {
@@ -240,6 +243,25 @@ impl BrowserState {
         });
         if !has_live_or_pending {
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
+        } else {
+            SetTimer(
+                self.window,
+                ID_RENDERER_MONITOR_TIMER,
+                self.renderer_monitor_interval(),
+                null(),
+            );
+        }
+    }
+
+    fn renderer_monitor_interval(&self) -> u32 {
+        if self.benchmark.is_some()
+            || self.tabs.iter().any(|tab| {
+                tab.loading || tab.renderer_work_pending || tab.renderer_next_timer.is_some()
+            })
+        {
+            ACTIVE_RENDERER_MONITOR_INTERVAL_MS
+        } else {
+            RENDERER_MONITOR_INTERVAL_MS
         }
     }
 
@@ -279,6 +301,40 @@ impl BrowserState {
                         status.phase = RendererLifecyclePhase::Unresponsive;
                     });
                 }
+                RendererEvent::FetchBatch(requests) => {
+                    self.begin_renderer_fetch_batch(id, requests);
+                }
+                RendererEvent::Presentation(presentation) => {
+                    self.process_for_tab(id, |state| {
+                        state.activate_renderer_presentation(*presentation)
+                    });
+                }
+                RendererEvent::TimeAdvanced {
+                    document,
+                    next_timer_micros,
+                } => {
+                    self.process_for_tab(id, |state| {
+                        state.complete_renderer_time_advance(document, next_timer_micros)
+                    });
+                }
+                RendererEvent::DocumentFailed { document, detail } => {
+                    let current = self
+                        .tabs
+                        .get_mut(id)
+                        .is_some_and(|tab| tab.renderer_document == Some(document));
+                    if current {
+                        self.contain_page_engine_failure(id, detail);
+                    }
+                }
+                RendererEvent::NavigationRequested { document, url } => {
+                    self.process_for_tab(id, |state| {
+                        if state.renderer_document == Some(document)
+                            && state.allow_script_navigation(&url)
+                        {
+                            state.begin_navigation(url, browser_navigation::HistoryMode::Script);
+                        }
+                    });
+                }
                 RendererEvent::Exited(renderer_exit) => exit = Some(renderer_exit),
             }
         }
@@ -307,6 +363,36 @@ impl BrowserState {
             {
                 self.set_status(&status);
             }
+        }
+    }
+
+    unsafe fn begin_renderer_fetch_batch(
+        &mut self,
+        id: TabId,
+        requests: Vec<better_web_browser::renderer_protocol::RendererFetchRequest>,
+    ) {
+        let Some(document) = requests.first().map(|request| request.head.document) else {
+            self.contain_page_engine_failure(id, "renderer sent an empty Fetch batch".into());
+            return;
+        };
+        let context = self.tabs.get_mut(id).and_then(|tab| {
+            (tab.renderer_document == Some(document))
+                .then(|| (tab.reader_url.clone(), tab.document_fetch.signal()))
+        });
+        let Some((document_url, signal)) = context else {
+            return;
+        };
+        let result = renderer_fetch::spawn_fetch_batch(
+            id,
+            document,
+            document_url,
+            requests,
+            Arc::clone(&self.http_client),
+            signal,
+            self.app.tab_router.clone(),
+        );
+        if let Err(error) = result {
+            self.contain_page_engine_failure(id, error);
         }
     }
 

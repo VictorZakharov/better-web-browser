@@ -1,3 +1,6 @@
+mod document;
+
+use self::document::{IncomingFetchBatch, IncomingPresentation};
 use super::diagnostics::{RendererExit, RendererExitReason, SharedDiagnostics};
 use super::{RendererEvent, RendererState};
 use crate::renderer_process::launcher::RendererLaunchOptions;
@@ -5,7 +8,9 @@ use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, FrameWriter, ProtocolError, RendererMessage, RestrictionReport, TestCommand,
+    BrowserFetchResponse, BrowserMessage, DocumentId, DocumentStart, FrameWriter,
+    PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation,
+    RestrictionReport, TestCommand, TransferAssembler,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -21,6 +26,21 @@ pub(super) enum BrokerCommand {
         reply: mpsc::Sender<Result<RestrictionReport, String>>,
     },
     Test(TestCommand),
+    LoadDocument {
+        start: DocumentStart,
+        body: Vec<u8>,
+    },
+    CompleteFetchBatch(Vec<BrowserFetchResponse>),
+    AdvanceTime {
+        document: DocumentId,
+        elapsed: Duration,
+        max_callbacks: u32,
+    },
+    ViewportChanged {
+        document: DocumentId,
+        viewport: PresentedViewport,
+    },
+    CancelDocument(DocumentId),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),
@@ -54,6 +74,8 @@ struct Broker {
     shutdown_deadline: Option<Instant>,
     shutdown_acknowledged: bool,
     exit_reason: Option<RendererExitReason>,
+    incoming_fetch: Option<IncomingFetchBatch>,
+    incoming_presentation: Option<IncomingPresentation>,
 }
 
 impl Broker {
@@ -70,6 +92,8 @@ impl Broker {
             shutdown_deadline: None,
             shutdown_acknowledged: false,
             exit_reason: None,
+            incoming_fetch: None,
+            incoming_presentation: None,
         }
     }
 
@@ -123,6 +147,46 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
+                BrokerCommand::LoadDocument { start, body } => {
+                    if let Err(error) = self.send_document(start, body) {
+                        self.protocol_failure(error);
+                    }
+                }
+                BrokerCommand::CompleteFetchBatch(responses) => {
+                    if let Err(error) = self.send_fetch_responses(responses) {
+                        self.protocol_failure(error);
+                    }
+                }
+                BrokerCommand::AdvanceTime {
+                    document,
+                    elapsed,
+                    max_callbacks,
+                } => {
+                    let elapsed_micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
+                    if let Err(error) = self.writer().send_browser(&BrowserMessage::AdvanceTime {
+                        document,
+                        elapsed_micros,
+                        max_callbacks,
+                    }) {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::ViewportChanged { document, viewport } => {
+                    if let Err(error) = self
+                        .writer()
+                        .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::CancelDocument(document) => {
+                    if let Err(error) = self
+                        .writer()
+                        .send_browser(&BrowserMessage::CancelDocument(document))
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
                 BrokerCommand::Terminate => {
                     self.exit_reason = Some(RendererExitReason::Terminated);
@@ -173,6 +237,22 @@ impl Broker {
                         let _ = reply.send(Ok(report));
                     } else {
                         self.protocol_failure("unsolicited renderer restriction report".into());
+                    }
+                }
+                Ok(Ok(
+                    message @ (RendererMessage::FetchBatchStart { .. }
+                    | RendererMessage::FetchRequestStart { .. }
+                    | RendererMessage::FetchRequestChunk(_)
+                    | RendererMessage::FetchRequestEnd(_)
+                    | RendererMessage::PresentationStart { .. }
+                    | RendererMessage::PresentationChunk(_)
+                    | RendererMessage::PresentationEnd { .. }
+                    | RendererMessage::TimeAdvanced { .. }
+                    | RendererMessage::DocumentFailed { .. }
+                    | RendererMessage::NavigationRequested { .. }),
+                )) => {
+                    if let Err(error) = self.process_document_message(message) {
+                        self.protocol_failure(error.to_string());
                     }
                 }
                 Ok(Ok(RendererMessage::Ready { .. })) => {

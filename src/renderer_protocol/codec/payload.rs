@@ -1,3 +1,9 @@
+mod document;
+
+use self::document::{
+    decode_browser_document, decode_renderer_document, encode_browser_document,
+    encode_renderer_document,
+};
 use super::{ProtocolError, get_u16, get_u32, get_u64};
 use crate::renderer_protocol::message::NONCE_LENGTH;
 use crate::renderer_protocol::{
@@ -24,6 +30,15 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
             payload = encode_text(text)?;
             7
         }
+        BrowserMessage::BeginDocument(_)
+        | BrowserMessage::DocumentChunk(_)
+        | BrowserMessage::EndDocument(_)
+        | BrowserMessage::FetchResponseStart(_)
+        | BrowserMessage::FetchResponseChunk(_)
+        | BrowserMessage::FetchResponseEnd(_)
+        | BrowserMessage::AdvanceTime { .. }
+        | BrowserMessage::ViewportChanged { .. }
+        | BrowserMessage::CancelDocument(_) => return encode_browser_document(message),
         BrowserMessage::Test(command) => {
             match command {
                 TestCommand::Crash => payload.push(1),
@@ -33,6 +48,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
                     payload.push(4);
                     payload.extend_from_slice(&loopback_port.to_le_bytes());
                 }
+                TestCommand::AccessViolation => payload.push(5),
+                TestCommand::OutOfMemory => payload.push(6),
+                TestCommand::StackOverflow => payload.push(7),
             }
             0x8001
         }
@@ -69,6 +87,9 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             Ok(BrowserMessage::Shutdown)
         }
         7 => Ok(BrowserMessage::ProtocolFailure(decode_text(payload)?)),
+        0x0101 | 0x0103 | 0x0105 | 0x0111 | 0x0113 | 0x0115 | 0x0121 | 0x0123 | 0x0125 => {
+            decode_browser_document(kind, payload)
+        }
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }
@@ -81,6 +102,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
             payload.extend_from_slice(nonce.as_bytes());
             payload.push(containment.app_container.into());
             payload.push(containment.no_console_window.into());
+            payload.push(containment.minimal_environment.into());
             2
         }
         RendererMessage::Pong(token) => {
@@ -93,6 +115,16 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
             payload.extend_from_slice(&encode_text(&diagnostic.text)?);
             8
         }
+        RendererMessage::FetchBatchStart { .. }
+        | RendererMessage::FetchRequestStart { .. }
+        | RendererMessage::FetchRequestChunk(_)
+        | RendererMessage::FetchRequestEnd(_)
+        | RendererMessage::PresentationStart { .. }
+        | RendererMessage::PresentationChunk(_)
+        | RendererMessage::PresentationEnd { .. }
+        | RendererMessage::TimeAdvanced { .. }
+        | RendererMessage::DocumentFailed { .. }
+        | RendererMessage::NavigationRequested { .. } => return encode_renderer_document(message),
         RendererMessage::Restrictions(report) => {
             payload.push(report.child_launch_denied.into());
             payload.push(report.loopback_denied.into());
@@ -110,12 +142,13 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
 pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessage, ProtocolError> {
     match kind {
         2 => {
-            require_length(payload, NONCE_LENGTH + 2)?;
+            require_length(payload, NONCE_LENGTH + 3)?;
             Ok(RendererMessage::Ready {
                 nonce: nonce_from(&payload[..NONCE_LENGTH])?,
                 containment: ContainmentReport {
                     app_container: boolean(payload[32])?,
                     no_console_window: boolean(payload[33])?,
+                    minimal_environment: boolean(payload[34])?,
                 },
             })
         }
@@ -134,6 +167,9 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
             let diagnostic =
                 RendererDiagnostic::new(get_u16(payload), decode_text(&payload[2..])?)?;
             Ok(RendererMessage::Diagnostic(diagnostic))
+        }
+        0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a | 0x011c => {
+            decode_renderer_document(kind, payload)
         }
         0x8002 => {
             require_length(payload, 16)?;
@@ -161,6 +197,9 @@ fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
         [4, low, high] => Ok(TestCommand::ProbeRestrictions {
             loopback_port: u16::from_le_bytes([*low, *high]),
         }),
+        [5] => Ok(TestCommand::AccessViolation),
+        [6] => Ok(TestCommand::OutOfMemory),
+        [7] => Ok(TestCommand::StackOverflow),
         _ => Err(ProtocolError::InvalidPayload("test command")),
     }
 }

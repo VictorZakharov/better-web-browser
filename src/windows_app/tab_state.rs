@@ -7,9 +7,9 @@ use super::scrolling::ScrollAnimation;
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::engine::dom::NodeId;
-use better_web_browser::fetch::{FetchController, FetchRequest};
+use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
-use std::collections::VecDeque;
+use better_web_browser::renderer_protocol::DocumentId;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
@@ -23,18 +23,11 @@ pub(super) struct BrowserTab {
     pub(super) performance: TabPerformance,
     pub(super) focus: TabFocus,
     pub(super) dynamic_fonts: DynamicFonts,
-    pub(super) web_fonts: WebFontResources,
     pub(super) image_bitmaps: ImageBitmaps,
+    pub(super) presented_images: HashMap<String, DecodedImage>,
     pub(super) page: Page,
-    pub(super) script_runtime: Option<ScriptRuntime>,
-    pub(super) script_runtime_clock: Option<Instant>,
-    pub(super) post_load_script_not_before: Option<Instant>,
-    pub(super) pending_async_scripts: VecDeque<async_scripts::AsyncScriptMessage>,
     pub(super) last_scroll_activity: Option<Instant>,
-    pub(super) loaded_page_resources: HashSet<PageResource>,
-    pub(super) page_resource_budget: u64,
     pub(super) document: Option<Document>,
-    pub(super) reader_html: String,
     pub(super) reader_url: String,
     pub(super) draw_items: Vec<DrawItem>,
     pub(super) page_layout: LayoutOutput,
@@ -51,13 +44,17 @@ pub(super) struct BrowserTab {
     pub(super) loading: bool,
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
-    pub(super) script_fetches: HashMap<u32, FetchController>,
-    pub(super) queued_script_fetches: VecDeque<(u32, FetchRequest)>,
-    pub(super) workers: HashMap<u32, worker_threads::WorkerHandle>,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
     pub(super) renderer_launch_pending: bool,
     pub(super) renderer_started_once: bool,
+    pub(super) pending_renderer_page: Option<LoadedPage>,
+    pub(super) renderer_document: Option<DocumentId>,
+    pub(super) renderer_revision: u64,
+    pub(super) renderer_load_metrics: Option<RendererLoadMetrics>,
+    pub(super) renderer_next_timer: Option<Duration>,
+    pub(super) renderer_runtime_clock: Option<Instant>,
+    pub(super) renderer_work_pending: bool,
     pub(super) last_layout_tree_time: Duration,
     pub(super) last_layout_finalize_time: Duration,
     pub(super) last_text_measure_count: usize,
@@ -77,18 +74,11 @@ impl BrowserTab {
             performance: TabPerformance::default(),
             focus: TabFocus::Address,
             dynamic_fonts: DynamicFonts::default(),
-            web_fonts: WebFontResources::default(),
             image_bitmaps: ImageBitmaps::default(),
+            presented_images: HashMap::new(),
             page,
-            script_runtime: None,
-            script_runtime_clock: None,
-            post_load_script_not_before: None,
-            pending_async_scripts: VecDeque::new(),
             last_scroll_activity: None,
-            loaded_page_resources: HashSet::new(),
-            page_resource_budget: PAGE_RESOURCE_BUDGET,
             document: Some(document),
-            reader_html: HOME_HTML.into(),
             reader_url: HOME_URL.into(),
             draw_items: Vec::new(),
             page_layout: LayoutOutput::default(),
@@ -105,13 +95,17 @@ impl BrowserTab {
             loading: false,
             crashed: false,
             document_fetch: FetchController::new(),
-            script_fetches: HashMap::new(),
-            queued_script_fetches: VecDeque::new(),
-            workers: HashMap::new(),
             renderer_session: None,
             renderer_launch_receiver: None,
             renderer_launch_pending: false,
             renderer_started_once: false,
+            pending_renderer_page: None,
+            renderer_document: None,
+            renderer_revision: 0,
+            renderer_load_metrics: None,
+            renderer_next_timer: None,
+            renderer_runtime_clock: None,
+            renderer_work_pending: false,
             last_layout_tree_time: Duration::ZERO,
             last_layout_finalize_time: Duration::ZERO,
             last_text_measure_count: 0,
@@ -133,19 +127,13 @@ impl BrowserTab {
         self.crashed = true;
         self.status_text = status;
         self.document_fetch.abort();
-        for (_, controller) in self.script_fetches.drain() {
-            controller.abort();
-        }
-        self.queued_script_fetches.clear();
-        self.pending_async_scripts.clear();
-        for (_, worker) in self.workers.drain() {
-            worker.terminate();
-        }
-        if let Some(mut runtime) = self.script_runtime.take() {
-            runtime.cancel_document();
-        }
-        self.script_runtime_clock = None;
-        self.post_load_script_not_before = None;
+        self.pending_renderer_page = None;
+        self.renderer_document = None;
+        self.renderer_revision = 0;
+        self.renderer_load_metrics = None;
+        self.renderer_next_timer = None;
+        self.renderer_runtime_clock = None;
+        self.renderer_work_pending = false;
         self.page_controls.clear();
         if let Some(session) = self.renderer_session.take() {
             session.terminate_in_background();
@@ -165,16 +153,6 @@ impl Drop for BrowserTab {
     fn drop(&mut self) {
         self.page_controls.clear();
         self.document_fetch.abort();
-        for (_, controller) in self.script_fetches.drain() {
-            controller.abort();
-        }
-        self.queued_script_fetches.clear();
-        for (_, worker) in self.workers.drain() {
-            worker.terminate();
-        }
-        if let Some(mut runtime) = self.script_runtime.take() {
-            runtime.cancel_document();
-        }
         if let Some(session) = self.renderer_session.take() {
             session.terminate_in_background();
         }
@@ -264,7 +242,6 @@ mod tests {
 
         assert!(tabs.active().crashed);
         assert!(!tabs.active().loading);
-        assert!(tabs.active().script_runtime.is_none());
         assert!(tabs.active().status_text.contains("Reload"));
         tabs.activate(sibling);
         assert!(!tabs.active().crashed);

@@ -43,12 +43,7 @@ pub(super) unsafe extern "system" fn main_window_proc(
         Err(payload) => {
             let id = if matches!(
                 message,
-                WM_APP_PAGE_LOADED
-                    | WM_APP_DEFERRED_RESOURCES
-                    | WM_APP_ASYNC_SCRIPT
-                    | WM_APP_SCRIPT_FETCH
-                    | WM_APP_WORKER_EVENT
-                    | WM_APP_RENDERER_LAUNCHED
+                WM_APP_PAGE_LOADED | WM_APP_RENDERER_LAUNCHED | WM_APP_RENDERER_FETCH_COMPLETE
             ) {
                 TabId::from_message(wparam).unwrap_or_else(|| state.tabs.active_id())
             } else {
@@ -164,7 +159,7 @@ unsafe fn dispatch_window_message(
                 DefWindowProcW(window, message, wparam, lparam)
             }
         }
-        WM_TIMER if wparam == ID_SCRIPT_RUNTIME_TIMER => {
+        WM_TIMER if wparam == ID_RENDERER_RUNTIME_TIMER => {
             state.pump_script_runtime();
             0
         }
@@ -204,64 +199,19 @@ unsafe fn dispatch_window_message(
             }
             0
         }
-        WM_APP_DEFERRED_RESOURCES => {
+        WM_APP_RENDERER_FETCH_COMPLETE => {
             if let Some(id) = TabId::from_message(wparam) {
                 if reroute_tab_message(state, id, message, wparam, lparam) {
                     return 0;
                 }
-                let message = Box::from_raw(lparam as *mut DeferredResourcesMessage);
+                let completion =
+                    Box::from_raw(lparam as *mut renderer_fetch::RendererFetchCompletion);
                 if state.tabs.contains(id) {
-                    state.route_resource_message(id, *message);
-                }
-            } else {
-                drop(Box::from_raw(lparam as *mut DeferredResourcesMessage));
-            }
-            0
-        }
-        WM_APP_ASYNC_SCRIPT => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                let message = Box::from_raw(lparam as *mut async_scripts::AsyncScriptMessage);
-                if state.tabs.contains(id) {
-                    state.route_async_script_message(id, *message);
+                    state.route_renderer_fetch_completion(id, *completion);
                 }
             } else {
                 drop(Box::from_raw(
-                    lparam as *mut async_scripts::AsyncScriptMessage,
-                ));
-            }
-            0
-        }
-        WM_APP_SCRIPT_FETCH => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                let message = Box::from_raw(lparam as *mut script_fetches::ScriptFetchMessage);
-                if state.tabs.contains(id) {
-                    state.route_script_fetch_message(id, *message);
-                }
-            } else {
-                drop(Box::from_raw(
-                    lparam as *mut script_fetches::ScriptFetchMessage,
-                ));
-            }
-            0
-        }
-        WM_APP_WORKER_EVENT => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                let message = Box::from_raw(lparam as *mut worker_threads::WorkerEventMessage);
-                if state.tabs.contains(id) {
-                    state.route_worker_event_message(id, *message);
-                }
-            } else {
-                drop(Box::from_raw(
-                    lparam as *mut worker_threads::WorkerEventMessage,
+                    lparam as *mut renderer_fetch::RendererFetchCompletion,
                 ));
             }
             0

@@ -28,7 +28,7 @@ impl BrowserState {
             self.tabs.activate(original);
         }
         self.processing_background_tab = false;
-        KillTimer(self.window, ID_SCRIPT_RUNTIME_TIMER);
+        KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         if self.tabs.active_id() == id {
             self.set_status(&status);
         }

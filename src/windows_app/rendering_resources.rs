@@ -172,42 +172,6 @@ impl Drop for DynamicFonts {
 }
 
 #[derive(Default)]
-pub(super) struct WebFontResources {
-    handles: Vec<Handle>,
-}
-
-impl WebFontResources {
-    pub(super) unsafe fn register(&mut self, fonts: &[WebFont]) {
-        self.clear();
-        for font in fonts {
-            let Ok(size) = u32::try_from(font.sfnt.len()) else {
-                continue;
-            };
-            let mut count = 0_u32;
-            let handle =
-                AddFontMemResourceEx(font.sfnt.as_ptr().cast(), size, null_mut(), &mut count);
-            if !handle.is_null() && count > 0 {
-                self.handles.push(handle);
-            }
-        }
-    }
-
-    pub(super) unsafe fn clear(&mut self) {
-        for handle in self.handles.drain(..) {
-            if !handle.is_null() {
-                RemoveFontMemResourceEx(handle);
-            }
-        }
-    }
-}
-
-impl Drop for WebFontResources {
-    fn drop(&mut self) {
-        unsafe { self.clear() }
-    }
-}
-
-#[derive(Default)]
 pub(super) struct ImageBitmaps {
     bitmaps: HashMap<String, Hbitmap>,
 }

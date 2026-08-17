@@ -33,8 +33,8 @@ Current page support includes:
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
-- A capability-free Windows AppContainer renderer lifecycle with bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics; this Stage 2 child handles lifecycle messages only and does not yet receive page bytes
-- Browser-owned multi-tab contexts with independent live documents, history, scrolling, script realms, native-control focus, in-flight completion routing, and one lifecycle renderer per tab
+- One capability-free Windows AppContainer renderer per tab, owning remote-document decoding, HTML/DOM, JavaScript, CSS/layout, image/font decoding, Workers, and immutable presentation output behind bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics
+- Browser-owned multi-tab contexts with independent history, scrolling, native-control focus, navigation and Fetch brokerage, in-flight completion routing, and isolated renderer lifecycles
 - Desktop tab workflows including Ctrl/Shift multi-selection, ordered drag/reorder, detach/redock across windows, searchable open/recent tabs, Ctrl+N/Ctrl+Shift+W, Ctrl+Shift+A, Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+Shift+PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
 - Links, history, reload, scrolling, and background networking
 
@@ -81,23 +81,30 @@ Six runs per browser, collected as two alternating three-run hidden release batc
 | CPU time | 523.4 ms | 3,976.6 ms | Breeze 7.60x lower |
 | Processes | 2 | 10 | Breeze uses 5x fewer |
 
-Breeze memory and CPU totals include both its browser process and the live lifecycle-only renderer.
+Breeze memory and CPU totals include both its browser process and the live page renderer.
 Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event
 and implements substantially more of the web platform. Treat this as a reproducible development
 snapshot, not a universal or feature-equivalent browser claim.
 
 ## Architecture
 
-The current page-engine data flow remains in the browser process while the lifecycle-only renderer
-boundary is exercised separately:
+The browser retains network and OS authority; each tab's AppContainer renderer owns untrusted page
+execution and sends back a bounded, immutable presentation:
 
 ```text
-URL/history -> Fetch policy -> WinHTTP -> charset decode -> HTML5 DOM
-                       |                          |-> JavaScript/DOM mutation
-                       |                          |-> CSS cascade
-                       |                          |-> resource discovery/decode
-                       |                          `-> box layout -> display list -> Win32/GDI paint
-                       `-> origin/CORS/cookies/redirects/cancellation
+Browser:  URL/history -> Fetch policy -> WinHTTP -> response bytes
+                    `-> origins/CORS/cookies/redirects/cancellation
+                                      |
+                              bounded typed IPC
+                                      v
+Renderer: charset decode -> HTML5 DOM -> JavaScript/DOM mutation
+                                  |-> brokered Fetch intents
+                                  |-> CSS and resource decode
+                                  `-> layout -> immutable presentation
+                                                        |
+                                                validated typed IPC
+                                                        v
+Browser:                                      Win32/GDI paint and native controls
 ```
 
 The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
@@ -171,17 +178,29 @@ The hostile-input suite deterministically replays the committed HTML, fragment, 
 JavaScript-host fuzz corpora on stable Windows. Coverage-guided runs use the separate pinned fuzz
 workspace and scheduled Linux workflow; see [fuzz/README.md](fuzz/README.md).
 
-## Honest current limitations
+## Support matrix and current limitations
 
-- Windows-only native shell
-- The JavaScript networking core now includes RFC-oriented cookies, Fetch/XHR, body streams, static module graphs with top-level await, and dedicated classic/module workers; progressive network-to-JavaScript streaming, dynamic imports/import maps, Shared/Service Workers, and much of the wider browser API surface remain incomplete
-- The JavaScript realm is retained on the document's UI thread for timer, script, Fetch/XHR, and worker-completion tasks, but user-input task dispatch and many other HTML event-loop task sources remain incomplete
-- JavaScript-created `Image` objects currently report asynchronous load errors until their fetch/decode path is connected to the renderer
-- Canvas, media, downloads, accessibility, text selection, tab-session persistence, and site isolation are not implemented yet
-- CSS selector/layout/painting coverage is useful on selected pages but remains far from the complete web platform
-- External classic `async` scripts execute on arrival without delaying page-ready, but their fetch currently starts after first paint instead of overlapping HTML parsing; `defer` scheduling is not yet modeled separately
-- Native form controls approximate browser control styling; a later owned widget painter is needed for tighter cross-platform parity
-- No site isolation or security audit; do not use this MVP for sensitive authenticated browsing
+`☑` means the high-level capability is supported, `◩` means useful foundations exist but
+important behavior is incomplete, and `☐` means the capability is not implemented.
+
+| Status | Area | Details |
+| --- | --- | --- |
+| ◩ | Host platforms | The native shell runs on Windows; macOS and Linux shells are not implemented. |
+| ◩ | HTML and DOM | The engine owns its DOM and implements substantial HTML5 tree construction, mutation, and event propagation behavior. Web-platform conformance is still incomplete. |
+| ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
+| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, timers, microtasks, navigation, storage, and other early browser APIs. User-input task dispatch, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
+| ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
+| ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Progressive delivery from the network into JavaScript streams is not yet connected. |
+| ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
+| ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
+| ◩ | Script scheduling | External classic `async` scripts execute on arrival without delaying page-ready. Their fetch starts after first paint instead of overlapping HTML parsing, and `defer` is not yet scheduled separately. |
+| ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfont loading and layout metrics are supported. Final browser-side text painting can fall back to an installed font because renderer-loaded webfont bytes are not yet part of the immutable presentation. JavaScript-created `Image` objects currently report asynchronous load errors because their fetch/decode path is not connected. |
+| ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported. Control styling is approximate, broader form behavior is incomplete, and document text selection is not implemented. |
+| ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
+| ☐ | Canvas, media, and downloads | Canvas rendering, audio/video playback, and downloads are not implemented. |
+| ☐ | Accessibility | An accessibility tree and platform accessibility integration are not implemented. |
+| ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. Bounded IPC, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow; reload creates a fresh process/session/document identity. Cross-site frame isolation is not implemented. |
+| ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
 
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.

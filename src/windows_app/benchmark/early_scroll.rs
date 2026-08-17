@@ -284,16 +284,4 @@ impl BrowserState {
             benchmark.activity.display_items_invalidated += damage.changed_items;
         }
     }
-
-    pub(in crate::windows_app) fn record_benchmark_resource_completion(
-        &mut self,
-        duration: Duration,
-        completions: usize,
-    ) {
-        self.record_performance_activity(PerformanceActivity::Resource, duration);
-        if let Some(benchmark) = self.benchmark.as_mut() {
-            benchmark.activity.resource_time += duration;
-            benchmark.activity.resource_completions += completions;
-        }
-    }
 }

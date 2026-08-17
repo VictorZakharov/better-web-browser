@@ -8,6 +8,7 @@ use crate::limits::{
 use crate::renderer_protocol::{Nonce, RendererSessionId};
 use std::fs::File;
 use std::mem::size_of;
+use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::OwnedHandle;
 use std::path::{Path, PathBuf};
 use std::ptr::null;
@@ -15,8 +16,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CreateProcessW, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
-    STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, EXTENDED_STARTUPINFO_PRESENT,
+    PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
@@ -86,20 +87,21 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
 
     let application = wide_path(&options.executable);
     let mut command_line = wide(&command_line(options, nonce, session));
+    let environment = renderer_environment(&options.executable)?;
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     startup.StartupInfo.hStdInput = raw(&pipes.child_input);
     startup.StartupInfo.hStdOutput = raw(&pipes.child_output);
     // Reusing the protocol output keeps the allowlist at exactly two unique handles. Renderer mode
-    // installs no stderr diagnostics or panic output, so only framed writes reach this pipe.
+    // suppresses panic output; fatal fault-injection paths terminate without writing diagnostics.
     startup.StartupInfo.hStdError = raw(&pipes.child_output);
     startup.lpAttributeList = attributes.as_ptr();
     let mut process = PROCESS_INFORMATION::default();
-    let flags = CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
-    // Stage 2 sends no remote document or resource bytes to this child. Before that changes, replace
-    // this inherited environment with an audited minimal block so page code cannot observe browser
-    // credentials or configuration through environment variables.
+    let flags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+    // CreateProcessW requires an explicit double-NUL-terminated UTF-16 environment block when
+    // CREATE_UNICODE_ENVIRONMENT is set. Only Windows bootstrap variables cross this boundary;
+    // browser credentials, proxy settings, developer tokens, and user configuration do not.
     let created = unsafe {
         CreateProcessW(
             application.as_ptr(),
@@ -108,7 +110,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
             null(),
             1,
             flags,
-            null(),
+            environment.as_ptr().cast(),
             null(),
             &startup.StartupInfo,
             &mut process,
@@ -183,6 +185,77 @@ fn wide(text: &str) -> Vec<u16> {
 }
 
 fn wide_path(path: &Path) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
     path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+fn renderer_environment(executable: &Path) -> Result<Vec<u16>, String> {
+    let mut entries = super::RENDERER_ENVIRONMENT_ALLOWLIST
+        .iter()
+        .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_string(), value)))
+        .collect::<Vec<_>>();
+    for directory in [std::env::current_dir().ok().as_deref(), executable.parent()]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(drive) = windows_drive(directory) {
+            entries.push((format!("={drive}:"), directory.as_os_str().to_owned()));
+        }
+    }
+    entries.sort_by_key(|(name, _)| name.to_ascii_uppercase());
+    entries.dedup_by(|left, right| left.0.eq_ignore_ascii_case(&right.0));
+    if !entries
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("SystemRoot"))
+    {
+        return Err("renderer launch requires SystemRoot".into());
+    }
+
+    let mut block = Vec::new();
+    for (name, value) in entries {
+        if !super::renderer_environment_name_allowed(&name) {
+            return Err(format!(
+                "renderer environment variable {name} is not allowlisted"
+            ));
+        }
+        let prefix = std::ffi::OsString::from(format!("{name}="));
+        for unit in prefix.encode_wide().chain(value.encode_wide()) {
+            if unit == 0 {
+                return Err(format!("renderer environment variable {name} contains NUL"));
+            }
+            block.push(unit);
+        }
+        block.push(0);
+    }
+    block.push(0);
+    Ok(block)
+}
+
+fn windows_drive(path: &Path) -> Option<char> {
+    let text = path.as_os_str().to_string_lossy();
+    let mut characters = text.chars();
+    let drive = characters.next()?;
+    (drive.is_ascii_alphabetic() && characters.next() == Some(':'))
+        .then(|| drive.to_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renderer_environment_is_allowlisted_and_double_terminated() {
+        let executable = std::env::current_exe().unwrap();
+        let block = renderer_environment(&executable).unwrap();
+        assert!(block.ends_with(&[0, 0]));
+        for entry in block[..block.len() - 1]
+            .split(|unit| *unit == 0)
+            .filter(|entry| !entry.is_empty())
+        {
+            let entry = String::from_utf16(entry).unwrap();
+            let split = entry[1..].find('=').map(|index| index + 1).unwrap();
+            assert!(super::super::renderer_environment_name_allowed(
+                &entry[..split]
+            ));
+        }
+    }
 }

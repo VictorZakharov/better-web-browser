@@ -20,7 +20,7 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, GetCurrentProcess, OpenProcessToken,
 };
 
-const CHILD_EXIT_PROTOCOL_ERROR: i32 = 70;
+pub(super) const CHILD_EXIT_PROTOCOL_ERROR: i32 = 70;
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     std::panic::set_hook(Box::new(|_| {}));
@@ -95,41 +95,21 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
             containment: containment_report()?,
         })
         .map_err(|error| error.to_string())?;
-
-    loop {
-        match reader.read_browser() {
-            Ok(BrowserMessage::Ping(token)) => writer
-                .send_renderer(&RendererMessage::Pong(token))
-                .map_err(|error| error.to_string())?,
-            Ok(BrowserMessage::Shutdown) => {
-                writer
-                    .send_renderer(&RendererMessage::ShutdownComplete)
-                    .map_err(|error| error.to_string())?;
-                return Ok(());
-            }
-            Ok(BrowserMessage::ProtocolFailure(_)) => return Err("browser rejected IPC".into()),
-            Ok(BrowserMessage::Test(command)) if options.test_mode => {
-                handle_test(command, &mut writer)?;
-            }
-            Ok(BrowserMessage::Test(_)) => return Err("test command rejected".into()),
-            Ok(BrowserMessage::Hello { .. }) => return Err("duplicate renderer Hello".into()),
-            Err(error) => {
-                let _ = writer.send_renderer(&RendererMessage::Diagnostic(
-                    crate::renderer_protocol::RendererDiagnostic::new(
-                        CHILD_EXIT_PROTOCOL_ERROR as u16,
-                        error.to_string(),
-                    )
-                    .map_err(|error| error.to_string())?,
-                ));
-                return Err(error.to_string());
-            }
-        }
-    }
+    connection::ChildConnection::new(reader, writer, options.test_mode).run()
 }
 
-fn handle_test(command: TestCommand, writer: &mut FrameWriter<File>) -> Result<(), String> {
+pub(super) fn handle_test(
+    command: TestCommand,
+    writer: &mut FrameWriter<File>,
+) -> Result<(), String> {
     match command {
         TestCommand::Crash => std::process::abort(),
+        TestCommand::AccessViolation => raise_access_violation(),
+        TestCommand::OutOfMemory => terminate_for_out_of_memory(),
+        TestCommand::StackOverflow => {
+            overflow_stack(0);
+            unreachable!("stack-overflow injection returned")
+        }
         TestCommand::Hang => loop {
             std::thread::sleep(Duration::from_secs(60));
         },
@@ -204,7 +184,61 @@ fn containment_report() -> Result<ContainmentReport, String> {
     Ok(ContainmentReport {
         app_container: is_app_container()?,
         no_console_window: unsafe { GetConsoleWindow() }.is_null(),
+        minimal_environment: has_minimal_environment(),
     })
+}
+
+fn has_minimal_environment() -> bool {
+    let mut system_root = false;
+    for (name, _) in std::env::vars_os() {
+        let name = name.to_string_lossy();
+        if name.eq_ignore_ascii_case("SystemRoot") {
+            system_root = true;
+        }
+        if !super::renderer_environment_name_allowed(&name) {
+            return false;
+        }
+    }
+    system_root
+}
+
+fn raise_access_violation() -> ! {
+    const EXCEPTION_ACCESS_VIOLATION: u32 = 0xC000_0005;
+    const EXCEPTION_NONCONTINUABLE: u32 = 1;
+    unsafe extern "system" {
+        fn RaiseException(code: u32, flags: u32, count: u32, arguments: *const usize);
+    }
+    unsafe {
+        RaiseException(
+            EXCEPTION_ACCESS_VIOLATION,
+            EXCEPTION_NONCONTINUABLE,
+            0,
+            std::ptr::null(),
+        );
+    }
+    std::process::abort()
+}
+
+fn terminate_for_out_of_memory() -> ! {
+    // The production Job Object enforces the memory ceiling. Fault injection uses Windows' native
+    // out-of-memory status directly so tests exercise the same uncatchable process-death boundary
+    // without transiently committing hundreds of MiB on the host.
+    const STATUS_NO_MEMORY: u32 = 0xC000_0017;
+    unsafe extern "system" {
+        fn TerminateProcess(process: *mut std::ffi::c_void, exit_code: u32) -> i32;
+    }
+    unsafe {
+        TerminateProcess(GetCurrentProcess(), STATUS_NO_MEMORY);
+    }
+    std::process::abort()
+}
+
+#[inline(never)]
+#[allow(unconditional_recursion)]
+fn overflow_stack(depth: usize) -> usize {
+    let marker = [depth as u8; 4096];
+    std::hint::black_box(&marker);
+    overflow_stack(depth.wrapping_add(1)).wrapping_add(usize::from(marker[0]))
 }
 
 fn is_app_container() -> Result<bool, String> {
@@ -316,3 +350,5 @@ impl ChildOptions {
         })
     }
 }
+mod connection;
+mod document;

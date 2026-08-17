@@ -23,10 +23,13 @@ Or run all targets for a bounded interval with PowerShell 7:
 ./scripts/run-fuzz-smoke.ps1 -LibFuzzer -Seconds 60
 ```
 
-Without `-LibFuzzer`, that script performs the stable corpus replay used by pull-request CI. The
-scheduled `Fuzz` workflow runs all six targets with pinned tooling. Any crash, panic, excessive
-allocation, or five-second input timeout fails the run. Findings must be minimized, added to the
-matching corpus, and covered by a stable regression test before the fix is merged.
+Without `-LibFuzzer`, that script performs the deterministic corpus replay used by pull-request CI.
+Coverage-guided campaigns are reserved for scheduled and manually dispatched `Fuzz` runs, where all
+six targets run concurrently with pinned tooling. Successful jobs print only seed and final
+statistics, while failures expose a bounded log tail and upload the full log and crash artifact. Any
+crash, panic, excessive allocation, or five-second input timeout fails the run. Findings must be
+minimized, added to the matching corpus, and covered by a stable regression test before the fix is
+merged.
 
 All checked-in corpus seeds were authored for this repository. Tool licensing and versions are
 recorded in `THIRD_PARTY_NOTICES.md`; generated artifacts are ignored and must not be committed.
