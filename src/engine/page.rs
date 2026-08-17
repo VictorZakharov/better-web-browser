@@ -9,7 +9,7 @@ use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, NodeRef};
 use super::font::{WebFont, WebFontFace, decode_web_font};
-use super::script::{self, ScriptInput, ScriptOutcome, ScriptRuntime};
+use super::script::{self, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime};
 use crate::limits::{
     MAX_CSS_SOURCE_BYTES, MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION,
     MAX_DECODED_IMAGE_PIXELS, MAX_EMBEDDED_IMAGE_URL_BYTES, MAX_IMAGE_SOURCE_BYTES,
@@ -32,6 +32,7 @@ pub enum PageResource {
     },
     Script {
         url: String,
+        kind: ScriptKind,
     },
     Font {
         url: String,
@@ -46,6 +47,7 @@ pub struct PageScript {
     pub node: NodeRef,
     pub source_url: String,
     pub code: Option<String>,
+    pub kind: ScriptKind,
     pub blocks_first_paint: bool,
 }
 

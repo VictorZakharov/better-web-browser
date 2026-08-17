@@ -1,8 +1,8 @@
 # Fetch and navigation pipeline
 
 Breeze routes top-level navigations and document subresources through one typed request/response
-boundary. The model exists independently of JavaScript APIs so future `fetch`, XHR, modules, and
-workers do not each invent URL, origin, redirect, cookie, or CORS behavior.
+boundary. The model exists independently of JavaScript APIs, so `fetch`, XHR, modules, and workers
+share URL, origin, redirect, cookie, and CORS behavior rather than implementing parallel policies.
 
 The compatibility references are the [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/), the
 [WHATWG URL Standard](https://url.spec.whatwg.org/), and Microsoft's
@@ -74,3 +74,6 @@ Networking integration tests use only ephemeral loopback servers. The matrix cov
 modes, cookies across redirect and path scopes, shared cancellation, HTTP versus network failures,
 CORS success/failure, preflight success/failure, guarded script headers, referrer reduction, and
 response-body limits. No public service is part of the conformance contract.
+
+The JavaScript-facing ownership and remaining streaming/module/worker boundaries are documented in
+[javascript-network-runtime.md](javascript-network-runtime.md).

@@ -1,18 +1,22 @@
 //! Fetch policy orchestration over the one-hop WinHTTP transport.
 
-use super::client::{HttpClient, TransportResponse};
+use super::client::{HttpClient, TransportRequest, TransportResponse};
 use crate::fetch::{
     Body, CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchResponse, FetchUrl,
-    HeaderList, RedirectMode, Referrer, RequestContext, RequestMode, ResponseType,
-    cors_filtered_headers, is_cors_safelisted_request_header, needs_cors_check, needs_preflight,
-    validate_cors_response, validate_preflight_response,
+    HeaderList, RedirectMode, Referrer, ReferrerPolicy, RequestCache, RequestContext, RequestMode,
+    ResponseType, cors_filtered_headers, is_cors_safelisted_request_header, needs_cors_check,
+    needs_preflight, validate_cors_response, validate_preflight_response,
 };
 use crate::limits::{MAX_PREFLIGHT_BODY_BYTES, MAX_REDIRECTS};
+use data_url::DataUrl;
 
 impl HttpClient {
     pub fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
         request.validate()?;
         request.signal.check()?;
+        if request.url.is_data() {
+            return fetch_data_url(request);
+        }
 
         let mut url_list = vec![request.url.clone()];
         for redirect_count in 0..=MAX_REDIRECTS {
@@ -28,14 +32,15 @@ impl HttpClient {
             }
 
             let outbound_headers = self.outbound_headers(&request)?;
-            let transport = self.send_once(
-                &request.url,
-                &request.method,
-                &outbound_headers,
-                request.body.as_ref(),
-                request.response_body_limit,
-                &request.signal,
-            )?;
+            let transport = self.send_once(TransportRequest {
+                url: &request.url,
+                method: &request.method,
+                headers: &outbound_headers,
+                body: request.body.as_ref(),
+                response_body_limit: request.response_body_limit,
+                signal: &request.signal,
+                cache: request.cache,
+            })?;
             self.store_response_cookies(&request, &transport.headers)?;
             validate_cors_response(&request, &transport.headers)?;
 
@@ -95,14 +100,15 @@ impl HttpClient {
         if !unsafe_names.is_empty() {
             headers.append("access-control-request-headers", &unsafe_names.join(", "))?;
         }
-        let response = self.send_once(
-            &request.url,
-            "OPTIONS",
-            &headers,
-            None,
-            MAX_PREFLIGHT_BODY_BYTES,
-            &request.signal,
-        )?;
+        let response = self.send_once(TransportRequest {
+            url: &request.url,
+            method: "OPTIONS",
+            headers: &headers,
+            body: None,
+            response_body_limit: MAX_PREFLIGHT_BODY_BYTES,
+            signal: &request.signal,
+            cache: RequestCache::NoStore,
+        })?;
         if !(200..=299).contains(&response.status) {
             return Err(FetchError::new(
                 FetchErrorKind::Cors,
@@ -114,12 +120,28 @@ impl HttpClient {
 
     fn outbound_headers(&self, request: &FetchRequest) -> Result<HeaderList, FetchError> {
         let mut headers = request.headers.clone();
+        match request.cache {
+            RequestCache::NoStore | RequestCache::Reload => {
+                headers.set("pragma", "no-cache")?;
+                headers.set("cache-control", "no-cache")?;
+            }
+            RequestCache::NoCache
+                if !headers.contains("if-modified-since")
+                    && !headers.contains("if-none-match")
+                    && !headers.contains("if-unmodified-since")
+                    && !headers.contains("if-match")
+                    && !headers.contains("if-range") =>
+            {
+                headers.set("cache-control", "max-age=0")?;
+            }
+            _ => {}
+        }
         if !headers.contains("accept-language") {
             headers.append("accept-language", "en-CA,en;q=0.9")?;
         }
         if credentials_permitted(request)
             && let Some(cookie) = self
-                .cookie_header_value(request.url.parsed())
+                .cookie_header_value(request)
                 .map_err(FetchError::network)?
         {
             headers.set("cookie", &cookie)?;
@@ -127,8 +149,7 @@ impl HttpClient {
         if let Some(referrer) = referrer_header(request) {
             headers.set("referer", &referrer)?;
         }
-        if ((needs_cors_check(request) && request.mode == RequestMode::Cors)
-            || !matches!(request.method.as_str(), "GET" | "HEAD"))
+        if should_send_origin(request)
             && let Some(origin) = &request.origin
         {
             headers.set("origin", &origin.serialize())?;
@@ -145,10 +166,72 @@ impl HttpClient {
             return Ok(());
         }
         for cookie in headers.values("set-cookie") {
-            self.store_response_cookie(request.url.as_str(), cookie)
+            self.store_response_cookie(request, cookie)
                 .map_err(FetchError::network)?;
         }
         Ok(())
+    }
+}
+
+fn fetch_data_url(request: FetchRequest) -> Result<FetchResponse, FetchError> {
+    request.signal.check()?;
+    if request.method != "GET" {
+        return Err(FetchError::new(
+            FetchErrorKind::Network,
+            "data URLs can only be fetched with GET",
+        ));
+    }
+    if request.mode == RequestMode::SameOrigin && request.origin.is_some() {
+        return Err(FetchError::new(
+            FetchErrorKind::Cors,
+            "opaque data URL is not same-origin with the requesting document",
+        ));
+    }
+    let data = DataUrl::process(request.url.as_str()).map_err(|error| {
+        FetchError::new(
+            FetchErrorKind::Network,
+            format!("invalid data URL: {error}"),
+        )
+    })?;
+    let content_type = data.mime_type().to_string();
+    let (bytes, _) = data.decode_to_vec().map_err(|error| {
+        FetchError::new(
+            FetchErrorKind::Network,
+            format!("invalid data URL body: {error:?}"),
+        )
+    })?;
+    let mut body = Body::empty(request.response_body_limit);
+    body.push(&bytes)?;
+    let mut headers = HeaderList::new();
+    headers.append("content-type", &content_type)?;
+    Ok(FetchResponse {
+        response_type: ResponseType::Basic,
+        url_list: vec![request.url],
+        status: 200,
+        headers,
+        body,
+    })
+}
+
+fn should_send_origin(request: &FetchRequest) -> bool {
+    if needs_cors_check(request) && request.mode == RequestMode::Cors {
+        return true;
+    }
+    if matches!(request.method.as_str(), "GET" | "HEAD") {
+        return false;
+    }
+    let Some(origin) = &request.origin else {
+        return false;
+    };
+    let cross_origin = !origin.is_same_origin(&request.url.origin());
+    let downgrade = origin.is_secure() && !request.url.is_secure();
+    match request.referrer_policy {
+        ReferrerPolicy::NoReferrer => false,
+        ReferrerPolicy::NoReferrerWhenDowngrade
+        | ReferrerPolicy::StrictOrigin
+        | ReferrerPolicy::StrictOriginWhenCrossOrigin => !downgrade,
+        ReferrerPolicy::SameOrigin => !cross_origin,
+        _ => true,
     }
 }
 
@@ -167,13 +250,27 @@ fn referrer_header(request: &FetchRequest) -> Option<String> {
     let Referrer::Url(source) = &request.referrer else {
         return None;
     };
-    if source.is_secure() && !request.url.is_secure() {
-        return None;
-    }
-    if source.origin().is_same_origin(&request.url.origin()) {
-        Some(source.as_str().to_string())
-    } else {
-        Some(format!("{}/", source.origin().serialize()))
+    let same_origin = source.origin().is_same_origin(&request.url.origin());
+    let downgrade = source.is_secure() && !request.url.is_secure();
+    let full = || source.as_str().to_string();
+    let origin = || format!("{}/", source.origin().serialize());
+    match request.referrer_policy {
+        ReferrerPolicy::NoReferrer => None,
+        ReferrerPolicy::NoReferrerWhenDowngrade => (!downgrade).then(full),
+        ReferrerPolicy::SameOrigin => same_origin.then(full),
+        ReferrerPolicy::Origin => Some(origin()),
+        ReferrerPolicy::StrictOrigin => (!downgrade).then(origin),
+        ReferrerPolicy::OriginWhenCrossOrigin => Some(if same_origin { full() } else { origin() }),
+        ReferrerPolicy::StrictOriginWhenCrossOrigin => {
+            if same_origin {
+                Some(full())
+            } else if downgrade {
+                None
+            } else {
+                Some(origin())
+            }
+        }
+        ReferrerPolicy::UnsafeUrl => Some(full()),
     }
 }
 

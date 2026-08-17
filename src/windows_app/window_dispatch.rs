@@ -198,6 +198,38 @@ pub(super) unsafe extern "system" fn main_window_proc(
             }
             0
         }
+        WM_APP_SCRIPT_FETCH => {
+            if let Some(id) = TabId::from_message(wparam) {
+                if reroute_tab_message(state, id, message, wparam, lparam) {
+                    return 0;
+                }
+                let message = Box::from_raw(lparam as *mut script_fetches::ScriptFetchMessage);
+                if state.tabs.contains(id) {
+                    state.route_script_fetch_message(id, *message);
+                }
+            } else {
+                drop(Box::from_raw(
+                    lparam as *mut script_fetches::ScriptFetchMessage,
+                ));
+            }
+            0
+        }
+        WM_APP_WORKER_EVENT => {
+            if let Some(id) = TabId::from_message(wparam) {
+                if reroute_tab_message(state, id, message, wparam, lparam) {
+                    return 0;
+                }
+                let message = Box::from_raw(lparam as *mut worker_threads::WorkerEventMessage);
+                if state.tabs.contains(id) {
+                    state.route_worker_event_message(id, *message);
+                }
+            } else {
+                drop(Box::from_raw(
+                    lparam as *mut worker_threads::WorkerEventMessage,
+                ));
+            }
+            0
+        }
         WM_APP_RENDERER_LAUNCHED => {
             if let Some(id) = TabId::from_message(wparam) {
                 if reroute_tab_message(state, id, message, wparam, lparam) {

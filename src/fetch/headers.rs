@@ -37,13 +37,14 @@ impl HeaderList {
 
     pub fn append_script(&mut self, name: &str, value: &str) -> Result<(), FetchError> {
         let normalized = normalize_name(name)?;
-        if is_forbidden_request_header(&normalized) {
+        let normalized_value = normalize_value(value)?;
+        if is_forbidden_request_header(&normalized, &normalized_value) {
             return Err(FetchError::new(
                 FetchErrorKind::InvalidRequest,
                 format!("script cannot set forbidden request header `{normalized}`"),
             ));
         }
-        self.append(&normalized, value)
+        self.append(&normalized, &normalized_value)
     }
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), FetchError> {
@@ -54,14 +55,15 @@ impl HeaderList {
 
     pub fn set_script(&mut self, name: &str, value: &str) -> Result<(), FetchError> {
         let normalized = normalize_name(name)?;
-        if is_forbidden_request_header(&normalized) {
+        let normalized_value = normalize_value(value)?;
+        if is_forbidden_request_header(&normalized, &normalized_value) {
             return Err(FetchError::new(
                 FetchErrorKind::InvalidRequest,
                 format!("script cannot set forbidden request header `{normalized}`"),
             ));
         }
         self.remove(&normalized);
-        self.append(&normalized, value)
+        self.append(&normalized, &normalized_value)
     }
 
     pub fn get(&self, name: &str) -> Option<&str> {
@@ -114,7 +116,7 @@ impl HeaderList {
         if let Some(header) = self
             .entries
             .iter()
-            .find(|header| is_forbidden_request_header(header.name()))
+            .find(|header| is_forbidden_request_header(header.name(), header.value()))
         {
             return Err(FetchError::new(
                 FetchErrorKind::InvalidRequest,
@@ -206,6 +208,7 @@ fn normalize_name(name: &str) -> Result<String, FetchError> {
 }
 
 fn normalize_value(value: &str) -> Result<String, FetchError> {
+    let value = value.trim_matches([' ', '\t', '\r', '\n']);
     if value.bytes().any(|byte| matches!(byte, 0 | b'\r' | b'\n')) {
         return Err(FetchError::new(
             FetchErrorKind::InvalidRequest,
@@ -215,7 +218,7 @@ fn normalize_value(value: &str) -> Result<String, FetchError> {
     Ok(value.trim_matches([' ', '\t']).to_string())
 }
 
-pub(crate) fn is_forbidden_request_header(name: &str) -> bool {
+pub(crate) fn is_forbidden_request_header(name: &str, value: &str) -> bool {
     matches!(
         name,
         "accept-charset"
@@ -247,7 +250,12 @@ pub(crate) fn is_forbidden_request_header(name: &str) -> bool {
         || matches!(
             name,
             "x-http-method" | "x-http-method-override" | "x-method-override"
-        )
+        ) && value.split(',').map(str::trim).any(|method| {
+            matches!(
+                method.to_ascii_uppercase().as_str(),
+                "CONNECT" | "TRACE" | "TRACK"
+            )
+        })
 }
 
 fn is_cors_unsafe_byte(byte: u8) -> bool {
@@ -294,6 +302,8 @@ mod tests {
             assert!(headers.append_script(name, "injected").is_err(), "{name}");
         }
         assert!(headers.append_script("X-Application", "allowed").is_ok());
+        assert!(headers.append_script("X-HTTP-Method", "GET").is_ok());
+        assert!(headers.append_script("X-HTTP-Method", "TRACE").is_err());
     }
 
     #[test]

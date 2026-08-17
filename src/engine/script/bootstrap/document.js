@@ -98,6 +98,10 @@
         get defaultView() { return host('isPrimaryDocument', this.__id) ? windowObject : null; }
         get implementation() { return this.__implementation ||= new DOMImplementation(); }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
+        __dispatchNodeEvent(id, type) {
+            const target = wrap(id);
+            if (target) target.dispatchEvent(markTrusted(new Event(String(type))));
+        }
         write(...parts) {
             host('documentWrite', parts.join(''));
             if (!documentWriteRefreshQueued) {
@@ -214,7 +218,15 @@
                 const objects = list(host('namedProperty', name));
                 return objects.length > 1 ? objects : objects[0];
             };
-            Object.defineProperty(windowObject, name, { configurable: true, enumerable: true, get: getter });
+            const setter = value => {
+                Object.defineProperty(windowObject, name, {
+                    configurable: true, enumerable: true, writable: true, value
+                });
+                installedWindowNames.delete(name);
+            };
+            Object.defineProperty(windowObject, name, {
+                configurable: true, enumerable: true, get: getter, set: setter
+            });
             installedWindowNames.set(name, getter);
         }
     };
@@ -325,12 +337,12 @@
         const cloned = cloneMessageValue(message);
         const expectedOrigin = targetOriginValue(targetOrigin);
         if (expectedOrigin !== '*' && expectedOrigin !== '/' && expectedOrigin !== location.origin) return;
-        setTimeout(() => targetEvents.dispatchEvent(new MessageEvent('message', {
+        setTimeout(() => targetEvents.dispatchEvent(markTrusted(new MessageEvent('message', {
             data: cloned,
             origin: location.origin,
             source: windowObject,
             ports: []
-        })), 0);
+        }))), 0);
     }
     windowObject.postMessage = (message, targetOriginOrOptions = '/', transfer = []) =>
         postMessageTo(windowEvents, message, targetOriginOrOptions, transfer);

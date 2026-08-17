@@ -42,6 +42,28 @@ pub enum RedirectMode {
     Manual,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestCache {
+    Default,
+    NoStore,
+    Reload,
+    NoCache,
+    ForceCache,
+    OnlyIfCached,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferrerPolicy {
+    NoReferrer,
+    NoReferrerWhenDowngrade,
+    SameOrigin,
+    Origin,
+    StrictOrigin,
+    OriginWhenCrossOrigin,
+    StrictOriginWhenCrossOrigin,
+    UnsafeUrl,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Referrer {
     NoReferrer,
@@ -58,9 +80,11 @@ pub struct FetchRequest {
     pub destination: RequestDestination,
     pub mode: RequestMode,
     pub credentials: CredentialsMode,
+    pub cache: RequestCache,
     pub redirect: RedirectMode,
     pub origin: Option<Origin>,
     pub referrer: Referrer,
+    pub referrer_policy: ReferrerPolicy,
     pub signal: FetchSignal,
     pub response_body_limit: usize,
 }
@@ -76,9 +100,11 @@ impl FetchRequest {
             destination: RequestDestination::Document,
             mode: RequestMode::Navigate,
             credentials: CredentialsMode::Include,
+            cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
             origin: None,
             referrer: Referrer::NoReferrer,
+            referrer_policy: ReferrerPolicy::StrictOriginWhenCrossOrigin,
             signal: FetchSignal::default(),
             response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
@@ -104,9 +130,11 @@ impl FetchRequest {
             destination,
             mode,
             credentials: CredentialsMode::SameOrigin,
+            cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
             origin: Some(document.origin()),
             referrer: Referrer::Url(document),
+            referrer_policy: ReferrerPolicy::StrictOriginWhenCrossOrigin,
             signal: FetchSignal::default(),
             response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
@@ -123,9 +151,11 @@ impl FetchRequest {
             destination: RequestDestination::Fetch,
             mode: RequestMode::Cors,
             credentials: CredentialsMode::SameOrigin,
+            cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
             origin: Some(document.origin()),
             referrer: Referrer::Url(document),
+            referrer_policy: ReferrerPolicy::StrictOriginWhenCrossOrigin,
             signal: FetchSignal::default(),
             response_body_limit: MAX_RESPONSE_BODY_BYTES,
         })
@@ -147,7 +177,15 @@ impl FetchRequest {
                 format!("forbidden HTTP method: {method}"),
             ));
         }
-        self.method = method.to_ascii_uppercase();
+        let normalized = method.to_ascii_uppercase();
+        self.method = if matches!(
+            normalized.as_str(),
+            "DELETE" | "GET" | "HEAD" | "OPTIONS" | "POST" | "PUT"
+        ) {
+            normalized
+        } else {
+            method.to_string()
+        };
         Ok(())
     }
 
@@ -205,6 +243,20 @@ impl FetchRequest {
                 ));
             }
             self.headers.validate_script_request()?;
+            if self.mode == RequestMode::NoCors
+                && !matches!(normalized_method.as_str(), "GET" | "HEAD" | "POST")
+            {
+                return Err(FetchError::new(
+                    FetchErrorKind::InvalidRequest,
+                    "no-cors requests require a CORS-safelisted method",
+                ));
+            }
+            if self.cache == RequestCache::OnlyIfCached && self.mode != RequestMode::SameOrigin {
+                return Err(FetchError::new(
+                    FetchErrorKind::InvalidRequest,
+                    "only-if-cached requires same-origin mode",
+                ));
+            }
         }
         Ok(())
     }

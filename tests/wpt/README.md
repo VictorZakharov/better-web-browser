@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 30 curated cases run with one offline command:
+After the fixtures exist, all 70 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -47,7 +47,7 @@ The console reports each case and `target/wpt/report.json` records the pinned re
 subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `pass`, `fail`,
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful, while an unexpected pass, changed failure mode, regression, or crash makes
-the command fail. The current pinned baseline is 30 passes with no expected failures or timeouts.
+the command fail. The current pinned baseline is 70 passes with no expected failures or timeouts.
 This forces the manifest to be updated deliberately when compatibility changes.
 
 The runner follows the official

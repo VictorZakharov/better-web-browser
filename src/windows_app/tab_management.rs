@@ -330,6 +330,22 @@ impl BrowserState {
         self.process_for_tab(id, |state| state.finish_async_script(message));
     }
 
+    pub(super) unsafe fn route_script_fetch_message(
+        &mut self,
+        id: TabId,
+        message: script_fetches::ScriptFetchMessage,
+    ) {
+        self.process_for_tab(id, |state| state.finish_script_fetch(message));
+    }
+
+    pub(super) unsafe fn route_worker_event_message(
+        &mut self,
+        id: TabId,
+        message: worker_threads::WorkerEventMessage,
+    ) {
+        self.process_for_tab(id, |state| state.finish_worker_event(message));
+    }
+
     // Boa realms and GDI layout remain UI-thread-owned. Select a background tab
     // internally to reuse the normal commit path, suppress its shared UI, then
     // restore the visible tab before Windows can dispatch another message.

@@ -1,5 +1,6 @@
 //! Script evaluation and bounded event-loop settlement for an owned document realm.
 
+use super::dynamic_scripts::drain_dynamic_scripts;
 use super::*;
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
@@ -25,39 +26,6 @@ fn execute_impl(
     }
     ScriptRuntime::new(document, document_url)
         .execute_initial_with_loader(scripts, dynamic_script_loader)
-}
-
-pub(super) fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|message| (*message).to_string())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "unknown evaluator panic".to_string())
-}
-
-pub(super) fn stopped_runtime_outcome(detail: String) -> ScriptOutcome {
-    ScriptOutcome {
-        errors: vec![format!(
-            "JavaScript runtime was stopped safely after an evaluator failure: {detail}"
-        )],
-        runtime_stopped: true,
-        ..ScriptOutcome::default()
-    }
-}
-
-pub(super) fn inactive_runtime_outcome() -> ScriptOutcome {
-    ScriptOutcome {
-        errors: vec!["JavaScript runtime is inactive because its document was cancelled".into()],
-        runtime_stopped: true,
-        ..ScriptOutcome::default()
-    }
-}
-
-pub(super) fn lifecycle_error(message: &str) -> ScriptOutcome {
-    ScriptOutcome {
-        errors: vec![format!("JavaScript runtime lifecycle: {message}")],
-        ..ScriptOutcome::default()
-    }
 }
 
 pub(super) fn execute_inner(
@@ -132,7 +100,16 @@ pub(super) fn execute_inner(
             break;
         }
         *total_bytes += script.code.len();
-        evaluate_script(context, host, &mut outcome, script, false);
+        evaluate_script(
+            context,
+            host,
+            &mut outcome,
+            script,
+            false,
+            dynamic_script_loader,
+            total_bytes,
+        );
+        super::module_lifecycle::drain(context, host, &mut outcome);
         drain_dynamic_scripts(
             context,
             host,
@@ -145,19 +122,18 @@ pub(super) fn execute_inner(
     // An async-only document still completes parsing before its first external script arrives.
     let finish_lifecycle =
         scripts.is_empty() || scripts.iter().any(|script| script.finish_lifecycle);
-    let lifecycle = if finish_lifecycle {
-        "document.__setCurrentScript(0); __finishDocument();"
-    } else {
-        "document.__setCurrentScript(0);"
-    };
-    if let Err(error) = context.eval(Source::from_bytes(lifecycle)) {
+    if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
         outcome
             .errors
-            .push(format!("finish document lifecycle: {error}"));
+            .push(format!("clear current script: {error}"));
+    }
+    if finish_lifecycle {
+        super::module_lifecycle::request_document_lifecycle(host);
     }
     if let Err(error) = context.run_jobs() {
         outcome.errors.push(format!("finish promise jobs: {error}"));
     }
+    super::module_lifecycle::drain(context, host, &mut outcome);
     drain_dynamic_scripts(
         context,
         host,
@@ -199,7 +175,16 @@ pub(super) fn execute_additional_inner(
             continue;
         }
         *total_bytes += script.code.len();
-        evaluate_script(context, host, &mut outcome, script, true);
+        evaluate_script(
+            context,
+            host,
+            &mut outcome,
+            script,
+            true,
+            dynamic_script_loader,
+            total_bytes,
+        );
+        super::module_lifecycle::drain(context, host, &mut outcome);
         drain_dynamic_scripts(
             context,
             host,
@@ -219,6 +204,7 @@ pub(super) fn execute_additional_inner(
             .errors
             .push(format!("finish additional script promise jobs: {error}"));
     }
+    super::module_lifecycle::drain(context, host, &mut outcome);
     drain_dynamic_scripts(
         context,
         host,
@@ -295,19 +281,33 @@ pub(super) fn settle_timer_slice(
                 .errors
                 .push(format!("JavaScript timer {timer_id} promise job: {error}"));
         }
+        super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
     }
 
     host.borrow_mut().timers.advance_to(horizon);
 }
 
-fn evaluate_script(
+pub(super) fn evaluate_script(
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     script: &ScriptInput,
     dispatch_load: bool,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    total_bytes: &mut usize,
 ) -> bool {
+    if script.kind == ScriptKind::Module {
+        return module_evaluation::evaluate_module(
+            context,
+            host,
+            outcome,
+            script,
+            dispatch_load,
+            dynamic_script_loader,
+            total_bytes,
+        );
+    }
     let node_id = host.borrow_mut().id_for(&script.node);
     let current_script = format!("document.__setCurrentScript({node_id});");
     if let Err(error) = context.eval(Source::from_bytes(&current_script)) {
@@ -360,60 +360,6 @@ fn evaluate_script(
     succeeded
 }
 
-fn drain_dynamic_scripts(
-    context: &mut Context,
-    host: &Rc<RefCell<HostState>>,
-    outcome: &mut ScriptOutcome,
-    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
-) {
-    let Some(loader) = dynamic_script_loader.as_mut() else {
-        return;
-    };
-    let mut executed = 0_usize;
-    loop {
-        let pending = std::mem::take(&mut host.borrow_mut().pending_dynamic_scripts);
-        if pending.is_empty() {
-            return;
-        }
-
-        for pending_script in pending {
-            if executed >= MAX_DYNAMIC_SCRIPTS {
-                outcome.errors.push(format!(
-                    "dynamically inserted scripts exceeded the limit of {MAX_DYNAMIC_SCRIPTS}"
-                ));
-                return;
-            }
-            executed += 1;
-            let code = match loader(&pending_script.source_url) {
-                Ok(code) => code,
-                Err(error) => {
-                    outcome.errors.push(format!(
-                        "{}: dynamically inserted script could not be loaded: {error}",
-                        pending_script.source_url
-                    ));
-                    continue;
-                }
-            };
-            if total_bytes.saturating_add(code.len()) > MAX_SCRIPT_BYTES {
-                outcome.errors.push(format!(
-                    "{}: skipped because the page exceeds the {} MiB JavaScript limit",
-                    pending_script.source_url,
-                    MAX_SCRIPT_BYTES / 1024 / 1024
-                ));
-                return;
-            }
-            *total_bytes += code.len();
-            let script = ScriptInput {
-                node: pending_script.node,
-                source_url: pending_script.source_url,
-                code,
-                finish_lifecycle: false,
-            };
-            evaluate_script(context, host, outcome, &script, true);
-        }
-    }
-}
 const IFRAME_REALM_BOOTSTRAP: &str = r#"
 globalThis.window = globalThis;
 globalThis.self = globalThis;
@@ -435,19 +381,3 @@ if (typeof String.prototype.substr !== 'function') {
     });
 }
 "#;
-pub(super) fn finish_host(
-    mut outcome: ScriptOutcome,
-    host: &Rc<RefCell<HostState>>,
-) -> ScriptOutcome {
-    let mut state = host.borrow_mut();
-    outcome.mutation_count = std::mem::take(&mut state.mutation_count);
-    outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
-    outcome.console.append(&mut state.console);
-    outcome.diagnostics.append(&mut state.diagnostics);
-    state.append_host_call_diagnostics(&mut outcome.diagnostics);
-    outcome.navigation_url = state.navigation_url.take();
-    outcome.cookie_updates.append(&mut state.cookie_updates);
-    outcome.render_requested = state.timers.take_render_request();
-    outcome.invalidation = state.pending_invalidation.take(outcome.mutation_count);
-    outcome
-}

@@ -1,11 +1,11 @@
 //! Non-render-blocking external classic-script fetch and delivery.
 
 use super::browser_app::TabMessageRouter;
-use super::resources::fetch_document_resource;
+use super::resources::fetch_script_source;
 use super::tabs::TabId;
 use super::*;
 use better_web_browser::engine::script::ScriptInput;
-use better_web_browser::fetch::{FetchSignal, RequestDestination};
+use better_web_browser::fetch::FetchSignal;
 
 // WinHTTP bounds each response at 16 MiB. Keep the in-flight set small so a hostile page cannot
 // multiply that per-response allowance into hundreds of transient MiB before UI-thread budgeting.
@@ -15,6 +15,7 @@ const MAX_PARALLEL_ASYNC_SCRIPT_FETCHES: usize = 4;
 struct AsyncScriptRequest {
     source_url: String,
     node_ids: Vec<u128>,
+    kind: better_web_browser::engine::ScriptKind,
 }
 
 struct FetchedAsyncScript {
@@ -42,15 +43,15 @@ impl BrowserState {
             .iter()
             .filter(|script| !script.blocks_first_paint && script.code.is_none())
         {
-            if let Some(existing) = requests
-                .iter_mut()
-                .find(|request| request.source_url == script.source_url)
-            {
+            if let Some(existing) = requests.iter_mut().find(|request| {
+                request.source_url == script.source_url && request.kind == script.kind
+            }) {
                 existing.node_ids.push(script.node.id().to_wire());
             } else {
                 requests.push(AsyncScriptRequest {
                     source_url: script.source_url.clone(),
                     node_ids: vec![script.node.id().to_wire()],
+                    kind: script.kind,
                 });
             }
         }
@@ -108,6 +109,7 @@ impl BrowserState {
                 additional_bytes += fetched.bytes;
                 self.loaded_page_resources.insert(PageResource::Script {
                     url: message.request.source_url.clone(),
+                    kind: message.request.kind,
                 });
                 self.page
                     .add_script(&message.request.source_url, fetched.code.clone());
@@ -122,6 +124,7 @@ impl BrowserState {
                             node: script.node.clone(),
                             source_url: message.request.source_url.clone(),
                             code: fetched.code.clone(),
+                            kind: message.request.kind,
                             finish_lifecycle: false,
                         });
                     }
@@ -153,16 +156,11 @@ impl BrowserState {
             if let Ok(header) = &cookie_header {
                 runtime.set_document_cookie_header(header);
             }
-            let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
+            let mut dynamic_script_loader = |url: &str, kind| -> Result<String, String> {
                 let request_started = Instant::now();
-                let response = fetch_document_resource(
-                    &client,
-                    &fetch_signal,
-                    &document_url,
-                    url,
-                    RequestDestination::Script,
-                )
-                .map_err(|error| error.to_string());
+                let response =
+                    fetch_script_source(&client, &fetch_signal, &document_url, url, kind)
+                        .map_err(|error| error.to_string());
                 dynamic_network_time += request_started.elapsed();
                 let response = response?;
                 if !response.is_success() {
@@ -220,12 +218,12 @@ fn fetch_async_script(
     request: AsyncScriptRequest,
 ) -> AsyncScriptMessage {
     let request_started = Instant::now();
-    let response = fetch_document_resource(
+    let response = fetch_script_source(
         client,
         signal,
         document_url,
         &request.source_url,
-        RequestDestination::Script,
+        request.kind,
     )
     .map_err(|error| error.to_string());
     let network_time = request_started.elapsed();
@@ -263,7 +261,7 @@ fn post_async_script(tab_router: &TabMessageRouter, tab_id: TabId, message: Asyn
     }
 }
 
-fn merge_script_outcome(
+pub(super) fn merge_script_outcome(
     target: &mut ScriptOutcome,
     mut source: ScriptOutcome,
     document_root: better_web_browser::engine::dom::NodeId,
@@ -287,6 +285,8 @@ fn merge_script_outcome(
         target.navigation_url = source.navigation_url;
     }
     target.cookie_updates.append(&mut source.cookie_updates);
+    target.fetch_actions.append(&mut source.fetch_actions);
+    target.worker_actions.append(&mut source.worker_actions);
     target.runtime_stopped |= source.runtime_stopped;
     target.render_requested |= source.render_requested;
 }

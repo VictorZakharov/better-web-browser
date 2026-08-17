@@ -98,6 +98,21 @@
       "expected": "pass"
     },
     {
+      "path": "dom/abort/AbortSignal.any.js",
+      "area": "Abort API",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/abort/event.any.js",
+      "area": "Abort API",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/abort/timeout.any.js",
+      "area": "Abort API",
+      "expected": "pass"
+    },
+    {
       "path": "html/webappapis/microtask-queuing/queue-microtask.any.js",
       "area": "Event loop",
       "expected": "pass"
@@ -110,6 +125,16 @@
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask-exceptions.any.js",
       "area": "Event loop",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/module/inline-async-onload.html",
+      "area": "JavaScript modules",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/module/inline-defer-onload.html",
+      "area": "JavaScript modules",
       "expected": "pass"
     },
     {
@@ -135,6 +160,181 @@
     {
       "path": "url/urlsearchparams-set.any.js",
       "area": "URL",
+      "expected": "pass"
+    },
+    {
+      "path": "webidl/ecmascript-binding/es-exceptions/DOMException-constants.any.js",
+      "area": "Web IDL",
+      "expected": "pass"
+    },
+    {
+      "path": "webidl/ecmascript-binding/es-exceptions/DOMException-constructor-and-prototype.any.js",
+      "area": "Web IDL",
+      "expected": "pass"
+    },
+    {
+      "path": "webidl/ecmascript-binding/es-exceptions/DOMException-constructor-behavior.any.js",
+      "area": "Web IDL",
+      "expected": "pass"
+    },
+    {
+      "path": "webidl/ecmascript-binding/es-exceptions/DOMException-custom-bindings.any.js",
+      "area": "Web IDL",
+      "expected": "pass"
+    },
+    {
+      "path": "webidl/ecmascript-binding/es-exceptions/DOMException-is-error.any.js",
+      "area": "Web IDL",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/abort-during-unsent.any.js",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/abort-during-open.any.js",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/open-method-bogus.htm",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/open-method-insecure.htm",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/open-parameters-toString.htm",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/setrequestheader-bogus-name.htm",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "xhr/setrequestheader-bogus-value.htm",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-basic.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-errors.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-combine.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-record.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-structure.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-init-001.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-static-error.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-static-redirect.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-casing.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-normalize.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/headers/headers-structure.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/forbidden-method.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-init-002.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-init-contenttype.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-init-priority.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-keepalive.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/json.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/body/cloned-any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/request/request-clone-readable-stream-body.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-error.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-headers-guard.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-init-contenttype.any.js",
+      "area": "Fetch API",
+      "expected": "pass"
+    },
+    {
+      "path": "fetch/api/response/response-static-json.any.js",
+      "area": "Fetch API",
       "expected": "pass"
     },
     {

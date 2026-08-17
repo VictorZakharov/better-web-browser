@@ -3,10 +3,13 @@
 use super::cookies::StoredCookie;
 use super::ffi::*;
 use crate::branding::USER_AGENT;
-use crate::fetch::{Body, FetchError, FetchRequest, FetchResponse, FetchUrl, HeaderList};
+use crate::fetch::{
+    Body, FetchError, FetchRequest, FetchResponse, FetchUrl, HeaderList, RequestCache,
+};
 use crate::navigation::ParsedUrl;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 pub type HttpResponse = FetchResponse;
@@ -17,9 +20,20 @@ pub(super) struct TransportResponse {
     pub body: Body,
 }
 
+pub(super) struct TransportRequest<'a> {
+    pub url: &'a FetchUrl,
+    pub method: &'a str,
+    pub headers: &'a HeaderList,
+    pub body: Option<&'a Body>,
+    pub response_body_limit: usize,
+    pub signal: &'a crate::fetch::FetchSignal,
+    pub cache: RequestCache,
+}
+
 pub struct HttpClient {
     connections: Mutex<HashMap<(String, String, u16), Arc<InternetHandle>>>,
     pub(super) cookies: Mutex<Vec<StoredCookie>>,
+    pub(super) next_cookie_creation: AtomicU64,
     session: InternetHandle,
 }
 
@@ -39,6 +53,7 @@ impl HttpClient {
         Ok(Self {
             connections: Mutex::new(HashMap::new()),
             cookies: Mutex::new(Vec::new()),
+            next_cookie_creation: AtomicU64::new(1),
             session,
         })
     }
@@ -50,25 +65,37 @@ impl HttpClient {
 
     pub(super) fn send_once(
         &self,
-        url: &FetchUrl,
-        method: &str,
-        headers: &HeaderList,
-        request_body: Option<&Body>,
-        response_body_limit: usize,
-        signal: &crate::fetch::FetchSignal,
+        transport: TransportRequest<'_>,
     ) -> Result<TransportResponse, FetchError> {
+        let TransportRequest {
+            url,
+            method,
+            headers,
+            body: request_body,
+            response_body_limit,
+            signal,
+            cache,
+        } = transport;
         signal.check()?;
-        let parsed = url.parsed();
+        let parsed = url.parsed().ok_or_else(|| {
+            FetchError::new(
+                crate::fetch::FetchErrorKind::InvalidRequest,
+                "WinHTTP only transports HTTP(S) URLs",
+            )
+        })?;
         let connection = self.connection(parsed).map_err(FetchError::network)?;
         let verb = wide(method);
         let object = wide(&parsed.path_and_query);
         let accept = wide(ACCEPT_TYPES);
         let accept_types = [accept.as_ptr(), null()];
-        let flags = if parsed.scheme == "https" {
+        let mut flags = if parsed.scheme == "https" {
             WINHTTP_FLAG_SECURE
         } else {
             0
         };
+        if matches!(cache, RequestCache::NoStore | RequestCache::Reload) {
+            flags |= WINHTTP_FLAG_REFRESH;
+        }
         let request = InternetHandle::new(unsafe {
             WinHttpOpenRequest(
                 connection.0,

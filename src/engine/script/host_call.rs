@@ -2,6 +2,7 @@
 
 use super::binding_helpers::*;
 use super::*;
+use boa_engine::object::builtins::JsArrayBuffer;
 
 pub(super) fn host_call(
     _this: &JsValue,
@@ -28,6 +29,12 @@ fn dispatch_host_call(
     context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = super::network::network_host_call(operation, args, context, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::workers::worker_host_call(operation, args, context, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::dom_host::dom_host_call(operation, args, context, state)? {
         return Ok(value);
     }
@@ -148,10 +155,29 @@ fn dispatch_host_call(
             state.set_cookie(argument_string(args, 1, context)?);
             Ok(JsValue::undefined())
         }
+        "arrayBufferDetach" => {
+            let object = args.get(1).and_then(JsValue::as_object).ok_or_else(|| {
+                JsNativeError::typ().with_message("transfer value is not an ArrayBuffer")
+            })?;
+            JsArrayBuffer::from_object(object)?.detach(&JsValue::undefined())?;
+            Ok(JsValue::undefined())
+        }
         "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
         "resolveUrl" => {
             let value = argument_string(args, 1, context)?;
             Ok(js_string(state.resolved_url(&value)))
+        }
+        "strictResolveUrl" => {
+            let value = argument_string(args, 1, context)?;
+            let base = if args.len() > 2 {
+                argument_string(args, 2, context)?
+            } else {
+                state.document_url.clone()
+            };
+            let resolved = crate::navigation::resolve_web_url(&base, &value).ok_or_else(|| {
+                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
+            })?;
+            Ok(js_string(resolved))
         }
         "navigate" => {
             let value = argument_string(args, 1, context)?;

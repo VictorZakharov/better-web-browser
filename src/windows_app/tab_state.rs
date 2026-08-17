@@ -7,7 +7,7 @@ use super::scrolling::ScrollAnimation;
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::engine::dom::NodeId;
-use better_web_browser::fetch::FetchController;
+use better_web_browser::fetch::{FetchController, FetchRequest};
 use better_web_browser::renderer_process::RendererSession;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -51,6 +51,9 @@ pub(super) struct BrowserTab {
     pub(super) loading: bool,
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
+    pub(super) script_fetches: HashMap<u32, FetchController>,
+    pub(super) queued_script_fetches: VecDeque<(u32, FetchRequest)>,
+    pub(super) workers: HashMap<u32, worker_threads::WorkerHandle>,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
     pub(super) renderer_launch_pending: bool,
@@ -102,6 +105,9 @@ impl BrowserTab {
             loading: false,
             crashed: false,
             document_fetch: FetchController::new(),
+            script_fetches: HashMap::new(),
+            queued_script_fetches: VecDeque::new(),
+            workers: HashMap::new(),
             renderer_session: None,
             renderer_launch_receiver: None,
             renderer_launch_pending: false,
@@ -132,6 +138,13 @@ impl Drop for BrowserTab {
     fn drop(&mut self) {
         self.page_controls.clear();
         self.document_fetch.abort();
+        for (_, controller) in self.script_fetches.drain() {
+            controller.abort();
+        }
+        self.queued_script_fetches.clear();
+        for (_, worker) in self.workers.drain() {
+            worker.terminate();
+        }
         if let Some(mut runtime) = self.script_runtime.take() {
             runtime.cancel_document();
         }

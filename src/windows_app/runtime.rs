@@ -7,9 +7,8 @@
 //! - <https://learn.microsoft.com/windows/win32/winmsg/wm-timer>
 
 use super::browser_navigation::HistoryMode;
-use super::resources::{ResourceLoadContext, fetch_document_resource, load_page_resources};
+use super::resources::{ResourceLoadContext, fetch_script_source, load_page_resources};
 use super::*;
-use better_web_browser::fetch::RequestDestination;
 const USER_TIMER_MINIMUM_MS: u128 = 10;
 const USER_TIMER_MAXIMUM_MS: u128 = 0x7fff_ffff;
 // HTML performs rendering and user-interaction steps between event-loop tasks. A Win32 timer
@@ -48,6 +47,13 @@ impl BrowserState {
         }
         if let Some(mut runtime) = self.script_runtime.take() {
             runtime.cancel_document();
+        }
+        for (_, controller) in self.script_fetches.drain() {
+            controller.abort();
+        }
+        self.queued_script_fetches.clear();
+        for (_, worker) in self.workers.drain() {
+            worker.terminate();
         }
         self.script_runtime_clock = None;
         self.post_load_script_not_before = None;
@@ -136,16 +142,11 @@ impl BrowserState {
             if let Ok(header) = &cookie_header {
                 runtime.set_document_cookie_header(header);
             }
-            let mut dynamic_script_loader = |url: &str| -> Result<String, String> {
+            let mut dynamic_script_loader = |url: &str, kind| -> Result<String, String> {
                 let request_started = Instant::now();
-                let response = fetch_document_resource(
-                    &client,
-                    &fetch_signal,
-                    &document_url,
-                    url,
-                    RequestDestination::Script,
-                )
-                .map_err(|error| error.to_string());
+                let response =
+                    fetch_script_source(&client, &fetch_signal, &document_url, url, kind)
+                        .map_err(|error| error.to_string());
                 additional_network_time += request_started.elapsed();
                 let response = response?;
                 if !response.is_success() {
@@ -220,6 +221,8 @@ impl BrowserState {
         mut work: PostLoadScriptWork,
     ) {
         let client = Arc::clone(&self.http_client);
+        let fetch_actions = std::mem::take(&mut outcome.fetch_actions);
+        let worker_actions = std::mem::take(&mut outcome.worker_actions);
 
         for cookie in &outcome.cookie_updates {
             if let Err(error) = client.set_cookie(&self.page.source_url, cookie) {
@@ -281,6 +284,8 @@ impl BrowserState {
             let deferred_resources = self.unloaded_deferred_resources();
             self.begin_deferred_resources(deferred_resources);
         }
+        self.apply_script_fetch_actions(fetch_actions);
+        self.apply_worker_actions(worker_actions);
         self.schedule_script_runtime_wakeup();
     }
 

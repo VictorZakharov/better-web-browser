@@ -175,7 +175,6 @@ impl IntrinsicObject for Error {
             .property(js_string!("message"), js_string!(), attribute)
             .method(Self::to_string, js_string!("toString"), 0);
 
-        #[cfg(feature = "experimental")]
         let builder = builder.static_method(Error::is_error, js_string!("isError"), 1);
 
         builder.build();
@@ -324,7 +323,6 @@ impl Error {
     /// Returns a boolean indicating whether the argument is a built-in Error instance or not.
     ///
     /// [spec]: https://tc39.es/proposal-is-error/#sec-error.iserror
-    #[cfg(feature = "experimental")]
     #[allow(clippy::unnecessary_wraps)]
     fn is_error(_: &JsValue, args: &[JsValue], _: &mut Context) -> JsResult<JsValue> {
         // 1. Return IsError(arg).

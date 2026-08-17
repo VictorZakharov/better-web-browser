@@ -2,16 +2,33 @@
 
 use super::*;
 
+mod cookies;
+
 #[derive(Debug, Clone)]
 pub(super) struct PendingDynamicScript {
     pub(super) node: NodeRef,
     pub(super) source_url: String,
 }
 
+#[derive(Debug)]
+pub(super) struct PendingModuleEvaluation {
+    pub(super) source_url: String,
+    pub(super) node_id: u32,
+    pub(super) dispatch_load: bool,
+    pub(super) blocks_lifecycle: bool,
+}
+
+#[derive(Debug)]
+pub(super) struct CompletedModuleEvaluation {
+    pub(super) pending: PendingModuleEvaluation,
+    pub(super) result: Result<(), String>,
+}
+
 pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) document_url: String,
     pub(super) document_character_set: String,
+    pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
     pub(super) owner_documents: HashMap<NodeId, u64>,
@@ -29,6 +46,15 @@ pub(super) struct HostState {
     pub(super) host_call_profile: super::host_profiling::HostCallProfile,
     pub(super) pending_document_write: String,
     pub(super) pending_dynamic_scripts: Vec<PendingDynamicScript>,
+    pub(super) next_module_evaluation_id: u32,
+    pub(super) pending_module_evaluations: HashMap<u32, PendingModuleEvaluation>,
+    pub(super) completed_module_evaluations: Vec<CompletedModuleEvaluation>,
+    pub(super) lifecycle_requested: bool,
+    pub(super) lifecycle_finished: bool,
+    pub(super) next_fetch_id: u32,
+    pub(super) pending_fetch_actions: Vec<ScriptFetchAction>,
+    pub(super) next_worker_id: u32,
+    pub(super) pending_worker_actions: Vec<ScriptWorkerAction>,
     pub(super) started_dynamic_scripts: HashSet<NodeId>,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
@@ -43,12 +69,18 @@ pub(super) struct HostState {
 pub(super) struct HostStateLink(pub(super) Weak<RefCell<HostState>>);
 
 impl HostState {
-    pub(super) fn new(document: NodeRef, document_url: &str, character_set: &str) -> Self {
+    pub(super) fn new(
+        document: NodeRef,
+        document_url: &str,
+        character_set: &str,
+        module_loader: Rc<module_loader::WebModuleLoader>,
+    ) -> Self {
         let document_identity = document.id().document();
         let mut state = Self {
             document,
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
+            module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
             owner_documents: HashMap::new(),
@@ -66,6 +98,15 @@ impl HostState {
             host_call_profile: super::host_profiling::HostCallProfile::default(),
             pending_document_write: String::new(),
             pending_dynamic_scripts: Vec::new(),
+            next_module_evaluation_id: 1,
+            pending_module_evaluations: HashMap::new(),
+            completed_module_evaluations: Vec::new(),
+            lifecycle_requested: false,
+            lifecycle_finished: false,
+            next_fetch_id: 1,
+            pending_fetch_actions: Vec::new(),
+            next_worker_id: 1,
+            pending_worker_actions: Vec::new(),
             started_dynamic_scripts: HashSet::new(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
@@ -329,62 +370,5 @@ impl HostState {
             source_url: self.resolved_url(source.trim()),
         });
         self.diagnose("queued dynamically inserted external script".into());
-    }
-
-    pub(super) fn cookie_header(&self) -> String {
-        let mut cookies = self.cookies.iter().collect::<Vec<_>>();
-        cookies.sort_unstable_by(|left, right| left.0.cmp(right.0));
-        cookies
-            .into_iter()
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect::<Vec<_>>()
-            .join("; ")
-    }
-
-    pub(super) fn replace_cookies_from_header(&mut self, cookie_header: &str) {
-        self.cookies.clear();
-        for pair in cookie_header.split(';').map(str::trim) {
-            let Some((name, value)) = pair.split_once('=') else {
-                continue;
-            };
-            let name = name.trim();
-            if !name.is_empty() {
-                self.cookies
-                    .insert(name.to_string(), value.trim().to_string());
-            }
-        }
-    }
-
-    pub(super) fn set_cookie(&mut self, assignment: String) {
-        let Some(pair) = assignment.split(';').next().map(str::trim) else {
-            return;
-        };
-        let Some((name, value)) = pair.split_once('=') else {
-            return;
-        };
-        let name = name.trim();
-        if name.is_empty() || name.bytes().any(|byte| byte <= 0x20 || byte == b';') {
-            return;
-        }
-
-        let expired = assignment.split(';').skip(1).any(|attribute| {
-            attribute
-                .trim()
-                .split_once('=')
-                .is_some_and(|(name, value)| {
-                    name.trim().eq_ignore_ascii_case("max-age")
-                        && value
-                            .trim()
-                            .parse::<i64>()
-                            .is_ok_and(|seconds| seconds <= 0)
-                })
-        });
-        if expired {
-            self.cookies.remove(name);
-        } else {
-            self.cookies
-                .insert(name.to_string(), value.trim().to_string());
-        }
-        self.cookie_updates.push(assignment);
     }
 }

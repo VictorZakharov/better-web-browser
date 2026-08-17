@@ -8,7 +8,7 @@ use std::collections::HashSet;
 impl Page {
     pub fn resource_blocks_first_paint(&self, resource: &PageResource) -> bool {
         match resource {
-            PageResource::Script { url } => self
+            PageResource::Script { url, .. } => self
                 .scripts
                 .iter()
                 .any(|script| script.source_url.as_str() == url && script.blocks_first_paint),

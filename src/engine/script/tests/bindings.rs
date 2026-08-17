@@ -20,11 +20,12 @@ fn loads_dynamically_inserted_external_scripts_in_the_same_realm() {
             source_url: "https://example.com/#inline".into(),
             code: node.text_content(),
             node,
+            kind: ScriptKind::Classic,
             finish_lifecycle: true,
         })
         .collect::<Vec<_>>();
     let mut requested = Vec::new();
-    let mut loader = |url: &str| {
+    let mut loader = |url: &str, _kind: ScriptKind| {
         requested.push(url.to_string());
         Ok("window.dynamicAnswer = window.initialValue + 2;".to_string())
     };

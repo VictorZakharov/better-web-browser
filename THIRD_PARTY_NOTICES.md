@@ -41,3 +41,8 @@ corpus inputs were authored for this repository and are provided under the repos
 
 Other Rust dependencies are resolved through Cargo and retain their respective
 licenses. Their exact versions are recorded in `Cargo.lock`.
+
+The `psl2` dependency embeds a compact, deterministically built snapshot of Mozilla's Public
+Suffix List for cookie-domain and schemeful-site decisions. Its Rust code is available under MIT
+OR Apache-2.0; the embedded list data is available under MPL-2.0. The exact crate and list versions
+are pinned in `Cargo.lock` and exposed by `psl2::psl_version()`.

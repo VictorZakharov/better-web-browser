@@ -17,7 +17,7 @@
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
     const reportGlobalException = error => {
         const message = error?.message === undefined ? String(error) : String(error.message);
-        const event = new ErrorEvent('error', { cancelable: true, message, error });
+        const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
         if (windowObject.dispatchEvent(event)) host('console', 'error', 'Uncaught microtask exception: ' + message);
     };
     windowObject.queueMicrotask = callback => {
@@ -101,8 +101,19 @@
         [Symbol.iterator]() { return this.entries(); }
     }
     windowObject.URLSearchParams = URLSearchParams;
+    const missingUrlValue = {};
     windowObject.URL = class URL {
-        constructor(value, base = currentUrl) { this.href = host('resolveUrl', String(value || base)); }
+        constructor(value = missingUrlValue, base = currentUrl) {
+            if (value === missingUrlValue) throw new TypeError('URL requires an input');
+            this.href = host('strictResolveUrl', String(value), String(base));
+        }
+        static canParse(value, base = currentUrl) {
+            try { host('strictResolveUrl', String(value), String(base)); return true; }
+            catch (_) { return false; }
+        }
+        static parse(value, base = currentUrl) {
+            try { return new URL(value, base); } catch (_) { return null; }
+        }
         toString() { return this.href; }
         toJSON() { return this.href; }
         get protocol() { return parseUrl(this.href).protocol; }
@@ -230,16 +241,6 @@
     };
     windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
     windowObject.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} };
-    windowObject.fetch = () => Promise.reject(new TypeError('fetch is not implemented yet'));
-    class XMLHttpRequest extends EventTarget {
-        constructor() { super(); this.readyState = 0; this.status = 0; this.responseText = ''; }
-        open(method, url) { this.method = method; this.url = host('resolveUrl', String(url)); this.readyState = 1; }
-        setRequestHeader() {}
-        send() { this.readyState = 4; this.dispatchEvent(new Event('error')); this.dispatchEvent(new Event('readystatechange')); }
-        abort() {}
-    }
-    installEventHandlerAttributes(XMLHttpRequest.prototype);
-    windowObject.XMLHttpRequest = XMLHttpRequest;
     windowObject.crypto = {
         getRandomValues(array) {
             for (let index = 0; index < array.length; index++) array[index] = Math.floor(Math.random() * 256);
@@ -257,8 +258,8 @@
     refreshWindowNamedProperties();
     windowObject.__finishDocument = () => {
         document.readyState = 'interactive';
-        document.dispatchEvent(new Event('DOMContentLoaded'));
+        document.dispatchEvent(markTrusted(new Event('DOMContentLoaded')));
         document.readyState = 'complete';
-        windowObject.dispatchEvent(new Event('load'));
+        windowObject.dispatchEvent(markTrusted(new Event('load')));
     };
 })();

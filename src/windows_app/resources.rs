@@ -1,7 +1,10 @@
 //! Deferred page-resource loading and UI-thread installation.
 
 use super::*;
-use better_web_browser::fetch::{FetchRequest, FetchSignal, RequestDestination};
+use better_web_browser::engine::ScriptKind;
+use better_web_browser::fetch::{
+    FetchError, FetchErrorKind, FetchRequest, FetchResponse, FetchSignal, RequestDestination,
+};
 
 const MAX_PARALLEL_DEFERRED_FETCHES: usize = 4;
 
@@ -51,15 +54,8 @@ pub(super) fn load_page_resources(page: &mut Page, context: ResourceLoadContext<
                 .map(|resource| {
                     let signal = signal.clone();
                     let document_url = &document_url;
-                    scope.spawn(move || {
-                        fetch_document_resource(
-                            client,
-                            &signal,
-                            document_url,
-                            page_resource_url(resource),
-                            page_resource_destination(resource),
-                        )
-                    })
+                    scope
+                        .spawn(move || fetch_page_resource(client, &signal, document_url, resource))
                 })
                 .collect::<Vec<_>>();
             requests
@@ -97,7 +93,7 @@ pub(super) fn load_page_resources(page: &mut Page, context: ResourceLoadContext<
                 PageResource::Image { url } => {
                     page.add_image(url, response.body.as_bytes()).is_ok()
                 }
-                PageResource::Script { url } => page.add_script(
+                PageResource::Script { url, .. } => page.add_script(
                     &url,
                     winhttp::decode_text(response.body.as_bytes(), response.content_type()),
                 ),
@@ -129,7 +125,7 @@ fn page_resource_url(resource: &PageResource) -> &str {
     match resource {
         PageResource::Stylesheet { url }
         | PageResource::Image { url }
-        | PageResource::Script { url }
+        | PageResource::Script { url, .. }
         | PageResource::Font { url, .. } => url,
     }
 }
@@ -153,6 +149,67 @@ pub(super) fn fetch_document_resource(
     let request =
         FetchRequest::subresource(url, document_url, destination)?.with_signal(signal.clone());
     client.fetch(request)
+}
+
+pub(super) fn fetch_script_source(
+    client: &winhttp::HttpClient,
+    signal: &FetchSignal,
+    document_url: &str,
+    url: &str,
+    kind: ScriptKind,
+) -> Result<winhttp::HttpResponse, better_web_browser::fetch::FetchError> {
+    let request = match kind {
+        ScriptKind::Classic => {
+            FetchRequest::subresource(url, document_url, RequestDestination::Script)?
+        }
+        // HTML's module-script graph fetch uses CORS mode. Reuse the shared script-request
+        // policy constructor so redirects, credentials, and response filtering stay centralized.
+        ScriptKind::Module => FetchRequest::script(url, document_url)?,
+    }
+    .with_signal(signal.clone());
+    let response = client.fetch(request)?;
+    validate_script_response(&response, kind)?;
+    Ok(response)
+}
+
+pub(super) fn validate_script_response(
+    response: &FetchResponse,
+    kind: ScriptKind,
+) -> Result<(), FetchError> {
+    if kind != ScriptKind::Module || !response.is_success() {
+        return Ok(());
+    }
+    let content_type = response.content_type().unwrap_or_default();
+    if super::script_mime::is_javascript_mime_type(content_type) {
+        return Ok(());
+    }
+    Err(FetchError::new(
+        FetchErrorKind::Network,
+        format!(
+            "module script response has non-JavaScript MIME type `{}`",
+            content_type.trim()
+        ),
+    ))
+}
+
+fn fetch_page_resource(
+    client: &winhttp::HttpClient,
+    signal: &FetchSignal,
+    document_url: &str,
+    resource: &PageResource,
+) -> Result<winhttp::HttpResponse, better_web_browser::fetch::FetchError> {
+    match resource {
+        PageResource::Script { url, kind } => {
+            fetch_script_source(client, signal, document_url, url, *kind)
+        }
+        _ => fetch_document_resource(
+            client,
+            signal,
+            document_url,
+            page_resource_url(resource),
+            page_resource_destination(resource),
+        ),
+    }
 }
 
 pub(super) struct DeferredResourcesMessage {
@@ -202,13 +259,8 @@ impl BrowserState {
                             let signal = fetch_signal.clone();
                             let document_url = &document_url;
                             scope.spawn(move || {
-                                let response = fetch_document_resource(
-                                    client,
-                                    &signal,
-                                    document_url,
-                                    page_resource_url(&resource),
-                                    page_resource_destination(&resource),
-                                );
+                                let response =
+                                    fetch_page_resource(client, &signal, document_url, &resource);
                                 (resource, response)
                             })
                         })

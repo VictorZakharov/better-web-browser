@@ -53,9 +53,11 @@ dependencies = [
  "flate2",
  "html5ever",
  "image",
+ "psl2",
  "resvg",
  "serde",
  "serde_json",
+ "time",
  "url",
  "windows-sys",
 ]
@@ -1109,6 +1111,12 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "psl2"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26fb83b8548503d5b7c47f4865d4866641a3af032a43ff80eef4899843ad16b9"
 
 [[package]]
 name = "pxfm"

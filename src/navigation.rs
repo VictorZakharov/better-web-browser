@@ -151,6 +151,21 @@ pub fn resolve_url(base: &str, reference: &str) -> Option<String> {
     (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
 }
 
+/// Parses a URL for the Web `URL` interface without applying navigation policy.
+///
+/// Browser navigation deliberately accepts only credential-free HTTP(S) URLs,
+/// while the Web URL parser must also represent schemes such as `data:` and
+/// retain fragments. Callers still apply their own scheme policy afterward.
+pub fn resolve_web_url(base: &str, reference: &str) -> Option<String> {
+    if base.len() > MAX_URL_BYTES || reference.len() > MAX_URL_BYTES {
+        return None;
+    }
+    let base = Url::parse(base).ok()?;
+    let resolved = base.join(reference).ok()?;
+    let serialized = resolved.to_string();
+    (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
+}
+
 /// Resolves a subresource reference, including embedded `data:` resources.
 /// Navigations deliberately continue to reject `data:` URLs in [`resolve_url`].
 pub fn resolve_resource_url(base: &str, reference: &str) -> Option<String> {
@@ -235,6 +250,19 @@ mod tests {
             resolve_resource_url("https://example.com/", embedded).as_deref(),
             Some(embedded)
         );
+    }
+
+    #[test]
+    fn web_url_resolution_preserves_non_navigation_schemes_and_fragments() {
+        assert_eq!(
+            resolve_web_url("https://example.com/base", "data:,hello#part").as_deref(),
+            Some("data:,hello#part")
+        );
+        assert_eq!(
+            resolve_web_url("https://example.com/base", "../next#part").as_deref(),
+            Some("https://example.com/next#part")
+        );
+        assert!(resolve_web_url("not a URL", "https://example.com/").is_none());
     }
 
     #[test]

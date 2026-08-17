@@ -8,6 +8,8 @@ use std::time::Duration;
 #[path = "live_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "live_runtime/network.rs"]
+mod network;
 const FIXTURE_HTML: &str = r#"<!doctype html>
 <title>runtime pending</title>
 <style>

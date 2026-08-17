@@ -13,6 +13,9 @@ The local delta is intentionally small:
 - A function-pointer comparison uses explicit pointer casts to satisfy current
   Rust diagnostics.
 - One documentation-only trailing-whitespace warning was removed.
+- The Stage 4 `Error.isError` implementation is enabled independently of Boa's
+  broader experimental feature set, so Web IDL `DOMException` objects retain
+  their required Error identity without enabling unrelated proposals.
 
 To review the exact patch against an unpacked crate from Cargo's registry:
 

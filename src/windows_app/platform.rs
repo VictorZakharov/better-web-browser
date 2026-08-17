@@ -1,10 +1,7 @@
 mod ffi;
-
-pub(super) use ffi::*;
-
 use super::rgb;
+pub(super) use ffi::*;
 use std::ffi::c_void;
-
 pub(super) type Handle = *mut c_void;
 pub(super) type Hwnd = Handle;
 pub(super) type Hinstance = Handle;
@@ -69,6 +66,8 @@ pub(super) const WM_APP_ASYNC_SCRIPT: u32 = WM_APP + 6;
 pub(super) const WM_APP_RENDERER_LAUNCHED: u32 = WM_APP + 7;
 pub(super) const WM_APP_TAB_SEARCH_CLOSED: u32 = WM_APP + 8;
 pub(super) const WM_APP_EARLY_SCROLL_TICK: u32 = WM_APP + 9;
+pub(super) const WM_APP_SCRIPT_FETCH: u32 = WM_APP + 10;
+pub(super) const WM_APP_WORKER_EVENT: u32 = WM_APP + 11;
 
 pub(super) const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 pub(super) const WS_POPUP: u32 = 0x8000_0000;
