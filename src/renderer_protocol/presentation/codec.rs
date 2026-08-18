@@ -323,6 +323,12 @@ fn encode_load(writer: &mut WireWriter, report: PageLoadReport) {
     writer.u64(report.text_shape_cache_misses);
     writer.u64(report.text_shape_cache_flushes);
     writer.u64(report.text_shape_cache_entries);
+    writer.u64(report.font_catalog_micros);
+    writer.u64(report.font_select_micros);
+    writer.u64(report.open_type_shape_micros);
+    writer.u64(report.glyph_raster_micros);
+    writer.u64(report.presentation_encode_micros);
+    writer.u64(report.presentation_decode_micros);
 }
 
 fn decode_load(reader: &mut WireReader<'_>) -> Result<PageLoadReport, ProtocolError> {
@@ -338,5 +344,11 @@ fn decode_load(reader: &mut WireReader<'_>) -> Result<PageLoadReport, ProtocolEr
         text_shape_cache_misses: reader.u64()?,
         text_shape_cache_flushes: reader.u64()?,
         text_shape_cache_entries: reader.u64()?,
+        font_catalog_micros: reader.u64()?,
+        font_select_micros: reader.u64()?,
+        open_type_shape_micros: reader.u64()?,
+        glyph_raster_micros: reader.u64()?,
+        presentation_encode_micros: reader.u64()?,
+        presentation_decode_micros: reader.u64()?,
     })
 }

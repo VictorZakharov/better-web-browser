@@ -22,7 +22,12 @@ time = { version = "0.3.55", default-features = false, features = ["std"] }
 url = "2.5.8"
 
 [target.'cfg(windows)'.dependencies]
-cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash", "shape-run-cache"] }
+fontique = { version = "0.11.1", default-features = false, features = ["system"] }
+harfrust = "0.5.2"
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
+unicode-bidi = "0.3.18"
+unicode-script = "0.5.8"
+unicode-segmentation = "1.13.3"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

@@ -117,19 +117,15 @@ impl DocumentRuntime {
         let layout_started = Instant::now();
         runtime.rebuild_layout();
         let layout_time = layout_started.elapsed();
-        let report = PageLoadReport {
+        let report = runtime.text.finish_load_report(PageLoadReport {
             parse_micros: micros(parse_started.elapsed()),
             html_parse_micros: micros(html_parse_time),
             resource_processing_micros: micros(resource_processing_time),
             script_micros: micros(script_time),
             style_micros: micros(style_time),
             layout_micros: micros(layout_time),
-            text_measure_count: runtime.text.measure_calls as u64,
-            text_shape_cache_hits: runtime.text.shape_cache_hits as u64,
-            text_shape_cache_misses: runtime.text.shape_cache_misses as u64,
-            text_shape_cache_flushes: runtime.text.shape_cache_flushes as u64,
-            text_shape_cache_entries: runtime.text.shape_cache_entries() as u64,
-        };
+            ..PageLoadReport::default()
+        });
         let presentation = runtime.presentation(outcome, style, report)?;
         Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
     }
@@ -255,15 +251,10 @@ impl DocumentRuntime {
         if resources_changed || outcome.render_requested {
             self.rebuild_layout();
         }
-        let load = PageLoadReport {
+        let load = self.text.finish_load_report(PageLoadReport {
             layout_micros: micros(layout_started.elapsed()),
-            text_measure_count: self.text.measure_calls as u64,
-            text_shape_cache_hits: self.text.shape_cache_hits as u64,
-            text_shape_cache_misses: self.text.shape_cache_misses as u64,
-            text_shape_cache_flushes: self.text.shape_cache_flushes as u64,
-            text_shape_cache_entries: self.text.shape_cache_entries() as u64,
             ..PageLoadReport::default()
-        };
+        });
         self.presentation(outcome, style, load).map(Some)
     }
 
@@ -276,26 +267,15 @@ impl DocumentRuntime {
         let style = self.page.refresh_resources(viewport.style_width);
         let started = Instant::now();
         self.rebuild_layout();
-        self.presentation(
-            ScriptOutcome::default(),
-            style,
-            PageLoadReport {
-                layout_micros: micros(started.elapsed()),
-                text_measure_count: self.text.measure_calls as u64,
-                text_shape_cache_hits: self.text.shape_cache_hits as u64,
-                text_shape_cache_misses: self.text.shape_cache_misses as u64,
-                text_shape_cache_flushes: self.text.shape_cache_flushes as u64,
-                text_shape_cache_entries: self.text.shape_cache_entries() as u64,
-                ..PageLoadReport::default()
-            },
-        )
+        let load = self.text.finish_load_report(PageLoadReport {
+            layout_micros: micros(started.elapsed()),
+            ..PageLoadReport::default()
+        });
+        self.presentation(ScriptOutcome::default(), style, load)
     }
 
     fn rebuild_layout(&mut self) {
-        self.text.measure_calls = 0;
-        self.text.shape_cache_hits = 0;
-        self.text.shape_cache_misses = 0;
-        self.text.shape_cache_flushes = 0;
+        self.text.reset_layout_metrics();
         self.layout = layout_page_with_style_viewport(
             &self.page,
             self.viewport.width,

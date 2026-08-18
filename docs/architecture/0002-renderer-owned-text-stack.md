@@ -1,6 +1,6 @@
 # ADR 0002: Renderer-owned Rust text stack
 
-- Status: Accepted
+- Status: Superseded in implementation by [ADR 0003](0003-lean-renderer-text-pipeline.md)
 - Date: 2026-08-18
 - Issue: [#43](https://github.com/VictorZakharov/better-web-browser/issues/43)
 
@@ -194,6 +194,6 @@ their hidden `CREATE_NO_WINDOW` launch paths.
 
 ## Dependency provenance
 
-COSMIC Text is distributed under MIT OR Apache-2.0. It is resolved through Cargo rather than
-vendored, and its exact version and transitive dependency graph are locked in `Cargo.lock`.
-`THIRD_PARTY_NOTICES.md` records the direct dependency and upstream project.
+COSMIC Text is distributed under MIT OR Apache-2.0. At the time of this decision it was resolved
+through Cargo rather than vendored. ADR 0003 removed it from the current dependency graph; this
+historical record retains the version and measurements that motivated that supersession.

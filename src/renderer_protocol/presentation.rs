@@ -47,6 +47,12 @@ pub struct PageLoadReport {
     pub text_shape_cache_misses: u64,
     pub text_shape_cache_flushes: u64,
     pub text_shape_cache_entries: u64,
+    pub font_catalog_micros: u64,
+    pub font_select_micros: u64,
+    pub open_type_shape_micros: u64,
+    pub glyph_raster_micros: u64,
+    pub presentation_encode_micros: u64,
+    pub presentation_decode_micros: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -193,7 +199,15 @@ mod tests {
             }],
             runtime: RuntimeReport::default(),
             style: StyleReport::default(),
-            load: PageLoadReport::default(),
+            load: PageLoadReport {
+                font_catalog_micros: 11,
+                font_select_micros: 12,
+                open_type_shape_micros: 13,
+                glyph_raster_micros: 14,
+                presentation_encode_micros: 15,
+                presentation_decode_micros: 16,
+                ..PageLoadReport::default()
+            },
             next_timer_micros: None,
         }
     }
@@ -216,6 +230,12 @@ mod tests {
         assert_eq!(glyphs[0].raster_id, 1);
         assert_eq!(font.letter_spacing, 0.5);
         assert_eq!(font.word_spacing, 1.0);
+        assert_eq!(decoded.load.font_catalog_micros, 11);
+        assert_eq!(decoded.load.font_select_micros, 12);
+        assert_eq!(decoded.load.open_type_shape_micros, 13);
+        assert_eq!(decoded.load.glyph_raster_micros, 14);
+        assert_eq!(decoded.load.presentation_encode_micros, 15);
+        assert_eq!(decoded.load.presentation_decode_micros, 16);
     }
 
     #[test]

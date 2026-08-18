@@ -120,10 +120,12 @@ pub(super) fn encode_renderer_document(
             document,
             revision,
             total_length,
+            encode_micros,
         } => {
             writer.u64(document.get());
             writer.u64(*revision);
             writer.u32(*total_length);
+            writer.u64(*encode_micros);
             0x0112
         }
         RendererMessage::PresentationChunk(chunk) => {
@@ -182,6 +184,7 @@ pub(super) fn decode_renderer_document(
             document: DocumentId::new(reader.u64()?)?,
             revision: nonzero(reader.u64()?, "presentation revision")?,
             total_length: reader.u32()?,
+            encode_micros: reader.u64()?,
         },
         0x0114 => RendererMessage::PresentationChunk(decode_chunk(&mut reader)?),
         0x0116 => RendererMessage::PresentationEnd {

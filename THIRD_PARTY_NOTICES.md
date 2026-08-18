@@ -14,17 +14,21 @@ The upstream license texts are preserved in
 [vendor/boa_engine/LICENSE-MIT](vendor/boa_engine/LICENSE-MIT) and
 [vendor/boa_engine/LICENSE-UNLICENSE](vendor/boa_engine/LICENSE-UNLICENSE).
 
-## COSMIC Text
+## Renderer text dependencies
 
-The release binary links the `cosmic-text` 0.19 text-layout and rasterization crate resolved
-through Cargo.
+The release binary links the following renderer-only text crates resolved through Cargo:
 
-- Upstream project: <https://github.com/pop-os/cosmic-text>
-- License: MIT OR Apache-2.0, at the recipient's option
-- Integration: renderer-only font discovery, shaping, fallback, and glyph rasterization
+- `fontique` 0.11.1, <https://github.com/linebender/parley>, Apache-2.0 OR MIT, for font
+  discovery, matching, fallback, and in-memory font registration
+- `harfrust` 0.5.2, <https://github.com/harfbuzz/harfrust>, MIT, for OpenType shaping
+- `swash` 0.2.10, <https://github.com/dfrg/swash>, Apache-2.0 OR MIT, for glyph rasterization
+- `unicode-bidi` 0.3.18, <https://github.com/servo/unicode-bidi>, MIT OR Apache-2.0
+- `unicode-script` 0.5.8, <https://github.com/unicode-rs/unicode-script>, MIT OR Apache-2.0
+- `unicode-segmentation` 1.13.3, <https://github.com/unicode-rs/unicode-segmentation>, MIT OR
+  Apache-2.0
 
-The crate is not vendored. Its exact version and transitive dependency graph are recorded in
-`Cargo.lock`; the upstream MIT and Apache-2.0 license texts are distributed with the crate.
+These crates are not vendored. Exact versions and their transitive dependency graph are recorded
+in `Cargo.lock`; upstream license texts are distributed with the crates.
 
 ## Web Platform Tests parser fixtures
 

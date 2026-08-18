@@ -161,6 +161,7 @@ impl BrowserState {
             return;
         }
 
+        let presentation_install_started = Instant::now();
         self.destroy_page_controls();
         let previous_layout = std::mem::take(&mut self.page_layout);
         self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
@@ -216,6 +217,10 @@ impl BrowserState {
         self.update_active_tab_title(&presentation.title);
         self.update_scrollbar();
         self.recreate_page_controls();
+
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.presentation_install_time += presentation_install_started.elapsed();
+        }
 
         self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
         let error_count = presentation.runtime.errors.len();
@@ -293,6 +298,15 @@ impl BrowserState {
             .text_shape_cache_flushes
             .saturating_add(presentation.load.text_shape_cache_flushes as usize);
         benchmark.text_shape_cache_entries = presentation.load.text_shape_cache_entries as usize;
+        benchmark.font_catalog_time += Duration::from_micros(presentation.load.font_catalog_micros);
+        benchmark.font_select_time += Duration::from_micros(presentation.load.font_select_micros);
+        benchmark.open_type_shape_time +=
+            Duration::from_micros(presentation.load.open_type_shape_micros);
+        benchmark.glyph_raster_time += Duration::from_micros(presentation.load.glyph_raster_micros);
+        benchmark.presentation_encode_time +=
+            Duration::from_micros(presentation.load.presentation_encode_micros);
+        benchmark.presentation_decode_time +=
+            Duration::from_micros(presentation.load.presentation_decode_micros);
         benchmark.script_executed = benchmark
             .script_executed
             .saturating_add(presentation.runtime.scripts_executed as usize);

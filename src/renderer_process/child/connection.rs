@@ -371,7 +371,12 @@ impl ChildConnection {
     }
 
     fn send_presentation(&mut self, presentation: &RendererPresentation) -> Result<(), String> {
+        let encode_started = std::time::Instant::now();
         let bytes = presentation.encode().map_err(|error| error.to_string())?;
+        let encode_micros = encode_started
+            .elapsed()
+            .as_micros()
+            .min(u128::from(u64::MAX)) as u64;
         if bytes.len() > MAX_RENDERER_PRESENTATION_BYTES {
             return Err("renderer presentation exceeded its byte budget".into());
         }
@@ -382,6 +387,7 @@ impl ChildConnection {
                 document: presentation.document,
                 revision: presentation.revision,
                 total_length,
+                encode_micros,
             })
             .map_err(|error| error.to_string())?;
         self.send_renderer_chunks(
