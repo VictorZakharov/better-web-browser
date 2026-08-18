@@ -23,8 +23,8 @@ mod tests_general;
 
 pub use engine::{layout_page, layout_page_with_style_viewport};
 pub use model::{
-    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, RectF, SelectOption,
-    TextMeasurer,
+    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
+    RectF, SelectOption, ShapedText, TextMeasurer,
 };
 
 use super::css::{

@@ -4,13 +4,17 @@ use super::reader::{decode_reader, encode_reader};
 use super::*;
 use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
-    MAX_PAGE_IMAGES, MAX_RENDERED_TEXT_BYTES, MAX_RENDERER_PRESENTATION_BYTES, MAX_URL_BYTES,
+    MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
+    MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
+    MAX_RENDERER_PRESENTATION_BYTES, MAX_URL_BYTES,
 };
+use std::collections::HashSet;
 
 const MAX_REPORT_ENTRIES: usize = 512;
 const MAX_REPORT_TEXT: usize = 64 * 1024;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
+    validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
     let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
@@ -34,11 +38,58 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
         writer.u32(image.image.height);
         writer.bytes(&image.image.bgra)?;
     }
+    writer.u64(value.glyph_epoch);
+    writer.u32(value.glyphs.len() as u32);
+    for glyph in &value.glyphs {
+        writer.u32(glyph.id);
+        writer.bool(glyph.color);
+        writer.u32(glyph.image.width);
+        writer.u32(glyph.image.height);
+        writer.bytes(&glyph.image.bgra)?;
+    }
     let bytes = writer.finish();
     if bytes.len() > MAX_RENDERER_PRESENTATION_BYTES {
         return Err(ProtocolError::PayloadTooLarge(bytes.len() as u32));
     }
     Ok(bytes)
+}
+
+fn validate_glyph_rasters(
+    epoch: u64,
+    glyphs: &[PresentedGlyphRaster],
+) -> Result<(), ProtocolError> {
+    if epoch == 0 {
+        return Err(ProtocolError::InvalidPayload("glyph epoch"));
+    }
+    if glyphs.len() > MAX_GLYPH_RASTERS {
+        return Err(ProtocolError::InvalidPayload("glyph raster count"));
+    }
+    let mut ids = HashSet::with_capacity(glyphs.len());
+    let mut total = 0_usize;
+    for glyph in glyphs {
+        let pixels = u64::from(glyph.image.width) * u64::from(glyph.image.height);
+        let expected = usize::try_from(pixels.saturating_mul(4))
+            .map_err(|_| ProtocolError::InvalidPayload("glyph raster size"))?;
+        if glyph.id == 0
+            || !ids.insert(glyph.id)
+            || glyph.image.width == 0
+            || glyph.image.height == 0
+            || glyph.image.width > MAX_GLYPH_RASTER_DIMENSION
+            || glyph.image.height > MAX_GLYPH_RASTER_DIMENSION
+            || pixels > MAX_GLYPH_RASTER_PIXELS
+            || expected > MAX_GLYPH_RASTER_BYTES
+            || glyph.image.bgra.len() != expected
+        {
+            return Err(ProtocolError::InvalidPayload("glyph raster"));
+        }
+        total = total
+            .checked_add(expected)
+            .ok_or(ProtocolError::InvalidPayload("glyph raster budget"))?;
+    }
+    if total > MAX_PRESENTED_GLYPH_BYTES {
+        return Err(ProtocolError::InvalidPayload("glyph raster budget"));
+    }
+    Ok(())
 }
 
 pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError> {
@@ -104,6 +155,56 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             },
         });
     }
+    let glyph_epoch = reader.u64()?;
+    if glyph_epoch == 0 {
+        return Err(ProtocolError::InvalidPayload("glyph epoch"));
+    }
+    let glyph_count = reader.u32()? as usize;
+    if glyph_count > MAX_GLYPH_RASTERS {
+        return Err(ProtocolError::InvalidPayload("glyph raster count"));
+    }
+    let mut glyphs = Vec::with_capacity(glyph_count);
+    let mut glyph_ids = HashSet::with_capacity(glyph_count);
+    let mut glyph_bytes = 0_usize;
+    for _ in 0..glyph_count {
+        let id = reader.u32()?;
+        if id == 0 || !glyph_ids.insert(id) {
+            return Err(ProtocolError::InvalidPayload("glyph raster identifier"));
+        }
+        let color = reader.bool()?;
+        let width = reader.u32()?;
+        let height = reader.u32()?;
+        let pixels = u64::from(width) * u64::from(height);
+        if width == 0
+            || height == 0
+            || width > MAX_GLYPH_RASTER_DIMENSION
+            || height > MAX_GLYPH_RASTER_DIMENSION
+            || pixels > MAX_GLYPH_RASTER_PIXELS
+        {
+            return Err(ProtocolError::InvalidPayload("glyph raster dimensions"));
+        }
+        let expected = usize::try_from(pixels.saturating_mul(4))
+            .map_err(|_| ProtocolError::InvalidPayload("glyph raster size"))?;
+        let bgra = reader.bytes(MAX_GLYPH_RASTER_BYTES)?;
+        if bgra.len() != expected {
+            return Err(ProtocolError::InvalidPayload("glyph raster pixels"));
+        }
+        glyph_bytes = glyph_bytes
+            .checked_add(bgra.len())
+            .ok_or(ProtocolError::InvalidPayload("glyph raster budget"))?;
+        if glyph_bytes > MAX_PRESENTED_GLYPH_BYTES {
+            return Err(ProtocolError::InvalidPayload("glyph raster budget"));
+        }
+        glyphs.push(PresentedGlyphRaster {
+            id,
+            image: DecodedImage {
+                width,
+                height,
+                bgra,
+            },
+            color,
+        });
+    }
     reader.finish()?;
     Ok(RendererPresentation {
         document,
@@ -115,6 +216,8 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         reader: reader_document,
         layout,
         images,
+        glyph_epoch,
+        glyphs,
         runtime,
         style,
         load,
@@ -216,6 +319,10 @@ fn encode_load(writer: &mut WireWriter, report: PageLoadReport) {
     writer.u64(report.style_micros);
     writer.u64(report.layout_micros);
     writer.u64(report.text_measure_count);
+    writer.u64(report.text_shape_cache_hits);
+    writer.u64(report.text_shape_cache_misses);
+    writer.u64(report.text_shape_cache_flushes);
+    writer.u64(report.text_shape_cache_entries);
 }
 
 fn decode_load(reader: &mut WireReader<'_>) -> Result<PageLoadReport, ProtocolError> {
@@ -227,5 +334,9 @@ fn decode_load(reader: &mut WireReader<'_>) -> Result<PageLoadReport, ProtocolEr
         style_micros: reader.u64()?,
         layout_micros: reader.u64()?,
         text_measure_count: reader.u64()?,
+        text_shape_cache_hits: reader.u64()?,
+        text_shape_cache_misses: reader.u64()?,
+        text_shape_cache_flushes: reader.u64()?,
+        text_shape_cache_entries: reader.u64()?,
     })
 }

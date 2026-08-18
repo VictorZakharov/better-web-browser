@@ -47,6 +47,8 @@ pub(super) fn apply_declaration(
             "color" => style.color = inherited.color,
             "font-family" => style.font_family.clone_from(&inherited.font_family),
             "font-size" => style.font_size = inherited.font_size,
+            "letter-spacing" => style.letter_spacing = inherited.letter_spacing,
+            "word-spacing" => style.word_spacing = inherited.word_spacing,
             "line-height" => style.line_height = inherited.line_height,
             "max-width" => style.max_width = inherited.max_width,
             "width" => style.width = inherited.width,
@@ -138,6 +140,16 @@ pub(super) fn apply_declaration(
         "font-style" => style.italic = matches!(value, "italic" | "oblique"),
         "font-family" => style.font_family = first_font_family(value),
         "font" => apply_font_shorthand(style, value, inherited_font_size),
+        "letter-spacing" => {
+            if let Some(spacing) = parse_text_spacing(value, style.font_size) {
+                style.letter_spacing = spacing;
+            }
+        }
+        "word-spacing" => {
+            if let Some(spacing) = parse_text_spacing(value, style.font_size) {
+                style.word_spacing = spacing;
+            }
+        }
         "line-height" => {
             if let Some(line_height) = parse_line_height(value, style.font_size) {
                 style.line_height = line_height;
@@ -307,4 +319,11 @@ pub(super) fn apply_declaration(
         "grid-area" => assign_grid_area(style, value),
         _ => {}
     }
+}
+
+pub(super) fn parse_text_spacing(value: &str, font_size: f32) -> Option<f32> {
+    if value.eq_ignore_ascii_case("normal") {
+        return Some(0.0);
+    }
+    parse_length(value).and_then(|length| length.resolve(font_size, font_size))
 }

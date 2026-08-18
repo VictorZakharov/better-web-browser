@@ -43,6 +43,10 @@ pub struct PageLoadReport {
     pub style_micros: u64,
     pub layout_micros: u64,
     pub text_measure_count: u64,
+    pub text_shape_cache_hits: u64,
+    pub text_shape_cache_misses: u64,
+    pub text_shape_cache_flushes: u64,
+    pub text_shape_cache_entries: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -83,6 +87,15 @@ pub struct PresentedImage {
     pub image: DecodedImage,
 }
 
+/// A renderer-rasterized glyph resource. Mask glyphs are tinted by the browser while color
+/// glyphs (for example emoji) retain their renderer-produced premultiplied BGRA pixels.
+#[derive(Clone, Debug)]
+pub struct PresentedGlyphRaster {
+    pub id: u32,
+    pub image: DecodedImage,
+    pub color: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct RendererPresentation {
     pub document: DocumentId,
@@ -94,6 +107,8 @@ pub struct RendererPresentation {
     pub reader: Document,
     pub layout: PresentedLayout,
     pub images: Vec<PresentedImage>,
+    pub glyph_epoch: u64,
+    pub glyphs: Vec<PresentedGlyphRaster>,
     pub runtime: RuntimeReport,
     pub style: StyleReport,
     pub load: PageLoadReport,
@@ -107,5 +122,112 @@ impl RendererPresentation {
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolError> {
         codec::decode(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::Document;
+    use crate::engine::{FontSpec, PositionedGlyph, RectF};
+
+    fn sample() -> RendererPresentation {
+        let url = "https://example.test/".to_string();
+        RendererPresentation {
+            document: DocumentId::new(1).unwrap(),
+            revision: 1,
+            title: "glyphs".into(),
+            final_url: url.clone(),
+            status: 200,
+            character_set: "utf-8".into(),
+            reader: Document {
+                title: "glyphs".into(),
+                source_url: url,
+                blocks: Vec::new(),
+                truncated: false,
+            },
+            layout: PresentedLayout {
+                items: vec![DisplayItem::Text {
+                    rect: RectF {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 3.0,
+                        height: 4.0,
+                    },
+                    text: "A".into(),
+                    font: FontSpec {
+                        family: "sans-serif".into(),
+                        size: 16.0,
+                        weight: 400,
+                        italic: false,
+                        underline: false,
+                        letter_spacing: 0.5,
+                        word_spacing: 1.0,
+                    },
+                    color: Color::BLACK,
+                    link: None,
+                    raster_run_id: 7,
+                    glyphs: vec![PositionedGlyph {
+                        raster_id: 1,
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1.0,
+                        height: 1.0,
+                        color: false,
+                    }],
+                }],
+                content_height: 10.0,
+                background: Color::WHITE,
+                forms: Vec::new(),
+            },
+            images: Vec::new(),
+            glyph_epoch: 1,
+            glyphs: vec![PresentedGlyphRaster {
+                id: 1,
+                image: DecodedImage {
+                    width: 1,
+                    height: 1,
+                    bgra: vec![255; 4],
+                },
+                color: false,
+            }],
+            runtime: RuntimeReport::default(),
+            style: StyleReport::default(),
+            load: PageLoadReport::default(),
+            next_timer_micros: None,
+        }
+    }
+
+    #[test]
+    fn glyph_runs_and_rasters_round_trip_through_the_checked_codec() {
+        let decoded = RendererPresentation::decode(&sample().encode().unwrap()).unwrap();
+        assert_eq!(decoded.glyph_epoch, 1);
+        assert_eq!(decoded.glyphs.len(), 1);
+        let DisplayItem::Text {
+            raster_run_id,
+            glyphs,
+            font,
+            ..
+        } = &decoded.layout.items[0]
+        else {
+            panic!("text item was not preserved");
+        };
+        assert_eq!(*raster_run_id, 7);
+        assert_eq!(glyphs[0].raster_id, 1);
+        assert_eq!(font.letter_spacing, 0.5);
+        assert_eq!(font.word_spacing, 1.0);
+    }
+
+    #[test]
+    fn duplicate_or_zero_glyph_resources_fail_closed() {
+        let mut presentation = sample();
+        presentation.glyphs.push(presentation.glyphs[0].clone());
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("glyph raster"))
+        ));
+        presentation.glyphs.truncate(1);
+        presentation.glyphs[0].id = 0;
+        assert!(presentation.encode().is_err());
     }
 }

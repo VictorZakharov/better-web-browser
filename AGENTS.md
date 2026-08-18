@@ -37,6 +37,7 @@
 - Never rely on a harness name, prior description, or `Start-Process` behavior as proof that a run is headless. Before running a browser harness, verify the actual browser launch arguments and process settings.
 - Chromium reference runs must pass the current unified-headless `--headless` flag and must not create a visible console window (`CreateNoWindow = true` when launched through .NET).
 - Breeze runs must use its hidden benchmark/capture modes. Do not launch the interactive browser executable for automated checks.
+- Run Breeze page benchmarks through `./scripts/run-hidden-benchmark.ps1`. It sets the executable's fail-closed automation guard, uses `CreateNoWindow`, and verifies `--benchmark` in the actual child command line; do not recreate its launch logic ad hoc.
 - If any code path can open a browser window, stop and fix that path before running it. A visible launch is allowed only when the user explicitly requests one.
 - Keep repeated and long-running browser checks headless even when a single manual check might seem harmless; unexpected windows disrupt the user's desktop.
 - Run `cargo test --test renderer_process` and `cargo test --test live_runtime` as the normal Windows user (an escalated shell in Codex), while preserving their hidden `CREATE_NO_WINDOW` launch paths. The filesystem-sandbox identity cannot access the user's AppContainer profile and produces a false renderer-launch/profile-open failure.

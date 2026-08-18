@@ -25,6 +25,8 @@ pub struct FontSpec {
     pub weight: u16,
     pub italic: bool,
     pub underline: bool,
+    pub letter_spacing: f32,
+    pub word_spacing: f32,
 }
 
 impl FontSpec {
@@ -35,12 +37,42 @@ impl FontSpec {
             weight: style.font_weight,
             italic: style.italic,
             underline: style.text_decoration_underline,
+            letter_spacing: style.letter_spacing,
+            word_spacing: style.word_spacing,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PositionedGlyph {
+    pub raster_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub color: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ShapedText {
+    pub width: f32,
+    pub height: f32,
+    pub raster_run_id: u64,
+    pub glyphs: Vec<PositionedGlyph>,
+}
+
 pub trait TextMeasurer {
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32);
+
+    fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {
+        let (width, height) = self.measure(text, font);
+        ShapedText {
+            width,
+            height,
+            raster_run_id: 0,
+            glyphs: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +144,8 @@ pub enum DisplayItem {
         font: FontSpec,
         color: Color,
         link: Option<String>,
+        raster_run_id: u64,
+        glyphs: Vec<PositionedGlyph>,
     },
     Image {
         rect: RectF,
@@ -185,15 +219,19 @@ pub(super) struct MeasuredAtom<'a> {
     pub(super) height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
+    pub(super) raster_run_id: u64,
+    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct CachedAtomMeasurement {
     pub(super) text_start: Option<usize>,
     pub(super) width: f32,
     pub(super) height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
+    pub(super) raster_run_id: u64,
+    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
 impl CachedAtomMeasurement {
@@ -209,6 +247,8 @@ impl CachedAtomMeasurement {
             height: self.height,
             no_wrap: self.no_wrap,
             break_before: self.break_before,
+            raster_run_id: self.raster_run_id,
+            glyphs: self.glyphs.clone(),
         }
     }
 }
@@ -226,6 +266,8 @@ impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
             height: measured.height,
             no_wrap: measured.no_wrap,
             break_before: measured.break_before,
+            raster_run_id: measured.raster_run_id,
+            glyphs: measured.glyphs.clone(),
         }
     }
 }

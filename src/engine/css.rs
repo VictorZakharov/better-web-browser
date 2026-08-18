@@ -29,7 +29,7 @@ pub(crate) use cssom::resolved_property_value;
 use cssparser::color::{parse_hash_color, parse_named_color};
 use cssparser::{Parser, ParserInput, ToCss, Token};
 pub(crate) use media::media_matches;
-use properties::apply_declaration;
+use properties::{apply_declaration, parse_text_spacing};
 use selector_match::selector_matches;
 use selector_model::*;
 use selector_parser::parse_selector;

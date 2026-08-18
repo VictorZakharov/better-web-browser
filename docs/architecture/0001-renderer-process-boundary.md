@@ -318,10 +318,10 @@ logical asset IDs. The browser checks every count, index, rectangle, byte range,
 painting. Rejection retains the last valid surface and records a bounded diagnostic; it never follows
 renderer pointers.
 
-Remote image, SVG, and webfont bytes are decoded in the renderer. The browser receives bounded pixel
-or drawing data and uses only validated system-font descriptors. Moving webfont rasterization out of
-the browser is required before disabling Win32k/GDI access in the renderer; the temporary GDI text
-measurement bridge is a migration constraint, not the target boundary.
+Remote image, SVG, and webfont bytes are decoded in the renderer. Text is shaped and rasterized
+there by the Rust stack accepted in ADR 0002. The browser receives bounded pixel/drawing assets and
+glyph placements, validates them, and composites them without receiving remote font bytes or
+parsing font tables.
 
 Renderer control descriptions create browser-owned native controls. Browser input is normalized and
 tagged with `DocumentId`, `ControlId`, and an event sequence. Focus or input targeting a stale control
@@ -380,8 +380,9 @@ Before processing remote content, a renderer launch must apply all required cont
   disabling, CFG, image loading, and dynamic code. Each policy needs a launch test on supported
   Windows versions; unsupported optional hardening is reported, while failure of AppContainer, Job,
   child-process, or handle-isolation setup is fatal.
-- Defer the Win32k system-call ban until renderer GDI/font dependencies have been removed. Do not
-  silently advertise that mitigation before its test passes.
+- The renderer's GDI/font text dependency has been removed. Keep the Win32k system-call ban
+  disabled until remaining renderer platform calls have an explicit compatibility launch test; do
+  not silently advertise that mitigation before its test passes.
 
 The browser monitors Job notifications and the process handle for accounting and termination. Job
 limits complement AppContainer; Microsoft documents that Job security limits do not replace
@@ -454,10 +455,10 @@ work.
 - Preserve the full rebuild fallback while incremental invalidation from issue #8 is adopted.
 
 Remote-document decoding, HTML/CSS parsing, DOM, Boa, scheduler, style/layout, Reader extraction,
-image/SVG/webfont decoding, dedicated Workers, and immutable presentation construction now run in
-the renderer. The privileged in-process page-engine fallback has been removed. GDI text measurement
-inside the renderer and browser-side final text painting remain migration constraints; final
-renderer-owned text raster output is not implemented.
+image/SVG/webfont decoding, dedicated Workers, text shaping/rasterization, and immutable
+presentation construction now run in the renderer. The privileged in-process page-engine fallback
+and temporary GDI text-measurement bridge have been removed. The browser only validates and
+composites renderer-owned glyph raster output as specified by ADR 0002.
 
 ### Stage 5: Make one renderer per top-level context the default
 
@@ -512,7 +513,8 @@ The production renderer boundary is accepted only while these executable invaria
   justifies a separately reviewed bulk transport.
 - Synchronous APIs such as `document.cookie` require carefully versioned caches rather than direct
   browser calls.
-- Native controls and current GDI font measurement create temporary cross-boundary work.
+- Native controls and the browser's GDI pixel compositor remain Windows-specific presentation
+  constraints, but neither parses remote fonts nor measures document text.
 - Protocol validation, cancellation races, process launch, AppContainer compatibility, and crash
   recovery substantially increase test surface.
 - One renderer per top-level context isolates contexts from each other but does not isolate mutually

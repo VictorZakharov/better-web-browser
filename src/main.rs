@@ -12,6 +12,13 @@ fn main() {
         }
         return;
     }
+    if let Err(error) = require_hidden_benchmark_when_automated(
+        &arguments,
+        std::env::var_os("BREEZE_REQUIRE_HIDDEN_BENCHMARK").is_some(),
+    ) {
+        eprintln!("{error}");
+        std::process::exit(64);
+    }
     let benchmark = arguments.iter().any(|argument| argument == "--benchmark");
     let large_headless_stack =
         benchmark && std::env::var_os("BREEZE_HEADLESS_LARGE_STACK").is_some();
@@ -31,6 +38,17 @@ fn main() {
 }
 
 #[cfg(target_os = "windows")]
+fn require_hidden_benchmark_when_automated(
+    arguments: &[String],
+    automation_guard_enabled: bool,
+) -> Result<(), &'static str> {
+    if automation_guard_enabled && !arguments.iter().any(|argument| argument == "--benchmark") {
+        return Err("refusing an interactive launch: guarded automation requires --benchmark");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn run_benchmark() -> Result<(), String> {
     // The WPT runner opts into this path because large standards harnesses create deeper debug-
     // build call stacks than ordinary pages. Other benchmark consumers keep the normal main-thread
@@ -47,4 +65,31 @@ fn run_benchmark() -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 fn main() {
     eprintln!("This MVP currently uses the Windows-native fast path. A portable shell is planned.");
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::require_hidden_benchmark_when_automated;
+
+    #[test]
+    fn guarded_automation_rejects_an_interactive_launch() {
+        let error = require_hidden_benchmark_when_automated(&[], true).unwrap_err();
+
+        assert!(error.contains("requires --benchmark"));
+    }
+
+    #[test]
+    fn guarded_automation_accepts_hidden_benchmark_arguments() {
+        let arguments = vec![
+            "--benchmark".to_string(),
+            "https://example.test/".to_string(),
+        ];
+
+        assert!(require_hidden_benchmark_when_automated(&arguments, true).is_ok());
+    }
+
+    #[test]
+    fn ordinary_interactive_launches_remain_available() {
+        assert!(require_hidden_benchmark_when_automated(&[], false).is_ok());
+    }
 }

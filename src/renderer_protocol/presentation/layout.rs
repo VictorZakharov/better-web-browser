@@ -3,7 +3,7 @@ use super::*;
 use crate::engine::css::Color;
 use crate::engine::dom::NodeId;
 use crate::engine::{
-    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, RectF, SelectOption,
+    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, PositionedGlyph, RectF, SelectOption,
 };
 use crate::limits::{MAX_DOM_NODES, MAX_RENDERED_TEXT_BYTES, MAX_URL_BYTES};
 
@@ -12,6 +12,7 @@ const MAX_FORM_FIELDS: usize = 10_000;
 const MAX_FAMILY_BYTES: usize = 1024;
 const MAX_CONTROL_TEXT_BYTES: usize = 64 * 1024;
 const MAX_COORDINATE: f32 = 10_000_000.0;
+const MAX_GLYPHS_PER_TEXT_ITEM: usize = 65_536;
 
 pub(super) fn encode_layout(
     writer: &mut WireWriter,
@@ -81,6 +82,8 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
             font,
             color,
             link,
+            raster_run_id,
+            glyphs,
         } => {
             writer.u8(3);
             encode_rect(writer, *rect);
@@ -88,6 +91,16 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
             encode_font(writer, font)?;
             encode_color(writer, *color);
             encode_optional_string(writer, link.as_deref())?;
+            writer.u64(*raster_run_id);
+            writer.u32(glyphs.len() as u32);
+            for glyph in glyphs.iter() {
+                writer.u32(glyph.raster_id);
+                writer.f32(glyph.x);
+                writer.f32(glyph.y);
+                writer.f32(glyph.width);
+                writer.f32(glyph.height);
+                writer.bool(glyph.color);
+            }
         }
         DisplayItem::Image {
             rect,
@@ -139,13 +152,39 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
             color: decode_color(reader)?,
             radius: finite(reader.f32()?, 0.0, MAX_COORDINATE, "radius")?,
         }),
-        3 => Ok(DisplayItem::Text {
-            rect: decode_rect(reader)?,
-            text: reader.string(MAX_RENDERED_TEXT_BYTES)?,
-            font: decode_font(reader)?,
-            color: decode_color(reader)?,
-            link: decode_optional_string(reader, MAX_URL_BYTES)?,
-        }),
+        3 => {
+            let rect = decode_rect(reader)?;
+            let text = reader.string(MAX_RENDERED_TEXT_BYTES)?;
+            let font = decode_font(reader)?;
+            let color = decode_color(reader)?;
+            let link = decode_optional_string(reader, MAX_URL_BYTES)?;
+            let raster_run_id = reader.u64()?;
+            let glyph_count =
+                bounded_count(reader.u32()?, MAX_GLYPHS_PER_TEXT_ITEM, "positioned glyphs")?;
+            if glyph_count > 0 && raster_run_id == 0 {
+                return Err(ProtocolError::InvalidPayload("text raster run identifier"));
+            }
+            let mut glyphs = Vec::with_capacity(glyph_count);
+            for _ in 0..glyph_count {
+                glyphs.push(PositionedGlyph {
+                    raster_id: reader.u32()?,
+                    x: finite(reader.f32()?, -MAX_COORDINATE, MAX_COORDINATE, "glyph x")?,
+                    y: finite(reader.f32()?, -MAX_COORDINATE, MAX_COORDINATE, "glyph y")?,
+                    width: finite(reader.f32()?, 0.0, MAX_COORDINATE, "glyph width")?,
+                    height: finite(reader.f32()?, 0.0, MAX_COORDINATE, "glyph height")?,
+                    color: reader.bool()?,
+                });
+            }
+            Ok(DisplayItem::Text {
+                rect,
+                text,
+                font,
+                color,
+                link,
+                raster_run_id,
+                glyphs,
+            })
+        }
         4 => Ok(DisplayItem::Image {
             rect: decode_rect(reader)?,
             url: reader.string(MAX_URL_BYTES)?,
@@ -294,6 +333,8 @@ fn encode_font(writer: &mut WireWriter, font: &FontSpec) -> Result<(), ProtocolE
     writer.u16(font.weight);
     writer.bool(font.italic);
     writer.bool(font.underline);
+    writer.f32(font.letter_spacing);
+    writer.f32(font.word_spacing);
     Ok(())
 }
 
@@ -310,6 +351,8 @@ fn decode_font(reader: &mut WireReader<'_>) -> Result<FontSpec, ProtocolError> {
         weight,
         italic: reader.bool()?,
         underline: reader.bool()?,
+        letter_spacing: finite(reader.f32()?, -768.0, 768.0, "letter spacing")?,
+        word_spacing: finite(reader.f32()?, -768.0, 768.0, "word spacing")?,
     })
 }
 

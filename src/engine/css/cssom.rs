@@ -9,6 +9,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "display" => style.display.css_keyword().to_string(),
         "font-size" => serialize_px(style.font_size),
         "font-weight" => style.font_weight.to_string(),
+        "letter-spacing" => serialize_px(style.letter_spacing),
+        "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => serialize_px(style.line_height),
         "opacity" => serialize_number(style.opacity),
         "overflow" | "overflow-x" | "overflow-y" => if style.overflow_hidden {

@@ -42,6 +42,11 @@ pub const MAX_INLINE_SVGS: usize = 64;
 pub const MAX_WEB_FONTS: usize = 16;
 pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_FONT_TABLES: usize = 256;
+pub const MAX_GLYPH_RASTERS: usize = 65_536;
+pub const MAX_GLYPH_RASTER_DIMENSION: u32 = 1_024;
+pub const MAX_GLYPH_RASTER_PIXELS: u64 = 1024 * 1024;
+pub const MAX_GLYPH_RASTER_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_PRESENTED_GLYPH_BYTES: usize = 48 * 1024 * 1024;
 pub const MAX_STYLESHEETS: usize = 16;
 pub const MAX_PAGE_SCRIPTS: usize = 64;
 

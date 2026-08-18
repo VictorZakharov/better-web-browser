@@ -196,10 +196,6 @@ pub(super) fn json_integer(json: &str, key: &str) -> Option<u64> {
     json_value(json, key)?.parse::<u64>().ok()
 }
 
-pub(super) fn json_number(json: &str, key: &str) -> Option<f64> {
-    json_value(json, key)?.parse::<f64>().ok()
-}
-
 fn json_value<'a>(json: &'a str, key: &str) -> Option<&'a str> {
     let prefix = format!("\"{key}\":");
     json.lines()

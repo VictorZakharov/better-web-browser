@@ -234,9 +234,12 @@ fn async_external_script_executes_after_page_ready_in_the_retained_realm() {
         json_integer(&report, "javascript_scripts_executed").is_some_and(|count| count >= 2),
         "async script was not executed:\n{report}"
     );
-    assert!(
-        json_number(&report, "page_ready_ms").is_some_and(|ready| ready < 2300.0),
-        "the 2500 ms async fetch delayed page-ready:\n{report}"
+    // Assert the event ordering directly. An absolute process-start deadline becomes flaky when
+    // CI launches several cold renderers and they contend while discovering system fonts.
+    assert_eq!(
+        json_integer(&report, "javascript_scripts_executed_at_page_ready"),
+        Some(1),
+        "the delayed async script executed before page-ready:\n{report}"
     );
     assert_green_capture(&artifacts, "async script did not repaint its document");
 }
@@ -259,7 +262,9 @@ fn navigation_discards_a_stale_async_script_completion() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/stale-async");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 1250);
+    // The navigation timer is scheduled for 1,600 ms of renderer event-loop time. Keep the
+    // observation window beyond that contract instead of relying on incidental startup delay.
+    let mut child = hidden_benchmark(&url, &artifacts, 1900);
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()

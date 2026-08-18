@@ -1,6 +1,7 @@
 use super::paint_primitives::{
-    draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_image,
-    paint_background_image, paint_border, screen_rect,
+    draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
+    paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_alpha_image, paint_background_image,
+    paint_border, screen_rect,
 };
 use super::platform::*;
 use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
@@ -137,6 +138,7 @@ impl BrowserState {
         SetBkMode(dc, TRANSPARENT);
         let saved_dc = SaveDC(dc);
         IntersectClipRect(dc, content.left, content.top, content.right, content.bottom);
+        let glyph_source_dc = CreateCompatibleDC(dc);
         match tab.surface {
             Surface::Page => {
                 let dirty_content_top = (dirty.top - toolbar_height).max(0);
@@ -185,6 +187,8 @@ impl BrowserState {
                                 text,
                                 font,
                                 color,
+                                raster_run_id,
+                                glyphs,
                                 ..
                             } => {
                                 let screen_y =
@@ -194,17 +198,112 @@ impl BrowserState {
                                 {
                                     continue;
                                 }
-                                let font_handle = tab.dynamic_fonts.get_or_create(font, dpi);
-                                SelectObject(dc, font_handle);
-                                SetTextColor(dc, color.to_colorref());
-                                let text = wide_without_null(text);
-                                TextOutW(
+                                // The built-in `browser.local` document is trusted browser UI and
+                                // still uses the native UI fallback. Remote documents always have
+                                // an active renderer identity and can only paint validated glyphs.
+                                if glyphs.is_empty() && tab.renderer_document.is_none() {
+                                    let font_handle = tab.dynamic_fonts.get_or_create(font, dpi);
+                                    SelectObject(dc, font_handle);
+                                    SetTextColor(dc, color.to_colorref());
+                                    let text = wide_without_null(text);
+                                    TextOutW(
+                                        dc,
+                                        (rect.x * scale).round() as i32,
+                                        screen_y,
+                                        text.as_ptr(),
+                                        text.len() as i32,
+                                    );
+                                    continue;
+                                }
+                                let tint = [color.red, color.green, color.blue, color.alpha];
+                                if let Some(run) = tab.glyph_bitmaps.get_or_create_run(
+                                    *raster_run_id,
+                                    glyphs,
+                                    &tab.presented_glyphs,
+                                    tint,
+                                    scale,
                                     dc,
-                                    (rect.x * scale).round() as i32,
-                                    screen_y,
-                                    text.as_ptr(),
-                                    text.len() as i32,
-                                );
+                                ) {
+                                    let run_rect = better_web_browser::engine::RectF {
+                                        x: rect.x + run.offset_x,
+                                        y: rect.y + run.offset_y,
+                                        width: run.width,
+                                        height: run.height,
+                                    };
+                                    let destination =
+                                        screen_rect(run_rect, tab.scroll_y, toolbar_height, scale);
+                                    if intersects(&destination, &content) {
+                                        if glyph_source_dc.is_null() {
+                                            paint_alpha_bitmap_size(
+                                                dc,
+                                                run.bitmap,
+                                                run.source_width,
+                                                run.source_height,
+                                                &destination,
+                                            );
+                                        } else {
+                                            paint_alpha_bitmap_from_dc(
+                                                dc,
+                                                glyph_source_dc,
+                                                run.bitmap,
+                                                run.source_width,
+                                                run.source_height,
+                                                &destination,
+                                            );
+                                        }
+                                    }
+                                    continue;
+                                }
+                                for glyph in glyphs.iter() {
+                                    let Some(resource) = tab.presented_glyphs.get(&glyph.raster_id)
+                                    else {
+                                        continue;
+                                    };
+                                    if resource.color != glyph.color {
+                                        continue;
+                                    }
+                                    let glyph_rect = better_web_browser::engine::RectF {
+                                        x: rect.x + glyph.x,
+                                        y: rect.y + glyph.y,
+                                        width: glyph.width,
+                                        height: glyph.height,
+                                    };
+                                    let destination = screen_rect(
+                                        glyph_rect,
+                                        tab.scroll_y,
+                                        toolbar_height,
+                                        scale,
+                                    );
+                                    if !intersects(&destination, &content) {
+                                        continue;
+                                    }
+                                    let tint = (!resource.color).then_some(tint);
+                                    let bitmap = tab.glyph_bitmaps.get_or_create(
+                                        resource.id,
+                                        &resource.image,
+                                        tint,
+                                        dc,
+                                    );
+                                    if !bitmap.is_null() {
+                                        if glyph_source_dc.is_null() {
+                                            paint_alpha_bitmap(
+                                                dc,
+                                                bitmap,
+                                                &resource.image,
+                                                &destination,
+                                            );
+                                        } else {
+                                            paint_alpha_bitmap_from_dc(
+                                                dc,
+                                                glyph_source_dc,
+                                                bitmap,
+                                                resource.image.width,
+                                                resource.image.height,
+                                                &destination,
+                                            );
+                                        }
+                                    }
+                                }
                             }
                             DisplayItem::Image {
                                 rect,
@@ -376,6 +475,9 @@ impl BrowserState {
                     }
                 }
             }
+        }
+        if !glyph_source_dc.is_null() {
+            DeleteDC(glyph_source_dc);
         }
         if saved_dc != 0 {
             RestoreDC(dc, saved_dc);
