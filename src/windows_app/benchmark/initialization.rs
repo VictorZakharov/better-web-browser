@@ -46,6 +46,7 @@ impl BenchmarkRun {
             final_url: String::new(),
             error: None,
             script_executed: 0,
+            script_executed_at_page_ready: 0,
             script_mutations: 0,
             render_checkpoints: 0,
             render_mutations: 0,

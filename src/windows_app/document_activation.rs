@@ -260,6 +260,7 @@ impl BrowserState {
         self.record_performance_activity(PerformanceActivity::Style, style_time);
         self.record_performance_activity(PerformanceActivity::Layout, layout_time);
         let load = first.then(|| self.renderer_load_metrics.take()).flatten();
+        let reached_page_ready = load.is_some();
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
@@ -295,6 +296,9 @@ impl BrowserState {
         benchmark.script_executed = benchmark
             .script_executed
             .saturating_add(presentation.runtime.scripts_executed as usize);
+        if reached_page_ready {
+            benchmark.script_executed_at_page_ready = benchmark.script_executed;
+        }
         benchmark.script_mutations = benchmark
             .script_mutations
             .saturating_add(presentation.runtime.dom_mutations as usize);

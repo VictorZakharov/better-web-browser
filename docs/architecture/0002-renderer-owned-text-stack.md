@@ -153,7 +153,7 @@ telemetry remains.
 All three final scroll traces passed the acceptance thresholds and reached the stable range at
 256 ms. Against the same-day control, page-ready is 23.8% slower, non-network time is 44.0% slower,
 layout/paint is 103.6% slower, and working set is 15.4% higher. The release executable grew from
-15,661,568 B to 17,833,984 B (+13.87%).
+15,661,568 B to 17,833,472 B (+13.87%).
 
 This exceeds issue #43's 10% page-ready allowance. The security/correctness boundary is accepted
 only with that regression explicitly visible for review: approximately 2,684 unique advanced
