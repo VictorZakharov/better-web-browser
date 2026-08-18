@@ -3,13 +3,17 @@
 //! Page font bytes and page text stay inside the AppContainer. The browser receives only bounded
 //! glyph placements and premultiplied raster assets over the validated presentation protocol.
 
+mod catalog;
 mod raster;
+mod shape;
 
-use self::raster::{GlyphAsset, GlyphRasterCache};
+use self::catalog::FontCatalog;
+use self::raster::{GlyphRasterCache, RasterizedGlyph};
+use self::shape::TextShaper;
 use crate::engine::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer, WebFont};
-use crate::renderer_protocol::PresentedGlyphRaster;
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Style, Weight, Wrap};
-use std::collections::{HashMap, HashSet};
+use crate::renderer_protocol::{PageLoadReport, PresentedGlyphRaster};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 const MAX_SHAPE_CACHE_ENTRIES: usize = 16_384;
 const MAX_SHAPE_CACHE_BYTES: usize = 32 * 1024 * 1024;
@@ -27,8 +31,8 @@ struct ShapeKey {
 }
 
 pub(in crate::renderer_process::child) struct RendererTextSystem {
-    fonts: FontSystem,
-    buffer: Buffer,
+    catalog: FontCatalog,
+    shaper: TextShaper,
     rasters: GlyphRasterCache,
     shapes: HashMap<ShapeKey, ShapedText>,
     shape_cache_bytes: usize,
@@ -36,19 +40,23 @@ pub(in crate::renderer_process::child) struct RendererTextSystem {
     glyph_epoch: u64,
     next_raster_run_id: u64,
     registered_web_fonts: usize,
-    pub(super) measure_calls: usize,
-    pub(super) shape_cache_hits: usize,
-    pub(super) shape_cache_misses: usize,
-    pub(super) shape_cache_flushes: usize,
+    pending_font_catalog_time: Duration,
+    measure_calls: usize,
+    shape_cache_hits: usize,
+    shape_cache_misses: usize,
+    shape_cache_flushes: usize,
+    font_select_time: Duration,
+    open_type_time: Duration,
+    glyph_raster_time: Duration,
 }
 
 impl RendererTextSystem {
     pub(in crate::renderer_process::child) fn new(dpi: u32) -> Self {
-        let mut buffer = Buffer::new_empty(Metrics::new(16.0, 19.2));
-        buffer.set_wrap(Wrap::None);
+        let catalog_started = Instant::now();
+        let catalog = FontCatalog::new();
         Self {
-            fonts: FontSystem::new(),
-            buffer,
+            catalog,
+            shaper: TextShaper::default(),
             rasters: GlyphRasterCache::default(),
             shapes: HashMap::new(),
             shape_cache_bytes: 0,
@@ -56,10 +64,14 @@ impl RendererTextSystem {
             glyph_epoch: 1,
             next_raster_run_id: 1,
             registered_web_fonts: 0,
+            pending_font_catalog_time: catalog_started.elapsed(),
             measure_calls: 0,
             shape_cache_hits: 0,
             shape_cache_misses: 0,
             shape_cache_flushes: 0,
+            font_select_time: Duration::ZERO,
+            open_type_time: Duration::ZERO,
+            glyph_raster_time: Duration::ZERO,
         }
     }
 
@@ -72,23 +84,18 @@ impl RendererTextSystem {
     }
 
     pub(super) fn register_web_fonts(&mut self, fonts: &[WebFont]) {
-        if self.registered_web_fonts == fonts.len() {
-            return;
+        let started = Instant::now();
+        if self.catalog.register_web_fonts(fonts) {
+            self.pending_font_catalog_time += started.elapsed();
+            self.shaper.clear();
+            self.registered_web_fonts = fonts.len();
+            self.reset_glyph_state();
         }
-        // Rebuilding the database drops all prior page-owned byte buffers at navigation/font-set
-        // boundaries. It also avoids exposing font parsing or global font registration to the
-        // privileged browser process.
-        self.fonts = FontSystem::new();
-        for font in fonts {
-            register_web_font(&mut self.fonts, font);
-        }
-        self.registered_web_fonts = fonts.len();
-        self.reset_glyph_state();
     }
 
     pub(super) fn reset_for_navigation(&mut self) {
-        if self.registered_web_fonts > 0 {
-            self.fonts = FontSystem::new();
+        if self.catalog.reset_web_fonts() {
+            self.shaper.clear();
             self.registered_web_fonts = 0;
         }
         // The browser clears presented glyph resources on every document's first presentation.
@@ -105,8 +112,27 @@ impl RendererTextSystem {
         self.rasters.take_pending()
     }
 
-    pub(super) fn shape_cache_entries(&self) -> usize {
-        self.shapes.len()
+    pub(super) fn reset_layout_metrics(&mut self) {
+        self.measure_calls = 0;
+        self.shape_cache_hits = 0;
+        self.shape_cache_misses = 0;
+        self.shape_cache_flushes = 0;
+        self.font_select_time = Duration::ZERO;
+        self.open_type_time = Duration::ZERO;
+        self.glyph_raster_time = Duration::ZERO;
+    }
+
+    pub(super) fn finish_load_report(&mut self, mut report: PageLoadReport) -> PageLoadReport {
+        report.text_measure_count = self.measure_calls as u64;
+        report.text_shape_cache_hits = self.shape_cache_hits as u64;
+        report.text_shape_cache_misses = self.shape_cache_misses as u64;
+        report.text_shape_cache_flushes = self.shape_cache_flushes as u64;
+        report.text_shape_cache_entries = self.shapes.len() as u64;
+        report.font_catalog_micros = micros(std::mem::take(&mut self.pending_font_catalog_time));
+        report.font_select_micros = micros(self.font_select_time);
+        report.open_type_shape_micros = micros(self.open_type_time);
+        report.glyph_raster_micros = micros(self.glyph_raster_time);
+        report
     }
 
     fn reset_glyph_state(&mut self) {
@@ -127,55 +153,31 @@ impl RendererTextSystem {
         self.shape_cache_misses = self.shape_cache_misses.saturating_add(1);
 
         let font_size = spec.size.clamp(1.0, 768.0);
-        let line_height = (font_size * 1.2).max(font_size);
-        self.buffer.set_metrics_and_size(
-            Metrics::new(font_size, line_height),
-            None,
-            Some(line_height * 2.0),
-        );
-        let family = css_family(&spec.family);
-        let mut attrs = Attrs::new()
-            .family(family)
-            .weight(Weight(spec.weight.clamp(1, 1000)))
-            .style(if spec.italic {
-                Style::Italic
-            } else {
-                Style::Normal
-            });
-        if spec.letter_spacing != 0.0 {
-            attrs = attrs.letter_spacing(spec.letter_spacing / font_size);
-        }
-        self.buffer.set_text(text, &attrs, Shaping::Advanced, None);
-        self.buffer.shape_until_scroll(&mut self.fonts, false);
-
+        let output = self.shaper.shape(&mut self.catalog, text, spec);
+        self.font_select_time += output.font_select_time;
+        self.open_type_time += output.open_type_time;
         let scale = self.dpi as f32 / 96.0;
         let mut shaped = ShapedText {
             raster_run_id: self.allocate_raster_run_id(),
+            width: output.width,
+            height: output.height,
             ..ShapedText::default()
         };
-        for run in self.buffer.layout_runs() {
-            let spaces = whitespace_glyph_positions(run.text, run.glyphs);
-            shaped.width = shaped
-                .width
-                .max((run.line_w + spec.word_spacing * spaces.len() as f32).max(0.0));
-            shaped.height = shaped.height.max(run.line_top + run.line_height);
-            for glyph in run.glyphs {
-                let shift = word_spacing_shift(glyph.x, &spaces, spec.word_spacing);
-                let physical = glyph.physical((shift * scale, run.line_y * scale), scale);
-                let Some(asset) = self
-                    .rasters
-                    .get_or_insert(&mut self.fonts, physical.cache_key)
-                else {
-                    continue;
-                };
-                shaped
-                    .glyphs
-                    .push(positioned_glyph(physical.x, physical.y, scale, asset));
-            }
+        let raster_started = Instant::now();
+        for glyph in output.glyphs {
+            let Some(raster) = self.rasters.get_or_insert(
+                &glyph.font,
+                glyph.glyph_id,
+                font_size,
+                glyph.x,
+                glyph.baseline,
+                self.dpi,
+            ) else {
+                continue;
+            };
+            shaped.glyphs.push(positioned_glyph(scale, raster));
         }
-        if shaped.height <= 0.0 {
-            shaped.height = line_height;
-        }
+        self.glyph_raster_time += raster_started.elapsed();
         if text.len() <= MAX_CACHED_TEXT_BYTES {
             let cached_bytes = shape_cache_entry_bytes(&key, &shaped);
             if cached_bytes > MAX_SHAPE_CACHE_BYTES {
@@ -242,80 +244,20 @@ impl ShapeKey {
     }
 }
 
-fn css_family(value: &str) -> Family<'_> {
-    let family = value
-        .split(',')
-        .next()
-        .unwrap_or("sans-serif")
-        .trim()
-        .trim_matches(['\'', '"']);
-    match family.to_ascii_lowercase().as_str() {
-        "serif" | "ui-serif" => Family::Serif,
-        "monospace" | "ui-monospace" => Family::Monospace,
-        "cursive" => Family::Cursive,
-        "fantasy" => Family::Fantasy,
-        "sans-serif" | "system-ui" | "ui-sans-serif" => Family::SansSerif,
-        _ => Family::Name(family),
-    }
-}
-
-fn register_web_font(fonts: &mut FontSystem, font: &WebFont) {
-    let existing = fonts
-        .db()
-        .faces()
-        .map(|face| face.id)
-        .collect::<HashSet<_>>();
-    fonts.db_mut().load_font_data(font.sfnt.clone());
-    let mut loaded = fonts
-        .db()
-        .faces()
-        .filter(|face| !existing.contains(&face.id))
-        .cloned()
-        .collect::<Vec<_>>();
-    for mut face in loaded.drain(..) {
-        fonts.db_mut().remove_face(face.id);
-        if let Some((_, language)) = face.families.first().cloned() {
-            face.families.insert(0, (font.family.clone(), language));
-        }
-        face.weight = Weight(font.weight.clamp(1, 1000));
-        face.style = if font.italic {
-            Style::Italic
-        } else {
-            Style::Normal
-        };
-        fonts.db_mut().push_face_info(face);
-    }
-}
-
-fn whitespace_glyph_positions(text: &str, glyphs: &[cosmic_text::LayoutGlyph]) -> Vec<f32> {
-    glyphs
-        .iter()
-        .filter(|glyph| {
-            text.get(glyph.start..glyph.end)
-                .is_some_and(|cluster| cluster.chars().any(char::is_whitespace))
-        })
-        .map(|glyph| glyph.x)
-        .collect()
-}
-
-fn word_spacing_shift(x: f32, spaces: &[f32], spacing: f32) -> f32 {
-    spacing * spaces.iter().filter(|space_x| **space_x < x).count() as f32
-}
-
-fn positioned_glyph(
-    physical_x: i32,
-    physical_y: i32,
-    scale: f32,
-    asset: GlyphAsset,
-) -> PositionedGlyph {
+fn positioned_glyph(scale: f32, raster: RasterizedGlyph) -> PositionedGlyph {
+    let asset = raster.asset;
     PositionedGlyph {
         raster_id: asset.id,
-        x: (physical_x + asset.left) as f32 / scale,
-        y: (physical_y - asset.top) as f32 / scale,
+        x: (raster.origin_x + asset.left) as f32 / scale,
+        y: (raster.origin_y - asset.top) as f32 / scale,
         width: asset.width as f32 / scale,
         height: asset.height as f32 / scale,
         color: asset.color,
     }
+}
+
+fn micros(duration: Duration) -> u64 {
+    duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
 #[cfg(test)]

@@ -86,6 +86,23 @@ Breeze page-ready is recorded after its first owned layout and paint; Chromium u
 and implements substantially more of the web platform. Treat this as a reproducible development
 snapshot, not a universal or feature-equivalent browser claim.
 
+### Renderer text cold-path comparison
+
+Three-run hidden release medians on the Wikipedia earthquake fixture compare the historical GDI
+control, the first renderer-owned COSMIC Text implementation, and the current lean renderer-owned
+pipeline:
+
+| Text backend | Page ready | Non-network | Layout/paint | Working set |
+|---|---:|---:|---:|---:|
+| GDI control | 576.915 ms | 223.193 ms | 105.540 ms | 155.7 MiB |
+| COSMIC Text | 714.472 ms | 321.404 ms | 214.886 ms | 179.668 MiB |
+| Fontique + HarfRust + Swash | 534.731 ms | 226.830 ms | 131.399 ms | 183.672 MiB |
+
+The current path keeps hostile font bytes, advanced shaping, and rasterization inside the
+AppContainer renderer. It recovers page-ready time but not the original GDI memory footprint; the
+full method, scroll results, per-stage profile, and outlier record are in
+[ADR 0003](docs/architecture/0003-lean-renderer-text-pipeline.md).
+
 ## Architecture
 
 The browser retains network and OS authority; each tab's AppContainer renderer owns untrusted page
@@ -113,8 +130,10 @@ The networking boundary and its standards/platform ownership are documented in
 The accepted renderer isolation boundary, threat model, IPC contract, and staged Windows migration
 are documented in
 [ADR 0001](docs/architecture/0001-renderer-process-boundary.md).
-The renderer-owned Rust text stack, font-byte boundary, and measured dependency decision are
-documented in [ADR 0002](docs/architecture/0002-renderer-owned-text-stack.md).
+The renderer-owned font-byte boundary is documented in
+[ADR 0002](docs/architecture/0002-renderer-owned-text-stack.md); its measured lean text pipeline
+supersession is documented in
+[ADR 0003](docs/architecture/0003-lean-renderer-text-pipeline.md).
 Central hostile-input budgets, decoder preflights, renderer termination behavior, and the fuzzing
 contract are documented in [docs/security-and-fuzzing.md](docs/security-and-fuzzing.md).
 

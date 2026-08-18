@@ -49,13 +49,42 @@ fn css_spacing_changes_shaped_geometry() {
 }
 
 #[test]
+fn preserves_contextual_arabic_and_canonical_mark_geometry() {
+    let mut text = RendererTextSystem::new(96);
+    let joined = text.shape("\u{0633}\u{0644}\u{0627}\u{0645}", &spec());
+    let join_blocked = text.shape(
+        "\u{0633}\u{200c}\u{0644}\u{200c}\u{0627}\u{200c}\u{0645}",
+        &spec(),
+    );
+    let joined_rasters = joined
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.raster_id)
+        .collect::<Vec<_>>();
+    let blocked_rasters = join_blocked
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.raster_id)
+        .collect::<Vec<_>>();
+    assert_ne!(
+        joined_rasters, blocked_rasters,
+        "Arabic joining context did not affect selected glyph forms"
+    );
+
+    let composed = text.shape("Caf\u{e9}", &spec());
+    let decomposed = text.shape("Cafe\u{301}", &spec());
+    assert!(
+        (composed.width - decomposed.width).abs() < 0.25,
+        "canonical combining-mark geometry diverged"
+    );
+}
+
+#[test]
 fn registers_bounded_in_memory_font_bytes_under_the_css_family_alias() {
     let mut text = RendererTextSystem::new(96);
-    let face = text.fonts.db().faces().next().expect("system font").id;
     let bytes = text
-        .fonts
-        .db()
-        .with_face_data(face, |data, _| data.to_vec())
+        .catalog
+        .first_system_font_bytes()
         .expect("system font bytes");
     text.register_web_fonts(&[WebFont {
         family: "Breeze Test Alias".into(),
@@ -63,11 +92,7 @@ fn registers_bounded_in_memory_font_bytes_under_the_css_family_alias() {
         italic: false,
         sfnt: bytes,
     }]);
-    assert!(text.fonts.db().faces().any(|face| {
-        face.families
-            .iter()
-            .any(|(family, _)| family == "Breeze Test Alias")
-    }));
+    assert!(text.catalog.contains_family("Breeze Test Alias"));
     let mut aliased = spec();
     aliased.family = "Breeze Test Alias".into();
     aliased.weight = 600;

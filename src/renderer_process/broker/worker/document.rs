@@ -89,7 +89,8 @@ impl Broker {
                 document,
                 revision,
                 total_length,
-            } => self.begin_presentation(document, revision, total_length)?,
+                encode_micros,
+            } => self.begin_presentation(document, revision, total_length, encode_micros)?,
             RendererMessage::PresentationChunk(chunk) => self
                 .incoming_presentation
                 .as_mut()
@@ -221,6 +222,7 @@ impl Broker {
         document: DocumentId,
         revision: u64,
         total_length: u32,
+        encode_micros: u64,
     ) -> Result<(), ProtocolError> {
         if self.incoming_presentation.is_some() || revision == 0 {
             return Err(ProtocolError::InvalidPayload("nested presentation"));
@@ -228,6 +230,7 @@ impl Broker {
         self.incoming_presentation = Some(IncomingPresentation {
             document,
             revision,
+            encode_micros,
             body: TransferAssembler::new(
                 revision,
                 total_length as usize,
@@ -251,7 +254,14 @@ impl Broker {
         if incoming.document != document || incoming.revision != revision {
             return Err(ProtocolError::InvalidPayload("presentation identity"));
         }
-        let presentation = RendererPresentation::decode(&incoming.body.finish(revision)?)?;
+        let decode_started = std::time::Instant::now();
+        let mut presentation = RendererPresentation::decode(&incoming.body.finish(revision)?)?;
+        presentation.load.presentation_encode_micros = incoming.encode_micros;
+        presentation.load.presentation_decode_micros = decode_started
+            .elapsed()
+            .as_micros()
+            .min(u128::from(u64::MAX))
+            as u64;
         if presentation.document != document || presentation.revision != revision {
             return Err(ProtocolError::InvalidPayload(
                 "presentation archive identity",
@@ -281,5 +291,6 @@ struct IncomingFetchRequest {
 pub(super) struct IncomingPresentation {
     document: DocumentId,
     revision: u64,
+    encode_micros: u64,
     body: TransferAssembler,
 }

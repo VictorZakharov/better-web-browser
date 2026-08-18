@@ -159,6 +159,7 @@ pub enum RendererMessage {
         document: DocumentId,
         revision: u64,
         total_length: u32,
+        encode_micros: u64,
     },
     PresentationChunk(TransferChunk),
     PresentationEnd {
