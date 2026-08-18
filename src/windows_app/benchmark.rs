@@ -32,6 +32,10 @@ pub(super) struct BenchmarkRun {
     pub(super) layout_tree_time: Duration,
     pub(super) layout_finalize_time: Duration,
     pub(super) text_measure_count: usize,
+    pub(super) text_shape_cache_hits: usize,
+    pub(super) text_shape_cache_misses: usize,
+    pub(super) text_shape_cache_flushes: usize,
+    pub(super) text_shape_cache_entries: usize,
     pub(super) paint_time: Duration,
     pub(super) status: u32,
     pub(super) bytes: u64,
@@ -57,6 +61,7 @@ pub(super) struct BenchmarkRun {
     pub(super) screenshot: Option<PathBuf>,
     pub(super) scroll_samples: usize,
     pub(super) early_scroll: Option<EarlyScrollTrace>,
+    pub(super) scroll_surface: Option<benchmark_capture::OffscreenSurface>,
     pub(super) activity: BenchmarkActivity,
     pub(super) diagnostic_selectors: Vec<String>,
     pub(super) window_width_dip: i32,
@@ -68,16 +73,27 @@ impl BrowserState {
         if self
             .benchmark
             .as_ref()
-            .is_some_and(|benchmark| benchmark.early_scroll.is_some())
+            .is_some_and(|benchmark| benchmark.finish_scheduled)
         {
+            return;
+        }
+        let traces_early_scroll = self
+            .benchmark
+            .as_ref()
+            .is_some_and(|benchmark| benchmark.early_scroll.is_some());
+        if traces_early_scroll {
             self.note_scroll_activity();
+            if let Err(error) = self.prepare_benchmark_scroll_surface()
+                && let Some(benchmark) = self.benchmark.as_mut()
+            {
+                benchmark
+                    .error
+                    .get_or_insert_with(|| format!("prepare retained scroll surface: {error}"));
+            }
         }
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
-        if benchmark.finish_scheduled {
-            return;
-        }
         benchmark.finish_scheduled = true;
         if let Some(trace) = benchmark.early_scroll.as_mut() {
             trace.schedule(self.window, benchmark.settle, benchmark.activity);
@@ -117,6 +133,13 @@ impl BrowserState {
                 ScrollPaintMetrics::default()
             }
         };
+        if let Some(surface) = self
+            .benchmark
+            .as_mut()
+            .and_then(|benchmark| benchmark.scroll_surface.take())
+        {
+            drop(surface);
+        }
         let Some(benchmark) = self.benchmark.as_ref() else {
             return;
         };
@@ -255,6 +278,10 @@ impl BrowserState {
                 "  \"layout_tree_ms\": {:.3},\n",
                 "  \"layout_finalize_ms\": {:.3},\n",
                 "  \"text_measure_count\": {},\n",
+                "  \"text_shape_cache_hits\": {},\n",
+                "  \"text_shape_cache_misses\": {},\n",
+                "  \"text_shape_cache_flushes\": {},\n",
+                "  \"text_shape_cache_entries\": {},\n",
                 "  \"paint_ms\": {:.3},\n",
                 "  \"scroll_paint_samples\": {},\n",
                 "  \"average_scroll_paint_ms\": {:.3},\n",
@@ -318,6 +345,10 @@ impl BrowserState {
             benchmark.layout_tree_time.as_secs_f64() * 1_000.0,
             benchmark.layout_finalize_time.as_secs_f64() * 1_000.0,
             benchmark.text_measure_count,
+            benchmark.text_shape_cache_hits,
+            benchmark.text_shape_cache_misses,
+            benchmark.text_shape_cache_flushes,
+            benchmark.text_shape_cache_entries,
             benchmark.paint_time.as_secs_f64() * 1_000.0,
             scroll_paint.samples,
             scroll_paint.average.as_secs_f64() * 1_000.0,

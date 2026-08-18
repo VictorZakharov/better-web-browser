@@ -1,7 +1,11 @@
-//! Native fonts, web-font registrations, decoded-image bitmaps, and GDI measurement.
+//! Native UI fonts, decoded-image/glyph bitmaps, and trusted local-layout measurement.
+
+mod glyphs;
 
 use super::paint_primitives::bitmap_info;
 use super::*;
+
+pub(super) use glyphs::GlyphBitmaps;
 
 #[derive(Clone, Copy)]
 pub(super) enum FontKind {

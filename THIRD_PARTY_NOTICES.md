@@ -14,6 +14,18 @@ The upstream license texts are preserved in
 [vendor/boa_engine/LICENSE-MIT](vendor/boa_engine/LICENSE-MIT) and
 [vendor/boa_engine/LICENSE-UNLICENSE](vendor/boa_engine/LICENSE-UNLICENSE).
 
+## COSMIC Text
+
+The release binary links the `cosmic-text` 0.19 text-layout and rasterization crate resolved
+through Cargo.
+
+- Upstream project: <https://github.com/pop-os/cosmic-text>
+- License: MIT OR Apache-2.0, at the recipient's option
+- Integration: renderer-only font discovery, shaping, fallback, and glyph rasterization
+
+The crate is not vendored. Its exact version and transitive dependency graph are recorded in
+`Cargo.lock`; the upstream MIT and Apache-2.0 license texts are distributed with the crate.
+
 ## Web Platform Tests parser fixtures
 
 The curated tree-construction fixtures under `tests/html-parser/fixtures` include selected,

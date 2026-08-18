@@ -9,7 +9,7 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
-use better_web_browser::renderer_protocol::DocumentId;
+use better_web_browser::renderer_protocol::{DocumentId, PresentedGlyphRaster};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
@@ -25,6 +25,9 @@ pub(super) struct BrowserTab {
     pub(super) dynamic_fonts: DynamicFonts,
     pub(super) image_bitmaps: ImageBitmaps,
     pub(super) presented_images: HashMap<String, DecodedImage>,
+    pub(super) glyph_bitmaps: GlyphBitmaps,
+    pub(super) presented_glyphs: HashMap<u32, PresentedGlyphRaster>,
+    pub(super) glyph_epoch: u64,
     pub(super) page: Page,
     pub(super) last_scroll_activity: Option<Instant>,
     pub(super) document: Option<Document>,
@@ -76,6 +79,9 @@ impl BrowserTab {
             dynamic_fonts: DynamicFonts::default(),
             image_bitmaps: ImageBitmaps::default(),
             presented_images: HashMap::new(),
+            glyph_bitmaps: GlyphBitmaps::default(),
+            presented_glyphs: HashMap::new(),
+            glyph_epoch: 0,
             page,
             last_scroll_activity: None,
             document: Some(document),

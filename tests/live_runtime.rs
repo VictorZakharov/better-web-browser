@@ -259,7 +259,9 @@ fn navigation_discards_a_stale_async_script_completion() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/stale-async");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 1250);
+    // The navigation timer is scheduled for 1,600 ms of renderer event-loop time. Keep the
+    // observation window beyond that contract instead of relying on incidental startup delay.
+    let mut child = hidden_benchmark(&url, &artifacts, 1900);
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()

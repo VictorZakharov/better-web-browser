@@ -6,7 +6,7 @@ mod text;
 mod workers;
 
 use self::resources::fetch_script_source;
-use self::text::RendererTextSystem;
+pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
 use super::connection::ChildConnection;
 use crate::engine::invalidation::RenderInvalidation;
@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 pub(super) enum LoadResult {
     Ready(Box<DocumentRuntime>, Box<RendererPresentation>),
-    Navigate(String),
+    Navigate(String, Box<RendererTextSystem>),
 }
 
 pub(super) struct DocumentRuntime {
@@ -52,6 +52,7 @@ impl DocumentRuntime {
         start: DocumentStart,
         body: Vec<u8>,
         connection: &mut ChildConnection,
+        mut text: RendererTextSystem,
     ) -> Result<LoadResult, String> {
         let parse_started = Instant::now();
         let decoded = crate::winhttp::decode_document(
@@ -64,9 +65,10 @@ impl DocumentRuntime {
         page.character_set = decoded.encoding.to_string();
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
-            return Ok(LoadResult::Navigate(url));
+            return Ok(LoadResult::Navigate(url, Box::new(text)));
         }
 
+        text.set_dpi(start.viewport.dpi);
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -74,7 +76,7 @@ impl DocumentRuntime {
             reader,
             script_runtime: None,
             viewport: start.viewport,
-            text: RendererTextSystem::new(start.viewport.dpi)?,
+            text,
             layout: Default::default(),
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
@@ -123,6 +125,10 @@ impl DocumentRuntime {
             style_micros: micros(style_time),
             layout_micros: micros(layout_time),
             text_measure_count: runtime.text.measure_calls as u64,
+            text_shape_cache_hits: runtime.text.shape_cache_hits as u64,
+            text_shape_cache_misses: runtime.text.shape_cache_misses as u64,
+            text_shape_cache_flushes: runtime.text.shape_cache_flushes as u64,
+            text_shape_cache_entries: runtime.text.shape_cache_entries() as u64,
         };
         let presentation = runtime.presentation(outcome, style, report)?;
         Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
@@ -130,6 +136,11 @@ impl DocumentRuntime {
 
     pub(super) fn id(&self) -> DocumentId {
         self.id
+    }
+
+    pub(super) fn into_text(mut self) -> RendererTextSystem {
+        self.text.reset_for_navigation();
+        self.text
     }
 
     pub(super) fn next_timer_micros(&mut self) -> Option<u64> {
@@ -247,6 +258,10 @@ impl DocumentRuntime {
         let load = PageLoadReport {
             layout_micros: micros(layout_started.elapsed()),
             text_measure_count: self.text.measure_calls as u64,
+            text_shape_cache_hits: self.text.shape_cache_hits as u64,
+            text_shape_cache_misses: self.text.shape_cache_misses as u64,
+            text_shape_cache_flushes: self.text.shape_cache_flushes as u64,
+            text_shape_cache_entries: self.text.shape_cache_entries() as u64,
             ..PageLoadReport::default()
         };
         self.presentation(outcome, style, load).map(Some)
@@ -267,6 +282,10 @@ impl DocumentRuntime {
             PageLoadReport {
                 layout_micros: micros(started.elapsed()),
                 text_measure_count: self.text.measure_calls as u64,
+                text_shape_cache_hits: self.text.shape_cache_hits as u64,
+                text_shape_cache_misses: self.text.shape_cache_misses as u64,
+                text_shape_cache_flushes: self.text.shape_cache_flushes as u64,
+                text_shape_cache_entries: self.text.shape_cache_entries() as u64,
                 ..PageLoadReport::default()
             },
         )
@@ -274,6 +293,9 @@ impl DocumentRuntime {
 
     fn rebuild_layout(&mut self) {
         self.text.measure_calls = 0;
+        self.text.shape_cache_hits = 0;
+        self.text.shape_cache_misses = 0;
+        self.text.shape_cache_flushes = 0;
         self.layout = layout_page_with_style_viewport(
             &self.page,
             self.viewport.width,
@@ -303,6 +325,8 @@ impl DocumentRuntime {
             }
         }
         let next_timer_micros = self.next_timer_micros();
+        let glyph_epoch = self.text.glyph_epoch();
+        let glyphs = self.text.take_pending_glyphs();
         Ok(RendererPresentation {
             document: self.id,
             revision: self.revision,
@@ -313,6 +337,8 @@ impl DocumentRuntime {
             reader: self.reader.clone(),
             layout: PresentedLayout::from_layout(self.layout.clone()),
             images,
+            glyph_epoch,
+            glyphs,
             runtime: runtime_report(outcome, self.script_runtime.is_some()),
             style: style_report(style),
             load,

@@ -103,14 +103,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 } else {
                     text.as_str()
                 };
-                let (width, measured_height) = self.measurer.measure(text, font);
+                let shaped = self.measurer.shape(text, font);
                 MeasuredAtom {
                     atom,
                     text: Some(text),
-                    width,
-                    height: line_height.max(measured_height),
+                    width: shaped.width,
+                    height: line_height.max(shaped.height),
                     no_wrap: *no_wrap,
                     break_before,
+                    raster_run_id: shaped.raster_run_id,
+                    glyphs: shaped.glyphs,
                 }
             }
             InlineAtom::Image { width, height, .. }
@@ -122,6 +124,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 height: *height,
                 no_wrap: false,
                 break_before: false,
+                raster_run_id: 0,
+                glyphs: Vec::new(),
             },
             InlineAtom::InlineBox { children, style } => {
                 let metrics = self.measure_inline_box(atom, children, style);
@@ -132,6 +136,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: metrics.total_height(),
                     no_wrap: style.white_space == WhiteSpace::NoWrap,
                     break_before: false,
+                    raster_run_id: 0,
+                    glyphs: Vec::new(),
                 }
             }
             InlineAtom::Break => unreachable!(),

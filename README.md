@@ -27,7 +27,7 @@ Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
-- External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and webfonts
+- External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, storage, and cookies
 - JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls, buttons, and GET forms
@@ -100,11 +100,11 @@ Browser:  URL/history -> Fetch policy -> WinHTTP -> response bytes
 Renderer: charset decode -> HTML5 DOM -> JavaScript/DOM mutation
                                   |-> brokered Fetch intents
                                   |-> CSS and resource decode
-                                  `-> layout -> immutable presentation
-                                                        |
-                                                validated typed IPC
-                                                        v
-Browser:                                      Win32/GDI paint and native controls
+                                  `-> layout -> text shape/raster -> immutable presentation
+                                                                       |
+                                                               validated typed IPC
+                                                                       v
+Browser:                            validated pixel composition and native controls
 ```
 
 The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
@@ -113,6 +113,8 @@ The networking boundary and its standards/platform ownership are documented in
 The accepted renderer isolation boundary, threat model, IPC contract, and staged Windows migration
 are documented in
 [ADR 0001](docs/architecture/0001-renderer-process-boundary.md).
+The renderer-owned Rust text stack, font-byte boundary, and measured dependency decision are
+documented in [ADR 0002](docs/architecture/0002-renderer-owned-text-stack.md).
 Central hostile-input budgets, decoder preflights, renderer termination behavior, and the fuzzing
 contract are documented in [docs/security-and-fuzzing.md](docs/security-and-fuzzing.md).
 
@@ -123,15 +125,15 @@ cargo test --all-targets
 cargo build --release
 ./scripts/run-fuzz-smoke.ps1
 
-.\target\release\better-web-browser.exe `
-  --benchmark https://example.org/ `
-  --output result.json `
-  --screenshot result.png `
-  --scroll-samples 12 `
-  --window-width 1920 `
-  --window-height 1080 `
-  --diagnostic-selector '#main' `
-  --settle-ms 2000
+.\scripts\run-hidden-benchmark.ps1 `
+  -Url https://example.org/ `
+  -Output result.json `
+  -Screenshot result.png `
+  -ScrollSamples 12 `
+  -WindowWidth 1920 `
+  -WindowHeight 1080 `
+  -DiagnosticSelector '#main' `
+  -SettleMs 2000
 ```
 
 Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
@@ -194,7 +196,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Script scheduling | External classic `async` scripts execute on arrival without delaying page-ready. Their fetch starts after first paint instead of overlapping HTML parsing, and `defer` is not yet scheduled separately. |
-| ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfont loading and layout metrics are supported. Final browser-side text painting can fall back to an installed font because renderer-loaded webfont bytes are not yet part of the immutable presentation. JavaScript-created `Image` objects currently report asynchronous load errors because their fetch/decode path is not connected. |
+| ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported. Control styling is approximate, broader form behavior is incomplete, and document text selection is not implemented. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
 | ☐ | Canvas, media, and downloads | Canvas rendering, audio/video playback, and downloads are not implemented. |

@@ -49,7 +49,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         font: font.clone(),
                         color: *color,
                         link: link.clone(),
+                        raster_run_id: measured.raster_run_id,
+                        glyphs: measured.glyphs.clone(),
                     });
+                    if font.underline {
+                        let thickness = (font.size / 14.0).clamp(1.0, 3.0);
+                        self.output.items.push(DisplayItem::SolidRect {
+                            rect: RectF {
+                                x,
+                                y: atom_y + measured.height - thickness,
+                                width: measured.width,
+                                height: thickness,
+                            },
+                            color: *color,
+                            radius: 0.0,
+                        });
+                    }
                 }
             }
             InlineAtom::Image {

@@ -129,9 +129,13 @@ mod tests {
                 weight: 400,
                 italic: false,
                 underline: false,
+                letter_spacing: 0.0,
+                word_spacing: 0.0,
             },
             color: Color::BLACK,
             link: None,
+            raster_run_id: 0,
+            glyphs: Default::default(),
         }
     }
 

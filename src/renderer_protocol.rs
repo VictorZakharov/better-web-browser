@@ -22,14 +22,14 @@ pub use message::{
     RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
-    PageLoadReport, PresentedImage, PresentedLayout, RendererPresentation, RuntimeReport,
-    StyleReport,
+    PageLoadReport, PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
+    RuntimeReport, StyleReport,
 };
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 1;
-pub const PROTOCOL_MINOR: u16 = 2;
+pub const PROTOCOL_MINOR: u16 = 4;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

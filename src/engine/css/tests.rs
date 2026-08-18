@@ -62,6 +62,30 @@ fn resolves_author_relative_font_sizes_against_the_parent() {
 }
 
 #[test]
+fn computes_inherited_css_text_spacing_in_pixels() {
+    let dom = dom::parse(
+        r#"<style>
+            body { font-size: 20px; letter-spacing: 0.1em; word-spacing: 3px }
+            p { word-spacing: normal }
+        </style><body><span>inherited</span><p>reset</p></body>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    let span = dom.elements_named("span").next().unwrap();
+    let paragraph = dom.elements_named("p").next().unwrap();
+    assert_eq!(styles.get(&span).letter_spacing, 2.0);
+    assert_eq!(styles.get(&span).word_spacing, 3.0);
+    assert_eq!(styles.get(&paragraph).letter_spacing, 2.0);
+    assert_eq!(styles.get(&paragraph).word_spacing, 0.0);
+    assert_eq!(
+        resolved_property_value(styles.get(&span), "letter-spacing").as_deref(),
+        Some("2px")
+    );
+    assert!(super::supports::supports_matches(
+        "@supports (word-spacing: 0.25em)"
+    ));
+}
+
+#[test]
 fn resolves_background_images_against_the_stylesheet_url() {
     let dom = dom::parse(r#"<a class="logo"></a>"#);
     let stylesheets = vec![(

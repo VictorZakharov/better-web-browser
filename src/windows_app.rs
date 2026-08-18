@@ -52,7 +52,9 @@ use performance_monitor::{PerformanceActivity, TabPerformance};
 use platform::*;
 use process_metrics::{process_cpu_ticks, process_memory};
 use reader_layout::layout_document;
-use rendering_resources::{DynamicFonts, FontKind, Fonts, GdiTextMeasurer, ImageBitmaps};
+use rendering_resources::{
+    DynamicFonts, FontKind, Fonts, GdiTextMeasurer, GlyphBitmaps, ImageBitmaps,
+};
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;

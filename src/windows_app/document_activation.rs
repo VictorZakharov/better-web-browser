@@ -174,6 +174,23 @@ impl BrowserState {
         for image in std::mem::take(&mut presentation.images) {
             self.presented_images.insert(image.url, image.image);
         }
+        if first_presentation || self.glyph_epoch != presentation.glyph_epoch {
+            self.glyph_epoch = presentation.glyph_epoch;
+            self.presented_glyphs.clear();
+            self.glyph_bitmaps.clear();
+        }
+        if presentation
+            .glyphs
+            .iter()
+            .any(|glyph| self.presented_glyphs.contains_key(&glyph.id))
+        {
+            // Resource IDs are immutable within an epoch. A redefinition is contained by
+            // dropping every surface derived from the old pixels before accepting the new batch.
+            self.glyph_bitmaps.clear();
+        }
+        for glyph in std::mem::take(&mut presentation.glyphs) {
+            self.presented_glyphs.insert(glyph.id, glyph);
+        }
         self.image_bitmaps.clear();
         self.reader_url.clone_from(&presentation.final_url);
         self.surface = Surface::Page;
@@ -265,6 +282,16 @@ impl BrowserState {
         benchmark.text_measure_count = benchmark
             .text_measure_count
             .saturating_add(presentation.load.text_measure_count as usize);
+        benchmark.text_shape_cache_hits = benchmark
+            .text_shape_cache_hits
+            .saturating_add(presentation.load.text_shape_cache_hits as usize);
+        benchmark.text_shape_cache_misses = benchmark
+            .text_shape_cache_misses
+            .saturating_add(presentation.load.text_shape_cache_misses as usize);
+        benchmark.text_shape_cache_flushes = benchmark
+            .text_shape_cache_flushes
+            .saturating_add(presentation.load.text_shape_cache_flushes as usize);
+        benchmark.text_shape_cache_entries = presentation.load.text_shape_cache_entries as usize;
         benchmark.script_executed = benchmark
             .script_executed
             .saturating_add(presentation.runtime.scripts_executed as usize);

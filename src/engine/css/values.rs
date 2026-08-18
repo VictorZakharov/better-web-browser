@@ -267,6 +267,8 @@ pub struct ComputedStyle {
     pub font_weight: u16,
     pub italic: bool,
     pub font_family: String,
+    pub letter_spacing: f32,
+    pub word_spacing: f32,
     pub line_height: f32,
     pub text_align: TextAlign,
     pub white_space: WhiteSpace,
@@ -332,6 +334,8 @@ impl ComputedStyle {
             font_weight: 400,
             italic: false,
             font_family: "Arial".to_string(),
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
             line_height: 19.2,
             text_align: TextAlign::Start,
             white_space: WhiteSpace::Normal,
@@ -387,6 +391,8 @@ impl ComputedStyle {
             style.font_weight = parent.font_weight;
             style.italic = parent.italic;
             style.font_family.clone_from(&parent.font_family);
+            style.letter_spacing = parent.letter_spacing;
+            style.word_spacing = parent.word_spacing;
             style.line_height = parent.line_height;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;

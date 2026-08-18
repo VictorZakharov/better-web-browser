@@ -59,6 +59,8 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 | "color"
                 | "font-family"
                 | "font-size"
+                | "letter-spacing"
+                | "word-spacing"
                 | "line-height"
                 | "max-width"
                 | "width"
@@ -147,6 +149,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         }
         "font-style" => matches!(value.as_str(), "normal" | "italic" | "oblique"),
         "font-family" => !first_font_family(&value).is_empty(),
+        "letter-spacing" | "word-spacing" => parse_text_spacing(&value, 16.0).is_some(),
         "line-height" => parse_line_height(&value, 16.0).is_some(),
         "text-align" => matches!(
             value.as_str(),

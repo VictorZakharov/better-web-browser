@@ -11,11 +11,49 @@ pub(super) struct ScrollPaintMetrics {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn prepare_benchmark_scroll_surface(&mut self) -> Result<(), String> {
+        let mut surface = OffscreenSurface::new(self)?;
+        self.paint_surface(surface.dc, &surface.client, &surface.client);
+        surface.scroll_y = Some(self.scroll_y);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.scroll_surface = Some(surface);
+        }
+        Ok(())
+    }
+
     pub(super) unsafe fn paint_benchmark_frame(&mut self) -> Result<Duration, String> {
         let started = Instant::now();
-        {
-            let surface = OffscreenSurface::new(self)?;
+        let mut surface = self
+            .benchmark
+            .as_mut()
+            .and_then(|benchmark| benchmark.scroll_surface.take())
+            .map(Ok)
+            .unwrap_or_else(|| OffscreenSurface::new(self))?;
+        let content = Rect {
+            left: 0,
+            top: self.toolbar_height(),
+            right: surface.client.right,
+            bottom: (surface.client.bottom - self.status_height()).max(self.toolbar_height()),
+        };
+        let dirty = surface
+            .scroll_y
+            .and_then(|previous| scroll_exposed_strip(content, previous - self.scroll_y));
+        if let Some(dirty) = dirty {
+            shift_scroll_pixels(
+                surface.dc,
+                content,
+                previous_scroll_delta(&surface, self.scroll_y),
+            );
+            let saved = SaveDC(surface.dc);
+            IntersectClipRect(surface.dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
+            self.paint_surface(surface.dc, &surface.client, &dirty);
+            RestoreDC(surface.dc, saved);
+        } else {
             self.paint_surface(surface.dc, &surface.client, &surface.client);
+        }
+        surface.scroll_y = Some(self.scroll_y);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.scroll_surface = Some(surface);
         }
         let elapsed = started.elapsed();
         self.record_benchmark_paint(elapsed);
@@ -96,7 +134,7 @@ impl BrowserState {
     }
 }
 
-struct OffscreenSurface {
+pub(super) struct OffscreenSurface {
     window: Hwnd,
     window_dc: Hdc,
     dc: Hdc,
@@ -105,6 +143,7 @@ struct OffscreenSurface {
     pixels: *mut std::ffi::c_void,
     byte_len: usize,
     client: Rect,
+    scroll_y: Option<i32>,
 }
 
 impl OffscreenSurface {
@@ -166,8 +205,50 @@ impl OffscreenSurface {
             pixels,
             byte_len,
             client,
+            scroll_y: None,
         })
     }
+}
+
+fn previous_scroll_delta(surface: &OffscreenSurface, scroll_y: i32) -> i32 {
+    surface.scroll_y.unwrap_or(scroll_y) - scroll_y
+}
+
+fn scroll_exposed_strip(content: Rect, delta: i32) -> Option<Rect> {
+    if delta == 0 || delta.unsigned_abs() >= content.height() as u32 {
+        return None;
+    }
+    if delta < 0 {
+        Some(Rect {
+            top: content.bottom + delta,
+            ..content
+        })
+    } else {
+        Some(Rect {
+            bottom: content.top + delta,
+            ..content
+        })
+    }
+}
+
+unsafe fn shift_scroll_pixels(dc: Hdc, content: Rect, delta: i32) {
+    let height = content.height() - delta.unsigned_abs() as i32;
+    let (destination_top, source_top) = if delta < 0 {
+        (content.top, content.top - delta)
+    } else {
+        (content.top + delta, content.top)
+    };
+    BitBlt(
+        dc,
+        content.left,
+        destination_top,
+        content.width(),
+        height,
+        dc,
+        content.left,
+        source_top,
+        SRCCOPY,
+    );
 }
 
 impl Drop for OffscreenSurface {
@@ -180,5 +261,41 @@ impl Drop for OffscreenSurface {
             DeleteDC(self.dc);
             ReleaseDC(self.window, self.window_dc);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONTENT: Rect = Rect {
+        left: 0,
+        top: 80,
+        right: 1280,
+        bottom: 720,
+    };
+
+    #[test]
+    fn downward_scroll_exposes_the_bottom_strip() {
+        let strip = scroll_exposed_strip(CONTENT, -42).expect("exposed strip");
+        assert_eq!(strip.left, CONTENT.left);
+        assert_eq!(strip.top, 678);
+        assert_eq!(strip.right, CONTENT.right);
+        assert_eq!(strip.bottom, CONTENT.bottom);
+    }
+
+    #[test]
+    fn upward_scroll_exposes_the_top_strip() {
+        let strip = scroll_exposed_strip(CONTENT, 42).expect("exposed strip");
+        assert_eq!(strip.left, CONTENT.left);
+        assert_eq!(strip.top, CONTENT.top);
+        assert_eq!(strip.right, CONTENT.right);
+        assert_eq!(strip.bottom, 122);
+    }
+
+    #[test]
+    fn unchanged_or_full_viewport_scroll_requires_a_full_paint() {
+        assert!(scroll_exposed_strip(CONTENT, 0).is_none());
+        assert!(scroll_exposed_strip(CONTENT, CONTENT.height()).is_none());
     }
 }

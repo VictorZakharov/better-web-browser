@@ -120,10 +120,45 @@ pub(super) unsafe fn paint_alpha_bitmap(
     image: &DecodedImage,
     destination_rect: &Rect,
 ) {
+    paint_alpha_bitmap_size(
+        destination,
+        bitmap,
+        image.width,
+        image.height,
+        destination_rect,
+    );
+}
+
+pub(super) unsafe fn paint_alpha_bitmap_size(
+    destination: Hdc,
+    bitmap: Hbitmap,
+    source_width: u32,
+    source_height: u32,
+    destination_rect: &Rect,
+) {
     let source = CreateCompatibleDC(destination);
     if source.is_null() {
         return;
     }
+    paint_alpha_bitmap_from_dc(
+        destination,
+        source,
+        bitmap,
+        source_width,
+        source_height,
+        destination_rect,
+    );
+    DeleteDC(source);
+}
+
+pub(super) unsafe fn paint_alpha_bitmap_from_dc(
+    destination: Hdc,
+    source: Hdc,
+    bitmap: Hbitmap,
+    source_width: u32,
+    source_height: u32,
+    destination_rect: &Rect,
+) {
     let previous = SelectObject(source, bitmap);
     AlphaBlend(
         destination,
@@ -134,8 +169,8 @@ pub(super) unsafe fn paint_alpha_bitmap(
         source,
         0,
         0,
-        image.width as i32,
-        image.height as i32,
+        source_width as i32,
+        source_height as i32,
         BlendFunction {
             operation: 0,
             flags: 0,
@@ -143,10 +178,11 @@ pub(super) unsafe fn paint_alpha_bitmap(
             alpha_format: 1,
         },
     );
+    // A cached bitmap may be evicted before this reusable DC is used again. Leaving it selected
+    // makes DeleteObject fail and turns bounded cache churn into a GDI-handle leak.
     if !previous.is_null() {
         SelectObject(source, previous);
     }
-    DeleteDC(source);
 }
 
 pub(super) fn intersects(left: &Rect, right: &Rect) -> bool {

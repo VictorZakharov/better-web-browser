@@ -11,6 +11,8 @@ impl ComputedStyle {
             && self.font_weight == other.font_weight
             && self.italic == other.italic
             && self.font_family == other.font_family
+            && self.letter_spacing == other.letter_spacing
+            && self.word_spacing == other.word_spacing
             && self.line_height == other.line_height
             && self.text_align == other.text_align
             && self.white_space == other.white_space

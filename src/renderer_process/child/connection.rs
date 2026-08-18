@@ -1,6 +1,6 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
-use super::document::{DocumentRuntime, LoadResult};
+use super::document::{DocumentRuntime, LoadResult, RendererTextSystem};
 use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
 use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
@@ -23,6 +23,7 @@ pub(super) struct ChildConnection {
     pending: VecDeque<BrowserMessage>,
     incoming_document: Option<IncomingDocument>,
     document: Option<DocumentRuntime>,
+    prepared_text: Option<RendererTextSystem>,
     next_request_id: u64,
     next_batch_id: u64,
 }
@@ -41,6 +42,9 @@ impl ChildConnection {
             pending: VecDeque::new(),
             incoming_document: None,
             document: None,
+            // Font discovery starts immediately after the renderer handshake, while the browser
+            // is still fetching the navigation. This keeps it off the page-ready critical path.
+            prepared_text: Some(RendererTextSystem::new(96)),
             next_request_id: 1,
             next_batch_id: 1,
         }
@@ -146,7 +150,7 @@ impl ChildConnection {
                     .as_ref()
                     .is_some_and(|runtime| runtime.id() == document)
                 {
-                    self.document.take();
+                    self.prepared_text = self.document.take().map(DocumentRuntime::into_text);
                 }
                 Ok(())
             }
@@ -198,18 +202,24 @@ impl ChildConnection {
             .finish(document.get())
             .map_err(|error| error.to_string())?;
         let start = incoming.start;
+        let text = self
+            .prepared_text
+            .take()
+            .unwrap_or_else(|| RendererTextSystem::new(start.viewport.dpi));
         let result = catch_unwind(AssertUnwindSafe(|| {
-            DocumentRuntime::load(start, body, self)
+            DocumentRuntime::load(start, body, self, text)
         }));
         match result {
             Ok(Ok(LoadResult::Ready(runtime, presentation))) => {
                 self.send_presentation(&presentation)?;
                 self.document = Some(*runtime);
             }
-            Ok(Ok(LoadResult::Navigate(url))) => self
-                .writer
-                .send_renderer(&RendererMessage::NavigationRequested { document, url })
-                .map_err(|error| error.to_string())?,
+            Ok(Ok(LoadResult::Navigate(url, text))) => {
+                self.prepared_text = Some(*text);
+                self.writer
+                    .send_renderer(&RendererMessage::NavigationRequested { document, url })
+                    .map_err(|error| error.to_string())?
+            }
             Ok(Err(error)) => self.send_document_failure(document, error)?,
             Err(payload) => self.send_document_failure(document, panic_detail(payload))?,
         }
