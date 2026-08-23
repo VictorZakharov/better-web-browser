@@ -87,6 +87,40 @@ fn renderer_messages_round_trip() {
 }
 
 #[test]
+fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
+    let start = DocumentStart {
+        document: DocumentId::new(11).unwrap(),
+        url: "https://example.test/".into(),
+        status: 200,
+        content_type: "text/html".into(),
+        diagnostic_selectors: vec!["#main".into(), ".content".into()],
+        body_length: 10,
+        viewport: PresentedViewport {
+            width: 800.0,
+            height: 600.0,
+            style_width: 800.0,
+            dpi: 96,
+        },
+    };
+    let message = BrowserMessage::BeginDocument(start.clone());
+    let decoded = FrameReader::new(Cursor::new(encoded_browser(&message)), session())
+        .read_browser()
+        .unwrap();
+    assert_eq!(decoded, message);
+
+    let mut oversized = start;
+    oversized.diagnostic_selectors =
+        vec!["*".into(); crate::limits::MAX_PAGE_DIAGNOSTIC_SELECTORS + 1];
+    let mut writer = FrameWriter::new(Vec::new(), session());
+    assert!(matches!(
+        writer.send_browser(&BrowserMessage::BeginDocument(oversized)),
+        Err(ProtocolError::InvalidPayload(
+            "document diagnostic selectors"
+        ))
+    ));
+}
+
+#[test]
 fn state_and_stream_messages_round_trip() {
     let document = DocumentId::new(11).unwrap();
     let browser = vec![
@@ -271,7 +305,7 @@ fn rejects_non_monotonic_sequence() {
 #[test]
 fn rejects_incompatible_version_and_reserved_flags() {
     let mut version = encoded_browser(&BrowserMessage::Shutdown);
-    version[4..6].copy_from_slice(&2_u16.to_le_bytes());
+    version[4..6].copy_from_slice(&(PROTOCOL_MAJOR + 1).to_le_bytes());
     assert!(matches!(
         FrameReader::new(Cursor::new(version), session()).read_browser(),
         Err(ProtocolError::IncompatibleVersion { .. })

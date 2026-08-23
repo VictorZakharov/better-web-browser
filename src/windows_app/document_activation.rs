@@ -11,9 +11,21 @@ pub(super) struct LoadedPage {
     pub(super) final_url: String,
     pub(super) status: u16,
     pub(super) content_type: String,
-    pub(super) cookie_snapshot: winhttp::CookieSnapshot,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
+}
+
+impl LoadedPage {
+    pub(super) fn home() -> Self {
+        Self {
+            body: HOME_HTML.as_bytes().to_vec(),
+            final_url: HOME_URL.into(),
+            status: 200,
+            content_type: "text/html".into(),
+            bytes: HOME_HTML.len() as u64,
+            network_time: Duration::ZERO,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -85,22 +97,32 @@ impl BrowserState {
             url: page.final_url.clone(),
             status: page.status,
             content_type: page.content_type,
+            diagnostic_selectors: self
+                .benchmark
+                .as_ref()
+                .map(|benchmark| benchmark.diagnostic_selectors.clone())
+                .unwrap_or_default(),
             body_length,
             viewport: self.renderer_viewport(),
         };
         let state = match (
-            self.local_storage.snapshot(&page.final_url),
-            self.session_storage.snapshot(&page.final_url),
+            self.http_client.document_cookie_snapshot(&page.final_url),
+            self.local_storage
+                .snapshot(&page.final_url)
+                .map_err(|error| error.to_string()),
+            self.session_storage
+                .snapshot(&page.final_url)
+                .map_err(|error| error.to_string()),
         ) {
-            (Ok(local_storage), Ok(session_storage)) => DocumentState {
-                cookie_version: page.cookie_snapshot.version,
-                cookie_header: page.cookie_snapshot.header,
+            (Ok(cookie), Ok(local_storage), Ok(session_storage)) => DocumentState {
+                cookie_version: cookie.version,
+                cookie_header: cookie.header,
                 local_storage,
                 session_storage,
             },
-            (Err(error), _) | (_, Err(error)) => {
+            (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
                 self.loading = false;
-                self.set_status(&format!("Could not prepare document storage: {error}"));
+                self.set_status(&format!("Could not prepare document state: {error}"));
                 return;
             }
         };
@@ -175,9 +197,14 @@ impl BrowserState {
         self.destroy_page_controls();
         let previous_layout = std::mem::take(&mut self.page_layout);
         self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
+        self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
         let damage = DisplayListDamage::between(&previous_layout, &self.page_layout);
         let retained_items = self.page_layout.items.clone();
         self.paint_index.rebuild(&retained_items);
+        if !self.processing_background_tab {
+            self.metrics
+                .set_retained_draw_items(self.page_layout.items.len());
+        }
         self.content_height = (self.page_layout.content_height * self.page_scale()).ceil() as i32;
         if first_presentation {
             self.presented_images.clear();

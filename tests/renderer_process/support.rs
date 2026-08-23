@@ -37,14 +37,21 @@ pub(super) fn load_html_document(
     value: u64,
     html: &str,
 ) -> RendererPresentation {
+    load_html_document_with_selectors(session, value, html, Vec::new())
+}
+
+pub(super) fn load_html_document_with_selectors(
+    session: &RendererSession,
+    value: u64,
+    html: &str,
+    diagnostic_selectors: Vec<String>,
+) -> RendererPresentation {
     let document = DocumentId::new(value).unwrap();
     let body = html.as_bytes().to_vec();
+    let mut start = document_start(document, body.len());
+    start.diagnostic_selectors = diagnostic_selectors;
     session
-        .load_document(
-            document_start(document, body.len()),
-            empty_document_state(),
-            body,
-        )
+        .load_document(start, empty_document_state(), body)
         .unwrap();
     loop {
         match session.wait_for_event(Duration::from_secs(3)).unwrap() {
@@ -65,6 +72,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
         url: format!("https://example.test/{}", document.get()),
         status: 200,
         content_type: "text/html; charset=utf-8".into(),
+        diagnostic_selectors: Vec::new(),
         body_length: body_length as u32,
         viewport: PresentedViewport {
             width: 800.0,

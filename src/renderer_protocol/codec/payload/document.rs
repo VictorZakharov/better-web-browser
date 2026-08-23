@@ -235,6 +235,10 @@ fn encode_document_start(
     writer.string(&start.url)?;
     writer.u16(start.status);
     writer.string(&start.content_type)?;
+    writer.u32(start.diagnostic_selectors.len() as u32);
+    for selector in &start.diagnostic_selectors {
+        writer.string(selector)?;
+    }
     writer.u32(start.body_length);
     encode_viewport(writer, start.viewport);
     Ok(())
@@ -246,6 +250,17 @@ fn decode_document_start(reader: &mut WireReader<'_>) -> Result<DocumentStart, P
         url: reader.string(MAX_URL_BYTES)?,
         status: reader.u16()?,
         content_type: reader.string(16 * 1024)?,
+        diagnostic_selectors: {
+            let count = reader.u32()? as usize;
+            if count > crate::limits::MAX_PAGE_DIAGNOSTIC_SELECTORS {
+                return Err(ProtocolError::InvalidPayload(
+                    "document diagnostic selectors",
+                ));
+            }
+            (0..count)
+                .map(|_| reader.string(crate::limits::MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES))
+                .collect::<Result<Vec<_>, _>>()?
+        },
         body_length: reader.u32()?,
         viewport: decode_viewport(reader)?,
     };

@@ -71,6 +71,28 @@ fn app_container_shapes_mixed_scripts_into_validated_glyph_resources() {
 }
 
 #[test]
+fn app_container_collects_requested_dom_and_style_diagnostics() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let presentation = load_html_document_with_selectors(
+        &session,
+        92,
+        r#"<!doctype html><main id="target" class="hero"
+            style="background-color: rgb(1, 2, 3)">isolated diagnostics</main>"#,
+        vec!["#target".into(), "[".into()],
+    );
+    let diagnostics = presentation.page_diagnostics.to_json();
+    assert_eq!(diagnostics[0]["selector"], "#target");
+    assert_eq!(diagnostics[0]["total_matches"], 1);
+    assert_eq!(diagnostics[0]["matches"][0]["tag"], "main");
+    assert_eq!(diagnostics[0]["matches"][0]["id"], "target");
+    assert_eq!(diagnostics[1]["error"], "invalid selector");
+    session.shutdown().expect("shutdown renderer");
+}
+
+#[test]
 fn hidden_contained_renderer_handshakes_pings_and_shuts_down() {
     let _serial = SERIAL
         .lock()

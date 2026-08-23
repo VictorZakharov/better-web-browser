@@ -2,8 +2,9 @@
 
 use super::ProtocolError;
 use crate::limits::{
-    MAX_FETCH_HEADER_NAME_BYTES, MAX_FETCH_HEADER_VALUE_BYTES, MAX_RENDERER_FETCH_HEADERS,
-    MAX_RESPONSE_BODY_BYTES, MAX_URL_BYTES,
+    MAX_FETCH_HEADER_NAME_BYTES, MAX_FETCH_HEADER_VALUE_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES,
+    MAX_PAGE_DIAGNOSTIC_SELECTORS, MAX_RENDERER_FETCH_HEADERS, MAX_RESPONSE_BODY_BYTES,
+    MAX_URL_BYTES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -49,6 +50,7 @@ pub struct DocumentStart {
     pub url: String,
     pub status: u16,
     pub content_type: String,
+    pub diagnostic_selectors: Vec<String>,
     pub body_length: u32,
     pub viewport: PresentedViewport,
 }
@@ -60,6 +62,15 @@ impl DocumentStart {
         }
         if self.content_type.len() > 16 * 1024 {
             return Err(ProtocolError::InvalidPayload("document metadata"));
+        }
+        if self.diagnostic_selectors.len() > MAX_PAGE_DIAGNOSTIC_SELECTORS
+            || self.diagnostic_selectors.iter().any(|selector| {
+                selector.is_empty() || selector.len() > MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES
+            })
+        {
+            return Err(ProtocolError::InvalidPayload(
+                "document diagnostic selectors",
+            ));
         }
         if self.body_length as usize > MAX_RESPONSE_BODY_BYTES {
             return Err(ProtocolError::PayloadTooLarge(self.body_length));

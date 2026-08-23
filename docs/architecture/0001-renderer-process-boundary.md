@@ -471,6 +471,14 @@ presentation construction now run in the renderer. The privileged in-process pag
 and temporary GDI text-measurement bridge have been removed. The browser only validates and
 composites renderer-owned glyph raster output as specified by ADR 0002.
 
+The trusted local home page follows the same document-start IPC path rather than constructing a
+browser-process `Page`. Opt-in benchmark selector diagnostics are sent as a bounded selector list
+on `DocumentStart`, evaluated beside the renderer-owned DOM and computed styles, and returned as a
+size-bounded JSON value inside the validated presentation archive. The browser never retains a DOM
+or CSS style set for diagnostic queries. Reader mode is the narrower exception: extraction happens
+in the renderer, while the browser lays out only the bounded semantic `Document` projection with
+trusted local UI fonts.
+
 ### Stage 5: Make one renderer per top-level context the default
 
 - Route native input, viewport, focus, lifecycle, and presentation through IPC.

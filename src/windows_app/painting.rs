@@ -318,11 +318,7 @@ impl BrowserState {
                                 {
                                     continue;
                                 }
-                                if let Some(image) = tab
-                                    .presented_images
-                                    .get(url)
-                                    .or_else(|| tab.page.images.get(url))
-                                {
+                                if let Some(image) = tab.presented_images.get(url) {
                                     let bitmap = if let Some(color) = tint {
                                         tab.image_bitmaps.get_or_create_tinted(
                                             url,
@@ -368,11 +364,7 @@ impl BrowserState {
                                 {
                                     continue;
                                 }
-                                if let Some(image) = tab
-                                    .presented_images
-                                    .get(url)
-                                    .or_else(|| tab.page.images.get(url))
-                                {
+                                if let Some(image) = tab.presented_images.get(url) {
                                     let bitmap = tab.image_bitmaps.get_or_create(url, image, dc);
                                     if !bitmap.is_null() {
                                         paint_background_image(

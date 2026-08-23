@@ -156,13 +156,7 @@ impl BrowserState {
         GetClientRect(self.window, &mut client);
         let viewport_width = client.right.max(1) as f32 / self.page_scale();
         let viewport_height = self.viewport_height().max(1) as f32 / self.page_scale();
-        let style_viewport_width = if self.media_viewport_width > 0.0 {
-            self.media_viewport_width
-        } else {
-            viewport_width
-        };
-        let diagnostics =
-            diagnostics::collect(self, &benchmark.diagnostic_selectors, style_viewport_width);
+        let diagnostics = self.page_diagnostics.to_json();
         let memory = process_memory();
         let renderer_registry = self
             .renderer_registry

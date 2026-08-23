@@ -11,6 +11,7 @@ review can audit the complete policy without hunting through parsers and platfor
 | HTML source | 8 MiB | Truncate at a UTF-8 boundary and retain an actionable document diagnostic. |
 | DOM | 100,000 nodes; depth 512 | Stop streaming parser input, prune excess post-parse nodes iteratively, and reject script mutations that would exceed the budget. |
 | HTML parse diagnostics | 256 | Retain the first errors and discard further diagnostics. |
+| Benchmark selector diagnostics | 32 selectors, 4 KiB each, 2 MiB output | Evaluate only in the renderer and reject or replace over-budget output. |
 | Rendered text | 2 MiB | Truncate Reader/document text before extending its backing string. |
 | CSS | 2 MiB/source; 20,000 rules; nesting 64; 256 declarations/rule | Truncate source and stop bounded parser loops while retaining valid rules already parsed. |
 | URLs | 16 KiB | Reject navigation addresses and URL resolution before parsing; embedded image data URLs have a separate 8 MiB boundary. |

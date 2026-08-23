@@ -29,7 +29,6 @@ pub(super) struct BrowserTab {
     pub(super) glyph_bitmaps: GlyphBitmaps,
     pub(super) presented_glyphs: HashMap<u32, PresentedGlyphRaster>,
     pub(super) glyph_epoch: u64,
-    pub(super) page: Page,
     pub(super) last_scroll_activity: Option<Instant>,
     pub(super) document: Option<Document>,
     pub(super) reader_url: String,
@@ -57,20 +56,16 @@ pub(super) struct BrowserTab {
     pub(super) renderer_document: Option<DocumentId>,
     pub(super) renderer_revision: u64,
     pub(super) renderer_load_metrics: Option<RendererLoadMetrics>,
+    pub(super) page_diagnostics: better_web_browser::renderer_protocol::PageDiagnostics,
     pub(super) renderer_next_timer: Option<Duration>,
     pub(super) renderer_runtime_clock: Option<Instant>,
     pub(super) renderer_work_pending: bool,
-    pub(super) last_layout_tree_time: Duration,
-    pub(super) last_layout_finalize_time: Duration,
-    pub(super) last_text_measure_count: usize,
     pub(super) layout_dirty: bool,
     pub(super) render_dpi: u32,
 }
 
 impl BrowserTab {
     pub(super) fn new(id: TabId) -> Self {
-        let document = parse_html(HOME_HTML, HOME_URL);
-        let page = Page::parse(HOME_HTML, HOME_URL);
         Self {
             id,
             title: "New Tab".into(),
@@ -84,9 +79,8 @@ impl BrowserTab {
             glyph_bitmaps: GlyphBitmaps::default(),
             presented_glyphs: HashMap::new(),
             glyph_epoch: 0,
-            page,
             last_scroll_activity: None,
-            document: Some(document),
+            document: None,
             reader_url: HOME_URL.into(),
             draw_items: Vec::new(),
             page_layout: LayoutOutput::default(),
@@ -99,7 +93,7 @@ impl BrowserTab {
             history: Vec::new(),
             history_index: 0,
             script_navigation: ScriptNavigationGuard::default(),
-            generation: 0,
+            generation: 1,
             loading: false,
             crashed: false,
             document_fetch: FetchController::new(),
@@ -108,16 +102,14 @@ impl BrowserTab {
             renderer_launch_receiver: None,
             renderer_launch_pending: false,
             renderer_started_once: false,
-            pending_renderer_page: None,
+            pending_renderer_page: Some(LoadedPage::home()),
             renderer_document: None,
             renderer_revision: 0,
             renderer_load_metrics: None,
+            page_diagnostics: Default::default(),
             renderer_next_timer: None,
             renderer_runtime_clock: None,
             renderer_work_pending: false,
-            last_layout_tree_time: Duration::ZERO,
-            last_layout_finalize_time: Duration::ZERO,
-            last_text_measure_count: 0,
             layout_dirty: true,
             render_dpi: DEFAULT_DPI,
         }
@@ -140,6 +132,7 @@ impl BrowserTab {
         self.renderer_document = None;
         self.renderer_revision = 0;
         self.renderer_load_metrics = None;
+        self.page_diagnostics = Default::default();
         self.renderer_next_timer = None;
         self.renderer_runtime_clock = None;
         self.renderer_work_pending = false;
@@ -208,6 +201,20 @@ impl ClosedTab {
 mod tests {
     use super::*;
     use crate::windows_app::tabs::TabCollection;
+
+    #[test]
+    fn new_tabs_queue_home_for_the_renderer_without_a_browser_document() {
+        let mut tab = BrowserTab::new(TabId::first());
+        assert!(tab.document.is_none());
+        assert_eq!(tab.generation, 1);
+        let home = tab
+            .pending_renderer_page
+            .take()
+            .expect("home document is queued for the renderer");
+        assert_eq!(home.final_url, HOME_URL);
+        assert_eq!(home.content_type, "text/html");
+        assert_eq!(home.body, HOME_HTML.as_bytes());
+    }
 
     #[test]
     fn live_document_state_is_independent_between_tabs() {
