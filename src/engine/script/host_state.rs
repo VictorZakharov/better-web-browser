@@ -3,6 +3,9 @@
 use super::*;
 
 mod cookies;
+mod storage;
+
+use crate::storage::{StorageAreaState, StorageMutation};
 
 #[derive(Debug, Clone)]
 pub(super) struct PendingDynamicScript {
@@ -39,8 +42,12 @@ pub(super) struct HostState {
     pub(super) task_mutation_count: usize,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
-    pub(super) cookies: HashMap<String, String>,
+    pub(super) cookie_header: String,
+    pub(super) cookie_version: u64,
     pub(super) cookie_updates: Vec<String>,
+    pub(super) local_storage: StorageAreaState,
+    pub(super) session_storage: StorageAreaState,
+    pub(super) storage_updates: Vec<StorageMutation>,
     pub(super) executed: usize,
     pub(super) diagnostics: Vec<String>,
     pub(super) host_call_profile: super::host_profiling::HostCallProfile,
@@ -91,8 +98,12 @@ impl HostState {
             task_mutation_count: 0,
             console: Vec::new(),
             navigation_url: None,
-            cookies: HashMap::new(),
+            cookie_header: String::new(),
+            cookie_version: 1,
             cookie_updates: Vec::new(),
+            local_storage: StorageAreaState::default(),
+            session_storage: StorageAreaState::default(),
+            storage_updates: Vec::new(),
             executed: 0,
             diagnostics: Vec::new(),
             host_call_profile: super::host_profiling::HostCallProfile::default(),

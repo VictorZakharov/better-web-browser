@@ -1,0 +1,133 @@
+//! Browser command dispatch for one renderer broker.
+
+use super::*;
+
+impl Broker {
+    pub(super) fn process_commands(&mut self) {
+        for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
+            let command = match self.resources().commands.try_recv() {
+                Ok(command) => command,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.begin_shutdown(None);
+                    break;
+                }
+            };
+            match command {
+                BrokerCommand::Ping(reply) => self.send_ping(Some(reply)),
+                BrokerCommand::ProbeRestrictions {
+                    loopback_port,
+                    reply,
+                } => self.probe_restrictions(loopback_port, reply),
+                BrokerCommand::Test(command) => {
+                    if let Err(error) = self.writer().send_browser(&BrowserMessage::Test(command)) {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::LoadDocument { start, state, body } => {
+                    if let Err(error) = self.send_document(start, state, body) {
+                        self.protocol_failure(error);
+                    }
+                }
+                BrokerCommand::UpdateCookieSnapshot(snapshot) => {
+                    if self.active_document == Some(snapshot.document)
+                        && let Err(error) = self.send_cookie_snapshot(snapshot)
+                    {
+                        self.protocol_failure(error);
+                    }
+                }
+                BrokerCommand::UpdateStorageSnapshot {
+                    document,
+                    area,
+                    snapshot,
+                } => {
+                    if self.active_document == Some(document)
+                        && let Err(error) = self.send_storage_snapshot(document, area, snapshot)
+                    {
+                        self.protocol_failure(error);
+                    }
+                }
+                BrokerCommand::AdvanceTime {
+                    document,
+                    elapsed,
+                    max_callbacks,
+                } => self.advance_time(document, elapsed, max_callbacks),
+                BrokerCommand::ViewportChanged { document, viewport } => {
+                    if let Err(error) = self
+                        .writer()
+                        .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::CancelDocument(document) => self.cancel_document(document),
+                BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
+                BrokerCommand::Terminate => {
+                    self.exit_reason = Some(RendererExitReason::Terminated);
+                    self.terminate_job(74);
+                }
+                BrokerCommand::CloseJobForTest(reply) => self.close_job_for_test(reply),
+            }
+        }
+    }
+
+    fn probe_restrictions(
+        &mut self,
+        loopback_port: u16,
+        reply: mpsc::Sender<Result<RestrictionReport, String>>,
+    ) {
+        if self.pending_probe.is_some() {
+            let _ = reply.send(Err("renderer probe already pending".into()));
+        } else if self
+            .writer()
+            .send_browser(&BrowserMessage::Test(TestCommand::ProbeRestrictions {
+                loopback_port,
+            }))
+            .is_ok()
+        {
+            self.pending_probe = Some(reply);
+        } else {
+            let _ = reply.send(Err("send renderer restriction probe".into()));
+        }
+    }
+
+    fn advance_time(&mut self, document: DocumentId, elapsed: Duration, max_callbacks: u32) {
+        let elapsed_micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
+        if let Err(error) = self.writer().send_browser(&BrowserMessage::AdvanceTime {
+            document,
+            elapsed_micros,
+            max_callbacks,
+        }) {
+            self.protocol_failure(error.to_string());
+        }
+    }
+
+    fn cancel_document(&mut self, document: DocumentId) {
+        if self.active_document == Some(document) {
+            self.active_document = None;
+            self.incoming_fetch = None;
+            self.incoming_presentation = None;
+            self.outgoing_fetch.clear();
+        }
+        if let Err(error) = self
+            .writer()
+            .send_browser(&BrowserMessage::CancelDocument(document))
+        {
+            self.protocol_failure(error.to_string());
+        }
+    }
+
+    fn close_job_for_test(&mut self, reply: mpsc::Sender<Result<(), String>>) {
+        if !self.resources().options.test_mode {
+            let _ = reply.send(Err("Job close is restricted to test sessions".into()));
+            return;
+        }
+        self.exit_reason = Some(RendererExitReason::Terminated);
+        let job = self
+            .resources
+            .as_mut()
+            .and_then(|resources| resources.job.take());
+        drop(job);
+        let _ = reply.send(Ok(()));
+    }
+}

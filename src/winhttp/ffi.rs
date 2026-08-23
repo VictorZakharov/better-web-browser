@@ -81,6 +81,7 @@ unsafe extern "system" {
         buffer_length: *mut u32,
         index: *mut u32,
     ) -> i32;
+    pub(super) fn WinHttpQueryDataAvailable(request: HInternet, bytes_available: *mut u32) -> i32;
     pub(super) fn WinHttpReadData(
         request: HInternet,
         buffer: *mut c_void,

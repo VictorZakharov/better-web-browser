@@ -47,6 +47,7 @@ pub(super) fn finish_host(
     state.append_host_call_diagnostics(&mut outcome.diagnostics);
     outcome.navigation_url = state.navigation_url.take();
     outcome.cookie_updates.append(&mut state.cookie_updates);
+    outcome.storage_updates.append(&mut state.storage_updates);
     outcome
         .fetch_actions
         .append(&mut state.pending_fetch_actions);

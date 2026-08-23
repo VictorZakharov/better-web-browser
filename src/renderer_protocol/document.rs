@@ -1,7 +1,10 @@
 //! Pointer-free document, viewport, and brokered-Fetch value types.
 
 use super::ProtocolError;
-use crate::limits::{MAX_RESPONSE_BODY_BYTES, MAX_URL_BYTES};
+use crate::limits::{
+    MAX_FETCH_HEADER_NAME_BYTES, MAX_FETCH_HEADER_VALUE_BYTES, MAX_RENDERER_FETCH_HEADERS,
+    MAX_RESPONSE_BODY_BYTES, MAX_URL_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DocumentId(u64);
@@ -46,7 +49,6 @@ pub struct DocumentStart {
     pub url: String,
     pub status: u16,
     pub content_type: String,
-    pub cookie_header: String,
     pub body_length: u32,
     pub viewport: PresentedViewport,
 }
@@ -56,7 +58,7 @@ impl DocumentStart {
         if self.url.is_empty() || self.url.len() > MAX_URL_BYTES {
             return Err(ProtocolError::InvalidPayload("document URL"));
         }
-        if self.content_type.len() > 16 * 1024 || self.cookie_header.len() > 64 * 1024 {
+        if self.content_type.len() > 16 * 1024 {
             return Err(ProtocolError::InvalidPayload("document metadata"));
         }
         if self.body_length as usize > MAX_RESPONSE_BODY_BYTES {
@@ -112,6 +114,52 @@ impl TransferAssembler {
     pub fn finish(self, transfer_id: u64) -> Result<Vec<u8>, ProtocolError> {
         if transfer_id != self.transfer_id || self.bytes.len() != self.expected {
             return Err(ProtocolError::InvalidPayload("incomplete transfer"));
+        }
+        Ok(self.bytes)
+    }
+}
+
+/// Reassembles an incremental transfer whose final size is declared only at completion.
+pub struct StreamingTransferAssembler {
+    transfer_id: u64,
+    maximum: usize,
+    bytes: Vec<u8>,
+}
+
+impl StreamingTransferAssembler {
+    pub fn new(transfer_id: u64, maximum: usize) -> Result<Self, ProtocolError> {
+        if transfer_id == 0 {
+            return Err(ProtocolError::InvalidPayload("stream transfer declaration"));
+        }
+        Ok(Self {
+            transfer_id,
+            maximum,
+            bytes: Vec::new(),
+        })
+    }
+
+    pub fn push(&mut self, chunk: TransferChunk) -> Result<(), ProtocolError> {
+        if chunk.transfer_id != self.transfer_id || chunk.offset as usize != self.bytes.len() {
+            return Err(ProtocolError::InvalidPayload("stream transfer offset"));
+        }
+        let next = self
+            .bytes
+            .len()
+            .checked_add(chunk.bytes.len())
+            .ok_or(ProtocolError::InvalidPayload("stream transfer length"))?;
+        if next > self.maximum {
+            return Err(ProtocolError::InvalidPayload("stream transfer overflow"));
+        }
+        self.bytes.extend_from_slice(&chunk.bytes);
+        Ok(())
+    }
+
+    pub fn finish(self, transfer_id: u64, total_length: usize) -> Result<Vec<u8>, ProtocolError> {
+        if transfer_id != self.transfer_id
+            || total_length != self.bytes.len()
+            || total_length > self.maximum
+        {
+            return Err(ProtocolError::InvalidPayload("incomplete stream transfer"));
         }
         Ok(self.bytes)
     }
@@ -212,11 +260,11 @@ impl FetchRequestHead {
         if self.method.is_empty() || self.method.len() > 64 {
             return Err(ProtocolError::InvalidPayload("renderer Fetch method"));
         }
-        if self.headers.len() > 256
-            || self
-                .headers
-                .iter()
-                .any(|(name, value)| name.len() > 1024 || value.len() > 16 * 1024)
+        if self.headers.len() > MAX_RENDERER_FETCH_HEADERS
+            || self.headers.iter().any(|(name, value)| {
+                name.len() > MAX_FETCH_HEADER_NAME_BYTES
+                    || value.len() > MAX_FETCH_HEADER_VALUE_BYTES
+            })
         {
             return Err(ProtocolError::InvalidPayload("renderer Fetch headers"));
         }
@@ -229,6 +277,17 @@ impl FetchRequestHead {
             return Err(ProtocolError::InvalidPayload("renderer Fetch referrer"));
         }
         Ok(())
+    }
+
+    pub fn metadata_bytes(&self) -> Option<usize> {
+        let mut total = self.url.len().checked_add(self.method.len())?;
+        if let FetchReferrer::Url(url) = &self.referrer {
+            total = total.checked_add(url.len())?;
+        }
+        for (name, value) in &self.headers {
+            total = total.checked_add(name.len())?.checked_add(value.len())?;
+        }
+        Some(total)
     }
 }
 
@@ -279,7 +338,6 @@ pub enum FetchResponseResult {
         urls: Vec<String>,
         status: u16,
         headers: Vec<(String, String)>,
-        body_length: u32,
     },
     Failure(BrowserFetchError),
 }
@@ -290,13 +348,16 @@ pub struct FetchResponseHead {
     pub result: FetchResponseResult,
 }
 
-impl FetchResponseHead {
-    pub fn body_length(&self) -> usize {
-        match self.result {
-            FetchResponseResult::Success { body_length, .. } => body_length as usize,
-            FetchResponseResult::Failure(_) => 0,
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FetchResponseEnd {
+    pub request_id: u64,
+    pub total_length: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FetchResponseAbort {
+    pub request_id: u64,
+    pub error: BrowserFetchError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

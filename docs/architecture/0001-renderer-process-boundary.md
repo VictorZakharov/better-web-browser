@@ -243,28 +243,34 @@ budget, tests, and review of this ownership table.
 
 ## Initial limits
 
-These are implementation ceilings, not web-standard limits. The browser sends the effective values
-in `Hello`; a renderer may operate below them but cannot raise them. Limits will live in one typed
-`RendererLimits` configuration in Stage 1 and can be tuned only with regression and compatibility
-evidence. Issue [#10](https://github.com/VictorZakharov/better-web-browser/issues/10) will centralize
-the remaining parser and hostile-input budgets.
+These are implementation ceilings, not web-standard limits. The browser sends negotiated frame
+limits in `Hello`; a renderer may operate below them but cannot raise them. The source of truth for
+the process, protocol, state, and parser budgets is `src/limits.rs`. Changes require regression and
+compatibility evidence.
 
 | Resource | Initial ceiling | Enforcement |
 |---|---:|---|
 | IPC control payload | 256 KiB | Reject frame before payload allocation |
 | IPC payload, any kind | 8 MiB | Close session on a larger declared length |
-| Bulk resource/display chunk | 64 KiB | Sender chunks; receiver rejects larger chunks |
-| Unread queued IPC per direction | 32 MiB or 1,024 frames | Stop reads for backpressure, then terminate on sustained overflow |
-| URL field | 64 KiB UTF-8 | Reject request or navigation intent |
-| Serialized HTTP header list | 256 KiB | Fetch failure; renderer cannot override browser-only headers |
-| Active network requests | 256 per document, 512 per renderer | Reject excess requests without starting WinHTTP |
-| Individual response body | 16 MiB | Existing Fetch streaming body limit |
-| Aggregate page-resource bodies | 32 MiB per document | Existing document resource budget |
-| Display-list update | 8 MiB and 250,000 commands | Reject update, keep last valid revision |
+| Navigation/presentation transfer chunk | 1 MiB | Sender chunks; receiver validates offset and declared total |
+| Fetch response chunk | 64 KiB | Producer and consumer reject a larger stream chunk |
+| Queued browser commands | 8 | UI uses nonblocking enqueue; reject overflow |
+| Queued decoded renderer frames | 8 | Pipe reader backpressures until the broker drains |
+| Deferred messages during a renderer Fetch wait | 64 | Reject the renderer session |
+| Queued renderer UI events | 256 total; at most 2 presentations | Overflow terminates only that renderer session |
+| Queued Fetch response chunks | 8 | Full queue backpressures the network worker |
+| URL field | 16 KiB UTF-8 | Reject request or navigation intent |
+| Serialized HTTP headers | 256 entries; 1 KiB names; 16 KiB values | Fetch failure; renderer cannot override browser-only headers |
+| Renderer Fetch requests | 256 per batch; at most 8 transport workers concurrently | Reject excess requests before WinHTTP |
+| Individual request/response body | 16 MiB | Reject or abort the typed stream |
+| Aggregate renderer request bodies | 32 MiB per batch | Reject the batch |
+| Aggregate page resources | 32 MiB per document | Stop admitting additional resources |
+| Immutable presentation archive | 64 MiB | Reject update and retain the last valid revision |
 | Decoded raster asset | 32 million pixels / 128 MiB BGRA | Decode in renderer; transfer in chunks |
-| Native page controls | 4,096 per document | Reject excess descriptions |
-| Frames | 256 per top-level context | Reject creation before assigning `FrameId` |
-| Renderer committed memory | 512 MiB notification, 1 GiB hard Job limit | Shed caches at soft limit; terminate on hard-limit failure |
+| Script-visible cookie snapshot / assignment | 64 KiB / 4 KiB | Reject state message |
+| Cookies | 3,000 total; 180 per domain | Deterministic oldest-cookie eviction |
+| Web Storage | 5 MiB and 1,024 entries per origin | Reject mutation with quota error |
+| Renderer committed memory | 1 GiB hard process and Job limit | Terminate only that renderer |
 | Renderer child processes | Zero | Child-process policy; Job active-process limit is one |
 | Startup handshake | 5 seconds | Terminate child and report launch failure |
 | Cooperative shutdown | 2 seconds | Close/terminate the renderer Job after grace period |
@@ -286,7 +292,8 @@ the browser UI.
 2. Browser Fetch performs redirects, TLS, cookie, credentials, and response-policy work. The
    renderer never sees ambient credentials or a mutable cookie jar.
 3. After accepting a displayable response, the browser allocates `DocumentId`, derives URL/origin,
-   sends `BeginDocument`, and streams bounded body chunks.
+   and transfers the bounded body with `BeginDocument` plus length-declared chunks. Navigation is
+   currently buffered before this transfer; subresource Fetch responses are network-progressive.
 4. Renderer creates the document realm, parses, requests subresources, runs eligible scripts, and
    returns `DocumentReady` plus a display-list revision.
 5. Browser validates that session, context, frame, navigation, and document are still active before
@@ -307,9 +314,9 @@ the browser UI.
 
 At document creation the browser provides the non-`HttpOnly` cookie view and permitted storage
 snapshot needed by synchronous APIs. Renderer mutations are requests, not durable writes. The
-browser applies URL/origin and attribute rules, updates persistent state, then broadcasts a new
-versioned snapshot to affected live documents. An outdated cache version cannot overwrite a newer
-browser value.
+browser applies URL/origin and attribute rules, updates persistent state, then returns a corrected
+versioned snapshot to the requesting active document. An outdated cache version cannot overwrite a
+newer browser value. Cross-document `storage` events remain follow-up compatibility work.
 
 ### Presentation and controls
 
@@ -441,10 +448,14 @@ document identities.
 - Run loopback-only integration tests proving that a renderer cannot bypass origin, credential,
   CORS, redirect, cookie, or response-body policy.
 
-The navigation and Fetch policy, request reconstruction, CORS/redirect/credential enforcement,
-bounded body transfer, cancellation, and cookie snapshot/update path are implemented. Progressive
-network-to-JavaScript streaming and browser-owned persistent storage snapshots remain follow-up
-work.
+Completed on 2026-08-23. Each renderer handshake is bound to a browser-issued
+`BrowsingContextId`. Browser-owned cookies, persistent `localStorage`, tab-scoped
+`sessionStorage`, versioned projections, guarded request reconstruction, response filtering,
+bounded command/event queues, progressive subresource response IPC, backpressure, cancellation,
+and stale-document rejection are implemented and tested. Navigation is still buffered before its
+bounded IPC transfer, and the JavaScript `Response` body is still assembled in the renderer. The
+full decision and remaining boundaries are recorded in
+[ADR 0004](0004-browser-state-and-fetch-broker.md).
 
 ### Stage 4: Move the document engine and decoders
 
@@ -526,6 +537,7 @@ The production renderer boundary is accepted only while these executable invaria
 - [WHATWG HTML: event loops](https://html.spec.whatwg.org/multipage/webappapis.html#event-loops)
 - [WHATWG DOM Standard](https://dom.spec.whatwg.org/)
 - [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/)
+- [RFC 10025: HTTP State Management Mechanism](https://www.rfc-editor.org/rfc/rfc10025.html)
 - [Microsoft: Launch an AppContainer](https://learn.microsoft.com/windows/win32/secauthz/implementing-an-appcontainer)
 - [Microsoft: Job Objects](https://learn.microsoft.com/windows/win32/procthread/job-objects)
 - [Microsoft: `UpdateProcThreadAttribute`](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)

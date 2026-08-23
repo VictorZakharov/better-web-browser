@@ -61,20 +61,6 @@ fn rejects_script_forbidden_headers_during_reconstruction() {
 fn execute_rejects_a_stale_document_identity() {
     let active = DocumentId::new(1).unwrap();
     let stale = DocumentId::new(2).unwrap();
-    let client = winhttp::HttpClient::new().unwrap();
-    let controller = better_web_browser::fetch::FetchController::new();
-    let response = execute(
-        &client,
-        &controller.signal(),
-        active,
-        "https://example.test/page",
-        intent(stale, "https://example.test/data"),
-    );
-    assert!(matches!(
-        response.head.result,
-        FetchResponseResult::Failure(BrowserFetchError {
-            kind: BrowserFetchErrorKind::InvalidRequest,
-            ..
-        })
-    ));
+    let error = validate_document_identity(active, stale).unwrap_err();
+    assert_eq!(error.kind(), FetchErrorKind::InvalidRequest);
 }

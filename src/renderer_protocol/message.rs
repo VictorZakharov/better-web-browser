@@ -1,7 +1,11 @@
 use super::ProtocolError;
 use super::document::{
-    DocumentId, DocumentStart, FetchRequestHead, FetchResponseHead, PresentedViewport,
-    TransferChunk,
+    DocumentId, DocumentStart, FetchRequestHead, FetchResponseAbort, FetchResponseEnd,
+    FetchResponseHead, PresentedViewport, TransferChunk,
+};
+use super::state::{
+    CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
+    StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use std::fmt;
@@ -73,6 +77,21 @@ impl RendererSessionId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BrowsingContextId(u64);
+
+impl BrowsingContextId {
+    pub fn new(value: u64) -> Result<Self, ProtocolError> {
+        (value != 0)
+            .then_some(Self(value))
+            .ok_or(ProtocolError::InvalidPayload("zero browsing context"))
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RendererLimits {
     pub max_control_payload: u32,
     pub max_frame_payload: u32,
@@ -100,6 +119,7 @@ pub struct ContainmentReport {
 pub enum BrowserMessage {
     Hello {
         nonce: Nonce,
+        context: BrowsingContextId,
         limits: RendererLimits,
     },
     Ping(u64),
@@ -108,9 +128,14 @@ pub enum BrowserMessage {
     BeginDocument(DocumentStart),
     DocumentChunk(TransferChunk),
     EndDocument(DocumentId),
+    CookieSnapshot(CookieStateSnapshot),
+    StorageSnapshotStart(StorageSnapshotStart),
+    StorageSnapshotEntry(StorageSnapshotEntry),
+    StorageSnapshotEnd(StorageSnapshotEnd),
     FetchResponseStart(FetchResponseHead),
     FetchResponseChunk(TransferChunk),
-    FetchResponseEnd(u64),
+    FetchResponseEnd(FetchResponseEnd),
+    FetchResponseAbort(FetchResponseAbort),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -139,6 +164,7 @@ pub enum TestCommand {
 pub enum RendererMessage {
     Ready {
         nonce: Nonce,
+        context: BrowsingContextId,
         containment: ContainmentReport,
     },
     Pong(u64),
@@ -178,6 +204,8 @@ pub enum RendererMessage {
         document: DocumentId,
         url: String,
     },
+    CookieMutation(CookieMutation),
+    StorageMutation(StorageMutationRequest),
     Restrictions(RestrictionReport),
 }
 

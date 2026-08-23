@@ -4,6 +4,7 @@ use super::network::ScriptFetchAction;
 use super::workers::ScriptWorkerAction;
 use crate::engine::dom::NodeRef;
 use crate::engine::invalidation::RenderInvalidation;
+use crate::storage::StorageMutation;
 use std::time::Duration;
 
 // Lifecycle dispatch no longer runs timers reentrantly. Six 250 ms slices retain the former
@@ -37,6 +38,7 @@ pub struct ScriptOutcome {
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
     pub cookie_updates: Vec<String>,
+    pub storage_updates: Vec<StorageMutation>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub runtime_stopped: bool,

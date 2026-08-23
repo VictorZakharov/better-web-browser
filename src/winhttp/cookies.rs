@@ -2,17 +2,24 @@
 
 mod date;
 mod parse;
+mod persistence;
+mod store;
 
 use super::client::HttpClient;
 use crate::fetch::{FetchRequest, RequestContext};
+use crate::limits::{MAX_COOKIE_HEADER_BYTES, MAX_COOKIES_PER_DOMAIN};
 use crate::navigation::ParsedUrl;
 use std::net::IpAddr;
 use std::str::FromStr;
-use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-const MAX_COOKIES: usize = 3_000;
-const MAX_COOKIES_PER_DOMAIN: usize = 180;
+pub(in crate::winhttp) use store::CookieStore;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CookieSnapshot {
+    pub version: u64,
+    pub header: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SameSite {
@@ -48,11 +55,8 @@ pub(super) fn parse_cookie(parsed: &ParsedUrl, assignment: &str) -> Option<(Stor
 
 impl HttpClient {
     pub fn set_cookie(&self, document_url: &str, assignment: &str) -> Result<(), String> {
-        let parsed = ParsedUrl::parse(document_url).map_err(|error| error.to_string())?;
-        let Some((cookie, expired)) = parse_cookie(&parsed, assignment) else {
-            return Ok(());
-        };
-        self.store_cookie(cookie, expired, false, is_secure_url(&parsed))
+        self.cookie_store
+            .set_document_cookie(document_url, assignment)
     }
 
     pub(super) fn store_response_cookie(
@@ -60,113 +64,23 @@ impl HttpClient {
         request: &FetchRequest,
         set_cookie: &str,
     ) -> Result<(), String> {
-        let Some(parsed) = request.url.parsed() else {
-            return Ok(());
-        };
-        let Some((cookie, expired)) =
-            parse::parse_cookie_internal(parsed, set_cookie, true, SystemTime::now())
-        else {
-            return Ok(());
-        };
-        if !same_site_allows_setting(&cookie, request) {
-            return Ok(());
-        }
-        self.store_cookie(cookie, expired, true, is_secure_url(parsed))
-    }
-
-    fn store_cookie(
-        &self,
-        mut cookie: StoredCookie,
-        expired: bool,
-        from_http: bool,
-        source_secure: bool,
-    ) -> Result<(), String> {
-        let mut cookies = self
-            .cookies
-            .lock()
-            .map_err(|_| "HTTP cookie jar is unavailable".to_string())?;
-        let now = SystemTime::now();
-        cookies.retain(|stored| !stored.is_expired(now));
-        let same_cookie = |stored: &StoredCookie| {
-            stored.name == cookie.name
-                && stored.domain == cookie.domain
-                && stored.path == cookie.path
-                && stored.host_only == cookie.host_only
-        };
-        if !from_http
-            && cookies
-                .iter()
-                .any(|stored| same_cookie(stored) && stored.http_only)
-        {
-            return Ok(());
-        }
-        if !cookie.secure
-            && !source_secure
-            && cookies.iter().any(|stored| {
-                stored.secure
-                    && stored.name == cookie.name
-                    && (domain_matches(&stored.domain, &cookie.domain)
-                        || domain_matches(&cookie.domain, &stored.domain))
-                    && path_matches(&cookie.path, &stored.path)
-            })
-        {
-            return Ok(());
-        }
-        if let Some(existing) = cookies.iter().find(|stored| same_cookie(stored)) {
-            cookie.creation = existing.creation;
-        } else {
-            cookie.creation = self.next_cookie_creation.fetch_add(1, Ordering::Relaxed);
-        }
-        cookies.retain(|stored| !same_cookie(stored));
-        if expired {
-            return Ok(());
-        }
-        evict_for_domain_limit(&mut cookies, &cookie.domain);
-        if cookies.len() >= MAX_COOKIES {
-            remove_oldest(&mut cookies, |_| true);
-        }
-        cookies.push(cookie);
-        Ok(())
+        self.cookie_store.store_response_cookie(request, set_cookie)
     }
 
     pub(super) fn cookie_header_value(
         &self,
         request: &FetchRequest,
     ) -> Result<Option<String>, String> {
-        let Some(parsed) = request.url.parsed() else {
-            return Ok(None);
-        };
-        let mut cookies = self
-            .cookies
-            .lock()
-            .map_err(|_| "HTTP cookie jar is unavailable".to_string())?;
-        let now = SystemTime::now();
-        cookies.retain(|cookie| !cookie.is_expired(now));
-        let mut matching = cookies
-            .iter()
-            .filter(|cookie| {
-                cookie_matches(cookie, parsed) && same_site_allows_request(cookie, request)
-            })
-            .collect::<Vec<_>>();
-        sort_for_header(&mut matching);
-        let header = cookie_pairs(matching);
-        Ok((!header.is_empty()).then_some(header))
+        self.cookie_store.request_header(request)
     }
 
     pub fn document_cookie_header(&self, document_url: &str) -> Result<String, String> {
-        let parsed = ParsedUrl::parse(document_url).map_err(|error| error.to_string())?;
-        let mut cookies = self
-            .cookies
-            .lock()
-            .map_err(|_| "HTTP cookie jar is unavailable".to_string())?;
-        let now = SystemTime::now();
-        cookies.retain(|cookie| !cookie.is_expired(now));
-        let mut matching = cookies
-            .iter()
-            .filter(|cookie| !cookie.http_only && cookie_matches(cookie, &parsed))
-            .collect::<Vec<_>>();
-        sort_for_header(&mut matching);
-        Ok(cookie_pairs(matching))
+        self.document_cookie_snapshot(document_url)
+            .map(|snapshot| snapshot.header)
+    }
+
+    pub fn document_cookie_snapshot(&self, document_url: &str) -> Result<CookieSnapshot, String> {
+        self.cookie_store.document_snapshot(document_url)
     }
 }
 
@@ -253,17 +167,28 @@ fn sort_for_header(cookies: &mut Vec<&StoredCookie>) {
 }
 
 fn cookie_pairs(cookies: Vec<&StoredCookie>) -> String {
-    cookies
-        .into_iter()
-        .map(|cookie| {
-            if cookie.name.is_empty() {
-                cookie.value.clone()
-            } else {
-                format!("{}={}", cookie.name, cookie.value)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
+    let mut header = String::new();
+    for cookie in cookies {
+        let pair = if cookie.name.is_empty() {
+            cookie.value.clone()
+        } else {
+            format!("{}={}", cookie.name, cookie.value)
+        };
+        let separator = usize::from(!header.is_empty()) * 2;
+        if header
+            .len()
+            .saturating_add(separator)
+            .saturating_add(pair.len())
+            > MAX_COOKIE_HEADER_BYTES
+        {
+            break;
+        }
+        if separator != 0 {
+            header.push_str("; ");
+        }
+        header.push_str(&pair);
+    }
+    header
 }
 
 fn evict_for_domain_limit(cookies: &mut Vec<StoredCookie>, domain: &str) {

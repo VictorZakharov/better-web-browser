@@ -7,6 +7,7 @@ pub mod limits;
 pub mod metrics;
 pub mod navigation;
 pub mod renderer_protocol;
+pub mod storage;
 
 #[cfg(target_os = "windows")]
 pub mod renderer_process;

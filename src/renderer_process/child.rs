@@ -45,7 +45,12 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
     let hello = reader
         .read_browser()
         .map_err(|error| format!("read renderer hello: {error}"))?;
-    let BrowserMessage::Hello { nonce, limits } = hello else {
+    let BrowserMessage::Hello {
+        nonce,
+        context,
+        limits,
+    } = hello
+    else {
         return Err("renderer expected Hello as its first message".into());
     };
     if nonce != options.nonce {
@@ -61,6 +66,7 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
             writer
                 .send_renderer(&RendererMessage::Ready {
                     nonce: Nonce::new([0; 32]),
+                    context,
                     containment: containment_report()?,
                 })
                 .map_err(|error| error.to_string())?;
@@ -92,6 +98,7 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
     writer
         .send_renderer(&RendererMessage::Ready {
             nonce,
+            context,
             containment: containment_report()?,
         })
         .map_err(|error| error.to_string())?;

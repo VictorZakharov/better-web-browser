@@ -1,76 +1,19 @@
 #![cfg(target_os = "windows")]
 
+#[path = "renderer_process/state.rs"]
+mod state;
+#[path = "renderer_process/support.rs"]
+mod support;
+
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{
-    RendererEvent, RendererExitReason, RendererLaunchOptions, RendererSession, RendererState,
-    StartupFault,
+    RendererEvent, RendererExitReason, RendererSession, RendererState, StartupFault,
 };
-use better_web_browser::renderer_protocol::{
-    DocumentId, DocumentStart, PresentedViewport, RendererPresentation, TestCommand,
-};
+use better_web_browser::renderer_protocol::{BrowsingContextId, TestCommand};
 use std::net::TcpListener;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use support::*;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
-
-static SERIAL: Mutex<()> = Mutex::new(());
-
-fn options() -> RendererLaunchOptions {
-    let mut options = RendererLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
-    options.test_mode = true;
-    options.heartbeat_interval = Duration::from_millis(50);
-    options.unresponsive_timeout = Duration::from_secs(2);
-    options.unresponsive_kill_timeout = Duration::from_millis(500);
-    options
-}
-
-fn hung_task_options() -> RendererLaunchOptions {
-    let mut options = options();
-    options.unresponsive_timeout = Duration::from_millis(300);
-    options.unresponsive_kill_timeout = Duration::from_millis(150);
-    options
-}
-
-fn load_inline_document(session: &RendererSession, value: u64) -> RendererPresentation {
-    load_html_document(
-        session,
-        value,
-        "<!doctype html><title>isolated</title><p>renderer owns this document</p>",
-    )
-}
-
-fn load_html_document(session: &RendererSession, value: u64, html: &str) -> RendererPresentation {
-    let document = DocumentId::new(value).unwrap();
-    let body = html.as_bytes().to_vec();
-    session
-        .load_document(
-            DocumentStart {
-                document,
-                url: format!("https://example.test/{value}"),
-                status: 200,
-                content_type: "text/html; charset=utf-8".into(),
-                cookie_header: String::new(),
-                body_length: body.len() as u32,
-                viewport: PresentedViewport {
-                    width: 800.0,
-                    height: 600.0,
-                    style_width: 800.0,
-                    dpi: 96,
-                },
-            },
-            body,
-        )
-        .unwrap();
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::Presentation(presentation) if presentation.document == document => {
-                return *presentation;
-            }
-            RendererEvent::Diagnostic { .. } => {}
-            event => panic!("unexpected renderer event while loading document: {event:?}"),
-        }
-    }
-}
 
 #[test]
 fn app_container_shapes_mixed_scripts_into_validated_glyph_resources() {
@@ -140,12 +83,15 @@ fn hidden_contained_renderer_handshakes_pings_and_shuts_down() {
         drop(warmup);
     }
     let before = process_handle_count();
-    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let mut launch = options();
+    launch.browsing_context = BrowsingContextId::new(77).unwrap();
+    let mut session = RendererSession::launch(launch).expect("launch renderer");
     session.ping(Duration::from_secs(1)).expect("renderer pong");
     let snapshot = session.snapshot();
     assert_eq!(snapshot.state, RendererState::Running);
     assert_ne!(snapshot.process_id, 0);
     assert_ne!(snapshot.session_id, 0);
+    assert_eq!(snapshot.context_id, 77);
     assert!(snapshot.working_set > 0);
     assert!(snapshot.private_memory > 0);
     assert!(snapshot.peak_working_set >= snapshot.working_set);

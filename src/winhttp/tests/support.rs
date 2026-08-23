@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,6 +23,7 @@ pub(super) struct TestResponse {
     body: Vec<u8>,
     chunk_size: usize,
     chunk_delay: Duration,
+    chunk_counter: Option<Arc<AtomicUsize>>,
 }
 
 impl TestResponse {
@@ -34,6 +35,7 @@ impl TestResponse {
             body: body.into(),
             chunk_size: usize::MAX,
             chunk_delay: Duration::ZERO,
+            chunk_counter: None,
         }
     }
 
@@ -45,6 +47,11 @@ impl TestResponse {
     pub fn streamed(mut self, chunk_size: usize, delay: Duration) -> Self {
         self.chunk_size = chunk_size.max(1);
         self.chunk_delay = delay;
+        self
+    }
+
+    pub fn count_chunks(mut self, counter: Arc<AtomicUsize>) -> Self {
+        self.chunk_counter = Some(counter);
         self
     }
 }
@@ -151,6 +158,9 @@ fn serve(
             }
             if stream.write_all(chunk).is_err() {
                 return;
+            }
+            if let Some(counter) = &response.chunk_counter {
+                counter.fetch_add(1, Ordering::Release);
             }
             if !response.chunk_delay.is_zero() {
                 thread::sleep(response.chunk_delay);

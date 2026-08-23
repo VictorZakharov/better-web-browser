@@ -155,6 +155,42 @@ fn dispatch_host_call(
             state.set_cookie(argument_string(args, 1, context)?);
             Ok(JsValue::undefined())
         }
+        "storageLength" => {
+            let area = storage_area(args, 1, context)?;
+            Ok(JsValue::from(state.storage_len(area) as u32))
+        }
+        "storageKey" => {
+            let area = storage_area(args, 1, context)?;
+            let index = argument_id(args, 2) as usize;
+            Ok(state
+                .storage_key(area, index)
+                .map_or_else(JsValue::null, |value| js_string(value.to_string())))
+        }
+        "storageGet" => {
+            let area = storage_area(args, 1, context)?;
+            let key = argument_string(args, 2, context)?;
+            Ok(state
+                .storage_get(area, &key)
+                .map_or_else(JsValue::null, |value| js_string(value.to_string())))
+        }
+        "storageSet" => {
+            let area = storage_area(args, 1, context)?;
+            let key = argument_string(args, 2, context)?;
+            let value = argument_string(args, 3, context)?;
+            state.storage_set(area, key, value).map_err(storage_error)?;
+            Ok(JsValue::undefined())
+        }
+        "storageRemove" => {
+            let area = storage_area(args, 1, context)?;
+            let key = argument_string(args, 2, context)?;
+            state.storage_remove(area, key).map_err(storage_error)?;
+            Ok(JsValue::undefined())
+        }
+        "storageClear" => {
+            let area = storage_area(args, 1, context)?;
+            state.storage_clear(area).map_err(storage_error)?;
+            Ok(JsValue::undefined())
+        }
         "arrayBufferDetach" => {
             let object = args.get(1).and_then(JsValue::as_object).ok_or_else(|| {
                 JsNativeError::typ().with_message("transfer value is not an ArrayBuffer")
@@ -211,4 +247,24 @@ fn dispatch_host_call(
             .with_message(format!("unsupported browser host operation: {operation}"))
             .into()),
     }
+}
+
+fn storage_area(
+    args: &[JsValue],
+    index: usize,
+    context: &mut Context,
+) -> JsResult<crate::storage::StorageAreaKind> {
+    match argument_string(args, index, context)?.as_str() {
+        "local" => Ok(crate::storage::StorageAreaKind::Local),
+        "session" => Ok(crate::storage::StorageAreaKind::Session),
+        _ => Err(JsNativeError::typ()
+            .with_message("invalid Web Storage area")
+            .into()),
+    }
+}
+
+fn storage_error(error: crate::storage::StorageError) -> boa_engine::JsError {
+    JsNativeError::error()
+        .with_message(error.to_string())
+        .into()
 }
