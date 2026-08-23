@@ -118,8 +118,8 @@ impl BrowserState {
                     let final_url = response.final_url().as_str().to_string();
                     let status = response.status;
                     let content_type = response.content_type().unwrap_or_default().to_string();
-                    let cookie_header = client
-                        .document_cookie_header(&final_url)
+                    let cookie_snapshot = client
+                        .document_cookie_snapshot(&final_url)
                         .map_err(|error| error.to_string())?;
                     let body = response.body.into_bytes();
                     metrics.record_success(bytes, 0);
@@ -128,7 +128,7 @@ impl BrowserState {
                         final_url,
                         status,
                         content_type,
-                        cookie_header,
+                        cookie_snapshot,
                         bytes,
                         network_time,
                     })

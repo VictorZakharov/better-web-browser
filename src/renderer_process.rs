@@ -6,8 +6,8 @@ mod launcher;
 mod windows;
 
 pub use broker::{
-    RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason, RendererSession,
-    RendererSnapshot, RendererState,
+    FetchResponseSink, RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason,
+    RendererSession, RendererSnapshot, RendererState,
 };
 pub use launcher::{RendererLaunchOptions, StartupFault};
 

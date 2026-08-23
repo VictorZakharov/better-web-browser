@@ -186,6 +186,34 @@ fn shared_document_abort_stops_outstanding_subresources() {
 }
 
 #[test]
+fn streams_before_completion_and_cancels_between_chunks() {
+    let chunks_sent = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&chunks_sent);
+    let server = LoopbackServer::start(move |_| {
+        TestResponse::new(200, vec![b'x'; 8 * 64 * 1_024])
+            .streamed(64 * 1_024, Duration::from_millis(150))
+            .count_chunks(Arc::clone(&observed))
+    });
+    let controller = FetchController::new();
+    let request = FetchRequest::navigation(&server.url("/stream"))
+        .unwrap()
+        .with_signal(controller.signal());
+    let client = client();
+    let mut response = client.fetch_stream(request).unwrap();
+
+    let first = response.next_chunk().unwrap().unwrap();
+    assert!(!first.is_empty());
+    assert!(
+        chunks_sent.load(Ordering::Acquire) < 8,
+        "the first body read must not wait for the complete response"
+    );
+
+    controller.abort();
+    let error = response.next_chunk().unwrap_err();
+    assert_eq!(error.kind(), FetchErrorKind::Aborted);
+}
+
+#[test]
 fn keeps_http_errors_distinct_from_network_failures() {
     let server = LoopbackServer::start(|_| TestResponse::new(503, b"retry later".to_vec()));
     let client = client();

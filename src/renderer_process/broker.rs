@@ -1,14 +1,20 @@
 //! Browser-side renderer session broker and diagnostics.
 
 mod diagnostics;
+mod events;
+mod session;
+mod stream;
+#[cfg(test)]
+mod tests;
+mod wake;
 mod worker;
 
 use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, wait_for_process};
 use crate::renderer_protocol::{
-    BrowserFetchResponse, BrowserMessage, ContainmentReport, DocumentId, DocumentStart,
-    FrameReader, FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest,
-    RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
+    BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
+    FrameWriter, ProtocolError, RendererFetchRequest, RendererLimits, RendererMessage,
+    RendererPresentation, RendererSessionId, RestrictionReport, StorageMutationRequest,
     TestCommand,
 };
 use std::sync::{Arc, Mutex, mpsc};
@@ -17,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use diagnostics::SharedDiagnostics;
 pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
+pub use stream::FetchResponseSink;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
@@ -29,6 +36,7 @@ pub enum RendererState {
 pub struct RendererSnapshot {
     pub process_id: u32,
     pub session_id: u64,
+    pub context_id: u64,
     pub state: RendererState,
     pub working_set: usize,
     pub private_memory: usize,
@@ -38,6 +46,7 @@ pub struct RendererSnapshot {
     pub uptime: Duration,
     pub last_pong_age: Duration,
     pub exit_reason: Option<RendererExitReason>,
+    pub exit: Option<RendererExit>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,13 +69,17 @@ pub enum RendererEvent {
         document: DocumentId,
         url: String,
     },
+    CookieMutation(CookieMutation),
+    StorageMutation(StorageMutationRequest),
     Unresponsive,
     Exited(RendererExit),
 }
 
 pub struct RendererSession {
-    commands: mpsc::Sender<worker::BrokerCommand>,
-    events: mpsc::Receiver<RendererEvent>,
+    commands: mpsc::SyncSender<worker::BrokerCommand>,
+    fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
+    events: events::EventReceiver,
+    wake: wake::BrokerWake,
     shared: Arc<Mutex<SharedDiagnostics>>,
     worker: Option<JoinHandle<()>>,
     shutdown_timeout: Duration,
@@ -79,12 +92,19 @@ impl RendererSession {
         let nonce = launched.nonce;
         let process_id = launched.process_id;
         let mut writer = FrameWriter::new(launched.browser_output, session);
-        let (incoming, reader_thread) = spawn_reader(launched.browser_input, session)?;
+        let wake = wake::BrokerWake::default();
+        let (incoming, reader_thread) =
+            spawn_reader(launched.browser_input, session, wake.clone())?;
         let limits = RendererLimits {
             heartbeat_millis: duration_millis(options.heartbeat_interval),
             ..RendererLimits::default()
         };
-        if let Err(error) = writer.send_browser(&BrowserMessage::Hello { nonce, limits }) {
+        let context = options.browsing_context;
+        if let Err(error) = writer.send_browser(&BrowserMessage::Hello {
+            nonce,
+            context,
+            limits,
+        }) {
             terminate_startup(&launched.process, &launched.job, reader_thread);
             return Err(format!("send renderer hello: {error}"));
         }
@@ -106,13 +126,16 @@ impl RendererSession {
         };
         let RendererMessage::Ready {
             nonce: echoed_nonce,
+            context: echoed_context,
             containment,
         } = ready
         else {
             terminate_startup(&launched.process, &launched.job, reader_thread);
             return Err("renderer did not send Ready during startup".into());
         };
-        if let Err(error) = validate_ready(nonce, echoed_nonce, containment) {
+        if let Err(error) =
+            validate_ready(nonce, echoed_nonce, context, echoed_context, containment)
+        {
             terminate_startup(&launched.process, &launched.job, reader_thread);
             return Err(error);
         }
@@ -122,16 +145,22 @@ impl RendererSession {
         let shared = Arc::new(Mutex::new(SharedDiagnostics {
             process_id,
             session,
+            context,
             state: RendererState::Running,
             sample,
             started: now,
             last_pong: now,
             exit_reason: None,
+            exit: None,
         }));
-        let (commands_tx, commands_rx) = mpsc::channel();
-        let (events_tx, events_rx) = mpsc::channel();
+        let (commands_tx, commands_rx) =
+            mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
+        let (fetch_stream_tx, fetch_stream_rx) =
+            mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let (events_tx, events_rx) = events::bounded();
         let worker_shared = Arc::clone(&shared);
         let worker_options = options.clone();
+        let worker_wake = wake.clone();
         let handle = std::thread::Builder::new()
             .name("breeze-renderer-broker".into())
             .spawn(move || {
@@ -142,7 +171,9 @@ impl RendererSession {
                     incoming,
                     reader_thread,
                     commands: commands_rx,
+                    fetch_stream: fetch_stream_rx,
                     events: events_tx,
+                    wake: worker_wake,
                     shared: worker_shared,
                     options: worker_options,
                 });
@@ -150,7 +181,9 @@ impl RendererSession {
             .map_err(|error| format!("start renderer broker thread: {error}"))?;
         Ok(Self {
             commands: commands_tx,
+            fetch_stream: fetch_stream_tx,
             events: events_rx,
+            wake,
             shared,
             worker: Some(handle),
             shutdown_timeout: options.shutdown_timeout,
@@ -166,9 +199,7 @@ impl RendererSession {
 
     pub fn ping(&self, timeout: Duration) -> Result<(), String> {
         let (reply, response) = mpsc::channel();
-        self.commands
-            .send(worker::BrokerCommand::Ping(reply))
-            .map_err(|_| "renderer broker has exited".to_string())?;
+        self.send_command(worker::BrokerCommand::Ping(reply))?;
         response
             .recv_timeout(timeout)
             .map_err(|_| "renderer ping timed out".to_string())?
@@ -180,64 +211,17 @@ impl RendererSession {
         timeout: Duration,
     ) -> Result<RestrictionReport, String> {
         let (reply, response) = mpsc::channel();
-        self.commands
-            .send(worker::BrokerCommand::ProbeRestrictions {
-                loopback_port,
-                reply,
-            })
-            .map_err(|_| "renderer broker has exited".to_string())?;
+        self.send_command(worker::BrokerCommand::ProbeRestrictions {
+            loopback_port,
+            reply,
+        })?;
         response
             .recv_timeout(timeout)
             .map_err(|_| "renderer restriction probe timed out".to_string())?
     }
 
     pub fn send_test_command(&self, command: TestCommand) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::Test(command))
-            .map_err(|_| "renderer broker has exited".to_string())
-    }
-
-    pub fn load_document(&self, start: DocumentStart, body: Vec<u8>) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::LoadDocument { start, body })
-            .map_err(|_| "renderer broker has exited".to_string())
-    }
-
-    pub fn complete_fetch_batch(&self, responses: Vec<BrowserFetchResponse>) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::CompleteFetchBatch(responses))
-            .map_err(|_| "renderer broker has exited".to_string())
-    }
-
-    pub fn advance_time(
-        &self,
-        document: DocumentId,
-        elapsed: Duration,
-        max_callbacks: u32,
-    ) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::AdvanceTime {
-                document,
-                elapsed,
-                max_callbacks,
-            })
-            .map_err(|_| "renderer broker has exited".to_string())
-    }
-
-    pub fn update_viewport(
-        &self,
-        document: DocumentId,
-        viewport: PresentedViewport,
-    ) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::ViewportChanged { document, viewport })
-            .map_err(|_| "renderer broker has exited".to_string())
-    }
-
-    pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::CancelDocument(document))
-            .map_err(|_| "renderer broker has exited".to_string())
+        self.send_command(worker::BrokerCommand::Test(command))
     }
 
     pub fn wait_for_event(&self, timeout: Duration) -> Result<RendererEvent, String> {
@@ -257,6 +241,9 @@ impl RendererSession {
     pub fn wait_for_exit(&self, timeout: Duration) -> Result<RendererExit, String> {
         let deadline = Instant::now() + timeout;
         loop {
+            if let Some(exit) = self.snapshot().exit {
+                return Ok(exit);
+            }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Err("renderer exit timed out".into());
@@ -268,9 +255,7 @@ impl RendererSession {
     }
 
     pub fn terminate(&self) -> Result<(), String> {
-        self.commands
-            .send(worker::BrokerCommand::Terminate)
-            .map_err(|_| "renderer broker has exited".to_string())
+        self.send_command(worker::BrokerCommand::Terminate)
     }
 
     /// Requests immediate renderer termination without waiting on the caller's thread.
@@ -278,13 +263,17 @@ impl RendererSession {
     /// Browser UI recovery paths use this instead of `Drop`, whose graceful shutdown wait is
     /// intentionally bounded but can still take several seconds for an unresponsive renderer.
     pub fn terminate_in_background(mut self) {
-        let _ = self.commands.send(worker::BrokerCommand::Terminate);
         let Some(worker) = self.worker.take() else {
             return;
         };
+        let commands = self.commands.clone();
+        let wake = self.wake.clone();
         let _ = std::thread::Builder::new()
             .name("breeze-renderer-reaper".into())
             .spawn(move || {
+                wake.notify();
+                let _ = commands.send(worker::BrokerCommand::Terminate);
+                wake.notify();
                 let _ = worker.join();
             });
     }
@@ -292,9 +281,7 @@ impl RendererSession {
     #[doc(hidden)]
     pub fn close_job_for_test(&self) -> Result<(), String> {
         let (reply, response) = mpsc::channel();
-        self.commands
-            .send(worker::BrokerCommand::CloseJobForTest(reply))
-            .map_err(|_| "renderer broker has exited".to_string())?;
+        self.send_command(worker::BrokerCommand::CloseJobForTest(reply))?;
         response
             .recv_timeout(Duration::from_secs(1))
             .map_err(|_| "renderer Job close timed out".to_string())?
@@ -302,9 +289,7 @@ impl RendererSession {
 
     pub fn shutdown(&mut self) -> Result<RendererExit, String> {
         let (reply, response) = mpsc::channel();
-        self.commands
-            .send(worker::BrokerCommand::Shutdown(reply))
-            .map_err(|_| "renderer broker has exited".to_string())?;
+        self.send_blocking_command(worker::BrokerCommand::Shutdown(reply))?;
         let result = response
             .recv_timeout(self.shutdown_timeout + Duration::from_secs(1))
             .map_err(|_| "renderer shutdown timed out".to_string())?;
@@ -325,12 +310,12 @@ impl Drop for RendererSession {
             return;
         }
         let (reply, response) = mpsc::channel();
-        let _ = self.commands.send(worker::BrokerCommand::Shutdown(reply));
+        let _ = self.send_blocking_command(worker::BrokerCommand::Shutdown(reply));
         if response
             .recv_timeout(self.shutdown_timeout + Duration::from_secs(1))
             .is_err()
         {
-            let _ = self.commands.send(worker::BrokerCommand::Terminate);
+            let _ = self.send_blocking_command(worker::BrokerCommand::Terminate);
         }
         self.join_worker();
     }
@@ -341,8 +326,9 @@ type RendererIncoming = mpsc::Receiver<Result<RendererMessage, ProtocolError>>;
 fn spawn_reader(
     input: std::fs::File,
     session: RendererSessionId,
+    wake: wake::BrokerWake,
 ) -> Result<(RendererIncoming, JoinHandle<()>), String> {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(crate::limits::MAX_QUEUED_RENDERER_IPC_MESSAGES);
     let handle = std::thread::Builder::new()
         .name("breeze-renderer-ipc-read".into())
         .spawn(move || {
@@ -350,7 +336,12 @@ fn spawn_reader(
             loop {
                 let message = reader.read_renderer();
                 let failed = message.is_err();
-                if sender.send(message).is_err() || failed {
+                wake.notify();
+                if sender.send(message).is_err() {
+                    break;
+                }
+                wake.notify();
+                if failed {
                     break;
                 }
             }
@@ -362,10 +353,15 @@ fn spawn_reader(
 fn validate_ready(
     expected: crate::renderer_protocol::Nonce,
     actual: crate::renderer_protocol::Nonce,
+    expected_context: BrowsingContextId,
+    actual_context: BrowsingContextId,
     containment: ContainmentReport,
 ) -> Result<(), String> {
     if expected != actual {
         return Err("renderer returned a stale bootstrap nonce".into());
+    }
+    if expected_context != actual_context {
+        return Err("renderer returned a stale browsing context".into());
     }
     if !containment.app_container {
         return Err("renderer did not start in an AppContainer".into());

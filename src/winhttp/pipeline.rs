@@ -1,83 +1,22 @@
 //! Fetch policy orchestration over the one-hop WinHTTP transport.
 
-use super::client::{HttpClient, TransportRequest, TransportResponse};
+mod stream;
+
+use super::client::{HttpClient, TransportRequest};
 use crate::fetch::{
-    Body, CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchResponse, FetchUrl,
-    HeaderList, RedirectMode, Referrer, ReferrerPolicy, RequestCache, RequestContext, RequestMode,
-    ResponseType, cors_filtered_headers, is_cors_safelisted_request_header, needs_cors_check,
-    needs_preflight, validate_cors_response, validate_preflight_response,
+    Body, CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchResponse, HeaderList,
+    Referrer, ReferrerPolicy, RequestCache, RequestMode, ResponseType,
+    is_cors_safelisted_request_header, needs_cors_check, needs_preflight,
+    validate_preflight_response,
 };
-use crate::limits::{MAX_PREFLIGHT_BODY_BYTES, MAX_REDIRECTS};
+use crate::limits::MAX_PREFLIGHT_BODY_BYTES;
 use data_url::DataUrl;
 
+pub use stream::StreamingFetchResponse;
+
 impl HttpClient {
-    pub fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        request.validate()?;
-        request.signal.check()?;
-        if request.url.is_data() {
-            return fetch_data_url(request);
-        }
-
-        let mut url_list = vec![request.url.clone()];
-        for redirect_count in 0..=MAX_REDIRECTS {
-            request.signal.check()?;
-            if needs_cors_check(&request) && request.mode == RequestMode::SameOrigin {
-                return Err(FetchError::new(
-                    FetchErrorKind::Cors,
-                    "cross-origin request blocked by same-origin mode",
-                ));
-            }
-            if needs_preflight(&request) {
-                self.run_preflight(&request)?;
-            }
-
-            let outbound_headers = self.outbound_headers(&request)?;
-            let transport = self.send_once(TransportRequest {
-                url: &request.url,
-                method: &request.method,
-                headers: &outbound_headers,
-                body: request.body.as_ref(),
-                response_body_limit: request.response_body_limit,
-                signal: &request.signal,
-                cache: request.cache,
-            })?;
-            self.store_response_cookies(&request, &transport.headers)?;
-            validate_cors_response(&request, &transport.headers)?;
-
-            if is_redirect_status(transport.status)
-                && let Some(location) = transport.headers.get("location")
-            {
-                match request.redirect {
-                    RedirectMode::Error => {
-                        return Err(FetchError::new(
-                            FetchErrorKind::Redirect,
-                            "redirect blocked by request redirect mode",
-                        ));
-                    }
-                    RedirectMode::Manual => {
-                        return Ok(manual_redirect_response(request, url_list, transport));
-                    }
-                    RedirectMode::Follow => {}
-                }
-                if redirect_count == MAX_REDIRECTS {
-                    return Err(FetchError::new(
-                        FetchErrorKind::Redirect,
-                        format!("redirect limit of {MAX_REDIRECTS} was exceeded"),
-                    ));
-                }
-                let next_url = request.url.resolve(location)?;
-                if !request.url.origin().is_same_origin(&next_url.origin()) {
-                    request.headers.remove("authorization");
-                }
-                rewrite_redirect_method(&mut request, transport.status);
-                request.url = next_url.clone();
-                url_list.push(next_url);
-                continue;
-            }
-
-            return Ok(filtered_response(request, url_list, transport));
-        }
-        unreachable!("the bounded redirect loop always returns")
+    pub fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        self.fetch_stream(request)?.into_buffered()
     }
 
     fn run_preflight(&self, request: &FetchRequest) -> Result<(), FetchError> {
@@ -288,65 +227,5 @@ fn rewrite_redirect_method(request: &mut FetchRequest, status: u16) {
         request.headers.remove("content-language");
         request.headers.remove("content-location");
         request.headers.remove("content-type");
-    }
-}
-
-fn manual_redirect_response(
-    request: FetchRequest,
-    url_list: Vec<FetchUrl>,
-    transport: TransportResponse,
-) -> FetchResponse {
-    if request.context == RequestContext::Script {
-        return FetchResponse {
-            response_type: ResponseType::OpaqueRedirect,
-            url_list,
-            status: 0,
-            headers: HeaderList::new(),
-            body: Body::from_bytes(Vec::new()),
-        };
-    }
-    FetchResponse {
-        response_type: ResponseType::Basic,
-        url_list,
-        status: transport.status,
-        headers: transport.headers,
-        body: transport.body,
-    }
-}
-
-fn filtered_response(
-    request: FetchRequest,
-    url_list: Vec<FetchUrl>,
-    transport: TransportResponse,
-) -> FetchResponse {
-    let cross_origin = needs_cors_check(&request);
-    if request.context == RequestContext::Script
-        && cross_origin
-        && request.mode == RequestMode::NoCors
-    {
-        return FetchResponse {
-            response_type: ResponseType::Opaque,
-            url_list,
-            status: 0,
-            headers: HeaderList::new(),
-            body: Body::from_bytes(Vec::new()),
-        };
-    }
-    let response_type = if request.context == RequestContext::Script && cross_origin {
-        ResponseType::Cors
-    } else {
-        ResponseType::Basic
-    };
-    let headers = if request.context == RequestContext::Script {
-        cors_filtered_headers(&transport.headers, &request)
-    } else {
-        transport.headers
-    };
-    FetchResponse {
-        response_type,
-        url_list,
-        status: transport.status,
-        headers,
-        body: transport.body,
     }
 }

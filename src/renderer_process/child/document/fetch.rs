@@ -114,14 +114,7 @@ pub(super) fn into_fetch_result(
             urls,
             status,
             headers,
-            body_length,
         } => {
-            if response.body.len() != body_length as usize {
-                return Err(FetchError::new(
-                    FetchErrorKind::Network,
-                    "brokered response body length mismatch",
-                ));
-            }
             let urls = urls
                 .into_iter()
                 .map(|url| FetchUrl::parse(&url))

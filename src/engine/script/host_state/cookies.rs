@@ -4,27 +4,22 @@ use super::*;
 
 impl HostState {
     pub(in crate::engine::script) fn cookie_header(&self) -> String {
-        let mut cookies = self.cookies.iter().collect::<Vec<_>>();
-        cookies.sort_unstable_by(|left, right| left.0.cmp(right.0));
-        cookies
-            .into_iter()
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect::<Vec<_>>()
-            .join("; ")
+        self.cookie_header.clone()
     }
 
     pub(in crate::engine::script) fn replace_cookies_from_header(&mut self, cookie_header: &str) {
-        self.cookies.clear();
-        for pair in cookie_header.split(';').map(str::trim) {
-            let Some((name, value)) = pair.split_once('=') else {
-                continue;
-            };
-            let name = name.trim();
-            if !name.is_empty() {
-                self.cookies
-                    .insert(name.to_string(), value.trim().to_string());
-            }
-        }
+        self.cookie_header.clear();
+        self.cookie_header.push_str(cookie_header);
+    }
+
+    pub(in crate::engine::script) fn replace_cookie_snapshot(
+        &mut self,
+        version: u64,
+        cookie_header: &str,
+    ) {
+        self.cookie_version = version;
+        self.replace_cookies_from_header(cookie_header);
+        self.cookie_updates.clear();
     }
 
     pub(in crate::engine::script) fn set_cookie(&mut self, assignment: String) {
@@ -38,6 +33,13 @@ impl HostState {
         if name.is_empty() || name.bytes().any(|byte| byte <= 0x20 || byte == b';') {
             return;
         }
+        let mut pairs = self
+            .cookie_header
+            .split(';')
+            .map(str::trim)
+            .filter(|pair| !pair.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
 
         let expired = assignment.split(';').skip(1).any(|attribute| {
             attribute
@@ -52,11 +54,24 @@ impl HostState {
                 })
         });
         if expired {
-            self.cookies.remove(name);
+            pairs.retain(|pair| cookie_pair_name(pair) != Some(name));
         } else {
-            self.cookies
-                .insert(name.to_string(), value.trim().to_string());
+            let serialized = format!("{name}={}", value.trim());
+            if let Some(pair) = pairs
+                .iter_mut()
+                .find(|pair| cookie_pair_name(pair) == Some(name))
+            {
+                *pair = serialized;
+            } else {
+                pairs.push(serialized);
+            }
         }
+        self.cookie_header = pairs.join("; ");
+        self.cookie_version = self.cookie_version.checked_add(1).unwrap_or(1);
         self.cookie_updates.push(assignment);
     }
+}
+
+fn cookie_pair_name(pair: &str) -> Option<&str> {
+    pair.split_once('=').map(|(name, _)| name.trim())
 }

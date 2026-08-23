@@ -31,7 +31,24 @@ impl Page {
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
         cookie_header: &str,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
-        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header)
+        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header, None)
+            .expect("empty Web Storage state is valid")
+    }
+
+    pub fn start_first_paint_script_runtime_with_document_state(
+        &mut self,
+        dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
+        cookie_version: u64,
+        cookie_header: &str,
+        local_storage: crate::storage::StorageAreaSnapshot,
+        session_storage: crate::storage::StorageAreaSnapshot,
+    ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
+        self.start_script_phase(
+            true,
+            Some(dynamic_script_loader),
+            cookie_header,
+            Some((cookie_version, local_storage, session_storage)),
+        )
     }
 
     fn execute_script_phase(
@@ -39,7 +56,8 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        self.start_script_phase(first_paint_only, dynamic_script_loader, "")
+        self.start_script_phase(first_paint_only, dynamic_script_loader, "", None)
+            .expect("empty Web Storage state is valid")
             .1
     }
 
@@ -48,7 +66,12 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
         cookie_header: &str,
-    ) -> (Option<ScriptRuntime>, ScriptOutcome) {
+        document_state: Option<(
+            u64,
+            crate::storage::StorageAreaSnapshot,
+            crate::storage::StorageAreaSnapshot,
+        )>,
+    ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
             .scripts
@@ -74,7 +97,11 @@ impl Page {
                 &self.source_url,
                 &self.character_set,
             );
-            runtime.set_document_cookie_header(cookie_header);
+            if let Some((cookie_version, local, session)) = document_state {
+                runtime.set_document_state(cookie_version, cookie_header, local, session)?;
+            } else {
+                runtime.set_document_cookie_header(cookie_header);
+            }
             let outcome = runtime.execute_initial_with_loader(&inputs, dynamic_script_loader);
             (runtime.is_active().then_some(runtime), outcome)
         };
@@ -90,6 +117,6 @@ impl Page {
             ));
         }
         self.title = self.dom.title();
-        (runtime, outcome)
+        Ok((runtime, outcome))
     }
 }

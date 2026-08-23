@@ -10,6 +10,7 @@ use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
 use better_web_browser::renderer_protocol::{DocumentId, PresentedGlyphRaster};
+use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
@@ -47,6 +48,7 @@ pub(super) struct BrowserTab {
     pub(super) loading: bool,
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
+    pub(super) session_storage: SessionStorage,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
     pub(super) renderer_launch_pending: bool,
@@ -101,6 +103,7 @@ impl BrowserTab {
             loading: false,
             crashed: false,
             document_fetch: FetchController::new(),
+            session_storage: SessionStorage::default(),
             renderer_session: None,
             renderer_launch_receiver: None,
             renderer_launch_pending: false,

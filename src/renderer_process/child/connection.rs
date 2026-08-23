@@ -1,16 +1,19 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
+mod fetch;
+mod state;
+
+use self::state::{IncomingDocumentState, IncomingStorageUpdate};
 use super::document::{DocumentRuntime, LoadResult, RendererTextSystem};
 use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
 use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
 };
 use crate::renderer_protocol::{
-    BrowserFetchResponse, BrowserMessage, DocumentId, DocumentStart, FetchResponseHead,
-    FrameReader, FrameWriter, ProtocolError, RendererFetchRequest, RendererMessage,
-    RendererPresentation, TransferAssembler, TransferChunk,
+    BrowserMessage, DocumentId, DocumentStart, FrameReader, FrameWriter, ProtocolError,
+    RendererMessage, RendererPresentation, TransferAssembler, TransferChunk,
 };
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
@@ -22,6 +25,7 @@ pub(super) struct ChildConnection {
     stopping: bool,
     pending: VecDeque<BrowserMessage>,
     incoming_document: Option<IncomingDocument>,
+    incoming_storage_update: Option<IncomingStorageUpdate>,
     document: Option<DocumentRuntime>,
     prepared_text: Option<RendererTextSystem>,
     next_request_id: u64,
@@ -41,6 +45,7 @@ impl ChildConnection {
             stopping: false,
             pending: VecDeque::new(),
             incoming_document: None,
+            incoming_storage_update: None,
             document: None,
             // Font discovery starts immediately after the renderer handshake, while the browser
             // is still fetching the navigation. This keeps it off the page-ready critical path.
@@ -74,53 +79,6 @@ impl ChildConnection {
         id
     }
 
-    pub(super) fn fetch_batch(
-        &mut self,
-        document: DocumentId,
-        requests: Vec<RendererFetchRequest>,
-    ) -> Result<Vec<BrowserFetchResponse>, String> {
-        if requests.is_empty() {
-            return Ok(Vec::new());
-        }
-        if requests.len() > 256
-            || requests
-                .iter()
-                .any(|request| request.head.document != document)
-        {
-            return Err("renderer Fetch batch exceeded its contract".into());
-        }
-        let batch_id = self.next_batch_id;
-        self.next_batch_id = batch_id.checked_add(1).unwrap_or(1);
-        self.writer
-            .send_renderer(&RendererMessage::FetchBatchStart {
-                document,
-                batch_id,
-                request_count: requests.len() as u32,
-            })
-            .map_err(|error| error.to_string())?;
-        let mut expected = HashSet::with_capacity(requests.len());
-        for request in requests {
-            request.validate().map_err(|error| error.to_string())?;
-            let request_id = request.head.request_id;
-            expected.insert(request_id);
-            self.writer
-                .send_renderer(&RendererMessage::FetchRequestStart {
-                    batch_id,
-                    request: request.head,
-                })
-                .map_err(|error| error.to_string())?;
-            self.send_renderer_chunks(
-                request_id,
-                &request.body,
-                RendererMessage::FetchRequestChunk,
-            )?;
-            self.writer
-                .send_renderer(&RendererMessage::FetchRequestEnd(request_id))
-                .map_err(|error| error.to_string())?;
-        }
-        self.receive_fetch_responses(document, expected)
-    }
-
     fn handle(&mut self, message: BrowserMessage) -> Result<(), String> {
         match message {
             BrowserMessage::Ping(token) => self
@@ -136,6 +94,10 @@ impl ChildConnection {
             BrowserMessage::BeginDocument(start) => self.begin_document(start),
             BrowserMessage::DocumentChunk(chunk) => self.document_chunk(chunk),
             BrowserMessage::EndDocument(document) => self.finish_document(document),
+            BrowserMessage::CookieSnapshot(snapshot) => self.document_state_cookie(snapshot),
+            BrowserMessage::StorageSnapshotStart(start) => self.document_state_start(start),
+            BrowserMessage::StorageSnapshotEntry(entry) => self.document_state_entry(entry),
+            BrowserMessage::StorageSnapshotEnd(end) => self.document_state_end(end),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,
@@ -145,6 +107,13 @@ impl ChildConnection {
                 self.resize_document(document, viewport)
             }
             BrowserMessage::CancelDocument(document) => {
+                if self
+                    .incoming_storage_update
+                    .as_ref()
+                    .is_some_and(|update| update.document() == document)
+                {
+                    self.incoming_storage_update = None;
+                }
                 if self
                     .document
                     .as_ref()
@@ -156,7 +125,8 @@ impl ChildConnection {
             }
             BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)
-            | BrowserMessage::FetchResponseEnd(_) => {
+            | BrowserMessage::FetchResponseEnd(_)
+            | BrowserMessage::FetchResponseAbort(_) => {
                 Err("unsolicited browser Fetch response".into())
             }
             BrowserMessage::Hello { .. } => Err("duplicate renderer Hello".into()),
@@ -175,6 +145,7 @@ impl ChildConnection {
                 MAX_RESPONSE_BODY_BYTES,
             )
             .map_err(|error| error.to_string())?,
+            state: IncomingDocumentState::new(start.document),
             start,
         });
         Ok(())
@@ -201,13 +172,14 @@ impl ChildConnection {
             .body
             .finish(document.get())
             .map_err(|error| error.to_string())?;
+        let state = incoming.state.finish()?;
         let start = incoming.start;
         let text = self
             .prepared_text
             .take()
             .unwrap_or_else(|| RendererTextSystem::new(start.viewport.dpi));
         let result = catch_unwind(AssertUnwindSafe(|| {
-            DocumentRuntime::load(start, body, self, text)
+            DocumentRuntime::load(start, state, body, self, text)
         }));
         match result {
             Ok(Ok(LoadResult::Ready(runtime, presentation))) => {
@@ -279,95 +251,6 @@ impl ChildConnection {
         }
         self.document = Some(runtime);
         Ok(())
-    }
-
-    fn receive_fetch_responses(
-        &mut self,
-        document: DocumentId,
-        expected: HashSet<u64>,
-    ) -> Result<Vec<BrowserFetchResponse>, String> {
-        let mut responses = HashMap::with_capacity(expected.len());
-        let mut active: Option<IncomingResponse> = None;
-        while responses.len() < expected.len() && !self.stopping {
-            let message = self
-                .reader
-                .read_browser()
-                .map_err(|error| error.to_string())?;
-            match message {
-                BrowserMessage::Ping(token) => self
-                    .writer
-                    .send_renderer(&RendererMessage::Pong(token))
-                    .map_err(|error| error.to_string())?,
-                BrowserMessage::Shutdown => {
-                    self.shutdown()?;
-                    break;
-                }
-                BrowserMessage::CancelDocument(cancelled) if cancelled == document => {
-                    return Err("document was cancelled".into());
-                }
-                BrowserMessage::FetchResponseStart(head) => {
-                    if !expected.contains(&head.request_id) || active.is_some() {
-                        return Err("unexpected browser Fetch response".into());
-                    }
-                    active = Some(IncomingResponse {
-                        body: TransferAssembler::new(
-                            head.request_id,
-                            head.body_length(),
-                            MAX_RESPONSE_BODY_BYTES,
-                        )
-                        .map_err(|error| error.to_string())?,
-                        head,
-                    });
-                }
-                BrowserMessage::FetchResponseChunk(chunk) => active
-                    .as_mut()
-                    .ok_or_else(|| "unsolicited Fetch response chunk".to_string())?
-                    .body
-                    .push(chunk)
-                    .map_err(|error| error.to_string())?,
-                BrowserMessage::FetchResponseEnd(request_id) => {
-                    let response = active
-                        .take()
-                        .ok_or_else(|| "unsolicited Fetch response completion".to_string())?;
-                    let body = response
-                        .body
-                        .finish(request_id)
-                        .map_err(|error| error.to_string())?;
-                    if responses
-                        .insert(
-                            request_id,
-                            BrowserFetchResponse {
-                                head: response.head,
-                                body,
-                            },
-                        )
-                        .is_some()
-                    {
-                        return Err("duplicate browser Fetch response".into());
-                    }
-                }
-                BrowserMessage::ProtocolFailure(_) => {
-                    return Err("browser rejected renderer IPC".into());
-                }
-                other => {
-                    if self.pending.len() >= 64 {
-                        return Err("renderer deferred-message queue exhausted".into());
-                    }
-                    self.pending.push_back(other);
-                }
-            }
-        }
-        if self.stopping {
-            return Err("renderer is shutting down".into());
-        }
-        expected
-            .into_iter()
-            .map(|request_id| {
-                responses
-                    .remove(&request_id)
-                    .ok_or_else(|| "browser omitted a Fetch response".to_string())
-            })
-            .collect()
     }
 
     fn send_presentation(&mut self, presentation: &RendererPresentation) -> Result<(), String> {
@@ -460,11 +343,7 @@ impl ChildConnection {
 
 struct IncomingDocument {
     start: DocumentStart,
-    body: TransferAssembler,
-}
-
-struct IncomingResponse {
-    head: FetchResponseHead,
+    state: IncomingDocumentState,
     body: TransferAssembler,
 }
 

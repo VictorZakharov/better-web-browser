@@ -1,15 +1,16 @@
 //! Public HTTP client facade and one-hop bounded WinHTTP transport.
 
-use super::cookies::StoredCookie;
+use super::cookies::CookieStore;
 use super::ffi::*;
 use crate::branding::USER_AGENT;
 use crate::fetch::{
-    Body, FetchError, FetchRequest, FetchResponse, FetchUrl, HeaderList, RequestCache,
+    Body, FetchError, FetchRequest, FetchResponse, FetchSignal, FetchUrl, HeaderList, RequestCache,
 };
+use crate::limits::MAX_FETCH_STREAM_CHUNK_BYTES;
 use crate::navigation::ParsedUrl;
 use std::collections::HashMap;
+use std::path::Path;
 use std::ptr::{null, null_mut};
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 pub type HttpResponse = FetchResponse;
@@ -17,7 +18,72 @@ pub type HttpResponse = FetchResponse;
 pub(super) struct TransportResponse {
     pub status: u16,
     pub headers: HeaderList,
-    pub body: Body,
+}
+
+pub(super) struct TransportStreamResponse {
+    pub status: u16,
+    pub headers: HeaderList,
+    pub body: TransportBodyStream,
+}
+
+pub(super) struct TransportBodyStream {
+    request: InternetHandle,
+    signal: FetchSignal,
+    response_body_limit: usize,
+    received: usize,
+    finished: bool,
+}
+
+impl TransportBodyStream {
+    pub(super) fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, FetchError> {
+        if self.finished {
+            return Ok(None);
+        }
+        self.signal.check()?;
+        // WinHttpReadData tries to fill a caller-provided buffer. Querying first is the
+        // documented progressive-consumption path and prevents a small response from being
+        // buffered to completion merely because our bounded IPC chunk is larger than it.
+        let mut available = 0_u32;
+        check(
+            unsafe { WinHttpQueryDataAvailable(self.request.0, &mut available) },
+            "query available response data",
+        )
+        .map_err(FetchError::network)?;
+        let read_capacity = if available == 0 {
+            // A zero query can represent end-of-body. ReadData remains the authoritative EOF
+            // signal, as required by the WinHTTP contract.
+            1
+        } else {
+            (available as usize).min(MAX_FETCH_STREAM_CHUNK_BYTES)
+        };
+        let mut buffer = vec![0_u8; read_capacity];
+        let mut bytes_read = 0_u32;
+        check(
+            unsafe {
+                WinHttpReadData(
+                    self.request.0,
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len() as u32,
+                    &mut bytes_read,
+                )
+            },
+            "read response",
+        )
+        .map_err(FetchError::network)?;
+        if bytes_read == 0 {
+            self.finished = true;
+            return Ok(None);
+        }
+        buffer.truncate(bytes_read as usize);
+        self.received = self
+            .received
+            .checked_add(buffer.len())
+            .ok_or_else(|| FetchError::body_too_large(self.response_body_limit))?;
+        if self.received > self.response_body_limit {
+            return Err(FetchError::body_too_large(self.response_body_limit));
+        }
+        Ok(Some(buffer))
+    }
 }
 
 pub(super) struct TransportRequest<'a> {
@@ -32,17 +98,26 @@ pub(super) struct TransportRequest<'a> {
 
 pub struct HttpClient {
     connections: Mutex<HashMap<(String, String, u16), Arc<InternetHandle>>>,
-    pub(super) cookies: Mutex<Vec<StoredCookie>>,
-    pub(super) next_cookie_creation: AtomicU64,
+    pub(super) cookie_store: CookieStore,
     session: InternetHandle,
 }
 
 impl HttpClient {
     pub fn new() -> Result<Self, String> {
-        Self::with_access_type(configured_access_type())
+        Self::with_store(configured_access_type(), CookieStore::in_memory())
     }
 
+    pub fn with_profile(profile_directory: &Path) -> Result<Self, String> {
+        let store = CookieStore::open(profile_directory.join("cookies.json"))?;
+        Self::with_store(configured_access_type(), store)
+    }
+
+    #[cfg(test)]
     pub(super) fn with_access_type(access_type: u32) -> Result<Self, String> {
+        Self::with_store(access_type, CookieStore::in_memory())
+    }
+
+    fn with_store(access_type: u32, cookie_store: CookieStore) -> Result<Self, String> {
         let agent = wide(USER_AGENT);
         let session = InternetHandle::new(unsafe {
             WinHttpOpen(agent.as_ptr(), access_type, null(), null(), 0)
@@ -52,8 +127,7 @@ impl HttpClient {
         }
         Ok(Self {
             connections: Mutex::new(HashMap::new()),
-            cookies: Mutex::new(Vec::new()),
-            next_cookie_creation: AtomicU64::new(1),
+            cookie_store,
             session,
         })
     }
@@ -67,6 +141,22 @@ impl HttpClient {
         &self,
         transport: TransportRequest<'_>,
     ) -> Result<TransportResponse, FetchError> {
+        let response_body_limit = transport.response_body_limit;
+        let mut streamed = self.send_once_stream(transport)?;
+        let mut body = Body::empty(response_body_limit);
+        while let Some(chunk) = streamed.body.next_chunk()? {
+            body.push(&chunk)?;
+        }
+        Ok(TransportResponse {
+            status: streamed.status,
+            headers: streamed.headers,
+        })
+    }
+
+    pub(super) fn send_once_stream(
+        &self,
+        transport: TransportRequest<'_>,
+    ) -> Result<TransportStreamResponse, FetchError> {
         let TransportRequest {
             url,
             method,
@@ -157,32 +247,16 @@ impl HttpClient {
         let status = query_status(request.0).map_err(FetchError::network)? as u16;
         let headers =
             parse_response_headers(&query_raw_headers(request.0).map_err(FetchError::network)?)?;
-        let mut body = Body::empty(response_body_limit);
-        let mut buffer = [0_u8; 16 * 1024];
-        loop {
-            signal.check()?;
-            let mut bytes_read = 0_u32;
-            check(
-                unsafe {
-                    WinHttpReadData(
-                        request.0,
-                        buffer.as_mut_ptr().cast(),
-                        buffer.len() as u32,
-                        &mut bytes_read,
-                    )
-                },
-                "read response",
-            )
-            .map_err(FetchError::network)?;
-            if bytes_read == 0 {
-                break;
-            }
-            body.push(&buffer[..bytes_read as usize])?;
-        }
-        Ok(TransportResponse {
+        Ok(TransportStreamResponse {
             status,
             headers,
-            body,
+            body: TransportBodyStream {
+                request,
+                signal: signal.clone(),
+                response_body_limit,
+                received: 0,
+                finished: false,
+            },
         })
     }
 

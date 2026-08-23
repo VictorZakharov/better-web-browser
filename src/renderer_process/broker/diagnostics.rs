@@ -1,6 +1,6 @@
 use super::{RendererSnapshot, RendererState};
 use crate::renderer_process::windows::ProcessSample;
-use crate::renderer_protocol::RendererSessionId;
+use crate::renderer_protocol::{BrowsingContextId, RendererSessionId};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,11 +56,13 @@ impl RendererExit {
 pub(super) struct SharedDiagnostics {
     pub(super) process_id: u32,
     pub(super) session: RendererSessionId,
+    pub(super) context: BrowsingContextId,
     pub(super) state: RendererState,
     pub(super) sample: ProcessSample,
     pub(super) started: Instant,
     pub(super) last_pong: Instant,
     pub(super) exit_reason: Option<RendererExitReason>,
+    pub(super) exit: Option<RendererExit>,
 }
 
 impl SharedDiagnostics {
@@ -69,6 +71,7 @@ impl SharedDiagnostics {
         RendererSnapshot {
             process_id: self.process_id,
             session_id: self.session.get(),
+            context_id: self.context.get(),
             state: self.state,
             working_set: self.sample.working_set,
             private_memory: self.sample.private_memory,
@@ -78,6 +81,7 @@ impl SharedDiagnostics {
             uptime: now.saturating_duration_since(self.started),
             last_pong_age: now.saturating_duration_since(self.last_pong),
             exit_reason: self.exit_reason.clone(),
+            exit: self.exit.clone(),
         }
     }
 }

@@ -1,23 +1,24 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
 mod fetch;
+mod reporting;
 mod resources;
 mod text;
 mod workers;
 
+use self::reporting::{merge_outcome, micros, runtime_report, style_report};
 use self::resources::fetch_script_source;
 pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
 use super::connection::ChildConnection;
-use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{
     Page, PageResource, ScriptFetchAction, ScriptKind, ScriptOutcome, ScriptRuntime,
     ScriptWorkerAction, StyleRefreshStats, layout_page_with_style_viewport,
 };
 use crate::limits::{MAX_POST_LOAD_TIMER_CALLBACKS, PAGE_RESOURCE_BUDGET};
 use crate::renderer_protocol::{
-    DocumentId, DocumentStart, PageLoadReport, PresentedImage, PresentedLayout,
-    RendererPresentation, RuntimeReport, StyleReport,
+    DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
+    RendererPresentation,
 };
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -50,6 +51,7 @@ pub(super) struct DocumentRuntime {
 impl DocumentRuntime {
     pub(super) fn load(
         start: DocumentStart,
+        state: DocumentState,
         body: Vec<u8>,
         connection: &mut ChildConnection,
         mut text: RendererTextSystem,
@@ -101,10 +103,15 @@ impl DocumentRuntime {
             |url: &str, kind: ScriptKind| fetch_script_source(connection, document, url, kind);
         let (script_runtime, mut outcome) = runtime
             .page
-            .start_first_paint_script_runtime_with_loader_and_cookies(
+            .start_first_paint_script_runtime_with_document_state(
                 &mut loader,
-                &start.cookie_header,
-            );
+                state.cookie_version,
+                &state.cookie_header,
+                state.local_storage,
+                state.session_storage,
+            )
+            .map_err(|error| error.to_string())?;
+        connection.send_state_mutations(document, &mut outcome)?;
         runtime.script_runtime = script_runtime;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
@@ -132,6 +139,25 @@ impl DocumentRuntime {
 
     pub(super) fn id(&self) -> DocumentId {
         self.id
+    }
+
+    pub(super) fn replace_cookie_snapshot(&mut self, version: u64, header: &str) {
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.replace_cookie_snapshot(version, header);
+        }
+    }
+
+    pub(super) fn replace_storage_snapshot(
+        &mut self,
+        area: crate::storage::StorageAreaKind,
+        snapshot: crate::storage::StorageAreaSnapshot,
+    ) -> Result<(), String> {
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime
+                .replace_storage_snapshot(area, snapshot)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 
     pub(super) fn into_text(mut self) -> RendererTextSystem {
@@ -225,6 +251,7 @@ impl DocumentRuntime {
             },
         )?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
+        connection.send_state_mutations(self.id, &mut outcome)?;
 
         let needs_present = resources_changed
             || performed_post_load_pass
@@ -325,61 +352,4 @@ impl DocumentRuntime {
             next_timer_micros,
         })
     }
-}
-
-fn merge_outcome(
-    target: &mut ScriptOutcome,
-    mut source: ScriptOutcome,
-    document_root: crate::engine::dom::NodeId,
-) {
-    if source.render_requested && source.invalidation.is_empty() {
-        source.invalidation = RenderInvalidation::full(document_root);
-    }
-    target
-        .invalidation
-        .merge_conservatively(source.invalidation, document_root);
-    target.executed = target.executed.saturating_add(source.executed);
-    target.mutation_count = target.mutation_count.saturating_add(source.mutation_count);
-    target.errors.append(&mut source.errors);
-    target.console.append(&mut source.console);
-    target.diagnostics.append(&mut source.diagnostics);
-    if source.navigation_url.is_some() {
-        target.navigation_url = source.navigation_url;
-    }
-    target.cookie_updates.append(&mut source.cookie_updates);
-    target.fetch_actions.append(&mut source.fetch_actions);
-    target.worker_actions.append(&mut source.worker_actions);
-    target.runtime_stopped |= source.runtime_stopped;
-    target.render_requested |= source.render_requested;
-}
-
-fn runtime_report(mut outcome: ScriptOutcome, runtime_active: bool) -> RuntimeReport {
-    RuntimeReport {
-        scripts_executed: outcome.executed as u64,
-        dom_mutations: outcome.mutation_count as u64,
-        errors: std::mem::take(&mut outcome.errors),
-        console: std::mem::take(&mut outcome.console),
-        diagnostics: std::mem::take(&mut outcome.diagnostics),
-        navigation_url: outcome.navigation_url,
-        cookie_updates: outcome.cookie_updates,
-        runtime_active,
-        runtime_stopped: outcome.runtime_stopped,
-        render_requested: outcome.render_requested,
-    }
-}
-
-fn style_report(style: StyleRefreshStats) -> StyleReport {
-    StyleReport {
-        invalidated_nodes: style.invalidated_nodes as u64,
-        total_styles: style.total_styles as u64,
-        recomputed_styles: style.recomputed_styles as u64,
-        changed_styles: style.changed_styles as u64,
-        removed_styles: style.removed_styles as u64,
-        layout_changed: style.layout_changed,
-        full_rebuild: style.full_rebuild,
-    }
-}
-
-fn micros(duration: Duration) -> u64 {
-    duration.as_micros().min(u64::MAX as u128) as u64
 }

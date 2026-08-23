@@ -23,6 +23,19 @@ pub const MAX_PREFLIGHT_BODY_BYTES: usize = 64 * 1024;
 pub const MAX_REDIRECTS: usize = 20;
 pub const PAGE_RESOURCE_BUDGET: u64 = 32 * 1024 * 1024;
 
+pub const MAX_COOKIES: usize = 3_000;
+pub const MAX_COOKIES_PER_DOMAIN: usize = 180;
+pub const MAX_COOKIE_HEADER_BYTES: usize = 64 * 1024;
+pub const MAX_COOKIE_ASSIGNMENT_BYTES: usize = 4 * 1024;
+pub const MAX_PERSISTED_COOKIE_BYTES: usize = 16 * 1024 * 1024;
+
+pub const MAX_STORAGE_ORIGINS: usize = 256;
+pub const MAX_STORAGE_ENTRIES_PER_ORIGIN: usize = 1_024;
+pub const MAX_STORAGE_KEY_BYTES: usize = 4 * 1024;
+pub const MAX_STORAGE_VALUE_BYTES: usize = 192 * 1024;
+pub const MAX_STORAGE_BYTES_PER_ORIGIN: usize = 5 * 1024 * 1024;
+pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
+
 pub const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DOCUMENT_WRITE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DYNAMIC_SCRIPTS: usize = 32;
@@ -52,6 +65,21 @@ pub const MAX_PAGE_SCRIPTS: usize = 64;
 
 pub const MAX_CONTROL_PAYLOAD: usize = 256 * 1024;
 pub const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
+pub const MAX_FETCH_STREAM_CHUNK_BYTES: usize = 64 * 1024;
+pub const MAX_QUEUED_FETCH_STREAM_CHUNKS: usize = 8;
+pub const MAX_RENDERER_FETCH_REQUESTS_PER_BATCH: usize = 256;
+pub const MAX_PARALLEL_RENDERER_FETCHES: usize = 8;
+pub const MAX_RENDERER_FETCH_BATCH_BODY_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_RENDERER_FETCH_BATCH_METADATA_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_RENDERER_FETCH_HEADERS: usize = 256;
+pub const MAX_FETCH_HEADER_NAME_BYTES: usize = 1024;
+pub const MAX_FETCH_HEADER_VALUE_BYTES: usize = 16 * 1024;
+pub const MAX_QUEUED_BROWSER_COMMANDS: usize = 8;
+pub const MAX_QUEUED_RENDERER_IPC_MESSAGES: usize = 8;
+pub const MAX_QUEUED_RENDERER_EVENTS: usize = 256;
+pub const MAX_QUEUED_RENDERER_PRESENTATIONS: usize = 2;
+pub const MAX_QUEUED_RENDERER_FETCH_BATCHES: usize = 1;
+pub const MAX_DEFERRED_RENDERER_MESSAGES: usize = 64;
 /// Maximum validated immutable presentation retained by the browser for one revision.
 pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;

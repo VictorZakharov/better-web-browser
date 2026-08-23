@@ -7,6 +7,8 @@ mod pipeline;
 mod text;
 
 pub use client::{HttpClient, HttpResponse, get};
+pub use cookies::CookieSnapshot;
+pub use pipeline::StreamingFetchResponse;
 pub use text::{DecodedText, decode_document, decode_text};
 
 #[cfg(test)]

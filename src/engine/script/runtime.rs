@@ -139,6 +139,34 @@ impl ScriptRuntime {
             .replace_cookies_from_header(cookie_header);
     }
 
+    pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {
+        self.host
+            .borrow_mut()
+            .replace_cookie_snapshot(version, cookie_header);
+    }
+
+    pub fn replace_storage_snapshot(
+        &mut self,
+        area: crate::storage::StorageAreaKind,
+        snapshot: crate::storage::StorageAreaSnapshot,
+    ) -> Result<(), crate::storage::StorageError> {
+        self.host
+            .borrow_mut()
+            .replace_storage_snapshot(area, snapshot)
+    }
+
+    pub fn set_document_state(
+        &mut self,
+        cookie_version: u64,
+        cookie_header: &str,
+        local_storage: crate::storage::StorageAreaSnapshot,
+        session_storage: crate::storage::StorageAreaSnapshot,
+    ) -> Result<(), crate::storage::StorageError> {
+        let mut host = self.host.borrow_mut();
+        host.replace_cookie_snapshot(cookie_version, cookie_header);
+        host.replace_storage_snapshots(local_storage, session_storage)
+    }
+
     /// Enables bounded native bridge timing for diagnostics produced by subsequent tasks.
     pub fn set_host_call_profiling(&mut self, enabled: bool) {
         self.host

@@ -6,37 +6,47 @@ use better_web_browser::fetch::{
     RedirectMode, Referrer, ReferrerPolicy, RequestCache, RequestDestination, RequestMode,
     ResponseType,
 };
-use better_web_browser::renderer_process::RendererSession;
+use better_web_browser::limits::MAX_PARALLEL_RENDERER_FETCHES;
+use better_web_browser::renderer_process::FetchResponseSink;
 use better_web_browser::renderer_protocol::{
-    BrowserFetchError, BrowserFetchErrorKind, BrowserFetchResponse, DocumentId, FetchCache,
-    FetchCredentials, FetchInitiator, FetchMode, FetchRedirect, FetchReferrer, FetchReferrerPolicy,
+    BrowserFetchError, BrowserFetchErrorKind, DocumentId, FetchCache, FetchCredentials,
+    FetchInitiator, FetchMode, FetchRedirect, FetchReferrer, FetchReferrerPolicy,
     FetchResponseHead, FetchResponseResult, FetchResponseType, RendererFetchRequest,
-    ResourceDestination,
+    ResourceDestination, TransferChunk,
 };
-
-const MAX_PARALLEL_RENDERER_FETCHES: usize = 8;
 
 pub(super) struct RendererFetchCompletion {
     pub(super) document: DocumentId,
-    pub(super) responses: Vec<BrowserFetchResponse>,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
 }
 
-pub(super) fn spawn_fetch_batch(
-    tab_id: super::tabs::TabId,
-    document: DocumentId,
-    document_url: String,
-    requests: Vec<RendererFetchRequest>,
-    client: Arc<winhttp::HttpClient>,
-    signal: FetchSignal,
-    tab_router: super::browser_app::TabMessageRouter,
-) -> Result<(), String> {
+pub(super) struct RendererFetchBatch {
+    pub(super) tab_id: super::tabs::TabId,
+    pub(super) document: DocumentId,
+    pub(super) document_url: String,
+    pub(super) requests: Vec<RendererFetchRequest>,
+    pub(super) client: Arc<winhttp::HttpClient>,
+    pub(super) signal: FetchSignal,
+    pub(super) sink: FetchResponseSink,
+    pub(super) tab_router: super::browser_app::TabMessageRouter,
+}
+
+pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String> {
+    let RendererFetchBatch {
+        tab_id,
+        document,
+        document_url,
+        requests,
+        client,
+        signal,
+        sink,
+        tab_router,
+    } = batch;
     std::thread::Builder::new()
         .name(format!("breeze-renderer-fetch-{}", tab_id.get()))
         .spawn(move || {
             let started = Instant::now();
-            let mut responses = Vec::with_capacity(requests.len());
             let mut bytes = 0_u64;
             for batch in requests.chunks(MAX_PARALLEL_RENDERER_FETCHES) {
                 let fetched = std::thread::scope(|scope| {
@@ -47,11 +57,19 @@ pub(super) fn spawn_fetch_batch(
                             let request_id = request.head.request_id;
                             let client = Arc::clone(&client);
                             let signal = signal.clone();
+                            let sink = sink.clone();
                             let document_url = &document_url;
                             (
                                 request_id,
                                 scope.spawn(move || {
-                                    execute(&client, &signal, document, document_url, request)
+                                    execute(
+                                        &client,
+                                        &signal,
+                                        &sink,
+                                        document,
+                                        document_url,
+                                        request,
+                                    )
                                 }),
                             )
                         })
@@ -59,25 +77,22 @@ pub(super) fn spawn_fetch_batch(
                         .into_iter()
                         .map(|(request_id, worker)| {
                             worker.join().unwrap_or_else(|_| {
-                                failure(
-                                    request_id,
-                                    FetchError::new(
-                                        FetchErrorKind::Network,
-                                        "browser Fetch worker panicked",
-                                    ),
-                                )
+                                let error = FetchError::new(
+                                    FetchErrorKind::Network,
+                                    "browser Fetch worker panicked",
+                                );
+                                let _ = send_failure(&sink, request_id, &error);
+                                0
                             })
                         })
                         .collect::<Vec<_>>()
                 });
-                for response in fetched {
-                    bytes = bytes.saturating_add(response.body.len() as u64);
-                    responses.push(response);
+                for count in fetched {
+                    bytes = bytes.saturating_add(count);
                 }
             }
             let completion = Box::new(RendererFetchCompletion {
                 document,
-                responses,
                 bytes,
                 network_time: started.elapsed(),
             });
@@ -101,28 +116,37 @@ pub(super) fn spawn_fetch_batch(
 fn execute(
     client: &winhttp::HttpClient,
     signal: &FetchSignal,
+    sink: &FetchResponseSink,
     document: DocumentId,
     document_url: &str,
     request: RendererFetchRequest,
-) -> BrowserFetchResponse {
+) -> u64 {
     let request_id = request.head.request_id;
     let result = (|| {
         request
             .validate()
             .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
-        if request.head.document != document {
-            return Err(FetchError::new(
-                FetchErrorKind::InvalidRequest,
-                "renderer Fetch document does not match the active document",
-            ));
-        }
+        validate_document_identity(document, request.head.document)?;
         let request = reconstruct(document_url, request)?.with_signal(signal.clone());
-        client.fetch(request)
+        client.fetch_stream(request)
     })();
     match result {
-        Ok(response) => success(request_id, response),
-        Err(error) => failure(request_id, error),
+        Ok(response) => stream_response(sink, request_id, response),
+        Err(error) => {
+            let _ = send_failure(sink, request_id, &error);
+            0
+        }
     }
+}
+
+fn validate_document_identity(active: DocumentId, requested: DocumentId) -> Result<(), FetchError> {
+    if requested == active {
+        return Ok(());
+    }
+    Err(FetchError::new(
+        FetchErrorKind::InvalidRequest,
+        "renderer Fetch document does not match the active document",
+    ))
 }
 
 fn reconstruct(
@@ -198,44 +222,76 @@ fn trusted_referrer(document_url: &str, requested: FetchReferrer) -> Result<Refe
     }
 }
 
-fn success(
+fn stream_response(
+    sink: &FetchResponseSink,
     request_id: u64,
-    response: better_web_browser::fetch::FetchResponse,
-) -> BrowserFetchResponse {
-    let body = response.body.into_bytes();
-    BrowserFetchResponse {
-        head: FetchResponseHead {
-            request_id,
-            result: FetchResponseResult::Success {
-                response_type: response_type(response.response_type),
-                urls: response
-                    .url_list
-                    .into_iter()
-                    .map(|url| url.as_str().to_string())
-                    .collect(),
-                status: response.status,
-                headers: response
-                    .headers
-                    .iter()
-                    .map(|header| (header.name().to_string(), header.value().to_string()))
-                    .collect(),
-                body_length: body.len() as u32,
-            },
+    mut response: winhttp::StreamingFetchResponse,
+) -> u64 {
+    let head = FetchResponseHead {
+        request_id,
+        result: FetchResponseResult::Success {
+            response_type: response_type(response.response_type),
+            urls: response
+                .url_list
+                .iter()
+                .map(|url| url.as_str().to_string())
+                .collect(),
+            status: response.status,
+            headers: response
+                .headers
+                .iter()
+                .map(|header| (header.name().to_string(), header.value().to_string()))
+                .collect(),
         },
-        body,
+    };
+    if sink.start(head).is_err() {
+        return 0;
+    }
+    let mut total = 0_u32;
+    loop {
+        match response.next_chunk() {
+            Ok(Some(bytes)) => {
+                let length = bytes.len() as u32;
+                if sink
+                    .chunk(TransferChunk {
+                        transfer_id: request_id,
+                        offset: total,
+                        bytes,
+                    })
+                    .is_err()
+                {
+                    return u64::from(total);
+                }
+                total = total.saturating_add(length);
+            }
+            Ok(None) => {
+                let _ = sink.end(request_id, total);
+                return u64::from(total);
+            }
+            Err(error) => {
+                let _ = sink.abort(request_id, wire_error(&error));
+                return u64::from(total);
+            }
+        }
     }
 }
 
-fn failure(request_id: u64, error: FetchError) -> BrowserFetchResponse {
-    BrowserFetchResponse {
-        head: FetchResponseHead {
-            request_id,
-            result: FetchResponseResult::Failure(BrowserFetchError {
-                kind: error_kind(error.kind()),
-                message: error.message().chars().take(4_096).collect(),
-            }),
-        },
-        body: Vec::new(),
+fn send_failure(
+    sink: &FetchResponseSink,
+    request_id: u64,
+    error: &FetchError,
+) -> Result<(), String> {
+    sink.start(FetchResponseHead {
+        request_id,
+        result: FetchResponseResult::Failure(wire_error(error)),
+    })?;
+    sink.end(request_id, 0)
+}
+
+fn wire_error(error: &FetchError) -> BrowserFetchError {
+    BrowserFetchError {
+        kind: error_kind(error.kind()),
+        message: error.message().chars().take(4_096).collect(),
     }
 }
 
@@ -319,14 +375,6 @@ fn error_kind(value: FetchErrorKind) -> BrowserFetchErrorKind {
     }
 }
 
-pub(super) fn complete(
-    session: &RendererSession,
-    completion: RendererFetchCompletion,
-) -> Result<(u64, Duration), String> {
-    session.complete_fetch_batch(completion.responses)?;
-    Ok((completion.bytes, completion.network_time))
-}
-
 impl BrowserState {
     pub(super) unsafe fn finish_renderer_fetch_completion(
         &mut self,
@@ -337,24 +385,11 @@ impl BrowserState {
         }
         let bytes = completion.bytes;
         let network_time = completion.network_time;
-        let result = self
-            .renderer_session
-            .as_ref()
-            .ok_or_else(|| "renderer session is no longer available".to_string())
-            .and_then(|session| complete(session, completion));
-        match result {
-            Ok(_) => {
-                if let Some(metrics) = self.renderer_load_metrics.as_mut() {
-                    metrics.bytes = metrics.bytes.saturating_add(bytes);
-                    metrics.network_time += network_time;
-                }
-                self.record_performance_activity(PerformanceActivity::Resource, network_time);
-            }
-            Err(error) => self.contain_page_engine_failure(
-                self.id,
-                format!("could not return a brokered Fetch response: {error}"),
-            ),
+        if let Some(metrics) = self.renderer_load_metrics.as_mut() {
+            metrics.bytes = metrics.bytes.saturating_add(bytes);
+            metrics.network_time += network_time;
         }
+        self.record_performance_activity(PerformanceActivity::Resource, network_time);
     }
 }
 

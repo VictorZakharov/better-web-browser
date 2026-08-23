@@ -1,11 +1,12 @@
 use super::ScriptRuntime;
 use crate::engine::dom;
 use crate::engine::script::ScriptInput;
+use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 use std::rc::Rc;
 use std::time::Duration;
 
 #[test]
-fn initializes_document_cookie_from_the_network_cookie_jar() {
+fn preserves_the_network_cookie_jars_order_and_duplicate_names() {
     let dom = dom::parse_with_scripting(
         r#"<body><div></div><script>
             document.querySelector('div').textContent = document.cookie;
@@ -14,14 +15,78 @@ fn initializes_document_cookie_from_the_network_cookie_jar() {
     );
     let scripts = script_inputs(&dom);
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-    runtime.set_document_cookie_header("theme=dark; session=visible");
+    runtime.set_document_cookie_header("theme=narrow; session=visible; theme=wide");
 
     let outcome = runtime.execute_initial(&scripts);
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "session=visible; theme=dark"
+        "theme=narrow; session=visible; theme=wide"
+    );
+}
+
+#[test]
+fn browser_snapshots_replace_optimistic_cookie_and_storage_state() {
+    let dom = dom::parse_with_scripting(
+        "<body><div></div><script></script><script></script></body>",
+        true,
+    );
+    let nodes = dom.elements_named("script").collect::<Vec<_>>();
+    let initial = input(
+        &nodes[0],
+        "initial.js",
+        r#"
+            document.cookie = 'theme=optimistic; Path=/';
+            localStorage.setItem('seed', 'optimistic');
+            sessionStorage.setItem('draft', 'optimistic');
+        "#,
+        true,
+    );
+    let observe = input(
+        &nodes[1],
+        "observe.js",
+        r#"
+            document.querySelector('div').textContent = [
+                document.cookie,
+                localStorage.getItem('seed'),
+                sessionStorage.getItem('draft')
+            ].join('|');
+        "#,
+        false,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime
+        .set_document_state(
+            2,
+            "theme=initial",
+            snapshot(3, "seed", "initial"),
+            snapshot(4, "draft", "initial"),
+        )
+        .unwrap();
+
+    let outcome = runtime.execute_initial(&[initial]);
+    assert_eq!(outcome.cookie_updates.len(), 1);
+    assert_eq!(outcome.storage_updates.len(), 2);
+    runtime.replace_cookie_snapshot(9, "theme=authoritative");
+    runtime
+        .replace_storage_snapshot(
+            StorageAreaKind::Local,
+            snapshot(10, "seed", "authoritative"),
+        )
+        .unwrap();
+    runtime
+        .replace_storage_snapshot(
+            StorageAreaKind::Session,
+            snapshot(11, "draft", "authoritative"),
+        )
+        .unwrap();
+
+    let observed = runtime.execute_additional_with_loader(&[observe], None);
+    assert!(observed.errors.is_empty(), "{:?}", observed.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "theme=authoritative|authoritative|authoritative"
     );
 }
 
@@ -241,6 +306,16 @@ fn retained_fixture(label: &str) -> (dom::Dom, ScriptRuntime) {
     let outcome = runtime.execute_initial(&scripts);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     (dom, runtime)
+}
+
+fn snapshot(version: u64, key: &str, value: &str) -> StorageAreaSnapshot {
+    StorageAreaSnapshot {
+        version,
+        entries: vec![StorageEntry {
+            key: key.into(),
+            value: value.into(),
+        }],
+    }
 }
 
 fn script_inputs(dom: &dom::Dom) -> Vec<ScriptInput> {

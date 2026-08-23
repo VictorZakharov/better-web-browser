@@ -13,6 +13,10 @@ cargo run --release
 cargo run --release -- https://www.google.com/
 ```
 
+Persistent cookies and `localStorage` use `%LOCALAPPDATA%\Breeze`; `sessionStorage` remains
+tab-scoped and is not written to disk. Tests and isolated automation can set
+`BREEZE_PROFILE_DIRECTORY` to an absolute profile directory.
+
 For a faster optimized edit/build loop, use `cargo run --profile performance`. This profile keeps
 optimization enabled but trades release LTO and single-unit code generation for incremental,
 parallel compilation. Reproducible performance claims and distributable binaries always use the
@@ -28,11 +32,11 @@ Current page support includes:
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
-- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, storage, and cookies
+- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls, buttons, and GET forms
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
-- A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, scoped cookies, CORS/preflight checks, bounded streaming bodies, and document-wide cancellation
+- A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, persistent RFC-oriented cookies, CORS/preflight checks, bounded backpressured renderer streams, and document-wide cancellation
 - One capability-free Windows AppContainer renderer per tab, owning remote-document decoding, HTML/DOM, JavaScript, CSS/layout, image/font decoding, Workers, and immutable presentation output behind bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics
 - Browser-owned multi-tab contexts with independent history, scrolling, native-control focus, navigation and Fetch brokerage, in-flight completion routing, and isolated renderer lifecycles
 - Desktop tab workflows including Ctrl/Shift multi-selection, ordered drag/reorder, detach/redock across windows, searchable open/recent tabs, Ctrl+N/Ctrl+Shift+W, Ctrl+Shift+A, Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+Shift+PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
@@ -102,6 +106,9 @@ The current path keeps hostile font bytes, advanced shaping, and rasterization i
 AppContainer renderer. It recovers page-ready time but not the original GDI memory footprint; the
 full method, scroll results, per-stage profile, and outlier record are in
 [ADR 0003](docs/architecture/0003-lean-renderer-text-pipeline.md).
+Browser-owned cookie/Web Storage authority, persistence, bounded Fetch streaming, and the
+`cookie_store` dependency decision are documented in
+[ADR 0004](docs/architecture/0004-browser-state-and-fetch-broker.md).
 
 ## Architecture
 
@@ -209,9 +216,10 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Host platforms | The native shell runs on Windows; macOS and Linux shells are not implemented. |
 | ◩ | HTML and DOM | The engine owns its DOM and implements substantial HTML5 tree construction, mutation, and event propagation behavior. Web-platform conformance is still incomplete. |
 | ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
-| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, timers, microtasks, navigation, storage, and other early browser APIs. User-input task dispatch, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
+| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. User-input task dispatch, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
-| ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Progressive delivery from the network into JavaScript streams is not yet connected. |
+| ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists and tab-scoped `sessionStorage` does not. Cross-document `storage` events, storage property-name traps, partitioned state, and user-facing data controls remain incomplete. |
+| ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Network responses now stream incrementally and with backpressure from WinHTTP across renderer IPC, but the JavaScript realm still receives each completed body rather than a progressively delivered network stream. |
 | ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Script scheduling | External classic `async` scripts execute on arrival without delaying page-ready. Their fetch starts after first paint instead of overlapping HTML parsing, and `defer` is not yet scheduled separately. |
@@ -220,7 +228,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
 | ☐ | Canvas, media, and downloads | Canvas rendering, audio/video playback, and downloads are not implemented. |
 | ☐ | Accessibility | An accessibility tree and platform accessibility integration are not implemented. |
-| ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. Bounded IPC, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow; reload creates a fresh process/session/document identity. Cross-site frame isolation is not implemented. |
+| ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
 
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the

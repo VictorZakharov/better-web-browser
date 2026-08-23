@@ -1,10 +1,22 @@
 use super::*;
 use crate::fetch::{CredentialsMode, FetchRequest, FetchUrl};
 use crate::winhttp::ffi::WINHTTP_ACCESS_TYPE_NO_PROXY;
+use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
 fn client() -> HttpClient {
     HttpClient::with_access_type(WINHTTP_ACCESS_TYPE_NO_PROXY).unwrap()
+}
+
+fn unique_profile(name: &str) -> PathBuf {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "breeze-cookie-{name}-{}-{nonce}",
+        std::process::id()
+    ))
 }
 
 #[test]
@@ -187,4 +199,95 @@ fn nameless_cookie_serialization_omits_the_equals_sign() {
             .unwrap(),
         "legacy-value"
     );
+}
+
+#[test]
+fn cookie_projections_stop_at_the_bounded_ipc_header_limit() {
+    let client = client();
+    let value = "x".repeat(3_900);
+    for index in 0..40 {
+        client
+            .set_cookie(
+                "https://example.com/",
+                &format!("cookie-{index}={value}; Path=/; Secure"),
+            )
+            .unwrap();
+    }
+    let snapshot = client
+        .document_cookie_snapshot("https://example.com/")
+        .unwrap();
+    assert!(snapshot.header.len() <= crate::limits::MAX_COOKIE_HEADER_BYTES);
+    assert!(snapshot.header.starts_with("cookie-0="));
+    assert!(!snapshot.header.ends_with("; "));
+}
+
+#[test]
+fn persistent_cookies_survive_restart_but_session_cookies_do_not() {
+    let profile = unique_profile("restart");
+    {
+        let client = HttpClient::with_profile(&profile).unwrap();
+        client
+            .set_cookie(
+                "https://example.com/",
+                "persistent=yes; Path=/; Secure; Max-Age=3600",
+            )
+            .unwrap();
+        client
+            .set_cookie("https://example.com/", "session=no; Path=/; Secure")
+            .unwrap();
+        let request = FetchRequest::navigation("https://example.com/").unwrap();
+        client
+            .store_response_cookie(
+                &request,
+                "server=secret; Path=/; Secure; HttpOnly; Max-Age=3600",
+            )
+            .unwrap();
+    }
+
+    let reopened = HttpClient::with_profile(&profile).unwrap();
+    assert_eq!(
+        reopened
+            .document_cookie_header("https://example.com/")
+            .unwrap(),
+        "persistent=yes"
+    );
+    let request = FetchRequest::navigation("https://example.com/").unwrap();
+    assert_eq!(
+        reopened.cookie_header_value(&request).unwrap().as_deref(),
+        Some("persistent=yes; server=secret")
+    );
+    drop(reopened);
+    std::fs::remove_dir_all(profile).unwrap();
+}
+
+#[test]
+fn persistent_cookies_recover_the_last_valid_backup() {
+    let profile = unique_profile("recovery");
+    let path = profile.join("cookies.json");
+    {
+        let client = HttpClient::with_profile(&profile).unwrap();
+        client
+            .set_cookie(
+                "https://example.com/",
+                "first=valid; Path=/; Secure; Max-Age=3600",
+            )
+            .unwrap();
+        client
+            .set_cookie(
+                "https://example.com/",
+                "second=newer; Path=/; Secure; Max-Age=3600",
+            )
+            .unwrap();
+    }
+    std::fs::write(path, b"{corrupt").unwrap();
+
+    let recovered = HttpClient::with_profile(&profile).unwrap();
+    assert_eq!(
+        recovered
+            .document_cookie_header("https://example.com/")
+            .unwrap(),
+        "first=valid"
+    );
+    drop(recovered);
+    std::fs::remove_dir_all(profile).unwrap();
 }

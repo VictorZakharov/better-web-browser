@@ -1,17 +1,21 @@
+mod commands;
 mod document;
+mod stream;
 
 use self::document::{IncomingFetchBatch, IncomingPresentation};
 use super::diagnostics::{RendererExit, RendererExitReason, SharedDiagnostics};
+use super::stream::FetchStreamEvent;
 use super::{RendererEvent, RendererState};
 use crate::renderer_process::launcher::RendererLaunchOptions;
 use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserFetchResponse, BrowserMessage, DocumentId, DocumentStart, FrameWriter,
+    BrowserMessage, CookieStateSnapshot, DocumentId, DocumentStart, DocumentState, FrameWriter,
     PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation,
     RestrictionReport, TestCommand, TransferAssembler,
 };
+use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::HashMap;
 use std::fs::File;
 use std::os::windows::io::OwnedHandle;
@@ -28,9 +32,15 @@ pub(super) enum BrokerCommand {
     Test(TestCommand),
     LoadDocument {
         start: DocumentStart,
+        state: DocumentState,
         body: Vec<u8>,
     },
-    CompleteFetchBatch(Vec<BrowserFetchResponse>),
+    UpdateCookieSnapshot(CookieStateSnapshot),
+    UpdateStorageSnapshot {
+        document: DocumentId,
+        area: StorageAreaKind,
+        snapshot: StorageAreaSnapshot,
+    },
     AdvanceTime {
         document: DocumentId,
         elapsed: Duration,
@@ -53,7 +63,9 @@ pub(super) struct BrokerResources {
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
-    pub(super) events: mpsc::Sender<RendererEvent>,
+    pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
+    pub(super) events: super::events::EventSender,
+    pub(super) wake: super::wake::BrokerWake,
     pub(super) shared: Arc<Mutex<SharedDiagnostics>>,
     pub(super) options: RendererLaunchOptions,
 }
@@ -76,6 +88,8 @@ struct Broker {
     exit_reason: Option<RendererExitReason>,
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
+    active_document: Option<DocumentId>,
+    outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
 }
 
 impl Broker {
@@ -94,13 +108,17 @@ impl Broker {
             exit_reason: None,
             incoming_fetch: None,
             incoming_presentation: None,
+            active_document: None,
+            outgoing_fetch: HashMap::new(),
         }
     }
 
     fn run(&mut self) {
+        self.resources().wake.register_current();
         loop {
             self.process_commands();
             self.process_messages();
+            self.process_fetch_stream();
             if self.process_has_exited() {
                 self.finish_exit();
                 break;
@@ -108,109 +126,12 @@ impl Broker {
             self.enforce_deadlines();
             self.send_heartbeat();
             self.refresh_metrics();
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    fn process_commands(&mut self) {
-        loop {
-            let command = match self.resources().commands.try_recv() {
-                Ok(command) => command,
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.begin_shutdown(None);
-                    break;
-                }
-            };
-            match command {
-                BrokerCommand::Ping(reply) => self.send_ping(Some(reply)),
-                BrokerCommand::ProbeRestrictions {
-                    loopback_port,
-                    reply,
-                } => {
-                    if self.pending_probe.is_some() {
-                        let _ = reply.send(Err("renderer probe already pending".into()));
-                    } else if self
-                        .writer()
-                        .send_browser(&BrowserMessage::Test(TestCommand::ProbeRestrictions {
-                            loopback_port,
-                        }))
-                        .is_ok()
-                    {
-                        self.pending_probe = Some(reply);
-                    } else {
-                        let _ = reply.send(Err("send renderer restriction probe".into()));
-                    }
-                }
-                BrokerCommand::Test(command) => {
-                    if let Err(error) = self.writer().send_browser(&BrowserMessage::Test(command)) {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::LoadDocument { start, body } => {
-                    if let Err(error) = self.send_document(start, body) {
-                        self.protocol_failure(error);
-                    }
-                }
-                BrokerCommand::CompleteFetchBatch(responses) => {
-                    if let Err(error) = self.send_fetch_responses(responses) {
-                        self.protocol_failure(error);
-                    }
-                }
-                BrokerCommand::AdvanceTime {
-                    document,
-                    elapsed,
-                    max_callbacks,
-                } => {
-                    let elapsed_micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
-                    if let Err(error) = self.writer().send_browser(&BrowserMessage::AdvanceTime {
-                        document,
-                        elapsed_micros,
-                        max_callbacks,
-                    }) {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::ViewportChanged { document, viewport } => {
-                    if let Err(error) = self
-                        .writer()
-                        .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
-                    {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::CancelDocument(document) => {
-                    if let Err(error) = self
-                        .writer()
-                        .send_browser(&BrowserMessage::CancelDocument(document))
-                    {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
-                BrokerCommand::Terminate => {
-                    self.exit_reason = Some(RendererExitReason::Terminated);
-                    self.terminate_job(74);
-                }
-                BrokerCommand::CloseJobForTest(reply) => {
-                    if !self.resources().options.test_mode {
-                        let _ = reply.send(Err("Job close is restricted to test sessions".into()));
-                    } else {
-                        self.exit_reason = Some(RendererExitReason::Terminated);
-                        let job = self
-                            .resources
-                            .as_mut()
-                            .and_then(|resources| resources.job.take());
-                        drop(job);
-                        let _ = reply.send(Ok(()));
-                    }
-                }
-            }
+            self.resources().wake.wait(Duration::from_millis(10));
         }
     }
 
     fn process_messages(&mut self) {
-        loop {
+        for _ in 0..crate::limits::MAX_QUEUED_RENDERER_IPC_MESSAGES {
             match self.resources().incoming.try_recv() {
                 Ok(Ok(RendererMessage::Pong(token))) => {
                     self.shared().last_pong = Instant::now();
@@ -227,10 +148,13 @@ impl Broker {
                     }
                 }
                 Ok(Ok(RendererMessage::Diagnostic(diagnostic))) => {
-                    let _ = self.resources().events.send(RendererEvent::Diagnostic {
+                    if let Err(error) = self.emit_event(RendererEvent::Diagnostic {
                         code: diagnostic.code,
                         text: diagnostic.text,
-                    });
+                    }) {
+                        self.protocol_failure(error.to_string());
+                        break;
+                    }
                 }
                 Ok(Ok(RendererMessage::Restrictions(report))) => {
                     if let Some(reply) = self.pending_probe.take() {
@@ -249,7 +173,9 @@ impl Broker {
                     | RendererMessage::PresentationEnd { .. }
                     | RendererMessage::TimeAdvanced { .. }
                     | RendererMessage::DocumentFailed { .. }
-                    | RendererMessage::NavigationRequested { .. }),
+                    | RendererMessage::NavigationRequested { .. }
+                    | RendererMessage::CookieMutation(_)
+                    | RendererMessage::StorageMutation(_)),
                 )) => {
                     if let Err(error) = self.process_document_message(message) {
                         self.protocol_failure(error.to_string());
@@ -310,7 +236,9 @@ impl Broker {
             >= self.resources().options.unresponsive_timeout;
         if unresponsive && self.shared().state == RendererState::Running {
             self.shared().state = RendererState::Unresponsive;
-            let _ = self.resources().events.send(RendererEvent::Unresponsive);
+            if let Err(error) = self.emit_event(RendererEvent::Unresponsive) {
+                self.protocol_failure(error.to_string());
+            }
         }
         let task_budget = self
             .resources()
@@ -388,23 +316,24 @@ impl Broker {
         };
         let reason = self.exit_reason.clone().unwrap_or(default_reason);
         let uptime = resources.shared.lock().unwrap().started.elapsed();
-        {
-            let mut shared = resources.shared.lock().unwrap();
-            shared.state = RendererState::Exited;
-            shared.sample = process_sample(&resources.process);
-            shared.exit_reason = Some(reason.clone());
-        }
         let exit = RendererExit {
             process_id: resources.shared.lock().unwrap().process_id,
             code,
             reason,
             uptime,
         };
+        {
+            let mut shared = resources.shared.lock().unwrap();
+            shared.state = RendererState::Exited;
+            shared.sample = process_sample(&resources.process);
+            shared.exit_reason = Some(exit.reason.clone());
+            shared.exit = Some(exit.clone());
+        }
         fail_pending(&mut self.pending_pings, &mut self.pending_probe);
         if let Some(reply) = self.shutdown_reply.take() {
             let _ = reply.send(Ok(exit.clone()));
         }
-        let _ = resources.events.send(RendererEvent::Exited(exit));
+        let _ = resources.events.try_send(RendererEvent::Exited(exit));
         drop(resources.writer);
         drop(resources.job);
         drop(resources.process);
@@ -434,6 +363,10 @@ impl Broker {
         if let Some(job) = self.resources().job.as_ref() {
             terminate_job(job, code);
         }
+    }
+
+    fn emit_event(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+        self.resources().events.try_send(event)
     }
 }
 

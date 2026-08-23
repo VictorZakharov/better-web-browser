@@ -5,7 +5,7 @@ use crate::limits::{
     RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT, RENDERER_STARTUP_TIMEOUT,
     RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
 };
-use crate::renderer_protocol::{Nonce, RendererSessionId};
+use crate::renderer_protocol::{BrowsingContextId, Nonce, RendererSessionId};
 use std::fs::File;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
@@ -34,6 +34,7 @@ pub enum StartupFault {
 #[derive(Clone, Debug)]
 pub struct RendererLaunchOptions {
     pub executable: PathBuf,
+    pub browsing_context: BrowsingContextId,
     pub startup_timeout: Duration,
     pub shutdown_timeout: Duration,
     pub heartbeat_interval: Duration,
@@ -47,6 +48,7 @@ impl RendererLaunchOptions {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
             executable: executable.into(),
+            browsing_context: BrowsingContextId::new(1).expect("default browsing context"),
             startup_timeout: RENDERER_STARTUP_TIMEOUT,
             shutdown_timeout: RENDERER_SHUTDOWN_TIMEOUT,
             heartbeat_interval: RENDERER_HEARTBEAT_INTERVAL,

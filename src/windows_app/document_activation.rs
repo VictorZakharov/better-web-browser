@@ -3,7 +3,7 @@
 use super::browser_navigation::HistoryMode;
 use super::*;
 use better_web_browser::renderer_protocol::{
-    DocumentId, DocumentStart, PresentedViewport, RendererPresentation,
+    DocumentId, DocumentStart, DocumentState, PresentedViewport, RendererPresentation,
 };
 
 pub(super) struct LoadedPage {
@@ -11,7 +11,7 @@ pub(super) struct LoadedPage {
     pub(super) final_url: String,
     pub(super) status: u16,
     pub(super) content_type: String,
-    pub(super) cookie_header: String,
+    pub(super) cookie_snapshot: winhttp::CookieSnapshot,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
 }
@@ -85,9 +85,24 @@ impl BrowserState {
             url: page.final_url.clone(),
             status: page.status,
             content_type: page.content_type,
-            cookie_header: page.cookie_header,
             body_length,
             viewport: self.renderer_viewport(),
+        };
+        let state = match (
+            self.local_storage.snapshot(&page.final_url),
+            self.session_storage.snapshot(&page.final_url),
+        ) {
+            (Ok(local_storage), Ok(session_storage)) => DocumentState {
+                cookie_version: page.cookie_snapshot.version,
+                cookie_header: page.cookie_snapshot.header,
+                local_storage,
+                session_storage,
+            },
+            (Err(error), _) | (_, Err(error)) => {
+                self.loading = false;
+                self.set_status(&format!("Could not prepare document storage: {error}"));
+                return;
+            }
         };
         let metrics = RendererLoadMetrics {
             final_url: page.final_url,
@@ -95,7 +110,7 @@ impl BrowserState {
             bytes: page.bytes,
             network_time: page.network_time,
         };
-        match session.load_document(start, page.body) {
+        match session.load_document(start, state, page.body) {
             Ok(()) => {
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_document = Some(document);
@@ -148,11 +163,6 @@ impl BrowserState {
         let first_presentation = self.renderer_revision == 0;
         self.renderer_revision = presentation.revision;
 
-        for cookie in &presentation.runtime.cookie_updates {
-            if let Err(error) = self.http_client.set_cookie(&presentation.final_url, cookie) {
-                self.status_text = format!("document.cookie update failed: {error}");
-            }
-        }
         if let Some(url) = presentation.runtime.navigation_url.as_deref()
             && url != presentation.final_url
             && self.allow_script_navigation(url)

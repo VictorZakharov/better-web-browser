@@ -37,7 +37,9 @@ The renderer process boundary keeps both Fetch policy and WinHTTP in the trusted
 An untrusted renderer submits a bounded fetch intent; the browser reconstructs `FetchRequest` from
 the active document and applies origin, credentials, header, redirect, cookie, CORS, and body policy
 before any transport call. See
-[ADR 0001](architecture/0001-renderer-process-boundary.md) for process ownership and IPC rules.
+[ADR 0001](architecture/0001-renderer-process-boundary.md) for process ownership and IPC rules and
+[ADR 0004](architecture/0004-browser-state-and-fetch-broker.md) for browser-owned state and streaming
+broker details.
 
 ## Request policies
 
@@ -58,6 +60,10 @@ body-budget, and CORS failures are typed `FetchError` values.
 Every active document owns a `FetchController`. Navigation aborts the previous controller before
 creating the next one, so blocking, deferred, and asynchronous resources share one abort signal.
 Workers check that signal before and after WinHTTP operations and between response-body chunks.
+WinHTTP response bodies are advanced with
+[`WinHttpQueryDataAvailable`](https://learn.microsoft.com/windows/win32/api/winhttp/nf-winhttp-winhttpquerydataavailable)
+and read in at most 64 KiB chunks. The network-worker queue holds at most eight chunks; a full queue
+backpressures the worker until the renderer broker makes progress.
 
 WinHTTP is currently used synchronously on background workers. Microsoft warns against closing a
 synchronous request handle from another thread while an operation is pending, so cancellation does
@@ -65,8 +71,12 @@ not use that unsafe shortcut. A platform call already in progress is allowed to 
 the request handle is dropped and no further body or redirect work occurs. Moving the transport to
 asynchronous WinHTTP would allow an OS-level wakeup without changing the Fetch-facing contract.
 
-Each response has an explicit byte ceiling (16 MiB by default), enforced while chunks arrive. The
-document layer retains its separate aggregate page-resource budget.
+Each request and response has an explicit byte ceiling (16 MiB by default), enforced while chunks
+arrive. A renderer Fetch batch admits at most 256 requests and 32 MiB of aggregate request bodies;
+the browser executes at most eight of those requests concurrently. The document layer retains its
+separate 32 MiB aggregate page-resource budget. Browser command, decoded-frame, UI-event, and stream
+queues are all bounded; queue exhaustion fails the affected renderer rather than blocking the Win32
+message pump or growing memory without limit.
 
 ## Offline verification
 

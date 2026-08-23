@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_COOKIE_PAIR_BYTES: usize = 4_096;
 const MAX_ATTRIBUTE_VALUE_BYTES: usize = 1_024;
-const MAX_PERSISTENT_AGE: Duration = Duration::from_secs(400 * 24 * 60 * 60);
+pub(super) const MAX_PERSISTENT_AGE: Duration = Duration::from_secs(400 * 24 * 60 * 60);
 
 #[derive(Debug, Clone, Copy)]
 enum MaxAge {

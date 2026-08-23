@@ -1,48 +1,98 @@
 use super::*;
-use crate::limits::{MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES};
-use crate::renderer_protocol::{FetchRequestHead, TransferChunk};
+use crate::limits::{
+    MAX_RENDERER_FETCH_BATCH_BODY_BYTES, MAX_RENDERER_FETCH_BATCH_METADATA_BYTES,
+    MAX_RENDERER_FETCH_REQUESTS_PER_BATCH, MAX_RENDERER_PRESENTATION_BYTES,
+    MAX_RESPONSE_BODY_BYTES,
+};
+use crate::renderer_protocol::{
+    CookieStateSnapshot, FetchRequestHead, StorageSnapshotEnd, StorageSnapshotEntry,
+    StorageSnapshotStart, TransferChunk,
+};
+use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
 impl Broker {
     pub(super) fn send_document(
         &mut self,
         start: DocumentStart,
+        state: DocumentState,
         body: Vec<u8>,
     ) -> Result<(), String> {
         start.validate().map_err(|error| error.to_string())?;
+        state.validate().map_err(|error| error.to_string())?;
         if body.len() != start.body_length as usize {
             return Err("document transfer length does not match its declaration".into());
         }
+        self.outgoing_fetch.clear();
         self.writer()
             .send_browser(&BrowserMessage::BeginDocument(start.clone()))
             .map_err(|error| error.to_string())?;
+        self.send_cookie_snapshot(CookieStateSnapshot {
+            document: start.document,
+            version: state.cookie_version,
+            header: state.cookie_header,
+        })?;
+        self.send_storage_snapshot(start.document, StorageAreaKind::Local, state.local_storage)?;
+        self.send_storage_snapshot(
+            start.document,
+            StorageAreaKind::Session,
+            state.session_storage,
+        )?;
         self.send_browser_chunks(start.document.get(), &body, BrowserMessage::DocumentChunk)?;
         self.writer()
             .send_browser(&BrowserMessage::EndDocument(start.document))
+            .map_err(|error| error.to_string())?;
+        self.active_document = Some(start.document);
+        Ok(())
+    }
+
+    pub(super) fn send_cookie_snapshot(
+        &mut self,
+        snapshot: CookieStateSnapshot,
+    ) -> Result<(), String> {
+        snapshot.validate().map_err(|error| error.to_string())?;
+        self.writer()
+            .send_browser(&BrowserMessage::CookieSnapshot(snapshot))
             .map_err(|error| error.to_string())
     }
 
-    pub(super) fn send_fetch_responses(
+    pub(super) fn send_storage_snapshot(
         &mut self,
-        responses: Vec<BrowserFetchResponse>,
+        document: DocumentId,
+        area: StorageAreaKind,
+        snapshot: StorageAreaSnapshot,
     ) -> Result<(), String> {
-        for response in responses {
-            if response.body.len() != response.head.body_length() {
-                return Err("Fetch response length does not match its declaration".into());
-            }
-            let request_id = response.head.request_id;
+        snapshot.validate().map_err(|error| error.to_string())?;
+        let version = snapshot.version;
+        let entry_count = u32::try_from(snapshot.entries.len())
+            .map_err(|_| "storage snapshot entry count overflow".to_string())?;
+        self.writer()
+            .send_browser(&BrowserMessage::StorageSnapshotStart(
+                StorageSnapshotStart {
+                    document,
+                    area,
+                    version,
+                    entry_count,
+                },
+            ))
+            .map_err(|error| error.to_string())?;
+        for entry in snapshot.entries {
             self.writer()
-                .send_browser(&BrowserMessage::FetchResponseStart(response.head))
-                .map_err(|error| error.to_string())?;
-            self.send_browser_chunks(
-                request_id,
-                &response.body,
-                BrowserMessage::FetchResponseChunk,
-            )?;
-            self.writer()
-                .send_browser(&BrowserMessage::FetchResponseEnd(request_id))
+                .send_browser(&BrowserMessage::StorageSnapshotEntry(
+                    StorageSnapshotEntry {
+                        document,
+                        area,
+                        entry,
+                    },
+                ))
                 .map_err(|error| error.to_string())?;
         }
-        Ok(())
+        self.writer()
+            .send_browser(&BrowserMessage::StorageSnapshotEnd(StorageSnapshotEnd {
+                document,
+                area,
+                version,
+            }))
+            .map_err(|error| error.to_string())
     }
 
     fn send_browser_chunks(
@@ -106,22 +156,38 @@ impl Broker {
                 document,
                 next_timer_micros,
             } => {
-                let _ = self.resources().events.send(RendererEvent::TimeAdvanced {
-                    document,
-                    next_timer_micros,
-                });
+                if self.active_document == Some(document) {
+                    self.emit_event(RendererEvent::TimeAdvanced {
+                        document,
+                        next_timer_micros,
+                    })?;
+                }
             }
             RendererMessage::DocumentFailed { document, detail } => {
-                let _ = self
-                    .resources()
-                    .events
-                    .send(RendererEvent::DocumentFailed { document, detail });
+                if self.active_document == Some(document) {
+                    self.emit_event(RendererEvent::DocumentFailed { document, detail })?;
+                }
             }
             RendererMessage::NavigationRequested { document, url } => {
-                let _ = self
-                    .resources()
-                    .events
-                    .send(RendererEvent::NavigationRequested { document, url });
+                if self.active_document == Some(document) {
+                    self.emit_event(RendererEvent::NavigationRequested { document, url })?;
+                }
+            }
+            RendererMessage::CookieMutation(mutation) => {
+                if self.active_document != Some(mutation.document) {
+                    // Cancellation and pipe delivery can race. A well-formed mutation from the
+                    // replaced document has no authority, but it is not a renderer violation.
+                    return Ok(());
+                }
+                mutation.validate()?;
+                self.emit_event(RendererEvent::CookieMutation(mutation))?;
+            }
+            RendererMessage::StorageMutation(request) => {
+                if self.active_document != Some(request.document) {
+                    return Ok(());
+                }
+                request.validate()?;
+                self.emit_event(RendererEvent::StorageMutation(request))?;
             }
             _ => return Err(ProtocolError::InvalidPayload("renderer document message")),
         }
@@ -135,9 +201,10 @@ impl Broker {
         request_count: u32,
     ) -> Result<(), ProtocolError> {
         if self.incoming_fetch.is_some()
+            || self.active_document != Some(document)
             || batch_id == 0
             || request_count == 0
-            || request_count > 256
+            || request_count as usize > MAX_RENDERER_FETCH_REQUESTS_PER_BATCH
         {
             return Err(ProtocolError::InvalidPayload("renderer Fetch batch"));
         }
@@ -147,6 +214,8 @@ impl Broker {
             expected: request_count as usize,
             requests: Vec::with_capacity(request_count as usize),
             active: None,
+            body_bytes: 0,
+            metadata_bytes: 0,
         });
         Ok(())
     }
@@ -164,12 +233,46 @@ impl Broker {
             || batch.document != request.document
             || batch.active.is_some()
             || batch.requests.len() >= batch.expected
+            || batch
+                .requests
+                .iter()
+                .any(|existing| existing.head.request_id == request.request_id)
         {
             return Err(ProtocolError::InvalidPayload(
                 "renderer Fetch request order",
             ));
         }
         request.validate()?;
+        let metadata_bytes = batch
+            .metadata_bytes
+            .checked_add(
+                request
+                    .metadata_bytes()
+                    .ok_or(ProtocolError::InvalidPayload(
+                        "renderer Fetch batch metadata length",
+                    ))?,
+            )
+            .ok_or(ProtocolError::InvalidPayload(
+                "renderer Fetch batch metadata length",
+            ))?;
+        if metadata_bytes > MAX_RENDERER_FETCH_BATCH_METADATA_BYTES {
+            return Err(ProtocolError::InvalidPayload(
+                "renderer Fetch batch metadata budget",
+            ));
+        }
+        let body_bytes = batch
+            .body_bytes
+            .checked_add(request.body_length as usize)
+            .ok_or(ProtocolError::InvalidPayload(
+                "renderer Fetch batch body length",
+            ))?;
+        if body_bytes > MAX_RENDERER_FETCH_BATCH_BODY_BYTES {
+            return Err(ProtocolError::InvalidPayload(
+                "renderer Fetch batch body budget",
+            ));
+        }
+        batch.metadata_bytes = metadata_bytes;
+        batch.body_bytes = body_bytes;
         batch.active = Some(IncomingFetchRequest {
             body: TransferAssembler::new(
                 request.request_id,
@@ -209,10 +312,7 @@ impl Broker {
         batch.requests.push(request);
         if batch.requests.len() == batch.expected {
             let complete = self.incoming_fetch.take().expect("Fetch batch exists");
-            let _ = self
-                .resources()
-                .events
-                .send(RendererEvent::FetchBatch(complete.requests));
+            self.emit_event(RendererEvent::FetchBatch(complete.requests))?;
         }
         Ok(())
     }
@@ -267,10 +367,9 @@ impl Broker {
                 "presentation archive identity",
             ));
         }
-        let _ = self
-            .resources()
-            .events
-            .send(RendererEvent::Presentation(Box::new(presentation)));
+        if self.active_document == Some(document) {
+            self.emit_event(RendererEvent::Presentation(Box::new(presentation)))?;
+        }
         Ok(())
     }
 }
@@ -281,6 +380,8 @@ pub(super) struct IncomingFetchBatch {
     expected: usize,
     requests: Vec<RendererFetchRequest>,
     active: Option<IncomingFetchRequest>,
+    body_bytes: usize,
+    metadata_bytes: usize,
 }
 
 struct IncomingFetchRequest {

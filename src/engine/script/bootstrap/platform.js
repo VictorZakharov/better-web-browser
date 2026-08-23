@@ -6,19 +6,18 @@
         back() {}, forward() {}, go() {}
     };
 
-    const storage = () => {
-        const values = new Map();
+    const storage = area => {
         return {
-            get length() { return values.size; },
-            key(index) { return [...values.keys()][index] || null; },
-            getItem(key) { key = String(key); return values.has(key) ? values.get(key) : null; },
-            setItem(key, value) { values.set(String(key), String(value)); },
-            removeItem(key) { values.delete(String(key)); },
-            clear() { values.clear(); }
+            get length() { return host('storageLength', area); },
+            key(index) { return host('storageKey', area, Number(index) >>> 0); },
+            getItem(key) { return host('storageGet', area, String(key)); },
+            setItem(key, value) { host('storageSet', area, String(key), String(value)); },
+            removeItem(key) { host('storageRemove', area, String(key)); },
+            clear() { host('storageClear', area); }
         };
     };
-    windowObject.localStorage = storage();
-    windowObject.sessionStorage = storage();
+    windowObject.localStorage = storage('local');
+    windowObject.sessionStorage = storage('session');
     windowObject.navigator = {
         userAgent: host('userAgent'),
         appName: 'Netscape',
