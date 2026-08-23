@@ -10,7 +10,8 @@ use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, DocumentId, DocumentStart, FrameReader, FrameWriter, ProtocolError,
+    BrowserMessage, DocumentId, DocumentInput, DocumentStart, FrameReader, FrameWriter,
+    NavigationCause, NavigationDisposition, PresentationAcknowledgement, ProtocolError,
     RendererMessage, RendererPresentation, TransferAssembler, TransferChunk,
 };
 use std::collections::VecDeque;
@@ -106,6 +107,10 @@ impl ChildConnection {
             BrowserMessage::ViewportChanged { document, viewport } => {
                 self.resize_document(document, viewport)
             }
+            BrowserMessage::Input(input) => self.interact_document(input),
+            BrowserMessage::PresentationAcknowledged(acknowledgement) => {
+                self.acknowledge_presentation(acknowledgement)
+            }
             BrowserMessage::CancelDocument(document) => {
                 if self
                     .incoming_storage_update
@@ -189,7 +194,12 @@ impl ChildConnection {
             Ok(Ok(LoadResult::Navigate(url, text))) => {
                 self.prepared_text = Some(*text);
                 self.writer
-                    .send_renderer(&RendererMessage::NavigationRequested { document, url })
+                    .send_renderer(&RendererMessage::NavigationRequested {
+                        document,
+                        url,
+                        disposition: NavigationDisposition::CurrentTab,
+                        cause: NavigationCause::Redirect,
+                    })
                     .map_err(|error| error.to_string())?
             }
             Ok(Err(error)) => self.send_document_failure(document, error)?,
@@ -225,9 +235,15 @@ impl ChildConnection {
                     next_timer_micros: runtime.next_timer_micros(),
                 })
                 .map_err(|error| error.to_string())?,
-            Ok(Err(error)) => self.send_document_failure(document, error)?,
-            Err(payload) => self.send_document_failure(document, panic_detail(payload))?,
-        }
+            Ok(Err(error)) => {
+                self.send_document_failure(document, error)?;
+                return Ok(());
+            }
+            Err(payload) => {
+                self.send_document_failure(document, panic_detail(payload))?;
+                return Ok(());
+            }
+        };
         if !self.stopping {
             self.document = Some(runtime);
         }
@@ -243,13 +259,73 @@ impl ChildConnection {
             return Ok(());
         };
         if runtime.id() == document {
-            match catch_unwind(AssertUnwindSafe(|| runtime.resize(viewport))) {
+            match catch_unwind(AssertUnwindSafe(|| runtime.resize(viewport, self))) {
                 Ok(Ok(presentation)) => self.send_presentation(&presentation)?,
-                Ok(Err(error)) => self.send_document_failure(document, error)?,
-                Err(payload) => self.send_document_failure(document, panic_detail(payload))?,
+                Ok(Err(error)) => {
+                    self.send_document_failure(document, error)?;
+                    return Ok(());
+                }
+                Err(payload) => {
+                    self.send_document_failure(document, panic_detail(payload))?;
+                    return Ok(());
+                }
             }
         }
         self.document = Some(runtime);
+        Ok(())
+    }
+
+    fn interact_document(&mut self, input: DocumentInput) -> Result<(), String> {
+        let document = input.document();
+        let Some(mut runtime) = self.document.take() else {
+            return Ok(());
+        };
+        if runtime.id() != document {
+            self.document = Some(runtime);
+            return Ok(());
+        }
+        let result = catch_unwind(AssertUnwindSafe(|| runtime.interact(input, self)));
+        match result {
+            Ok(Ok(result)) => {
+                if let Some(presentation) = result.presentation {
+                    self.send_presentation(&presentation)?;
+                }
+                if let Some((url, disposition)) = result.navigation {
+                    self.writer
+                        .send_renderer(&RendererMessage::NavigationRequested {
+                            document,
+                            url,
+                            disposition,
+                            cause: NavigationCause::UserActivation,
+                        })
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            Ok(Err(error)) => {
+                self.send_document_failure(document, error)?;
+                return Ok(());
+            }
+            Err(payload) => {
+                self.send_document_failure(document, panic_detail(payload))?;
+                return Ok(());
+            }
+        }
+        if !self.stopping {
+            self.document = Some(runtime);
+        }
+        Ok(())
+    }
+
+    fn acknowledge_presentation(
+        &mut self,
+        acknowledgement: PresentationAcknowledgement,
+    ) -> Result<(), String> {
+        let Some(runtime) = self.document.as_mut() else {
+            return Ok(());
+        };
+        if runtime.id() == acknowledgement.document {
+            runtime.acknowledge_presentation(acknowledgement)?;
+        }
         Ok(())
     }
 

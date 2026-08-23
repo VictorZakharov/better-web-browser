@@ -144,6 +144,8 @@ pub enum DisplayItem {
         font: FontSpec,
         color: Color,
         link: Option<String>,
+        /// Stable renderer DOM target for hit-testable text such as anchor contents.
+        node_id: Option<NodeId>,
         raster_run_id: u64,
         glyphs: Vec<PositionedGlyph>,
     },
@@ -178,6 +180,7 @@ pub(super) enum InlineAtom {
         font: FontSpec,
         color: Color,
         link: Option<String>,
+        node_id: Option<NodeId>,
         line_height: f32,
         no_wrap: bool,
     },

@@ -158,6 +158,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
+        self.route_renderer_lifecycle(
+            better_web_browser::renderer_protocol::DocumentLifecycle::Hidden,
+        );
         self.omnibox_text = window_text(self.controls.address);
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         let focused = GetFocus();
@@ -181,6 +184,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn restore_active_tab_ui(&mut self) {
+        self.route_renderer_lifecycle(
+            better_web_browser::renderer_protocol::DocumentLifecycle::Active,
+        );
         set_window_text(self.controls.address, &self.omnibox_text);
         set_window_text(
             self.controls.reader,

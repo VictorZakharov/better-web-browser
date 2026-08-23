@@ -13,7 +13,7 @@ impl InlineBoxMetrics {
 pub(super) fn collect_text_atoms(
     text: &str,
     style: &ComputedStyle,
-    link: Option<String>,
+    link: Option<(String, NodeId)>,
     output: &mut Vec<InlineAtom>,
     pending_space: &mut bool,
 ) {
@@ -60,12 +60,21 @@ pub(super) fn collect_text_atoms(
     }
 }
 
-pub(super) fn text_atom(text: String, style: &ComputedStyle, link: Option<String>) -> InlineAtom {
+pub(super) fn text_atom(
+    text: String,
+    style: &ComputedStyle,
+    link: Option<(String, NodeId)>,
+) -> InlineAtom {
+    let (link, node_id) = match link {
+        Some((url, node_id)) => (Some(url), Some(node_id)),
+        None => (None, None),
+    };
     InlineAtom::Text {
         text,
         font: FontSpec::from_style(style),
         color: style.color,
         link,
+        node_id,
         line_height: style.line_height,
         no_wrap: style.white_space == WhiteSpace::NoWrap,
     }

@@ -5,6 +5,7 @@
 
 mod codec;
 mod document;
+mod input;
 mod message;
 mod presentation;
 mod state;
@@ -18,6 +19,11 @@ pub use document::{
     FetchResponseResult, FetchResponseType, PresentedViewport, RendererFetchRequest,
     RendererFetchResponse, ResourceDestination, StreamingTransferAssembler, TransferAssembler,
     TransferChunk,
+};
+pub use input::{
+    DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
+    KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
+    PointerInput, PointerPhase, PresentationAcknowledgement, ScrollInput, TextInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce, RendererDiagnostic,
@@ -35,7 +41,7 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-pub const PROTOCOL_MAJOR: u16 = 2;
+pub const PROTOCOL_MAJOR: u16 = 3;
 pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 

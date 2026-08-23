@@ -53,9 +53,29 @@ impl Broker {
                     max_callbacks,
                 } => self.advance_time(document, elapsed, max_callbacks),
                 BrokerCommand::ViewportChanged { document, viewport } => {
-                    if let Err(error) = self
-                        .writer()
-                        .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
+                    if self.active_document == Some(document)
+                        && let Err(error) = self
+                            .writer()
+                            .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::Input(input) => {
+                    if self.active_document == Some(input.document())
+                        && let Err(error) =
+                            self.writer().send_browser(&BrowserMessage::Input(input))
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
+                BrokerCommand::PresentationAcknowledged(acknowledgement) => {
+                    if self.active_document == Some(acknowledgement.document)
+                        && let Err(error) =
+                            self.writer()
+                                .send_browser(&BrowserMessage::PresentationAcknowledged(
+                                    acknowledgement,
+                                ))
                     {
                         self.protocol_failure(error.to_string());
                     }

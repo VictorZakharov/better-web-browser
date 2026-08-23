@@ -4,7 +4,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn collect_inline(
         &self,
         node: &NodeRef,
-        inherited_link: Option<String>,
+        inherited_link: Option<(String, NodeId)>,
         output: &mut Vec<InlineAtom>,
         pending_space: &mut bool,
         honor_block_boundaries: bool,
@@ -25,6 +25,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let link = if tag == "a" {
                     node.attr("href")
                         .and_then(|href| resolve_url(&self.page.source_url, &href))
+                        .map(|url| (url, node.id()))
                         .or(inherited_link)
                 } else {
                     inherited_link
@@ -110,7 +111,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &self,
         node: &NodeRef,
         style: &ComputedStyle,
-        _link: Option<String>,
+        _link: Option<(String, NodeId)>,
         output: &mut Vec<InlineAtom>,
     ) {
         let Some(url) = self.page.image_url(node) else {

@@ -2,6 +2,7 @@
 
 mod diagnostics;
 mod fetch;
+mod interaction;
 mod reporting;
 mod resources;
 mod text;
@@ -45,6 +46,14 @@ pub(super) struct DocumentRuntime {
     workers: RendererWorkers,
     executed_async_scripts: HashSet<String>,
     deferred_resources_loaded: bool,
+    lifecycle: crate::renderer_protocol::DocumentLifecycle,
+    focused_node: Option<crate::engine::dom::NodeId>,
+    pointer_down: Option<(
+        crate::engine::dom::NodeId,
+        crate::renderer_protocol::PointerButton,
+    )>,
+    last_input_sequence: u64,
+    last_acknowledged_revision: u64,
     revision: u64,
     sent_images: HashSet<String>,
     diagnostic_selectors: Vec<String>,
@@ -89,6 +98,11 @@ impl DocumentRuntime {
             workers: RendererWorkers::new(),
             executed_async_scripts: HashSet::new(),
             deferred_resources_loaded: false,
+            lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
+            focused_node: None,
+            pointer_down: None,
+            last_input_sequence: 0,
+            last_acknowledged_revision: 0,
             revision: 0,
             sent_images: HashSet::new(),
             diagnostic_selectors: start.diagnostic_selectors,
@@ -169,6 +183,9 @@ impl DocumentRuntime {
     }
 
     pub(super) fn next_timer_micros(&mut self) -> Option<u64> {
+        if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
+            return None;
+        }
         let runtime_timer = self
             .script_runtime
             .as_mut()
@@ -198,6 +215,9 @@ impl DocumentRuntime {
         max_callbacks: u32,
         connection: &mut ChildConnection,
     ) -> Result<Option<RendererPresentation>, String> {
+        if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
+            return Ok(None);
+        }
         let mut outcome = ScriptOutcome::default();
         let mut resources_changed = false;
         let performed_post_load_pass = self.has_post_load_work();
@@ -291,9 +311,21 @@ impl DocumentRuntime {
     pub(super) fn resize(
         &mut self,
         viewport: crate::renderer_protocol::PresentedViewport,
+        connection: &mut ChildConnection,
     ) -> Result<RendererPresentation, String> {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
         self.text.set_dpi(viewport.dpi);
+        let mut outcome = self
+            .dispatch_user_input(
+                crate::engine::UserInputEvent::Viewport {
+                    width: viewport.width,
+                    height: viewport.height,
+                    scale: viewport.dpi as f32 / 96.0,
+                },
+                connection,
+            )?
+            .outcome;
+        self.admit_user_input_outcome(&mut outcome, connection)?;
         let style = self.page.refresh_resources(viewport.style_width);
         let started = Instant::now();
         self.rebuild_layout();
@@ -301,7 +333,7 @@ impl DocumentRuntime {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
-        self.presentation(ScriptOutcome::default(), style, load)
+        self.presentation(outcome, style, load)
     }
 
     fn rebuild_layout(&mut self) {

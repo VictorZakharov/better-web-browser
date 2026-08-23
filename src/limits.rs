@@ -83,6 +83,8 @@ pub const MAX_DEFERRED_RENDERER_MESSAGES: usize = 64;
 /// Maximum validated immutable presentation retained by the browser for one revision.
 pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;
+/// Maximum normalized native-control text carried in one browser-to-renderer input event.
+pub const MAX_RENDERER_TEXT_INPUT_BYTES: usize = 64 * 1024;
 pub const MAX_PAGE_DIAGNOSTIC_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTORS: usize = 32;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES: usize = 4 * 1024;

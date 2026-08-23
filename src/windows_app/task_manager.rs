@@ -1,3 +1,4 @@
+mod controls;
 mod metrics;
 mod paint;
 mod process_tree;
@@ -147,6 +148,8 @@ struct TaskManagerState {
     cpu_percent: f64,
     logical_processors: usize,
     view: TaskMetricsView,
+    selected_context: Option<u64>,
+    end_process_button: Hwnd,
 }
 
 impl TaskManagerState {
@@ -172,6 +175,8 @@ impl TaskManagerState {
                 .map(|count| count.get())
                 .unwrap_or(1),
             view: TaskMetricsView::default(),
+            selected_context: None,
+            end_process_button: null_mut(),
         }
     }
 
@@ -182,17 +187,9 @@ impl TaskManagerState {
     unsafe fn create(&mut self) -> Result<(), String> {
         self.dpi = window_dpi(self.window);
         self.fonts = Some(TaskManagerFonts::create(self.dpi)?);
+        self.create_end_process_button()?;
         SetTimer(self.window, 1, 1_000, null());
         self.refresh();
-        Ok(())
-    }
-
-    unsafe fn apply_dpi(&mut self, dpi: u32) -> Result<(), String> {
-        let dpi = dpi.max(DEFAULT_DPI);
-        if dpi != self.dpi {
-            self.fonts = Some(TaskManagerFonts::create(dpi)?);
-            self.dpi = dpi;
-        }
         Ok(())
     }
 
@@ -278,6 +275,7 @@ impl TaskManagerState {
             last_parse: format_duration(Duration::from_micros(snapshot.last_parse_micros)),
             draw_items: snapshot.retained_draw_items.to_string(),
         };
+        self.update_end_process_state();
         InvalidateRect(self.window, null(), 0);
     }
 }
@@ -317,6 +315,7 @@ pub(super) unsafe extern "system" fn window_proc(
             0
         }
         WM_SIZE => {
+            state.position_end_process_button();
             InvalidateRect(window, null(), 0);
             0
         }
@@ -335,7 +334,20 @@ pub(super) unsafe extern "system" fn window_proc(
             if state.apply_dpi(dpi).is_err() {
                 return -1;
             }
+            state.position_end_process_button();
             InvalidateRect(window, null(), 0);
+            0
+        }
+        WM_COMMAND if wparam & 0xffff == ID_TASK_END_PROCESS => {
+            state.request_selected_renderer_termination();
+            0
+        }
+        WM_LBUTTONUP => {
+            let point = Point {
+                x: (lparam as u16) as i16 as i32,
+                y: ((lparam >> 16) as u16) as i16 as i32,
+            };
+            state.select_process_at(point);
             0
         }
         WM_TIMER => {

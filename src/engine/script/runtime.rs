@@ -206,6 +206,47 @@ impl ScriptRuntime {
         self.finish_guarded_run(result)
     }
 
+    /// Dispatches one browser-normalized native event as a bounded task in this realm.
+    pub fn dispatch_user_input_with_loader(
+        &mut self,
+        event: UserInputEvent,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> UserInputResult {
+        if !self.initialized {
+            return UserInputResult {
+                outcome: lifecycle_error("the document's initial scripts have not executed"),
+                default_allowed: false,
+            };
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return UserInputResult {
+                outcome: inactive_runtime_outcome(),
+                default_allowed: false,
+            };
+        };
+        let host = Rc::clone(&self.host);
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            super::user_events::dispatch(
+                context,
+                &host,
+                event,
+                &mut dynamic_script_loader,
+                &mut self.total_script_bytes,
+            )
+        }));
+        match result {
+            Ok(mut result) => {
+                result.outcome = self.finish_guarded_run(Ok(result.outcome));
+                result
+            }
+            Err(payload) => UserInputResult {
+                outcome: self.finish_guarded_run(Err(payload)),
+                default_allowed: false,
+            },
+        }
+    }
+
     /// Delivers one asynchronous Fetch result into this document's retained realm.
     pub fn complete_fetch_with_loader(
         &mut self,

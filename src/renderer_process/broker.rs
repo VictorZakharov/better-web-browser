@@ -10,12 +10,12 @@ mod wake;
 mod worker;
 
 use super::launcher::{RendererLaunchOptions, launch};
-use super::windows::{process_sample, terminate_job, wait_for_process};
+use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_for_process};
 use crate::renderer_protocol::{
     BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
-    FrameWriter, ProtocolError, RendererFetchRequest, RendererLimits, RendererMessage,
-    RendererPresentation, RendererSessionId, RestrictionReport, StorageMutationRequest,
-    TestCommand,
+    FrameWriter, NavigationCause, NavigationDisposition, ProtocolError, RendererFetchRequest,
+    RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
+    StorageMutationRequest, TestCommand,
 };
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -68,6 +68,8 @@ pub enum RendererEvent {
     NavigationRequested {
         document: DocumentId,
         url: String,
+        disposition: NavigationDisposition,
+        cause: NavigationCause,
     },
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
@@ -81,6 +83,7 @@ pub struct RendererSession {
     events: events::EventReceiver,
     wake: wake::BrokerWake,
     shared: Arc<Mutex<SharedDiagnostics>>,
+    termination_job: std::os::windows::io::OwnedHandle,
     worker: Option<JoinHandle<()>>,
     shutdown_timeout: Duration,
 }
@@ -140,6 +143,13 @@ impl RendererSession {
             return Err(error);
         }
 
+        let termination_job = match launched.job.try_clone() {
+            Ok(job) => job,
+            Err(error) => {
+                terminate_startup(&launched.process, &launched.job, reader_thread);
+                return Err(format!("duplicate renderer Job handle: {error}"));
+            }
+        };
         let sample = process_sample(&launched.process);
         let now = Instant::now();
         let shared = Arc::new(Mutex::new(SharedDiagnostics {
@@ -185,6 +195,7 @@ impl RendererSession {
             events: events_rx,
             wake,
             shared,
+            termination_job,
             worker: Some(handle),
             shutdown_timeout: options.shutdown_timeout,
         })
@@ -255,7 +266,19 @@ impl RendererSession {
     }
 
     pub fn terminate(&self) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::Terminate)
+        let mut shared = self
+            .shared
+            .lock()
+            .map_err(|_| "renderer diagnostics lock poisoned".to_string())?;
+        if shared.state == RendererState::Exited {
+            return Err("renderer has already exited".into());
+        }
+        terminate_job_checked(&self.termination_job, 74)
+            .map_err(|error| format!("terminate renderer Job: {error}"))?;
+        shared.exit_reason = Some(RendererExitReason::Terminated);
+        drop(shared);
+        self.wake.notify();
+        Ok(())
     }
 
     /// Requests immediate renderer termination without waiting on the caller's thread.

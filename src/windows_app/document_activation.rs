@@ -136,6 +136,9 @@ impl BrowserState {
             Ok(()) => {
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_document = Some(document);
+                self.renderer_input_sequence = 0;
+                self.renderer_input_poll_budget = 0;
+                self.pending_renderer_scroll = None;
                 self.renderer_revision = 0;
                 self.renderer_load_metrics = Some(metrics);
                 self.renderer_next_timer = None;
@@ -144,6 +147,10 @@ impl BrowserState {
                 self.status_text = "Rendering in the isolated page process …".into();
                 if !self.processing_background_tab {
                     self.set_status("Rendering in the isolated page process …");
+                } else {
+                    self.route_renderer_lifecycle(
+                        better_web_browser::renderer_protocol::DocumentLifecycle::Hidden,
+                    );
                 }
             }
             Err(error) => {
@@ -189,12 +196,17 @@ impl BrowserState {
             && url != presentation.final_url
             && self.allow_script_navigation(url)
         {
+            self.acknowledge_renderer_presentation(
+                presentation.document,
+                presentation.revision,
+                false,
+                false,
+            );
             self.begin_navigation(url.to_string(), HistoryMode::Script);
             return;
         }
 
         let presentation_install_started = Instant::now();
-        self.destroy_page_controls();
         let previous_layout = std::mem::take(&mut self.page_layout);
         self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
         self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
@@ -239,6 +251,7 @@ impl BrowserState {
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
         self.renderer_runtime_clock = Some(Instant::now());
         self.renderer_work_pending = false;
+        self.renderer_input_poll_budget = 0;
 
         let history_index = self.history_index;
         if let Some(current) = self.history.get_mut(history_index) {
@@ -282,6 +295,12 @@ impl BrowserState {
                 benchmark.paint_time = paint_started.elapsed();
             }
         }
+        self.acknowledge_renderer_presentation(
+            presentation.document,
+            presentation.revision,
+            true,
+            true,
+        );
         self.schedule_script_runtime_wakeup();
         if first_presentation {
             self.schedule_benchmark_finish();

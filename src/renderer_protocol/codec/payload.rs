@@ -1,11 +1,13 @@
 mod document;
 mod fetch;
+mod input;
 mod state;
 
 use self::document::{
     decode_browser_document, decode_renderer_document, encode_browser_document,
     encode_renderer_document,
 };
+use self::input::{decode_browser_input, encode_browser_input};
 use self::state::{
     decode_browser_state, decode_renderer_state, encode_browser_state, encode_renderer_state,
 };
@@ -50,6 +52,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         | BrowserMessage::AdvanceTime { .. }
         | BrowserMessage::ViewportChanged { .. }
         | BrowserMessage::CancelDocument(_) => return encode_browser_document(message),
+        BrowserMessage::Input(_) | BrowserMessage::PresentationAcknowledged(_) => {
+            return encode_browser_input(message);
+        }
         BrowserMessage::CookieSnapshot(_)
         | BrowserMessage::StorageSnapshotStart(_)
         | BrowserMessage::StorageSnapshotEntry(_)
@@ -111,6 +116,9 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             decode_browser_document(kind, payload)
         }
         0x0131 | 0x0133 | 0x0135 | 0x0137 => decode_browser_state(kind, payload),
+        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d => {
+            decode_browser_input(kind, payload)
+        }
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }

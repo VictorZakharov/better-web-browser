@@ -36,6 +36,7 @@ mod runtime_guard;
 mod style_cache;
 mod style_host;
 mod types;
+mod user_events;
 mod worker_bootstrap;
 mod worker_host;
 mod worker_module;
@@ -48,7 +49,10 @@ use host_state::{HostState, HostStateLink};
 pub use network::ScriptFetchAction;
 pub use runtime::ScriptRuntime;
 pub(crate) use types::is_classic_javascript_type;
-pub use types::{DynamicScriptLoader, ScriptInput, ScriptKind, ScriptOutcome};
+pub use types::{
+    DynamicScriptLoader, ScriptInput, ScriptKind, ScriptOutcome, UserInputEvent,
+    UserInputModifiers, UserInputResult,
+};
 use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerRuntime, WorkerRuntimeOutcome};

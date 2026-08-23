@@ -168,9 +168,19 @@ impl Broker {
                     self.emit_event(RendererEvent::DocumentFailed { document, detail })?;
                 }
             }
-            RendererMessage::NavigationRequested { document, url } => {
+            RendererMessage::NavigationRequested {
+                document,
+                url,
+                disposition,
+                cause,
+            } => {
                 if self.active_document == Some(document) {
-                    self.emit_event(RendererEvent::NavigationRequested { document, url })?;
+                    self.emit_event(RendererEvent::NavigationRequested {
+                        document,
+                        url,
+                        disposition,
+                        cause,
+                    })?;
                 }
             }
             RendererMessage::CookieMutation(mutation) => {

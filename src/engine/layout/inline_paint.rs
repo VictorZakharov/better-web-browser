@@ -34,7 +34,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         match measured.atom {
             InlineAtom::Text {
-                font, color, link, ..
+                font,
+                color,
+                link,
+                node_id,
+                ..
             } => {
                 let text = measured.text.unwrap_or_default();
                 if !text.is_empty() {
@@ -49,6 +53,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         font: font.clone(),
                         color: *color,
                         link: link.clone(),
+                        node_id: *node_id,
                         raster_run_id: measured.raster_run_id,
                         glyphs: measured.glyphs.clone(),
                     });

@@ -81,8 +81,19 @@ pub(in crate::renderer_process) fn exit_code(process: &OwnedHandle) -> Option<u3
 }
 
 pub(in crate::renderer_process) fn terminate_job(job: &OwnedHandle, code: u32) {
-    unsafe {
-        windows_sys::Win32::System::JobObjects::TerminateJobObject(raw(job), code);
+    let _ = terminate_job_checked(job, code);
+}
+
+pub(in crate::renderer_process) fn terminate_job_checked(
+    job: &OwnedHandle,
+    code: u32,
+) -> std::io::Result<()> {
+    let result =
+        unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(raw(job), code) };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 

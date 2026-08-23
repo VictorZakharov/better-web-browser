@@ -57,6 +57,18 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
             return true;
         }
     }
+    if matches!(
+        message.message,
+        WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP
+    ) && !in_tab_search
+    {
+        state.route_renderer_keyboard(
+            message.hwnd,
+            message.message,
+            message.wparam,
+            message.lparam,
+        );
+    }
     if message.message != WM_KEYDOWN || message.wparam != VK_RETURN || parent.is_null() {
         return false;
     }
@@ -65,25 +77,7 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
         SendMessageW(parent, WM_COMMAND, ID_GO, 0);
         return true;
     }
-    if control_id < ID_PAGE_CONTROL_BASE as i32 {
-        return false;
-    }
-    let Some(index) = (control_id as usize).checked_sub(ID_PAGE_CONTROL_BASE) else {
-        return false;
-    };
-    let Some(control) = state.page_controls.get(index) else {
-        return false;
-    };
-    if control.spec.kind == ControlKind::TextArea {
-        return false;
-    }
-    SendMessageW(
-        parent,
-        WM_COMMAND,
-        control_id as usize,
-        message.hwnd as isize,
-    );
-    true
+    false
 }
 
 pub(in crate::windows_app) unsafe extern "system" fn chrome_control_proc(
@@ -120,6 +114,33 @@ pub(in crate::windows_app) unsafe extern "system" fn chrome_control_proc(
             InvalidateRect(window, null(), 0);
         }
         _ => {}
+    }
+    DefSubclassProc(window, message, wparam, lparam)
+}
+
+pub(in crate::windows_app) unsafe extern "system" fn page_control_proc(
+    window: Hwnd,
+    message: u32,
+    wparam: Wparam,
+    lparam: Lparam,
+    _subclass_id: usize,
+    control_id: usize,
+) -> Lresult {
+    if matches!(message, WM_SETFOCUS | WM_KILLFOCUS) {
+        let parent = GetParent(window);
+        let next = wparam as Hwnd;
+        let moves_between_page_controls = message == WM_KILLFOCUS
+            && !next.is_null()
+            && GetParent(next) == parent
+            && GetDlgCtrlID(next) >= ID_PAGE_CONTROL_BASE as i32;
+        if !parent.is_null() && !moves_between_page_controls {
+            SendMessageW(
+                parent,
+                WM_APP_PAGE_CONTROL_FOCUS,
+                control_id,
+                isize::from(message == WM_SETFOCUS),
+            );
+        }
     }
     DefSubclassProc(window, message, wparam, lparam)
 }

@@ -23,6 +23,7 @@ review can audit the complete policy without hunting through parsers and platfor
 | SVG | 4 MiB source; 32 Mi pixels | Reject source before the third-party parser and reject dimensions before allocating the render pixmap. |
 | Fonts | 32 MiB input/output; 256 WOFF tables | Validate container offsets, table counts, compressed sizes, and declared output size before allocation/decompression. |
 | IPC | 256 KiB control frames; 8 MiB image frames; 16 KiB diagnostics | Reject frame headers before allocating payload buffers and truncate diagnostics at UTF-8 boundaries. |
+| Native document input | 64 KiB text values; monotonic per-document event sequence | Drop stale documents or sequences before DOM dispatch; drop pointer moves, retain the latest unsent scroll, and coalesce consecutive state updates while a renderer Fetch response is pending. |
 | Renderer process | one child; 1 GiB process/job memory | A Windows Job Object prevents child creation and terminates the renderer when containment is lost or a budget is exceeded. |
 | Renderer liveness | 10 s without heartbeat plus 2 s kill grace | Report unresponsive state, terminate the renderer Job automatically, preserve the browser process, and expose a reloadable crash surface. |
 
@@ -31,7 +32,10 @@ processing. Image, SVG, and font consumers enforce their own tighter decoded-for
 second boundary. Remote-document decoding, parsing, JavaScript/DOM, style/layout, Workers, and
 resource decoding run in the capability-free per-tab renderer. The browser validates bounded Fetch
 intents and immutable presentation output, retains network/cookie and OS authority, and contains a
-fatal renderer exit to that tab.
+fatal renderer exit to that tab. Native pointer, keyboard, text, focus, scroll, viewport, and
+visibility changes cross typed IPC with `DocumentId` and event sequence checks. Native controls
+round-trip only renderer-issued `NodeId` values, and accepted presentation revisions receive an
+explicit browser acknowledgement after native-control projection and final presentation.
 
 ## Fuzz targets
 

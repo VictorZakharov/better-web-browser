@@ -34,6 +34,8 @@ impl Default for TaskMetricsView {
 }
 
 pub(super) struct ProcessRowView {
+    pub(super) context_id: Option<u64>,
+    pub(super) live: bool,
     pub(super) depth: usize,
     pub(super) name: String,
     pub(super) detail: String,
@@ -51,6 +53,8 @@ pub(super) fn browser_process_row(
     uptime: std::time::Duration,
 ) -> ProcessRowView {
     ProcessRowView {
+        context_id: None,
+        live: true,
         depth: 0,
         name: format!("{PRODUCT_NAME} Browser"),
         detail: format!("PID {} · privileged broker", std::process::id()),
@@ -94,6 +98,8 @@ pub(super) fn renderer_process_row(
         })
         .unwrap_or_else(|| ("—".into(), "—".into(), "—".into()));
     ProcessRowView {
+        context_id: Some(status.context_id),
+        live: renderer_is_live(status),
         depth: 1,
         name: format!("Tab {} · {}", status.context_id, status.tab_title),
         detail,

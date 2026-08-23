@@ -17,6 +17,7 @@ pub use layout::{
 };
 pub use page::{DecodedImage, Page, PageResource};
 pub use script::{
-    ScriptFetchAction, ScriptKind, ScriptOutcome, ScriptRuntime, ScriptWorkerAction, WorkerRuntime,
-    WorkerRuntimeOutcome, WorkerSourceLoader,
+    ScriptFetchAction, ScriptKind, ScriptOutcome, ScriptRuntime, ScriptWorkerAction,
+    UserInputEvent, UserInputModifiers, UserInputResult, WorkerRuntime, WorkerRuntimeOutcome,
+    WorkerSourceLoader,
 };

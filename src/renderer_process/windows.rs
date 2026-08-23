@@ -1,7 +1,8 @@
 mod metrics;
 
 pub(super) use metrics::{
-    ProcessSample, exit_code, process_exited, process_sample, terminate_job, wait_for_process,
+    ProcessSample, exit_code, process_exited, process_sample, terminate_job, terminate_job_checked,
+    wait_for_process,
 };
 
 use crate::limits::RENDERER_MEMORY_LIMIT_BYTES;

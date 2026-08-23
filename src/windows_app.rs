@@ -21,6 +21,7 @@ mod process_metrics;
 mod profile;
 mod reader_layout;
 mod renderer_fetch;
+mod renderer_input;
 mod renderer_lifecycle;
 mod rendering_resources;
 mod runtime;
@@ -43,7 +44,7 @@ use better_web_browser::engine::{
     ControlKind, DecodedImage, DisplayItem, DisplayListDamage, FontSpec, LayoutOutput,
 };
 use better_web_browser::metrics::BrowserMetrics;
-use better_web_browser::navigation::{encode_www_form_component, normalize_user_input};
+use better_web_browser::navigation::normalize_user_input;
 use better_web_browser::winhttp;
 use browser_app::BrowserApplication;
 use browser_window::{BrowserWindowPlacement, create_browser_window};
@@ -63,7 +64,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
-use window_dispatch::{chrome_control_proc, dispatch_browser_input, main_window_proc};
+use window_dispatch::{
+    chrome_control_proc, dispatch_browser_input, main_window_proc, page_control_proc,
+};
 pub fn run() -> Result<(), String> {
     unsafe {
         let process_started = Instant::now();

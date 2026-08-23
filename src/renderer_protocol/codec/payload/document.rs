@@ -5,7 +5,9 @@ use super::fetch::{
 use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD, MAX_URL_BYTES};
 use crate::renderer_protocol::document::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
-use crate::renderer_protocol::{BrowserMessage, ProtocolError, RendererMessage};
+use crate::renderer_protocol::{
+    BrowserMessage, NavigationCause, NavigationDisposition, ProtocolError, RendererMessage,
+};
 
 pub(super) fn encode_browser_document(
     message: &BrowserMessage,
@@ -170,9 +172,23 @@ pub(super) fn encode_renderer_document(
             writer.string(detail)?;
             0x0118
         }
-        RendererMessage::NavigationRequested { document, url } => {
+        RendererMessage::NavigationRequested {
+            document,
+            url,
+            disposition,
+            cause,
+        } => {
             writer.u64(document.get());
             writer.string(url)?;
+            writer.u8(match disposition {
+                NavigationDisposition::CurrentTab => 1,
+                NavigationDisposition::NewForegroundTab => 2,
+                NavigationDisposition::NewBackgroundTab => 3,
+            });
+            writer.u8(match cause {
+                NavigationCause::UserActivation => 1,
+                NavigationCause::Redirect => 2,
+            });
             0x011a
         }
         _ => return Err(ProtocolError::InvalidPayload("renderer document message")),
@@ -219,6 +235,17 @@ pub(super) fn decode_renderer_document(
         0x011a => RendererMessage::NavigationRequested {
             document: DocumentId::new(reader.u64()?)?,
             url: reader.string(MAX_URL_BYTES)?,
+            disposition: match reader.u8()? {
+                1 => NavigationDisposition::CurrentTab,
+                2 => NavigationDisposition::NewForegroundTab,
+                3 => NavigationDisposition::NewBackgroundTab,
+                _ => return Err(ProtocolError::InvalidPayload("navigation disposition")),
+            },
+            cause: match reader.u8()? {
+                1 => NavigationCause::UserActivation,
+                2 => NavigationCause::Redirect,
+                _ => return Err(ProtocolError::InvalidPayload("navigation cause")),
+            },
         },
         _ => return Err(ProtocolError::UnexpectedMessage(kind)),
     };

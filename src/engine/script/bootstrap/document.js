@@ -194,6 +194,12 @@
     windowObject.MessageEvent = MessageEvent;
     windowObject.ErrorEvent = ErrorEvent;
     windowObject.ToggleEvent = ToggleEvent;
+    windowObject.UIEvent = UIEvent;
+    windowObject.FocusEvent = FocusEvent;
+    windowObject.MouseEvent = MouseEvent;
+    windowObject.PointerEvent = PointerEvent;
+    windowObject.KeyboardEvent = KeyboardEvent;
+    windowObject.InputEvent = InputEvent;
     windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
     windowObject.DOMTokenList = DOMTokenList;
