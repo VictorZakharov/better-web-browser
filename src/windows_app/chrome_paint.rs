@@ -245,7 +245,7 @@ impl BrowserState {
 
         if spec.label.is_empty()
             && let Some(icon_url) = spec.icon_url.as_deref()
-            && let Some(image) = tab.page.images.get(icon_url)
+            && let Some(image) = tab.presented_images.get(icon_url)
         {
             let bitmap = tab.image_bitmaps.get_or_create_tinted(
                 icon_url,

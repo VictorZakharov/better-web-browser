@@ -24,8 +24,9 @@ pub use message::{
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
-    PageLoadReport, PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
-    RuntimeReport, StyleReport,
+    NodeDiagnostics, PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage,
+    PresentedLayout, RendererPresentation, ResourceDiagnostics, RuntimeReport, SelectorDiagnostics,
+    StyleDiagnostics, StyleReport,
 };
 pub use state::{
     CookieMutation, CookieStateSnapshot, DocumentState, StorageMutationRequest, StorageSnapshotEnd,
@@ -34,8 +35,8 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-pub const PROTOCOL_MAJOR: u16 = 1;
-pub const PROTOCOL_MINOR: u16 = 7;
+pub const PROTOCOL_MAJOR: u16 = 2;
+pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

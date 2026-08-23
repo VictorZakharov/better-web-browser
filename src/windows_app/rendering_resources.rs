@@ -1,4 +1,4 @@
-//! Native UI fonts, decoded-image/glyph bitmaps, and trusted local-layout measurement.
+//! Native UI fonts and decoded-image/glyph bitmap caches.
 
 mod glyphs;
 
@@ -246,25 +246,5 @@ impl ImageBitmaps {
 impl Drop for ImageBitmaps {
     fn drop(&mut self) {
         unsafe { self.clear() }
-    }
-}
-
-pub(super) struct GdiTextMeasurer<'a> {
-    pub(super) dc: Hdc,
-    pub(super) fonts: &'a mut DynamicFonts,
-    pub(super) dpi: u32,
-    pub(super) calls: usize,
-}
-
-impl TextMeasurer for GdiTextMeasurer<'_> {
-    fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
-        unsafe {
-            let handle = self.fonts.get_or_create(font, self.dpi);
-            SelectObject(self.dc, handle);
-            let size = measure_text(self.dc, text);
-            self.calls += 1;
-            let scale = dpi_scale(self.dpi);
-            (size.cx as f32 / scale, size.cy as f32 / scale)
-        }
     }
 }

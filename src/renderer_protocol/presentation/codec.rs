@@ -1,11 +1,12 @@
 use super::super::wire::{WireReader, WireWriter};
+use super::diagnostics::{decode_diagnostics, encode_diagnostics};
 use super::layout::{decode_layout, encode_layout};
 use super::reader::{decode_reader, encode_reader};
 use super::*;
 use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
-    MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
+    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
     MAX_RENDERER_PRESENTATION_BYTES, MAX_URL_BYTES,
 };
 use std::collections::HashSet;
@@ -26,6 +27,7 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
     encode_runtime(&mut writer, &value.runtime)?;
     encode_style(&mut writer, value.style);
     encode_load(&mut writer, value.load);
+    writer.bytes(&encode_diagnostics(&value.page_diagnostics)?)?;
     writer.bool(value.next_timer_micros.is_some());
     if let Some(delay) = value.next_timer_micros {
         writer.u64(delay);
@@ -113,6 +115,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let runtime = decode_runtime(&mut reader)?;
     let style = decode_style(&mut reader)?;
     let load = decode_load(&mut reader)?;
+    let page_diagnostics = decode_diagnostics(&reader.bytes(MAX_PAGE_DIAGNOSTIC_BYTES)?)?;
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
     let layout = decode_layout(&mut reader)?;
     let image_count = reader.u32()? as usize;
@@ -221,6 +224,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         runtime,
         style,
         load,
+        page_diagnostics,
         next_timer_micros,
     })
 }

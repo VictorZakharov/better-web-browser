@@ -26,7 +26,13 @@ pub(super) enum Surface {
 
 impl BrowserState {
     pub(super) unsafe fn rebuild_layout(&mut self) -> DisplayListDamage {
-        if let Some(document) = self.renderer_document {
+        if self.surface == Surface::Page {
+            let Some(document) = self.renderer_document else {
+                // The pending document carries the current viewport when it enters the renderer.
+                // There is intentionally no privileged in-process page-engine fallback.
+                self.layout_dirty = false;
+                return DisplayListDamage::default();
+            };
             let viewport = self.renderer_viewport();
             let result = self
                 .renderer_session
@@ -43,81 +49,33 @@ impl BrowserState {
             }
             return DisplayListDamage::default();
         }
+
+        // Reader extraction happens in the renderer. The browser lays out only that bounded,
+        // validated semantic projection with trusted UI fonts.
         let layout_started = Instant::now();
         let mut client: Rect = std::mem::zeroed();
         GetClientRect(self.window, &mut client);
         let dc = GetDC(self.window);
         if dc.is_null() {
-            return DisplayListDamage::full(self.tabs.active().page_layout.items.len());
+            return DisplayListDamage::full(self.draw_items.len());
         }
-        let dpi = self.dpi;
-        let scale = self.page_scale();
-        let viewport_height = self.viewport_height() as f32 / scale;
-        let style_viewport_width = if self.media_viewport_width > 0.0 {
-            self.media_viewport_width
-        } else {
-            client.right.max(1) as f32 / scale
-        };
-        let metrics = Arc::clone(&self.metrics);
-        let fonts = self.fonts.as_ref();
-        let content_margin = scale_dip(CONTENT_MARGIN_DIP, dpi);
-        let available = (client.right - content_margin * 2).max(scale_dip(220, dpi));
-        let reading_width = available.min(scale_dip(MAX_READING_WIDTH_DIP, dpi));
-        SetBkMode(dc, TRANSPARENT);
-        let mut damage = DisplayListDamage::full(self.tabs.active().page_layout.items.len());
-        let tab = self.tabs.active_mut();
-        tab.last_text_measure_count = 0;
-        match tab.surface {
-            Surface::Page => {
-                let viewport_width = client.right.max(1) as f32 / scale;
-                let mut measurer = GdiTextMeasurer {
-                    dc,
-                    fonts: &mut tab.dynamic_fonts,
-                    dpi,
-                    calls: 0,
-                };
-                let next_layout = layout_page_with_style_viewport(
-                    &tab.page,
-                    viewport_width,
-                    viewport_height,
-                    style_viewport_width,
-                    &mut measurer,
-                );
-                let measure_calls = measurer.calls;
-                damage = DisplayListDamage::between(&tab.page_layout, &next_layout);
-                tab.page_layout = next_layout;
-                tab.paint_index.rebuild(&tab.page_layout.items);
-                tab.last_text_measure_count = measure_calls;
-                tab.content_height = (tab.page_layout.content_height * scale).ceil() as i32;
-                metrics.set_retained_draw_items(tab.page_layout.items.len());
-            }
-            Surface::Reader => {
-                tab.paint_index = PaintIndex::default();
-                let Some(fonts) = fonts else {
-                    ReleaseDC(self.window, dc);
-                    return damage;
-                };
-                let left = ((client.right - reading_width) / 2).max(content_margin);
-                let Some(document) = tab.document.as_ref() else {
-                    ReleaseDC(self.window, dc);
-                    return damage;
-                };
-                let (items, height) = layout_document(dc, fonts, document, left, reading_width);
-                tab.draw_items = items;
-                tab.content_height = height;
-                metrics.set_retained_draw_items(tab.draw_items.len());
-            }
+        let content_margin = scale_dip(CONTENT_MARGIN_DIP, self.dpi);
+        let available = (client.right - content_margin * 2).max(scale_dip(220, self.dpi));
+        let reading_width = available.min(scale_dip(MAX_READING_WIDTH_DIP, self.dpi));
+        let left = ((client.right - reading_width) / 2).max(content_margin);
+        let damage = DisplayListDamage::full(self.draw_items.len());
+        self.paint_index = PaintIndex::default();
+        if let (Some(fonts), Some(document)) = (self.fonts.as_ref(), self.document.as_ref()) {
+            let (items, height) = layout_document(dc, fonts, document, left, reading_width);
+            self.draw_items = items;
+            self.content_height = height;
+            self.metrics.set_retained_draw_items(self.draw_items.len());
         }
         ReleaseDC(self.window, dc);
-        let layout_tree_time = layout_started.elapsed();
-        self.tabs.active_mut().last_layout_tree_time = layout_tree_time;
+        self.layout_dirty = false;
         self.clamp_scroll();
         self.update_scrollbar();
-        self.recreate_page_controls();
-        let layout_finalize_time = layout_started.elapsed().saturating_sub(layout_tree_time);
-        let tab = self.tabs.active_mut();
-        tab.last_layout_finalize_time = layout_finalize_time;
-        tab.layout_dirty = false;
+        self.destroy_page_controls();
         self.record_benchmark_layout(layout_started.elapsed(), damage);
         damage
     }

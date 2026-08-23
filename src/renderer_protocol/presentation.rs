@@ -1,8 +1,13 @@
 //! Validated immutable renderer output retained by the browser process.
 
 mod codec;
+mod diagnostics;
 mod layout;
 mod reader;
+
+pub use diagnostics::{
+    NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, StyleDiagnostics,
+};
 
 use super::{DocumentId, ProtocolError};
 use crate::document::Document;
@@ -118,6 +123,7 @@ pub struct RendererPresentation {
     pub runtime: RuntimeReport,
     pub style: StyleReport,
     pub load: PageLoadReport,
+    pub page_diagnostics: PageDiagnostics,
     pub next_timer_micros: Option<u64>,
 }
 
@@ -208,6 +214,14 @@ mod tests {
                 presentation_decode_micros: 16,
                 ..PageLoadReport::default()
             },
+            page_diagnostics: PageDiagnostics {
+                error: None,
+                selectors: vec![SelectorDiagnostics {
+                    selector: "#main".into(),
+                    total_matches: 1,
+                    ..SelectorDiagnostics::default()
+                }],
+            },
             next_timer_micros: None,
         }
     }
@@ -236,6 +250,7 @@ mod tests {
         assert_eq!(decoded.load.glyph_raster_micros, 14);
         assert_eq!(decoded.load.presentation_encode_micros, 15);
         assert_eq!(decoded.load.presentation_decode_micros, 16);
+        assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
     }
 
     #[test]
@@ -249,5 +264,17 @@ mod tests {
         presentation.glyphs.truncate(1);
         presentation.glyphs[0].id = 0;
         assert!(presentation.encode().is_err());
+    }
+
+    #[test]
+    fn oversized_page_diagnostics_fail_closed() {
+        let mut presentation = sample();
+        presentation.page_diagnostics.selectors.clear();
+        presentation.page_diagnostics.error =
+            Some("x".repeat(crate::limits::MAX_PAGE_DIAGNOSTIC_BYTES));
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("page diagnostics"))
+        ));
     }
 }

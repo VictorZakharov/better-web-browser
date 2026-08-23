@@ -1,5 +1,6 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
+mod diagnostics;
 mod fetch;
 mod reporting;
 mod resources;
@@ -46,6 +47,7 @@ pub(super) struct DocumentRuntime {
     deferred_resources_loaded: bool,
     revision: u64,
     sent_images: HashSet<String>,
+    diagnostic_selectors: Vec<String>,
 }
 
 impl DocumentRuntime {
@@ -89,6 +91,7 @@ impl DocumentRuntime {
             deferred_resources_loaded: false,
             revision: 0,
             sent_images: HashSet::new(),
+            diagnostic_selectors: start.diagnostic_selectors,
         };
 
         let resource_started = Instant::now();
@@ -334,6 +337,12 @@ impl DocumentRuntime {
         let next_timer_micros = self.next_timer_micros();
         let glyph_epoch = self.text.glyph_epoch();
         let glyphs = self.text.take_pending_glyphs();
+        let page_diagnostics = diagnostics::collect(
+            &self.page,
+            &self.layout,
+            &self.diagnostic_selectors,
+            self.viewport.style_width,
+        );
         Ok(RendererPresentation {
             document: self.id,
             revision: self.revision,
@@ -349,6 +358,7 @@ impl DocumentRuntime {
             runtime: runtime_report(outcome, self.script_runtime.is_some()),
             style: style_report(style),
             load,
+            page_diagnostics,
             next_timer_micros,
         })
     }

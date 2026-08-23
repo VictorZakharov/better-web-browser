@@ -52,6 +52,7 @@ impl BrowserState {
             tab.renderer_document = None;
             tab.renderer_revision = 0;
             tab.renderer_load_metrics = None;
+            tab.page_diagnostics = Default::default();
             tab.renderer_next_timer = None;
             tab.renderer_runtime_clock = None;
             tab.renderer_work_pending = false;
@@ -118,9 +119,6 @@ impl BrowserState {
                     let final_url = response.final_url().as_str().to_string();
                     let status = response.status;
                     let content_type = response.content_type().unwrap_or_default().to_string();
-                    let cookie_snapshot = client
-                        .document_cookie_snapshot(&final_url)
-                        .map_err(|error| error.to_string())?;
                     let body = response.body.into_bytes();
                     metrics.record_success(bytes, 0);
                     Ok(LoadedPage {
@@ -128,7 +126,6 @@ impl BrowserState {
                         final_url,
                         status,
                         content_type,
-                        cookie_snapshot,
                         bytes,
                         network_time,
                     })
