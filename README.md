@@ -179,19 +179,23 @@ quiet period.
 
 ### Web-platform regression suite
 
-A pinned, curated 70-case Web Platform Test suite covers HTML parsing, DOM, events, abort signals,
-event-loop ordering, URLs, Web IDL, Fetch, XHR, modules, and the CSS cascade. Upstream fixtures stay
-in a separate sparse WPT checkout; after preparing that checkout, the suite runs offline with one hidden command. All 70 cases pass at the pinned
-revision, with no expected-failure or timeout allowances:
+A pinned, curated 80-file Web Platform Test suite covers 570 upstream harness subtests across HTML
+parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
+Web IDL, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
+after preparing that checkout, the suite runs offline with one hidden command. All 570 selected
+subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
 ```
 
-The runner emits `target/wpt/report.json` and fails on regressions, crashes, changed failure modes,
-and unexpected passes. See [tests/wpt/README.md](tests/wpt/README.md) for provenance, licensing,
-expectation policy, filtering, and the exact execution contract.
+The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
+regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression
+gate, not Breeze's whole-platform pass rate. A separate discovery sample records 3 passes and 16
+known failures across nearby unsupported behavior. See
+[tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
+provenance, licensing, expectation policy, filtering, and exact execution contract.
 
 A second in-repository parser suite runs selected WPT tree-construction fixtures directly against
 the engine-owned DOM. It covers implied elements, foster parenting, adoption-agency repair,

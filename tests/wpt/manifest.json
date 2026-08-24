@@ -1,10 +1,14 @@
 {
-  "schema": 1,
+  "schema": 2,
   "suite": "Breeze curated Web Platform Tests",
   "upstream": {
     "repository": "https://github.com/web-platform-tests/wpt.git",
     "revision": "f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476",
     "license": "BSD-3-Clause"
+  },
+  "policy": {
+    "minimum_subtests": 200,
+    "expectations": "forbidden"
   },
   "tests": [
     {
@@ -355,6 +359,56 @@
     {
       "path": "css/css-cascade/inherit-initial.html",
       "area": "CSS cascade",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/nodes/Element-childElementCount-dynamic-remove.html",
+      "area": "DOM mutation",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/forms/the-form-element/form-length.html",
+      "area": "Forms",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/forms/the-select-element/select-value.html",
+      "area": "Forms",
+      "expected": "pass"
+    },
+    {
+      "path": "cookies/meta-blocked.html",
+      "area": "Cookies",
+      "expected": "pass"
+    },
+    {
+      "path": "css/selectors/first-child.html",
+      "area": "CSS selectors",
+      "expected": "pass"
+    },
+    {
+      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_display.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-direction-row.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-grow-number.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/cssom-getBoundingClientRect-001.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/cssom-getBoundingClientRect-002.html",
+      "area": "CSS layout",
       "expected": "pass"
     }
   ]

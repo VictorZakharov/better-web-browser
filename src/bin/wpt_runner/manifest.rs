@@ -10,6 +10,19 @@ pub(crate) struct Upstream {
     pub(crate) license: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ExpectationsPolicy {
+    Allowed,
+    Forbidden,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct Policy {
+    pub(crate) minimum_subtests: usize,
+    pub(crate) expectations: ExpectationsPolicy,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ExpectedStatus {
@@ -49,6 +62,7 @@ pub(crate) struct Manifest {
     pub(crate) schema: u32,
     pub(crate) suite: String,
     pub(crate) upstream: Upstream,
+    pub(crate) policy: Policy,
     pub(crate) tests: Vec<TestCase>,
 }
 
@@ -126,7 +140,7 @@ impl Manifest {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.schema != 1 {
+        if self.schema != 2 {
             return Err(format!("unsupported WPT manifest schema {}", self.schema));
         }
         if self.suite.trim().is_empty() {
@@ -147,10 +161,21 @@ impl Manifest {
         if self.tests.is_empty() {
             return Err("manifest must contain at least one test".to_string());
         }
+        if self.policy.minimum_subtests == 0 {
+            return Err("manifest minimum_subtests must be greater than zero".to_string());
+        }
 
         let mut paths = HashSet::new();
         for test in &self.tests {
             validate_test(test)?;
+            if self.policy.expectations == ExpectationsPolicy::Forbidden
+                && test.expected != ExpectedStatus::Pass
+            {
+                return Err(format!(
+                    "manifest policy forbids expectations: {}",
+                    test.path
+                ));
+            }
             if !paths.insert(&test.path) {
                 return Err(format!("duplicate WPT path: {}", test.path));
             }
@@ -251,5 +276,29 @@ mod tests {
         assert!(case("url/a.any.js", ExpectedStatus::Pass, None).needs_wrapper());
         assert!(case("fetch/cloned-any.js", ExpectedStatus::Pass, None).needs_wrapper());
         assert!(!case("dom/a.html", ExpectedStatus::Pass, None).needs_wrapper());
+    }
+
+    #[test]
+    fn curated_policy_rejects_expectations() {
+        let manifest = Manifest {
+            schema: 2,
+            suite: "curated".to_string(),
+            upstream: Upstream {
+                repository: "https://github.com/web-platform-tests/wpt.git".to_string(),
+                revision: "a".repeat(40),
+                license: "BSD-3-Clause".to_string(),
+            },
+            policy: Policy {
+                minimum_subtests: 1,
+                expectations: ExpectationsPolicy::Forbidden,
+            },
+            tests: vec![case(
+                "dom/test.html",
+                ExpectedStatus::Fail,
+                Some("known gap"),
+            )],
+        };
+
+        assert!(manifest.validate().is_err());
     }
 }

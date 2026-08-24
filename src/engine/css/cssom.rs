@@ -7,6 +7,12 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "background-color" => serialize_color(style.background_color),
         "color" => serialize_color(style.color),
         "display" => style.display.css_keyword().to_string(),
+        "flex-direction" => match style.flex_direction {
+            FlexDirection::Row => "row",
+            FlexDirection::Column => "column",
+        }
+        .to_string(),
+        "flex-grow" => serialize_number(style.flex_grow),
         "font-size" => serialize_px(style.font_size),
         "font-weight" => style.font_weight.to_string(),
         "letter-spacing" => serialize_px(style.letter_spacing),
@@ -57,5 +63,26 @@ fn serialize_number(value: f32) -> String {
         "0".to_string()
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_supported_flex_values() {
+        let mut style = ComputedStyle::initial();
+        style.flex_direction = FlexDirection::Column;
+        style.flex_grow = 2.5;
+
+        assert_eq!(
+            resolved_property_value(&style, "flex-direction").as_deref(),
+            Some("column")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "flex-grow").as_deref(),
+            Some("2.5")
+        );
     }
 }

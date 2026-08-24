@@ -92,23 +92,24 @@
         set reversed(value) { this.toggleAttribute('reversed', !!value); }
     }
     class HTMLSelectElement extends HTMLElement {
+        get options() { return this.querySelectorAll('option'); }
         get selectedIndex() {
-            const options = this.querySelectorAll('option');
+            const options = this.options;
             const selected = options.findIndex(option => option.hasAttribute('selected'));
             return selected >= 0 ? selected : (options.length ? 0 : -1);
         }
         set selectedIndex(value) {
             const selected = Math.trunc(Number(value));
-            this.querySelectorAll('option').forEach((option, index) =>
+            this.options.forEach((option, index) =>
                 option.toggleAttribute('selected', index === selected));
         }
         get value() {
-            const option = this.querySelectorAll('option')[this.selectedIndex];
+            const option = this.options[this.selectedIndex];
             return option ? (option.getAttribute('value') ?? option.textContent) : '';
         }
         set value(value) {
             value = String(value);
-            const options = this.querySelectorAll('option');
+            const options = this.options;
             const selected = options.findIndex(option =>
                 (option.getAttribute('value') ?? option.textContent) === value);
             this.selectedIndex = selected;
