@@ -212,7 +212,9 @@ impl DocumentRuntime {
             });
         };
         let document = self.id;
-        let mut loader = |url: &str, kind| fetch_script_source(connection, document, url, kind);
+        let mut loader = |url: &str, kind, options| {
+            fetch_script_source(connection, document, url, kind, options)
+        };
         Ok(runtime.dispatch_user_input_with_loader(event, Some(&mut loader)))
     }
 

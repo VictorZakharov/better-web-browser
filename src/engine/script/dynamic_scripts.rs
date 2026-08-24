@@ -27,7 +27,11 @@ pub(super) fn drain_dynamic_scripts(
                 return;
             }
             executed += 1;
-            let code = match loader(&pending_script.source_url, ScriptKind::Classic) {
+            let code = match loader(
+                &pending_script.source_url,
+                ScriptKind::Classic,
+                pending_script.fetch_options,
+            ) {
                 Ok(code) => code,
                 Err(error) => {
                     outcome.errors.push(format!(
@@ -51,6 +55,7 @@ pub(super) fn drain_dynamic_scripts(
                 source_url: pending_script.source_url,
                 code,
                 kind: ScriptKind::Classic,
+                fetch_options: pending_script.fetch_options,
                 finish_lifecycle: false,
             };
             let mut no_nested_module_loader = None;

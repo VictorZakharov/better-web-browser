@@ -50,8 +50,8 @@ pub use network::ScriptFetchAction;
 pub use runtime::ScriptRuntime;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
-    DynamicScriptLoader, ScriptInput, ScriptKind, ScriptOutcome, UserInputEvent,
-    UserInputModifiers, UserInputResult,
+    DynamicScriptLoader, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome,
+    UserInputEvent, UserInputModifiers, UserInputResult,
 };
 use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;

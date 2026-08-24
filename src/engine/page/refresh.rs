@@ -8,10 +8,16 @@ use std::collections::HashSet;
 impl Page {
     pub fn resource_blocks_first_paint(&self, resource: &PageResource) -> bool {
         match resource {
-            PageResource::Script { url, .. } => self
-                .scripts
-                .iter()
-                .any(|script| script.source_url.as_str() == url && script.blocks_first_paint),
+            PageResource::Script {
+                url,
+                kind,
+                fetch_options,
+            } => self.scripts.iter().any(|script| {
+                script.source_url.as_str() == url
+                    && script.kind == *kind
+                    && script.fetch_options == *fetch_options
+                    && script.blocks_first_paint
+            }),
             PageResource::Stylesheet { .. } => true,
             PageResource::Image { .. } | PageResource::Font { .. } => false,
         }

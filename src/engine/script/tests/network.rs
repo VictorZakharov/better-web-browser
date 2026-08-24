@@ -116,6 +116,24 @@ fn retained_fetch_completion_resolves_response_body_and_headers() {
 }
 
 #[test]
+fn cancelled_document_discards_a_stale_fetch_completion() {
+    let (dom, mut runtime, id) = pending_runtime(
+        r#"fetch('/data').then(() => {
+            document.querySelector('div').textContent = 'stale completion';
+        });"#,
+    );
+    runtime.cancel_document();
+
+    let outcome = runtime.complete_fetch_with_loader(id, Ok(test_response(b"ignored")), None);
+
+    assert!(outcome.runtime_stopped);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "pending"
+    );
+}
+
+#[test]
 fn xhr_uses_fetch_and_dispatches_the_success_state_sequence() {
     let (dom, mut runtime, id) = pending_runtime(
         r#"const events = [];
@@ -234,6 +252,7 @@ pub(super) fn pending_runtime(code: &str) -> (crate::engine::dom::Dom, ScriptRun
             code: node.text_content(),
             node,
             kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
             finish_lifecycle: true,
         })
         .collect::<Vec<_>>();

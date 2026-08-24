@@ -77,12 +77,20 @@ impl Page {
             .scripts
             .iter()
             .filter(|script| !first_paint_only || script.blocks_first_paint)
+            .filter(|script| !script.executes_after_parsing)
+            .chain(
+                self.scripts
+                    .iter()
+                    .filter(|script| !first_paint_only || script.blocks_first_paint)
+                    .filter(|script| script.executes_after_parsing),
+            )
             .filter_map(|script| {
                 script.code.as_ref().map(|code| ScriptInput {
                     node: script.node.clone(),
                     source_url: script.source_url.clone(),
                     code: code.clone(),
                     kind: script.kind,
+                    fetch_options: script.fetch_options,
                     finish_lifecycle: true,
                 })
             })

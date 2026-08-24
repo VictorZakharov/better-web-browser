@@ -232,7 +232,9 @@ fn stylesheet_text_mutation_forces_rule_rebuild_without_stale_style() {
             }, 2000)</script>"#,
         "https://example.com/",
     );
-    let mut loader = |_url: &str, _kind: ScriptKind| Err("unexpected dynamic script".to_string());
+    let mut loader = |_url: &str, _kind: ScriptKind, _options: ScriptFetchOptions| {
+        Err("unexpected dynamic script".to_string())
+    };
     let (runtime, initial) = page.start_first_paint_script_runtime_with_loader(&mut loader);
     assert!(initial.errors.is_empty(), "{:?}", initial.errors);
     let mut runtime = runtime.unwrap();

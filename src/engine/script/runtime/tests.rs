@@ -325,6 +325,9 @@ fn script_inputs(dom: &dom::Dom) -> Vec<ScriptInput> {
             code: node.text_content(),
             node,
             kind: crate::engine::script::ScriptKind::Classic,
+            fetch_options: crate::engine::script::ScriptFetchOptions::for_kind(
+                crate::engine::script::ScriptKind::Classic,
+            ),
             finish_lifecycle: true,
         })
         .collect()
@@ -341,6 +344,9 @@ fn input(
         source_url: format!("https://example.com/{source}"),
         code: code.into(),
         kind: crate::engine::script::ScriptKind::Classic,
+        fetch_options: crate::engine::script::ScriptFetchOptions::for_kind(
+            crate::engine::script::ScriptKind::Classic,
+        ),
         finish_lifecycle,
     }
 }

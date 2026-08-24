@@ -10,6 +10,7 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
             code: node.text_content(),
             node,
             kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
             finish_lifecycle: true,
         })
         .collect::<Vec<_>>();

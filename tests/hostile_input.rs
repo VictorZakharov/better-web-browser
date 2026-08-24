@@ -104,6 +104,10 @@ fn oversized_urls_and_page_resources_fail_softly() {
     let mut page = Page::parse("<script src='/large.js'></script>", "https://example.test/");
     assert!(!page.add_script(
         "https://example.test/large.js",
+        better_web_browser::engine::ScriptKind::Classic,
+        better_web_browser::engine::ScriptFetchOptions::for_kind(
+            better_web_browser::engine::ScriptKind::Classic,
+        ),
         "x".repeat(MAX_SCRIPT_BYTES + 1),
     ));
     assert!(page.add_stylesheet("a".repeat(MAX_CSS_SOURCE_BYTES + 1)));

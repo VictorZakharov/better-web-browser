@@ -3,6 +3,11 @@ use std::time::Duration;
 
 #[test]
 fn module_graph_resolves_relative_imports_and_import_meta_url() {
+    let fetch_options = ScriptFetchOptions::for_element(
+        ScriptKind::Module,
+        Some("use-credentials"),
+        Some("no-referrer"),
+    );
     let dom = crate::engine::dom::parse_with_scripting(
         "<body><div>pending</div><script type=module></script></body>",
         true,
@@ -17,11 +22,12 @@ fn module_graph_resolves_relative_imports_and_import_meta_url() {
         "#
         .into(),
         kind: ScriptKind::Module,
+        fetch_options,
         finish_lifecycle: true,
     };
     let mut requests = Vec::new();
-    let mut loader = |url: &str, kind: ScriptKind| {
-        requests.push((url.to_string(), kind));
+    let mut loader = |url: &str, kind: ScriptKind, options: ScriptFetchOptions| {
+        requests.push((url.to_string(), kind, options));
         match url {
             "https://example.com/scripts/dependency.js" => {
                 Ok("export { answer } from './answer.js';".into())
@@ -45,11 +51,13 @@ fn module_graph_resolves_relative_imports_and_import_meta_url() {
         [
             (
                 "https://example.com/scripts/dependency.js".into(),
-                ScriptKind::Module
+                ScriptKind::Module,
+                fetch_options,
             ),
             (
                 "https://example.com/scripts/answer.js".into(),
-                ScriptKind::Module
+                ScriptKind::Module,
+                fetch_options,
             )
         ]
     );
@@ -70,6 +78,7 @@ fn bare_module_specifiers_fail_without_running_the_module_body() {
         source_url: "https://example.com/main.js".into(),
         code: "import value from 'unmapped-package'; document.querySelector('div').textContent = value;".into(),
         kind: ScriptKind::Module,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
         finish_lifecycle: true,
     };
     let outcome = execute(dom.document.clone(), "https://example.com/", &[input]);
@@ -106,6 +115,7 @@ fn top_level_await_delays_document_lifecycle_until_the_module_settles() {
         "#
         .into(),
         kind: ScriptKind::Module,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
         finish_lifecycle: true,
     };
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
@@ -139,6 +149,7 @@ fn pending_additional_module_dispatches_load_only_after_evaluation() {
         source_url: "https://example.com/#setup".into(),
         code: "document.getElementById('module').addEventListener('load', () => document.querySelector('div').textContent = 'loaded');".into(),
         kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
         finish_lifecycle: true,
     };
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
@@ -150,6 +161,7 @@ fn pending_additional_module_dispatches_load_only_after_evaluation() {
         source_url: "https://example.com/additional.js".into(),
         code: "await new Promise(resolve => setTimeout(resolve, 250));".into(),
         kind: ScriptKind::Module,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
         finish_lifecycle: false,
     };
     let started = runtime.execute_additional_with_loader(&[module], None);

@@ -11,6 +11,7 @@ use crate::storage::{StorageAreaState, StorageMutation};
 pub(super) struct PendingDynamicScript {
     pub(super) node: NodeRef,
     pub(super) source_url: String,
+    pub(super) fetch_options: ScriptFetchOptions,
 }
 
 #[derive(Debug)]
@@ -379,6 +380,11 @@ impl HostState {
         self.pending_dynamic_scripts.push(PendingDynamicScript {
             node: node.clone(),
             source_url: self.resolved_url(source.trim()),
+            fetch_options: ScriptFetchOptions::for_element(
+                ScriptKind::Classic,
+                node.attr("crossorigin").as_deref(),
+                node.attr("referrerpolicy").as_deref(),
+            ),
         });
         self.diagnose("queued dynamically inserted external script".into());
     }

@@ -1,15 +1,19 @@
+mod preload;
 mod refresh;
 mod resources;
 mod scripts;
 mod svg;
 
+pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, NodeRef};
 use super::font::{WebFont, WebFontFace, decode_web_font};
-use super::script::{self, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime};
+use super::script::{
+    self, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime,
+};
 use crate::limits::{
     MAX_CSS_SOURCE_BYTES, MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION,
     MAX_DECODED_IMAGE_PIXELS, MAX_EMBEDDED_IMAGE_URL_BYTES, MAX_IMAGE_SOURCE_BYTES,
@@ -33,6 +37,7 @@ pub enum PageResource {
     Script {
         url: String,
         kind: ScriptKind,
+        fetch_options: ScriptFetchOptions,
     },
     Font {
         url: String,
@@ -48,7 +53,9 @@ pub struct PageScript {
     pub source_url: String,
     pub code: Option<String>,
     pub kind: ScriptKind,
+    pub fetch_options: ScriptFetchOptions,
     pub blocks_first_paint: bool,
+    pub executes_after_parsing: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -176,7 +183,13 @@ impl Page {
         Ok(())
     }
 
-    pub fn add_script(&mut self, url: &str, code: String) -> bool {
+    pub fn add_script(
+        &mut self,
+        url: &str,
+        kind: ScriptKind,
+        fetch_options: ScriptFetchOptions,
+        code: String,
+    ) -> bool {
         if code.len() > MAX_SCRIPT_BYTES {
             self.diagnostics.push(format!(
                 "script {url} exceeded the {MAX_SCRIPT_BYTES}-byte limit"
@@ -185,7 +198,11 @@ impl Page {
         }
         let mut installed = false;
         for script in &mut self.scripts {
-            if script.source_url == url && script.code.is_none() {
+            if script.source_url == url
+                && script.kind == kind
+                && script.fetch_options == fetch_options
+                && script.code.is_none()
+            {
                 script.code = Some(code.clone());
                 installed = true;
             }
