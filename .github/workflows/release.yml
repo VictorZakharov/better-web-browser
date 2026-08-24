@@ -1,0 +1,127 @@
+name: Technical alpha release
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v<package-version> tag on protected main
+        required: true
+        type: string
+
+jobs:
+  validate:
+    name: Validate release authority
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Validate existing tag on protected main
+        id: release
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Run the release workflow from protected main.' }
+          ./scripts/validate-release-ref.ps1 -Tag $env:RELEASE_TAG -MainRef origin/main -GitHubOutputPath $env:GITHUB_OUTPUT
+
+  package:
+    name: Build and smoke Windows x64 archive
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.17.0
+      - name: Restore Cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-registry-v3-
+            windows-cargo-registry-v2-
+      - name: Build canonical release executable
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc --bin better-web-browser
+      - name: Exercise renderer crash recovery headlessly
+        run: cargo test --release --locked --target x86_64-pc-windows-msvc --test renderer_process crashed_tab_renderer_preserves_its_sibling_and_can_be_reloaded -- --exact
+      - name: Package twice and require identical archives
+        id: package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          $executable = Join-Path $PWD 'target\x86_64-pc-windows-msvc\release\better-web-browser.exe'
+          $first = Join-Path $env:RUNNER_TEMP 'release-a'
+          $second = Join-Path $env:RUNNER_TEMP 'release-b'
+          ./scripts/package-technical-alpha.ps1 -Version $env:VERSION -Commit $env:COMMIT -Executable $executable -OutputDirectory $first
+          ./scripts/package-technical-alpha.ps1 -Version $env:VERSION -Commit $env:COMMIT -Executable $executable -OutputDirectory $second
+          $archiveName = "breeze-v$env:VERSION-x86_64-pc-windows-msvc.zip"
+          $firstHash = (Get-FileHash -LiteralPath (Join-Path $first $archiveName) -Algorithm SHA256).Hash
+          $secondHash = (Get-FileHash -LiteralPath (Join-Path $second $archiveName) -Algorithm SHA256).Hash
+          if ($firstHash -ne $secondHash) { throw "Repeated package hashes differ: $firstHash / $secondHash" }
+          ./scripts/test-release-package.ps1 -Archive (Join-Path $first $archiveName) -Version $env:VERSION -Commit $env:COMMIT
+          "asset_path=$first" >> $env:GITHUB_OUTPUT
+      - name: Upload validated release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: breeze-${{ needs.validate.outputs.tag }}-windows-x64
+          path: ${{ steps.package.outputs.asset_path }}/*
+          if-no-files-found: error
+
+  draft-release:
+    name: Create owner-reviewed draft
+    if: github.actor == github.repository_owner
+    needs:
+      - validate
+      - package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: breeze-${{ needs.validate.outputs.tag }}-windows-x64
+          path: release-assets
+      - name: Create or refresh an unpublished draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $view = gh release view $env:RELEASE_TAG --json isDraft 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
+            $existing = $view | ConvertFrom-Json
+            if (-not $existing.isDraft) { throw "Refusing to replace published release $env:RELEASE_TAG." }
+            $assets = @(Get-ChildItem -LiteralPath release-assets -File | ForEach-Object FullName)
+            gh release upload $env:RELEASE_TAG @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to upload draft-release assets.' }
+            gh release edit $env:RELEASE_TAG --draft --title "Breeze $env:RELEASE_VERSION technical alpha" --notes-file docs/technical-alpha-release.md
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to refresh draft-release metadata.' }
+          } else {
+            $assets = @(Get-ChildItem -LiteralPath release-assets -File | ForEach-Object FullName)
+            gh release create $env:RELEASE_TAG @assets --draft --verify-tag --title "Breeze $env:RELEASE_VERSION technical alpha" --notes-file docs/technical-alpha-release.md
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to create the draft release.' }
+          }

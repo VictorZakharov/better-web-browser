@@ -171,6 +171,28 @@ jobs:
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
 
+  dependency-policy:
+    name: Dependency policy
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
+    runs-on: ubuntu-latest
+    env:
+      # This Ubuntu job and cargo-deny's Alpine container do not include the
+      # Windows-worker sccache wrapper configured at workflow scope.
+      RUSTC_WRAPPER: ""
+      SCCACHE_GHA_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          rust-version: 1.95.0
+          command: check advisories bans licenses sources
+          arguments: --all-features --locked
+      - name: Require notices to match the locked Windows release graph
+        shell: pwsh
+        run: ./scripts/generate-third-party-notices.ps1 -Check
+
   alpha-compatibility:
     name: Public alpha compatibility
     needs: changes
@@ -207,6 +229,7 @@ jobs:
       - test
       - wpt
       - alpha-compatibility
+      - dependency-policy
     runs-on: ubuntu-latest
     steps:
       - name: Require every Windows worker
@@ -220,6 +243,7 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           WPT_RESULT: ${{ needs.wpt.result }}
           ALPHA_RESULT: ${{ needs.alpha-compatibility.result }}
+          DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
         run: |
           if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
             echo "Change classification did not succeed: $CLASSIFICATION_RESULT"
@@ -227,12 +251,12 @@ jobs:
           fi
 
           if [[ "$RUN_WINDOWS" == "false" && "$MARKDOWN_ONLY" == "true" ]]; then
-            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" && "$ALPHA_RESULT" == "skipped" ]]; then
+            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" && "$ALPHA_RESULT" == "skipped" && "$DEPENDENCY_RESULT" == "skipped" ]]; then
               echo "Markdown-only pull request: Windows workers were safely skipped."
               exit 0
             fi
             echo "Markdown-only classification had unexpected worker results."
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT"
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT; dependencies: $DEPENDENCY_RESULT"
             exit 1
           fi
 
@@ -241,7 +265,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" || "$ALPHA_RESULT" != "success" ]]; then
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT"
+          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" || "$ALPHA_RESULT" != "success" || "$DEPENDENCY_RESULT" != "success" ]]; then
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT; dependencies: $DEPENDENCY_RESULT"
             exit 1
           fi

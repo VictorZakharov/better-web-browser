@@ -20,6 +20,7 @@ param(
     [ValidatePattern('^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')]
     [string] $Locale = 'en-US',
     [switch] $FreshProfile,
+    [string] $ProfileDirectory,
     [string[]] $DiagnosticSelector = @()
 )
 
@@ -31,9 +32,17 @@ if ([string]::IsNullOrWhiteSpace($Browser)) {
 $Browser = (Resolve-Path $Browser).Path
 $outputPath = [System.IO.Path]::GetFullPath($Output)
 $profilePath = $null
+if ($FreshProfile -and -not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
+    throw 'Use either -FreshProfile or -ProfileDirectory, not both.'
+}
 if ($FreshProfile) {
     $profilePath = Join-Path ([IO.Path]::GetTempPath()) ("breeze-benchmark-" + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($profilePath) | Out-Null
+} elseif (-not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
+    $profilePath = [IO.Path]::GetFullPath($ProfileDirectory)
+    if (-not [IO.Path]::IsPathFullyQualified($profilePath)) {
+        throw '-ProfileDirectory must resolve to an absolute path.'
+    }
 }
 $outputDirectory = Split-Path -Parent $outputPath
 if (-not [string]::IsNullOrEmpty($outputDirectory)) {
@@ -111,7 +120,7 @@ $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
 $startInfo.EnvironmentVariables['BREEZE_REQUIRE_HIDDEN_BENCHMARK'] = '1'
-if ($FreshProfile) {
+if ($null -ne $profilePath) {
     $startInfo.EnvironmentVariables['BREEZE_PROFILE_DIRECTORY'] = $profilePath
 }
 $startInfo.EnvironmentVariables['BREEZE_BENCHMARK_LOCALE'] = $Locale
@@ -173,5 +182,6 @@ if (-not [string]::IsNullOrWhiteSpace($standardError)) {
 $record = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
 $record | Add-Member -NotePropertyName locale -NotePropertyValue $Locale
 $record | Add-Member -NotePropertyName fresh_profile -NotePropertyValue ([bool] $FreshProfile)
+$record | Add-Member -NotePropertyName isolated_profile -NotePropertyValue ($null -ne $profilePath)
 $record | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $outputPath -Encoding UTF8
 Write-Output $outputPath

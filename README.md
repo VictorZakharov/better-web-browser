@@ -220,6 +220,12 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.
 
+The [technical-alpha release notes](docs/technical-alpha-release.md) describe the reproducible
+unsigned Windows x64 archive, verification and cleanup, acceptance evidence, dependency policy,
+and the safety limitations that apply before trying a public build. Development-only licenses and
+provenance that are intentionally absent from the shipped graph are tracked separately in
+[development third-party material](docs/development-third-party.md).
+
 The deterministic alpha matrix now covers long-form and portal pages, responsive articles, search results, a capability dashboard, forms/storage, layout, media/fonts, and asynchronous mutation. Its opt-in live URLs provide side-by-side evidence rather than CI truth. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results remain a compatibility target, not evidence that Google search is solved.
 
 As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **158 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
