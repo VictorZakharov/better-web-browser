@@ -1,4 +1,4 @@
-//! Benchmark state initialization kept separate from report collection.
+//! Benchmark state initialization and automation completion tracking.
 
 use super::*;
 
@@ -9,6 +9,7 @@ impl BenchmarkRun {
         output: PathBuf,
         screenshot: Option<PathBuf>,
         settle: Duration,
+        completion_marker: Option<String>,
         scroll_samples: usize,
         early_scroll: bool,
         diagnostic_selectors: Vec<String>,
@@ -68,6 +69,8 @@ impl BenchmarkRun {
             script_console: Vec::new(),
             script_diagnostics: Vec::new(),
             script_runtime_stopped: false,
+            completion_marker,
+            completion_observed: false,
             finish_scheduled: false,
             renderer_wait_deadline: None,
             screenshot,
@@ -79,5 +82,50 @@ impl BenchmarkRun {
             window_width_dip,
             window_height_dip,
         }
+    }
+
+    pub(in crate::windows_app) fn record_script_console(&mut self, messages: &[String]) -> bool {
+        let newly_completed = !self.completion_observed
+            && self
+                .completion_marker
+                .as_deref()
+                .is_some_and(|marker| messages.iter().any(|message| message.contains(marker)));
+        self.completion_observed |= newly_completed;
+        self.script_console.extend(messages.iter().cloned());
+        newly_completed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_marker_finishes_once_and_preserves_console_history() {
+        let mut benchmark = BenchmarkRun::new(
+            "https://example.test".into(),
+            PathBuf::from("report.json"),
+            None,
+            Duration::from_secs(10),
+            Some("__DONE__".into()),
+            0,
+            false,
+            Vec::new(),
+            1280,
+            720,
+            Instant::now(),
+        );
+
+        assert!(!benchmark.record_script_console(&["starting".into()]));
+        assert!(benchmark.record_script_console(&["log: __DONE__{}".into()]));
+        assert!(!benchmark.record_script_console(&["log: __DONE__{}".into()]));
+        assert_eq!(
+            benchmark.script_console,
+            [
+                "starting".to_string(),
+                "log: __DONE__{}".to_string(),
+                "log: __DONE__{}".to_string(),
+            ]
+        );
     }
 }

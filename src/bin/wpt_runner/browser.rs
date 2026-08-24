@@ -45,6 +45,8 @@ pub(crate) fn run(browser: &Path, url: &str, settle_ms: u64, timeout_ms: u64) ->
             path_text(&artifacts.report),
             "--settle-ms",
             &settle_ms.to_string(),
+            "--completion-marker",
+            RESULT_MARKER,
         ])
         .env("BREEZE_HEADLESS_LARGE_STACK", "1")
         .stdout(Stdio::null())

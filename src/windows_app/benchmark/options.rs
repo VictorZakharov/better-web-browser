@@ -32,6 +32,7 @@ impl LaunchOptions {
         let mut output = None;
         let mut screenshot = None;
         let mut settle_ms = 2_000_u64;
+        let mut completion_marker = None;
         let mut scroll_samples = 0_usize;
         let mut early_scroll = false;
         let mut diagnostic_selectors = Vec::new();
@@ -47,6 +48,13 @@ impl LaunchOptions {
                 }
                 "--settle-ms" => {
                     settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000);
+                }
+                "--completion-marker" => {
+                    let marker = required(&mut arguments, &argument)?;
+                    if marker.is_empty() {
+                        return Err("--completion-marker cannot be empty".to_string());
+                    }
+                    completion_marker = Some(marker);
                 }
                 "--scroll-samples" => {
                     scroll_samples = number::<usize>(&mut arguments, &argument)?.clamp(1, 120);
@@ -85,6 +93,7 @@ impl LaunchOptions {
                 output,
                 screenshot,
                 Duration::from_millis(settle_ms),
+                completion_marker,
                 scroll_samples,
                 early_scroll,
                 diagnostic_selectors,
@@ -98,6 +107,9 @@ impl LaunchOptions {
             }
             if scroll_samples > 0 {
                 return Err("--scroll-samples requires --benchmark".to_string());
+            }
+            if completion_marker.is_some() {
+                return Err("--completion-marker requires --benchmark".to_string());
             }
             if early_scroll {
                 return Err("--early-scroll-trace requires --benchmark".to_string());
@@ -154,6 +166,8 @@ mod tests {
                 "--early-scroll-trace",
                 "--diagnostic-selector",
                 "#main",
+                "--completion-marker",
+                "__DONE__",
             ]
             .into_iter()
             .map(str::to_string),
@@ -166,5 +180,6 @@ mod tests {
         );
         assert!(benchmark.early_scroll.is_some());
         assert_eq!(benchmark.diagnostic_selectors, ["#main"]);
+        assert_eq!(benchmark.completion_marker.as_deref(), Some("__DONE__"));
     }
 }
