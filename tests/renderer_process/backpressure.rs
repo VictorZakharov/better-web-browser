@@ -2,7 +2,8 @@ use super::support::*;
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession, RendererState};
 use better_web_browser::renderer_protocol::{
-    DocumentInput, DocumentNodeId, TestCommand, TextInput,
+    DocumentInput, DocumentNodeId, InputModifiers, NavigationCause, NavigationDisposition,
+    PointerButton, PointerInput, PointerPhase, TestCommand, TextInput,
 };
 use std::time::{Duration, Instant};
 
@@ -35,24 +36,7 @@ fn saturated_command_queue_recovers_and_delivers_final_input() {
         })
         .expect("input control target");
 
-    session
-        .send_test_command(TestCommand::DelayCommandRead { millis: 1_200 })
-        .expect("start finite renderer command-read stall");
-    let mut saturated = false;
-    for _ in 0..256 {
-        match session.send_test_command(TestCommand::Padding { bytes: 60 * 1024 }) {
-            Ok(()) => {}
-            Err(error) if error.contains("command queue is full") => {
-                saturated = true;
-                break;
-            }
-            Err(error) => panic!("unexpected command enqueue failure: {error}"),
-        }
-    }
-    assert!(
-        saturated,
-        "finite child stall did not apply bounded command backpressure"
-    );
+    saturate_command_queue(&session);
 
     let expected_marker = "retained-final";
     let final_input = DocumentInput::Text(TextInput {
@@ -94,6 +78,120 @@ fn saturated_command_queue_recovers_and_delivers_final_input() {
 
     session.shutdown().expect("shutdown pressured renderer");
     sibling.shutdown().expect("shutdown sibling renderer");
+}
+
+#[test]
+fn duckduckgo_link_navigation_replaces_a_document_under_command_backpressure() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut launch = options();
+    launch.unresponsive_timeout = Duration::from_secs(5);
+    let mut session = RendererSession::launch(launch).expect("launch navigation renderer");
+    let initial = load_html_document(
+        &session,
+        151,
+        r#"<!doctype html><a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FMain_Page&amp;rut=test">Wikipedia</a>"#,
+    );
+    let (rect, expected_url) = initial
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Text {
+                rect,
+                link: Some(url),
+                ..
+            } if url.contains("duckduckgo.com/l/") => Some((*rect, url.clone())),
+            _ => None,
+        })
+        .expect("DuckDuckGo result link geometry");
+    for (sequence, phase) in [(1, PointerPhase::Down), (2, PointerPhase::Up)] {
+        session
+            .send_input(DocumentInput::Pointer(PointerInput {
+                document: initial.document,
+                sequence,
+                phase,
+                button: PointerButton::Primary,
+                x: rect.x + rect.width / 2.0,
+                y: rect.y + rect.height / 2.0,
+                modifiers: InputModifiers::default(),
+                target: None,
+            }))
+            .expect("activate DuckDuckGo result link");
+    }
+    let (url, disposition, cause) = wait_for_navigation(&session, initial.document);
+    assert_eq!(url, expected_url);
+    assert_eq!(
+        url,
+        "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FMain_Page&rut=test"
+    );
+    assert_eq!(disposition, NavigationDisposition::CurrentTab);
+    assert_eq!(cause, NavigationCause::UserActivation);
+
+    saturate_command_queue(&session);
+    session
+        .cancel_document(initial.document)
+        .expect("queue lossless document cancellation");
+    let replacement_document = better_web_browser::renderer_protocol::DocumentId::new(152).unwrap();
+    let replacement = b"<!doctype html><p>Wikipedia replacement ready</p>".to_vec();
+    session
+        .load_document(
+            document_start(replacement_document, replacement.len()),
+            empty_document_state(),
+            replacement,
+        )
+        .expect("queue lossless replacement document");
+
+    wait_for_text(
+        &session,
+        replacement_document,
+        "Wikipedia replacement ready",
+    );
+    session
+        .ping(Duration::from_secs(1))
+        .expect("replacement renderer remains responsive");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session.shutdown().expect("shutdown navigation renderer");
+}
+
+fn saturate_command_queue(session: &RendererSession) {
+    session
+        .send_test_command(TestCommand::DelayCommandRead { millis: 1_200 })
+        .expect("start finite renderer command-read stall");
+    let mut saturated = false;
+    for _ in 0..256 {
+        match session.send_test_command(TestCommand::Padding { bytes: 60 * 1024 }) {
+            Ok(()) => {}
+            Err(error) if error.contains("command queue is full") => {
+                saturated = true;
+                break;
+            }
+            Err(error) => panic!("unexpected command enqueue failure: {error}"),
+        }
+    }
+    assert!(
+        saturated,
+        "finite child stall did not apply bounded command backpressure"
+    );
+}
+
+fn wait_for_navigation(
+    session: &RendererSession,
+    document: better_web_browser::renderer_protocol::DocumentId,
+) -> (String, NavigationDisposition, NavigationCause) {
+    loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::NavigationRequested {
+                document: event_document,
+                url,
+                disposition,
+                cause,
+            } if event_document == document => return (url, disposition, cause),
+            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            event => panic!("unexpected navigation event: {event:?}"),
+        }
+    }
 }
 
 fn wait_for_text(

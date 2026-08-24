@@ -3,6 +3,23 @@
 use super::*;
 
 impl Broker {
+    pub(super) fn process_lifecycle_commands(&mut self) {
+        for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
+            let command = match self.resources().lifecycle.try_recv() {
+                Ok(command) => command,
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            };
+            match command {
+                LifecycleCommand::LoadDocument { start, state, body } => {
+                    if let Err(error) = self.send_document(*start, state, body) {
+                        self.protocol_failure(error);
+                    }
+                }
+                LifecycleCommand::CancelDocument(document) => self.cancel_document(document),
+            }
+        }
+    }
+
     pub(super) fn process_commands(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
             let command = match self.resources().commands.try_recv() {
@@ -22,11 +39,6 @@ impl Broker {
                 BrokerCommand::Test(command) => {
                     if let Err(error) = self.writer().send_browser(&BrowserMessage::Test(command)) {
                         self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::LoadDocument { start, state, body } => {
-                    if let Err(error) = self.send_document(start, state, body) {
-                        self.protocol_failure(error);
                     }
                 }
                 BrokerCommand::UpdateCookieSnapshot(snapshot) => {
@@ -80,7 +92,6 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
-                BrokerCommand::CancelDocument(document) => self.cancel_document(document),
                 BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
                 BrokerCommand::Terminate => {
                     self.exit_reason = Some(RendererExitReason::Terminated);

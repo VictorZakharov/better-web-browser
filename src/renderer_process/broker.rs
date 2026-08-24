@@ -79,6 +79,7 @@ pub enum RendererEvent {
 
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
+    lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
     wake: wake::BrokerWake,
@@ -165,6 +166,9 @@ impl RendererSession {
         }));
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
+        // Browser state serializes replacement to one cancel plus one pending page. Keep that
+        // lifecycle lossless and independent from bounded, potentially hostile page traffic.
+        let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
         let (events_tx, events_rx) = events::bounded();
@@ -181,6 +185,7 @@ impl RendererSession {
                     incoming,
                     reader_thread,
                     commands: commands_rx,
+                    lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
                     wake: worker_wake,
@@ -191,6 +196,7 @@ impl RendererSession {
             .map_err(|error| format!("start renderer broker thread: {error}"))?;
         Ok(Self {
             commands: commands_tx,
+            lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,
             wake,
