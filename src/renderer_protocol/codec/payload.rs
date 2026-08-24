@@ -71,6 +71,15 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
                 TestCommand::AccessViolation => payload.push(5),
                 TestCommand::OutOfMemory => payload.push(6),
                 TestCommand::StackOverflow => payload.push(7),
+                TestCommand::DelayCommandRead { millis } => {
+                    payload.push(8);
+                    payload.extend_from_slice(&millis.to_le_bytes());
+                }
+                TestCommand::Padding { bytes } => {
+                    payload.push(9);
+                    payload.extend_from_slice(&bytes.to_le_bytes());
+                    payload.resize(3 + usize::from(*bytes), 0);
+                }
             }
             0x8001
         }
@@ -239,6 +248,17 @@ fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
         [5] => Ok(TestCommand::AccessViolation),
         [6] => Ok(TestCommand::OutOfMemory),
         [7] => Ok(TestCommand::StackOverflow),
+        [8, low, high] => Ok(TestCommand::DelayCommandRead {
+            millis: u16::from_le_bytes([*low, *high]),
+        }),
+        [9, low, high, padding @ ..]
+            if padding.len() == usize::from(u16::from_le_bytes([*low, *high]))
+                && padding.iter().all(|byte| *byte == 0) =>
+        {
+            Ok(TestCommand::Padding {
+                bytes: u16::from_le_bytes([*low, *high]),
+            })
+        }
         _ => Err(ProtocolError::InvalidPayload("test command")),
     }
 }

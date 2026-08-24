@@ -2,6 +2,8 @@
 
 #[path = "renderer_process/accessibility.rs"]
 mod accessibility;
+#[path = "renderer_process/backpressure.rs"]
+mod backpressure;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/presentation.rs"]

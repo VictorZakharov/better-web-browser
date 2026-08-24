@@ -94,12 +94,22 @@ impl RendererSession {
     }
 
     /// Attempts one validated input enqueue without treating backpressure as a renderer failure.
-    /// Callers that need last-value delivery (for example scroll position) can retain and retry.
     pub fn try_send_input(&self, input: DocumentInput) -> Result<bool, String> {
+        self.try_send_input_retained(input)
+            .map(|pending| pending.is_none())
+    }
+
+    /// Returns the original validated input when the bounded broker channel is temporarily full.
+    /// Browser UI callers use this to retain exact discrete-event ordering without blocking.
+    pub fn try_send_input_retained(
+        &self,
+        input: DocumentInput,
+    ) -> Result<Option<DocumentInput>, String> {
         input.validate().map_err(|error| error.to_string())?;
         let result = match self.commands.try_send(worker::BrokerCommand::Input(input)) {
-            Ok(()) => Ok(true),
-            Err(mpsc::TrySendError::Full(_)) => Ok(false),
+            Ok(()) => Ok(None),
+            Err(mpsc::TrySendError::Full(worker::BrokerCommand::Input(input))) => Ok(Some(input)),
+            Err(mpsc::TrySendError::Full(_)) => unreachable!("only input commands are sent here"),
             Err(mpsc::TrySendError::Disconnected(_)) => Err("renderer broker has exited".into()),
         };
         self.wake.notify();

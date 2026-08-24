@@ -1,9 +1,11 @@
 //! Browser-to-renderer native input translation and document-scoped sequencing.
 
+use super::renderer_input_queue::QueueResult;
 use super::tab_state::TabFocus;
 use super::tabs::TabId;
 use super::*;
 use better_web_browser::engine::dom::NodeId;
+use better_web_browser::limits::MAX_QUEUED_BROWSER_COMMANDS;
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, PointerButton, PointerInput, PointerPhase,
@@ -22,22 +24,46 @@ impl BrowserState {
     }
 
     pub(in crate::windows_app) fn submit_renderer_input(&mut self, input: DocumentInput) -> bool {
-        let result = self
-            .renderer_session
-            .as_ref()
-            .ok_or_else(|| "renderer session is unavailable".to_string())
-            .and_then(|session| session.send_input(input));
-        if let Err(error) = result {
-            unsafe {
-                self.contain_page_engine_failure(
-                    self.id,
-                    format!("could not deliver document input: {error}"),
-                );
-            }
-            false
+        let result = if self.pending_renderer_inputs.is_empty() {
+            self.renderer_session
+                .as_ref()
+                .ok_or_else(|| "renderer session is unavailable".to_string())
+                .and_then(|session| session.try_send_input_retained(input))
         } else {
-            self.note_renderer_input_activity();
-            true
+            input
+                .validate()
+                .map_err(|error| error.to_string())
+                .map(|()| Some(input))
+        };
+        match result {
+            Ok(None) => {
+                self.note_renderer_input_activity();
+                true
+            }
+            Ok(Some(input)) => match self.pending_renderer_inputs.enqueue(input) {
+                QueueResult::Queued | QueueResult::Coalesced => {
+                    self.note_renderer_input_activity();
+                    true
+                }
+                QueueResult::Full => {
+                    self.note_renderer_input_activity();
+                    unsafe {
+                        self.set_status(
+                            "Renderer is busy; this input was not accepted. Try again.",
+                        );
+                    }
+                    false
+                }
+            },
+            Err(error) => {
+                unsafe {
+                    self.contain_page_engine_failure(
+                        self.id,
+                        format!("could not deliver document input: {error}"),
+                    );
+                }
+                false
+            }
         }
     }
 
@@ -219,67 +245,53 @@ impl BrowserState {
             return;
         };
         let scale = self.page_scale().max(f32::EPSILON);
-        let input = ScrollInput {
+        let _ = self.submit_renderer_input(DocumentInput::Scroll(ScrollInput {
             document,
             sequence,
             x: 0.0,
             y: self.scroll_y.max(0) as f32 / scale,
-        };
-        self.pending_renderer_scroll = None;
-        match self
-            .renderer_session
-            .as_ref()
-            .ok_or_else(|| "renderer session is unavailable".to_string())
-            .and_then(|session| session.try_send_input(DocumentInput::Scroll(input)))
-        {
-            Ok(true) => self.note_renderer_input_activity(),
-            Ok(false) => {
-                self.pending_renderer_scroll = Some(input);
-                self.note_renderer_input_activity();
-            }
-            Err(error) => unsafe {
-                self.contain_page_engine_failure(
-                    self.id,
-                    format!("could not deliver document input: {error}"),
-                );
-            },
-        }
+        }));
     }
 
-    pub(super) unsafe fn flush_renderer_scroll_for(&mut self, id: TabId) {
-        let failure = {
-            let Some(tab) = self.tabs.get_mut(id) else {
-                return;
-            };
-            let Some(input) = tab.pending_renderer_scroll.take() else {
-                return;
-            };
-            if tab.renderer_document != Some(input.document) {
-                return;
-            }
-            match tab
-                .renderer_session
-                .as_ref()
-                .ok_or_else(|| "renderer session is unavailable".to_string())
-                .and_then(|session| session.try_send_input(DocumentInput::Scroll(input)))
-            {
-                Ok(true) => {
-                    tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
-                    None
+    pub(super) unsafe fn flush_renderer_inputs_for(&mut self, id: TabId) {
+        for _ in 0..MAX_QUEUED_BROWSER_COMMANDS {
+            let delivery = {
+                let Some(tab) = self.tabs.get_mut(id) else {
+                    return;
+                };
+                let Some(input) = tab.pending_renderer_inputs.pop_front() else {
+                    return;
+                };
+                if tab.renderer_document != Some(input.document()) {
+                    continue;
                 }
-                Ok(false) => {
-                    tab.pending_renderer_scroll = Some(input);
-                    tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
-                    None
+                tab.renderer_session
+                    .as_ref()
+                    .ok_or_else(|| "renderer session is unavailable".to_string())
+                    .and_then(|session| session.try_send_input_retained(input))
+            };
+            match delivery {
+                Ok(None) => {}
+                Ok(Some(input)) => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.pending_renderer_inputs.restore_front(input);
+                        tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
+                    }
+                    return;
                 }
-                Err(error) => Some(error),
+                Err(error) => {
+                    self.contain_page_engine_failure(
+                        id,
+                        format!("could not deliver document input: {error}"),
+                    );
+                    return;
+                }
             }
-        };
-        if let Some(error) = failure {
-            self.contain_page_engine_failure(
-                id,
-                format!("could not deliver document input: {error}"),
-            );
+        }
+        if let Some(tab) = self.tabs.get_mut(id)
+            && !tab.pending_renderer_inputs.is_empty()
+        {
+            tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
         }
     }
 

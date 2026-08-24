@@ -4,13 +4,14 @@ use super::accessibility::AccessibilityDocument;
 use super::document_navigation::ScriptNavigationGuard;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
+use super::renderer_input_queue::PendingRendererInputs;
 use super::scrolling::ScrollAnimation;
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
-use better_web_browser::renderer_protocol::{DocumentId, PresentedGlyphRaster, ScrollInput};
+use better_web_browser::renderer_protocol::{DocumentId, PresentedGlyphRaster};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -58,7 +59,7 @@ pub(super) struct BrowserTab {
     pub(super) renderer_document: Option<DocumentId>,
     pub(super) renderer_input_sequence: u64,
     pub(super) renderer_input_poll_budget: u8,
-    pub(super) pending_renderer_scroll: Option<ScrollInput>,
+    pub(super) pending_renderer_inputs: PendingRendererInputs,
     pub(super) renderer_revision: u64,
     pub(super) renderer_load_metrics: Option<RendererLoadMetrics>,
     pub(super) page_diagnostics: better_web_browser::renderer_protocol::PageDiagnostics,
@@ -112,7 +113,7 @@ impl BrowserTab {
             renderer_document: None,
             renderer_input_sequence: 0,
             renderer_input_poll_budget: 0,
-            pending_renderer_scroll: None,
+            pending_renderer_inputs: PendingRendererInputs::default(),
             renderer_revision: 0,
             renderer_load_metrics: None,
             page_diagnostics: Default::default(),
@@ -141,7 +142,7 @@ impl BrowserTab {
         self.renderer_document = None;
         self.renderer_input_sequence = 0;
         self.renderer_input_poll_budget = 0;
-        self.pending_renderer_scroll = None;
+        self.pending_renderer_inputs.clear();
         self.renderer_revision = 0;
         self.renderer_load_metrics = None;
         self.page_diagnostics = Default::default();
