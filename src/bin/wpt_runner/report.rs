@@ -158,12 +158,18 @@ pub(crate) struct Summary {
     pub(crate) regressions: usize,
     pub(crate) actual_timeouts: usize,
     pub(crate) actual_crashes: usize,
+    pub(crate) subtests_total: usize,
+    pub(crate) subtests_passed: usize,
+    pub(crate) subtests_failed: usize,
+    pub(crate) subtests_timed_out: usize,
+    pub(crate) minimum_subtests: usize,
 }
 
 impl Summary {
-    fn from_results(results: &[CaseResult]) -> Self {
+    fn from_results(results: &[CaseResult], minimum_subtests: usize) -> Self {
         let mut summary = Self {
             total: results.len(),
+            minimum_subtests,
             ..Self::default()
         };
         for result in results {
@@ -179,12 +185,24 @@ impl Summary {
             if result.actual == ActualStatus::Crash {
                 summary.actual_crashes += 1;
             }
+            if let Some(harness) = &result.harness {
+                for subtest in &harness.tests {
+                    summary.subtests_total += 1;
+                    match subtest.status.as_str() {
+                        "PASS" => summary.subtests_passed += 1,
+                        "TIMEOUT" => summary.subtests_timed_out += 1,
+                        _ => summary.subtests_failed += 1,
+                    }
+                }
+            }
         }
         summary
     }
 
     pub(crate) fn is_success(&self) -> bool {
-        self.unexpected_passes == 0 && self.regressions == 0
+        self.unexpected_passes == 0
+            && self.regressions == 0
+            && self.subtests_total >= self.minimum_subtests
     }
 }
 
@@ -217,6 +235,7 @@ impl RunReport {
         suite: String,
         upstream: Upstream,
         configuration: RunConfiguration<'_>,
+        minimum_subtests: usize,
         tests: Vec<CaseResult>,
     ) -> Self {
         Self {
@@ -233,7 +252,7 @@ impl RunReport {
             settle_ms: configuration.settle_ms,
             timeout_ms: configuration.timeout_ms,
             jobs: configuration.jobs,
-            summary: Summary::from_results(&tests),
+            summary: Summary::from_results(&tests, minimum_subtests),
             tests,
         }
     }
@@ -258,6 +277,37 @@ impl RunReport {
 mod tests {
     use super::*;
 
+    fn result_with_subtests(statuses: &[&str]) -> CaseResult {
+        CaseResult {
+            path: "dom/test.html".to_string(),
+            area: "DOM".to_string(),
+            expected: ExpectedStatus::Pass,
+            expectation_reason: None,
+            actual: ActualStatus::Pass,
+            verdict: Verdict::Pass,
+            duration_ms: 1,
+            detail: None,
+            harness: Some(HarnessReport {
+                overall: HarnessStatus {
+                    status: "OK".to_string(),
+                    message: None,
+                },
+                tests: statuses
+                    .iter()
+                    .map(|status| HarnessTest {
+                        name: status.to_string(),
+                        status: status.to_string(),
+                        message: None,
+                        stack: None,
+                    })
+                    .collect(),
+            }),
+            javascript_errors: Vec::new(),
+            javascript_diagnostics: Vec::new(),
+            process_stderr: None,
+        }
+    }
+
     #[test]
     fn expected_failures_are_precise_and_crashes_are_never_blessed() {
         assert_eq!(
@@ -276,5 +326,21 @@ mod tests {
             evaluate(ExpectedStatus::Timeout, ActualStatus::Fail),
             Verdict::Regression
         );
+    }
+
+    #[test]
+    fn counts_harness_subtests_and_enforces_the_floor() {
+        let results = [result_with_subtests(&["PASS", "PASS", "FAIL", "TIMEOUT"])];
+        let summary = Summary::from_results(&results, 5);
+
+        assert_eq!(summary.subtests_total, 4);
+        assert_eq!(summary.subtests_passed, 2);
+        assert_eq!(summary.subtests_failed, 1);
+        assert_eq!(summary.subtests_timed_out, 1);
+        assert!(!summary.is_success());
+
+        let passing_results = [result_with_subtests(&["PASS", "PASS", "PASS", "PASS"])];
+        let summary = Summary::from_results(&passing_results, 4);
+        assert!(summary.is_success());
     }
 }

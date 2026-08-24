@@ -37,12 +37,18 @@ fn run() -> Result<bool, String> {
     }
     let manifest = Manifest::load(&cli.manifest)?;
     let tests = manifest.selected(cli.filter.as_deref())?;
+    let minimum_subtests = if cli.filter.is_none() {
+        manifest.policy.minimum_subtests
+    } else {
+        1
+    };
     let root = manifest.verify_checkout(&cli.wpt_root, &tests)?;
     let server = TestServer::start(root, tests.clone())?;
 
     println!(
-        "Running {} curated WPT cases from {}",
+        "Running {} WPT cases for {:?} from {}",
         tests.len(),
+        manifest.suite,
         &manifest.upstream.revision[..12]
     );
     let results = execute_tests(&cli, &server, tests)?;
@@ -57,6 +63,7 @@ fn run() -> Result<bool, String> {
             timeout_ms: cli.timeout_ms,
             jobs: cli.jobs,
         },
+        minimum_subtests,
         results,
     );
     report.write(&cli.output)?;
@@ -67,6 +74,14 @@ fn run() -> Result<bool, String> {
         report.summary.unexpected_passes,
         report.summary.regressions,
         report.summary.total
+    );
+    println!(
+        "Harness subtests: {} pass, {} fail, {} timeout ({} total, {} required)",
+        report.summary.subtests_passed,
+        report.summary.subtests_failed,
+        report.summary.subtests_timed_out,
+        report.summary.subtests_total,
+        report.summary.minimum_subtests,
     );
     println!("JSON report: {}", cli.output.display());
     Ok(report.summary.is_success())

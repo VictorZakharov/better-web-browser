@@ -61,35 +61,13 @@ updates are excluded from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The comparison harness runs Breeze and a separately supplied Chromium reference as fresh hidden processes, then reports median timing, memory, CPU, and process counts.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against nine deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
-.\benchmarks\compare.ps1 `
-  -Urls https://example.org/ `
-  -Iterations 3 `
-  -ChromiumProject <path-to-reference-harness>
+.\benchmarks\run-alpha.ps1 -Iterations 3
 ```
 
-Performance claims are valid only when the exercised page path is feature-equivalent. The visual acceptance target is perceptual parity: with the same viewport, scale, fonts, locale, and network state, a person looking at the page surfaces side by side should not be able to identify which is Chromium. Exact byte-for-byte raster equality is not required.
-
-### Current benchmark snapshot
-
-Six runs per browser, collected as two alternating three-run hidden release batches against a representative public blog page on 2026-08-14 with a 2-second settle period, produced these combined medians:
-
-| Metric | Breeze | Chromium | Result |
-|---|---:|---:|---:|
-| Window ready | 13.7 ms | 198.7 ms | Breeze 14.52x faster |
-| Process start to page ready | 420.0 ms | 775.6 ms | Breeze 1.85x faster |
-| Navigation | 407.2 ms | 436.0 ms | Breeze 1.07x faster |
-| Working set | 97.2 MiB | 609.3 MiB | Breeze 6.27x smaller |
-| Private memory | 76.5 MiB | 392.1 MiB | Breeze 5.12x smaller |
-| CPU time | 523.4 ms | 3,976.6 ms | Breeze 7.60x lower |
-| Processes | 2 | 10 | Breeze uses 5x fewer |
-
-Breeze memory and CPU totals include both its browser process and the live page renderer.
-Breeze page-ready is recorded after its first owned layout and paint; Chromium uses its load event
-and implements substantially more of the web platform. Treat this as a reproducible development
-snapshot, not a universal or feature-equivalent browser claim.
+The CI gate requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md) and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
 
 ### Renderer text cold-path comparison
 
@@ -179,19 +157,23 @@ quiet period.
 
 ### Web-platform regression suite
 
-A pinned, curated 70-case Web Platform Test suite covers HTML parsing, DOM, events, abort signals,
-event-loop ordering, URLs, Web IDL, Fetch, XHR, modules, and the CSS cascade. Upstream fixtures stay
-in a separate sparse WPT checkout; after preparing that checkout, the suite runs offline with one hidden command. All 70 cases pass at the pinned
-revision, with no expected-failure or timeout allowances:
+A pinned, curated 80-file Web Platform Test suite covers 570 upstream harness subtests across HTML
+parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
+Web IDL, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
+after preparing that checkout, the suite runs offline with one hidden command. All 570 selected
+subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
 ```
 
-The runner emits `target/wpt/report.json` and fails on regressions, crashes, changed failure modes,
-and unexpected passes. See [tests/wpt/README.md](tests/wpt/README.md) for provenance, licensing,
-expectation policy, filtering, and the exact execution contract.
+The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
+regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression
+gate, not Breeze's whole-platform pass rate. A separate discovery sample records 3 passes and 16
+known failures across nearby unsupported behavior. See
+[tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
+provenance, licensing, expectation policy, filtering, and exact execution contract.
 
 A second in-repository parser suite runs selected WPT tree-construction fixtures directly against
 the engine-owned DOM. It covers implied elements, foster parenting, adoption-agency repair,
@@ -238,7 +220,13 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.
 
-The public blog page used above is the current visual/performance fixture and renders through the owned engine with its responsive layout, scripts, images, SVG icons, and webfonts. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results are an explicitly requested compatibility fixture and now render close to the Chromium reference, although generated select chevrons and some native-control details still differ; this is not evidence that Google search is solved.
+The [technical-alpha release notes](docs/technical-alpha-release.md) describe the reproducible
+unsigned Windows x64 archive, verification and cleanup, acceptance evidence, dependency policy,
+and the safety limitations that apply before trying a public build. Development-only licenses and
+provenance that are intentionally absent from the shipped graph are tracked separately in
+[development third-party material](docs/development-third-party.md).
+
+The deterministic alpha matrix now covers long-form and portal pages, responsive articles, search results, a capability dashboard, forms/storage, layout, media/fonts, and asynchronous mutation. Its opt-in live URLs provide side-by-side evidence rather than CI truth. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results remain a compatibility target, not evidence that Google search is solved.
 
 As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **158 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
 

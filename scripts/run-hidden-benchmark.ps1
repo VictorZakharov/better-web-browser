@@ -8,6 +8,8 @@ param(
     [string] $Screenshot,
     [ValidateRange(100, 60000)]
     [int] $SettleMs = 2000,
+    [ValidateRange(5, 600)]
+    [int] $TimeoutSeconds = 120,
     [ValidateRange(0, 120)]
     [int] $ScrollSamples = 0,
     [switch] $EarlyScrollTrace,
@@ -15,6 +17,10 @@ param(
     [int] $WindowWidth = 1280,
     [ValidateRange(240, 4320)]
     [int] $WindowHeight = 720,
+    [ValidatePattern('^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')]
+    [string] $Locale = 'en-US',
+    [switch] $FreshProfile,
+    [string] $ProfileDirectory,
     [string[]] $DiagnosticSelector = @()
 )
 
@@ -25,6 +31,19 @@ if ([string]::IsNullOrWhiteSpace($Browser)) {
 }
 $Browser = (Resolve-Path $Browser).Path
 $outputPath = [System.IO.Path]::GetFullPath($Output)
+$profilePath = $null
+if ($FreshProfile -and -not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
+    throw 'Use either -FreshProfile or -ProfileDirectory, not both.'
+}
+if ($FreshProfile) {
+    $profilePath = Join-Path ([IO.Path]::GetTempPath()) ("breeze-benchmark-" + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($profilePath) | Out-Null
+} elseif (-not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
+    $profilePath = [IO.Path]::GetFullPath($ProfileDirectory)
+    if (-not [IO.Path]::IsPathFullyQualified($profilePath)) {
+        throw '-ProfileDirectory must resolve to an absolute path.'
+    }
+}
 $outputDirectory = Split-Path -Parent $outputPath
 if (-not [string]::IsNullOrEmpty($outputDirectory)) {
     [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
@@ -101,6 +120,10 @@ $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
 $startInfo.RedirectStandardOutput = $true
 $startInfo.RedirectStandardError = $true
 $startInfo.EnvironmentVariables['BREEZE_REQUIRE_HIDDEN_BENCHMARK'] = '1'
+if ($null -ne $profilePath) {
+    $startInfo.EnvironmentVariables['BREEZE_PROFILE_DIRECTORY'] = $profilePath
+}
+$startInfo.EnvironmentVariables['BREEZE_BENCHMARK_LOCALE'] = $Locale
 
 $process = [System.Diagnostics.Process]::new()
 $process.StartInfo = $startInfo
@@ -117,11 +140,23 @@ try {
         }
         throw 'Refusing benchmark run: the actual Breeze child command line lacks --benchmark.'
     }
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        throw "Hidden Breeze benchmark exceeded the $TimeoutSeconds-second process timeout."
+    }
+    # Flush redirected asynchronous reads after the bounded wait succeeds.
     $process.WaitForExit()
 } finally {
     if (-not $process.HasExited) {
         $process.Kill()
         $process.WaitForExit()
+    }
+    if ($FreshProfile -and (Test-Path -LiteralPath $profilePath)) {
+        $fullProfile = [IO.Path]::GetFullPath($profilePath)
+        $expectedPrefix = Join-Path ([IO.Path]::GetTempPath()) 'breeze-benchmark-'
+        if (-not $fullProfile.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Refusing to remove an unexpected Breeze benchmark profile path.'
+        }
+        Remove-Item -LiteralPath $fullProfile -Recurse -Force
     }
 }
 
@@ -144,4 +179,9 @@ if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
 if (-not [string]::IsNullOrWhiteSpace($standardError)) {
     Write-Warning $standardError.Trim()
 }
+$record = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
+$record | Add-Member -NotePropertyName locale -NotePropertyValue $Locale
+$record | Add-Member -NotePropertyName fresh_profile -NotePropertyValue ([bool] $FreshProfile)
+$record | Add-Member -NotePropertyName isolated_profile -NotePropertyValue ($null -ne $profilePath)
+$record | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $outputPath -Encoding UTF8
 Write-Output $outputPath

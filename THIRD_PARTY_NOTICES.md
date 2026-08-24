@@ -1,64 +1,230 @@
 # Third-party notices
 
-## Boa JavaScript engine
+This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
-This repository contains a modified copy of `boa_engine` 0.21.1 under
-`vendor/boa_engine`.
+- Target: `x86_64-pc-windows-msvc`
+- Cargo.lock SHA-256: `08716b4c1f0cdd8e73c45906f3f247a1c8c2daddc514ff723401f9bef83d7d7f`
+- Third-party packages: 212
 
-- Upstream project: <https://github.com/boa-dev/boa>
-- Upstream revision: `bc36c3fac0969ea21ea0570b62e7846f97389b73`
-- License: Unlicense OR MIT, at the recipient's option
-- Local changes: [vendor/boa_engine/LOCAL_CHANGES.md](vendor/boa_engine/LOCAL_CHANGES.md)
+| Package | Version | License expression | Source |
+|---|---:|---|---|
+| `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | [upstream](https://github.com/oyvindln/adler2) |
+| `aligned-vec` | 0.6.4 | MIT | [upstream](https://github.com/sarah-ek/aligned-vec/) |
+| `allocator-api2` | 0.2.21 | MIT OR Apache-2.0 | [upstream](https://github.com/zakarumych/allocator-api2) |
+| `arrayref` | 0.3.9 | BSD-2-Clause | [upstream](https://github.com/droundy/arrayref) |
+| `arrayvec` | 0.7.8 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/arrayvec) |
+| `autocfg` | 1.5.1 | Apache-2.0 OR MIT | [upstream](https://github.com/cuviper/autocfg) |
+| `bitflags` | 2.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/bitflags/bitflags) |
+| `boa_ast` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_engine` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_gc` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_interner` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_macros` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_parser` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `boa_string` | 0.21.1 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
+| `bytemuck_derive` | 1.12.0 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
+| `byteorder-lite` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/image-rs/byteorder-lite) |
+| `cfg-if` | 1.0.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cfg-if) |
+| `color_quant` | 1.1.0 | MIT | [upstream](https://github.com/image-rs/color_quant.git) |
+| `core_maths` | 0.1.1 | MIT | [upstream](https://github.com/robertbastian/core_maths) |
+| `cow-utils` | 0.1.3 | MIT | [upstream](https://github.com/RReverser/cow-utils-rs) |
+| `crc32fast` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/srijs/rust-crc32fast) |
+| `crossbeam-utils` | 0.8.22 | MIT OR Apache-2.0 | [upstream](https://github.com/crossbeam-rs/crossbeam) |
+| `cssparser` | 0.37.0 | MPL-2.0 | [upstream](https://github.com/servo/rust-cssparser) |
+| `cssparser-macros` | 0.7.0 | MPL-2.0 | [upstream](https://github.com/servo/rust-cssparser) |
+| `dashmap` | 6.2.1 | MIT | [upstream](https://github.com/xacrimon/dashmap) |
+| `data-url` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
+| `deranged` | 0.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/deranged) |
+| `displaydoc` | 0.2.7 | MIT OR Apache-2.0 | [upstream](https://github.com/yaahc/displaydoc) |
+| `dtoa` | 1.0.11 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/dtoa) |
+| `dtoa-short` | 0.3.5 | MPL-2.0 | [upstream](https://github.com/upsuper/dtoa-short) |
+| `dynify` | 0.1.2 | MIT OR Apache-2.0 | [upstream](https://github.com/loichyan/dynify) |
+| `dynify-macros` | 0.1.2 | MIT OR Apache-2.0 | [upstream](https://github.com/loichyan/dynify) |
+| `either` | 1.17.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rayon-rs/either) |
+| `encoding_rs` | 0.8.35 | (Apache-2.0 OR MIT) AND BSD-3-Clause | [upstream](https://github.com/hsivonen/encoding_rs) |
+| `equator` | 0.4.2 | MIT | [upstream](https://github.com/sarah-ek/equator/) |
+| `equator-macro` | 0.4.2 | MIT | [upstream](https://github.com/sarah-ek/equator/) |
+| `equivalent` | 1.0.2 | Apache-2.0 OR MIT | [upstream](https://github.com/indexmap-rs/equivalent) |
+| `euclid` | 0.22.14 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/euclid) |
+| `fast-float2` | 0.2.3 | MIT OR Apache-2.0 | [upstream](https://github.com/Alexhuszagh/fast-float-rust) |
+| `fastrand` | 2.5.0 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/fastrand) |
+| `fdeflate` | 0.3.7 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/fdeflate) |
+| `fixedbitset` | 0.5.7 | MIT OR Apache-2.0 | [upstream](https://github.com/petgraph/fixedbitset) |
+| `flate2` | 1.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/flate2-rs) |
+| `float-cmp` | 0.9.0 | MIT | [upstream](https://github.com/mikedilger/float-cmp) |
+| `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
+| `font-types` | 0.11.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `font-types` | 0.12.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
+| `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
+| `futures-channel` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-concurrency` | 7.7.1 | MIT OR Apache-2.0 | [upstream](https://github.com/yoshuawuyts/futures-concurrency) |
+| `futures-core` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-io` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
+| `futures-lite` | 2.6.1 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/futures-lite) |
+| `getrandom` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/getrandom) |
+| `gif` | 0.14.2 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-gif) |
+| `harfrust` | 0.5.2 | MIT | [upstream](https://github.com/harfbuzz/harfrust) |
+| `hashbrown` | 0.14.5 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
+| `hashbrown` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
+| `hashbrown` | 0.17.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
+| `html5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `icu_collections` | 2.0.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_locale_core` | 2.2.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_normalizer` | 2.0.1 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_normalizer_data` | 2.0.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_properties` | 2.0.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_properties_data` | 2.0.1 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_provider` | 2.2.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `idna` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
+| `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/idna_adapter) |
+| `image` | 0.25.10 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image) |
+| `image-webp` | 0.2.4 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-webp) |
+| `imagesize` | 0.15.0 | MIT | [upstream](https://github.com/Roughsketch/imagesize) |
+| `indexmap` | 2.14.0 | Apache-2.0 OR MIT | [upstream](https://github.com/indexmap-rs/indexmap) |
+| `intrusive-collections` | 0.9.7 | Apache-2.0/MIT | [upstream](https://github.com/Amanieu/intrusive-rs) |
+| `itertools` | 0.14.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-itertools/itertools) |
+| `itoa` | 1.0.18 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/itoa) |
+| `kurbo` | 0.13.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/kurbo) |
+| `libm` | 0.2.16 | MIT | [upstream](https://github.com/rust-lang/compiler-builtins) |
+| `linebender_resource_handle` | 0.1.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/raw_resource_handle) |
+| `litemap` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `lock_api` | 0.4.14 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
+| `log` | 0.4.33 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/log) |
+| `markup5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `memchr` | 2.8.3 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/memchr) |
+| `memmap2` | 0.9.11 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/memmap2-rs) |
+| `memoffset` | 0.9.1 | MIT | [upstream](https://github.com/Gilnaa/memoffset) |
+| `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
+| `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
+| `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
+| `num_enum` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
+| `num_enum_derive` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
+| `num-bigint` | 0.4.8 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-bigint) |
+| `num-conv` | 0.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/num-conv) |
+| `num-integer` | 0.1.47 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-integer) |
+| `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
+| `once_cell` | 1.21.4 | MIT OR Apache-2.0 | [upstream](https://github.com/matklad/once_cell) |
+| `parking` | 2.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/parking) |
+| `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
+| `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
+| `parlance` | 0.1.0 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
+| `paste` | 1.0.15 | MIT OR Apache-2.0 | [upstream](https://github.com/esrauch/paste) |
+| `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
+| `phf` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
+| `phf_codegen` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
+| `phf_generator` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
+| `phf_macros` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
+| `phf_shared` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
+| `pico-args` | 0.5.0 | MIT | [upstream](https://github.com/RazrFalcon/pico-args) |
+| `pin-project` | 1.1.13 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/pin-project) |
+| `pin-project-internal` | 1.1.13 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/pin-project) |
+| `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/pin-project-lite) |
+| `png` | 0.18.1 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-png) |
+| `polycool` | 0.4.0 | MIT OR Apache-2.0 | [upstream](https://github.com/linebender/kurbo) |
+| `portable-atomic` | 1.15.0 | Apache-2.0 OR MIT | [upstream](https://github.com/taiki-e/portable-atomic) |
+| `potential_utf` | 0.1.5 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `powerfmt` | 0.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/powerfmt) |
+| `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 | [upstream](https://github.com/cryptocorrosion/cryptocorrosion) |
+| `precomputed-hash` | 0.1.1 | MIT | [upstream](https://github.com/emilio/precomputed-hash) |
+| `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bkchr/proc-macro-crate) |
+| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/proc-macro2) |
+| `psl2` | 0.1.18 | MIT OR Apache-2.0 | [upstream](https://github.com/KarpelesLab/psl2) |
+| `pxfm` | 0.1.30 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/pxfm) |
+| `quick-error` | 2.0.1 | MIT/Apache-2.0 | [upstream](http://github.com/tailhook/quick-error) |
+| `quote` | 1.0.47 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/quote) |
+| `rand` | 0.9.5 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/rand) |
+| `rand_chacha` | 0.9.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/rand) |
+| `rand_core` | 0.9.5 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/rand) |
+| `read-fonts` | 0.37.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `read-fonts` | 0.41.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `regress` | 0.10.5 | MIT OR Apache-2.0 | [upstream](https://github.com/ridiculousfish/regress) |
+| `resvg` | 0.48.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/resvg) |
+| `rgb` | 0.8.53 | MIT | [upstream](https://github.com/kornelski/rust-rgb) |
+| `roxmltree` | 0.21.1 | MIT OR Apache-2.0 | [upstream](https://github.com/RazrFalcon/roxmltree) |
+| `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT | [upstream](https://github.com/rust-lang/rustc-hash) |
+| `rustversion` | 1.0.23 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/rustversion) |
+| `ryu-js` | 1.0.3 | Apache-2.0 OR BSL-1.0 | [upstream](https://github.com/boa-dev/ryu-js) |
+| `scopeguard` | 1.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/scopeguard) |
+| `serde` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
+| `serde_core` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
+| `serde_derive` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
+| `serde_json` | 1.0.151 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/json) |
+| `simd-adler32` | 0.3.10 | MIT | [upstream](https://github.com/mcountryman/simd-adler32) |
+| `simplecss` | 0.2.2 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/simplecss) |
+| `siphasher` | 1.0.3 | MIT/Apache-2.0 | [upstream](https://github.com/jedisct1/rust-siphash) |
+| `skrifa` | 0.44.0 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `small_btree` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `smallvec` | 1.15.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-smallvec) |
+| `stable_deref_trait` | 1.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/storyyeller/stable_deref_trait) |
+| `static_assertions` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/nvzqz/static-assertions-rs) |
+| `strict-num` | 0.1.1 | MIT | [upstream](https://github.com/RazrFalcon/strict-num) |
+| `string_cache` | 0.9.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/string-cache) |
+| `string_cache_codegen` | 0.6.1 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/string-cache) |
+| `svgtypes` | 0.16.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/svgtypes) |
+| `swash` | 0.2.10 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/swash) |
+| `syn` | 2.0.119 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
+| `syn` | 3.0.3 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/syn) |
+| `synstructure` | 0.13.2 | MIT | [upstream](https://github.com/mystor/synstructure) |
+| `tag_ptr` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/boa-dev/boa) |
+| `tap` | 1.0.1 | MIT | [upstream](https://github.com/myrrlyn/tap) |
+| `tendril` | 0.5.1 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `thin-vec` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/mozilla/thin-vec) |
+| `thiserror` | 2.0.20 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/thiserror) |
+| `thiserror-impl` | 2.0.20 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/thiserror) |
+| `time` | 0.3.55 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
+| `time-core` | 0.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
+| `time-macros` | 0.2.32 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
+| `tiny-skia` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia) |
+| `tiny-skia-path` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia/tree/master/path) |
+| `tinystr` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
+| `toml_edit` | 0.25.13+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
+| `toml_parser` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
+| `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/unicode-bidi) |
+| `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | [upstream](https://github.com/dtolnay/unicode-ident) |
+| `unicode-script` | 0.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/unicode-rs/unicode-script) |
+| `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 | [upstream](https://github.com/unicode-rs/unicode-segmentation) |
+| `url` | 2.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
+| `usvg` | 0.48.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/resvg) |
+| `utf16_iter` | 1.0.5 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf16_iter) |
+| `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf8_iter) |
+| `web_atoms` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
+| `weezl` | 0.1.12 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/weezl) |
+| `windows` | 0.62.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-collections` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-core` | 0.62.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-future` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-implement` | 0.60.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-interface` | 0.59.3 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-link` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-numerics` | 0.3.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-result` | 0.4.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-strings` | 0.5.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-sys` | 0.61.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `windows-threading` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
+| `winnow` | 1.0.4 | MIT | [upstream](https://github.com/winnow-rs/winnow) |
+| `write16` | 1.0.0 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/write16) |
+| `writeable` | 0.6.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
+| `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `yoke-derive` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zeno` | 0.3.3 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/zeno) |
+| `zerocopy` | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT | [upstream](https://github.com/google/zerocopy) |
+| `zerofrom` | 0.1.8 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerofrom-derive` | 0.1.7 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerotrie` | 0.2.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerovec` | 0.11.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerovec-derive` | 0.11.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zmij` | 1.0.23 | MIT | [upstream](https://github.com/dtolnay/zmij) |
+| `zune-core` | 0.5.3 | MIT OR Apache-2.0 OR Zlib | [upstream](https://github.com/etemesi254/zune-image) |
+| `zune-jpeg` | 0.5.15 | MIT OR Apache-2.0 OR Zlib | [upstream](https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg) |
 
-The upstream license texts are preserved in
-[vendor/boa_engine/LICENSE-MIT](vendor/boa_engine/LICENSE-MIT) and
-[vendor/boa_engine/LICENSE-UNLICENSE](vendor/boa_engine/LICENSE-UNLICENSE).
+## Bundled sources and data
 
-## Renderer text dependencies
+- `boa_engine` is a locally modified path dependency from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in `vendor/boa_engine/LOCAL_CHANGES.md`; both upstream license texts are preserved beside the source and copied into release archives.
+- Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.
+- `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 
-The release binary links the following renderer-only text crates resolved through Cargo:
-
-- `fontique` 0.11.1, <https://github.com/linebender/parley>, Apache-2.0 OR MIT, for font
-  discovery, matching, fallback, and in-memory font registration
-- `harfrust` 0.5.2, <https://github.com/harfbuzz/harfrust>, MIT, for OpenType shaping
-- `swash` 0.2.10, <https://github.com/dfrg/swash>, Apache-2.0 OR MIT, for glyph rasterization
-- `unicode-bidi` 0.3.18, <https://github.com/servo/unicode-bidi>, MIT OR Apache-2.0
-- `unicode-script` 0.5.8, <https://github.com/unicode-rs/unicode-script>, MIT OR Apache-2.0
-- `unicode-segmentation` 1.13.3, <https://github.com/unicode-rs/unicode-segmentation>, MIT OR
-  Apache-2.0
-
-These crates are not vendored. Exact versions and their transitive dependency graph are recorded
-in `Cargo.lock`; upstream license texts are distributed with the crates.
-
-## Web Platform Tests parser fixtures
-
-The curated tree-construction fixtures under `tests/html-parser/fixtures` include selected,
-unmodified cases from web-platform-tests.
-
-- Upstream project: <https://github.com/web-platform-tests/wpt>
-- Upstream revision: `964ddae49acd35592ae4c2a50ea1b9fc2edec686`
-- License: BSD-3-Clause
-- Fixture-level provenance: [tests/html-parser/README.md](tests/html-parser/README.md)
-
-The applicable license text is preserved in
-[tests/html-parser/LICENSE-WPT.md](tests/html-parser/LICENSE-WPT.md).
-
-## Fuzz-development tooling
-
-The optional `fuzz` workspace uses the following development-only tools; neither is linked into the
-browser's release binaries:
-
-- `cargo-fuzz` 0.13.2, <https://github.com/rust-fuzz/cargo-fuzz>, MIT OR Apache-2.0
-- `libfuzzer-sys` 0.4.13, <https://github.com/rust-fuzz/libfuzzer>,
-  (MIT OR Apache-2.0) AND NCSA
-
-Their versions are pinned by the workflow, fuzz manifest, and `fuzz/Cargo.lock`. All committed fuzz
-corpus inputs were authored for this repository and are provided under the repository's MIT license.
-
-Other Rust dependencies are resolved through Cargo and retain their respective
-licenses. Their exact versions are recorded in `Cargo.lock`.
-
-The `psl2` dependency embeds a compact, deterministically built snapshot of Mozilla's Public
-Suffix List for cookie-domain and schemeful-site decisions. Its Rust code is available under MIT
-OR Apache-2.0; the embedded list data is available under MPL-2.0. The exact crate and list versions
-are pinned in `Cargo.lock` and exposed by `psl2::psl_version()`.
+The release archive also contains each available package license/notice file under `licenses/<crate>-<version>/`. When a published crate omits a standalone license file, its package notice records the Cargo license expression and upstream repository. SPDX expressions in this document state the choices declared by each package; they do not relicense third-party work.

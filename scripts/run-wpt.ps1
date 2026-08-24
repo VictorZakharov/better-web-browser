@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $WptRoot = $env:BREEZE_WPT_ROOT,
+    [string] $Manifest,
     [string] $Output,
     [string] $Filter,
     [ValidateSet('release', 'debug')]
@@ -17,6 +18,9 @@ if ([string]::IsNullOrWhiteSpace($WptRoot)) {
 }
 if ([string]::IsNullOrWhiteSpace($Output)) {
     $Output = Join-Path $repoRoot 'target\wpt\report.json'
+}
+if ([string]::IsNullOrWhiteSpace($Manifest)) {
+    $Manifest = Join-Path $repoRoot 'tests\wpt\manifest.json'
 }
 
 Push-Location $repoRoot
@@ -36,6 +40,7 @@ try {
     $browser = Join-Path $binaryDirectory 'better-web-browser.exe'
     $arguments = @(
         '--wpt-root', $WptRoot,
+        '--manifest', $Manifest,
         '--browser', $browser,
         '--output', $Output,
         '--jobs', $Jobs

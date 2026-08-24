@@ -260,6 +260,8 @@ impl BrowserState {
             concat!(
                 "{{\n",
                 "  \"browser\": {},\n",
+                "  \"headless\": true,\n",
+                "  \"device_scale_factor\": {:.3},\n",
                 "  \"requested_url\": {},\n",
                 "  \"final_url\": {},\n",
                 "  \"error\": {},\n",
@@ -331,6 +333,7 @@ impl BrowserState {
                 "}}\n"
             ),
             json_string(BENCHMARK_ID),
+            self.page_scale(),
             json_string(&benchmark.requested_url),
             json_string(&benchmark.final_url),
             benchmark

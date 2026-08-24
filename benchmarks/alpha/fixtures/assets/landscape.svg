@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360" role="img" aria-labelledby="title description">
+  <title id="title">Abstract lakeside landscape</title>
+  <desc id="description">Blue sky, green hills, a lake, and a yellow sun.</desc>
+  <rect width="800" height="360" fill="#b9dcf2"/>
+  <circle cx="650" cy="78" r="42" fill="#ffd369"/>
+  <path d="M0 250 L190 105 L355 250 Z" fill="#5e9363"/>
+  <path d="M190 250 L455 85 L690 250 Z" fill="#3f7653"/>
+  <rect y="240" width="800" height="120" fill="#4f9dc4"/>
+  <path d="M0 285 C180 245 360 320 800 270 L800 360 L0 360 Z" fill="#327fa6"/>
+</svg>
