@@ -171,6 +171,32 @@ jobs:
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
 
+  alpha-compatibility:
+    name: Public alpha compatibility
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: v0.17.0
+      - name: Restore Cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-registry-v3-
+            windows-cargo-registry-v2-
+      - name: Run deterministic public-alpha gate headlessly
+        shell: pwsh
+        run: ./benchmarks/run-alpha.ps1 -Iterations 1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
+
   windows:
     name: windows
     if: ${{ always() }}
@@ -180,6 +206,7 @@ jobs:
       - lint
       - test
       - wpt
+      - alpha-compatibility
     runs-on: ubuntu-latest
     steps:
       - name: Require every Windows worker
@@ -192,6 +219,7 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           WPT_RESULT: ${{ needs.wpt.result }}
+          ALPHA_RESULT: ${{ needs.alpha-compatibility.result }}
         run: |
           if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
             echo "Change classification did not succeed: $CLASSIFICATION_RESULT"
@@ -199,12 +227,12 @@ jobs:
           fi
 
           if [[ "$RUN_WINDOWS" == "false" && "$MARKDOWN_ONLY" == "true" ]]; then
-            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" ]]; then
+            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" && "$ALPHA_RESULT" == "skipped" ]]; then
               echo "Markdown-only pull request: Windows workers were safely skipped."
               exit 0
             fi
             echo "Markdown-only classification had unexpected worker results."
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT"
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT"
             exit 1
           fi
 
@@ -213,7 +241,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" ]]; then
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT"
+          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" || "$ALPHA_RESULT" != "success" ]]; then
+            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT"
             exit 1
           fi

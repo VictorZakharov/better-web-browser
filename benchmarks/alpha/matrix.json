@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "viewport": { "window_width": 1120, "window_height": 780 },
+  "locale": "en-US",
+  "settle_ms": 800,
+  "scroll_samples": 8,
+  "fixtures": [
+    { "id": "encyclopedia-article", "path": "/encyclopedia-article.html", "role": "Long-form Wikipedia-like article", "early_scroll": true, "max_visual_difference": 0.28, "live_url": "https://en.wikipedia.org/wiki/Web_browser" },
+    { "id": "encyclopedia-main", "path": "/encyclopedia-main.html", "role": "Wikipedia main-page structure", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://en.wikipedia.org/wiki/Main_Page" },
+    { "id": "responsive-blog", "path": "/responsive-blog.html", "role": "Public responsive blog structure", "early_scroll": true, "max_visual_difference": 0.20, "live_url": "https://www.neolisk.blog/" },
+    { "id": "search-results", "path": "/search-results.html", "role": "DuckDuckGo HTML-style results", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://html.duckduckgo.com/html/?q=web+standards" },
+    { "id": "compatibility-dashboard", "path": "/compatibility-dashboard.html", "role": "HTML5test-style capability dashboard", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://html5test.com/" },
+    { "id": "forms-storage", "path": "/forms-storage.html", "role": "Forms and Web Storage", "early_scroll": false, "max_visual_difference": 0.12 },
+    { "id": "layout-matrix", "path": "/layout-matrix.html", "role": "Flex, grid, table, and float layout", "early_scroll": false, "max_visual_difference": 0.12 },
+    { "id": "media-fonts", "path": "/media-fonts.html", "role": "Images, SVG, and webfont loading", "early_scroll": false, "max_visual_difference": 0.15 },
+    { "id": "async-mutation", "path": "/async-mutation.html", "role": "Asynchronous DOM mutation", "early_scroll": false, "max_visual_difference": 0.12 }
+  ]
+}
