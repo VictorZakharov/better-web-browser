@@ -1,6 +1,6 @@
 # Public alpha compatibility and performance gate
 
-`run-alpha.ps1` is the reproducible Breeze-versus-Chromium gate for the public technical alpha. It builds both release binaries, serves repository-owned fixtures on loopback, launches fresh hidden browser profiles, captures comparable page surfaces, enforces compatibility thresholds, and writes raw JSON plus median Markdown and JSON summaries.
+`run-alpha.ps1` is the reproducible Breeze-versus-Chromium gate for the public technical alpha. By default it builds the canonical release browser and release Chromium harness, serves repository-owned fixtures on loopback, launches fresh hidden browser profiles, captures comparable page surfaces, enforces compatibility thresholds, and writes raw JSON plus median Markdown and JSON summaries.
 
 The Chromium baseline is owned by this repository under `benchmarks/chromium` and targets .NET 8 without third-party packages. It uses Chrome DevTools Protocol directly. Chrome documents `--headless` as its current unified headless mode, which creates no displayed platform windows: [Chrome Headless mode](https://developer.chrome.com/docs/automation-and-testing/headless). Metric and environment controls use the official [Performance](https://chromedevtools.github.io/devtools-protocol/tot/Performance/), [Page](https://chromedevtools.github.io/devtools-protocol/tot/Page/), and [Emulation](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/) domains.
 
@@ -26,7 +26,7 @@ Run the same local matrix used by CI:
 .\benchmarks\run-alpha.ps1 -Iterations 3
 ```
 
-Use `-Fixture layout-matrix,media-fonts` for a focused run, `-OutputDirectory <path>` to select the artifact location, or `-SkipBuild` only when both release outputs are already current. `compare.ps1` is a compatibility alias for the same runner.
+Use `-Fixture layout-matrix,media-fonts` for a focused run, `-OutputDirectory <path>` to select the artifact location, or `-SkipBuild` only when both selected outputs are already current. Pull-request CI passes `-BuildProfile debug`: it preserves every compatibility assertion while reusing the same compiler-cache inputs as the core, integration, and WPT workers instead of adding a release-LTO build to the critical path. Measurements from that profile are regression signals, not publishable performance claims. `compare.ps1` is a compatibility alias for the same runner.
 
 The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
@@ -37,7 +37,7 @@ The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
 ## Controlled comparison contract
 
-- Both browsers run on the same machine from canonical release builds, hidden and with a new temporary profile for every sample. Cache is disabled in Chromium; the loopback server sends `Cache-Control: no-store`.
+- Canonical evidence runs both browsers on the same machine from release builds. Pull-request CI uses Breeze's `debug` profile and the release Chromium harness; its timing fields are regression signals only. Every browser remains hidden and gets a new temporary profile for every sample. Cache is disabled in Chromium; the loopback server sends `Cache-Control: no-store`.
 - The matrix fixes the outer Breeze window, `en-US` locale, settle period, scroll sample count, and fixture bytes. Breeze's observed content viewport and Windows scale factor are then applied to Chromium. Fractional Windows scaling requires at most a two-CSS-pixel viewport tolerance because CDP accepts integer dimensions and Chromium quantizes device pixels.
 - Breeze launches only through `scripts/run-hidden-benchmark.ps1`, which fail-closes unless the actual child command line contains `--benchmark`. Chromium launches with the exact `--headless` flag, `CreateNoWindow`, a fresh profile, and a visible-window check.
 - Local captures must be nonblank and structurally populated. Breeze must report HTTP 200, one visible `#main`, retained draw items, no JavaScript errors, page-ready no slower than two times Chromium load, and successful early-scroll acceptance where configured.

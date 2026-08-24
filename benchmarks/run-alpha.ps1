@@ -4,6 +4,8 @@ param(
     [ValidateRange(1, 10)] [int] $Iterations = 3,
     [string[]] $Fixture = @(),
     [string] $OutputDirectory,
+    [ValidateSet('debug', 'release', 'performance')]
+    [string] $BuildProfile = 'release',
     [switch] $Live,
     [switch] $SkipBuild
 )
@@ -33,12 +35,19 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $resultDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($resultDirectory) | Out-Null
 
-$breezeExe = Join-Path $repoRoot 'target\release\better-web-browser.exe'
+$breezeExe = Join-Path $repoRoot "target\$BuildProfile\better-web-browser.exe"
 $chromiumProject = Join-Path $PSScriptRoot 'chromium\ChromiumBaseline.csproj'
 $chromiumDll = Join-Path $PSScriptRoot 'chromium\bin\Release\net8.0\ChromiumBaseline.dll'
 if (-not $SkipBuild) {
-    & cargo build --release --manifest-path (Join-Path $repoRoot 'Cargo.toml') --bin better-web-browser
-    if ($LASTEXITCODE -ne 0) { throw 'Breeze release build failed.' }
+    $cargoProfile = if ($BuildProfile -eq 'release') {
+        @('--release')
+    } elseif ($BuildProfile -eq 'debug') {
+        @()
+    } else {
+        @('--profile', $BuildProfile)
+    }
+    & cargo build @cargoProfile --locked --manifest-path (Join-Path $repoRoot 'Cargo.toml') --bin better-web-browser
+    if ($LASTEXITCODE -ne 0) { throw "Breeze $BuildProfile build failed." }
     & dotnet build $chromiumProject -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Chromium harness release build failed.' }
 }
@@ -257,6 +266,7 @@ $environment = [pscustomobject]@{
     processors = [Environment]::ProcessorCount
     locale = [string] $configuration.locale
     local_fixtures = -not [bool] $Live
+    breeze_build_profile = $BuildProfile
     chromium_version = if ($firstChromium.Count -eq 0) { $null } else { [string] $firstChromium[0].chromium.chrome_version }
 }
 $environment | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $resultDirectory 'environment.json') -Encoding UTF8
@@ -264,7 +274,7 @@ $environment | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $resultDirec
 $markdown = [Text.StringBuilder]::new()
 [void] $markdown.AppendLine('# Public alpha compatibility comparison')
 [void] $markdown.AppendLine()
-[void] $markdown.AppendLine("Mode: $(if ($Live) { 'opt-in live evidence' } else { 'deterministic loopback gate' }); iterations: $Iterations; locale: $($configuration.locale).")
+[void] $markdown.AppendLine("Mode: $(if ($Live) { 'opt-in live evidence' } else { 'deterministic loopback gate' }); Breeze profile: $BuildProfile; iterations: $Iterations; locale: $($configuration.locale).")
 [void] $markdown.AppendLine()
 [void] $markdown.AppendLine('| Fixture | Samples | Breeze ready | Chromium ready | Breeze layout/paint | Chromium layout/capture | Breeze/Chromium memory | Visual diff |')
 [void] $markdown.AppendLine('|---|---:|---:|---:|---:|---:|---:|---:|')

@@ -45,6 +45,28 @@ required `windows` and `Linear PR history` names are unchanged. Markdown-only pu
 take the checked-in fail-safe classifier path and skip every Windows worker; pushes to `main` run the
 full suite.
 
+### Public-alpha compatibility critical path
+
+The public technical-alpha milestone added a required nine-fixture Breeze-versus-Chromium gate.
+Building the canonical release profile inside every pull request put thin LTO and single-unit code
+generation on the critical path even though publishable benchmark evidence and release packaging
+already retain their own release-profile contract.
+
+Exact GitHub timestamps measure the correction:
+
+| Revision | End to end | Public-alpha worker |
+| --- | ---: | ---: |
+| [Release-profile baseline](https://github.com/VictorZakharov/better-web-browser/actions/runs/32745221188) | 8m54s | 8m29s |
+| [Debug-profile compatibility gate](https://github.com/VictorZakharov/better-web-browser/actions/runs/32748153419) | 4m53s | 4m30s |
+
+The pull-request path is **4m01s (45.1%) faster** while retaining all nine fixtures and every
+structural, visual, JavaScript, page-readiness, and early-scroll assertion. The measured
+public-alpha worker spent 57 seconds in checkout/cache setup, 69 seconds building Breeze, 30 seconds
+building the Chromium harness, and 1m50s in the hidden browser matrix. Generated reports record the
+Breeze build profile so debug-profile regression signals cannot be mistaken for canonical release
+claims. The job has a six-minute hard limit; distributable binaries and published benchmark claims
+continue to use `release`.
+
 Material changes from the baseline are:
 
 - compiler outputs remain in the compiler-level sccache backend;
@@ -60,16 +82,19 @@ Material changes from the baseline are:
 
 ### Remaining critical path
 
-The initial sub-two-minute target is not yet met; the measured median misses it by 20 seconds. On a
-representative final run, an exact Cargo registry-source cache hit still took about 15 seconds to
-extract, and compiler work remained around
-85% sccache hits. The uncached workspace/test outputs, Cargo fingerprinting, the vendored Boa path
-dependency, and MSVC linking leave the compile-heavy workers clustered around two minutes.
+The original compile/test path's initial sub-two-minute target is not yet met; its measured median
+misses it by 20 seconds. The later public-alpha gate now determines pull-request wall clock at
+roughly five minutes. On its measured run, an exact Cargo registry-source cache hit took 41 seconds
+to extract, and the serial nine-fixture matrix took 1m50s after both browser builds. The uncached
+workspace outputs, Cargo fingerprinting, the vendored Boa path dependency, and MSVC linking still
+leave the compile-heavy workers clustered around two minutes.
 Adding more compiler workers was measured and rejected: remote-cache read latency doubled and the
 end-to-end result regressed.
 
-The next investigation should focus on making the vendored-engine input and workspace output graph
-cheaper to fingerprint and link, then on removing the serial classification delay if branch
+The next public-alpha investigation should evaluate isolated fixture shards or a shared browser
+artifact without contaminating same-runner performance comparisons or increasing compiler-cache
+contention. The broader build investigation should make the vendored-engine input and workspace
+output graph cheaper to fingerprint and link, then remove the serial classification delay if branch
 protection can remain fail-safe. A larger or persistent runner is an operational fallback, not a
 source-level fix. Direct caching of `target` remains excluded because checkout timestamps invalidate
 the vendored path dependency and make that archive expensive without producing reliable hits.
