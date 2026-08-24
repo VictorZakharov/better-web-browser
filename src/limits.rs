@@ -77,7 +77,6 @@ pub const MAX_FETCH_HEADER_VALUE_BYTES: usize = 16 * 1024;
 pub const MAX_QUEUED_BROWSER_COMMANDS: usize = 8;
 pub const MAX_QUEUED_RENDERER_IPC_MESSAGES: usize = 8;
 pub const MAX_QUEUED_RENDERER_EVENTS: usize = 256;
-pub const MAX_QUEUED_RENDERER_PRESENTATIONS: usize = 2;
 pub const MAX_QUEUED_RENDERER_FETCH_BATCHES: usize = 1;
 pub const MAX_DEFERRED_RENDERER_MESSAGES: usize = 64;
 /// Maximum validated immutable presentation retained by the browser for one revision.

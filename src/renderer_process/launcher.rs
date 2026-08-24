@@ -6,7 +6,7 @@ use crate::limits::{
     RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
 };
 use crate::renderer_protocol::{BrowsingContextId, Nonce, RendererSessionId};
-use std::fs::File;
+use std::fs::{self, File};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::OwnedHandle;
@@ -146,9 +146,19 @@ fn validate_executable(path: &Path) -> Result<(), String> {
     if !path.is_absolute() {
         return Err("renderer executable path must be absolute".into());
     }
-    if !path.is_file() {
+    let metadata = fs::metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "renderer executable does not exist: {}: {error}",
+                path.display()
+            )
+        } else {
+            format!("inspect renderer executable {}: {error}", path.display())
+        }
+    })?;
+    if !metadata.is_file() {
         return Err(format!(
-            "renderer executable does not exist: {}",
+            "renderer executable is not a file: {}",
             path.display()
         ));
     }
@@ -259,5 +269,23 @@ mod tests {
                 &entry[..split]
             ));
         }
+    }
+
+    #[test]
+    fn executable_validation_distinguishes_missing_and_non_file_paths() {
+        let executable = std::env::current_exe().unwrap();
+        validate_executable(&executable).unwrap();
+
+        let missing = executable.with_file_name("missing-renderer-executable.exe");
+        assert!(
+            validate_executable(&missing)
+                .unwrap_err()
+                .starts_with("renderer executable does not exist:")
+        );
+        assert!(
+            validate_executable(executable.parent().unwrap())
+                .unwrap_err()
+                .starts_with("renderer executable is not a file:")
+        );
     }
 }
