@@ -231,6 +231,7 @@ impl BrowserState {
                 SetFocus(self.window);
             }
         }
+        self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
     }
 

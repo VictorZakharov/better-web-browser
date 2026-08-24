@@ -1,5 +1,6 @@
 //! Complete document-owned state retained independently for each browser tab.
 
+use super::accessibility::AccessibilityDocument;
 use super::document_navigation::ScriptNavigationGuard;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
@@ -23,6 +24,7 @@ pub(super) struct BrowserTab {
     pub(super) status_text: String,
     pub(super) performance: TabPerformance,
     pub(super) focus: TabFocus,
+    pub(super) accessibility_document: AccessibilityDocument,
     pub(super) dynamic_fonts: DynamicFonts,
     pub(super) image_bitmaps: ImageBitmaps,
     pub(super) presented_images: HashMap<String, DecodedImage>,
@@ -76,6 +78,7 @@ impl BrowserTab {
             status_text: "Ready".into(),
             performance: TabPerformance::default(),
             focus: TabFocus::Address,
+            accessibility_document: AccessibilityDocument::default(),
             dynamic_fonts: DynamicFonts::default(),
             image_bitmaps: ImageBitmaps::default(),
             presented_images: HashMap::new(),
@@ -142,6 +145,7 @@ impl BrowserTab {
         self.renderer_revision = 0;
         self.renderer_load_metrics = None;
         self.page_diagnostics = Default::default();
+        self.accessibility_document.clear();
         self.renderer_next_timer = None;
         self.renderer_runtime_clock = None;
         self.renderer_work_pending = false;
@@ -256,7 +260,39 @@ mod tests {
     fn crashing_one_tab_cancels_only_its_page_state() {
         let mut tabs = TabCollection::new(BrowserTab::new(TabId::first()));
         tabs.active_mut().loading = true;
+        let first_document = better_web_browser::renderer_protocol::DocumentId::new(31).unwrap();
+        let first_root =
+            better_web_browser::renderer_protocol::DocumentNodeId::new((31_u128 << 64) | 1)
+                .unwrap();
+        tabs.active_mut()
+            .accessibility_document
+            .apply(
+                first_document,
+                1,
+                better_web_browser::renderer_protocol::AccessibilityUpdate::full_root(
+                    first_root,
+                    "first",
+                    better_web_browser::engine::RectF::default(),
+                ),
+            )
+            .unwrap();
         let sibling = tabs.add(true, BrowserTab::new).unwrap();
+        let sibling_document = better_web_browser::renderer_protocol::DocumentId::new(32).unwrap();
+        let sibling_root =
+            better_web_browser::renderer_protocol::DocumentNodeId::new((32_u128 << 64) | 1)
+                .unwrap();
+        tabs.active_mut()
+            .accessibility_document
+            .apply(
+                sibling_document,
+                1,
+                better_web_browser::renderer_protocol::AccessibilityUpdate::full_root(
+                    sibling_root,
+                    "sibling",
+                    better_web_browser::engine::RectF::default(),
+                ),
+            )
+            .unwrap();
         tabs.active_mut()
             .history
             .push("https://sibling.example/".into());
@@ -268,11 +304,16 @@ mod tests {
         assert!(tabs.active().crashed);
         assert!(!tabs.active().loading);
         assert!(tabs.active().status_text.contains("Reload"));
+        assert!(tabs.active().accessibility_document.root().is_none());
         tabs.activate(sibling);
         assert!(!tabs.active().crashed);
         assert_eq!(
             tabs.active().current_url(),
             Some("https://sibling.example/")
+        );
+        assert_eq!(
+            tabs.active().accessibility_document.root(),
+            Some(sibling_root)
         );
     }
 }

@@ -75,6 +75,7 @@ try {
     Copy-ReleaseText (Join-Path $repoRoot 'README.md') (Join-Path $packageRoot 'README.md')
     Copy-ReleaseText (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md') (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md')
     Copy-ReleaseText (Join-Path $repoRoot 'docs\technical-alpha-release.md') (Join-Path $packageRoot 'TECHNICAL_ALPHA.md')
+    Copy-ReleaseText (Join-Path $repoRoot 'docs\accessibility.md') (Join-Path $packageRoot 'accessibility.md')
     Write-Utf8File (Join-Path $packageRoot 'VERSION.txt') @"
 Breeze $Version
 commit $($Commit.ToLowerInvariant())
@@ -102,6 +103,9 @@ source: $repository
         } | Sort-Object Name)
         foreach ($licenseFile in $licenseFiles) {
             [IO.File]::Copy($licenseFile.FullName, (Join-Path $destination $licenseFile.Name), $true)
+        }
+        if ([string] $package.name -like 'accesskit*') {
+            Copy-ReleaseText (Join-Path $repoRoot 'third_party\accesskit\LICENSE.chromium') (Join-Path $destination 'LICENSE.chromium')
         }
         if ($licenseFiles.Count -eq 0) {
             $fallback = @('ABOUT.md', 'README.md') | ForEach-Object { Join-Path $sourceDirectory $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1

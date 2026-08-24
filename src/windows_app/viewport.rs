@@ -96,6 +96,7 @@ impl BrowserState {
         InvalidateRect(self.controls.reader, null(), 0);
         self.scroll_y = 0;
         self.rebuild_layout();
+        self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
     }
 
@@ -179,6 +180,9 @@ impl BrowserState {
             self.sync_page_control_positions();
         }
         self.route_renderer_scroll();
+        if !self.processing_background_tab {
+            self.refresh_accessibility_document_bounds();
+        }
     }
 
     pub(super) unsafe fn update_scrollbar(&self) {

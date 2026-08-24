@@ -29,6 +29,8 @@ impl DocumentRuntime {
             });
         }
         self.last_input_sequence = input.sequence();
+        let force_accessibility_update =
+            matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
         let (mut outcome, navigation) = match input {
             DocumentInput::Pointer(input) => self.pointer_input(input, connection)?,
             DocumentInput::Keyboard(input) => {
@@ -69,6 +71,12 @@ impl DocumentRuntime {
                         navigation: None,
                     });
                 };
+                self.accessibility_selection =
+                    Some((target.id(), input.selection_start, input.selection_end));
+                if self.script_runtime.is_none() {
+                    self.accessibility_values
+                        .insert(target.id(), input.value.clone());
+                }
                 let result = self.dispatch_user_input(
                     UserInputEvent::Text {
                         target,
@@ -119,7 +127,8 @@ impl DocumentRuntime {
             }
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        let presentation = self.presentation_after_user_input(outcome)?;
+        let presentation =
+            self.presentation_after_user_input(outcome, force_accessibility_update)?;
         Ok(InteractionResult {
             presentation,
             navigation,
@@ -152,7 +161,7 @@ impl DocumentRuntime {
     ) -> Result<(ScriptOutcome, Option<(String, NavigationDisposition)>), String> {
         let target = input
             .target
-            .and_then(|target| self.explicit_control_target(target))
+            .and_then(|target| self.explicit_target(target))
             .or_else(|| self.hit_target(input.x, input.y));
         let target_id = target.as_ref().map(|target| target.node.id());
         let activate = match input.phase {
@@ -232,8 +241,10 @@ impl DocumentRuntime {
     fn presentation_after_user_input(
         &mut self,
         outcome: ScriptOutcome,
+        force_accessibility_update: bool,
     ) -> Result<Option<RendererPresentation>, String> {
-        let needs_present = outcome.render_requested
+        let needs_present = force_accessibility_update
+            || outcome.render_requested
             || outcome.executed > 0
             || !outcome.errors.is_empty()
             || !outcome.console.is_empty()
@@ -266,13 +277,22 @@ impl DocumentRuntime {
         NodeId::from_wire(target.get()).and_then(|id| self.page.dom.find_node(id))
     }
 
-    fn explicit_control_target(&self, target: DocumentNodeId) -> Option<HitTarget> {
+    fn explicit_target(&self, target: DocumentNodeId) -> Option<HitTarget> {
         let node = self.resolve_target(target)?;
         self.layout.items.iter().find_map(|item| match item {
             DisplayItem::Control(control) if control.node_id == node.id() => Some(HitTarget {
                 node: node.clone(),
                 link: None,
                 control: Some((**control).clone()),
+            }),
+            DisplayItem::Text {
+                node_id: Some(node_id),
+                link: Some(link),
+                ..
+            } if *node_id == node.id() => Some(HitTarget {
+                node: node.clone(),
+                link: Some(link.clone()),
+                control: None,
             }),
             _ => None,
         })

@@ -1,5 +1,6 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
+mod accessibility;
 mod diagnostics;
 mod fetch;
 mod interaction;
@@ -8,6 +9,7 @@ mod resources;
 mod text;
 mod workers;
 
+use self::accessibility::RendererAccessibility;
 use self::reporting::{merge_outcome, micros, runtime_report, style_report};
 use self::resources::{
     PendingResourceFetch, discard_resource_preloads, fetch_script_source, start_resource_preloads,
@@ -24,7 +26,7 @@ use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
     RendererPresentation,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 pub(super) enum LoadResult {
@@ -50,6 +52,9 @@ pub(super) struct DocumentRuntime {
     pending_resource_preloads: Option<PendingResourceFetch>,
     deferred_resources_loaded: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
+    accessibility: RendererAccessibility,
+    accessibility_selection: Option<(crate::engine::dom::NodeId, u32, u32)>,
+    accessibility_values: HashMap<crate::engine::dom::NodeId, String>,
     focused_node: Option<crate::engine::dom::NodeId>,
     pointer_down: Option<(
         crate::engine::dom::NodeId,
@@ -120,6 +125,9 @@ impl DocumentRuntime {
             pending_resource_preloads: pending_deferred,
             deferred_resources_loaded: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
+            accessibility: RendererAccessibility::default(),
+            accessibility_selection: None,
+            accessibility_values: HashMap::new(),
             focused_node: None,
             pointer_down: None,
             last_input_sequence: 0,
@@ -406,6 +414,14 @@ impl DocumentRuntime {
             &self.diagnostic_selectors,
             self.viewport.style_width,
         );
+        let accessibility = self.accessibility.update(
+            &self.page,
+            &self.layout,
+            self.viewport,
+            self.focused_node,
+            self.accessibility_selection,
+            &self.accessibility_values,
+        )?;
         Ok(RendererPresentation {
             document: self.id,
             revision: self.revision,
@@ -422,6 +438,7 @@ impl DocumentRuntime {
             style: style_report(style),
             load,
             page_diagnostics,
+            accessibility,
             next_timer_micros,
         })
     }

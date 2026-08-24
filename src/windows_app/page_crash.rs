@@ -33,6 +33,7 @@ impl BrowserState {
             self.set_status(&status);
         }
         self.update_scrollbar();
+        self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
     }
 }

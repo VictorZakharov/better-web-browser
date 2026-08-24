@@ -13,7 +13,7 @@ use better_web_browser::renderer_protocol::{
 const RENDERER_INPUT_POLL_BUDGET: u8 = 16;
 
 impl BrowserState {
-    fn next_renderer_input(
+    pub(in crate::windows_app) fn next_renderer_input(
         &mut self,
     ) -> Option<(better_web_browser::renderer_protocol::DocumentId, u64)> {
         let document = self.renderer_document?;
@@ -21,7 +21,7 @@ impl BrowserState {
         Some((document, self.renderer_input_sequence))
     }
 
-    fn submit_renderer_input(&mut self, input: DocumentInput) -> bool {
+    pub(in crate::windows_app) fn submit_renderer_input(&mut self, input: DocumentInput) -> bool {
         let result = self
             .renderer_session
             .as_ref()

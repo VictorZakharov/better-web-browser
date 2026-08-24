@@ -3,6 +3,7 @@
 //! The wire contract follows ADR 0001. It deliberately uses an explicit field codec instead of
 //! deserializing Rust object graphs: every length and tag is checked before allocation.
 
+mod accessibility;
 mod codec;
 mod document;
 mod input;
@@ -11,6 +12,9 @@ mod presentation;
 mod state;
 mod wire;
 
+pub use accessibility::{
+    AccessibilityUpdate, SemanticActions, SemanticNode, SemanticRole, SemanticSelection,
+};
 pub use codec::{FrameReader, FrameWriter, ProtocolError};
 pub use document::{
     BrowserFetchError, BrowserFetchErrorKind, BrowserFetchResponse, DocumentId, DocumentStart,
@@ -41,7 +45,7 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-pub const PROTOCOL_MAJOR: u16 = 3;
+pub const PROTOCOL_MAJOR: u16 = 4;
 pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 

@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+mod accessibility;
 mod app_state;
 mod benchmark;
 mod benchmark_capture;
@@ -36,6 +37,7 @@ mod task_manager;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
+use accessibility::AccessibilityState;
 use app_state::BrowserState;
 use benchmark::{BenchmarkRun, LaunchOptions};
 use better_web_browser::branding::{BENCHMARK_ID, HOME_HTML, HOME_URL, PRODUCT_NAME};

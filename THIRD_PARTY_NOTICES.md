@@ -3,11 +3,14 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `08716b4c1f0cdd8e73c45906f3f247a1c8c2daddc514ff723401f9bef83d7d7f`
-- Third-party packages: 212
+- Cargo.lock SHA-256: `f3a4500513f64507516140a043ea7cf955346f99cb8aad1dc551d609f2c13c09`
+- Third-party packages: 216
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
+| `accesskit` | 0.24.1 | MIT OR Apache-2.0 | [upstream](https://github.com/AccessKit/accesskit) |
+| `accesskit_consumer` | 0.38.0 | MIT OR Apache-2.0 | [upstream](https://github.com/AccessKit/accesskit) |
+| `accesskit_windows` | 0.34.0 | MIT OR Apache-2.0 | [upstream](https://github.com/AccessKit/accesskit) |
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | [upstream](https://github.com/oyvindln/adler2) |
 | `aligned-vec` | 0.6.4 | MIT | [upstream](https://github.com/sarah-ek/aligned-vec/) |
 | `allocator-api2` | 0.2.21 | MIT OR Apache-2.0 | [upstream](https://github.com/zakarumych/allocator-api2) |
@@ -190,6 +193,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `usvg` | 0.48.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/resvg) |
 | `utf16_iter` | 1.0.5 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf16_iter) |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf8_iter) |
+| `uuid` | 1.25.0 | Apache-2.0 OR MIT | [upstream](https://github.com/uuid-rs/uuid) |
 | `web_atoms` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/weezl) |
 | `windows` | 0.62.2 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
@@ -226,5 +230,6 @@ This file describes the complete third-party Rust graph linked into the Windows 
 - `boa_engine` is a locally modified path dependency from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in `vendor/boa_engine/LOCAL_CHANGES.md`; both upstream license texts are preserved beside the source and copied into release archives.
 - Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
+- The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
 
 The release archive also contains each available package license/notice file under `licenses/<crate>-<version>/`. When a published crate omits a standalone license file, its package notice records the Cargo license expression and upstream repository. SPDX expressions in this document state the choices declared by each package; they do not relicense third-party work.

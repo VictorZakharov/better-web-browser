@@ -28,6 +28,7 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
     encode_style(&mut writer, value.style);
     encode_load(&mut writer, value.load);
     writer.bytes(&encode_diagnostics(&value.page_diagnostics)?)?;
+    value.accessibility.encode_into(&mut writer)?;
     writer.bool(value.next_timer_micros.is_some());
     if let Some(delay) = value.next_timer_micros {
         writer.u64(delay);
@@ -116,6 +117,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let style = decode_style(&mut reader)?;
     let load = decode_load(&mut reader)?;
     let page_diagnostics = decode_diagnostics(&reader.bytes(MAX_PAGE_DIAGNOSTIC_BYTES)?)?;
+    let accessibility = AccessibilityUpdate::decode_from(&mut reader)?;
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
     let layout = decode_layout(&mut reader)?;
     let image_count = reader.u32()? as usize;
@@ -225,6 +227,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         style,
         load,
         page_diagnostics,
+        accessibility,
         next_timer_micros,
     })
 }
