@@ -198,6 +198,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v7
       - name: Configure compiler cache
@@ -215,9 +216,18 @@ jobs:
           restore-keys: |
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
-      - name: Run deterministic public-alpha gate headlessly
+      - name: Build alpha browser
+        run: cargo build --locked --bin better-web-browser
+      - name: Build Chromium baseline harness
+        run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
+      - name: Run deterministic public-alpha matrix headlessly
         shell: pwsh
-        run: ./benchmarks/run-alpha.ps1 -Iterations 1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
+        run: >-
+          ./benchmarks/run-alpha.ps1
+          -BuildProfile debug
+          -Iterations 1
+          -SkipBuild
+          -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
 
   windows:
     name: windows
