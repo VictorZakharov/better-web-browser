@@ -2,8 +2,9 @@ use super::support::*;
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession, RendererState};
 use better_web_browser::renderer_protocol::{
-    DocumentInput, DocumentNodeId, InputModifiers, NavigationCause, NavigationDisposition,
-    PointerButton, PointerInput, PointerPhase, TestCommand, TextInput,
+    DocumentId, DocumentInput, DocumentNodeId, FetchResponseHead, FetchResponseResult,
+    FetchResponseType, InputModifiers, NavigationCause, NavigationDisposition, PointerButton,
+    PointerInput, PointerPhase, RendererFetchRequest, TestCommand, TextInput,
 };
 use std::time::{Duration, Instant};
 
@@ -153,6 +154,88 @@ fn duckduckgo_link_navigation_replaces_a_document_under_command_backpressure() {
         .expect("replacement renderer remains responsive");
     assert_eq!(session.snapshot().state, RendererState::Running);
     session.shutdown().expect("shutdown navigation renderer");
+}
+
+#[test]
+fn navigation_discards_a_queued_fetch_batch_from_the_replaced_document() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch navigation renderer");
+    let replaced_document = DocumentId::new(153).unwrap();
+    let replaced = br#"<!doctype html><script src="/stale.js"></script><p>old page</p>"#.to_vec();
+    session
+        .load_document(
+            document_start(replaced_document, replaced.len()),
+            empty_document_state(),
+            replaced,
+        )
+        .expect("load document with an outstanding Fetch batch");
+    session
+        .ping(Duration::from_secs(1))
+        .expect("old Fetch batch reached the broker before navigation");
+
+    session
+        .cancel_document(replaced_document)
+        .expect("cancel document with a queued Fetch batch");
+    let replacement_document = DocumentId::new(154).unwrap();
+    let replacement =
+        br#"<!doctype html><script src="/current.js"></script><p>replacement ready</p>"#.to_vec();
+    session
+        .load_document(
+            document_start(replacement_document, replacement.len()),
+            empty_document_state(),
+            replacement,
+        )
+        .expect("load replacement document with its own Fetch batch");
+    session
+        .ping(Duration::from_secs(1))
+        .expect("replacement Fetch batch does not kill the renderer");
+
+    let requests = loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::FetchBatch { document, requests }
+                if document == replacement_document =>
+            {
+                break requests;
+            }
+            RendererEvent::FetchBatch { document, requests } => {
+                panic!("stale Fetch batch for {document:?} survived navigation: {requests:?}")
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            event => panic!("unexpected replacement event: {event:?}"),
+        }
+    };
+    respond_with_empty_scripts(&session, replacement_document, requests);
+    wait_for_text(&session, replacement_document, "replacement ready");
+    session
+        .ping(Duration::from_secs(1))
+        .expect("replacement renderer remains responsive after Fetch completion");
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session.shutdown().expect("shutdown navigation renderer");
+}
+
+fn respond_with_empty_scripts(
+    session: &RendererSession,
+    document: DocumentId,
+    requests: Vec<RendererFetchRequest>,
+) {
+    let sink = session.fetch_response_sink(document);
+    for request in requests {
+        let request_id = request.head.request_id;
+        sink.start(FetchResponseHead {
+            request_id,
+            result: FetchResponseResult::Success {
+                response_type: FetchResponseType::Basic,
+                urls: vec![request.head.url],
+                status: 200,
+                headers: vec![("content-type".into(), "text/javascript".into())],
+            },
+        })
+        .expect("start replacement script response");
+        sink.end(request_id, 0)
+            .expect("finish replacement script response");
+    }
 }
 
 fn saturate_command_queue(session: &RendererSession) {

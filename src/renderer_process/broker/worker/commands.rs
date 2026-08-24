@@ -134,10 +134,13 @@ impl Broker {
     }
 
     fn cancel_document(&mut self, document: DocumentId) {
+        // A completed event can already be waiting for the browser while cancellation crosses the
+        // command pipe. It has no authority after replacement and must not consume the new
+        // document's bounded event capacity.
+        self.resources().events.discard_document(document);
         if self.active_document == Some(document) {
             self.active_document = None;
-            self.incoming_fetch = None;
-            self.incoming_presentation = None;
+            self.retired_document = Some(document);
             self.outgoing_fetch.clear();
         }
         if let Err(error) = self

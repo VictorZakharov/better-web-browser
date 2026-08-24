@@ -165,6 +165,7 @@ impl Broker {
             }
             RendererMessage::DocumentFailed { document, detail } => {
                 if self.active_document == Some(document) {
+                    self.retired_document = None;
                     self.emit_event(RendererEvent::DocumentFailed { document, detail })?;
                 }
             }
@@ -210,13 +211,20 @@ impl Broker {
         batch_id: u64,
         request_count: u32,
     ) -> Result<(), ProtocolError> {
+        let owns_document =
+            self.active_document == Some(document) || self.retired_document == Some(document);
         if self.incoming_fetch.is_some()
-            || self.active_document != Some(document)
+            || !owns_document
             || batch_id == 0
             || request_count == 0
             || request_count as usize > MAX_RENDERER_FETCH_REQUESTS_PER_BATCH
         {
             return Err(ProtocolError::InvalidPayload("renderer Fetch batch"));
+        }
+        if self.active_document == Some(document) {
+            // Renderer pipe ordering guarantees that no retired-document transfer can follow the
+            // first transfer for the replacement document.
+            self.retired_document = None;
         }
         self.incoming_fetch = Some(IncomingFetchBatch {
             document,
@@ -322,7 +330,12 @@ impl Broker {
         batch.requests.push(request);
         if batch.requests.len() == batch.expected {
             let complete = self.incoming_fetch.take().expect("Fetch batch exists");
-            self.emit_event(RendererEvent::FetchBatch(complete.requests))?;
+            if self.active_document == Some(complete.document) {
+                self.emit_event(RendererEvent::FetchBatch {
+                    document: complete.document,
+                    requests: complete.requests,
+                })?;
+            }
         }
         Ok(())
     }
@@ -334,8 +347,15 @@ impl Broker {
         total_length: u32,
         encode_micros: u64,
     ) -> Result<(), ProtocolError> {
-        if self.incoming_presentation.is_some() || revision == 0 {
+        let owns_document =
+            self.active_document == Some(document) || self.retired_document == Some(document);
+        if self.incoming_presentation.is_some() || !owns_document || revision == 0 {
             return Err(ProtocolError::InvalidPayload("nested presentation"));
+        }
+        if self.active_document == Some(document) {
+            // See the equivalent Fetch transfer rule above. Once replacement output arrives, the
+            // retired document can no longer have unread frames on the renderer pipe.
+            self.retired_document = None;
         }
         self.incoming_presentation = Some(IncomingPresentation {
             document,

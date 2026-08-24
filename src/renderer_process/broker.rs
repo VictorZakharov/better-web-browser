@@ -55,7 +55,10 @@ pub enum RendererEvent {
         code: u16,
         text: String,
     },
-    FetchBatch(Vec<RendererFetchRequest>),
+    FetchBatch {
+        document: DocumentId,
+        requests: Vec<RendererFetchRequest>,
+    },
     Presentation(Box<RendererPresentation>),
     TimeAdvanced {
         document: DocumentId,

@@ -96,6 +96,7 @@ struct Broker {
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
     active_document: Option<DocumentId>,
+    retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
 }
 
@@ -116,6 +117,7 @@ impl Broker {
             incoming_fetch: None,
             incoming_presentation: None,
             active_document: None,
+            retired_document: None,
             outgoing_fetch: HashMap::new(),
         }
     }

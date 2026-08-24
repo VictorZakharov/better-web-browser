@@ -71,11 +71,11 @@ impl EventSender {
             state
                 .events
                 .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
-        } else if matches!(&event, RendererEvent::FetchBatch(_))
+        } else if matches!(&event, RendererEvent::FetchBatch { .. })
             && state
                 .events
                 .iter()
-                .filter(|queued| matches!(queued, RendererEvent::FetchBatch(_)))
+                .filter(|queued| matches!(queued, RendererEvent::FetchBatch { .. }))
                 .count()
                 >= MAX_QUEUED_RENDERER_FETCH_BATCHES
         {
@@ -93,6 +93,32 @@ impl EventSender {
         drop(state);
         self.queue.available.notify_one();
         Ok(())
+    }
+
+    pub(super) fn discard_document(&self, document: crate::renderer_protocol::DocumentId) {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state
+            .events
+            .retain(|event| event_document(event) != Some(document));
+    }
+}
+
+fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
+    match event {
+        RendererEvent::FetchBatch { document, .. }
+        | RendererEvent::TimeAdvanced { document, .. }
+        | RendererEvent::DocumentFailed { document, .. }
+        | RendererEvent::NavigationRequested { document, .. } => Some(*document),
+        RendererEvent::Presentation(presentation) => Some(presentation.document),
+        RendererEvent::CookieMutation(mutation) => Some(mutation.document),
+        RendererEvent::StorageMutation(request) => Some(request.document),
+        RendererEvent::Diagnostic { .. }
+        | RendererEvent::Unresponsive
+        | RendererEvent::Exited(_) => None,
     }
 }
 
@@ -248,23 +274,36 @@ mod tests {
     }
 
     #[test]
-    fn transactional_fetch_batches_remain_bounded_and_reusable() {
+    fn cancelled_transactional_fetch_batches_are_discarded_and_reusable() {
         let (sender, receiver) = bounded();
+        let replaced = DocumentId::new(1).unwrap();
         sender
-            .try_send(RendererEvent::FetchBatch(Vec::new()))
+            .try_send(RendererEvent::FetchBatch {
+                document: replaced,
+                requests: Vec::new(),
+            })
             .unwrap();
         assert!(matches!(
-            sender.try_send(RendererEvent::FetchBatch(Vec::new())),
+            sender.try_send(RendererEvent::FetchBatch {
+                document: replaced,
+                requests: Vec::new(),
+            }),
             Err(ProtocolError::InvalidPayload(
                 "browser Fetch-batch event queue exhausted"
             ))
         ));
+        sender.discard_document(replaced);
+        let replacement = DocumentId::new(2).unwrap();
+        sender
+            .try_send(RendererEvent::FetchBatch {
+                document: replacement,
+                requests: Vec::new(),
+            })
+            .unwrap();
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            RendererEvent::FetchBatch(batch) if batch.is_empty()
+            RendererEvent::FetchBatch { document, requests }
+                if document == replacement && requests.is_empty()
         ));
-        sender
-            .try_send(RendererEvent::FetchBatch(Vec::new()))
-            .unwrap();
     }
 }
