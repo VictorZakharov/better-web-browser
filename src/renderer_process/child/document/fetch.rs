@@ -30,17 +30,18 @@ pub(super) fn page_resource_request(
             ResourceDestination::Image,
             FetchMode::NoCors,
         ),
-        PageResource::Script { url, kind } => (
+        PageResource::Script {
+            url,
+            kind,
+            fetch_options,
+        } => (
             url,
             match kind {
                 ScriptKind::Classic => FetchInitiator::ClassicScript,
                 ScriptKind::Module => FetchInitiator::ModuleScript,
             },
             ResourceDestination::Script,
-            match kind {
-                ScriptKind::Classic => FetchMode::NoCors,
-                ScriptKind::Module => FetchMode::Cors,
-            },
+            mode(fetch_options.mode),
         ),
         PageResource::Font { url, .. } => (
             url,
@@ -59,11 +60,21 @@ pub(super) fn page_resource_request(
             method: "GET".into(),
             headers: Vec::new(),
             mode,
-            credentials: FetchCredentials::SameOrigin,
+            credentials: match resource {
+                PageResource::Script { fetch_options, .. } => {
+                    credentials(fetch_options.credentials)
+                }
+                _ => FetchCredentials::SameOrigin,
+            },
             cache: FetchCache::Default,
             redirect: FetchRedirect::Follow,
             referrer: FetchReferrer::Client,
-            referrer_policy: FetchReferrerPolicy::StrictOriginWhenCrossOrigin,
+            referrer_policy: match resource {
+                PageResource::Script { fetch_options, .. } => {
+                    referrer_policy(fetch_options.referrer_policy)
+                }
+                _ => FetchReferrerPolicy::StrictOriginWhenCrossOrigin,
+            },
             body_length: 0,
         },
         body: Vec::new(),
@@ -305,5 +316,42 @@ mod tests {
             assert!(validate_script_response(&response(mime), ScriptKind::Module).is_err());
             assert!(validate_script_response(&response(mime), ScriptKind::Classic).is_ok());
         }
+    }
+
+    #[test]
+    fn script_elements_preserve_cors_credentials_and_referrer_policy() {
+        let document = DocumentId::new(1).unwrap();
+        let options = crate::engine::ScriptFetchOptions::for_element(
+            ScriptKind::Module,
+            Some("use-credentials"),
+            Some("no-referrer"),
+        );
+        let request = page_resource_request(
+            7,
+            document,
+            &PageResource::Script {
+                url: "https://cdn.example/module.js".into(),
+                kind: ScriptKind::Module,
+                fetch_options: options,
+            },
+        );
+        assert_eq!(request.head.mode, FetchMode::Cors);
+        assert_eq!(request.head.credentials, FetchCredentials::Include);
+        assert_eq!(
+            request.head.referrer_policy,
+            FetchReferrerPolicy::NoReferrer
+        );
+
+        let classic = page_resource_request(
+            8,
+            document,
+            &PageResource::Script {
+                url: "https://example.com/classic.js".into(),
+                kind: ScriptKind::Classic,
+                fetch_options: crate::engine::ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            },
+        );
+        assert_eq!(classic.head.mode, FetchMode::NoCors);
+        assert_eq!(classic.head.credentials, FetchCredentials::Include);
     }
 }

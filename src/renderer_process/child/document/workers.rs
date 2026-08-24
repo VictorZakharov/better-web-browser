@@ -99,8 +99,9 @@ impl RendererWorkers {
                 let Some(runtime) = runtime.as_mut() else {
                     continue;
                 };
-                let mut loader =
-                    |url: &str, kind| fetch_script_source(connection, document, url, kind);
+                let mut loader = |url: &str, kind, options| {
+                    fetch_script_source(connection, document, url, kind, options)
+                };
                 for message in event.messages {
                     let worker = runtime.complete_worker_event_with_loader(
                         event.id,

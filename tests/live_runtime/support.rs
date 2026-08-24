@@ -68,36 +68,59 @@ pub(super) fn serve_fixtures(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct FixtureResponse {
+    status: u16,
+    reason: &'static str,
     content_type: &'static str,
-    body: &'static str,
+    body: String,
     delay: Duration,
+    headers: Vec<(String, String)>,
 }
 
 impl FixtureResponse {
-    pub(super) fn html(body: &'static str) -> Self {
+    pub(super) fn html(body: impl Into<String>) -> Self {
         Self {
+            status: 200,
+            reason: "OK",
             content_type: "text/html; charset=utf-8",
-            body,
+            body: body.into(),
             delay: Duration::ZERO,
+            headers: Vec::new(),
         }
     }
 
-    pub(super) fn script(body: &'static str, delay: Duration) -> Self {
+    pub(super) fn script(body: impl Into<String>, delay: Duration) -> Self {
         Self {
+            status: 200,
+            reason: "OK",
             content_type: "text/javascript; charset=utf-8",
-            body,
+            body: body.into(),
             delay,
+            headers: Vec::new(),
         }
     }
 
-    pub(super) fn json(body: &'static str) -> Self {
+    pub(super) fn json(body: impl Into<String>) -> Self {
         Self {
+            status: 200,
+            reason: "OK",
             content_type: "application/json; charset=utf-8",
-            body,
+            body: body.into(),
             delay: Duration::ZERO,
+            headers: Vec::new(),
         }
+    }
+
+    pub(super) fn status(mut self, status: u16, reason: &'static str) -> Self {
+        self.status = status;
+        self.reason = reason;
+        self
+    }
+
+    pub(super) fn header(mut self, name: &str, value: impl Into<String>) -> Self {
+        self.headers.push((name.to_string(), value.into()));
+        self
     }
 }
 
@@ -155,7 +178,7 @@ fn serve_fixture_connection(
     let request = read_request(&mut stream)?;
     let response = response_for(&request);
     thread::sleep(response.delay);
-    write_response(&mut stream, response.content_type, response.body)
+    write_fixture_response(&mut stream, &response)
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<String, String> {
@@ -174,6 +197,29 @@ fn write_response(stream: &mut TcpStream, content_type: &str, body: &str) -> Res
     stream
         .write_all(headers.as_bytes())
         .and_then(|_| stream.write_all(body.as_bytes()))
+        .map_err(|error| format!("write fixture response: {error}"))
+}
+
+fn write_fixture_response(
+    stream: &mut TcpStream,
+    response: &FixtureResponse,
+) -> Result<(), String> {
+    let extra_headers = response
+        .headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect::<String>();
+    let headers = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n",
+        response.status,
+        response.reason,
+        response.content_type,
+        extra_headers,
+        response.body.len()
+    );
+    stream
+        .write_all(headers.as_bytes())
+        .and_then(|_| stream.write_all(response.body.as_bytes()))
         .map_err(|error| format!("write fixture response: {error}"))
 }
 

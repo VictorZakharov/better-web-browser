@@ -6,9 +6,48 @@ use super::fetch::{
 use super::{DocumentRuntime, merge_outcome};
 use crate::engine::script::ScriptInput;
 use crate::engine::{Page, PageResource, ScriptFetchAction, ScriptKind, ScriptOutcome};
-use crate::renderer_process::child::connection::ChildConnection;
-use crate::renderer_protocol::DocumentId;
+use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
+use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
 use std::collections::{HashMap, HashSet};
+
+pub(super) struct PendingResourceFetch {
+    batch: PendingFetchBatch,
+    by_request: HashMap<u64, PageResource>,
+}
+
+pub(super) fn start_resource_preloads(
+    connection: &mut ChildConnection,
+    document: DocumentId,
+    first_paint: Vec<PageResource>,
+    deferred: Vec<PageResource>,
+) -> Result<(Option<PendingResourceFetch>, Option<PendingResourceFetch>), String> {
+    let (mut requests, first_by_request) = resource_requests(connection, document, first_paint);
+    let first_ids = first_by_request.keys().copied().collect();
+    let (deferred_requests, deferred_by_request) =
+        resource_requests(connection, document, deferred);
+    requests.extend(deferred_requests);
+    let Some(batch) = connection.start_fetch_batch(document, requests)? else {
+        return Ok((None, None));
+    };
+    let (first_batch, deferred_batch) = batch.split(first_ids)?;
+    Ok((
+        first_batch.map(|batch| PendingResourceFetch {
+            batch,
+            by_request: first_by_request,
+        }),
+        deferred_batch.map(|batch| PendingResourceFetch {
+            batch,
+            by_request: deferred_by_request,
+        }),
+    ))
+}
+
+pub(super) fn discard_resource_preloads(
+    connection: &mut ChildConnection,
+    pending: PendingResourceFetch,
+) -> Result<(), String> {
+    connection.finish_fetch_batch(pending.batch).map(|_| ())
+}
 
 impl DocumentRuntime {
     pub(super) fn fetch_resources(
@@ -27,21 +66,34 @@ impl DocumentRuntime {
         if resources.is_empty() {
             return Ok(false);
         }
-        let mut by_request = HashMap::new();
-        let requests = resources
-            .iter()
-            .map(|resource| {
-                let id = connection.allocate_request_id();
-                by_request.insert(id, resource.clone());
-                page_resource_request(id, self.id, resource)
-            })
-            .collect::<Vec<_>>();
+        let (requests, by_request) = resource_requests(connection, self.id, resources);
         let responses = connection.fetch_batch(self.id, requests)?;
+        self.install_resource_responses(responses, by_request, false)
+    }
+
+    pub(super) fn finish_resource_preloads(
+        &mut self,
+        connection: &mut ChildConnection,
+        pending: PendingResourceFetch,
+    ) -> Result<bool, String> {
+        let responses = connection.finish_fetch_batch(pending.batch)?;
+        self.install_resource_responses(responses, pending.by_request, true)
+    }
+
+    fn install_resource_responses(
+        &mut self,
+        responses: Vec<BrowserFetchResponse>,
+        mut by_request: HashMap<u64, PageResource>,
+        require_authoritative_match: bool,
+    ) -> Result<bool, String> {
         let mut retained = false;
         for response in responses {
             let Some(resource) = by_request.remove(&response.head.request_id) else {
                 return Err("browser returned an unknown resource request".into());
             };
+            if require_authoritative_match && !self.page.resources.contains(&resource) {
+                continue;
+            }
             self.loaded_resources.insert(resource.clone());
             let Ok(response) = into_fetch_result(response) else {
                 continue;
@@ -66,8 +118,14 @@ impl DocumentRuntime {
                     crate::winhttp::decode_text(&bytes, content_type.as_deref()),
                 ),
                 PageResource::Image { url } => self.page.add_image(url, &bytes).is_ok(),
-                PageResource::Script { url, .. } => self.page.add_script(
+                PageResource::Script {
+                    url,
+                    kind,
+                    fetch_options,
+                } => self.page.add_script(
                     &url,
+                    kind,
+                    fetch_options,
                     crate::winhttp::decode_text(&bytes, content_type.as_deref()),
                 ),
                 PageResource::Font {
@@ -99,20 +157,34 @@ impl DocumentRuntime {
             .iter()
             .filter(|script| !script.blocks_first_paint)
             .filter(|script| !self.executed_async_scripts.contains(&script.source_url))
-            .map(|script| (script.source_url.clone(), script.kind))
+            .map(|script| (script.source_url.clone(), script.kind, script.fetch_options))
             .collect::<Vec<_>>();
         if pending.is_empty() {
             return Ok(());
         }
-        for (url, kind) in &pending {
-            if self
-                .page
-                .scripts
-                .iter()
-                .any(|script| script.source_url == *url && script.code.is_none())
-            {
-                let code = fetch_script_source(connection, self.id, url, *kind)?;
-                self.page.add_script(url, code);
+        for (url, kind, fetch_options) in &pending {
+            if self.page.scripts.iter().any(|script| {
+                script.source_url == *url
+                    && script.kind == *kind
+                    && script.fetch_options == *fetch_options
+                    && script.code.is_none()
+            }) {
+                let resource = PageResource::Script {
+                    url: url.clone(),
+                    kind: *kind,
+                    fetch_options: *fetch_options,
+                };
+                let result = if self.loaded_resources.contains(&resource) {
+                    Err("script could not be loaded".to_string())
+                } else {
+                    fetch_script_source(connection, self.id, url, *kind, *fetch_options)
+                };
+                match result {
+                    Ok(code) => {
+                        self.page.add_script(url, *kind, *fetch_options, code);
+                    }
+                    Err(error) => outcome.errors.push(format!("{url}: {error}")),
+                }
             }
         }
         let inputs = self
@@ -127,16 +199,19 @@ impl DocumentRuntime {
                     source_url: script.source_url.clone(),
                     code: code.clone(),
                     kind: script.kind,
+                    fetch_options: script.fetch_options,
                     finish_lifecycle: true,
                 })
             })
             .collect::<Vec<_>>();
-        for input in &inputs {
-            self.executed_async_scripts.insert(input.source_url.clone());
+        for (url, ..) in pending {
+            self.executed_async_scripts.insert(url);
         }
         if let Some(runtime) = self.script_runtime.as_mut() {
             let document = self.id;
-            let mut loader = |url: &str, kind| fetch_script_source(connection, document, url, kind);
+            let mut loader = |url: &str, kind, options| {
+                fetch_script_source(connection, document, url, kind, options)
+            };
             let result = runtime.execute_additional_with_loader(&inputs, Some(&mut loader));
             merge_outcome(outcome, result, self.page.dom.document.id());
         }
@@ -175,8 +250,9 @@ impl DocumentRuntime {
             };
             if let Some(runtime) = self.script_runtime.as_mut() {
                 let document = self.id;
-                let mut loader =
-                    |url: &str, kind| fetch_script_source(connection, document, url, kind);
+                let mut loader = |url: &str, kind, options| {
+                    fetch_script_source(connection, document, url, kind, options)
+                };
                 let result = runtime.complete_fetch_with_loader(
                     script_id,
                     into_fetch_result(response),
@@ -189,15 +265,38 @@ impl DocumentRuntime {
     }
 }
 
+fn resource_requests(
+    connection: &mut ChildConnection,
+    document: DocumentId,
+    resources: Vec<PageResource>,
+) -> (
+    Vec<crate::renderer_protocol::RendererFetchRequest>,
+    HashMap<u64, PageResource>,
+) {
+    let mut by_request = HashMap::new();
+    let requests = resources
+        .into_iter()
+        .map(|resource| {
+            let id = connection.allocate_request_id();
+            let request = page_resource_request(id, document, &resource);
+            by_request.insert(id, resource);
+            request
+        })
+        .collect();
+    (requests, by_request)
+}
+
 pub(super) fn fetch_script_source(
     connection: &mut ChildConnection,
     document: DocumentId,
     url: &str,
     kind: ScriptKind,
+    fetch_options: crate::engine::ScriptFetchOptions,
 ) -> Result<String, String> {
     let resource = PageResource::Script {
         url: url.to_string(),
         kind,
+        fetch_options,
     };
     let request = page_resource_request(connection.allocate_request_id(), document, &resource);
     let response = connection

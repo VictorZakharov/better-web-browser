@@ -56,7 +56,7 @@ pub(super) fn evaluate_module(
         };
         let mut loaded_any = false;
         for url in missing {
-            let source = match load(&url, ScriptKind::Module) {
+            let source = match load(&url, ScriptKind::Module, script.fetch_options) {
                 Ok(source) => source,
                 Err(error) => {
                     result = Err(format!("{url}: module could not be loaded: {error}"));

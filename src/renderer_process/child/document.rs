@@ -9,7 +9,9 @@ mod text;
 mod workers;
 
 use self::reporting::{merge_outcome, micros, runtime_report, style_report};
-use self::resources::fetch_script_source;
+use self::resources::{
+    PendingResourceFetch, discard_resource_preloads, fetch_script_source, start_resource_preloads,
+};
 pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
 use super::connection::ChildConnection;
@@ -45,6 +47,7 @@ pub(super) struct DocumentRuntime {
     pending_worker_actions: Vec<ScriptWorkerAction>,
     workers: RendererWorkers,
     executed_async_scripts: HashSet<String>,
+    pending_resource_preloads: Option<PendingResourceFetch>,
     deferred_resources_loaded: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
     focused_node: Option<crate::engine::dom::NodeId>,
@@ -72,12 +75,29 @@ impl DocumentRuntime {
             &body,
             (!start.content_type.is_empty()).then_some(start.content_type.as_str()),
         );
+        // The HTML Standard permits speculative parsing to start eligible fetches while the
+        // authoritative parser continues. Results are reconciled with the completed page below,
+        // so this optimization cannot introduce scripts the real parse did not discover:
+        // https://html.spec.whatwg.org/multipage/parsing.html#speculative-html-parsing
+        let preloads = crate::engine::page::discover_script_preloads(&decoded.text, &start.url);
+        let (pending_first_paint, pending_deferred) = start_resource_preloads(
+            connection,
+            start.document,
+            preloads.first_paint,
+            preloads.deferred,
+        )?;
         let html_parse_started = Instant::now();
         let reader = crate::document::parse_html(&decoded.text, &start.url);
         let mut page = Page::parse_scripted(&decoded.text, &start.url);
         page.character_set = decoded.encoding.to_string();
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
+            if let Some(pending) = pending_first_paint {
+                discard_resource_preloads(connection, pending)?;
+            }
+            if let Some(pending) = pending_deferred {
+                discard_resource_preloads(connection, pending)?;
+            }
             return Ok(LoadResult::Navigate(url, Box::new(text)));
         }
 
@@ -97,6 +117,7 @@ impl DocumentRuntime {
             pending_worker_actions: Vec::new(),
             workers: RendererWorkers::new(),
             executed_async_scripts: HashSet::new(),
+            pending_resource_preloads: pending_deferred,
             deferred_resources_loaded: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
             focused_node: None,
@@ -109,6 +130,9 @@ impl DocumentRuntime {
         };
 
         let resource_started = Instant::now();
+        if let Some(pending) = pending_first_paint {
+            runtime.finish_resource_preloads(connection, pending)?;
+        }
         runtime.fetch_resources(connection, |page, resource| {
             page.resource_blocks_first_paint(resource)
         })?;
@@ -116,8 +140,9 @@ impl DocumentRuntime {
 
         let script_started = Instant::now();
         let document = runtime.id;
-        let mut loader =
-            |url: &str, kind: ScriptKind| fetch_script_source(connection, document, url, kind);
+        let mut loader = |url: &str, kind: ScriptKind, options| {
+            fetch_script_source(connection, document, url, kind, options)
+        };
         let (script_runtime, mut outcome) = runtime
             .page
             .start_first_paint_script_runtime_with_document_state(
@@ -200,6 +225,7 @@ impl DocumentRuntime {
 
     fn has_post_load_work(&self) -> bool {
         !self.deferred_resources_loaded
+            || self.pending_resource_preloads.is_some()
             || !self.pending_fetches.is_empty()
             || !self.pending_worker_actions.is_empty()
             || self.workers.has_work()
@@ -221,6 +247,9 @@ impl DocumentRuntime {
         let mut outcome = ScriptOutcome::default();
         let mut resources_changed = false;
         let performed_post_load_pass = self.has_post_load_work();
+        if let Some(pending) = self.pending_resource_preloads.take() {
+            resources_changed |= self.finish_resource_preloads(connection, pending)?;
+        }
         if !self.deferred_resources_loaded {
             resources_changed = self.fetch_resources(connection, |_, resource| {
                 matches!(
@@ -252,7 +281,9 @@ impl DocumentRuntime {
 
         if let Some(runtime) = self.script_runtime.as_mut() {
             let document = self.id;
-            let mut loader = |url: &str, kind| fetch_script_source(connection, document, url, kind);
+            let mut loader = |url: &str, kind, options| {
+                fetch_script_source(connection, document, url, kind, options)
+            };
             let timed = runtime.advance_time_with_loader(
                 elapsed,
                 max_callbacks.min(MAX_POST_LOAD_TIMER_CALLBACKS as u32) as usize,

@@ -20,7 +20,7 @@ pub enum RequestDestination {
     Fetch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RequestMode {
     Navigate,
     SameOrigin,
@@ -28,7 +28,7 @@ pub enum RequestMode {
     Cors,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CredentialsMode {
     Omit,
     SameOrigin,
@@ -52,7 +52,7 @@ pub enum RequestCache {
     OnlyIfCached,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReferrerPolicy {
     NoReferrer,
     NoReferrerWhenDowngrade,

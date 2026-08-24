@@ -3,6 +3,8 @@
 mod fetch;
 mod state;
 
+use self::fetch::FetchState;
+pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
 use self::state::{IncomingDocumentState, IncomingStorageUpdate};
 use super::document::{DocumentRuntime, LoadResult, RendererTextSystem};
 use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
@@ -25,6 +27,7 @@ pub(super) struct ChildConnection {
     test_mode: bool,
     stopping: bool,
     pending: VecDeque<BrowserMessage>,
+    fetches: FetchState,
     incoming_document: Option<IncomingDocument>,
     incoming_storage_update: Option<IncomingStorageUpdate>,
     document: Option<DocumentRuntime>,
@@ -45,6 +48,7 @@ impl ChildConnection {
             test_mode,
             stopping: false,
             pending: VecDeque::new(),
+            fetches: FetchState::default(),
             incoming_document: None,
             incoming_storage_update: None,
             document: None,
@@ -112,6 +116,7 @@ impl ChildConnection {
                 self.acknowledge_presentation(acknowledgement)
             }
             BrowserMessage::CancelDocument(document) => {
+                self.cancel_document_fetches(document);
                 if self
                     .incoming_storage_update
                     .as_ref()
@@ -128,12 +133,10 @@ impl ChildConnection {
                 }
                 Ok(())
             }
-            BrowserMessage::FetchResponseStart(_)
+            message @ (BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)
             | BrowserMessage::FetchResponseEnd(_)
-            | BrowserMessage::FetchResponseAbort(_) => {
-                Err("unsolicited browser Fetch response".into())
-            }
+            | BrowserMessage::FetchResponseAbort(_)) => self.handle_fetch_message(message),
             BrowserMessage::Hello { .. } => Err("duplicate renderer Hello".into()),
         }
     }

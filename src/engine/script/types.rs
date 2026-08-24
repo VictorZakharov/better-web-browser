@@ -4,6 +4,7 @@ use super::network::ScriptFetchAction;
 use super::workers::ScriptWorkerAction;
 use crate::engine::dom::NodeRef;
 use crate::engine::invalidation::RenderInvalidation;
+use crate::fetch::{CredentialsMode, ReferrerPolicy, RequestMode};
 use crate::storage::StorageMutation;
 use std::time::Duration;
 
@@ -12,12 +13,72 @@ use std::time::Duration;
 pub(super) const STARTUP_TIMER_PASSES: usize = 6;
 pub(super) const STARTUP_TIMER_SLICE: Duration = Duration::from_millis(250);
 
-pub type DynamicScriptLoader<'a> = dyn FnMut(&str, ScriptKind) -> Result<String, String> + 'a;
+pub type DynamicScriptLoader<'a> =
+    dyn FnMut(&str, ScriptKind, ScriptFetchOptions) -> Result<String, String> + 'a;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScriptKind {
     Classic,
     Module,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScriptFetchOptions {
+    pub mode: RequestMode,
+    pub credentials: CredentialsMode,
+    pub referrer_policy: ReferrerPolicy,
+}
+
+impl ScriptFetchOptions {
+    // Keep element policy separate from generic Fetch defaults. Classic and module scripts use
+    // different request modes and credentials rules:
+    // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+    pub fn for_element(
+        kind: ScriptKind,
+        cross_origin: Option<&str>,
+        referrer_policy: Option<&str>,
+    ) -> Self {
+        let includes_credentials = cross_origin
+            .is_some_and(|value| value.eq_ignore_ascii_case("use-credentials"))
+            || kind == ScriptKind::Classic && cross_origin.is_none();
+        let credentials = if includes_credentials {
+            CredentialsMode::Include
+        } else {
+            CredentialsMode::SameOrigin
+        };
+        let mode = if kind == ScriptKind::Module || cross_origin.is_some() {
+            RequestMode::Cors
+        } else {
+            RequestMode::NoCors
+        };
+        Self {
+            mode,
+            credentials,
+            referrer_policy: parse_referrer_policy(referrer_policy),
+        }
+    }
+
+    pub fn for_kind(kind: ScriptKind) -> Self {
+        Self::for_element(kind, None, None)
+    }
+}
+
+fn parse_referrer_policy(value: Option<&str>) -> ReferrerPolicy {
+    match value
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "no-referrer" => ReferrerPolicy::NoReferrer,
+        "no-referrer-when-downgrade" => ReferrerPolicy::NoReferrerWhenDowngrade,
+        "same-origin" => ReferrerPolicy::SameOrigin,
+        "origin" => ReferrerPolicy::Origin,
+        "strict-origin" => ReferrerPolicy::StrictOrigin,
+        "origin-when-cross-origin" => ReferrerPolicy::OriginWhenCrossOrigin,
+        "unsafe-url" => ReferrerPolicy::UnsafeUrl,
+        _ => ReferrerPolicy::StrictOriginWhenCrossOrigin,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +87,7 @@ pub struct ScriptInput {
     pub source_url: String,
     pub code: String,
     pub kind: ScriptKind,
+    pub fetch_options: ScriptFetchOptions,
     pub finish_lifecycle: bool,
 }
 

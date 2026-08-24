@@ -56,7 +56,7 @@ pub(super) fn discover_resources(
     }
 
     let mut scripts = Vec::new();
-    let mut seen_script_urls = HashSet::new();
+    let mut seen_script_resources = HashSet::new();
     for node in Node::descendants(&dom.document) {
         if node.tag_name() != Some("script") || scripts.len() >= MAX_SCRIPTS {
             continue;
@@ -69,23 +69,38 @@ pub(super) fn discover_resources(
         } else {
             continue;
         };
+        if kind == script::ScriptKind::Classic && node.attr("nomodule").is_some() {
+            continue;
+        }
+        let fetch_options = script::ScriptFetchOptions::for_element(
+            kind,
+            node.attr("crossorigin").as_deref(),
+            node.attr("referrerpolicy").as_deref(),
+        );
         if let Some(url) = node
             .attr("src")
             .and_then(|source| resolve_url(base_url, &source))
         {
-            let blocks_first_paint = node.attr("async").is_none();
-            if seen_script_urls.insert((url.clone(), kind)) {
-                resources.push(PageResource::Script {
-                    url: url.clone(),
-                    kind,
-                });
+            let is_async = node.attr("async").is_some();
+            let blocks_first_paint = !is_async;
+            let executes_after_parsing =
+                !is_async && (kind == script::ScriptKind::Module || node.attr("defer").is_some());
+            let resource = PageResource::Script {
+                url: url.clone(),
+                kind,
+                fetch_options,
+            };
+            if seen_script_resources.insert(resource.clone()) {
+                resources.push(resource);
             }
             scripts.push(PageScript {
                 node,
                 source_url: url,
                 code: None,
                 kind,
+                fetch_options,
                 blocks_first_paint,
+                executes_after_parsing,
             });
         } else {
             let source_url = format!("{}#inline-script-{}", base_url, scripts.len() + 1);
@@ -95,7 +110,9 @@ pub(super) fn discover_resources(
                 source_url,
                 code: Some(code),
                 kind,
+                fetch_options,
                 blocks_first_paint: true,
+                executes_after_parsing: kind == script::ScriptKind::Module,
             });
         }
     }
