@@ -2,7 +2,7 @@
 
 use super::super::paint_primitives::bitmap_info;
 use super::super::*;
-use better_web_browser::engine::PositionedGlyph;
+use better_web_browser::engine::{PositionedGlyph, RectF};
 use better_web_browser::renderer_protocol::PresentedGlyphRaster;
 use std::collections::VecDeque;
 
@@ -14,10 +14,8 @@ const MAX_CACHED_RUNS: usize = 4_096;
 #[derive(Clone, Copy)]
 pub(in crate::windows_app) struct GlyphRunBitmap {
     pub(in crate::windows_app) bitmap: Hbitmap,
-    pub(in crate::windows_app) offset_x: f32,
-    pub(in crate::windows_app) offset_y: f32,
-    pub(in crate::windows_app) width: f32,
-    pub(in crate::windows_app) height: f32,
+    offset_x: i32,
+    offset_y: i32,
     pub(in crate::windows_app) source_width: u32,
     pub(in crate::windows_app) source_height: u32,
 }
@@ -34,6 +32,31 @@ struct CachedGlyphRun {
     bitmap: GlyphRunBitmap,
     bytes: usize,
     glyphs: Vec<PositionedGlyph>,
+}
+
+impl GlyphRunBitmap {
+    pub(in crate::windows_app) fn destination_rect(
+        self,
+        text_rect: RectF,
+        scroll_y: i32,
+        content_top: i32,
+        scale: f32,
+    ) -> Rect {
+        // Renderer rasters are already produced at the final physical DPI. Keep the run at its
+        // exact source dimensions; converting its bounds back through CSS floats can ceil one edge
+        // at fractional DPI and stretch a one-pixel stem across the entire run.
+        let left = ((text_rect.x * scale).round() as i32).saturating_add(self.offset_x);
+        let top = content_top
+            .saturating_add((text_rect.y * scale).round() as i32)
+            .saturating_sub(scroll_y)
+            .saturating_add(self.offset_y);
+        Rect {
+            left,
+            top,
+            right: left.saturating_add(self.source_width as i32),
+            bottom: top.saturating_add(self.source_height as i32),
+        }
+    }
 }
 
 impl GlyphBitmaps {
@@ -122,10 +145,8 @@ impl GlyphBitmaps {
         std::ptr::copy_nonoverlapping(image.bgra.as_ptr(), destination.cast(), image.bgra.len());
         let run = GlyphRunBitmap {
             bitmap,
-            offset_x: bounds.left as f32 / scale,
-            offset_y: bounds.top as f32 / scale,
-            width: width as f32 / scale,
-            height: height as f32 / scale,
+            offset_x: bounds.left,
+            offset_y: bounds.top,
             source_width: width,
             source_height: height,
         };
@@ -334,51 +355,4 @@ fn tint_mask(image: &DecodedImage, tint: [u8; 4]) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn raster(id: u32, color: bool) -> PresentedGlyphRaster {
-        PresentedGlyphRaster {
-            id,
-            image: DecodedImage {
-                width: 1,
-                height: 1,
-                bgra: vec![255; 4],
-            },
-            color,
-        }
-    }
-
-    fn glyph(id: u32, color: bool) -> PositionedGlyph {
-        PositionedGlyph {
-            raster_id: id,
-            x: 0.0,
-            y: 0.0,
-            width: 1.0,
-            height: 1.0,
-            color,
-        }
-    }
-
-    #[test]
-    fn source_over_composites_premultiplied_pixels() {
-        let mut destination = [0, 0, 128, 128];
-        source_over(&mut destination, [0, 128, 0, 128]);
-
-        assert_eq!(destination, [0, 128, 63, 191]);
-    }
-
-    #[test]
-    fn tint_pixel_preserves_premultiplied_alpha() {
-        assert_eq!(tint_pixel(128, [10, 20, 30, 128]), [7, 5, 2, 64]);
-    }
-
-    #[test]
-    fn unknown_or_mismatched_glyph_resources_fail_closed() {
-        let resources = HashMap::from([(1, raster(1, false))]);
-
-        assert!(pixel_bounds(&[glyph(2, false)], &resources, 1.0).is_none());
-        assert!(pixel_bounds(&[glyph(1, true)], &resources, 1.0).is_none());
-        assert!(pixel_bounds(&[glyph(1, false)], &resources, 1.0).is_some());
-    }
-}
+mod tests;
