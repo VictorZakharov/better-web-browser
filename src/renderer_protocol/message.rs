@@ -3,6 +3,9 @@ use super::document::{
     DocumentId, DocumentStart, FetchRequestHead, FetchResponseAbort, FetchResponseEnd,
     FetchResponseHead, PresentedViewport, TransferChunk,
 };
+use super::input::{
+    DocumentInput, NavigationCause, NavigationDisposition, PresentationAcknowledgement,
+};
 use super::state::{
     CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
     StorageSnapshotEntry, StorageSnapshotStart,
@@ -145,6 +148,8 @@ pub enum BrowserMessage {
         document: DocumentId,
         viewport: PresentedViewport,
     },
+    Input(DocumentInput),
+    PresentationAcknowledged(PresentationAcknowledgement),
     CancelDocument(DocumentId),
     Test(TestCommand),
 }
@@ -203,6 +208,8 @@ pub enum RendererMessage {
     NavigationRequested {
         document: DocumentId,
         url: String,
+        disposition: NavigationDisposition,
+        cause: NavigationCause,
     },
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),

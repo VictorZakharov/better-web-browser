@@ -2,6 +2,8 @@ use super::*;
 use crate::storage::{StorageAreaKind, StorageEntry, StorageMutation, StorageOperation};
 use std::io::Cursor;
 
+mod input;
+
 fn session() -> RendererSessionId {
     RendererSessionId::new(7).unwrap()
 }

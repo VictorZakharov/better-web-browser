@@ -93,15 +93,15 @@ impl TaskManagerState {
             Rect {
                 left: margin,
                 top: self.scale(38),
-                right: client.right - margin - self.scale(86),
+                right: client.right - margin - self.scale(220),
                 bottom: self.scale(60),
             },
             DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
         );
         let live = Rect {
-            left: (client.right - margin - self.scale(72)).max(margin),
+            left: (client.right - margin - self.scale(202)).max(margin),
             top: self.scale(20),
-            right: client.right - margin,
+            right: client.right - margin - self.scale(130),
             bottom: self.scale(48),
         };
         paint_rounded_panel(

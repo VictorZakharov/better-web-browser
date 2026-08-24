@@ -129,11 +129,11 @@
     const eventHandlerTypes = (
         'abort auxclick beforeinput beforematch beforetoggle blur cancel canplay canplaythrough change ' +
         'click close command contextlost contextmenu contextrestored copy cuechange cut dblclick drag ' +
-        'dragend dragenter dragleave dragover dragstart drop durationchange emptied ended error focus ' +
+        'dragend dragenter dragleave dragover dragstart drop durationchange emptied ended error focus freeze ' +
         'formdata input invalid keydown keypress keyup load loadeddata loadedmetadata loadstart mousedown ' +
         'mouseenter mouseleave mousemove mouseout mouseover mouseup paste pause play playing progress ratechange ' +
-        'readystatechange reset resize scroll scrollend securitypolicyviolation seeked seeking select slotchange stalled submit ' +
-        'suspend timeupdate toggle unload volumechange waiting wheel message'
+        'readystatechange reset resize resume scroll scrollend securitypolicyviolation seeked seeking select slotchange stalled submit ' +
+        'suspend timeupdate toggle unload visibilitychange volumechange waiting wheel message'
     ).split(/\s+/);
 
     const storageFor = target => proxyStorage.get(target) || target;

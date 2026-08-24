@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::renderer_protocol::{
-    CookieStateSnapshot, DocumentStart, DocumentState, PresentedViewport,
+    CookieStateSnapshot, DocumentInput, DocumentStart, DocumentState, PresentationAcknowledgement,
+    PresentedViewport,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
@@ -81,6 +82,40 @@ impl RendererSession {
         viewport: PresentedViewport,
     ) -> Result<(), String> {
         self.send_command(worker::BrokerCommand::ViewportChanged { document, viewport })
+    }
+
+    pub fn send_input(&self, input: DocumentInput) -> Result<(), String> {
+        let coalescible = input.coalescible();
+        match self.try_send_input(input)? {
+            true => Ok(()),
+            false if coalescible => Ok(()),
+            false => Err("renderer command queue is full".into()),
+        }
+    }
+
+    /// Attempts one validated input enqueue without treating backpressure as a renderer failure.
+    /// Callers that need last-value delivery (for example scroll position) can retain and retry.
+    pub fn try_send_input(&self, input: DocumentInput) -> Result<bool, String> {
+        input.validate().map_err(|error| error.to_string())?;
+        let result = match self.commands.try_send(worker::BrokerCommand::Input(input)) {
+            Ok(()) => Ok(true),
+            Err(mpsc::TrySendError::Full(_)) => Ok(false),
+            Err(mpsc::TrySendError::Disconnected(_)) => Err("renderer broker has exited".into()),
+        };
+        self.wake.notify();
+        result
+    }
+
+    pub fn acknowledge_presentation(
+        &self,
+        acknowledgement: PresentationAcknowledgement,
+    ) -> Result<(), String> {
+        acknowledgement
+            .validate()
+            .map_err(|error| error.to_string())?;
+        self.send_command(worker::BrokerCommand::PresentationAcknowledged(
+            acknowledgement,
+        ))
     }
 
     pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {

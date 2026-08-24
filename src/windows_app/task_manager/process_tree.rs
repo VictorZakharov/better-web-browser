@@ -55,6 +55,9 @@ impl TaskManagerState {
                     + header_height
                     + self.scale(PROCESS_ROW_HEIGHT_DIP) * (index as i32 + 1),
             };
+            if process.context_id == self.selected_context {
+                fill_color_rect(dc, &row, CHROME_THEME.hover);
+            }
             if index > 0 {
                 fill_color_rect(
                     dc,

@@ -34,11 +34,11 @@ Current page support includes:
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
-- Native text/search/password/select controls, buttons, and GET forms
+- Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, persistent RFC-oriented cookies, CORS/preflight checks, bounded backpressured renderer streams, and document-wide cancellation
-- One capability-free Windows AppContainer renderer per tab, owning remote-document decoding, HTML/DOM, JavaScript, CSS/layout, image/font decoding, Workers, and immutable presentation output behind bounded IPC, Job limits, crash recovery, hang detection, and Task Manager diagnostics
-- Browser-owned multi-tab contexts with independent history, scrolling, native-control focus, navigation and Fetch brokerage, in-flight completion routing, and isolated renderer lifecycles
+- One capability-free Windows AppContainer renderer per tab, owning remote-document decoding, HTML/DOM, JavaScript, trusted input dispatch, CSS/layout, image/font decoding, Workers, and immutable presentation output behind bounded IPC, Job limits, crash recovery, hang detection, and Task Manager controls
+- Browser-owned multi-tab contexts with independent history, native-event capture, final scrolling/composition, navigation and Fetch brokerage, in-flight completion routing, and isolated renderer lifecycles
 - Desktop tab workflows including Ctrl/Shift multi-selection, ordered drag/reorder, detach/redock across windows, searchable open/recent tabs, Ctrl+N/Ctrl+Shift+W, Ctrl+Shift+A, Ctrl+T/W/Shift+T, Ctrl+Tab/PageUp/PageDown, Ctrl+Shift+PageUp/PageDown, Ctrl+1-9, Ctrl+L/R, F5, Alt+Left/Right, middle-click, and Ctrl+click
 - Links, history, reload, scrolling, and background networking
 
@@ -47,7 +47,8 @@ Current page support includes:
 Click **Task manager**. Its modeless popup refreshes every second and shows a process tree rooted at
 the privileged browser, with one child row per stable tab/renderer context. Rows report CPU, working/private
 memory, handles, uptime, lifecycle state, restarts, and exit diagnostics; document-engine activity
-is reported separately.
+is reported separately. Select a live renderer row and click **End process** to exercise the same
+browser-owned termination and reload path used for an unresponsive renderer.
 
 ## Performance monitor
 
@@ -129,6 +130,9 @@ Renderer: charset decode -> HTML5 DOM -> JavaScript/DOM mutation
                                                                validated typed IPC
                                                                        v
 Browser:                            validated pixel composition and native controls
+                                      ^                         |
+                                      `-- presented/controls ---'
+                    native input/lifecycle -- typed IPC --> Renderer DOM dispatch
 ```
 
 The page and Reader surfaces share navigation and networking, but Reader extraction is never selected automatically.
@@ -216,7 +220,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Host platforms | The native shell runs on Windows; macOS and Linux shells are not implemented. |
 | ◩ | HTML and DOM | The engine owns its DOM and implements substantial HTML5 tree construction, mutation, and event propagation behavior. Web-platform conformance is still incomplete. |
 | ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
-| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. User-input task dispatch, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
+| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists and tab-scoped `sessionStorage` does not. Cross-document `storage` events, storage property-name traps, partitioned state, and user-facing data controls remain incomplete. |
 | ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Network responses now stream incrementally and with backpressure from WinHTTP across renderer IPC, but the JavaScript realm still receives each completed body rather than a progressively delivered network stream. |
@@ -224,7 +228,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Script scheduling | External classic `async` scripts execute on arrival without delaying page-ready. Their fetch starts after first paint instead of overlapping HTML parsing, and `defer` is not yet scheduled separately. |
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
-| ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported. Control styling is approximate, broader form behavior is incomplete, and document text selection is not implemented. |
+| ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Control styling is approximate; reset/default-value behavior, IME/composition, cancelable `beforeinput`, broader form behavior, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
 | ☐ | Canvas, media, and downloads | Canvas rendering, audio/video playback, and downloads are not implemented. |
 | ☐ | Accessibility | An accessibility tree and platform accessibility integration are not implemented. |

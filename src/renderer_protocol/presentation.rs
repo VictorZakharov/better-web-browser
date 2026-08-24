@@ -178,6 +178,7 @@ mod tests {
                     },
                     color: Color::BLACK,
                     link: None,
+                    node_id: None,
                     raster_run_id: 7,
                     glyphs: vec![PositionedGlyph {
                         raster_id: 1,

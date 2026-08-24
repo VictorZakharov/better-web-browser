@@ -82,6 +82,7 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
             font,
             color,
             link,
+            node_id,
             raster_run_id,
             glyphs,
         } => {
@@ -91,6 +92,10 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
             encode_font(writer, font)?;
             encode_color(writer, *color);
             encode_optional_string(writer, link.as_deref())?;
+            writer.bool(node_id.is_some());
+            if let Some(node_id) = node_id {
+                writer.u128(node_id.to_wire());
+            }
             writer.u64(*raster_run_id);
             writer.u32(glyphs.len() as u32);
             for glyph in glyphs.iter() {
@@ -158,6 +163,7 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
             let font = decode_font(reader)?;
             let color = decode_color(reader)?;
             let link = decode_optional_string(reader, MAX_URL_BYTES)?;
+            let node_id = reader.bool()?.then(|| decode_node_id(reader)).transpose()?;
             let raster_run_id = reader.u64()?;
             let glyph_count =
                 bounded_count(reader.u32()?, MAX_GLYPHS_PER_TEXT_ITEM, "positioned glyphs")?;
@@ -181,6 +187,7 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
                 font,
                 color,
                 link,
+                node_id,
                 raster_run_id,
                 glyphs,
             })

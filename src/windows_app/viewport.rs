@@ -178,6 +178,7 @@ impl BrowserState {
         } else {
             self.sync_page_control_positions();
         }
+        self.route_renderer_scroll();
     }
 
     pub(super) unsafe fn update_scrollbar(&self) {
@@ -230,25 +231,7 @@ impl BrowserState {
             return;
         }
         let url = match self.surface {
-            Surface::Page => {
-                let scale = self.page_scale();
-                let document_x = x as f32 / scale;
-                let document_y = (y - toolbar_height + self.scroll_y) as f32 / scale;
-                self.page_layout.items.iter().find_map(|item| match item {
-                    DisplayItem::Text {
-                        rect,
-                        link: Some(link),
-                        ..
-                    } if document_x >= rect.x
-                        && document_x <= rect.right()
-                        && document_y >= rect.y
-                        && document_y <= rect.bottom() =>
-                    {
-                        Some(link.clone())
-                    }
-                    _ => None,
-                })
-            }
+            Surface::Page => None,
             Surface::Reader => {
                 let document_y = y - toolbar_height + self.scroll_y;
                 self.draw_items

@@ -46,6 +46,72 @@ pub struct ScriptOutcome {
     pub invalidation: RenderInvalidation,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UserInputModifiers {
+    pub alt: bool,
+    pub control: bool,
+    pub shift: bool,
+    pub meta: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum UserInputEvent {
+    Pointer {
+        target: Option<NodeRef>,
+        phase: &'static str,
+        button: u8,
+        buttons: u8,
+        x: f32,
+        y: f32,
+        activate: bool,
+        modifiers: UserInputModifiers,
+    },
+    Keyboard {
+        target: Option<NodeRef>,
+        phase: &'static str,
+        key: String,
+        code: String,
+        key_code: u32,
+        repeat: bool,
+        modifiers: UserInputModifiers,
+    },
+    Text {
+        target: NodeRef,
+        value: String,
+        selection_start: u32,
+        selection_end: u32,
+    },
+    Focus {
+        target: Option<NodeRef>,
+        focused: bool,
+    },
+    Simple {
+        target: NodeRef,
+        event_type: &'static str,
+        bubbles: bool,
+        cancelable: bool,
+    },
+    Scroll {
+        x: f32,
+        y: f32,
+    },
+    Viewport {
+        width: f32,
+        height: f32,
+        scale: f32,
+    },
+    Lifecycle {
+        state: &'static str,
+        previous: &'static str,
+    },
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct UserInputResult {
+    pub outcome: ScriptOutcome,
+    pub default_allowed: bool,
+}
+
 pub(crate) fn is_classic_javascript_type(script_type: &str) -> bool {
     matches!(
         script_type.trim().to_ascii_lowercase().as_str(),

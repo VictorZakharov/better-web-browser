@@ -50,6 +50,9 @@ impl BrowserState {
             }
             tab.pending_renderer_page = None;
             tab.renderer_document = None;
+            tab.renderer_input_sequence = 0;
+            tab.renderer_input_poll_budget = 0;
+            tab.pending_renderer_scroll = None;
             tab.renderer_revision = 0;
             tab.renderer_load_metrics = None;
             tab.page_diagnostics = Default::default();

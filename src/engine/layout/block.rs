@@ -297,6 +297,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 font: FontSpec::from_style(style),
                 color: style.color,
                 link: None,
+                node_id: None,
                 line_height: style.line_height,
                 no_wrap: false,
             });

@@ -1,6 +1,6 @@
 # ADR 0001: Renderer process isolation boundary
 
-- Status: Accepted; remote-page renderer path implemented, with site/frame isolation still pending
+- Status: Accepted; renderer-only top-level document path implemented, with site/frame isolation still pending
 - Date: 2026-08-14
 - Tracking issue: [#6](https://github.com/VictorZakharov/better-web-browser/issues/6)
 
@@ -233,9 +233,9 @@ large families into focused modules, but it must preserve their authority and st
 | Fetch | `FetchAccepted`, `ResponseHead`, `ResponseBodyChunk`, `ResponseEnd`, `FetchFailed` | `StartFetch`, `CancelFetch` |
 | Storage | `CookieSnapshot`, `CookieChanged`, `StorageResult`, `StorageInvalidated` | `SetCookie`, `StorageRead`, `StorageWrite`, `StorageDelete`, `StorageClear` |
 | Permissions | `PermissionDecision`, `PermissionRevoked` | `RequestPermission` |
-| Input | `PointerInput`, `KeyboardInput`, `TextInput`, `FocusChanged` | `SetCursor`, `SetFocus`, `CapturePointer`, `ReleasePointer` |
-| Presentation | `DisplayListPresented`, `ControlsApplied`, `PresentationRejected` | `UpdateDisplayList`, `UpdateControls`, `SetTitle`, `SetStatusText`, `InvalidateRegion` |
-| Lifecycle | `FreezeDocument`, `ResumeDocument`, `DiscardDocument`, `MemoryPressure` | `LifecycleComplete`, `Progress`, `LoadEventReached` |
+| Input | `PointerInput`, `KeyboardInput`, `TextInput`, `FocusInput`, `ScrollInput` | Navigation/default-action results are explicit typed messages |
+| Presentation | `PresentationAcknowledged` | Length-declared immutable presentation revisions with controls, title, status, and diagnostics |
+| Lifecycle | `LifecycleInput`, `CancelDocument`, `Shutdown` | `TimeAdvanced`, `DocumentFailed`, `ShutdownComplete` |
 
 There is deliberately no generic “invoke browser API”, “execute script”, “set arbitrary header”, or
 “paint native handle” message. New browser authority requires a named message, validation rules, a
@@ -331,8 +331,18 @@ glyph placements, validates them, and composites them without receiving remote f
 parsing font tables.
 
 Renderer control descriptions create browser-owned native controls. Browser input is normalized and
-tagged with `DocumentId`, `ControlId`, and an event sequence. Focus or input targeting a stale control
-is dropped before DOM dispatch.
+tagged with `DocumentId`, a renderer-issued `NodeId` where needed, and an event sequence. Focus or input targeting a stale control
+is dropped before DOM dispatch. Content coordinates are renderer-hit-tested against the current
+layout; the browser never chooses a page link target. Text controls send a bounded full value plus
+UTF-16 selection offsets, while native control activation round-trips only the renderer-issued
+`NodeId`. Presentation acknowledgements distinguish an installed/presented revision from a rejected
+one and report whether its native controls were applied.
+
+Ordered keyboard, text, focus, and lifecycle messages are never dropped. Pointer moves may be
+dropped at browser-command backpressure, the browser retains the latest unsent scroll for retry,
+and consecutive scroll, pointer-move, or viewport updates are coalesced while the renderer waits for
+a browser-brokered Fetch response. This prevents high-rate state updates from crowding the bounded
+deferred queue without reordering discrete events.
 
 ## Crash, timeout, cancellation, and teardown
 
@@ -486,9 +496,19 @@ trusted local UI fonts.
 - Remove the old in-process document execution path after hidden browser, WPT, visual, performance,
   hostile-input, and crash-recovery suites pass.
 
-One renderer per live tab is the default, and crash/error surfaces, reload, cancellation, and Task
-Manager integration are active. Browser-to-renderer user-input/event dispatch is still incomplete,
-so this stage is not fully closed.
+Completed on 2026-08-23. One renderer per live tab is the only top-level document execution path.
+Typed, bounded IPC now carries viewport, pointer, keyboard, full native-control text values with
+selection, focus, scroll, visibility/freeze lifecycle, navigation disposition/cause, and explicit
+presentation acknowledgements. The renderer owns content hit testing, DOM event dispatch, control
+state, and GET-form/link default actions; the browser owns only native-event capture, HWND
+projection, validation, final composition, history policy, and privileged navigation/Fetch.
+
+Crash/error surfaces, cancellation, reload with fresh identities, heartbeat hang termination, and
+Task Manager **End process** are active in normal builds. Hidden real-process tests cover trusted
+input and lifecycle dispatch, stale document/sequence rejection, presentation acknowledgement,
+user-navigation disposition, crash/hang containment, explicit termination, sibling survival, and
+replacement renderer recovery. IME/composition, cancelable `beforeinput`, and broader form behavior
+remain web-compatibility work, not alternate document execution paths.
 
 ### Stage 6: Evolve allocation policy
 
@@ -514,6 +534,10 @@ The production renderer boundary is accepted only while these executable invaria
 - reload after a fatal exit creates a fresh process ID, renderer session, and document identity;
 - malformed and oversized frames terminate only the renderer session;
 - clean shutdown and timeout paths leak no process or pipe handles; and
+- renderer-issued nodes receive pointer/keyboard/text/focus events only for the active document and
+  monotonic input sequence, while stale input cannot mutate a replacement document;
+- Task Manager termination stops the selected real renderer and a user reload creates a fresh
+  renderer session; and
 - all tests run without visible browser or console windows.
 
 ## Consequences
@@ -544,6 +568,9 @@ The production renderer boundary is accepted only while these executable invaria
 - [WHATWG HTML: navigables and browsing contexts](https://html.spec.whatwg.org/multipage/document-sequences.html)
 - [WHATWG HTML: event loops](https://html.spec.whatwg.org/multipage/webappapis.html#event-loops)
 - [WHATWG DOM Standard](https://dom.spec.whatwg.org/)
+- [W3C UI Events](https://www.w3.org/TR/uievents/)
+- [CSSOM View: scrolling events and state](https://drafts.csswg.org/cssom-view/)
+- [WHATWG HTML: interaction, focus, and page visibility](https://html.spec.whatwg.org/multipage/interaction.html)
 - [WHATWG Fetch Standard](https://fetch.spec.whatwg.org/)
 - [RFC 10025: HTTP State Management Mechanism](https://www.rfc-editor.org/rfc/rfc10025.html)
 - [Microsoft: Launch an AppContainer](https://learn.microsoft.com/windows/win32/secauthz/implementing-an-appcontainer)

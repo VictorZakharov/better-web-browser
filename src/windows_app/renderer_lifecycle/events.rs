@@ -1,9 +1,14 @@
 use super::*;
 use better_web_browser::renderer_process::{RendererEvent, RendererState};
+use better_web_browser::renderer_protocol::{NavigationCause, NavigationDisposition};
 use std::sync::Arc;
 
 impl BrowserState {
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
+        self.flush_renderer_scroll_for(id);
+        if let Some(tab) = self.tabs.get_mut(id) {
+            tab.renderer_input_poll_budget = tab.renderer_input_poll_budget.saturating_sub(1);
+        }
         let snapshot_and_events = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_session.as_ref().map(|session| {
                 let snapshot = session.snapshot();
@@ -64,12 +69,34 @@ impl BrowserState {
                         self.contain_page_engine_failure(id, detail);
                     }
                 }
-                RendererEvent::NavigationRequested { document, url } => {
+                RendererEvent::NavigationRequested {
+                    document,
+                    url,
+                    disposition,
+                    cause,
+                } => {
                     self.process_for_tab(id, |state| {
-                        if state.renderer_document == Some(document)
-                            && state.allow_script_navigation(&url)
-                        {
-                            state.begin_navigation(url, browser_navigation::HistoryMode::Script);
+                        if state.renderer_document != Some(document) {
+                            return;
+                        }
+                        match disposition {
+                            NavigationDisposition::CurrentTab
+                                if cause == NavigationCause::UserActivation =>
+                            {
+                                state.begin_navigation(url, browser_navigation::HistoryMode::Push)
+                            }
+                            NavigationDisposition::CurrentTab
+                                if state.allow_script_navigation(&url) =>
+                            {
+                                state.begin_navigation(url, browser_navigation::HistoryMode::Script)
+                            }
+                            NavigationDisposition::NewForegroundTab => {
+                                state.open_url_in_new_tab(url, true)
+                            }
+                            NavigationDisposition::NewBackgroundTab => {
+                                state.open_url_in_new_tab(url, false)
+                            }
+                            NavigationDisposition::CurrentTab => {}
                         }
                     });
                 }

@@ -1,9 +1,13 @@
 #![cfg(target_os = "windows")]
 
+#[path = "renderer_process/input.rs"]
+mod input;
 #[path = "renderer_process/state.rs"]
 mod state;
 #[path = "renderer_process/support.rs"]
 mod support;
+#[path = "renderer_process/termination.rs"]
+mod termination;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{

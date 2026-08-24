@@ -1,6 +1,6 @@
-//! Native form-control creation, positioning, state preservation, and activation.
+//! Native form-control projection, positioning, and renderer input forwarding.
 
-use super::browser_navigation::HistoryMode;
+use super::tab_state::TabFocus;
 use super::*;
 
 pub(super) struct PageControlWindow {
@@ -28,31 +28,32 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn recreate_page_controls(&mut self) {
-        let previous_values = self
+        let focused = GetFocus();
+        let focused_node = self
             .page_controls
             .iter()
-            .filter(|control| {
-                matches!(
-                    control.spec.kind,
-                    ControlKind::Text
-                        | ControlKind::TextArea
-                        | ControlKind::Password
-                        | ControlKind::Search
-                )
-            })
-            .map(|control| (control.spec.node_id, window_text(control.window)))
-            .collect::<HashMap<_, _>>();
-        let previous_selections = self
+            .find(|control| control.window == focused)
+            .map(|control| control.spec.node_id);
+        let focused_selection = self
             .page_controls
             .iter()
-            .filter(|control| control.spec.kind == ControlKind::Select)
-            .filter_map(|control| {
-                let selected = SendMessageW(control.window, CB_GETCURSEL, 0, 0);
-                (selected >= 0).then_some((control.spec.node_id, selected as usize))
-            })
-            .collect::<HashMap<_, _>>();
+            .find(|control| control.window == focused)
+            .filter(|control| control.spec.kind != ControlKind::Select)
+            .map(|control| {
+                let mut start = 0_u32;
+                let mut end = 0_u32;
+                SendMessageW(
+                    control.window,
+                    EM_GETSEL,
+                    (&mut start as *mut u32) as usize,
+                    (&mut end as *mut u32) as isize,
+                );
+                (start, end)
+            });
+        self.suppress_page_control_focus = true;
         self.destroy_page_controls();
         if self.surface != Surface::Page {
+            self.suppress_page_control_focus = false;
             return;
         }
         let specs = self
@@ -79,32 +80,20 @@ impl BrowserState {
                 ControlKind::Password => (
                     "EDIT",
                     WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
-                    previous_values
-                        .get(&spec.node_id)
-                        .cloned()
-                        .unwrap_or_else(|| spec.value.clone()),
+                    spec.value.clone(),
                 ),
                 ControlKind::TextArea => (
                     "EDIT",
                     WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL,
-                    previous_values
-                        .get(&spec.node_id)
-                        .cloned()
-                        .unwrap_or_else(|| spec.value.clone()),
+                    spec.value.clone(),
                 ),
-                _ => (
-                    "EDIT",
-                    WS_TABSTOP | ES_AUTOHSCROLL,
-                    previous_values
-                        .get(&spec.node_id)
-                        .cloned()
-                        .unwrap_or_else(|| spec.value.clone()),
-                ),
+                _ => ("EDIT", WS_TABSTOP | ES_AUTOHSCROLL, spec.value.clone()),
             };
             let window = self.create_control(class, &text, style, id);
             if window.is_null() {
                 continue;
             }
+            SetWindowSubclass(window, Some(page_control_proc), 1, id);
             let font = self.dynamic_fonts.get_or_create(&spec.font, dpi);
             SendMessageW(window, WM_SETFONT, font as usize, 1);
             if spec.kind == ControlKind::Select {
@@ -112,10 +101,8 @@ impl BrowserState {
                     let label = wide(&option.label);
                     SendMessageW(window, CB_ADDSTRING, 0, label.as_ptr() as isize);
                 }
-                let selected = previous_selections
-                    .get(&spec.node_id)
-                    .copied()
-                    .unwrap_or(spec.selected_index)
+                let selected = spec
+                    .selected_index
                     .min(spec.options.len().saturating_sub(1));
                 SendMessageW(window, CB_SETCURSEL, selected, 0);
             }
@@ -139,6 +126,19 @@ impl BrowserState {
             });
         }
         self.sync_page_control_positions();
+        if let Some(node) = focused_node
+            && let Some(control) = self
+                .page_controls
+                .iter()
+                .find(|control| control.spec.node_id == node)
+        {
+            if let Some((start, end)) = focused_selection {
+                SendMessageW(control.window, EM_SETSEL, start as usize, end as isize);
+            }
+            SetFocus(control.window);
+            self.focus = TabFocus::PageControl(node);
+        }
+        self.suppress_page_control_focus = false;
         self.position_performance_window();
     }
 
@@ -200,104 +200,31 @@ impl BrowserState {
         let Some(index) = id.checked_sub(ID_PAGE_CONTROL_BASE) else {
             return;
         };
-        let Some(control) = self.page_controls.get(index) else {
+        let Some(kind) = self
+            .page_controls
+            .get(index)
+            .map(|control| control.spec.kind)
+        else {
             return;
         };
-        let spec = control.spec.clone();
-        let is_button = matches!(
-            spec.kind,
+        match kind {
+            ControlKind::Text
+            | ControlKind::TextArea
+            | ControlKind::Password
+            | ControlKind::Search
+                if notification == EN_CHANGE =>
+            {
+                self.route_page_control_text(index)
+            }
+            ControlKind::Select if notification == CBN_SELCHANGE => {
+                self.route_page_control_text(index)
+            }
             ControlKind::Submit | ControlKind::Button | ControlKind::Reset
-        );
-        if !is_button && notification != 0 {
-            return;
-        }
-        if spec.kind == ControlKind::Button {
-            self.set_status("This button requires JavaScript, which is not implemented yet.");
-            return;
-        }
-        let Some(form_id) = spec.form_id else {
-            self.set_status("This control requires JavaScript, which is not implemented yet.");
-            return;
-        };
-        if spec.kind == ControlKind::Reset {
-            for page_control in &self.page_controls {
-                if page_control.spec.form_id != Some(form_id) {
-                    continue;
-                }
-                if matches!(
-                    page_control.spec.kind,
-                    ControlKind::Text
-                        | ControlKind::TextArea
-                        | ControlKind::Password
-                        | ControlKind::Search
-                ) {
-                    set_window_text(page_control.window, &page_control.spec.value);
-                } else if page_control.spec.kind == ControlKind::Select {
-                    SendMessageW(
-                        page_control.window,
-                        CB_SETCURSEL,
-                        page_control.spec.selected_index,
-                        0,
-                    );
-                }
+                if notification == BN_CLICKED =>
+            {
+                self.route_page_control_activation(index)
             }
-            return;
+            _ => {}
         }
-        let Some(form) = self.page_layout.forms.get(&form_id).cloned() else {
-            return;
-        };
-        if form.method != "get" {
-            self.set_status("POST form submission is not implemented yet.");
-            return;
-        }
-        let mut fields = form.hidden_fields;
-        for page_control in &self.page_controls {
-            if page_control.spec.form_id != Some(form_id) || page_control.spec.name.is_empty() {
-                continue;
-            }
-            match page_control.spec.kind {
-                ControlKind::Text
-                | ControlKind::TextArea
-                | ControlKind::Password
-                | ControlKind::Search => fields.push((
-                    page_control.spec.name.clone(),
-                    window_text(page_control.window),
-                )),
-                ControlKind::Select => {
-                    let selected = SendMessageW(page_control.window, CB_GETCURSEL, 0, 0);
-                    let value = (selected >= 0)
-                        .then_some(selected as usize)
-                        .and_then(|index| page_control.spec.options.get(index))
-                        .map(|option| option.value.clone())
-                        .unwrap_or_else(|| page_control.spec.value.clone());
-                    fields.push((page_control.spec.name.clone(), value));
-                }
-                ControlKind::Submit if page_control.spec.node_id == spec.node_id => {
-                    fields.push((
-                        page_control.spec.name.clone(),
-                        page_control.spec.value.clone(),
-                    ));
-                }
-                _ => {}
-            }
-        }
-        let query = fields
-            .iter()
-            .map(|(name, value)| {
-                format!(
-                    "{}={}",
-                    encode_www_form_component(name),
-                    encode_www_form_component(value)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("&");
-        let separator = if form.action.contains('?') { '&' } else { '?' };
-        let target = if query.is_empty() {
-            form.action
-        } else {
-            format!("{}{separator}{query}", form.action)
-        };
-        self.begin_navigation(target, HistoryMode::Push);
     }
 }

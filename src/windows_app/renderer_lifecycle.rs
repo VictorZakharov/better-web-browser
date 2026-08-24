@@ -258,10 +258,40 @@ impl BrowserState {
         }
     }
 
+    pub(super) unsafe fn terminate_renderer_for(&mut self, id: TabId) {
+        let result = self
+            .tabs
+            .get_mut(id)
+            .and_then(|tab| {
+                tab.renderer_work_pending = true;
+                tab.renderer_session.as_ref()
+            })
+            .ok_or_else(|| "renderer is not running".to_string())
+            .and_then(RendererSession::terminate);
+        match result {
+            Ok(()) => {
+                if self.tabs.active_id() == id {
+                    self.set_status("Terminating the selected renderer process …");
+                }
+                self.ensure_renderer_monitoring();
+            }
+            Err(error) => {
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.renderer_work_pending = false;
+                }
+                self.set_status(&format!("Could not terminate renderer: {error}"));
+            }
+        }
+    }
+
     fn renderer_monitor_interval(&self) -> u32 {
         if self.benchmark.is_some()
             || self.tabs.iter().any(|tab| {
-                tab.loading || tab.renderer_work_pending || tab.renderer_next_timer.is_some()
+                tab.loading
+                    || tab.renderer_work_pending
+                    || tab.renderer_input_poll_budget > 0
+                    || tab.pending_renderer_scroll.is_some()
+                    || tab.renderer_next_timer.is_some()
             })
         {
             ACTIVE_RENDERER_MONITOR_INTERVAL_MS

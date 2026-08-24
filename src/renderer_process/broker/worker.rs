@@ -11,9 +11,10 @@ use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, CookieStateSnapshot, DocumentId, DocumentStart, DocumentState, FrameWriter,
-    PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation,
-    RestrictionReport, TestCommand, TransferAssembler,
+    BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
+    FrameWriter, PresentationAcknowledgement, PresentedViewport, ProtocolError,
+    RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport, TestCommand,
+    TransferAssembler,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::HashMap;
@@ -50,6 +51,8 @@ pub(super) enum BrokerCommand {
         document: DocumentId,
         viewport: PresentedViewport,
     },
+    Input(DocumentInput),
+    PresentationAcknowledged(PresentationAcknowledgement),
     CancelDocument(DocumentId),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
@@ -314,7 +317,10 @@ impl Broker {
         } else {
             RendererExitReason::Crash
         };
-        let reason = self.exit_reason.clone().unwrap_or(default_reason);
+        let requested_reason = resources.shared.lock().unwrap().exit_reason.clone();
+        let reason = requested_reason
+            .or_else(|| self.exit_reason.clone())
+            .unwrap_or(default_reason);
         let uptime = resources.shared.lock().unwrap().started.elapsed();
         let exit = RendererExit {
             process_id: resources.shared.lock().unwrap().process_id,

@@ -5,7 +5,7 @@ mod input;
 use super::tabs::{KeyModifiers, TabId, TabStripHit};
 use super::*;
 use input::reroute_tab_message;
-pub(super) use input::{chrome_control_proc, dispatch_browser_input};
+pub(super) use input::{chrome_control_proc, dispatch_browser_input, page_control_proc};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub(super) unsafe extern "system" fn main_window_proc(
@@ -185,6 +185,12 @@ unsafe fn dispatch_window_message(
             InvalidateRect(window, &toolbar, 0);
             0
         }
+        WM_APP_PAGE_CONTROL_FOCUS => {
+            if !state.suppress_page_control_focus {
+                state.route_page_control_focus(wparam, lparam != 0);
+            }
+            0
+        }
         WM_APP_PAGE_LOADED => {
             if let Some(id) = TabId::from_message(wparam) {
                 if reroute_tab_message(state, id, message, wparam, lparam) {
@@ -231,6 +237,12 @@ unsafe fn dispatch_window_message(
             state.task_window = null_mut();
             0
         }
+        WM_APP_TASK_TERMINATE_RENDERER => {
+            if let Some(id) = TabId::from_message(wparam) {
+                state.terminate_renderer_for(id);
+            }
+            0
+        }
         WM_APP_TAB_SEARCH_CLOSED => {
             state.tab_search_window = null_mut();
             state.tab_search_edit = null_mut();
@@ -260,7 +272,15 @@ unsafe fn dispatch_window_message(
                 y: ((lparam >> 16) as u16) as i16 as i32,
             };
             state.update_tab_hover(point);
-            if state.update_tab_pointer(point) {
+            if state.update_tab_pointer(point)
+                || state.route_content_pointer(
+                    point.x,
+                    point.y,
+                    better_web_browser::renderer_protocol::PointerPhase::Move,
+                    better_web_browser::renderer_protocol::PointerButton::None,
+                    wparam,
+                )
+            {
                 0
             } else {
                 DefWindowProcW(window, message, wparam, lparam)
@@ -277,6 +297,35 @@ unsafe fn dispatch_window_message(
                 alt: GetKeyState(VK_MENU) < 0,
             };
             if state.begin_tab_pointer(point, modifiers) {
+                0
+            } else if state.route_content_pointer(
+                point.x,
+                point.y,
+                better_web_browser::renderer_protocol::PointerPhase::Down,
+                better_web_browser::renderer_protocol::PointerButton::Primary,
+                wparam,
+            ) {
+                SetFocus(window);
+                0
+            } else {
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+        }
+        WM_MBUTTONDOWN | WM_RBUTTONDOWN => {
+            let x = (lparam as u16) as i16 as i32;
+            let y = ((lparam >> 16) as u16) as i16 as i32;
+            let button = if message == WM_MBUTTONDOWN {
+                better_web_browser::renderer_protocol::PointerButton::Middle
+            } else {
+                better_web_browser::renderer_protocol::PointerButton::Secondary
+            };
+            if state.route_content_pointer(
+                x,
+                y,
+                better_web_browser::renderer_protocol::PointerPhase::Down,
+                button,
+                wparam,
+            ) {
                 0
             } else {
                 DefWindowProcW(window, message, wparam, lparam)
@@ -295,7 +344,15 @@ unsafe fn dispatch_window_message(
             if state.finish_tab_pointer(Point { x, y }) {
                 return 0;
             }
-            if !state.handle_tab_strip_click(x, y) {
+            if !state.handle_tab_strip_click(x, y)
+                && !state.route_content_pointer(
+                    x,
+                    y,
+                    better_web_browser::renderer_protocol::PointerPhase::Up,
+                    better_web_browser::renderer_protocol::PointerButton::Primary,
+                    wparam,
+                )
+            {
                 state.click_content(x, y, wparam & MK_CONTROL != 0);
             }
             0
@@ -313,9 +370,34 @@ unsafe fn dispatch_window_message(
                 Some(TabStripHit::Activate(id) | TabStripHit::Close(id)) => state.close_tab(id),
                 Some(TabStripHit::NewTab) => state.new_tab(),
                 Some(TabStripHit::SearchTabs) => state.toggle_tab_search(),
-                None => state.click_content(x, y, true),
+                None => {
+                    if !state.route_content_pointer(
+                        x,
+                        y,
+                        better_web_browser::renderer_protocol::PointerPhase::Up,
+                        better_web_browser::renderer_protocol::PointerButton::Middle,
+                        wparam,
+                    ) {
+                        state.click_content(x, y, true);
+                    }
+                }
             }
             0
+        }
+        WM_RBUTTONUP => {
+            let x = (lparam as u16) as i16 as i32;
+            let y = ((lparam >> 16) as u16) as i16 as i32;
+            if state.route_content_pointer(
+                x,
+                y,
+                better_web_browser::renderer_protocol::PointerPhase::Up,
+                better_web_browser::renderer_protocol::PointerButton::Secondary,
+                wparam,
+            ) {
+                0
+            } else {
+                DefWindowProcW(window, message, wparam, lparam)
+            }
         }
         WM_CLOSE => {
             DestroyWindow(window);
