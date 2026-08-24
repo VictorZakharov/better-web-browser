@@ -206,6 +206,21 @@ impl BrowserState {
             return;
         }
 
+        let accessibility_update = match self.accessibility_document.apply(
+            presentation.document,
+            presentation.revision,
+            presentation.accessibility.clone(),
+        ) {
+            Ok(update) => update,
+            Err(error) => {
+                self.contain_page_engine_failure(
+                    self.id,
+                    format!("renderer accessibility tree was rejected: {error}"),
+                );
+                return;
+            }
+        };
+
         let presentation_install_started = Instant::now();
         let previous_layout = std::mem::take(&mut self.page_layout);
         self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
@@ -288,6 +303,7 @@ impl BrowserState {
         ));
 
         if !self.processing_background_tab {
+            self.refresh_accessibility_document(&accessibility_update);
             let paint_started = Instant::now();
             InvalidateRect(self.window, null(), 0);
             UpdateWindow(self.window);

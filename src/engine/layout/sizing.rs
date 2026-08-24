@@ -14,6 +14,7 @@ pub(super) fn collect_text_atoms(
     text: &str,
     style: &ComputedStyle,
     link: Option<(String, NodeId)>,
+    source_node: NodeId,
     output: &mut Vec<InlineAtom>,
     pending_space: &mut bool,
 ) {
@@ -23,7 +24,12 @@ pub(super) fn collect_text_atoms(
                 output.push(InlineAtom::Break);
             }
             if !line.is_empty() {
-                output.push(text_atom(line.to_string(), style, link.clone()));
+                output.push(text_atom(
+                    line.to_string(),
+                    style,
+                    link.clone(),
+                    Some(source_node),
+                ));
             }
         }
         return;
@@ -38,7 +44,7 @@ pub(super) fn collect_text_atoms(
                 if saw_space {
                     word.insert(0, ' ');
                 }
-                output.push(text_atom(word, style, link.clone()));
+                output.push(text_atom(word, style, link.clone(), Some(source_node)));
             }
             saw_space = true;
         } else if word_start.is_none() {
@@ -50,7 +56,7 @@ pub(super) fn collect_text_atoms(
         if saw_space {
             word.insert(0, ' ');
         }
-        output.push(text_atom(word, style, link));
+        output.push(text_atom(word, style, link, Some(source_node)));
         *pending_space = false;
     } else {
         *pending_space = saw_space;
@@ -64,17 +70,18 @@ pub(super) fn text_atom(
     text: String,
     style: &ComputedStyle,
     link: Option<(String, NodeId)>,
+    source_node: Option<NodeId>,
 ) -> InlineAtom {
-    let (link, node_id) = match link {
+    let (link, interaction_node) = match link {
         Some((url, node_id)) => (Some(url), Some(node_id)),
-        None => (None, None),
+        None => (None, source_node),
     };
     InlineAtom::Text {
         text,
         font: FontSpec::from_style(style),
         color: style.color,
         link,
-        node_id,
+        node_id: interaction_node,
         line_height: style.line_height,
         no_wrap: style.white_space == WhiteSpace::NoWrap,
     }

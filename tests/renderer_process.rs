@@ -1,5 +1,7 @@
 #![cfg(target_os = "windows")]
 
+#[path = "renderer_process/accessibility.rs"]
+mod accessibility;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/presentation.rs"]

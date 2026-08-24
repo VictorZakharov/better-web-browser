@@ -9,7 +9,7 @@ pub use diagnostics::{
     NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, StyleDiagnostics,
 };
 
-use super::{DocumentId, ProtocolError};
+use super::{AccessibilityUpdate, DocumentId, ProtocolError};
 use crate::document::Document;
 use crate::engine::css::Color;
 use crate::engine::{DecodedImage, DisplayItem, FormSpec, LayoutOutput};
@@ -124,6 +124,7 @@ pub struct RendererPresentation {
     pub style: StyleReport,
     pub load: PageLoadReport,
     pub page_diagnostics: PageDiagnostics,
+    pub accessibility: AccessibilityUpdate,
     pub next_timer_micros: Option<u64>,
 }
 
@@ -142,9 +143,11 @@ mod tests {
     use super::*;
     use crate::document::Document;
     use crate::engine::{FontSpec, PositionedGlyph, RectF};
+    use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};
 
     fn sample() -> RendererPresentation {
         let url = "https://example.test/".to_string();
+        let accessibility_root = DocumentNodeId::new((1_u128 << 64) | 1).unwrap();
         RendererPresentation {
             document: DocumentId::new(1).unwrap(),
             revision: 1,
@@ -223,6 +226,32 @@ mod tests {
                     ..SelectorDiagnostics::default()
                 }],
             },
+            accessibility: AccessibilityUpdate {
+                full: true,
+                root: accessibility_root,
+                focus: accessibility_root,
+                nodes: vec![SemanticNode {
+                    id: accessibility_root,
+                    role: SemanticRole::RootWebArea,
+                    name: "glyphs".into(),
+                    value: String::new(),
+                    description: String::new(),
+                    bounds: RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 100.0,
+                        height: 100.0,
+                    },
+                    children: Vec::new(),
+                    level: None,
+                    disabled: false,
+                    read_only: false,
+                    actions: SemanticActions::default(),
+                    selection: None,
+                }],
+                added: Vec::new(),
+                removed: Vec::new(),
+            },
             next_timer_micros: None,
         }
     }
@@ -252,6 +281,35 @@ mod tests {
         assert_eq!(decoded.load.presentation_encode_micros, 15);
         assert_eq!(decoded.load.presentation_decode_micros, 16);
         assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
+        assert_eq!(decoded.accessibility, sample().accessibility);
+    }
+
+    #[test]
+    fn invalid_accessibility_semantics_fail_closed() {
+        let mut presentation = sample();
+        presentation
+            .accessibility
+            .nodes
+            .push(presentation.accessibility.nodes[0].clone());
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("accessibility node"))
+        ));
+
+        presentation.accessibility.nodes.truncate(1);
+        presentation.accessibility.nodes[0].bounds.width = f32::INFINITY;
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("accessibility bounds"))
+        ));
+
+        let mut presentation = sample();
+        presentation.accessibility.nodes[0].name =
+            "x".repeat(crate::limits::MAX_ACCESSIBILITY_NODE_TEXT_BYTES + 1);
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("accessibility node text"))
+        ));
     }
 
     #[test]

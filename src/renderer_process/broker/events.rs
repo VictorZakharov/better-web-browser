@@ -40,7 +40,7 @@ pub(super) struct EventSender {
 }
 
 impl EventSender {
-    pub(super) fn try_send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+    pub(super) fn try_send(&self, mut event: RendererEvent) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
             .state
@@ -52,10 +52,22 @@ impl EventSender {
             ));
         }
 
-        if matches!(&event, RendererEvent::Presentation(_)) {
-            // Presentations are immutable state snapshots, so a browser that falls behind only
-            // needs the newest one. Append the replacement after any intervening transactional
-            // events; the renderer protocol permits acknowledging a later revision directly.
+        if let RendererEvent::Presentation(next) = &mut event {
+            // Layout and paint data are immutable snapshots. Accessibility is incremental, so fold
+            // the queued update into its replacement before dropping the older presentation.
+            if let Some(previous) = state.events.iter().find_map(|queued| match queued {
+                RendererEvent::Presentation(previous)
+                    if previous.document == next.document && previous.revision < next.revision =>
+                {
+                    Some(previous)
+                }
+                _ => None,
+            }) {
+                next.accessibility = previous
+                    .accessibility
+                    .clone()
+                    .coalesce(next.accessibility.clone())?;
+            }
             state
                 .events
                 .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
@@ -168,11 +180,18 @@ mod tests {
     use super::*;
     use crate::document::Document;
     use crate::renderer_protocol::{
-        DocumentId, PageLoadReport, PresentedLayout, RendererPresentation, RuntimeReport,
-        StyleReport,
+        AccessibilityUpdate, DocumentId, DocumentNodeId, PageLoadReport, PresentedLayout,
+        RendererPresentation, RuntimeReport, StyleReport,
     };
 
     fn presentation(revision: u64) -> RendererEvent {
+        let root = DocumentNodeId::new((1_u128 << 64) | 1).unwrap();
+        let mut accessibility =
+            AccessibilityUpdate::full_root(root, "revision 1", crate::engine::RectF::default());
+        if revision > 1 {
+            accessibility.full = false;
+            accessibility.nodes[0].name = format!("revision {revision}");
+        }
         RendererEvent::Presentation(Box::new(RendererPresentation {
             document: DocumentId::new(1).unwrap(),
             revision,
@@ -194,6 +213,7 @@ mod tests {
             style: StyleReport::default(),
             load: PageLoadReport::default(),
             page_diagnostics: Default::default(),
+            accessibility,
             next_timer_micros: None,
         }))
     }
@@ -215,10 +235,12 @@ mod tests {
             receiver.try_recv().unwrap(),
             RendererEvent::Diagnostic { code: 7, .. }
         ));
-        assert!(matches!(
-            receiver.try_recv().unwrap(),
-            RendererEvent::Presentation(presentation) if presentation.revision == 3
-        ));
+        let RendererEvent::Presentation(presentation) = receiver.try_recv().unwrap() else {
+            panic!("newest presentation was not retained");
+        };
+        assert_eq!(presentation.revision, 3);
+        assert!(presentation.accessibility.full);
+        assert_eq!(presentation.accessibility.nodes[0].name, "revision 3");
         assert!(matches!(
             receiver.try_recv(),
             Err(mpsc::TryRecvError::Empty)

@@ -22,6 +22,8 @@ time = { version = "0.3.55", default-features = false, features = ["std"] }
 url = "2.5.8"
 
 [target.'cfg(windows)'.dependencies]
+accesskit = "0.24.1"
+accesskit_windows = "0.34.0"
 fontique = { version = "0.11.1", default-features = false, features = ["system"] }
 harfrust = "0.5.2"
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }

@@ -68,7 +68,15 @@ unsafe fn dispatch_window_message(
             if state.create_controls().is_err() {
                 return -1;
             }
+            state.initialize_accessibility();
             0
+        }
+        WM_GETOBJECT => state
+            .handle_accessibility_getobject(wparam, lparam)
+            .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam)),
+        WM_ACTIVATE => {
+            state.update_accessibility_window_focus(wparam & 0xffff != 0);
+            DefWindowProcW(window, message, wparam, lparam)
         }
         WM_GETMINMAXINFO => {
             let info = &mut *(lparam as *mut MinMaxInfo);
@@ -83,6 +91,7 @@ unsafe fn dispatch_window_message(
             state.mark_all_tab_layouts_dirty();
             state.resize_controls();
             state.rebuild_layout();
+            state.refresh_accessibility_full();
             InvalidateRect(window, null(), 0);
             0
         }
@@ -103,6 +112,7 @@ unsafe fn dispatch_window_message(
             }
             state.resize_controls();
             state.rebuild_layout();
+            state.refresh_accessibility_full();
             InvalidateRect(window, null(), 0);
             0
         }
@@ -183,11 +193,17 @@ unsafe fn dispatch_window_message(
                 bottom: state.toolbar_height(),
             };
             InvalidateRect(window, &toolbar, 0);
+            state.refresh_accessibility_chrome();
+            0
+        }
+        WM_APP_ACCESSIBILITY_ACTION => {
+            state.dispatch_accessibility_actions();
             0
         }
         WM_APP_PAGE_CONTROL_FOCUS => {
             if !state.suppress_page_control_focus {
                 state.route_page_control_focus(wparam, lparam != 0);
+                state.refresh_accessibility_chrome();
             }
             0
         }

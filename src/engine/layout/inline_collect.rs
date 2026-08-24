@@ -18,7 +18,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         match &node.data {
             NodeData::Text(text) => {
-                collect_text_atoms(&text.borrow(), style, inherited_link, output, pending_space);
+                collect_text_atoms(
+                    &text.borrow(),
+                    style,
+                    inherited_link,
+                    node.id(),
+                    output,
+                    pending_space,
+                );
             }
             NodeData::Element(_) => {
                 let tag = node.tag_name().unwrap_or_default();
@@ -51,7 +58,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             || style.mask_image.is_some()
                         {
                             if *pending_space {
-                                output.push(text_atom(" ".into(), style, link.clone()));
+                                output.push(text_atom(" ".into(), style, link.clone(), None));
                                 *pending_space = false;
                             }
                             let mut children = Vec::new();

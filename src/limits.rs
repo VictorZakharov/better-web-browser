@@ -84,6 +84,13 @@ pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;
 /// Maximum normalized native-control text carried in one browser-to-renderer input event.
 pub const MAX_RENDERER_TEXT_INPUT_BYTES: usize = 64 * 1024;
+/// Maximum semantic nodes retained for one active renderer document.
+pub const MAX_ACCESSIBILITY_NODES: usize = MAX_DOM_NODES;
+/// A valid tree has one incoming edge per non-root node; this spare factor admits deltas while
+/// preventing a compromised renderer from constructing a dense graph in the browser.
+pub const MAX_ACCESSIBILITY_EDGES: usize = MAX_ACCESSIBILITY_NODES * 2;
+pub const MAX_ACCESSIBILITY_NODE_TEXT_BYTES: usize = 64 * 1024;
+pub const MAX_ACCESSIBILITY_TOTAL_TEXT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_PAGE_DIAGNOSTIC_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTORS: usize = 32;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES: usize = 4 * 1024;

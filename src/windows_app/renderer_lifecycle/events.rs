@@ -145,6 +145,7 @@ impl BrowserState {
                 && let Some(status) = status
             {
                 self.set_status(&status);
+                self.refresh_accessibility_full();
             }
         }
     }

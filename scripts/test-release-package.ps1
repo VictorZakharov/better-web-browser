@@ -40,9 +40,17 @@ try {
     $packageRoot = Join-Path $extractRoot $packageName
     $browser = Join-Path $packageRoot 'better-web-browser.exe'
     $manifestPath = Join-Path $packageRoot 'artifact-manifest.json'
-    foreach ($required in @($browser, $manifestPath, (Join-Path $packageRoot 'LICENSE.txt'), (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md'), (Join-Path $packageRoot 'TECHNICAL_ALPHA.md'), (Join-Path $packageRoot 'VERSION.txt'))) {
+    foreach ($required in @($browser, $manifestPath, (Join-Path $packageRoot 'LICENSE.txt'), (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md'), (Join-Path $packageRoot 'TECHNICAL_ALPHA.md'), (Join-Path $packageRoot 'accessibility.md'), (Join-Path $packageRoot 'VERSION.txt'))) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Release archive is missing $required." }
     }
+    $accessKitDirectories = @(Get-ChildItem -LiteralPath (Join-Path $packageRoot 'licenses') -Directory | Where-Object Name -like 'accesskit*')
+    if ($accessKitDirectories.Count -eq 0) { throw 'Release archive has no AccessKit package notices.' }
+    foreach ($directory in $accessKitDirectories) {
+        if (-not (Test-Path -LiteralPath (Join-Path $directory.FullName 'LICENSE.chromium') -PathType Leaf)) {
+            throw "Release archive is missing the Chromium notice for $($directory.Name)."
+        }
+    }
+
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.package_version -ne $Version -or $manifest.commit -ne $Commit.ToLowerInvariant() -or $manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.signed) {
         throw 'Artifact manifest version, commit, target, or signing status is invalid.'
