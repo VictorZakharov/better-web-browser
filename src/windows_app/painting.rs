@@ -224,14 +224,12 @@ impl BrowserState {
                                     scale,
                                     dc,
                                 ) {
-                                    let run_rect = better_web_browser::engine::RectF {
-                                        x: rect.x + run.offset_x,
-                                        y: rect.y + run.offset_y,
-                                        width: run.width,
-                                        height: run.height,
-                                    };
-                                    let destination =
-                                        screen_rect(run_rect, tab.scroll_y, toolbar_height, scale);
+                                    let destination = run.destination_rect(
+                                        *rect,
+                                        tab.scroll_y,
+                                        toolbar_height,
+                                        scale,
+                                    );
                                     if intersects(&destination, &content) {
                                         if glyph_source_dc.is_null() {
                                             paint_alpha_bitmap_size(
