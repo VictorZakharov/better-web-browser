@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 impl BrowserState {
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
-        self.flush_renderer_scroll_for(id);
+        self.flush_renderer_inputs_for(id);
         if let Some(tab) = self.tabs.get_mut(id) {
             tab.renderer_input_poll_budget = tab.renderer_input_poll_budget.saturating_sub(1);
         }

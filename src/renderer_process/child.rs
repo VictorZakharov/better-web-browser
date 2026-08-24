@@ -120,6 +120,11 @@ pub(super) fn handle_test(
         TestCommand::Hang => loop {
             std::thread::sleep(Duration::from_secs(60));
         },
+        TestCommand::DelayCommandRead { millis } => {
+            std::thread::sleep(Duration::from_millis(u64::from(millis)));
+            Ok(())
+        }
+        TestCommand::Padding { .. } => Ok(()),
         TestCommand::WriteMalformedFrame => {
             writer
                 .inner_mut()

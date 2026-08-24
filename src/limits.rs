@@ -75,6 +75,10 @@ pub const MAX_RENDERER_FETCH_HEADERS: usize = 256;
 pub const MAX_FETCH_HEADER_NAME_BYTES: usize = 1024;
 pub const MAX_FETCH_HEADER_VALUE_BYTES: usize = 16 * 1024;
 pub const MAX_QUEUED_BROWSER_COMMANDS: usize = 8;
+/// Valid native input retained per tab while the renderer command pipe applies backpressure.
+/// This is deliberately no larger than the broker command channel so a stalled renderer cannot
+/// make browser-owned memory grow with the rate of Windows input messages.
+pub const MAX_PENDING_RENDERER_INPUTS: usize = MAX_QUEUED_BROWSER_COMMANDS;
 pub const MAX_QUEUED_RENDERER_IPC_MESSAGES: usize = 8;
 pub const MAX_QUEUED_RENDERER_EVENTS: usize = 256;
 pub const MAX_QUEUED_RENDERER_FETCH_BATCHES: usize = 1;

@@ -290,7 +290,7 @@ impl BrowserState {
                 tab.loading
                     || tab.renderer_work_pending
                     || tab.renderer_input_poll_budget > 0
-                    || tab.pending_renderer_scroll.is_some()
+                    || !tab.pending_renderer_inputs.is_empty()
                     || tab.renderer_next_timer.is_some()
             })
         {

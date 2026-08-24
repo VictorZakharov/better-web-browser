@@ -161,6 +161,8 @@ pub enum TestCommand {
     OutOfMemory,
     StackOverflow,
     Hang,
+    DelayCommandRead { millis: u16 },
+    Padding { bytes: u16 },
     WriteMalformedFrame,
     ProbeRestrictions { loopback_port: u16 },
 }

@@ -138,7 +138,7 @@ impl BrowserState {
                 self.renderer_document = Some(document);
                 self.renderer_input_sequence = 0;
                 self.renderer_input_poll_budget = 0;
-                self.pending_renderer_scroll = None;
+                self.pending_renderer_inputs.clear();
                 self.renderer_revision = 0;
                 self.renderer_load_metrics = Some(metrics);
                 self.renderer_next_timer = None;

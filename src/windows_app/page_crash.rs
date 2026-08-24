@@ -15,9 +15,8 @@ pub(super) fn panic_detail(payload: Box<dyn Any + Send>) -> String {
 
 impl BrowserState {
     pub(super) unsafe fn contain_page_engine_failure(&mut self, id: TabId, detail: String) {
-        let status = format!(
-            "Page engine stopped after an internal error: {detail}. Reload to try again; other tabs are unaffected."
-        );
+        let status =
+            format!("Page engine stopped after an internal error: {detail}. Reload to try again.");
         if let Some(tab) = self.tabs.get_mut(id) {
             tab.mark_crashed(status.clone());
         }

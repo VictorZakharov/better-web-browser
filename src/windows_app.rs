@@ -23,6 +23,7 @@ mod profile;
 mod reader_layout;
 mod renderer_fetch;
 mod renderer_input;
+mod renderer_input_queue;
 mod renderer_lifecycle;
 mod rendering_resources;
 mod runtime;

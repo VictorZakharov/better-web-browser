@@ -36,6 +36,8 @@ fn browser_messages_round_trip() {
         BrowserMessage::Test(TestCommand::OutOfMemory),
         BrowserMessage::Test(TestCommand::StackOverflow),
         BrowserMessage::Test(TestCommand::Hang),
+        BrowserMessage::Test(TestCommand::DelayCommandRead { millis: 250 }),
+        BrowserMessage::Test(TestCommand::Padding { bytes: 32 }),
         BrowserMessage::Test(TestCommand::WriteMalformedFrame),
         BrowserMessage::Test(TestCommand::ProbeRestrictions {
             loopback_port: 8080,
