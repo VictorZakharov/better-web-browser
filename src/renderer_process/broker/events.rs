@@ -1,68 +1,104 @@
 //! Bounded renderer-to-browser event delivery.
 
 use super::RendererEvent;
-use crate::limits::{
-    MAX_QUEUED_RENDERER_EVENTS, MAX_QUEUED_RENDERER_FETCH_BATCHES,
-    MAX_QUEUED_RENDERER_PRESENTATIONS,
-};
+use crate::limits::{MAX_QUEUED_RENDERER_EVENTS, MAX_QUEUED_RENDERER_FETCH_BATCHES};
 use crate::renderer_protocol::ProtocolError;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use std::collections::VecDeque;
+use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::time::{Duration, Instant};
 
 pub(super) fn bounded() -> (EventSender, EventReceiver) {
-    let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_RENDERER_EVENTS);
-    let budget = Arc::new(EventBudget::default());
+    let queue = Arc::new(EventQueue {
+        state: Mutex::new(QueueState {
+            events: VecDeque::new(),
+            sender_open: true,
+            receiver_open: true,
+        }),
+        available: Condvar::new(),
+    });
     (
         EventSender {
-            sender,
-            budget: Arc::clone(&budget),
+            queue: Arc::clone(&queue),
         },
-        EventReceiver { receiver, budget },
+        EventReceiver { queue },
     )
 }
 
+struct EventQueue {
+    state: Mutex<QueueState>,
+    available: Condvar,
+}
+
+struct QueueState {
+    events: VecDeque<RendererEvent>,
+    sender_open: bool,
+    receiver_open: bool,
+}
+
 pub(super) struct EventSender {
-    sender: mpsc::SyncSender<RendererEvent>,
-    budget: Arc<EventBudget>,
+    queue: Arc<EventQueue>,
 }
 
 impl EventSender {
     pub(super) fn try_send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
-        let presentation = matches!(&event, RendererEvent::Presentation(_));
-        if presentation && !self.budget.try_reserve_presentation() {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !state.receiver_open {
             return Err(ProtocolError::InvalidPayload(
-                "browser presentation-event queue exhausted",
+                "browser renderer-event receiver closed",
             ));
         }
-        let fetch_batch = matches!(&event, RendererEvent::FetchBatch(_));
-        if fetch_batch && !self.budget.try_reserve_fetch_batch() {
+
+        if matches!(&event, RendererEvent::Presentation(_)) {
+            // Presentations are immutable state snapshots, so a browser that falls behind only
+            // needs the newest one. Append the replacement after any intervening transactional
+            // events; the renderer protocol permits acknowledging a later revision directly.
+            state
+                .events
+                .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
+        } else if matches!(&event, RendererEvent::FetchBatch(_))
+            && state
+                .events
+                .iter()
+                .filter(|queued| matches!(queued, RendererEvent::FetchBatch(_)))
+                .count()
+                >= MAX_QUEUED_RENDERER_FETCH_BATCHES
+        {
             return Err(ProtocolError::InvalidPayload(
                 "browser Fetch-batch event queue exhausted",
             ));
         }
-        self.sender.try_send(event).map_err(|error| {
-            if presentation {
-                self.budget.release_presentation();
-            }
-            if fetch_batch {
-                self.budget.release_fetch_batch();
-            }
-            match error {
-                mpsc::TrySendError::Full(_) => {
-                    ProtocolError::InvalidPayload("browser renderer-event queue exhausted")
-                }
-                mpsc::TrySendError::Disconnected(_) => {
-                    ProtocolError::InvalidPayload("browser renderer-event receiver closed")
-                }
-            }
-        })
+
+        if state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
+            return Err(ProtocolError::InvalidPayload(
+                "browser renderer-event queue exhausted",
+            ));
+        }
+        state.events.push_back(event);
+        drop(state);
+        self.queue.available.notify_one();
+        Ok(())
+    }
+}
+
+impl Drop for EventSender {
+    fn drop(&mut self) {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.sender_open = false;
+        drop(state);
+        self.queue.available.notify_all();
     }
 }
 
 pub(super) struct EventReceiver {
-    receiver: mpsc::Receiver<RendererEvent>,
-    budget: Arc<EventBudget>,
+    queue: Arc<EventQueue>,
 }
 
 impl EventReceiver {
@@ -70,80 +106,143 @@ impl EventReceiver {
         &self,
         timeout: Duration,
     ) -> Result<RendererEvent, mpsc::RecvTimeoutError> {
-        self.receiver
-            .recv_timeout(timeout)
-            .inspect(|event| self.release(event))
+        let started = Instant::now();
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        loop {
+            if let Some(event) = state.events.pop_front() {
+                return Ok(event);
+            }
+            if !state.sender_open {
+                return Err(mpsc::RecvTimeoutError::Disconnected);
+            }
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(mpsc::RecvTimeoutError::Timeout);
+            }
+            let (next, wait) = self
+                .queue
+                .available
+                .wait_timeout(state, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state = next;
+            if wait.timed_out() && state.events.is_empty() {
+                return Err(mpsc::RecvTimeoutError::Timeout);
+            }
+        }
     }
 
     pub(super) fn try_recv(&self) -> Result<RendererEvent, mpsc::TryRecvError> {
-        self.receiver
-            .try_recv()
-            .inspect(|event| self.release(event))
-    }
-
-    fn release(&self, event: &RendererEvent) {
-        if matches!(event, RendererEvent::Presentation(_)) {
-            self.budget.release_presentation();
-        }
-        if matches!(event, RendererEvent::FetchBatch(_)) {
-            self.budget.release_fetch_batch();
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match state.events.pop_front() {
+            Some(event) => Ok(event),
+            None if state.sender_open => Err(mpsc::TryRecvError::Empty),
+            None => Err(mpsc::TryRecvError::Disconnected),
         }
     }
 }
 
-#[derive(Default)]
-struct EventBudget {
-    queued_presentations: AtomicUsize,
-    queued_fetch_batches: AtomicUsize,
-}
-
-impl EventBudget {
-    fn try_reserve_presentation(&self) -> bool {
-        self.queued_presentations
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
-                (queued < MAX_QUEUED_RENDERER_PRESENTATIONS).then_some(queued + 1)
-            })
-            .is_ok()
-    }
-
-    fn release_presentation(&self) {
-        let previous = self.queued_presentations.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(previous > 0);
-    }
-
-    fn try_reserve_fetch_batch(&self) -> bool {
-        self.queued_fetch_batches
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
-                (queued < MAX_QUEUED_RENDERER_FETCH_BATCHES).then_some(queued + 1)
-            })
-            .is_ok()
-    }
-
-    fn release_fetch_batch(&self) {
-        let previous = self.queued_fetch_batches.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(previous > 0);
+impl Drop for EventReceiver {
+    fn drop(&mut self) {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.receiver_open = false;
+        state.events.clear();
+        drop(state);
+        self.queue.available.notify_all();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::Document;
+    use crate::renderer_protocol::{
+        DocumentId, PageLoadReport, PresentedLayout, RendererPresentation, RuntimeReport,
+        StyleReport,
+    };
+
+    fn presentation(revision: u64) -> RendererEvent {
+        RendererEvent::Presentation(Box::new(RendererPresentation {
+            document: DocumentId::new(1).unwrap(),
+            revision,
+            title: String::new(),
+            final_url: "https://example.test/".into(),
+            status: 200,
+            character_set: "utf-8".into(),
+            reader: Document {
+                title: String::new(),
+                source_url: "https://example.test/".into(),
+                blocks: Vec::new(),
+                truncated: false,
+            },
+            layout: PresentedLayout::default(),
+            images: Vec::new(),
+            glyph_epoch: 0,
+            glyphs: Vec::new(),
+            runtime: RuntimeReport::default(),
+            style: StyleReport::default(),
+            load: PageLoadReport::default(),
+            page_diagnostics: Default::default(),
+            next_timer_micros: None,
+        }))
+    }
 
     #[test]
-    fn large_payload_budgets_are_released_for_reuse() {
-        let budget = EventBudget::default();
-        for _ in 0..MAX_QUEUED_RENDERER_PRESENTATIONS {
-            assert!(budget.try_reserve_presentation());
-        }
-        assert!(!budget.try_reserve_presentation());
-        budget.release_presentation();
-        assert!(budget.try_reserve_presentation());
+    fn presentation_bursts_keep_only_the_newest_snapshot() {
+        let (sender, receiver) = bounded();
+        sender.try_send(presentation(1)).unwrap();
+        sender
+            .try_send(RendererEvent::Diagnostic {
+                code: 7,
+                text: "between revisions".into(),
+            })
+            .unwrap();
+        sender.try_send(presentation(2)).unwrap();
+        sender.try_send(presentation(3)).unwrap();
 
-        for _ in 0..MAX_QUEUED_RENDERER_FETCH_BATCHES {
-            assert!(budget.try_reserve_fetch_batch());
-        }
-        assert!(!budget.try_reserve_fetch_batch());
-        budget.release_fetch_batch();
-        assert!(budget.try_reserve_fetch_batch());
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            RendererEvent::Diagnostic { code: 7, .. }
+        ));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            RendererEvent::Presentation(presentation) if presentation.revision == 3
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn transactional_fetch_batches_remain_bounded_and_reusable() {
+        let (sender, receiver) = bounded();
+        sender
+            .try_send(RendererEvent::FetchBatch(Vec::new()))
+            .unwrap();
+        assert!(matches!(
+            sender.try_send(RendererEvent::FetchBatch(Vec::new())),
+            Err(ProtocolError::InvalidPayload(
+                "browser Fetch-batch event queue exhausted"
+            ))
+        ));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            RendererEvent::FetchBatch(batch) if batch.is_empty()
+        ));
+        sender
+            .try_send(RendererEvent::FetchBatch(Vec::new()))
+            .unwrap();
     }
 }
