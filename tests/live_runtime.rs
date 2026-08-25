@@ -10,6 +10,10 @@ mod support;
 use support::*;
 #[path = "live_runtime/network.rs"]
 mod network;
+#[path = "live_runtime/reload.rs"]
+mod reload;
+#[path = "live_runtime/window.rs"]
+mod window;
 const FIXTURE_HTML: &str = r#"<!doctype html>
 <title>runtime pending</title>
 <style>

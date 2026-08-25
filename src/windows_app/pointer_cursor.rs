@@ -44,6 +44,14 @@ impl BrowserState {
         SetCursor(LoadCursorW(null_mut(), int_resource(resource)));
     }
 
+    pub(super) unsafe fn apply_page_cursor_for_hit_test(&self, lparam: Lparam) -> bool {
+        if !uses_page_cursor((lparam as usize & 0xffff) as u16) {
+            return false;
+        }
+        self.apply_current_pointer_cursor();
+        true
+    }
+
     pub(super) unsafe fn track_pointer_leave(&self) {
         let mut tracking = TrackMouseEventData {
             size: size_of::<TrackMouseEventData>() as u32,
@@ -58,6 +66,10 @@ impl BrowserState {
         let toolbar = self.toolbar_height();
         point.x >= 0 && point.y >= toolbar && point.y <= toolbar + self.viewport_height()
     }
+}
+
+fn uses_page_cursor(hit_test: u16) -> bool {
+    hit_test == HTCLIENT
 }
 
 fn cursor_result_is_current(
@@ -128,5 +140,12 @@ mod tests {
             reader_cursor_at(&[item(Some("link".into()))], 200, 35),
             PointerCursor::Default
         );
+    }
+
+    #[test]
+    fn page_cursor_owns_only_the_client_area() {
+        assert!(uses_page_cursor(HTCLIENT));
+        assert!(!uses_page_cursor(2));
+        assert!(!uses_page_cursor(0));
     }
 }

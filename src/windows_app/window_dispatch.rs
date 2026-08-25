@@ -86,6 +86,7 @@ unsafe fn dispatch_window_message(
             };
             0
         }
+        WM_SETCURSOR if state.apply_page_cursor_for_hit_test(lparam) => 1,
         WM_SIZE => {
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();

@@ -111,6 +111,19 @@ impl BrowserState {
         self.start_renderer_for(self.tabs.active_id());
     }
 
+    pub(super) unsafe fn replace_renderer_for_reload(&mut self, id: TabId) {
+        let session = self.tabs.get_mut(id).and_then(|tab| {
+            tab.renderer_launch_receiver.take();
+            tab.renderer_launch_pending = false;
+            tab.renderer_work_pending = false;
+            tab.renderer_session.take()
+        });
+        if let Some(session) = session {
+            session.terminate_in_background();
+        }
+        self.start_renderer_for(id);
+    }
+
     pub(super) unsafe fn start_renderer_for(&mut self, id: TabId) {
         let title = {
             let Some(tab) = self.tabs.get_mut(id) else {

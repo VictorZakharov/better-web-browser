@@ -183,8 +183,11 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reload(&mut self) {
-        self.start_renderer();
         if let Some(url) = self.history.get(self.history_index).cloned() {
+            // The current renderer can be inside an uninterruptible script/layout task. Process
+            // identity is not observable page state, so replace it asynchronously instead of
+            // allowing old-document work to delay an explicit user reload.
+            self.replace_renderer_for_reload(self.tabs.active_id());
             self.begin_navigation(url, HistoryMode::Existing);
         }
     }
