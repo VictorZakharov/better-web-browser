@@ -1,4 +1,5 @@
 mod commands;
+mod deadlines;
 mod document;
 mod stream;
 
@@ -87,6 +88,7 @@ struct Broker {
     shutdown_reply: Option<mpsc::Sender<Result<RendererExit, String>>>,
     shutdown_deadline: Option<Instant>,
     shutdown_acknowledged: bool,
+    document_load_deadline: Option<(DocumentId, Instant)>,
     exit_reason: Option<RendererExitReason>,
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
@@ -108,6 +110,7 @@ impl Broker {
             shutdown_reply: None,
             shutdown_deadline: None,
             shutdown_acknowledged: false,
+            document_load_deadline: None,
             exit_reason: None,
             incoming_fetch: None,
             incoming_presentation: None,
@@ -230,66 +233,6 @@ impl Broker {
         }
     }
 
-    fn enforce_deadlines(&mut self) {
-        let now = Instant::now();
-        if self
-            .shutdown_deadline
-            .is_some_and(|deadline| now >= deadline)
-        {
-            self.exit_reason = Some(RendererExitReason::ShutdownTimeout);
-            self.terminate_job(73);
-            self.shutdown_deadline = None;
-        }
-        let unresponsive = now.saturating_duration_since(self.shared().last_pong)
-            >= self.resources().options.unresponsive_timeout;
-        if unresponsive && self.shared().state == RendererState::Running {
-            self.shared().state = RendererState::Unresponsive;
-            if let Err(error) = self.emit_event(RendererEvent::Unresponsive) {
-                self.protocol_failure(error.to_string());
-            }
-        }
-        let task_budget = self
-            .resources()
-            .options
-            .unresponsive_timeout
-            .saturating_add(self.resources().options.unresponsive_kill_timeout);
-        if now.saturating_duration_since(self.shared().last_pong) >= task_budget
-            && self.shared().state == RendererState::Unresponsive
-            && self.exit_reason.is_none()
-        {
-            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded);
-            self.terminate_job(74);
-        }
-    }
-
-    fn send_heartbeat(&mut self) {
-        if self.shutdown_deadline.is_some()
-            || self.last_heartbeat.elapsed() < self.resources().options.heartbeat_interval
-        {
-            return;
-        }
-        self.last_heartbeat = Instant::now();
-        self.send_ping(None);
-    }
-
-    fn send_ping(&mut self, reply: Option<mpsc::Sender<Result<(), String>>>) {
-        let token = self.next_ping;
-        self.next_ping = self.next_ping.checked_add(1).unwrap_or(1);
-        match self.writer().send_browser(&BrowserMessage::Ping(token)) {
-            Ok(()) => {
-                if let Some(reply) = reply {
-                    self.pending_pings.insert(token, reply);
-                }
-            }
-            Err(error) => {
-                if let Some(reply) = reply {
-                    let _ = reply.send(Err(error.to_string()));
-                }
-                self.protocol_failure(error.to_string());
-            }
-        }
-    }
-
     fn refresh_metrics(&mut self) {
         if self.last_sample.elapsed() < Duration::from_secs(1) {
             return;
@@ -378,6 +321,12 @@ impl Broker {
 
     fn emit_event(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         self.resources().events.send(event)
+    }
+
+    fn note_renderer_activity(&mut self) {
+        let mut shared = self.shared();
+        shared.last_pong = Instant::now();
+        shared.state = RendererState::Running;
     }
 }
 

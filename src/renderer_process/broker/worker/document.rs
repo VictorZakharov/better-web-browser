@@ -42,6 +42,10 @@ impl Broker {
             .send_browser(&BrowserMessage::EndDocument(start.document))
             .map_err(|error| error.to_string())?;
         self.active_document = Some(start.document);
+        self.document_load_deadline = Some((
+            start.document,
+            Instant::now() + self.resources().options.first_presentation_timeout,
+        ));
         Ok(())
     }
 
@@ -120,6 +124,7 @@ impl Broker {
         &mut self,
         message: RendererMessage,
     ) -> Result<(), ProtocolError> {
+        self.note_renderer_activity();
         match message {
             RendererMessage::FetchBatchStart {
                 document,
@@ -165,6 +170,7 @@ impl Broker {
             }
             RendererMessage::DocumentFailed { document, detail } => {
                 if self.active_document == Some(document) {
+                    self.document_load_deadline = None;
                     self.retired_document = None;
                     self.emit_event(RendererEvent::DocumentFailed { document, detail })?;
                 }
@@ -176,6 +182,7 @@ impl Broker {
                 cause,
             } => {
                 if self.active_document == Some(document) {
+                    self.document_load_deadline = None;
                     self.emit_event(RendererEvent::NavigationRequested {
                         document,
                         url,
@@ -359,6 +366,7 @@ impl Broker {
             return Err(ProtocolError::InvalidPayload("nested presentation"));
         }
         if self.active_document == Some(document) {
+            self.document_load_deadline = None;
             // See the equivalent Fetch transfer rule above. Once replacement output arrives, the
             // retired document can no longer have unread frames on the renderer pipe.
             self.retired_document = None;

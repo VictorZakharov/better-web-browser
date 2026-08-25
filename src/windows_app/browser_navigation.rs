@@ -4,6 +4,7 @@ use super::tabs::TabId;
 use super::*;
 use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
 
+#[derive(Clone, Copy)]
 pub(super) enum HistoryMode {
     Push,
     Existing,
@@ -43,8 +44,7 @@ impl BrowserState {
             };
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
-            tab.pending_renderer_page = None;
-            tab.renderer_document = None;
+            let generation = tab.navigation.begin();
             tab.renderer_input_sequence = 0;
             tab.pointer_cursor_request = None;
             tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
@@ -59,9 +59,6 @@ impl BrowserState {
             tab.last_scroll_activity = None;
             tab.performance = TabPerformance::default();
             tab.scroll_animation = Default::default();
-            if tab.loading {
-                tab.generation = tab.generation.wrapping_add(1);
-            }
             match history_mode {
                 HistoryMode::Push => {
                     tab.script_navigation.reset(&url);
@@ -76,13 +73,11 @@ impl BrowserState {
                 HistoryMode::Existing => tab.script_navigation.reset(&url),
                 HistoryMode::Script => {}
             }
-            tab.generation = tab.generation.wrapping_add(1);
-            tab.loading = true;
             tab.crashed = false;
             tab.omnibox_text.clone_from(&url);
             tab.title.clone_from(&url);
             tab.status_text = format!("Loading {url} …");
-            (tab.generation, tab.document_fetch.signal())
+            (generation, tab.document_fetch.signal())
         };
         // A full document navigation is a renderer ownership boundary. The previous page may be
         // inside uninterruptible script, layout, or IPC work, so do not let its process delay the
@@ -156,7 +151,7 @@ impl BrowserState {
             });
         if let Err(error) = navigation_thread {
             if let Some(tab) = self.tabs.get_mut(id) {
-                tab.loading = false;
+                tab.navigation.fail();
                 tab.status_text = format!("Could not start navigation: {error}");
             }
             if is_active {

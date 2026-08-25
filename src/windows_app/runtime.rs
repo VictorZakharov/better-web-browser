@@ -10,7 +10,7 @@ impl BrowserState {
         document: better_web_browser::renderer_protocol::DocumentId,
         next_timer_micros: Option<u64>,
     ) {
-        if self.renderer_document != Some(document) || !self.renderer_work_pending {
+        if !self.navigation.owns_document(document) || !self.renderer_work_pending {
             return;
         }
         self.renderer_next_timer = next_timer_micros.map(Duration::from_micros);
@@ -20,7 +20,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn resume_script_runtime(&mut self) {
-        if self.renderer_document.is_some() {
+        if self.navigation.active_document().is_some() {
             self.renderer_runtime_clock = Some(Instant::now());
             self.schedule_script_runtime_wakeup();
         }
@@ -28,7 +28,11 @@ impl BrowserState {
 
     pub(super) unsafe fn schedule_script_runtime_wakeup(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
-        let Some(next_delay) = self.renderer_document.and(self.renderer_next_timer) else {
+        let Some(next_delay) = self
+            .navigation
+            .active_document()
+            .and(self.renderer_next_timer)
+        else {
             return;
         };
         if SetTimer(
@@ -44,7 +48,7 @@ impl BrowserState {
 
     pub(super) unsafe fn pump_script_runtime(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
-        let Some(document) = self.renderer_document else {
+        let Some(document) = self.navigation.active_document() else {
             return;
         };
         let now = Instant::now();

@@ -51,7 +51,7 @@ impl BrowserState {
             self.scale(if address_focused { 2 } else { 1 }).max(1),
         );
 
-        if self.loading {
+        if self.navigation.is_loading() {
             let progress_width = ((client.right as f32) * 0.36).round() as i32;
             fill_color_rect(
                 dc,
@@ -94,7 +94,7 @@ impl BrowserState {
                 right: dot_left + dot_size,
                 bottom: dot_top + dot_size,
             },
-            if self.loading {
+            if self.navigation.is_loading() {
                 CHROME_THEME.accent
             } else {
                 CHROME_THEME.success

@@ -104,6 +104,11 @@ pub const RENDERER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 pub const RENDERER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 pub const RENDERER_UNRESPONSIVE_TIMEOUT: Duration = Duration::from_secs(10);
 pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(2);
+/// A first document can synchronously parse, execute blocking scripts, shape text, and lay out
+/// before the renderer returns to its control pipe. The browser owns the shorter interactive
+/// recovery deadline; this broker ceiling prevents the generic heartbeat from killing valid
+/// first-paint work prematurely.
+pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub const MAX_SCRIPT_NAVIGATIONS: usize = 5;
 

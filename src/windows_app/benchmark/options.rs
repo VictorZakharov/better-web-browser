@@ -36,6 +36,8 @@ impl LaunchOptions {
         let mut scroll_samples = 0_usize;
         let mut early_scroll = false;
         let mut diagnostic_selectors = Vec::new();
+        let mut navigation_targets = Vec::new();
+        let mut navigation_delay_ms = 0_u64;
         let mut window_width_dip = None;
         let mut window_height_dip = None;
 
@@ -76,6 +78,13 @@ impl LaunchOptions {
                     diagnostic_selectors.push(selector);
                     diagnostics::validate_selector_count(&diagnostic_selectors)?;
                 }
+                "--navigate-after-ready" => {
+                    navigation_targets.push(required(&mut arguments, &argument)?);
+                }
+                "--navigation-delay-ms" => {
+                    navigation_delay_ms =
+                        number::<u64>(&mut arguments, &argument)?.clamp(0, 60_000);
+                }
                 "--task-manager" => open_task_manager = true,
                 option if option.starts_with('-') => {
                     return Err(format!("unknown option: {option}"));
@@ -88,7 +97,7 @@ impl LaunchOptions {
             let output = output
                 .ok_or_else(|| "benchmark mode requires --output <result.json>".to_string())?;
             startup_url = Some(url.clone());
-            Some(BenchmarkRun::new(
+            let mut benchmark = BenchmarkRun::new(
                 url,
                 output,
                 screenshot,
@@ -100,7 +109,10 @@ impl LaunchOptions {
                 window_width_dip.unwrap_or(DEFAULT_WINDOW_WIDTH_DIP),
                 window_height_dip.unwrap_or(DEFAULT_WINDOW_HEIGHT_DIP),
                 process_started,
-            ))
+            );
+            benchmark.navigation_targets = navigation_targets;
+            benchmark.navigation_delay = Duration::from_millis(navigation_delay_ms);
+            Some(benchmark)
         } else {
             if screenshot.is_some() {
                 return Err("--screenshot requires --benchmark".to_string());
@@ -116,6 +128,9 @@ impl LaunchOptions {
             }
             if !diagnostic_selectors.is_empty() {
                 return Err("--diagnostic-selector requires --benchmark".to_string());
+            }
+            if !navigation_targets.is_empty() || navigation_delay_ms > 0 {
+                return Err("benchmark navigation options require --benchmark".to_string());
             }
             if window_width_dip.is_some() || window_height_dip.is_some() {
                 return Err("--window-width and --window-height require --benchmark".to_string());
@@ -181,5 +196,49 @@ mod tests {
         assert!(benchmark.early_scroll.is_some());
         assert_eq!(benchmark.diagnostic_selectors, ["#main"]);
         assert_eq!(benchmark.completion_marker.as_deref(), Some("__DONE__"));
+    }
+
+    #[test]
+    fn parses_ordered_hidden_navigation_sequence() {
+        let options = LaunchOptions::parse_from(
+            Instant::now(),
+            [
+                "--benchmark",
+                "https://example.test/first",
+                "--output",
+                "result.json",
+                "--navigate-after-ready",
+                "https://example.test/second",
+                "--navigate-after-ready",
+                "https://example.test/final",
+                "--navigation-delay-ms",
+                "750",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .unwrap();
+        let benchmark = options.benchmark.unwrap();
+        assert_eq!(
+            benchmark.navigation_targets,
+            [
+                "https://example.test/second".to_string(),
+                "https://example.test/final".to_string(),
+            ]
+        );
+        assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));
+    }
+
+    #[test]
+    fn rejects_navigation_sequence_outside_hidden_benchmark_mode() {
+        let error = LaunchOptions::parse_from(
+            Instant::now(),
+            ["--navigate-after-ready", "https://example.test/second"]
+                .into_iter()
+                .map(str::to_string),
+        )
+        .err()
+        .expect("interactive navigation sequence is rejected");
+        assert!(error.contains("require --benchmark"));
     }
 }

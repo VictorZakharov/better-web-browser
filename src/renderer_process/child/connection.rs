@@ -41,6 +41,7 @@ impl ChildConnection {
         reader: FrameReader<File>,
         writer: FrameWriter<File>,
         test_mode: bool,
+        text: RendererTextSystem,
     ) -> Self {
         Self {
             reader,
@@ -52,9 +53,9 @@ impl ChildConnection {
             incoming_document: None,
             incoming_storage_update: None,
             document: None,
-            // Font discovery starts immediately after the renderer handshake, while the browser
-            // is still fetching the navigation. This keeps it off the page-ready critical path.
-            prepared_text: Some(RendererTextSystem::new(96)),
+            // Ready is sent only after this renderer-owned dependency is initialized. Otherwise
+            // the browser can submit a document to a process that is not actually command-ready.
+            prepared_text: Some(text),
             next_request_id: 1,
             next_batch_id: 1,
         }

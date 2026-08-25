@@ -25,6 +25,27 @@ pub(super) fn hidden_benchmark_with_args(
     settle_ms: u64,
     extra_arguments: &[&str],
 ) -> std::process::Child {
+    spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, None)
+}
+
+pub(super) fn hidden_benchmark_with_fresh_profile_args(
+    url: &str,
+    artifacts: &TestArtifacts,
+    settle_ms: u64,
+    extra_arguments: &[&str],
+) -> std::process::Child {
+    let profile = artifacts.root.join("profile");
+    fs::create_dir(&profile).expect("create hidden Breeze profile");
+    spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, Some(&profile))
+}
+
+fn spawn_hidden_benchmark(
+    url: &str,
+    artifacts: &TestArtifacts,
+    settle_ms: u64,
+    extra_arguments: &[&str],
+    profile: Option<&Path>,
+) -> std::process::Child {
     let settle_ms = settle_ms.to_string();
     let mut command = Command::new(env!("CARGO_BIN_EXE_better-web-browser"));
     command
@@ -39,9 +60,11 @@ pub(super) fn hidden_benchmark_with_args(
             &settle_ms,
         ])
         .args(extra_arguments)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .expect("launch hidden Breeze benchmark")
+        .creation_flags(CREATE_NO_WINDOW);
+    if let Some(profile) = profile {
+        command.env("BREEZE_PROFILE_DIRECTORY", profile);
+    }
+    command.spawn().expect("launch hidden Breeze benchmark")
 }
 
 pub(super) fn serve_fixtures(

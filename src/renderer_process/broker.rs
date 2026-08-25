@@ -304,16 +304,16 @@ impl RendererSession {
     /// intentionally bounded but can still take several seconds for an unresponsive renderer.
     pub fn terminate_in_background(mut self) {
         self.events.close();
+        // Termination is an ownership boundary, so end the Job before returning to the caller.
+        // Queueing a broker command here lets a saturated renderer overlap its replacement.
+        let _ = self.terminate();
         let Some(worker) = self.worker.take() else {
             return;
         };
-        let commands = self.commands.clone();
         let wake = self.wake.clone();
         let _ = std::thread::Builder::new()
             .name("breeze-renderer-reaper".into())
             .spawn(move || {
-                wake.notify();
-                let _ = commands.send(worker::BrokerCommand::Terminate);
                 wake.notify();
                 let _ = worker.join();
             });

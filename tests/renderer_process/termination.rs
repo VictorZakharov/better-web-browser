@@ -3,6 +3,7 @@ use better_web_browser::renderer_process::{RendererExitReason, RendererSession};
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentNodeId, TestCommand, TextInput,
 };
+use std::ffi::c_void;
 use std::time::Duration;
 
 #[test]
@@ -33,13 +34,15 @@ fn browser_owned_termination_stops_the_real_renderer_and_allows_replacement() {
 }
 
 #[test]
-fn browser_owned_termination_bypasses_a_saturated_page_command_queue() {
+fn browser_owned_background_termination_bypasses_a_saturated_page_command_queue() {
     let _serial = SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut launch = options();
     launch.unresponsive_timeout = Duration::from_secs(10);
     let session = RendererSession::launch(launch).expect("launch renderer");
+    let process = unsafe { OpenProcess(SYNCHRONIZE, 0, session.snapshot().process_id) };
+    assert!(!process.is_null(), "open renderer process wait handle");
     let presentation = load_inline_document(&session, 122);
     session
         .send_test_command(TestCommand::Hang)
@@ -70,15 +73,21 @@ fn browser_owned_termination_bypasses_a_saturated_page_command_queue() {
         "hung renderer did not apply command backpressure"
     );
 
-    session
-        .terminate()
-        .expect("direct browser-owned Job termination");
-    let exit = session
-        .wait_for_exit(Duration::from_secs(3))
-        .expect("renderer termination exit");
-    assert_eq!(exit.reason, RendererExitReason::Terminated);
-    assert!(
-        exit.crash_surface()
-            .is_some_and(|surface| surface.can_reload)
+    session.terminate_in_background();
+    let wait = unsafe { WaitForSingleObject(process, 3_000) };
+    unsafe { CloseHandle(process) };
+    assert_eq!(
+        wait, WAIT_OBJECT_0,
+        "background termination was not immediate"
     );
+}
+
+const SYNCHRONIZE: u32 = 0x0010_0000;
+const WAIT_OBJECT_0: u32 = 0;
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn OpenProcess(access: u32, inherit: i32, process_id: u32) -> *mut c_void;
+    fn WaitForSingleObject(handle: *mut c_void, milliseconds: u32) -> u32;
+    fn CloseHandle(handle: *mut c_void) -> i32;
 }

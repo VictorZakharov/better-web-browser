@@ -5,7 +5,11 @@ use better_web_browser::renderer_protocol::{PointerCursor, PointerCursorResult};
 
 impl BrowserState {
     pub(super) unsafe fn apply_renderer_pointer_cursor(&mut self, result: PointerCursorResult) {
-        if !cursor_result_is_current(self.renderer_document, self.pointer_cursor_request, result) {
+        if !cursor_result_is_current(
+            self.navigation.active_document(),
+            self.pointer_cursor_request,
+            result,
+        ) {
             return;
         }
         self.pointer_cursor = result.cursor;

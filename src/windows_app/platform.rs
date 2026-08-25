@@ -77,6 +77,7 @@ pub(super) const WM_APP_RENDERER_FETCH_COMPLETE: u32 = WM_APP + 12;
 pub(super) const WM_APP_PAGE_CONTROL_FOCUS: u32 = WM_APP + 13;
 pub(super) const WM_APP_TASK_TERMINATE_RENDERER: u32 = WM_APP + 14;
 pub(super) const WM_APP_ACCESSIBILITY_ACTION: u32 = WM_APP + 15;
+pub(super) const WM_APP_BENCHMARK_NAVIGATE: u32 = WM_APP + 16;
 
 pub(super) const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 pub(super) const WS_POPUP: u32 = 0x8000_0000;

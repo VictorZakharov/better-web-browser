@@ -1,9 +1,32 @@
 use super::*;
+use crate::windows_app::navigation_transaction::PresentationDeadline;
 use better_web_browser::renderer_process::{RendererEvent, RendererState};
 use better_web_browser::renderer_protocol::{NavigationCause, NavigationDisposition};
 use std::sync::Arc;
 
 impl BrowserState {
+    pub(super) unsafe fn enforce_first_presentation_deadline(&mut self, id: TabId) {
+        let action = self
+            .tabs
+            .get_mut(id)
+            .and_then(|tab| tab.navigation.deadline(Instant::now()));
+        match action {
+            Some(PresentationDeadline::Retry) => {
+                if self.tabs.active_id() == id {
+                    self.set_status("Renderer did not present the document; retrying once …");
+                }
+                self.replace_renderer_for_navigation(id);
+                self.start_renderer_for(id);
+                self.ensure_renderer_monitoring();
+            }
+            Some(PresentationDeadline::Failed) => self.contain_page_engine_failure(
+                id,
+                "renderer did not produce a first presentation after a clean retry".into(),
+            ),
+            None => {}
+        }
+    }
+
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
         self.flush_renderer_inputs_for(id);
         if let Some(tab) = self.tabs.get_mut(id) {
@@ -64,7 +87,7 @@ impl BrowserState {
                     let current = self
                         .tabs
                         .get_mut(id)
-                        .is_some_and(|tab| tab.renderer_document == Some(document));
+                        .is_some_and(|tab| tab.navigation.owns_document(document));
                     if current {
                         self.contain_page_engine_failure(id, detail);
                     }
@@ -76,7 +99,7 @@ impl BrowserState {
                     cause,
                 } => {
                     self.process_for_tab(id, |state| {
-                        if state.renderer_document != Some(document) {
+                        if !state.navigation.owns_document(document) {
                             return;
                         }
                         match disposition {
@@ -131,6 +154,36 @@ impl BrowserState {
                 status.phase = RendererLifecyclePhase::Exited;
                 status.last_exit = Some(exit);
             });
+            let recovery = self.tabs.get_mut(id).and_then(|tab| {
+                let recovery = tab.navigation.renderer_exited();
+                if recovery.is_some() {
+                    tab.renderer_session.take();
+                    tab.renderer_work_pending = false;
+                    tab.pointer_cursor_request = None;
+                    tab.pointer_cursor =
+                        better_web_browser::renderer_protocol::PointerCursor::Default;
+                }
+                recovery
+            });
+            match recovery {
+                Some(PresentationDeadline::Retry) => {
+                    if self.tabs.active_id() == id {
+                        self.apply_current_pointer_cursor();
+                        self.set_status("Renderer exited before first paint; retrying once …");
+                    }
+                    self.start_renderer_for(id);
+                    self.ensure_renderer_monitoring();
+                    return;
+                }
+                Some(PresentationDeadline::Failed) => {
+                    self.contain_page_engine_failure(
+                        id,
+                        "renderer exited before first paint after a clean retry".into(),
+                    );
+                    return;
+                }
+                None => {}
+            }
             let status = crash_surface.map(|surface| {
                 format!(
                     "{}: {}. Reload to restart the renderer.",
@@ -165,7 +218,8 @@ impl BrowserState {
         requests: Vec<better_web_browser::renderer_protocol::RendererFetchRequest>,
     ) {
         let context = self.tabs.get_mut(id).and_then(|tab| {
-            (tab.renderer_document == Some(document))
+            tab.navigation
+                .owns_document(document)
                 .then(|| {
                     tab.renderer_session.as_ref().map(|session| {
                         (

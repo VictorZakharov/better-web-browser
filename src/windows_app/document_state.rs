@@ -11,7 +11,7 @@ impl BrowserState {
         &mut self,
         mutation: CookieMutation,
     ) -> Result<(), String> {
-        if self.renderer_document != Some(mutation.document) {
+        if !self.navigation.owns_document(mutation.document) {
             return Ok(());
         }
         if let Err(error) = self
@@ -41,7 +41,7 @@ impl BrowserState {
         &mut self,
         request: StorageMutationRequest,
     ) -> Result<(), String> {
-        if self.renderer_document != Some(request.document) {
+        if !self.navigation.owns_document(request.document) {
             return Ok(());
         }
         let document_url = self.reader_url.clone();

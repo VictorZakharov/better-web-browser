@@ -11,6 +11,7 @@ mod chrome_paint;
 mod document_activation;
 mod document_navigation;
 mod document_state;
+mod navigation_transaction;
 mod page_controls;
 mod page_crash;
 mod paint_index;

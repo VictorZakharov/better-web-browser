@@ -18,7 +18,7 @@ impl BrowserState {
     pub(in crate::windows_app) fn next_renderer_input(
         &mut self,
     ) -> Option<(better_web_browser::renderer_protocol::DocumentId, u64)> {
-        let document = self.renderer_document?;
+        let document = self.navigation.active_document()?;
         self.renderer_input_sequence = self.renderer_input_sequence.checked_add(1)?;
         Some((document, self.renderer_input_sequence))
     }
@@ -266,7 +266,7 @@ impl BrowserState {
                 let Some(input) = tab.pending_renderer_inputs.pop_front() else {
                     return;
                 };
-                if tab.renderer_document != Some(input.document()) {
+                if !tab.navigation.owns_document(input.document()) {
                     continue;
                 }
                 tab.renderer_session

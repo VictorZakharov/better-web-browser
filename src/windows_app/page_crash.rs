@@ -35,5 +35,10 @@ impl BrowserState {
         self.update_scrollbar();
         self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.error.get_or_insert(detail);
+            benchmark.page_ready = benchmark.process_started.elapsed();
+            self.schedule_benchmark_finish();
+        }
     }
 }

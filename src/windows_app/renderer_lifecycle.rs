@@ -90,11 +90,10 @@ pub(super) type SharedRendererRegistry = Arc<Mutex<RendererTaskRegistry>>;
 
 impl BrowserState {
     pub(super) unsafe fn ensure_renderer_monitoring(&mut self) {
-        let needs_monitor = self.tabs.iter().any(|tab| {
-            tab.renderer_session.is_some()
-                || tab.renderer_launch_pending
-                || tab.renderer_launch_receiver.is_some()
-        });
+        let needs_monitor = self
+            .tabs
+            .iter()
+            .any(|tab| tab.renderer_session.is_some() || tab.renderer_launch_receiver.is_some());
         if needs_monitor {
             SetTimer(
                 self.window,
@@ -114,7 +113,6 @@ impl BrowserState {
     pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
         let session = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_launch_receiver.take();
-            tab.renderer_launch_pending = false;
             tab.renderer_work_pending = false;
             tab.renderer_session.take()
         });
@@ -128,10 +126,9 @@ impl BrowserState {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;
             };
-            if tab.renderer_launch_pending || tab.renderer_session.is_some() {
+            if tab.renderer_launch_receiver.is_some() || tab.renderer_session.is_some() {
                 return;
             }
-            tab.renderer_launch_pending = true;
             tab.title.clone()
         };
         self.update_renderer_status(id, &title, |status| {
@@ -199,9 +196,6 @@ impl BrowserState {
                 Err("renderer launcher exited without a result".into())
             }
         };
-        if let Some(tab) = self.tabs.get_mut(id) {
-            tab.renderer_launch_pending = false;
-        }
         let session = match result {
             Ok(session) => session,
             Err(error) => {
@@ -252,12 +246,12 @@ impl BrowserState {
             .collect::<Vec<_>>();
         for id in ids {
             self.poll_renderer(id);
+            self.enforce_first_presentation_deadline(id);
         }
-        let has_live_or_pending = self.tabs.iter().any(|tab| {
-            tab.renderer_session.is_some()
-                || tab.renderer_launch_pending
-                || tab.renderer_launch_receiver.is_some()
-        });
+        let has_live_or_pending = self
+            .tabs
+            .iter()
+            .any(|tab| tab.renderer_session.is_some() || tab.renderer_launch_receiver.is_some());
         if !has_live_or_pending {
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
         } else {
@@ -299,7 +293,7 @@ impl BrowserState {
     fn renderer_monitor_interval(&self) -> u32 {
         if self.benchmark.is_some()
             || self.tabs.iter().any(|tab| {
-                tab.loading
+                tab.navigation.is_loading()
                     || tab.renderer_work_pending
                     || tab.renderer_input_poll_budget > 0
                     || !tab.pending_renderer_inputs.is_empty()

@@ -2,6 +2,7 @@
 
 use super::accessibility::AccessibilityDocument;
 use super::document_navigation::ScriptNavigationGuard;
+use super::navigation_transaction::NavigationTransaction;
 use super::page_controls::PageControlWindow;
 use super::paint_index::PaintIndex;
 use super::renderer_input_queue::PendingRendererInputs;
@@ -11,7 +12,7 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
-use better_web_browser::renderer_protocol::{DocumentId, PointerCursor, PresentedGlyphRaster};
+use better_web_browser::renderer_protocol::{PointerCursor, PresentedGlyphRaster};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -46,17 +47,13 @@ pub(super) struct BrowserTab {
     pub(super) history: Vec<String>,
     pub(super) history_index: usize,
     pub(super) script_navigation: ScriptNavigationGuard,
-    pub(super) generation: u64,
-    pub(super) loading: bool,
+    pub(super) navigation: NavigationTransaction,
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
     pub(super) session_storage: SessionStorage,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
-    pub(super) renderer_launch_pending: bool,
     pub(super) renderer_started_once: bool,
-    pub(super) pending_renderer_page: Option<LoadedPage>,
-    pub(super) renderer_document: Option<DocumentId>,
     pub(super) renderer_input_sequence: u64,
     pub(super) pointer_cursor_request: Option<u64>,
     pub(super) pointer_cursor: PointerCursor,
@@ -102,17 +99,13 @@ impl BrowserTab {
             history: Vec::new(),
             history_index: 0,
             script_navigation: ScriptNavigationGuard::default(),
-            generation: 1,
-            loading: false,
+            navigation: NavigationTransaction::new(LoadedPage::home()),
             crashed: false,
             document_fetch: FetchController::new(),
             session_storage: SessionStorage::default(),
             renderer_session: None,
             renderer_launch_receiver: None,
-            renderer_launch_pending: false,
             renderer_started_once: false,
-            pending_renderer_page: Some(LoadedPage::home()),
-            renderer_document: None,
             renderer_input_sequence: 0,
             pointer_cursor_request: None,
             pointer_cursor: PointerCursor::Default,
@@ -137,13 +130,10 @@ impl BrowserTab {
     }
 
     pub(super) fn mark_crashed(&mut self, status: String) {
-        self.generation = self.generation.wrapping_add(1);
-        self.loading = false;
+        self.navigation.invalidate();
         self.crashed = true;
         self.status_text = status;
         self.document_fetch.abort();
-        self.pending_renderer_page = None;
-        self.renderer_document = None;
         self.renderer_input_sequence = 0;
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;
@@ -161,7 +151,6 @@ impl BrowserTab {
             session.terminate_in_background();
         }
         self.renderer_launch_receiver.take();
-        self.renderer_launch_pending = false;
     }
 }
 
@@ -224,12 +213,12 @@ mod tests {
 
     #[test]
     fn new_tabs_queue_home_for_the_renderer_without_a_browser_document() {
-        let mut tab = BrowserTab::new(TabId::first());
+        let tab = BrowserTab::new(TabId::first());
         assert!(tab.document.is_none());
-        assert_eq!(tab.generation, 1);
+        assert_eq!(tab.navigation.generation(), 1);
         let home = tab
-            .pending_renderer_page
-            .take()
+            .navigation
+            .page_for_submission()
             .expect("home document is queued for the renderer");
         assert_eq!(home.final_url, HOME_URL);
         assert_eq!(home.content_type, "text/html");
@@ -244,7 +233,7 @@ mod tests {
             .push("https://first.example/".into());
         tabs.active_mut().scroll_y = 420;
         tabs.active_mut().title = "First".into();
-        tabs.active_mut().loading = true;
+        tabs.active_mut().navigation.begin();
         tabs.active_mut().focus = TabFocus::Content;
         let second = tabs.add(true, BrowserTab::new).unwrap();
         tabs.active_mut()
@@ -256,7 +245,7 @@ mod tests {
         assert_eq!(tabs.active().current_url(), Some("https://first.example/"));
         assert_eq!(tabs.active().scroll_y, 420);
         assert_eq!(tabs.active().title, "First");
-        assert!(tabs.active().loading);
+        assert!(tabs.active().navigation.is_loading());
         assert!(matches!(tabs.active().focus, TabFocus::Content));
         tabs.activate(second);
         assert_eq!(tabs.active().current_url(), Some("https://second.example/"));
@@ -266,7 +255,7 @@ mod tests {
     #[test]
     fn crashing_one_tab_cancels_only_its_page_state() {
         let mut tabs = TabCollection::new(BrowserTab::new(TabId::first()));
-        tabs.active_mut().loading = true;
+        tabs.active_mut().navigation.begin();
         let first_document = better_web_browser::renderer_protocol::DocumentId::new(31).unwrap();
         let first_root =
             better_web_browser::renderer_protocol::DocumentNodeId::new((31_u128 << 64) | 1)
@@ -309,7 +298,7 @@ mod tests {
             .mark_crashed("Renderer crashed. Reload to try again.".into());
 
         assert!(tabs.active().crashed);
-        assert!(!tabs.active().loading);
+        assert!(!tabs.active().navigation.is_loading());
         assert!(tabs.active().status_text.contains("Reload"));
         assert!(tabs.active().accessibility_document.root().is_none());
         tabs.activate(sibling);

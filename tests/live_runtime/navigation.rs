@@ -57,3 +57,48 @@ navigation chain committed</div>"#
         "repeated navigation retained an earlier document",
     );
 }
+
+#[test]
+#[ignore = "live Wikipedia diagnosis"]
+fn live_wikipedia_navigation_endurance_reaches_the_final_article() {
+    const MAIN_PAGE: &str = "https://en.wikipedia.org/wiki/Main_Page";
+    const ARTICLE: &str = "https://en.wikipedia.org/wiki/Democratic_Autonomous_Administration_of_North_and_East_Syria";
+    const ZAMBIA: &str = "https://en.wikipedia.org/wiki/Zambia";
+    const WIKI: &str = "https://en.wikipedia.org/wiki/Wiki";
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark_with_fresh_profile_args(
+        MAIN_PAGE,
+        &artifacts,
+        12_000,
+        &[
+            "--window-width",
+            "1508",
+            "--window-height",
+            "977",
+            "--navigate-after-ready",
+            ARTICLE,
+            "--navigate-after-ready",
+            ZAMBIA,
+            "--navigate-after-ready",
+            WIKI,
+            "--navigate-after-ready",
+            MAIN_PAGE,
+            "--navigate-after-ready",
+            ARTICLE,
+            "--navigation-delay-ms",
+            "2000",
+        ],
+    );
+    let status = wait_for_child(&mut child, Duration::from_secs(90));
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+
+    let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
+    assert!(
+        report.contains(ARTICLE),
+        "Wikipedia navigation did not commit the article:\n{report}"
+    );
+    assert!(
+        report.contains("\"renderer_launch_errors\": []"),
+        "renderer replacement failed during Wikipedia navigation:\n{report}"
+    );
+}

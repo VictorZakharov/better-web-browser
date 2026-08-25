@@ -146,6 +146,7 @@ impl Broker {
         self.resources().events.discard_document(document);
         if self.active_document == Some(document) {
             self.active_document = None;
+            self.document_load_deadline = None;
             self.retired_document = Some(document);
             self.outgoing_fetch.clear();
         }

@@ -3,9 +3,10 @@
 use super::browser_navigation::HistoryMode;
 use super::*;
 use better_web_browser::renderer_protocol::{
-    DocumentId, DocumentStart, DocumentState, PresentedViewport, RendererPresentation,
+    DocumentStart, DocumentState, PresentedViewport, RendererPresentation,
 };
 
+#[derive(Clone)]
 pub(super) struct LoadedPage {
     pub(super) body: Vec<u8>,
     pub(super) final_url: String,
@@ -43,16 +44,18 @@ pub(super) struct LoadMessage {
 
 impl BrowserState {
     pub(super) unsafe fn finish_navigation(&mut self, message: LoadMessage) {
-        if message.generation != self.generation {
-            return;
-        }
         match message.result {
             Ok(page) => {
-                self.tabs.active_mut().pending_renderer_page = Some(page);
+                if !self.navigation.accept_page(message.generation, page) {
+                    return;
+                }
                 self.submit_pending_renderer_document();
             }
             Err(error) => {
-                self.loading = false;
+                if message.generation != self.navigation.generation() {
+                    return;
+                }
+                self.navigation.fail();
                 self.set_status(&format!("Load failed: {error}"));
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.error = Some(error);
@@ -68,18 +71,17 @@ impl BrowserState {
     }
 
     unsafe fn submit_pending_renderer_document(&mut self) {
-        let Some(page) = self.pending_renderer_page.take() else {
+        let Some(page) = self.navigation.page_for_submission() else {
             return;
         };
         let Some(session) = self.renderer_session.as_ref() else {
-            self.pending_renderer_page = Some(page);
             self.start_renderer_for(self.id);
             return;
         };
-        let document = match DocumentId::new(self.generation) {
+        let document = match self.navigation.document_id() {
             Ok(document) => document,
             Err(error) => {
-                self.loading = false;
+                self.navigation.fail();
                 self.set_status(&format!("Renderer document rejected: {error}"));
                 return;
             }
@@ -87,7 +89,7 @@ impl BrowserState {
         let body_length = match u32::try_from(page.body.len()) {
             Ok(length) => length,
             Err(_) => {
-                self.loading = false;
+                self.navigation.fail();
                 self.set_status("Renderer document exceeded the IPC byte limit");
                 return;
             }
@@ -121,7 +123,7 @@ impl BrowserState {
                 session_storage,
             },
             (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
-                self.loading = false;
+                self.navigation.fail();
                 self.set_status(&format!("Could not prepare document state: {error}"));
                 return;
             }
@@ -134,8 +136,10 @@ impl BrowserState {
         };
         match session.load_document(start, state, page.body) {
             Ok(()) => {
+                if !self.navigation.document_submitted(document, Instant::now()) {
+                    return;
+                }
                 self.reader_url.clone_from(&metrics.final_url);
-                self.renderer_document = Some(document);
                 self.renderer_input_sequence = 0;
                 self.pointer_cursor_request = None;
                 self.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
@@ -156,7 +160,7 @@ impl BrowserState {
                 }
             }
             Err(error) => {
-                self.loading = false;
+                self.navigation.fail();
                 self.contain_page_engine_failure(
                     self.id,
                     format!("could not transfer the document to its renderer: {error}"),
@@ -186,7 +190,7 @@ impl BrowserState {
         &mut self,
         mut presentation: RendererPresentation,
     ) {
-        if self.renderer_document != Some(presentation.document)
+        if !self.navigation.owns_document(presentation.document)
             || presentation.revision <= self.renderer_revision
         {
             return;
@@ -263,23 +267,25 @@ impl BrowserState {
         self.surface = Surface::Page;
         self.scroll_y = self.scroll_y.min(self.content_height.max(0));
         self.layout_dirty = false;
-        self.loading = false;
+        self.navigation.mark_presented(presentation.document);
         self.crashed = false;
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
         self.renderer_runtime_clock = Some(Instant::now());
         self.renderer_work_pending = false;
         self.renderer_input_poll_budget = 0;
 
-        let history_index = self.history_index;
-        if let Some(current) = self.history.get_mut(history_index) {
-            current.clone_from(&presentation.final_url);
-        }
-        self.script_navigation
-            .record_committed(&presentation.final_url);
-        self.omnibox_text.clone_from(&presentation.final_url);
-        if !self.processing_background_tab {
-            set_window_text(self.controls.address, &presentation.final_url);
-            set_window_text(self.controls.reader, "Reader");
+        if first_presentation {
+            let history_index = self.history_index;
+            if let Some(current) = self.history.get_mut(history_index) {
+                current.clone_from(&presentation.final_url);
+            }
+            self.script_navigation
+                .record_committed(&presentation.final_url);
+            self.omnibox_text.clone_from(&presentation.final_url);
+            if !self.processing_background_tab {
+                set_window_text(self.controls.address, &presentation.final_url);
+                set_window_text(self.controls.reader, "Reader");
+            }
         }
         self.update_active_tab_title(&presentation.title);
         self.update_scrollbar();
@@ -321,7 +327,7 @@ impl BrowserState {
             true,
         );
         self.schedule_script_runtime_wakeup();
-        if first_presentation {
+        if first_presentation && !self.schedule_benchmark_navigation() {
             self.schedule_benchmark_finish();
         }
         if benchmark_completed {
