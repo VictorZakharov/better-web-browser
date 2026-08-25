@@ -75,6 +75,10 @@ pub const MAX_RENDERER_FETCH_HEADERS: usize = 256;
 pub const MAX_FETCH_HEADER_NAME_BYTES: usize = 1024;
 pub const MAX_FETCH_HEADER_VALUE_BYTES: usize = 16 * 1024;
 pub const MAX_QUEUED_BROWSER_COMMANDS: usize = 8;
+/// Upper bound for already-validated messages waiting on a renderer command pipe. Document,
+/// storage, and Fetch byte limits bound the payload memory represented by these messages; this
+/// count additionally prevents an unresponsive page from accumulating small input indefinitely.
+pub const MAX_QUEUED_BROWSER_WRITES: usize = 4_096;
 /// Valid native input retained per tab while the renderer command pipe applies backpressure.
 /// This is deliberately no larger than the broker command channel so a stalled renderer cannot
 /// make browser-owned memory grow with the rate of Windows input messages.
@@ -102,8 +106,11 @@ pub const RENDERER_MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 pub const RENDERER_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const RENDERER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 pub const RENDERER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
-pub const RENDERER_UNRESPONSIVE_TIMEOUT: Duration = Duration::from_secs(10);
-pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(2);
+// First presentation has its own larger allowance below. Once a page is interactive, a command
+// task that cannot answer the control-plane heartbeat for this budget is not allowed to leave the
+// tab apparently frozen for Chromium-scale tens of seconds.
+pub const RENDERER_UNRESPONSIVE_TIMEOUT: Duration = Duration::from_secs(3);
+pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 /// A first document can synchronously parse, execute blocking scripts, shape text, and lay out
 /// before the renderer returns to its control pipe. The browser owns the shorter interactive
 /// recovery deadline; this broker ceiling prevents the generic heartbeat from killing valid

@@ -21,6 +21,9 @@ impl Broker {
     }
 
     pub(super) fn process_presentation_acknowledgement(&mut self) {
+        if !self.writer().has_page_command_capacity() {
+            return;
+        }
         let Some(acknowledgement) = self.resources().acknowledgements.take() else {
             return;
         };
@@ -34,6 +37,9 @@ impl Broker {
     }
 
     pub(super) fn process_document_clock(&mut self) {
+        if !self.writer().has_page_command_capacity() {
+            return;
+        }
         let Some(advance) = self.resources().clock.take() else {
             return;
         };
@@ -44,6 +50,9 @@ impl Broker {
 
     pub(super) fn process_commands(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
+            if !self.writer().has_page_command_capacity() {
+                break;
+            }
             let command = match self.resources().commands.try_recv() {
                 Ok(command) => command,
                 Err(mpsc::TryRecvError::Empty) => break,

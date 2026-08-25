@@ -1,6 +1,6 @@
 use super::*;
 use crate::windows_app::navigation_transaction::PresentationDeadline;
-use better_web_browser::renderer_process::{RendererEvent, RendererState};
+use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
 use better_web_browser::renderer_protocol::{NavigationCause, NavigationDisposition};
 use std::sync::Arc;
 
@@ -150,10 +150,40 @@ impl BrowserState {
 
         if let Some(exit) = exit {
             let crash_surface = exit.crash_surface();
+            let task_budget_exceeded =
+                matches!(exit.reason, RendererExitReason::TaskBudgetExceeded);
             self.update_renderer_status(id, &title, |status| {
                 status.phase = RendererLifecyclePhase::Exited;
                 status.last_exit = Some(exit);
             });
+            if task_budget_exceeded {
+                let recovery_url = self
+                    .tabs
+                    .get_mut(id)
+                    .and_then(|tab| tab.current_url().map(str::to_owned));
+                if let Some(url) = recovery_url
+                    && self
+                        .tabs
+                        .get_mut(id)
+                        .is_some_and(|tab| !tab.navigation.is_loading())
+                {
+                    if self.tabs.active_id() == id {
+                        self.set_status("Renderer stopped responding; reloading once …");
+                    }
+                    self.begin_navigation_for_tab(
+                        id,
+                        url,
+                        browser_navigation::HistoryMode::Recovery,
+                    );
+                    if self
+                        .tabs
+                        .get_mut(id)
+                        .is_some_and(|tab| tab.navigation.is_loading())
+                    {
+                        return;
+                    }
+                }
+            }
             let recovery = self.tabs.get_mut(id).and_then(|tab| {
                 let recovery = tab.navigation.renderer_exited();
                 if recovery.is_some() {

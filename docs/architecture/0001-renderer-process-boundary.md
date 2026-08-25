@@ -274,7 +274,7 @@ compatibility evidence.
 | Renderer child processes | Zero | Child-process policy; Job active-process limit is one |
 | Startup handshake | 5 seconds | Terminate child and report launch failure |
 | Cooperative shutdown | 2 seconds | Close/terminate the renderer Job after grace period |
-| Responsiveness | Ping every 1 second; unresponsive at 10 seconds | Keep browser interactive and offer termination |
+| Responsiveness | Ping every 1 second; unresponsive at 3 seconds after first paint | Keep browser interactive; terminate after 1 second of grace and reload a presented document once |
 | Hidden-test hang | 30 seconds | Terminate renderer and fail the test deterministically |
 | Crash loop | 3 crashes for one context in 60 seconds | Suppress automatic process recreation |
 
@@ -356,15 +356,19 @@ The browser treats process exit, broken pipe, invalid framing, and fatal decode 
 3. Destroy browser-owned page controls and discard unpresented display-list revisions.
 4. Close IPC and the Job handle, retaining exit code, Job accounting, active URL, and bounded
    diagnostics for the task manager.
-5. Present a browser-owned crash surface. Reload is user initiated; form submissions and script
-   navigations are never replayed automatically.
+5. Present a browser-owned crash surface. A task-budget exit after a successful presentation may
+   refetch that same history entry once; other reloads remain user initiated, and form submissions
+   and script navigations are never replayed automatically.
 
 ### Unresponsive renderer
 
-The broker's pipe and process monitors are independent from both the renderer event loop and the UI
-thread. Missing progress for ten seconds marks the page unresponsive; a further two-second grace
-period terminates the renderer Job, while chrome, history, and sibling tabs remain available.
-Hidden automation also has an outer deterministic deadline so CI cannot hang indefinitely.
+The broker's process monitor is independent from both the renderer event loop and the UI thread.
+Browser-to-renderer `WriteFile` calls run on a dedicated bounded writer thread; otherwise a child
+that stops reading its command pipe can block the broker that must enforce its deadline. Missing
+progress for three seconds after first paint marks the page unresponsive; a further one-second
+grace period terminates the renderer Job, while chrome, history, and sibling tabs remain available.
+First presentation retains its separate 25-second ceiling. Hidden automation also has an outer
+deterministic deadline so CI cannot hang indefinitely.
 
 ### Navigation cancellation
 
@@ -444,11 +448,11 @@ bounded allocations, and owned payloads.
   browser-owned crash surface.
 - Record renderer PID, exit reason, memory, CPU, and restart count in task-manager diagnostics.
 
-Completed on 2026-08-14 and subsequently hardened. A dedicated broker owns blocking IPC,
-heartbeats, process accounting, shutdown, and Job termination. The UI thread consumes typed events;
-Task Manager presents the browser and per-tab renderers as a process tree. Abnormal exit preserves
-the browser and sibling tabs, and Reload starts a replacement process with fresh session and
-document identities.
+Completed on 2026-08-14 and subsequently hardened. Dedicated reader and writer threads own blocking
+pipe I/O; the nonblocking broker owns heartbeats, process accounting, shutdown deadlines, and Job
+termination. The UI thread consumes typed events; Task Manager presents the browser and per-tab
+renderers as a process tree. Abnormal exit preserves the browser and sibling tabs, and Reload starts
+a replacement process with fresh session and document identities.
 
 ### Stage 3: Broker navigation, Fetch, cookies, and storage
 

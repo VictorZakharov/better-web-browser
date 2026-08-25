@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 pub(super) const FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_FIRST_PRESENTATION_RETRIES: u8 = 1;
+const MAX_POST_PRESENTATION_RECOVERIES: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NavigationPhase {
@@ -29,6 +30,7 @@ pub(super) struct NavigationTransaction {
     document: Option<DocumentId>,
     first_presentation_deadline: Option<Instant>,
     retry_count: u8,
+    post_presentation_recovery_count: u8,
 }
 
 impl NavigationTransaction {
@@ -40,10 +42,26 @@ impl NavigationTransaction {
             document: None,
             first_presentation_deadline: None,
             retry_count: 0,
+            post_presentation_recovery_count: 0,
         }
     }
 
     pub(super) fn begin(&mut self) -> u64 {
+        self.post_presentation_recovery_count = 0;
+        self.begin_fetch()
+    }
+
+    pub(super) fn begin_recovery(&mut self) -> Option<u64> {
+        if self.phase != NavigationPhase::Presented
+            || self.post_presentation_recovery_count >= MAX_POST_PRESENTATION_RECOVERIES
+        {
+            return None;
+        }
+        self.post_presentation_recovery_count += 1;
+        Some(self.begin_fetch())
+    }
+
+    fn begin_fetch(&mut self) -> u64 {
         self.generation = self.generation.wrapping_add(1).max(1);
         self.phase = NavigationPhase::Fetching;
         self.page = None;
@@ -211,5 +229,28 @@ mod tests {
         assert!(transaction.mark_presented(document));
         assert!(transaction.page_for_submission().is_none());
         assert!(!transaction.is_loading());
+    }
+
+    #[test]
+    fn post_presentation_recovery_is_bounded_and_new_navigation_resets_it() {
+        let mut transaction = NavigationTransaction::new(page());
+        let document = transaction.document_id().unwrap();
+        assert!(transaction.document_submitted(document, Instant::now()));
+        assert!(transaction.mark_presented(document));
+        assert!(transaction.begin_recovery().is_some());
+
+        let recovered = transaction.document_id().unwrap();
+        assert!(transaction.accept_page(transaction.generation(), page()));
+        assert!(transaction.document_submitted(recovered, Instant::now()));
+        assert!(transaction.mark_presented(recovered));
+        assert_eq!(transaction.begin_recovery(), None);
+
+        transaction.begin();
+        let next = transaction.generation();
+        assert!(transaction.accept_page(next, page()));
+        let document = transaction.document_id().unwrap();
+        assert!(transaction.document_submitted(document, Instant::now()));
+        assert!(transaction.mark_presented(document));
+        assert!(transaction.begin_recovery().is_some());
     }
 }

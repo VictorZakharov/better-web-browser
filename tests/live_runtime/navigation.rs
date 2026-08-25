@@ -65,6 +65,7 @@ fn live_wikipedia_navigation_endurance_reaches_the_final_article() {
     const ARTICLE: &str = "https://en.wikipedia.org/wiki/Democratic_Autonomous_Administration_of_North_and_East_Syria";
     const ZAMBIA: &str = "https://en.wikipedia.org/wiki/Zambia";
     const WIKI: &str = "https://en.wikipedia.org/wiki/Wiki";
+    const DOLLY: &str = "https://en.wikipedia.org/wiki/Dolly_Parton";
     let artifacts = TestArtifacts::new();
     let mut child = hidden_benchmark_with_fresh_profile_args(
         MAIN_PAGE,
@@ -85,6 +86,8 @@ fn live_wikipedia_navigation_endurance_reaches_the_final_article() {
             MAIN_PAGE,
             "--navigate-after-ready",
             ARTICLE,
+            "--navigate-after-ready",
+            DOLLY,
             "--navigation-delay-ms",
             "2000",
         ],
@@ -94,7 +97,7 @@ fn live_wikipedia_navigation_endurance_reaches_the_final_article() {
 
     let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
     assert!(
-        report.contains(ARTICLE),
+        report.contains(DOLLY),
         "Wikipedia navigation did not commit the article:\n{report}"
     );
     assert!(

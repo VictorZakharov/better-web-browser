@@ -9,6 +9,7 @@ pub(super) enum HistoryMode {
     Push,
     Existing,
     Script,
+    Recovery,
 }
 
 impl BrowserState {
@@ -44,7 +45,15 @@ impl BrowserState {
             };
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
-            let generation = tab.navigation.begin();
+            let generation = match history_mode {
+                HistoryMode::Recovery => {
+                    let Some(generation) = tab.navigation.begin_recovery() else {
+                        return;
+                    };
+                    generation
+                }
+                _ => tab.navigation.begin(),
+            };
             tab.renderer_input_sequence = 0;
             tab.pointer_cursor_request = None;
             tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
@@ -70,7 +79,7 @@ impl BrowserState {
                         tab.history_index = tab.history.len() - 1;
                     }
                 }
-                HistoryMode::Existing => tab.script_navigation.reset(&url),
+                HistoryMode::Existing | HistoryMode::Recovery => tab.script_navigation.reset(&url),
                 HistoryMode::Script => {}
             }
             tab.crashed = false;

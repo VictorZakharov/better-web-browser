@@ -13,12 +13,11 @@ use crate::renderer_process::windows::{
 };
 use crate::renderer_protocol::{
     BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
-    FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage,
-    RendererPresentation, RestrictionReport, TestCommand, TransferAssembler,
+    PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation,
+    RestrictionReport, TestCommand, TransferAssembler,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::HashMap;
-use std::fs::File;
 use std::os::windows::io::OwnedHandle;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -59,7 +58,8 @@ pub(super) enum LifecycleCommand {
 pub(super) struct BrokerResources {
     pub(super) process: OwnedHandle,
     pub(super) job: Option<OwnedHandle>,
-    pub(super) writer: FrameWriter<File>,
+    pub(super) writer: super::outbound::Sender,
+    pub(super) writer_thread: JoinHandle<()>,
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
@@ -123,6 +123,7 @@ impl Broker {
     fn run(&mut self) {
         self.resources().wake.register_current();
         loop {
+            self.process_writer_failure();
             self.process_lifecycle_commands();
             self.process_presentation_acknowledgement();
             self.process_commands();
@@ -291,6 +292,7 @@ impl Broker {
         drop(resources.writer);
         drop(resources.job);
         drop(resources.process);
+        let _ = resources.writer_thread.join();
         let _ = resources.reader_thread.join();
     }
 
@@ -298,12 +300,8 @@ impl Broker {
         self.resources.as_ref().expect("broker resources available")
     }
 
-    fn writer(&mut self) -> &mut FrameWriter<File> {
-        &mut self
-            .resources
-            .as_mut()
-            .expect("broker resources available")
-            .writer
+    fn writer(&self) -> &super::outbound::Sender {
+        &self.resources().writer
     }
 
     fn shared(&self) -> std::sync::MutexGuard<'_, SharedDiagnostics> {
@@ -316,6 +314,14 @@ impl Broker {
     fn terminate_job(&self, code: u32) {
         if let Some(job) = self.resources().job.as_ref() {
             terminate_job(job, code);
+        }
+    }
+
+    fn process_writer_failure(&mut self) {
+        if let Some(error) = self.writer().take_failure()
+            && self.exit_reason.is_none()
+        {
+            self.protocol_failure(format!("renderer IPC writer stopped: {error}"));
         }
     }
 

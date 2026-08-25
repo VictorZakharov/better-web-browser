@@ -4,6 +4,7 @@ mod acknowledgements;
 mod clock;
 mod diagnostics;
 mod events;
+mod outbound;
 mod session;
 mod stream;
 #[cfg(test)]
@@ -169,6 +170,13 @@ impl RendererSession {
             exit_reason: None,
             exit: None,
         }));
+        let (outbound, writer_thread) = match outbound::spawn(writer, session, wake.clone()) {
+            Ok(writer) => writer,
+            Err(error) => {
+                terminate_startup(&launched.process, &launched.job, reader_thread);
+                return Err(error);
+            }
+        };
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
         // Browser-owned progress must not compete with bounded page-generated commands.
@@ -188,7 +196,8 @@ impl RendererSession {
                 worker::run(worker::BrokerResources {
                     process: launched.process,
                     job: Some(launched.job),
-                    writer,
+                    writer: outbound,
+                    writer_thread,
                     incoming,
                     reader_thread,
                     commands: commands_rx,
