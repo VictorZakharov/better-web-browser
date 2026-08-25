@@ -4,6 +4,8 @@
 mod accessibility;
 #[path = "renderer_process/backpressure.rs"]
 mod backpressure;
+#[path = "renderer_process/clock_backpressure.rs"]
+mod clock_backpressure;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/presentation.rs"]

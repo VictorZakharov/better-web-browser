@@ -36,11 +36,6 @@ pub(super) enum BrokerCommand {
         area: StorageAreaKind,
         snapshot: StorageAreaSnapshot,
     },
-    AdvanceTime {
-        document: DocumentId,
-        elapsed: Duration,
-        max_callbacks: u32,
-    },
     ViewportChanged {
         document: DocumentId,
         viewport: PresentedViewport,
@@ -68,6 +63,7 @@ pub(super) struct BrokerResources {
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
     pub(super) acknowledgements: super::acknowledgements::Receiver,
+    pub(super) clock: super::clock::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) events: super::events::EventSender,
@@ -127,6 +123,7 @@ impl Broker {
             self.process_lifecycle_commands();
             self.process_presentation_acknowledgement();
             self.process_commands();
+            self.process_document_clock();
             self.process_messages();
             self.process_fetch_stream();
             if self.process_has_exited() {

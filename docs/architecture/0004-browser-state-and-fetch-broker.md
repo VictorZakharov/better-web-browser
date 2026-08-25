@@ -101,11 +101,15 @@ The renderer sends a bounded batch of Fetch intent heads and request-body chunks
 
 The network-worker-to-broker queue is synchronous and bounded. A full queue backpressures the
 network worker. Browser command, renderer input, and browser UI-event queues are also bounded.
-Presentation events coalesce to the newest immutable snapshot. Valid renderer Fetch batches have a
-one-slot browser-event lane; its producer waits on the broker thread until the Win32 thread drains
-the slot, preserving Fetch ordering while bounded pipe queues propagate backpressure to the
-renderer. Queue producers explicitly wake the broker after enqueueing work; a 10 ms timed park
-remains only as an idle fail-safe, not as the normal delivery cadence.
+Presentation events coalesce to the newest immutable snapshot. Browser-owned document-clock
+progress uses one accumulating slot per renderer: repeated ticks for the same document add their
+elapsed time and callback budgets, while a replacement document supersedes stale progress. The
+broker drains earlier state and input commands before consuming clock progress, so a timer cannot
+overtake browser state that was already queued. Valid renderer Fetch batches have a one-slot
+browser-event lane; its producer waits on the broker thread
+until the Win32 thread drains the slot, preserving Fetch ordering while bounded pipe queues
+propagate backpressure to the renderer. Queue producers explicitly wake the broker after
+enqueueing work; a 10 ms timed park remains only as an idle fail-safe, not as normal delivery.
 
 Other UI-event exhaustion fails the renderer session rather than growing browser memory or
 blocking the Win32 message pump. Terminal exit data is retained outside that queue so overflow

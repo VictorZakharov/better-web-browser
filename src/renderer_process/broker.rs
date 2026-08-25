@@ -1,6 +1,7 @@
 //! Browser-side renderer session broker and diagnostics.
 
 mod acknowledgements;
+mod clock;
 mod diagnostics;
 mod events;
 mod session;
@@ -9,7 +10,6 @@ mod stream;
 mod tests;
 mod wake;
 mod worker;
-
 use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_for_process};
 use crate::renderer_protocol::{
@@ -18,14 +18,12 @@ use crate::renderer_protocol::{
     RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
     StorageMutationRequest, TestCommand,
 };
+use diagnostics::SharedDiagnostics;
+pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-
-use diagnostics::SharedDiagnostics;
-pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
 pub use stream::FetchResponseSink;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
     Running,
@@ -84,6 +82,7 @@ pub enum RendererEvent {
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
     acknowledgements: acknowledgements::Sender,
+    clock: clock::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
@@ -171,11 +170,10 @@ impl RendererSession {
         }));
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
-        // Acknowledgements are renderer progress state, so retain only the newest one without
-        // competing with bounded page-generated commands.
+        // Browser-owned progress must not compete with bounded page-generated commands.
         let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
-        // Browser state serializes replacement to one cancel plus one pending page. Keep that
-        // lifecycle lossless and independent from bounded, potentially hostile page traffic.
+        let (clock_tx, clock_rx) = clock::bounded();
+        // Browser state serializes replacement to one lossless cancel plus one pending page.
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
@@ -194,6 +192,7 @@ impl RendererSession {
                     reader_thread,
                     commands: commands_rx,
                     acknowledgements: acknowledgements_rx,
+                    clock: clock_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
@@ -206,6 +205,7 @@ impl RendererSession {
         Ok(Self {
             commands: commands_tx,
             acknowledgements: acknowledgements_tx,
+            clock: clock_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,

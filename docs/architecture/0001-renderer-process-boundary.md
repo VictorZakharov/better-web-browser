@@ -340,9 +340,10 @@ one and report whether its native controls were applied.
 
 Ordered keyboard, text, focus, and lifecycle messages are never dropped. Pointer moves may be
 dropped at browser-command backpressure, the browser retains the latest unsent scroll for retry,
-and consecutive scroll, pointer-move, or viewport updates are coalesced while the renderer waits for
-a browser-brokered Fetch response. This prevents high-rate state updates from crowding the bounded
-deferred queue without reordering discrete events.
+and obsolete scroll or pointer-move updates are coalesced within the current continuous-input run
+while the renderer waits for a browser-brokered Fetch response. A click, key, focus, or lifecycle
+input is an ordering barrier that coalescing never crosses. This prevents alternating high-rate
+state updates from crowding the bounded deferred queue without reordering discrete events.
 
 ## Crash, timeout, cancellation, and teardown
 
