@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blocked renderer timeout fixture</title>
+</head>
+<body>
+  <main id="main">The renderer deliberately blocks after painting this fixture shell.</main>
+  <script>
+    // Each script blocks until the runtime guard intervenes. The sequence keeps the renderer
+    // occupied beyond the outer harness deadline without relying on network timing.
+    while (true) {}
+  </script>
+  <script>
+    while (true) {}
+  </script>
+  <script>
+    while (true) {}
+  </script>
+  <script>
+    while (true) {}
+  </script>
+</body>
+</html>

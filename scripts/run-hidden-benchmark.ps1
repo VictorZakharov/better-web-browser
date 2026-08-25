@@ -26,11 +26,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'hidden-benchmark-diagnostics.ps1')
 if ([string]::IsNullOrWhiteSpace($Browser)) {
     $Browser = Join-Path $repoRoot 'target\release\better-web-browser.exe'
 }
 $Browser = (Resolve-Path $Browser).Path
 $outputPath = [System.IO.Path]::GetFullPath($Output)
+$screenshotPath = if ([string]::IsNullOrWhiteSpace($Screenshot)) {
+    $null
+} else {
+    [System.IO.Path]::GetFullPath($Screenshot)
+}
 $profilePath = $null
 if ($FreshProfile -and -not [string]::IsNullOrWhiteSpace($ProfileDirectory)) {
     throw 'Use either -FreshProfile or -ProfileDirectory, not both.'
@@ -47,6 +53,10 @@ if ($FreshProfile) {
 $outputDirectory = Split-Path -Parent $outputPath
 if (-not [string]::IsNullOrEmpty($outputDirectory)) {
     [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
+}
+if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force }
+if ($null -ne $screenshotPath -and (Test-Path -LiteralPath $screenshotPath)) {
+    Remove-Item -LiteralPath $screenshotPath -Force
 }
 
 function ConvertTo-WindowsCommandLineArgument {
@@ -102,7 +112,7 @@ if ($EarlyScrollTrace) {
 }
 if (-not [string]::IsNullOrWhiteSpace($Screenshot)) {
     $arguments.Add('--screenshot')
-    $arguments.Add([System.IO.Path]::GetFullPath($Screenshot))
+    $arguments.Add($screenshotPath)
 }
 foreach ($selector in $DiagnosticSelector) {
     $arguments.Add('--diagnostic-selector')
@@ -132,23 +142,37 @@ if (-not $process.Start()) {
 }
 $stdout = $process.StandardOutput.ReadToEndAsync()
 $stderr = $process.StandardError.ReadToEndAsync()
+$stopwatch = [Diagnostics.Stopwatch]::StartNew()
+$timedOut = $false
+$processTree = @()
+$cleanup = [pscustomobject]@{
+    killed_by_harness = $false
+    process_tree_kill_supported = $false
+    kill_error = $null
+    remaining_process_ids = @()
+}
 try {
     $actual = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)"
     if ($null -eq $actual -or $actual.CommandLine -notmatch '(?i)(?:^|\s)--benchmark(?:\s|$)') {
-        if (-not $process.HasExited) {
-            $process.Kill()
-        }
+        $processTree = @(Get-BenchmarkProcessTreeSnapshot -RootProcessId $process.Id)
+        $cleanup = Stop-BenchmarkProcessTree -Process $process -ProcessTree $processTree
         throw 'Refusing benchmark run: the actual Breeze child command line lacks --benchmark.'
     }
+    $processTree = @(Get-BenchmarkProcessTreeSnapshot -RootProcessId $process.Id)
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        throw "Hidden Breeze benchmark exceeded the $TimeoutSeconds-second process timeout."
+        $timedOut = $true
+        $processTree = @(Get-BenchmarkProcessTreeSnapshot -RootProcessId $process.Id)
+        $cleanup = Stop-BenchmarkProcessTree -Process $process -ProcessTree $processTree
+    } else {
+        # Flush redirected asynchronous reads after the bounded wait succeeds.
+        $process.WaitForExit()
     }
-    # Flush redirected asynchronous reads after the bounded wait succeeds.
-    $process.WaitForExit()
 } finally {
     if (-not $process.HasExited) {
-        $process.Kill()
-        $process.WaitForExit()
+        if ($processTree.Count -eq 0) {
+            $processTree = @(Get-BenchmarkProcessTreeSnapshot -RootProcessId $process.Id)
+        }
+        $cleanup = Stop-BenchmarkProcessTree -Process $process -ProcessTree $processTree
     }
     if ($FreshProfile -and (Test-Path -LiteralPath $profilePath)) {
         $fullProfile = [IO.Path]::GetFullPath($profilePath)
@@ -159,22 +183,69 @@ try {
         Remove-Item -LiteralPath $fullProfile -Recurse -Force
     }
 }
+$stopwatch.Stop()
 
 $standardOutput = $stdout.GetAwaiter().GetResult()
 $standardError = $stderr.GetAwaiter().GetResult()
-if (-not [string]::IsNullOrWhiteSpace($standardOutput)) {
-    Write-Output $standardOutput.TrimEnd()
+$browserExitCode = if ($process.HasExited) { $process.ExitCode } else { $null }
+if ($null -ne $browserExitCode) {
+    foreach ($entry in $processTree | Where-Object role -eq 'browser') {
+        if (-not $timedOut) { $entry.state = 'exited' }
+        $entry.exit_code = $browserExitCode
+        $entry.exit_code_unavailable_reason = $null
+    }
+}
+$failureReportArguments = @{
+    OutputPath = $outputPath
+    RequestedUrl = $Url
+    Locale = $Locale
+    FreshProfile = [bool] $FreshProfile
+    IsolatedProfile = $null -ne $profilePath
+    ScreenshotPath = $screenshotPath
+    FailureKind = $null
+    ErrorMessage = $null
+    ElapsedMs = $stopwatch.Elapsed.TotalMilliseconds
+    TimeoutSeconds = $TimeoutSeconds
+    KilledByHarness = [bool] $cleanup.killed_by_harness
+    BrowserProcessId = $process.Id
+    BrowserExitCode = $browserExitCode
+    ProcessTree = @($processTree)
+    RemainingProcessIds = @($cleanup.remaining_process_ids)
+    ProcessTreeKillSupported = [bool] $cleanup.process_tree_kill_supported
+    KillError = $cleanup.kill_error
+    Stdout = $standardOutput
+    Stderr = $standardError
+    ProfilePath = $profilePath
+}
+if ($timedOut) {
+    $message = "Hidden Breeze benchmark exceeded the $TimeoutSeconds-second process timeout."
+    $failureReportArguments.FailureKind = Get-BenchmarkFailureKind -TimedOut
+    $failureReportArguments.ErrorMessage = $message
+    Write-BenchmarkFailureReport @failureReportArguments
+    throw $message
 }
 if ($process.ExitCode -ne 0) {
-    $detail = if ([string]::IsNullOrWhiteSpace($standardError)) {
+    $rawDetail = if ([string]::IsNullOrWhiteSpace($standardError)) {
         'no stderr was reported'
     } else {
         $standardError.Trim()
     }
-    throw "Hidden Breeze benchmark failed with exit code $($process.ExitCode): $detail"
+    $detail = ConvertTo-BoundedBenchmarkDiagnostic -Value $rawDetail -ProfilePath $profilePath
+    $message = "Hidden Breeze benchmark failed with exit code $($process.ExitCode): $detail"
+    $failureReportArguments.FailureKind = Get-BenchmarkFailureKind -Stdout $standardOutput -Stderr $standardError
+    $failureReportArguments.ErrorMessage = $message
+    Write-BenchmarkFailureReport @failureReportArguments
+    throw $message
 }
 if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
-    throw "Hidden Breeze benchmark did not create $outputPath."
+    $message = "Hidden Breeze benchmark did not create $outputPath."
+    $failureReportArguments.FailureKind = 'missing_output'
+    $failureReportArguments.ErrorMessage = $message
+    Write-BenchmarkFailureReport @failureReportArguments
+    throw $message
+}
+if (-not [string]::IsNullOrWhiteSpace($standardOutput)) {
+    Write-Output $standardOutput.TrimEnd()
 }
 if (-not [string]::IsNullOrWhiteSpace($standardError)) {
     Write-Warning $standardError.Trim()
@@ -183,5 +254,7 @@ $record = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
 $record | Add-Member -NotePropertyName locale -NotePropertyValue $Locale
 $record | Add-Member -NotePropertyName fresh_profile -NotePropertyValue ([bool] $FreshProfile)
 $record | Add-Member -NotePropertyName isolated_profile -NotePropertyValue ($null -ne $profilePath)
+$outcome = Get-BenchmarkHarnessOutcome -PageError ([string] $record.error)
+$record | Add-Member -NotePropertyName harness_outcome -NotePropertyValue $outcome -Force
 $record | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $outputPath -Encoding UTF8
 Write-Output $outputPath
