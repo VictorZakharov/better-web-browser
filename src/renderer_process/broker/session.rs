@@ -33,13 +33,26 @@ impl RendererSession {
         result
     }
 
+    fn send_lifecycle_command(&self, command: worker::LifecycleCommand) -> Result<(), String> {
+        let result = self
+            .lifecycle
+            .send(command)
+            .map_err(|_| "renderer broker has exited".to_string());
+        self.wake.notify();
+        result
+    }
+
     pub fn load_document(
         &self,
         start: DocumentStart,
         state: DocumentState,
         body: Vec<u8>,
     ) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::LoadDocument { start, state, body })
+        self.send_lifecycle_command(worker::LifecycleCommand::LoadDocument {
+            start: Box::new(start),
+            state,
+            body,
+        })
     }
 
     pub fn fetch_response_sink(&self, document: DocumentId) -> FetchResponseSink {
@@ -123,12 +136,12 @@ impl RendererSession {
         acknowledgement
             .validate()
             .map_err(|error| error.to_string())?;
-        self.send_command(worker::BrokerCommand::PresentationAcknowledged(
-            acknowledgement,
-        ))
+        let result = self.acknowledgements.send(acknowledgement);
+        self.wake.notify();
+        result
     }
 
     pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::CancelDocument(document))
+        self.send_lifecycle_command(worker::LifecycleCommand::CancelDocument(document))
     }
 }

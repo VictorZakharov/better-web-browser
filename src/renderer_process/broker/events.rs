@@ -14,7 +14,7 @@ pub(super) fn bounded() -> (EventSender, EventReceiver) {
             sender_open: true,
             receiver_open: true,
         }),
-        available: Condvar::new(),
+        changed: Condvar::new(),
     });
     (
         EventSender {
@@ -26,7 +26,7 @@ pub(super) fn bounded() -> (EventSender, EventReceiver) {
 
 struct EventQueue {
     state: Mutex<QueueState>,
-    available: Condvar,
+    changed: Condvar,
 }
 
 struct QueueState {
@@ -40,6 +40,14 @@ pub(super) struct EventSender {
 }
 
 impl EventSender {
+    pub(super) fn send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+        if matches!(event, RendererEvent::FetchBatch { .. }) {
+            self.send_lossless_fetch(event)
+        } else {
+            self.try_send(event)
+        }
+    }
+
     pub(super) fn try_send(&self, mut event: RendererEvent) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
@@ -71,19 +79,7 @@ impl EventSender {
             state
                 .events
                 .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
-        } else if matches!(&event, RendererEvent::FetchBatch(_))
-            && state
-                .events
-                .iter()
-                .filter(|queued| matches!(queued, RendererEvent::FetchBatch(_)))
-                .count()
-                >= MAX_QUEUED_RENDERER_FETCH_BATCHES
-        {
-            return Err(ProtocolError::InvalidPayload(
-                "browser Fetch-batch event queue exhausted",
-            ));
         }
-
         if state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
             return Err(ProtocolError::InvalidPayload(
                 "browser renderer-event queue exhausted",
@@ -91,8 +87,71 @@ impl EventSender {
         }
         state.events.push_back(event);
         drop(state);
-        self.queue.available.notify_one();
+        self.queue.changed.notify_one();
         Ok(())
+    }
+
+    fn send_lossless_fetch(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while state.receiver_open
+            && (state.events.len() >= MAX_QUEUED_RENDERER_EVENTS
+                || queued_fetch_batches(&state.events) >= MAX_QUEUED_RENDERER_FETCH_BATCHES)
+        {
+            // A Fetch batch is valid page work, not a protocol violation. Apply bounded
+            // backpressure on the broker thread until the Win32 thread drains its event slot.
+            // Closing the browser-side receiver releases this wait during renderer teardown.
+            state = self
+                .queue
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        if !state.receiver_open {
+            return Ok(());
+        }
+        state.events.push_back(event);
+        drop(state);
+        self.queue.changed.notify_one();
+        Ok(())
+    }
+
+    pub(super) fn discard_document(&self, document: crate::renderer_protocol::DocumentId) {
+        let mut state = self
+            .queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state
+            .events
+            .retain(|event| event_document(event) != Some(document));
+        drop(state);
+        self.queue.changed.notify_all();
+    }
+}
+
+fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
+    events
+        .iter()
+        .filter(|event| matches!(event, RendererEvent::FetchBatch { .. }))
+        .count()
+}
+
+fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
+    match event {
+        RendererEvent::FetchBatch { document, .. }
+        | RendererEvent::TimeAdvanced { document, .. }
+        | RendererEvent::DocumentFailed { document, .. }
+        | RendererEvent::NavigationRequested { document, .. } => Some(*document),
+        RendererEvent::Presentation(presentation) => Some(presentation.document),
+        RendererEvent::CookieMutation(mutation) => Some(mutation.document),
+        RendererEvent::StorageMutation(request) => Some(request.document),
+        RendererEvent::Diagnostic { .. }
+        | RendererEvent::Unresponsive
+        | RendererEvent::Exited(_) => None,
     }
 }
 
@@ -105,7 +164,7 @@ impl Drop for EventSender {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.sender_open = false;
         drop(state);
-        self.queue.available.notify_all();
+        self.queue.changed.notify_all();
     }
 }
 
@@ -126,7 +185,12 @@ impl EventReceiver {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         loop {
             if let Some(event) = state.events.pop_front() {
+                drop(state);
+                self.queue.changed.notify_all();
                 return Ok(event);
+            }
+            if !state.receiver_open {
+                return Err(mpsc::RecvTimeoutError::Disconnected);
             }
             if !state.sender_open {
                 return Err(mpsc::RecvTimeoutError::Disconnected);
@@ -137,7 +201,7 @@ impl EventReceiver {
             }
             let (next, wait) = self
                 .queue
-                .available
+                .changed
                 .wait_timeout(state, remaining)
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             state = next;
@@ -153,16 +217,19 @@ impl EventReceiver {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match state.events.pop_front() {
+        let result = match state.events.pop_front() {
             Some(event) => Ok(event),
-            None if state.sender_open => Err(mpsc::TryRecvError::Empty),
+            None if state.receiver_open && state.sender_open => Err(mpsc::TryRecvError::Empty),
             None => Err(mpsc::TryRecvError::Disconnected),
+        };
+        drop(state);
+        if result.is_ok() {
+            self.queue.changed.notify_all();
         }
+        result
     }
-}
 
-impl Drop for EventReceiver {
-    fn drop(&mut self) {
+    pub(super) fn close(&self) {
         let mut state = self
             .queue
             .state
@@ -171,9 +238,18 @@ impl Drop for EventReceiver {
         state.receiver_open = false;
         state.events.clear();
         drop(state);
-        self.queue.available.notify_all();
+        self.queue.changed.notify_all();
     }
 }
+
+impl Drop for EventReceiver {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+#[cfg(test)]
+mod teardown_tests;
 
 #[cfg(test)]
 mod tests {
@@ -248,23 +324,71 @@ mod tests {
     }
 
     #[test]
-    fn transactional_fetch_batches_remain_bounded_and_reusable() {
+    fn consecutive_fetch_batches_wait_for_browser_drain_without_failing() {
         let (sender, receiver) = bounded();
+        let document = DocumentId::new(1).unwrap();
         sender
-            .try_send(RendererEvent::FetchBatch(Vec::new()))
+            .send(RendererEvent::FetchBatch {
+                document,
+                requests: Vec::new(),
+            })
             .unwrap();
+
+        let (completed, completion) = mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            let result = sender.send(RendererEvent::FetchBatch {
+                document,
+                requests: Vec::new(),
+            });
+            completed.send(result).unwrap();
+        });
         assert!(matches!(
-            sender.try_send(RendererEvent::FetchBatch(Vec::new())),
-            Err(ProtocolError::InvalidPayload(
-                "browser Fetch-batch event queue exhausted"
-            ))
+            completion.recv_timeout(Duration::from_millis(50)),
+            Err(mpsc::RecvTimeoutError::Timeout)
         ));
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            RendererEvent::FetchBatch(batch) if batch.is_empty()
+            RendererEvent::FetchBatch {
+                document: first,
+                requests
+            } if first == document && requests.is_empty()
         ));
-        sender
-            .try_send(RendererEvent::FetchBatch(Vec::new()))
+        completion
+            .recv_timeout(Duration::from_secs(1))
+            .expect("Fetch producer resumed after the browser drained its slot")
             .unwrap();
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            RendererEvent::FetchBatch {
+                document: second,
+                requests
+            } if second == document && requests.is_empty()
+        ));
+        producer.join().unwrap();
+    }
+
+    #[test]
+    fn cancelled_transactional_fetch_batches_are_discarded_and_reusable() {
+        let (sender, receiver) = bounded();
+        let replaced = DocumentId::new(1).unwrap();
+        sender
+            .send(RendererEvent::FetchBatch {
+                document: replaced,
+                requests: Vec::new(),
+            })
+            .unwrap();
+        sender.discard_document(replaced);
+        let replacement = DocumentId::new(2).unwrap();
+        sender
+            .send(RendererEvent::FetchBatch {
+                document: replacement,
+                requests: Vec::new(),
+            })
+            .unwrap();
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            RendererEvent::FetchBatch { document, requests }
+                if document == replacement && requests.is_empty()
+        ));
     }
 }

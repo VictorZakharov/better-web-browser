@@ -64,6 +64,8 @@ pub(super) struct BenchmarkRun {
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
     pub(super) script_runtime_stopped: bool,
+    pub(super) completion_marker: Option<String>,
+    pub(super) completion_observed: bool,
     pub(super) finish_scheduled: bool,
     pub(super) renderer_wait_deadline: Option<Instant>,
     pub(super) screenshot: Option<PathBuf>,
@@ -77,6 +79,10 @@ pub(super) struct BenchmarkRun {
 }
 
 impl BrowserState {
+    pub(super) fn finish_benchmark_after_completion(&self) {
+        post_benchmark_finish(self.window, Duration::ZERO);
+    }
+
     pub(super) unsafe fn schedule_benchmark_finish(&mut self) {
         if self
             .benchmark

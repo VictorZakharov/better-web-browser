@@ -12,9 +12,8 @@ use crate::renderer_process::windows::{
 };
 use crate::renderer_protocol::{
     BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
-    FrameWriter, PresentationAcknowledgement, PresentedViewport, ProtocolError,
-    RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport, TestCommand,
-    TransferAssembler,
+    FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage,
+    RendererPresentation, RestrictionReport, TestCommand, TransferAssembler,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::HashMap;
@@ -31,11 +30,6 @@ pub(super) enum BrokerCommand {
         reply: mpsc::Sender<Result<RestrictionReport, String>>,
     },
     Test(TestCommand),
-    LoadDocument {
-        start: DocumentStart,
-        state: DocumentState,
-        body: Vec<u8>,
-    },
     UpdateCookieSnapshot(CookieStateSnapshot),
     UpdateStorageSnapshot {
         document: DocumentId,
@@ -52,11 +46,18 @@ pub(super) enum BrokerCommand {
         viewport: PresentedViewport,
     },
     Input(DocumentInput),
-    PresentationAcknowledged(PresentationAcknowledgement),
-    CancelDocument(DocumentId),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),
+}
+
+pub(super) enum LifecycleCommand {
+    LoadDocument {
+        start: Box<DocumentStart>,
+        state: DocumentState,
+        body: Vec<u8>,
+    },
+    CancelDocument(DocumentId),
 }
 
 pub(super) struct BrokerResources {
@@ -66,6 +67,8 @@ pub(super) struct BrokerResources {
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
+    pub(super) acknowledgements: super::acknowledgements::Receiver,
+    pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) events: super::events::EventSender,
     pub(super) wake: super::wake::BrokerWake,
@@ -92,6 +95,7 @@ struct Broker {
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
     active_document: Option<DocumentId>,
+    retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
 }
 
@@ -112,6 +116,7 @@ impl Broker {
             incoming_fetch: None,
             incoming_presentation: None,
             active_document: None,
+            retired_document: None,
             outgoing_fetch: HashMap::new(),
         }
     }
@@ -119,6 +124,8 @@ impl Broker {
     fn run(&mut self) {
         self.resources().wake.register_current();
         loop {
+            self.process_lifecycle_commands();
+            self.process_presentation_acknowledgement();
             self.process_commands();
             self.process_messages();
             self.process_fetch_stream();
@@ -372,7 +379,7 @@ impl Broker {
     }
 
     fn emit_event(&self, event: RendererEvent) -> Result<(), ProtocolError> {
-        self.resources().events.try_send(event)
+        self.resources().events.send(event)
     }
 }
 

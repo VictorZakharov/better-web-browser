@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-const DEFAULT_SETTLE_MS: u64 = 1_500;
+// Completion-aware WPT runs normally exit as soon as testharness reports. This is only the
+// fail-safe horizon for a harness that never emits its completion callback.
+const DEFAULT_SETTLE_MS: u64 = 10_000;
 const DEFAULT_TIMEOUT_MS: u64 = 20_000;
 
 pub(crate) struct Cli {

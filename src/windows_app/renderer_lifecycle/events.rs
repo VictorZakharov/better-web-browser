@@ -44,8 +44,8 @@ impl BrowserState {
                         status.phase = RendererLifecyclePhase::Unresponsive;
                     });
                 }
-                RendererEvent::FetchBatch(requests) => {
-                    self.begin_renderer_fetch_batch(id, requests);
+                RendererEvent::FetchBatch { document, requests } => {
+                    self.begin_renderer_fetch_batch(id, document, requests);
                 }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
@@ -153,12 +153,9 @@ impl BrowserState {
     unsafe fn begin_renderer_fetch_batch(
         &mut self,
         id: TabId,
+        document: better_web_browser::renderer_protocol::DocumentId,
         requests: Vec<better_web_browser::renderer_protocol::RendererFetchRequest>,
     ) {
-        let Some(document) = requests.first().map(|request| request.head.document) else {
-            self.contain_page_engine_failure(id, "renderer sent an empty Fetch batch".into());
-            return;
-        };
         let context = self.tabs.get_mut(id).and_then(|tab| {
             (tab.renderer_document == Some(document))
                 .then(|| {

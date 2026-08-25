@@ -287,7 +287,8 @@ impl BrowserState {
             benchmark.presentation_install_time += presentation_install_started.elapsed();
         }
 
-        self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
+        let benchmark_completed =
+            self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
         let error_count = presentation.runtime.errors.len();
         let script_status = if presentation.runtime.scripts_executed == 0 && error_count == 0 {
             String::new()
@@ -321,6 +322,9 @@ impl BrowserState {
         if first_presentation {
             self.schedule_benchmark_finish();
         }
+        if benchmark_completed {
+            self.finish_benchmark_after_completion();
+        }
         self.document = Some(presentation.reader);
     }
 
@@ -329,7 +333,7 @@ impl BrowserState {
         presentation: &RendererPresentation,
         damage: DisplayListDamage,
         first: bool,
-    ) {
+    ) -> bool {
         let script_time = Duration::from_micros(presentation.load.script_micros);
         let style_time = Duration::from_micros(presentation.load.style_micros);
         let layout_time = Duration::from_micros(presentation.load.layout_micros);
@@ -339,7 +343,7 @@ impl BrowserState {
         let load = first.then(|| self.renderer_load_metrics.take()).flatten();
         let reached_page_ready = load.is_some();
         let Some(benchmark) = self.benchmark.as_mut() else {
-            return;
+            return false;
         };
         if let Some(load) = load {
             benchmark.final_url = presentation.final_url.clone();
@@ -391,9 +395,7 @@ impl BrowserState {
         benchmark
             .script_errors
             .extend(presentation.runtime.errors.iter().cloned());
-        benchmark
-            .script_console
-            .extend(presentation.runtime.console.iter().cloned());
+        let benchmark_completed = benchmark.record_script_console(&presentation.runtime.console);
         benchmark
             .script_diagnostics
             .extend(presentation.runtime.diagnostics.iter().cloned());
@@ -423,5 +425,6 @@ impl BrowserState {
                 .full_paint_repaints
                 .saturating_add(usize::from(damage.full_repaint));
         }
+        benchmark_completed
     }
 }

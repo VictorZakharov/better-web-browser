@@ -43,6 +43,10 @@ processes launched by this runner request an explicitly sized headless UI-thread
 standards harnesses remain safe in unoptimized builds. Normal local runs remain sequential release
 builds, and unrelated performance benchmarks keep the browser's ordinary main-thread path.
 
+The runner asks hidden Breeze instances to finish as soon as testharness emits the reporter's
+completion marker. The configured settle period is therefore a fail-safe deadline for a harness
+that never completes, rather than a fixed delay paid by every passing case.
+
 The console reports each case and `target/wpt/report.json` records the pinned revision, harness
 subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `pass`, `fail`,
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected

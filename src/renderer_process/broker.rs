@@ -1,5 +1,6 @@
 //! Browser-side renderer session broker and diagnostics.
 
+mod acknowledgements;
 mod diagnostics;
 mod events;
 mod session;
@@ -55,7 +56,10 @@ pub enum RendererEvent {
         code: u16,
         text: String,
     },
-    FetchBatch(Vec<RendererFetchRequest>),
+    FetchBatch {
+        document: DocumentId,
+        requests: Vec<RendererFetchRequest>,
+    },
     Presentation(Box<RendererPresentation>),
     TimeAdvanced {
         document: DocumentId,
@@ -79,6 +83,8 @@ pub enum RendererEvent {
 
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
+    acknowledgements: acknowledgements::Sender,
+    lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
     wake: wake::BrokerWake,
@@ -165,6 +171,12 @@ impl RendererSession {
         }));
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
+        // Acknowledgements are renderer progress state, so retain only the newest one without
+        // competing with bounded page-generated commands.
+        let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
+        // Browser state serializes replacement to one cancel plus one pending page. Keep that
+        // lifecycle lossless and independent from bounded, potentially hostile page traffic.
+        let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
         let (events_tx, events_rx) = events::bounded();
@@ -181,6 +193,8 @@ impl RendererSession {
                     incoming,
                     reader_thread,
                     commands: commands_rx,
+                    acknowledgements: acknowledgements_rx,
+                    lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
                     wake: worker_wake,
@@ -191,6 +205,8 @@ impl RendererSession {
             .map_err(|error| format!("start renderer broker thread: {error}"))?;
         Ok(Self {
             commands: commands_tx,
+            acknowledgements: acknowledgements_tx,
+            lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,
             wake,
@@ -286,6 +302,7 @@ impl RendererSession {
     /// Browser UI recovery paths use this instead of `Drop`, whose graceful shutdown wait is
     /// intentionally bounded but can still take several seconds for an unresponsive renderer.
     pub fn terminate_in_background(mut self) {
+        self.events.close();
         let Some(worker) = self.worker.take() else {
             return;
         };
@@ -311,6 +328,7 @@ impl RendererSession {
     }
 
     pub fn shutdown(&mut self) -> Result<RendererExit, String> {
+        self.events.close();
         let (reply, response) = mpsc::channel();
         self.send_blocking_command(worker::BrokerCommand::Shutdown(reply))?;
         let result = response
@@ -332,6 +350,7 @@ impl Drop for RendererSession {
         if self.worker.is_none() {
             return;
         }
+        self.events.close();
         let (reply, response) = mpsc::channel();
         let _ = self.send_blocking_command(worker::BrokerCommand::Shutdown(reply));
         if response
