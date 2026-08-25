@@ -1,5 +1,6 @@
 //! Validated immutable renderer output retained by the browser process.
 
+mod coalescing;
 mod codec;
 mod diagnostics;
 mod layout;
@@ -145,7 +146,7 @@ mod tests {
     use crate::engine::{FontSpec, PositionedGlyph, RectF};
     use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};
 
-    fn sample() -> RendererPresentation {
+    pub(super) fn sample() -> RendererPresentation {
         let url = "https://example.test/".to_string();
         let accessibility_root = DocumentNodeId::new((1_u128 << 64) | 1).unwrap();
         RendererPresentation {
