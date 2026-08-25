@@ -6,7 +6,8 @@ use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD, MAX_URL_BYTES};
 use crate::renderer_protocol::document::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{
-    BrowserMessage, NavigationCause, NavigationDisposition, ProtocolError, RendererMessage,
+    BrowserMessage, NavigationCause, NavigationDisposition, PointerCursor, PointerCursorResult,
+    ProtocolError, RendererMessage,
 };
 
 pub(super) fn encode_browser_document(
@@ -191,6 +192,16 @@ pub(super) fn encode_renderer_document(
             });
             0x011a
         }
+        RendererMessage::PointerCursor(result) => {
+            let result = result.validate()?;
+            writer.u64(result.document.get());
+            writer.u64(result.sequence);
+            writer.u8(match result.cursor {
+                PointerCursor::Default => 1,
+                PointerCursor::Pointer => 2,
+            });
+            0x011e
+        }
         _ => return Err(ProtocolError::InvalidPayload("renderer document message")),
     };
     Ok((kind, writer.finish()))
@@ -247,6 +258,18 @@ pub(super) fn decode_renderer_document(
                 _ => return Err(ProtocolError::InvalidPayload("navigation cause")),
             },
         },
+        0x011e => RendererMessage::PointerCursor(
+            PointerCursorResult {
+                document: DocumentId::new(reader.u64()?)?,
+                sequence: reader.u64()?,
+                cursor: match reader.u8()? {
+                    1 => PointerCursor::Default,
+                    2 => PointerCursor::Pointer,
+                    _ => return Err(ProtocolError::InvalidPayload("pointer cursor")),
+                },
+            }
+            .validate()?,
+        ),
         _ => return Err(ProtocolError::UnexpectedMessage(kind)),
     };
     reader.finish()?;

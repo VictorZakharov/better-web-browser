@@ -51,6 +51,8 @@ impl BrowserState {
             tab.pending_renderer_page = None;
             tab.renderer_document = None;
             tab.renderer_input_sequence = 0;
+            tab.pointer_cursor_request = None;
+            tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
             tab.renderer_revision = 0;
@@ -91,6 +93,7 @@ impl BrowserState {
         self.ensure_renderer_monitoring();
         self.update_renderer_tab_title(id, &url);
         if is_active {
+            self.apply_current_pointer_cursor();
             self.update_active_tab_title(&url);
             KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
             self.update_history_buttons();

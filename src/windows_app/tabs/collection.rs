@@ -196,7 +196,7 @@ impl<T: IdentifiedTab> TabCollection<T> {
     }
 
     pub(in crate::windows_app) fn remove_active(&mut self) -> T {
-        assert!(self.tabs.len() > 1, "the last tab must be replaced");
+        assert!(self.tabs.len() > 1, "the last tab closes its window");
         let removed = self.tabs.remove(self.active);
         self.active = self.active.min(self.tabs.len() - 1);
         self.retain_valid_selection();
@@ -216,16 +216,6 @@ impl<T: IdentifiedTab> TabCollection<T> {
         }
         self.retain_valid_selection();
         Some(removed)
-    }
-
-    pub(in crate::windows_app) fn replace_active(
-        &mut self,
-        create: impl FnOnce(TabId) -> T,
-    ) -> (TabId, T) {
-        let id = TabId::allocate();
-        let removed = std::mem::replace(&mut self.tabs[self.active], create(id));
-        self.selection.select_only(id);
-        (id, removed)
     }
 
     pub(in crate::windows_app) fn reorder_selected(&mut self, target_index: usize) {

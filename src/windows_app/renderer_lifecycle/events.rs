@@ -100,6 +100,9 @@ impl BrowserState {
                         }
                     });
                 }
+                RendererEvent::PointerCursor(result) => {
+                    self.process_for_tab(id, |state| state.apply_renderer_pointer_cursor(result));
+                }
                 RendererEvent::CookieMutation(mutation) => {
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
@@ -140,6 +143,11 @@ impl BrowserState {
                 } else {
                     tab.renderer_session.take();
                 }
+                tab.pointer_cursor_request = None;
+                tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
+            }
+            if self.tabs.active_id() == id {
+                self.apply_current_pointer_cursor();
             }
             if self.tabs.active_id() == id
                 && let Some(status) = status

@@ -79,6 +79,20 @@ impl EventSender {
             state
                 .events
                 .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
+        } else if let RendererEvent::PointerCursor(next) = &event {
+            if state.events.iter().any(|queued| {
+                matches!(
+                    queued,
+                    RendererEvent::PointerCursor(previous)
+                        if previous.document == next.document
+                            && previous.sequence >= next.sequence
+                )
+            }) {
+                return Ok(());
+            }
+            state.events.retain(|queued| {
+                !matches!(queued, RendererEvent::PointerCursor(previous) if previous.document == next.document)
+            });
         }
         if state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
             return Err(ProtocolError::InvalidPayload(
@@ -145,6 +159,10 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::FetchBatch { document, .. }
         | RendererEvent::TimeAdvanced { document, .. }
         | RendererEvent::DocumentFailed { document, .. }
+        | RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
+            document,
+            ..
+        })
         | RendererEvent::NavigationRequested { document, .. } => Some(*document),
         RendererEvent::Presentation(presentation) => Some(presentation.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
@@ -321,6 +339,36 @@ mod tests {
             receiver.try_recv(),
             Err(mpsc::TryRecvError::Empty)
         ));
+    }
+
+    #[test]
+    fn cursor_results_coalesce_to_the_newest_sequence_per_document() {
+        let (sender, receiver) = bounded();
+        let first = DocumentId::new(1).unwrap();
+        let second = DocumentId::new(2).unwrap();
+        let cursor = |document, sequence| {
+            RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
+                document,
+                sequence,
+                cursor: crate::renderer_protocol::PointerCursor::Pointer,
+            })
+        };
+
+        sender.try_send(cursor(first, 1)).unwrap();
+        sender.try_send(cursor(second, 1)).unwrap();
+        sender.try_send(cursor(first, 3)).unwrap();
+        sender.try_send(cursor(first, 2)).unwrap();
+
+        let RendererEvent::PointerCursor(second_result) = receiver.try_recv().unwrap() else {
+            panic!("expected second-document cursor");
+        };
+        assert_eq!(second_result.document, second);
+        let RendererEvent::PointerCursor(first_result) = receiver.try_recv().unwrap() else {
+            panic!("expected first-document cursor");
+        };
+        assert_eq!(first_result.document, first);
+        assert_eq!(first_result.sequence, 3);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[test]

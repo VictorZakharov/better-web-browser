@@ -91,6 +91,41 @@ fn renderer_messages_round_trip() {
 }
 
 #[test]
+fn pointer_cursor_results_round_trip_and_reject_invalid_fields() {
+    let document = DocumentId::new(11).unwrap();
+    for cursor in [PointerCursor::Default, PointerCursor::Pointer] {
+        let message = RendererMessage::PointerCursor(PointerCursorResult {
+            document,
+            sequence: 27,
+            cursor,
+        });
+        let decoded = FrameReader::new(Cursor::new(encoded_renderer(&message)), session())
+            .read_renderer()
+            .unwrap();
+        assert_eq!(decoded, message);
+    }
+
+    let valid = RendererMessage::PointerCursor(PointerCursorResult {
+        document,
+        sequence: 27,
+        cursor: PointerCursor::Pointer,
+    });
+    let mut zero_sequence = encoded_renderer(&valid);
+    zero_sequence[HEADER_LENGTH + 8..HEADER_LENGTH + 16].fill(0);
+    assert!(matches!(
+        FrameReader::new(Cursor::new(zero_sequence), session()).read_renderer(),
+        Err(ProtocolError::InvalidPayload("pointer cursor sequence"))
+    ));
+
+    let mut invalid_cursor = encoded_renderer(&valid);
+    invalid_cursor[HEADER_LENGTH + 16] = 3;
+    assert!(matches!(
+        FrameReader::new(Cursor::new(invalid_cursor), session()).read_renderer(),
+        Err(ProtocolError::InvalidPayload("pointer cursor"))
+    ));
+}
+
+#[test]
 fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
     let start = DocumentStart {
         document: DocumentId::new(11).unwrap(),

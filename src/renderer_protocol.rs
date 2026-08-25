@@ -27,7 +27,8 @@ pub use document::{
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
-    PointerInput, PointerPhase, PresentationAcknowledgement, ScrollInput, TextInput,
+    PointerCursor, PointerCursorResult, PointerInput, PointerPhase, PresentationAcknowledgement,
+    ScrollInput, TextInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce, RendererDiagnostic,

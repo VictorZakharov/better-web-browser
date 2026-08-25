@@ -11,7 +11,7 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
-use better_web_browser::renderer_protocol::{DocumentId, PresentedGlyphRaster};
+use better_web_browser::renderer_protocol::{DocumentId, PointerCursor, PresentedGlyphRaster};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -58,6 +58,8 @@ pub(super) struct BrowserTab {
     pub(super) pending_renderer_page: Option<LoadedPage>,
     pub(super) renderer_document: Option<DocumentId>,
     pub(super) renderer_input_sequence: u64,
+    pub(super) pointer_cursor_request: Option<u64>,
+    pub(super) pointer_cursor: PointerCursor,
     pub(super) renderer_input_poll_budget: u8,
     pub(super) pending_renderer_inputs: PendingRendererInputs,
     pub(super) renderer_revision: u64,
@@ -112,6 +114,8 @@ impl BrowserTab {
             pending_renderer_page: Some(LoadedPage::home()),
             renderer_document: None,
             renderer_input_sequence: 0,
+            pointer_cursor_request: None,
+            pointer_cursor: PointerCursor::Default,
             renderer_input_poll_budget: 0,
             pending_renderer_inputs: PendingRendererInputs::default(),
             renderer_revision: 0,
@@ -141,6 +145,8 @@ impl BrowserTab {
         self.pending_renderer_page = None;
         self.renderer_document = None;
         self.renderer_input_sequence = 0;
+        self.pointer_cursor_request = None;
+        self.pointer_cursor = PointerCursor::Default;
         self.renderer_input_poll_budget = 0;
         self.pending_renderer_inputs.clear();
         self.renderer_revision = 0;

@@ -95,7 +95,7 @@ impl BrowserState {
         let Some((document, sequence)) = self.next_renderer_input() else {
             return false;
         };
-        self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+        let accepted = self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
             document,
             sequence,
             phase,
@@ -104,7 +104,11 @@ impl BrowserState {
             y: document_y,
             modifiers: pointer_modifiers(wparam),
             target: None,
-        }))
+        }));
+        if accepted && phase == PointerPhase::Move {
+            self.pointer_cursor_request = Some(sequence);
+        }
+        accepted
     }
 
     pub(super) unsafe fn route_page_control_activation(&mut self, index: usize) {

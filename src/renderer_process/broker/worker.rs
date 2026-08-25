@@ -181,6 +181,7 @@ impl Broker {
                     | RendererMessage::TimeAdvanced { .. }
                     | RendererMessage::DocumentFailed { .. }
                     | RendererMessage::NavigationRequested { .. }
+                    | RendererMessage::PointerCursor(_)
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::StorageMutation(_)),
                 )) => {

@@ -57,6 +57,7 @@ unsafe extern "system" {
         instance: Hinstance,
         cursor_name: *const u16,
     ) -> Hcursor;
+    pub(in crate::windows_app) fn SetCursor(cursor: Hcursor) -> Hcursor;
     pub(in crate::windows_app) fn BeginPaint(window: Hwnd, paint: *mut PaintStruct) -> Hdc;
     pub(in crate::windows_app) fn EndPaint(window: Hwnd, paint: *const PaintStruct) -> i32;
     pub(in crate::windows_app) fn GetClientRect(window: Hwnd, rectangle: *mut Rect) -> i32;

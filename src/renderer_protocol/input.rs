@@ -62,6 +62,29 @@ pub struct PointerInput {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerCursor {
+    Default,
+    Pointer,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointerCursorResult {
+    pub document: DocumentId,
+    pub sequence: u64,
+    pub cursor: PointerCursor,
+}
+
+impl PointerCursorResult {
+    pub fn validate(self) -> Result<Self, ProtocolError> {
+        if self.sequence == 0 {
+            Err(ProtocolError::InvalidPayload("pointer cursor sequence"))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyPhase {
     Down,
     Up,

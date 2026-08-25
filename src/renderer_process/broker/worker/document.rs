@@ -184,6 +184,12 @@ impl Broker {
                     })?;
                 }
             }
+            RendererMessage::PointerCursor(result) => {
+                let result = result.validate()?;
+                if self.active_document == Some(result.document) {
+                    self.emit_event(RendererEvent::PointerCursor(result))?;
+                }
+            }
             RendererMessage::CookieMutation(mutation) => {
                 if self.active_document != Some(mutation.document) {
                     // Cancellation and pipe delivery can race. A well-formed mutation from the

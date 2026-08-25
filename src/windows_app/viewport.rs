@@ -85,6 +85,7 @@ impl BrowserState {
             Surface::Page => Surface::Reader,
             Surface::Reader => Surface::Page,
         };
+        self.reset_pointer_cursor();
         set_window_text(
             self.controls.reader,
             if self.surface == Surface::Reader {

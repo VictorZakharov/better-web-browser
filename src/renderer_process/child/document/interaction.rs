@@ -7,12 +7,19 @@ use crate::engine::dom::{NodeId, NodeRef};
 use crate::engine::{ControlKind, ControlSpec, DisplayItem, UserInputEvent, UserInputModifiers};
 use crate::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, InputModifiers, KeyPhase,
-    NavigationDisposition, PointerButton, PointerInput, PointerPhase, PresentationAcknowledgement,
+    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
+    PointerPhase, PresentationAcknowledgement,
 };
 
 pub(in crate::renderer_process::child) struct InteractionResult {
     pub(in crate::renderer_process::child) presentation: Option<RendererPresentation>,
     pub(in crate::renderer_process::child) navigation: Option<(String, NavigationDisposition)>,
+    pub(in crate::renderer_process::child) cursor: Option<PointerCursorResult>,
+}
+struct PointerInteraction {
+    outcome: ScriptOutcome,
+    navigation: Option<(String, NavigationDisposition)>,
+    cursor: Option<PointerCursorResult>,
 }
 
 impl DocumentRuntime {
@@ -26,13 +33,19 @@ impl DocumentRuntime {
             return Ok(InteractionResult {
                 presentation: None,
                 navigation: None,
+                cursor: None,
             });
         }
         self.last_input_sequence = input.sequence();
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
+        let mut cursor = None;
         let (mut outcome, navigation) = match input {
-            DocumentInput::Pointer(input) => self.pointer_input(input, connection)?,
+            DocumentInput::Pointer(input) => {
+                let interaction = self.pointer_input(input, connection)?;
+                cursor = interaction.cursor;
+                (interaction.outcome, interaction.navigation)
+            }
             DocumentInput::Keyboard(input) => {
                 let key_code = key_code(&input.key);
                 let activates_form = input.phase == KeyPhase::Down && input.key == "Enter";
@@ -69,6 +82,7 @@ impl DocumentRuntime {
                     return Ok(InteractionResult {
                         presentation: None,
                         navigation: None,
+                        cursor: None,
                     });
                 };
                 self.accessibility_selection =
@@ -132,6 +146,7 @@ impl DocumentRuntime {
         Ok(InteractionResult {
             presentation,
             navigation,
+            cursor,
         })
     }
 
@@ -158,11 +173,16 @@ impl DocumentRuntime {
         &mut self,
         input: PointerInput,
         connection: &mut ChildConnection,
-    ) -> Result<(ScriptOutcome, Option<(String, NavigationDisposition)>), String> {
+    ) -> Result<PointerInteraction, String> {
         let target = input
             .target
             .and_then(|target| self.explicit_target(target))
             .or_else(|| self.hit_target(input.x, input.y));
+        let cursor = (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
+            document: self.id,
+            sequence: input.sequence,
+            cursor: cursor_for_target(target.as_ref()),
+        });
         let target_id = target.as_ref().map(|target| target.node.id());
         let activate = match input.phase {
             PointerPhase::Down => {
@@ -206,7 +226,11 @@ impl DocumentRuntime {
         } else {
             None
         };
-        Ok((outcome, navigation))
+        Ok(PointerInteraction {
+            outcome,
+            navigation,
+            cursor,
+        })
     }
 
     pub(super) fn dispatch_user_input(
@@ -330,6 +354,18 @@ struct HitTarget {
     control: Option<ControlSpec>,
 }
 
+fn cursor_for_target(target: Option<&HitTarget>) -> PointerCursor {
+    cursor_for_link(target.is_some_and(|target| target.link.is_some()))
+}
+
+fn cursor_for_link(actionable_link: bool) -> PointerCursor {
+    if actionable_link {
+        PointerCursor::Pointer
+    } else {
+        PointerCursor::Default
+    }
+}
+
 impl From<InputModifiers> for UserInputModifiers {
     fn from(modifiers: InputModifiers) -> Self {
         Self {
@@ -382,5 +418,16 @@ fn key_code(key: &str) -> u32 {
             .next()
             .filter(|_| key.chars().count() == 1)
             .map_or(0, |c| c as u32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
+        assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
+        assert_eq!(cursor_for_link(false), PointerCursor::Default);
     }
 }

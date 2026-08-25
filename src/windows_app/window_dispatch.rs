@@ -288,7 +288,13 @@ unsafe fn dispatch_window_message(
                 y: ((lparam >> 16) as u16) as i16 as i32,
             };
             state.update_tab_hover(point);
-            if state.update_tab_pointer(point)
+            state.track_pointer_leave();
+            let over_tab_strip = state.update_tab_pointer(point);
+            if over_tab_strip {
+                state.reset_pointer_cursor();
+            }
+            if over_tab_strip
+                || state.update_reader_pointer_cursor(point)
                 || state.route_content_pointer(
                     point.x,
                     point.y,
@@ -301,6 +307,10 @@ unsafe fn dispatch_window_message(
             } else {
                 DefWindowProcW(window, message, wparam, lparam)
             }
+        }
+        WM_MOUSELEAVE => {
+            state.reset_pointer_cursor();
+            0
         }
         WM_LBUTTONDOWN => {
             let point = Point {

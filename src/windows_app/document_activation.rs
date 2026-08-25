@@ -137,6 +137,8 @@ impl BrowserState {
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_document = Some(document);
                 self.renderer_input_sequence = 0;
+                self.pointer_cursor_request = None;
+                self.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
                 self.renderer_input_poll_budget = 0;
                 self.pending_renderer_inputs.clear();
                 self.renderer_revision = 0;

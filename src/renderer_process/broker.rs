@@ -14,9 +14,9 @@ use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_for_process};
 use crate::renderer_protocol::{
     BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
-    FrameWriter, NavigationCause, NavigationDisposition, ProtocolError, RendererFetchRequest,
-    RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
-    StorageMutationRequest, TestCommand,
+    FrameWriter, NavigationCause, NavigationDisposition, PointerCursorResult, ProtocolError,
+    RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation, RendererSessionId,
+    RestrictionReport, StorageMutationRequest, TestCommand,
 };
 use diagnostics::SharedDiagnostics;
 pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
@@ -73,6 +73,7 @@ pub enum RendererEvent {
         disposition: NavigationDisposition,
         cause: NavigationCause,
     },
+    PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     Unresponsive,

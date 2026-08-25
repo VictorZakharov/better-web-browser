@@ -4,7 +4,7 @@ use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
-    PointerInput, PointerPhase, PresentationAcknowledgement, ScrollInput, TextInput,
+    PointerCursor, PointerInput, PointerPhase, PresentationAcknowledgement, ScrollInput, TextInput,
 };
 use std::time::Duration;
 
@@ -159,7 +159,51 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         .expect("renderer link geometry");
     let x = link.0.x + link.0.width / 2.0;
     let y = link.0.y + link.0.height / 2.0;
-    for (sequence, phase) in [(7, PointerPhase::Down), (8, PointerPhase::Up)] {
+    session
+        .send_input(DocumentInput::Pointer(PointerInput {
+            document: initial.document,
+            sequence: 7,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            x,
+            y,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
+        .unwrap();
+    assert_eq!(
+        wait_for_cursor(&session, initial.document, 7),
+        PointerCursor::Pointer
+    );
+    let ordinary_text = updated
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Text {
+                rect, link: None, ..
+            } if rect.width > 0.0 && rect.height > 0.0 => Some(*rect),
+            _ => None,
+        })
+        .expect("ordinary text geometry");
+    session
+        .send_input(DocumentInput::Pointer(PointerInput {
+            document: initial.document,
+            sequence: 8,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            x: ordinary_text.x + ordinary_text.width / 2.0,
+            y: ordinary_text.y + ordinary_text.height / 2.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
+        .unwrap();
+    assert_eq!(
+        wait_for_cursor(&session, initial.document, 8),
+        PointerCursor::Default
+    );
+
+    for (sequence, phase) in [(9, PointerPhase::Down), (10, PointerPhase::Up)] {
         session
             .send_input(DocumentInput::Pointer(PointerInput {
                 document: initial.document,
@@ -181,7 +225,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     assert_eq!(disposition, NavigationDisposition::NewBackgroundTab);
     assert_eq!(cause, NavigationCause::UserActivation);
 
-    for (sequence, phase) in [(9, PointerPhase::Down), (10, PointerPhase::Up)] {
+    for (sequence, phase) in [(11, PointerPhase::Down), (12, PointerPhase::Up)] {
         session
             .send_input(DocumentInput::Pointer(PointerInput {
                 document: initial.document,
@@ -218,7 +262,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     session
         .send_input(DocumentInput::Pointer(PointerInput {
             document: initial.document,
-            sequence: 11,
+            sequence: 13,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
             x: submit.1.x + submit.1.width / 2.0,
@@ -256,7 +300,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     session
         .send_input(DocumentInput::Text(TextInput {
             document: initial.document,
-            sequence: 12,
+            sequence: 14,
             target,
             value: "stale-document".into(),
             selection_start: 14,
@@ -299,6 +343,26 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         .ping(Duration::from_secs(1))
         .expect("renderer remains responsive");
     session.shutdown().expect("shutdown renderer");
+}
+
+fn wait_for_cursor(
+    session: &RendererSession,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    sequence: u64,
+) -> PointerCursor {
+    loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::PointerCursor(result)
+                if result.document == document && result.sequence == sequence =>
+            {
+                return result.cursor;
+            }
+            RendererEvent::Presentation(_)
+            | RendererEvent::Diagnostic { .. }
+            | RendererEvent::TimeAdvanced { .. } => {}
+            event => panic!("unexpected renderer cursor event: {event:?}"),
+        }
+    }
 }
 
 fn wait_for_text(

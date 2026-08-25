@@ -98,6 +98,7 @@ pub(super) const CW_USEDEFAULT: i32 = i32::MIN;
 pub(super) const GWLP_USERDATA: i32 = -21;
 pub(super) const COLOR_WINDOW: usize = 5;
 pub(super) const IDC_ARROW: u16 = 32512;
+pub(super) const IDC_HAND: u16 = 32649;
 pub(super) const TRANSPARENT: i32 = 1;
 pub(super) const VK_RETURN: usize = 0x0D;
 pub(super) const VK_BACK: usize = 0x08;

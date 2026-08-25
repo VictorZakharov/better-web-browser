@@ -29,6 +29,7 @@ impl BrowserState {
         self.processing_background_tab = false;
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         if self.tabs.active_id() == id {
+            self.apply_current_pointer_cursor();
             self.set_status(&status);
         }
         self.update_scrollbar();

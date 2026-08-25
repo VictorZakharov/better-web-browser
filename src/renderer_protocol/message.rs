@@ -4,7 +4,8 @@ use super::document::{
     FetchResponseHead, PresentedViewport, TransferChunk,
 };
 use super::input::{
-    DocumentInput, NavigationCause, NavigationDisposition, PresentationAcknowledgement,
+    DocumentInput, NavigationCause, NavigationDisposition, PointerCursorResult,
+    PresentationAcknowledgement,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
@@ -213,6 +214,7 @@ pub enum RendererMessage {
         disposition: NavigationDisposition,
         cause: NavigationCause,
     },
+    PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     Restrictions(RestrictionReport),

@@ -290,6 +290,11 @@ impl ChildConnection {
         let result = catch_unwind(AssertUnwindSafe(|| runtime.interact(input, self)));
         match result {
             Ok(Ok(result)) => {
+                if let Some(cursor) = result.cursor {
+                    self.writer
+                        .send_renderer(&RendererMessage::PointerCursor(cursor))
+                        .map_err(|error| error.to_string())?;
+                }
                 if let Some(presentation) = result.presentation {
                     self.send_presentation(&presentation)?;
                 }

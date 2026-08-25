@@ -18,6 +18,7 @@ mod paint_primitives;
 mod painting;
 mod performance_monitor;
 mod platform;
+mod pointer_cursor;
 mod process_metrics;
 mod profile;
 mod reader_layout;
