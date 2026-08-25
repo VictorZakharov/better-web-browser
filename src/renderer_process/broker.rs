@@ -1,5 +1,6 @@
 //! Browser-side renderer session broker and diagnostics.
 
+mod acknowledgements;
 mod diagnostics;
 mod events;
 mod session;
@@ -82,6 +83,7 @@ pub enum RendererEvent {
 
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
+    acknowledgements: acknowledgements::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
@@ -169,6 +171,9 @@ impl RendererSession {
         }));
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
+        // Acknowledgements are renderer progress state, so retain only the newest one without
+        // competing with bounded page-generated commands.
+        let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
         // Browser state serializes replacement to one cancel plus one pending page. Keep that
         // lifecycle lossless and independent from bounded, potentially hostile page traffic.
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
@@ -188,6 +193,7 @@ impl RendererSession {
                     incoming,
                     reader_thread,
                     commands: commands_rx,
+                    acknowledgements: acknowledgements_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
@@ -199,6 +205,7 @@ impl RendererSession {
             .map_err(|error| format!("start renderer broker thread: {error}"))?;
         Ok(Self {
             commands: commands_tx,
+            acknowledgements: acknowledgements_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,

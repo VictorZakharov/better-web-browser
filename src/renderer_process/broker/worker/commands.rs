@@ -20,6 +20,19 @@ impl Broker {
         }
     }
 
+    pub(super) fn process_presentation_acknowledgement(&mut self) {
+        let Some(acknowledgement) = self.resources().acknowledgements.take() else {
+            return;
+        };
+        if self.active_document == Some(acknowledgement.document)
+            && let Err(error) = self
+                .writer()
+                .send_browser(&BrowserMessage::PresentationAcknowledged(acknowledgement))
+        {
+            self.protocol_failure(error.to_string());
+        }
+    }
+
     pub(super) fn process_commands(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
             let command = match self.resources().commands.try_recv() {
@@ -77,17 +90,6 @@ impl Broker {
                     if self.active_document == Some(input.document())
                         && let Err(error) =
                             self.writer().send_browser(&BrowserMessage::Input(input))
-                    {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::PresentationAcknowledged(acknowledgement) => {
-                    if self.active_document == Some(acknowledgement.document)
-                        && let Err(error) =
-                            self.writer()
-                                .send_browser(&BrowserMessage::PresentationAcknowledged(
-                                    acknowledgement,
-                                ))
                     {
                         self.protocol_failure(error.to_string());
                     }

@@ -12,9 +12,8 @@ use crate::renderer_process::windows::{
 };
 use crate::renderer_protocol::{
     BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
-    FrameWriter, PresentationAcknowledgement, PresentedViewport, ProtocolError,
-    RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport, TestCommand,
-    TransferAssembler,
+    FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage,
+    RendererPresentation, RestrictionReport, TestCommand, TransferAssembler,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::HashMap;
@@ -47,7 +46,6 @@ pub(super) enum BrokerCommand {
         viewport: PresentedViewport,
     },
     Input(DocumentInput),
-    PresentationAcknowledged(PresentationAcknowledgement),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),
@@ -69,6 +67,7 @@ pub(super) struct BrokerResources {
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
+    pub(super) acknowledgements: super::acknowledgements::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) events: super::events::EventSender,
@@ -126,6 +125,7 @@ impl Broker {
         self.resources().wake.register_current();
         loop {
             self.process_lifecycle_commands();
+            self.process_presentation_acknowledgement();
             self.process_commands();
             self.process_messages();
             self.process_fetch_stream();

@@ -4,7 +4,8 @@ use better_web_browser::renderer_process::{RendererEvent, RendererSession, Rende
 use better_web_browser::renderer_protocol::{
     DocumentId, DocumentInput, DocumentNodeId, FetchResponseHead, FetchResponseResult,
     FetchResponseType, InputModifiers, NavigationCause, NavigationDisposition, PointerButton,
-    PointerInput, PointerPhase, RendererFetchRequest, TestCommand, TextInput,
+    PointerInput, PointerPhase, PresentationAcknowledgement, RendererFetchRequest, TestCommand,
+    TextInput,
 };
 use std::time::{Duration, Instant};
 
@@ -238,6 +239,59 @@ fn respond_with_empty_scripts(
     }
 }
 
+#[test]
+fn presentation_acknowledgement_survives_saturation_and_followup_navigation() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let process_id = session.snapshot().process_id;
+    let initial = load_inline_document(&session, 155);
+    saturate_command_queue(&session);
+
+    let acknowledgement = PresentationAcknowledgement {
+        document: initial.document,
+        revision: initial.revision,
+        presented: true,
+        controls_applied: true,
+    };
+    // Repeated paint completion must coalesce while the stalled renderer leaves the ordinary
+    // command channel full; none may be classified as a fatal page-engine failure.
+    for _ in 0..256 {
+        session
+            .acknowledge_presentation(acknowledgement)
+            .expect("coalesce the presentation acknowledgement while ordinary commands are full");
+    }
+
+    session
+        .cancel_document(initial.document)
+        .expect("cancel the acknowledged document");
+    let replacement_document = DocumentId::new(156).unwrap();
+    let replacement = b"<!doctype html><p>followup navigation ready</p>".to_vec();
+    session
+        .load_document(
+            document_start(replacement_document, replacement.len()),
+            empty_document_state(),
+            replacement,
+        )
+        .expect("queue the followup navigation");
+    let replacement = wait_for_text(&session, replacement_document, "followup navigation ready");
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: replacement.document,
+            revision: replacement.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .expect("acknowledge the replacement presentation");
+    session
+        .ping(Duration::from_secs(2))
+        .expect("same renderer remains responsive after followup navigation");
+    assert_eq!(session.snapshot().process_id, process_id);
+    assert_eq!(session.snapshot().state, RendererState::Running);
+    session.shutdown().expect("shutdown navigation renderer");
+}
+
 fn saturate_command_queue(session: &RendererSession) {
     session
         .send_test_command(TestCommand::DelayCommandRead { millis: 1_200 })
@@ -281,7 +335,7 @@ fn wait_for_text(
     session: &RendererSession,
     document: better_web_browser::renderer_protocol::DocumentId,
     expected: &str,
-) {
+) -> better_web_browser::renderer_protocol::RendererPresentation {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         match session.wait_for_event(Duration::from_millis(500)) {
@@ -296,7 +350,7 @@ fn wait_for_text(
                     })
                     .collect::<String>();
                 if text.contains(expected) {
-                    return;
+                    return *presentation;
                 }
             }
             Ok(RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. }) | Err(_) => {}

@@ -136,9 +136,9 @@ impl RendererSession {
         acknowledgement
             .validate()
             .map_err(|error| error.to_string())?;
-        self.send_command(worker::BrokerCommand::PresentationAcknowledged(
-            acknowledgement,
-        ))
+        let result = self.acknowledgements.send(acknowledgement);
+        self.wake.notify();
+        result
     }
 
     pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {
