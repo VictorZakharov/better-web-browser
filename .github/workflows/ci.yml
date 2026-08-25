@@ -218,6 +218,9 @@ jobs:
             windows-cargo-registry-v2-
       - name: Build alpha browser
         run: cargo build --locked --bin better-web-browser
+      - name: Test bounded hidden-benchmark timeout diagnostics
+        shell: pwsh
+        run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
       - name: Build Chromium baseline harness
         run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
       - name: Run deterministic public-alpha matrix headlessly

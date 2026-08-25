@@ -89,6 +89,9 @@ function Get-Median {
 
 function Assert-BreezeFixture {
     param($Record, [string] $Id)
+    if ($Record.harness_outcome.outcome -ne 'success') {
+        throw "$Id Breeze harness outcome was $($Record.harness_outcome.outcome)."
+    }
     if ($null -ne $Record.error) { throw "$Id Breeze error: $($Record.error)" }
     if ([int] $Record.http_status -ne 200) { throw "$Id Breeze status was $($Record.http_status)." }
     if (@($Record.javascript_errors).Count -ne 0) { throw "$Id Breeze reported JavaScript errors." }
