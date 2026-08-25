@@ -379,7 +379,7 @@ impl Broker {
     }
 
     fn emit_event(&self, event: RendererEvent) -> Result<(), ProtocolError> {
-        self.resources().events.try_send(event)
+        self.resources().events.send(event)
     }
 }
 

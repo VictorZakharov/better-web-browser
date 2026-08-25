@@ -100,14 +100,18 @@ The renderer sends a bounded batch of Fetch intent heads and request-body chunks
 6. sends a typed response head followed by ordered chunks and an end or abort message.
 
 The network-worker-to-broker queue is synchronous and bounded. A full queue backpressures the
-network worker. Browser command, renderer input, and browser UI-event queues are also bounded;
-presentation events have a separate two-item budget because each validated archive may be large.
-Queue producers explicitly wake the broker after enqueueing work; a 10 ms timed park remains only
-as an idle fail-safe, not as the normal delivery cadence.
-Exhaustion fails the renderer session rather than growing browser memory or blocking the Win32
-message pump. Terminal exit data is retained outside that queue so overflow cannot hide the
-crashed-tab surface. Fetch batches have both per-body and aggregate body limits. The broker
-validates request IDs, offsets, lengths, ordering, and active-document identity in both directions.
+network worker. Browser command, renderer input, and browser UI-event queues are also bounded.
+Presentation events coalesce to the newest immutable snapshot. Valid renderer Fetch batches have a
+one-slot browser-event lane; its producer waits on the broker thread until the Win32 thread drains
+the slot, preserving Fetch ordering while bounded pipe queues propagate backpressure to the
+renderer. Queue producers explicitly wake the broker after enqueueing work; a 10 ms timed park
+remains only as an idle fail-safe, not as the normal delivery cadence.
+
+Other UI-event exhaustion fails the renderer session rather than growing browser memory or
+blocking the Win32 message pump. Terminal exit data is retained outside that queue so overflow
+cannot hide the crashed-tab surface. Fetch batches have both per-body and aggregate body limits.
+The broker validates request IDs, offsets, lengths, ordering, and active-document identity in both
+directions.
 
 Navigation currently completes its bounded network body before transferring it through typed
 length-declared chunks. Subresource responses are progressive from WinHTTP through broker IPC.

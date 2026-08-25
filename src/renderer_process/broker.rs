@@ -302,6 +302,7 @@ impl RendererSession {
     /// Browser UI recovery paths use this instead of `Drop`, whose graceful shutdown wait is
     /// intentionally bounded but can still take several seconds for an unresponsive renderer.
     pub fn terminate_in_background(mut self) {
+        self.events.close();
         let Some(worker) = self.worker.take() else {
             return;
         };
@@ -327,6 +328,7 @@ impl RendererSession {
     }
 
     pub fn shutdown(&mut self) -> Result<RendererExit, String> {
+        self.events.close();
         let (reply, response) = mpsc::channel();
         self.send_blocking_command(worker::BrokerCommand::Shutdown(reply))?;
         let result = response
@@ -348,6 +350,7 @@ impl Drop for RendererSession {
         if self.worker.is_none() {
             return;
         }
+        self.events.close();
         let (reply, response) = mpsc::channel();
         let _ = self.send_blocking_command(worker::BrokerCommand::Shutdown(reply));
         if response

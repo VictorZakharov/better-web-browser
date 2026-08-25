@@ -74,9 +74,11 @@ asynchronous WinHTTP would allow an OS-level wakeup without changing the Fetch-f
 Each request and response has an explicit byte ceiling (16 MiB by default), enforced while chunks
 arrive. A renderer Fetch batch admits at most 256 requests and 32 MiB of aggregate request bodies;
 the browser executes at most eight of those requests concurrently. The document layer retains its
-separate 32 MiB aggregate page-resource budget. Browser command, decoded-frame, UI-event, and stream
-queues are all bounded; queue exhaustion fails the affected renderer rather than blocking the Win32
-message pump or growing memory without limit.
+separate 32 MiB aggregate page-resource budget. Browser command, decoded-frame, UI-event, and
+stream queues are all bounded. Valid Fetch batches use a lossless one-slot browser-event lane: when
+the Win32 thread has not drained the prior batch yet, the renderer broker waits off the UI thread
+and lets the bounded pipe path apply backpressure. Other event-queue exhaustion still fails the
+affected renderer rather than blocking the Win32 message pump or growing memory without limit.
 
 ## Offline verification
 
