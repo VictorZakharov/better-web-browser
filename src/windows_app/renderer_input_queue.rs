@@ -26,6 +26,24 @@ impl PendingRendererInputs {
             *self.inputs.back_mut().expect("pending input exists") = input;
             return QueueResult::Coalesced;
         }
+        // Alternating move/scroll updates still describe replaceable state. Search only the
+        // current continuous run so a click, key, focus, or lifecycle input remains an ordering
+        // barrier.
+        let mut compact = None;
+        for (index, pending) in self.inputs.iter().enumerate().rev() {
+            if !is_continuous(pending) {
+                break;
+            }
+            if can_compact_across(&input, pending) {
+                compact = Some(index);
+                break;
+            }
+        }
+        if let Some(index) = compact {
+            self.inputs.remove(index);
+            self.inputs.push_back(input);
+            return QueueResult::Coalesced;
+        }
         if self.inputs.len() == MAX_PENDING_RENDERER_INPUTS {
             return QueueResult::Full;
         }
@@ -73,6 +91,28 @@ fn safely_supersedes(newer: &DocumentInput, pending: &DocumentInput) -> bool {
     }
 }
 
+fn is_continuous(input: &DocumentInput) -> bool {
+    match input {
+        DocumentInput::Scroll(_) => true,
+        DocumentInput::Pointer(input) => input.phase == PointerPhase::Move,
+        _ => false,
+    }
+}
+
+fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
+    match (newer, pending) {
+        (DocumentInput::Scroll(newer), DocumentInput::Scroll(pending)) => {
+            newer.document == pending.document
+        }
+        (DocumentInput::Pointer(newer), DocumentInput::Pointer(pending)) => {
+            newer.document == pending.document
+                && newer.phase == PointerPhase::Move
+                && pending.phase == PointerPhase::Move
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,6 +131,19 @@ mod tests {
             sequence,
             x: 0.0,
             y,
+        })
+    }
+
+    fn pointer_move(sequence: u64) -> DocumentInput {
+        DocumentInput::Pointer(PointerInput {
+            document: document(),
+            sequence,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            x: sequence as f32,
+            y: sequence as f32,
+            modifiers: InputModifiers::default(),
+            target: None,
         })
     }
 
@@ -134,6 +187,30 @@ mod tests {
         assert_eq!(pending.pop_front().unwrap().sequence(), 3);
         assert_eq!(pending.pop_front().unwrap().sequence(), 4);
         assert_eq!(pending.pop_front().unwrap().sequence(), 6);
+    }
+
+    #[test]
+    fn alternating_continuous_updates_leave_capacity_for_activation() {
+        let mut pending = PendingRendererInputs::default();
+        for sequence in 1..=(MAX_PENDING_RENDERER_INPUTS as u64 * 2) {
+            let input = if sequence % 2 == 0 {
+                pointer_move(sequence)
+            } else {
+                scroll(sequence, sequence as f32)
+            };
+            assert_ne!(pending.enqueue(input), QueueResult::Full);
+        }
+
+        let activation_sequence = MAX_PENDING_RENDERER_INPUTS as u64 * 2 + 1;
+        assert_eq!(
+            pending.enqueue(activation(activation_sequence)),
+            QueueResult::Queued
+        );
+        assert!(pending.len() <= 3);
+        assert_eq!(
+            pending.inputs.back().unwrap().sequence(),
+            activation_sequence
+        );
     }
 
     #[test]
