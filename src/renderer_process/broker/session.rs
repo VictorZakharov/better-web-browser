@@ -82,11 +82,13 @@ impl RendererSession {
         elapsed: Duration,
         max_callbacks: u32,
     ) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::AdvanceTime {
+        let result = self.clock.send(clock::Advance {
             document,
             elapsed,
             max_callbacks,
-        })
+        });
+        self.wake.notify();
+        result
     }
 
     pub fn update_viewport(

@@ -33,6 +33,15 @@ impl Broker {
         }
     }
 
+    pub(super) fn process_document_clock(&mut self) {
+        let Some(advance) = self.resources().clock.take() else {
+            return;
+        };
+        if self.active_document == Some(advance.document) {
+            self.advance_time(advance.document, advance.elapsed, advance.max_callbacks);
+        }
+    }
+
     pub(super) fn process_commands(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
             let command = match self.resources().commands.try_recv() {
@@ -72,11 +81,6 @@ impl Broker {
                         self.protocol_failure(error);
                     }
                 }
-                BrokerCommand::AdvanceTime {
-                    document,
-                    elapsed,
-                    max_callbacks,
-                } => self.advance_time(document, elapsed, max_callbacks),
                 BrokerCommand::ViewportChanged { document, viewport } => {
                     if self.active_document == Some(document)
                         && let Err(error) = self
