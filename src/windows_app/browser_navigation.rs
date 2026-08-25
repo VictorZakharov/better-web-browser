@@ -43,11 +43,6 @@ impl BrowserState {
             };
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
-            if let (Some(session), Some(document)) =
-                (tab.renderer_session.as_ref(), tab.renderer_document)
-            {
-                let _ = session.cancel_document(document);
-            }
             tab.pending_renderer_page = None;
             tab.renderer_document = None;
             tab.renderer_input_sequence = 0;
@@ -89,6 +84,10 @@ impl BrowserState {
             tab.status_text = format!("Loading {url} …");
             (tab.generation, tab.document_fetch.signal())
         };
+        // A full document navigation is a renderer ownership boundary. The previous page may be
+        // inside uninterruptible script, layout, or IPC work, so do not let its process delay the
+        // replacement document or carry stale queued work across the navigation.
+        self.replace_renderer_for_navigation(id);
         self.start_renderer_for(id);
         self.ensure_renderer_monitoring();
         self.update_renderer_tab_title(id, &url);
@@ -184,10 +183,6 @@ impl BrowserState {
 
     pub(super) unsafe fn reload(&mut self) {
         if let Some(url) = self.history.get(self.history_index).cloned() {
-            // The current renderer can be inside an uninterruptible script/layout task. Process
-            // identity is not observable page state, so replace it asynchronously instead of
-            // allowing old-document work to delay an explicit user reload.
-            self.replace_renderer_for_reload(self.tabs.active_id());
             self.begin_navigation(url, HistoryMode::Existing);
         }
     }

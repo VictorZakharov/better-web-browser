@@ -111,7 +111,7 @@ impl BrowserState {
         self.start_renderer_for(self.tabs.active_id());
     }
 
-    pub(super) unsafe fn replace_renderer_for_reload(&mut self, id: TabId) {
+    pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
         let session = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_launch_receiver.take();
             tab.renderer_launch_pending = false;
@@ -121,7 +121,6 @@ impl BrowserState {
         if let Some(session) = session {
             session.terminate_in_background();
         }
-        self.start_renderer_for(id);
     }
 
     pub(super) unsafe fn start_renderer_for(&mut self, id: TabId) {

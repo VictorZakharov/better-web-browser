@@ -8,6 +8,8 @@ use std::time::Duration;
 #[path = "live_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "live_runtime/navigation.rs"]
+mod navigation;
 #[path = "live_runtime/network.rs"]
 mod network;
 #[path = "live_runtime/reload.rs"]
