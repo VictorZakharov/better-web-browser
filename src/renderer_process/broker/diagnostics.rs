@@ -80,6 +80,9 @@ impl SharedDiagnostics {
             handle_count: self.sample.handle_count,
             uptime: now.saturating_duration_since(self.started),
             last_pong_age: now.saturating_duration_since(self.last_pong),
+            pending_state_updates: 0,
+            submitted_state_updates: 0,
+            coalesced_state_updates: 0,
             exit_reason: self.exit_reason.clone(),
             exit: self.exit.clone(),
         }

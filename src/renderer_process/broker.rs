@@ -6,6 +6,7 @@ mod diagnostics;
 mod events;
 mod outbound;
 mod session;
+mod state_updates;
 mod stream;
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,9 @@ pub struct RendererSnapshot {
     pub handle_count: u32,
     pub uptime: Duration,
     pub last_pong_age: Duration,
+    pub pending_state_updates: usize,
+    pub submitted_state_updates: u64,
+    pub coalesced_state_updates: u64,
     pub exit_reason: Option<RendererExitReason>,
     pub exit: Option<RendererExit>,
 }
@@ -83,6 +87,7 @@ pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
     acknowledgements: acknowledgements::Sender,
     clock: clock::Sender,
+    state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
@@ -180,6 +185,7 @@ impl RendererSession {
         // Browser-owned progress must not compete with bounded page-generated commands.
         let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
         let (clock_tx, clock_rx) = clock::bounded();
+        let (state_updates_tx, state_updates_rx) = state_updates::bounded();
         // Browser state serializes replacement to one lossless cancel plus one pending page.
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
@@ -201,6 +207,7 @@ impl RendererSession {
                     commands: commands_rx,
                     acknowledgements: acknowledgements_rx,
                     clock: clock_rx,
+                    state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
@@ -214,6 +221,7 @@ impl RendererSession {
             commands: commands_tx,
             acknowledgements: acknowledgements_tx,
             clock: clock_tx,
+            state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,
@@ -226,10 +234,16 @@ impl RendererSession {
     }
 
     pub fn snapshot(&self) -> RendererSnapshot {
-        self.shared
+        let state_updates = self.state_updates.snapshot();
+        let mut snapshot = self
+            .shared
             .lock()
             .expect("renderer diagnostics lock poisoned")
-            .snapshot()
+            .snapshot();
+        snapshot.pending_state_updates = state_updates.pending;
+        snapshot.submitted_state_updates = state_updates.submitted;
+        snapshot.coalesced_state_updates = state_updates.coalesced;
+        snapshot
     }
 
     pub fn ping(&self, timeout: Duration) -> Result<(), String> {

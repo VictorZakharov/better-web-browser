@@ -12,12 +12,11 @@ use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
-    PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation,
-    RestrictionReport, TestCommand, TransferAssembler,
+    BrowserMessage, DocumentId, DocumentInput, DocumentStart, DocumentState, PresentedViewport,
+    ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport,
+    TestCommand, TransferAssembler,
 };
-use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::os::windows::io::OwnedHandle;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -30,12 +29,6 @@ pub(super) enum BrokerCommand {
         reply: mpsc::Sender<Result<RestrictionReport, String>>,
     },
     Test(TestCommand),
-    UpdateCookieSnapshot(CookieStateSnapshot),
-    UpdateStorageSnapshot {
-        document: DocumentId,
-        area: StorageAreaKind,
-        snapshot: StorageAreaSnapshot,
-    },
     ViewportChanged {
         document: DocumentId,
         viewport: PresentedViewport,
@@ -65,6 +58,7 @@ pub(super) struct BrokerResources {
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
     pub(super) acknowledgements: super::acknowledgements::Receiver,
     pub(super) clock: super::clock::Receiver,
+    pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) events: super::events::EventSender,
@@ -95,6 +89,7 @@ struct Broker {
     active_document: Option<DocumentId>,
     retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
+    outgoing_state_update: Option<OutgoingStateUpdate>,
 }
 
 impl Broker {
@@ -117,6 +112,7 @@ impl Broker {
             active_document: None,
             retired_document: None,
             outgoing_fetch: HashMap::new(),
+            outgoing_state_update: None,
         }
     }
 
@@ -125,6 +121,7 @@ impl Broker {
         loop {
             self.process_writer_failure();
             self.process_lifecycle_commands();
+            self.process_state_updates();
             self.process_presentation_acknowledgement();
             self.process_commands();
             self.process_document_clock();
@@ -334,6 +331,11 @@ impl Broker {
         shared.last_pong = Instant::now();
         shared.state = RendererState::Running;
     }
+}
+
+struct OutgoingStateUpdate {
+    document: DocumentId,
+    messages: VecDeque<BrowserMessage>,
 }
 
 fn fail_pending(

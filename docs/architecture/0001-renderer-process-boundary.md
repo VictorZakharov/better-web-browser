@@ -237,6 +237,11 @@ large families into focused modules, but it must preserve their authority and st
 | Presentation | `PresentationAcknowledged` | Length-declared immutable presentation revisions with controls, title, status, and diagnostics |
 | Lifecycle | `LifecycleInput`, `CancelDocument`, `Shutdown` | `RuntimeUpdate`, `DocumentFailed`, `ShutdownComplete` |
 
+Browser-authoritative cookie and Web Storage corrections use a separate newest-wins state lane
+with one cookie slot and one slot per storage area. The broker drains an accepted snapshot as an
+ordered transfer before returning to ordinary page commands. Input or viewport bursts can delay and
+coalesce corrections, but cannot turn temporary command-channel saturation into a page failure.
+
 There is deliberately no generic “invoke browser API”, “execute script”, “set arbitrary header”, or
 “paint native handle” message. New browser authority requires a named message, validation rules, a
 budget, tests, and review of this ownership table.
