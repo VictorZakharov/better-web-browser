@@ -156,15 +156,23 @@ pub(super) fn resolve_height_value(length: Length, viewport: RectF, font_size: f
         Length::Em(value) => Some(value * font_size),
         Length::Vh(value) => Some(viewport.height * value / 100.0),
         Length::Vw(value) => Some(viewport.width * value / 100.0),
+        Length::Vmin(value) => Some(viewport.width.min(viewport.height) * value / 100.0),
+        Length::Vmax(value) => Some(viewport.width.max(viewport.height) * value / 100.0),
         Length::Calc {
             px,
             percent,
             em,
             vw,
             vh,
-        } if percent.abs() <= f32::EPSILON => {
-            Some(px + font_size * em + viewport.width * vw / 100.0 + viewport.height * vh / 100.0)
-        }
+            vmin,
+            vmax,
+        } if percent.abs() <= f32::EPSILON => Some(
+            px + font_size * em
+                + viewport.width * vw / 100.0
+                + viewport.height * vh / 100.0
+                + viewport.width.min(viewport.height) * vmin / 100.0
+                + viewport.width.max(viewport.height) * vmax / 100.0,
+        ),
         Length::Calc { .. } => None,
     }
 }

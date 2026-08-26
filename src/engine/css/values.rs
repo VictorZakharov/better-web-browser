@@ -70,12 +70,16 @@ pub enum Length {
     Em(f32),
     Vw(f32),
     Vh(f32),
+    Vmin(f32),
+    Vmax(f32),
     Calc {
         px: f32,
         percent: f32,
         em: f32,
         vw: f32,
         vh: f32,
+        vmin: f32,
+        vmax: f32,
     },
 }
 
@@ -86,19 +90,60 @@ impl Length {
             Self::Px(value) => Some(value),
             Self::Percent(value) => Some(basis * value / 100.0),
             Self::Em(value) => Some(font_size * value),
-            Self::Vw(value) | Self::Vh(value) => Some(basis * value / 100.0),
+            Self::Vw(value) | Self::Vh(value) | Self::Vmin(value) | Self::Vmax(value) => {
+                Some(basis * value / 100.0)
+            }
             Self::Calc {
                 px,
                 percent,
                 em,
                 vw,
                 vh,
+                vmin,
+                vmax,
             } => Some(
                 px + basis * percent / 100.0
                     + font_size * em
                     + basis * vw / 100.0
-                    + basis * vh / 100.0,
+                    + basis * vh / 100.0
+                    + basis * vmin / 100.0
+                    + basis * vmax / 100.0,
             ),
+        }
+    }
+
+    pub(super) fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
+        let width = width.max(1.0);
+        let height = height.max(1.0);
+        let minimum = width.min(height);
+        let maximum = width.max(height);
+        match self {
+            Self::Vw(value) => Self::Px(width * value / 100.0),
+            Self::Vh(value) => Self::Px(height * value / 100.0),
+            Self::Vmin(value) => Self::Px(minimum * value / 100.0),
+            Self::Vmax(value) => Self::Px(maximum * value / 100.0),
+            Self::Calc {
+                px,
+                percent,
+                em,
+                vw,
+                vh,
+                vmin,
+                vmax,
+            } => Self::Calc {
+                px: px
+                    + width * vw / 100.0
+                    + height * vh / 100.0
+                    + minimum * vmin / 100.0
+                    + maximum * vmax / 100.0,
+                percent,
+                em,
+                vw: 0.0,
+                vh: 0.0,
+                vmin: 0.0,
+                vmax: 0.0,
+            },
+            value => value,
         }
     }
 }
@@ -125,6 +170,15 @@ impl Edges {
             right: self.right.resolve(width, font_size).unwrap_or(0.0),
             bottom: self.bottom.resolve(width, font_size).unwrap_or(0.0),
             left: self.left.resolve(width, font_size).unwrap_or(0.0),
+        }
+    }
+
+    fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
+        Self {
+            top: self.top.resolve_viewport_units(width, height),
+            right: self.right.resolve_viewport_units(width, height),
+            bottom: self.bottom.resolve_viewport_units(width, height),
+            left: self.left.resolve_viewport_units(width, height),
         }
     }
 }
@@ -401,5 +455,41 @@ impl ComputedStyle {
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style
+    }
+
+    pub(super) fn resolve_viewport_units(&mut self, width: f32, height: f32) {
+        self.background_position_x = self
+            .background_position_x
+            .resolve_viewport_units(width, height);
+        self.background_position_y = self
+            .background_position_y
+            .resolve_viewport_units(width, height);
+        if let BackgroundSize::Explicit {
+            width: background_width,
+            height: background_height,
+        } = self.background_size
+        {
+            self.background_size = BackgroundSize::Explicit {
+                width: background_width.resolve_viewport_units(width, height),
+                height: background_height.resolve_viewport_units(width, height),
+            };
+        }
+        self.width = self.width.resolve_viewport_units(width, height);
+        self.height = self.height.resolve_viewport_units(width, height);
+        self.min_width = self.min_width.resolve_viewport_units(width, height);
+        self.min_height = self.min_height.resolve_viewport_units(width, height);
+        self.max_width = self.max_width.resolve_viewport_units(width, height);
+        self.max_height = self.max_height.resolve_viewport_units(width, height);
+        self.margin = self.margin.resolve_viewport_units(width, height);
+        self.padding = self.padding.resolve_viewport_units(width, height);
+        self.border_width = self.border_width.resolve_viewport_units(width, height);
+        self.border_radius = self.border_radius.resolve_viewport_units(width, height);
+        self.top = self.top.resolve_viewport_units(width, height);
+        self.right = self.right.resolve_viewport_units(width, height);
+        self.bottom = self.bottom.resolve_viewport_units(width, height);
+        self.left = self.left.resolve_viewport_units(width, height);
+        self.flex_basis = self.flex_basis.resolve_viewport_units(width, height);
+        self.grid_column_gap = self.grid_column_gap.resolve_viewport_units(width, height);
+        self.grid_row_gap = self.grid_row_gap.resolve_viewport_units(width, height);
     }
 }

@@ -2,6 +2,11 @@
 
 use super::dynamic_scripts::drain_dynamic_scripts;
 use super::*;
+
+// Each callback and its microtask checkpoint are one indivisible HTML task. Yield between tasks
+// after this wall-clock slice so rendering and the renderer control plane get an opportunity to
+// run even when many timers became due while another command was in flight.
+const TIMER_TASK_WALL_SLICE: Duration = Duration::from_millis(25);
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
 }
@@ -89,7 +94,16 @@ pub(super) fn execute_inner(
         return outcome;
     }
 
-    host.borrow_mut().begin_task();
+    {
+        let mut state = host.borrow_mut();
+        // Parsed scripts have already been prepared by the time this static document model starts
+        // evaluation. Preserve HTML''s "already started" flag so moving one of those elements
+        // while it runs cannot enqueue and execute the same script a second time.
+        for script in scripts {
+            state.mark_script_started(&script.node);
+        }
+        state.begin_task();
+    }
     for script in scripts {
         if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -164,7 +178,13 @@ pub(super) fn execute_additional_inner(
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
-    host.borrow_mut().begin_task();
+    {
+        let mut state = host.borrow_mut();
+        for script in scripts {
+            state.mark_script_started(&script.node);
+        }
+        state.begin_task();
+    }
     for script in scripts {
         if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
             outcome.errors.push(format!(
@@ -253,6 +273,7 @@ pub(super) fn settle_timer_slice(
     max_callbacks: usize,
 ) {
     let horizon = host.borrow().timers.now().saturating_add(advance);
+    let slice_started = Instant::now();
 
     for _ in 0..max_callbacks {
         let timer_id = {
@@ -283,6 +304,9 @@ pub(super) fn settle_timer_slice(
         }
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+        if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
+            break;
+        }
     }
 
     host.borrow_mut().timers.advance_to(horizon);

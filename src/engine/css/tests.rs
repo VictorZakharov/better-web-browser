@@ -97,7 +97,13 @@ fn resolves_background_images_against_the_stylesheet_url() {
             }"#
                 .to_string(),
         )];
-    let styles = StyleSet::from_sources(&dom, "https://example.com/page/", &stylesheets, 1000.0);
+    let styles = StyleSet::from_sources_for_viewport(
+        &dom,
+        "https://example.com/page/",
+        &stylesheets,
+        1000.0,
+        1000.0,
+    );
     let logo = dom.elements_named("a").next().unwrap();
     let style = styles.get(&logo);
     assert_eq!(
@@ -125,7 +131,13 @@ fn resolves_standard_and_prefixed_mask_images() {
         ".icon { -webkit-mask-image: url('../menu.svg'); mask-image: url('../menu.svg') }"
             .to_string(),
     )];
-    let styles = StyleSet::from_sources(&dom, "https://example.com/", &stylesheets, 1000.0);
+    let styles = StyleSet::from_sources_for_viewport(
+        &dom,
+        "https://example.com/",
+        &stylesheets,
+        1000.0,
+        1000.0,
+    );
     let icon = dom.elements_named("span").next().unwrap();
 
     assert_eq!(
@@ -403,6 +415,8 @@ fn cascades_inherited_custom_properties_before_var_substitution() {
 fn parses_css_lengths_and_colors() {
     assert_eq!(parse_length("50%"), Some(Length::Percent(50.0)));
     assert_eq!(parse_length("1.5em"), Some(Length::Em(1.5)));
+    assert_eq!(parse_length("2vmin"), Some(Length::Vmin(2.0)));
+    assert_eq!(parse_length("3vmax"), Some(Length::Vmax(3.0)));
     assert_eq!(parse_length("calc(672px - 72px)"), Some(Length::Px(600.0)));
     assert_eq!(
         parse_length("calc(100% - 20px)").and_then(|length| length.resolve(200.0, 16.0)),

@@ -132,11 +132,15 @@ pub(super) fn resolve_background_position(
             em,
             vw,
             vh,
+            vmin,
+            vmax,
         } => {
             px + (area_size - image_size) * percent / 100.0
                 + font_size * em
                 + viewport.width * vw / 100.0
                 + viewport.height * vh / 100.0
+                + viewport.width.min(viewport.height) * vmin / 100.0
+                + viewport.width.max(viewport.height) * vmax / 100.0
         }
         _ => resolve_background_length(position, area_size, font_size, viewport).unwrap_or(0.0),
     }
@@ -155,17 +159,23 @@ pub(super) fn resolve_background_length(
         Length::Em(value) => Some(font_size * value),
         Length::Vw(value) => Some(viewport.width * value / 100.0),
         Length::Vh(value) => Some(viewport.height * value / 100.0),
+        Length::Vmin(value) => Some(viewport.width.min(viewport.height) * value / 100.0),
+        Length::Vmax(value) => Some(viewport.width.max(viewport.height) * value / 100.0),
         Length::Calc {
             px,
             percent,
             em,
             vw,
             vh,
+            vmin,
+            vmax,
         } => Some(
             px + basis * percent / 100.0
                 + font_size * em
                 + viewport.width * vw / 100.0
-                + viewport.height * vh / 100.0,
+                + viewport.height * vh / 100.0
+                + viewport.width.min(viewport.height) * vmin / 100.0
+                + viewport.width.max(viewport.height) * vmax / 100.0,
         ),
     }
 }

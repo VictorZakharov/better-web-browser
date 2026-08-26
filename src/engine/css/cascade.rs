@@ -20,6 +20,8 @@ pub struct StyleSet {
     rules: Vec<Rule>,
     rule_index: RuleIndex,
     document_base_url: String,
+    viewport_width: f32,
+    viewport_height: f32,
 }
 
 impl StyleSet {
@@ -31,17 +33,19 @@ impl StyleSet {
         Self::from_document(&dom.document, "", &sources, viewport_width)
     }
 
-    pub(crate) fn from_sources(
+    pub(crate) fn from_sources_for_viewport(
         dom: &Dom,
         document_base_url: &str,
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
+        viewport_height: f32,
     ) -> Self {
-        Self::from_document(
+        Self::from_document_for_viewport(
             &dom.document,
             document_base_url,
             external_stylesheets,
             viewport_width,
+            viewport_height,
         )
     }
 
@@ -51,11 +55,28 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
     ) -> Self {
-        let mut set = Self::for_computed_style(
+        Self::from_document_for_viewport(
             document,
             document_base_url,
             external_stylesheets,
             viewport_width,
+            viewport_width,
+        )
+    }
+
+    pub(crate) fn from_document_for_viewport(
+        document: &NodeRef,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Self {
+        let mut set = Self::for_computed_style_for_viewport(
+            document,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+            viewport_height,
         );
         set.compute_subtree(document, None);
         set
@@ -67,6 +88,24 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
     ) -> Self {
+        Self::for_computed_style_for_viewport(
+            document,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+            viewport_width,
+        )
+    }
+
+    pub(crate) fn for_computed_style_for_viewport(
+        document: &NodeRef,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Self {
+        let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
         let mut rules = Vec::new();
         let mut next_order = 0_u32;
         for style_element in
@@ -95,6 +134,8 @@ impl StyleSet {
             rules,
             rule_index,
             document_base_url: document_base_url.to_string(),
+            viewport_width,
+            viewport_height,
         }
     }
 
@@ -273,16 +314,31 @@ impl StyleSet {
         }
         for &(declaration, base_url) in &cascaded {
             if declaration.name != "line-height" {
-                apply_resolved_declaration(&mut style, declaration, parent, base_url);
+                apply_resolved_declaration(
+                    &mut style,
+                    declaration,
+                    parent,
+                    base_url,
+                    self.viewport_width,
+                    self.viewport_height,
+                );
             }
         }
         // line-height depends on the winning font-size, independent of declaration source order.
         for &(declaration, base_url) in &cascaded {
             if declaration.name == "line-height" {
-                apply_resolved_declaration(&mut style, declaration, parent, base_url);
+                apply_resolved_declaration(
+                    &mut style,
+                    declaration,
+                    parent,
+                    base_url,
+                    self.viewport_width,
+                    self.viewport_height,
+                );
             }
         }
         apply_presentational_hints(node, &mut style);
+        style.resolve_viewport_units(self.viewport_width, self.viewport_height);
         if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
             style.display = Display::None;
         }

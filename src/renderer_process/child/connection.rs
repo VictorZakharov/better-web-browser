@@ -13,11 +13,15 @@ use super::handle_test;
 use crate::limits::MAX_RENDERER_PRESENTATION_BYTES;
 use crate::renderer_protocol::{
     BrowserMessage, DocumentId, DocumentStart, FrameReader, FrameWriter, ProtocolError,
-    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR, RendererDiagnostic,
-    RendererMessage, RendererPresentation, TestCommand, TransferAssembler, TransferChunk,
+    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR,
+    RENDERER_DIAGNOSTIC_TASK_STARTED, RendererDiagnostic, RendererMessage, RendererPresentation,
+    TestCommand, TransferAssembler, TransferChunk,
 };
 use std::collections::VecDeque;
 use std::fs::File;
+use std::time::{Duration, Instant};
+
+const PROCESSED_WORK_ACK_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(super) struct ChildConnection {
     reader: FrameReader<File>,
@@ -36,6 +40,7 @@ pub(super) struct ChildConnection {
     prepared_text: Option<RendererTextSystem>,
     next_request_id: u64,
     next_batch_id: u64,
+    last_processed_work_ack: Instant,
 }
 
 impl ChildConnection {
@@ -62,6 +67,7 @@ impl ChildConnection {
             prepared_text: Some(text),
             next_request_id: 1,
             next_batch_id: 1,
+            last_processed_work_ack: Instant::now(),
         }
     }
 
@@ -69,6 +75,7 @@ impl ChildConnection {
         while !self.stopping {
             if let Some(delivery) = self.pending_fetch_deliveries.pop_front() {
                 self.deliver_script_fetch(delivery)?;
+                self.acknowledge_processed_work()?;
                 continue;
             }
             let message = match self.pending.pop_front() {
@@ -82,11 +89,41 @@ impl ChildConnection {
                     return Err(error.to_string());
                 }
             };
+            let acknowledge = !matches!(
+                message,
+                BrowserMessage::Ping(_)
+                    | BrowserMessage::Shutdown
+                    | BrowserMessage::ProtocolFailure(_)
+            );
+            if let Some(task) = renderer_task_label(&message) {
+                let diagnostic = RendererDiagnostic::new(RENDERER_DIAGNOSTIC_TASK_STARTED, task)
+                    .map_err(|error| error.to_string())?;
+                self.writer
+                    .send_renderer(&RendererMessage::Diagnostic(diagnostic))
+                    .map_err(|error| error.to_string())?;
+            }
             if let Err(error) = self.handle(message) {
                 self.send_diagnostic(RENDERER_DIAGNOSTIC_INTERNAL_ERROR, &error);
                 return Err(error);
             }
+            if acknowledge {
+                self.acknowledge_processed_work()?;
+            }
         }
+        Ok(())
+    }
+
+    fn acknowledge_processed_work(&mut self) -> Result<(), String> {
+        if self.last_processed_work_ack.elapsed() < PROCESSED_WORK_ACK_INTERVAL {
+            return Ok(());
+        }
+        // A completed-work acknowledgement cannot mask one long-running task because it is sent
+        // only after control returns here. It does keep queued finite tasks from starving a Ping
+        // behind streamed Fetch commands already accepted by the pipe.
+        self.writer
+            .send_renderer(&RendererMessage::Pong(0))
+            .map_err(|error| error.to_string())?;
+        self.last_processed_work_ack = Instant::now();
         Ok(())
     }
 
@@ -255,6 +292,21 @@ impl ChildConnection {
                 .writer
                 .send_renderer(&RendererMessage::Diagnostic(diagnostic));
         }
+    }
+}
+
+fn renderer_task_label(message: &BrowserMessage) -> Option<&'static str> {
+    match message {
+        BrowserMessage::EndDocument(_) => Some("loading and presenting a document"),
+        BrowserMessage::StorageSnapshotEnd(_) => Some("installing document storage"),
+        BrowserMessage::AdvanceTime { .. } => Some("running timers and rendering their mutations"),
+        BrowserMessage::ViewportChanged { .. } => Some("laying out a viewport change"),
+        BrowserMessage::Input(_) => Some("dispatching input and rendering its mutations"),
+        BrowserMessage::FetchResponseChunk(_) => Some("delivering a streamed response chunk"),
+        BrowserMessage::FetchResponseEnd(_) => Some("completing a streamed response"),
+        BrowserMessage::FetchResponseAbort(_) => Some("aborting a streamed response"),
+        BrowserMessage::Test(_) => Some("running a renderer test command"),
+        _ => None,
     }
 }
 

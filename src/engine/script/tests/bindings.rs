@@ -47,6 +47,52 @@ fn loads_dynamically_inserted_external_scripts_in_the_same_realm() {
 }
 
 #[test]
+fn moving_an_already_started_external_script_does_not_execute_it_again() {
+    let dom = dom::parse_with_scripting(
+        r#"<html><body><script src="/app.js"></script></body></html>"#,
+        true,
+    );
+    let node = dom.elements_named("script").next().unwrap();
+    let script = ScriptInput {
+        source_url: "https://example.com/app.js".into(),
+        code: r#"
+            window.executionCount = (window.executionCount || 0) + 1;
+            document.body.setAttribute('data-executions', String(window.executionCount));
+            document.body.appendChild(document.currentScript);
+        "#
+        .into(),
+        node,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let mut requested = Vec::new();
+    let dynamic_code = script.code.clone();
+    let mut loader = |url: &str, _kind: ScriptKind, _options: ScriptFetchOptions| {
+        requested.push(url.to_string());
+        Ok(dynamic_code.clone())
+    };
+    let outcome = execute_with_loader(
+        dom.document.clone(),
+        "https://example.com/",
+        &[script],
+        &mut loader,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.executed, 1);
+    assert!(requested.is_empty());
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-executions")
+            .as_deref(),
+        Some("1")
+    );
+}
+
+#[test]
 fn image_constructor_reports_failed_load_asynchronously() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">waiting</div><script>

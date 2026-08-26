@@ -35,6 +35,8 @@ pub(super) fn apply_resolved_declaration(
     declaration: &Declaration,
     parent: Option<&ComputedStyle>,
     base_url: &str,
+    viewport_width: f32,
+    viewport_height: f32,
 ) {
     if declaration.name.starts_with("--") {
         return;
@@ -47,7 +49,14 @@ pub(super) fn apply_resolved_declaration(
         value,
         important: declaration.important,
     };
-    apply_declaration(style, &resolved, parent, base_url);
+    apply_declaration(
+        style,
+        &resolved,
+        parent,
+        base_url,
+        viewport_width,
+        viewport_height,
+    );
 }
 
 pub(super) fn substitute_variables(

@@ -86,7 +86,9 @@
     globalThis.__pushFetch = (id, body) => {
         const operation = pending.get(Number(id));
         if (!operation || operation.completed || !operation.responseStarted || !operation.controller) return;
-        operation.controller.enqueue(new Uint8Array(body));
+        // The host creates a fresh Uint8Array for every IPC chunk. The stream owns that
+        // value after enqueue, so copying it here only doubles large-response allocation.
+        operation.controller.enqueue(body);
     };
 
     globalThis.__finishFetch = id => {

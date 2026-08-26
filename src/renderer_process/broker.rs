@@ -174,6 +174,7 @@ impl RendererSession {
             sample,
             started: now,
             last_pong: now,
+            active_task: None,
             exit_reason: None,
             exit: None,
         }));

@@ -18,6 +18,7 @@ use std::fmt;
 pub const NONCE_LENGTH: usize = 32;
 pub const RENDERER_DIAGNOSTIC_INTERNAL_ERROR: u16 = 70;
 pub const RENDERER_DIAGNOSTIC_PROTOCOL_ERROR: u16 = 71;
+pub const RENDERER_DIAGNOSTIC_TASK_STARTED: u16 = 72;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Nonce([u8; NONCE_LENGTH]);
@@ -180,6 +181,7 @@ pub enum RendererMessage {
         context: BrowsingContextId,
         containment: ContainmentReport,
     },
+    /// Token zero reports completed renderer work; broker-issued heartbeat tokens start at one.
     Pong(u64),
     ShutdownComplete,
     Diagnostic(RendererDiagnostic),

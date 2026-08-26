@@ -47,17 +47,32 @@ const STREAMING_HTML: &str = r#"<!doctype html>
       });
   }
 
+  let measuredRate = 0;
   function completedLargeBlob() {
     return new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
       const loaded = [];
+      let lastLoaded = 0;
+      let lastProgressAt = performance.now();
+      let monotonic = true;
       request.open('GET', '/large');
       request.responseType = 'blob';
-      request.onprogress = event => loaded.push(event.loaded);
+      request.onprogress = event => {
+        const now = performance.now();
+        monotonic = monotonic && event.loaded > lastLoaded;
+        measuredRate = (event.loaded - lastLoaded) * 8000 /
+          Math.max(now - lastProgressAt, 1);
+        lastLoaded = event.loaded;
+        lastProgressAt = now;
+        loaded.push(event.loaded);
+      };
       request.onerror = reject;
       request.onload = () => {
-        if (loaded.length < 2 || request.response.size !== 25 * 1024 * 1024)
-          reject(new Error('large streamed Blob response mismatch'));
+        if (
+          loaded.length < 2 || !monotonic || !Number.isFinite(measuredRate) ||
+          measuredRate <= 0 || request.response.size !== 25 * 1024 * 1024
+        )
+          reject(new Error('large streamed Blob measurement mismatch'));
         else
           resolve();
       };
@@ -70,7 +85,8 @@ const STREAMING_HTML: &str = r#"<!doctype html>
     completedXhr(4), completedXhr(5), completedLargeBlob(), abortAndRetry()
   ]).then(() => {
     if (!timerFired) throw new Error('document event loop was blocked by response bodies');
-    document.getElementById('state').textContent = 'streaming complete';
+    document.getElementById('state').textContent =
+      'streaming complete ' + Math.round(measuredRate) + ' bps';
     document.body.style.backgroundColor = 'rgb(17, 170, 34)';
     document.title = 'streaming complete';
   });

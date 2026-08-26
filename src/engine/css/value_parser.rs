@@ -24,6 +24,8 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
         ("rem", |value| Length::Px(value * 16.0)),
         ("vw", Length::Vw),
         ("vh", Length::Vh),
+        ("vmin", Length::Vmin),
+        ("vmax", Length::Vmax),
         ("%", Length::Percent),
     ] {
         if let Some(number) = value.strip_suffix(suffix)
@@ -42,6 +44,8 @@ pub(super) struct CalcLength {
     em: f32,
     vw: f32,
     vh: f32,
+    vmin: f32,
+    vmax: f32,
 }
 
 impl CalcLength {
@@ -52,6 +56,8 @@ impl CalcLength {
             em: self.em * factor,
             vw: self.vw * factor,
             vh: self.vh * factor,
+            vmin: self.vmin * factor,
+            vmax: self.vmax * factor,
         }
     }
 
@@ -62,14 +68,24 @@ impl CalcLength {
             em: self.em + other.em,
             vw: self.vw + other.vw,
             vh: self.vh + other.vh,
+            vmin: self.vmin + other.vmin,
+            vmax: self.vmax + other.vmax,
         }
     }
 
     fn into_length(self) -> Length {
-        let non_zero = [self.px, self.percent, self.em, self.vw, self.vh]
-            .into_iter()
-            .filter(|value| value.abs() > f32::EPSILON)
-            .count();
+        let non_zero = [
+            self.px,
+            self.percent,
+            self.em,
+            self.vw,
+            self.vh,
+            self.vmin,
+            self.vmax,
+        ]
+        .into_iter()
+        .filter(|value| value.abs() > f32::EPSILON)
+        .count();
         if non_zero <= 1 {
             if self.percent.abs() > f32::EPSILON {
                 Length::Percent(self.percent)
@@ -79,6 +95,10 @@ impl CalcLength {
                 Length::Vw(self.vw)
             } else if self.vh.abs() > f32::EPSILON {
                 Length::Vh(self.vh)
+            } else if self.vmin.abs() > f32::EPSILON {
+                Length::Vmin(self.vmin)
+            } else if self.vmax.abs() > f32::EPSILON {
+                Length::Vmax(self.vmax)
             } else {
                 Length::Px(self.px)
             }
@@ -89,6 +109,8 @@ impl CalcLength {
                 em: self.em,
                 vw: self.vw,
                 vh: self.vh,
+                vmin: self.vmin,
+                vmax: self.vmax,
             }
         }
     }
@@ -202,6 +224,8 @@ pub(super) fn parse_calc_value<'i, 't>(
                 "em" => length.em = value,
                 "vw" => length.vw = value,
                 "vh" => length.vh = value,
+                "vmin" => length.vmin = value,
+                "vmax" => length.vmax = value,
                 _ => return Err(input.new_custom_error::<(), ()>(())),
             }
             Ok(CalcValue::Length(length))

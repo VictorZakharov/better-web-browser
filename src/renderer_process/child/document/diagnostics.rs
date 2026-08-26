@@ -14,11 +14,12 @@ pub(super) fn collect(
     layout: &LayoutOutput,
     selectors: &[String],
     style_viewport_width: f32,
+    viewport_height: f32,
 ) -> PageDiagnostics {
     if selectors.is_empty() {
         return PageDiagnostics::default();
     }
-    let Some(styles) = page.cached_style(style_viewport_width) else {
+    let Some(styles) = page.cached_style_for_viewport(style_viewport_width, viewport_height) else {
         return error("computed styles are unavailable");
     };
     let diagnostics = PageDiagnostics {

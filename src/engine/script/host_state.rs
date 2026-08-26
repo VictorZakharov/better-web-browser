@@ -388,4 +388,8 @@ impl HostState {
         });
         self.diagnose("queued dynamically inserted external script".into());
     }
+
+    pub(super) fn mark_script_started(&mut self, node: &NodeRef) {
+        self.started_dynamic_scripts.insert(node.id());
+    }
 }

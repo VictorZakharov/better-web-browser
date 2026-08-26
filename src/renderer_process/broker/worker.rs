@@ -144,9 +144,17 @@ impl Broker {
         for _ in 0..crate::limits::MAX_QUEUED_RENDERER_IPC_MESSAGES {
             match self.resources().incoming.try_recv() {
                 Ok(Ok(RendererMessage::Pong(token))) => {
-                    self.shared().last_pong = Instant::now();
-                    self.shared().state = RendererState::Running;
-                    if let Some(reply) = self.pending_pings.remove(&token) {
+                    // Token zero is a rate-limited acknowledgement emitted only after the child
+                    // completes a command. Real Ping tokens start at one and retain reply routing.
+                    {
+                        let mut shared = self.shared();
+                        shared.last_pong = Instant::now();
+                        shared.state = RendererState::Running;
+                        shared.active_task = None;
+                    }
+                    if token != 0
+                        && let Some(reply) = self.pending_pings.remove(&token)
+                    {
                         let _ = reply.send(Ok(()));
                     }
                 }
@@ -158,6 +166,14 @@ impl Broker {
                     }
                 }
                 Ok(Ok(RendererMessage::Diagnostic(diagnostic))) => {
+                    if diagnostic.code == crate::renderer_protocol::RENDERER_DIAGNOSTIC_TASK_STARTED
+                    {
+                        let mut shared = self.shared();
+                        shared.last_pong = Instant::now();
+                        shared.state = RendererState::Running;
+                        shared.active_task = Some(diagnostic.text);
+                        continue;
+                    }
                     if self.exit_reason.is_none() {
                         self.exit_reason = match diagnostic.code {
                             crate::renderer_protocol::RENDERER_DIAGNOSTIC_INTERNAL_ERROR => {

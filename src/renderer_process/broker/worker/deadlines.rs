@@ -32,7 +32,12 @@ impl Broker {
         ) && self.shared().state == RendererState::Unresponsive
             && self.exit_reason.is_none()
         {
-            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded);
+            let task = self
+                .shared()
+                .active_task
+                .clone()
+                .unwrap_or_else(|| "processing an unidentified renderer task".into());
+            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded(task));
             self.terminate_job(74);
         }
     }
