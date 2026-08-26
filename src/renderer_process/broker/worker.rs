@@ -4,7 +4,10 @@ mod document;
 mod stream;
 
 use self::document::{IncomingFetchBatch, IncomingPresentation};
-use super::diagnostics::{RendererExit, RendererExitReason, SharedDiagnostics};
+use super::diagnostics::{
+    RendererExit, RendererExitReason, RendererQueueDepths, RendererTaskTimeout, SharedDiagnostics,
+};
+use super::queue_depth::QueueDepth;
 use super::stream::FetchStreamEvent;
 use super::{RendererEvent, RendererState};
 use crate::renderer_process::launcher::RendererLaunchOptions;
@@ -54,8 +57,10 @@ pub(super) struct BrokerResources {
     pub(super) writer: super::outbound::Sender,
     pub(super) writer_thread: JoinHandle<()>,
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
+    pub(super) incoming_depth: QueueDepth,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
+    pub(super) command_depth: QueueDepth,
     pub(super) acknowledgements: super::acknowledgements::Receiver,
     pub(super) clock: super::clock::Receiver,
     pub(super) state_updates: super::state_updates::Receiver,
@@ -142,8 +147,16 @@ impl Broker {
 
     fn process_messages(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_RENDERER_IPC_MESSAGES {
-            match self.resources().incoming.try_recv() {
-                Ok(Ok(RendererMessage::Pong(token))) => {
+            let message = match self.resources().incoming.try_recv() {
+                Ok(message) => {
+                    self.resources().incoming_depth.finish_dequeue();
+                    message
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => break,
+            };
+            match message {
+                Ok(RendererMessage::Pong(token)) => {
                     // Token zero is a rate-limited acknowledgement emitted only after the child
                     // completes a command. Real Ping tokens start at one and retain reply routing.
                     {
@@ -151,6 +164,7 @@ impl Broker {
                         shared.last_pong = Instant::now();
                         shared.state = RendererState::Running;
                         shared.active_task = None;
+                        shared.active_task_started = None;
                     }
                     if token != 0
                         && let Some(reply) = self.pending_pings.remove(&token)
@@ -158,20 +172,21 @@ impl Broker {
                         let _ = reply.send(Ok(()));
                     }
                 }
-                Ok(Ok(RendererMessage::ShutdownComplete)) => {
+                Ok(RendererMessage::ShutdownComplete) => {
                     if self.shutdown_deadline.is_some() {
                         self.shutdown_acknowledged = true;
                     } else {
                         self.protocol_failure("unsolicited renderer shutdown completion".into());
                     }
                 }
-                Ok(Ok(RendererMessage::Diagnostic(diagnostic))) => {
+                Ok(RendererMessage::Diagnostic(diagnostic)) => {
                     if diagnostic.code == crate::renderer_protocol::RENDERER_DIAGNOSTIC_TASK_STARTED
                     {
                         let mut shared = self.shared();
                         shared.last_pong = Instant::now();
                         shared.state = RendererState::Running;
                         shared.active_task = Some(diagnostic.text);
+                        shared.active_task_started = Some(Instant::now());
                         continue;
                     }
                     if self.exit_reason.is_none() {
@@ -193,14 +208,14 @@ impl Broker {
                         break;
                     }
                 }
-                Ok(Ok(RendererMessage::Restrictions(report))) => {
+                Ok(RendererMessage::Restrictions(report)) => {
                     if let Some(reply) = self.pending_probe.take() {
                         let _ = reply.send(Ok(report));
                     } else {
                         self.protocol_failure("unsolicited renderer restriction report".into());
                     }
                 }
-                Ok(Ok(
+                Ok(
                     message @ (RendererMessage::FetchBatchStart { .. }
                     | RendererMessage::FetchRequestStart { .. }
                     | RendererMessage::FetchRequestChunk(_)
@@ -215,24 +230,22 @@ impl Broker {
                     | RendererMessage::PointerCursor(_)
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::StorageMutation(_)),
-                )) => {
+                ) => {
                     if let Err(error) = self.process_document_message(message) {
                         self.protocol_failure(error.to_string());
                     }
                 }
-                Ok(Ok(RendererMessage::Ready { .. })) => {
+                Ok(RendererMessage::Ready { .. }) => {
                     self.protocol_failure("duplicate renderer Ready".into());
                 }
-                Ok(Err(_)) if self.shutdown_acknowledged => break,
-                Ok(Err(ProtocolError::Io(error))) => {
+                Err(_) if self.shutdown_acknowledged => break,
+                Err(ProtocolError::Io(error)) => {
                     if wait_for_process(&self.resources().process, Duration::from_millis(100)) {
                         break;
                     }
                     self.protocol_failure(format!("renderer IPC closed unexpectedly: {error}"));
                 }
-                Ok(Err(error)) => self.protocol_failure(error.to_string()),
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(error) => self.protocol_failure(error.to_string()),
             }
         }
     }

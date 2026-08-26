@@ -363,10 +363,12 @@ fn hung_task_is_detected_and_terminated_without_blocking_the_browser() {
         }
     }
     let exit = session.wait_for_exit(Duration::from_secs(3)).unwrap();
-    assert!(matches!(
-        exit.reason,
-        RendererExitReason::TaskBudgetExceeded(_)
-    ));
+    let timeout = exit
+        .reason
+        .task_timeout()
+        .expect("task timeout diagnostics");
+    assert!(timeout.task.contains("renderer test command Hang"));
+    assert!((Duration::from_millis(400)..Duration::from_secs(2)).contains(&timeout.elapsed));
     let surface = exit
         .crash_surface()
         .expect("recoverable task-budget surface");

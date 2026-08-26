@@ -9,6 +9,7 @@ use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
 impl RendererSession {
     pub(super) fn send_command(&self, command: worker::BrokerCommand) -> Result<(), String> {
+        self.command_depth.begin_enqueue();
         let result = self
             .commands
             .try_send(command)
@@ -16,6 +17,9 @@ impl RendererSession {
                 mpsc::TrySendError::Full(_) => "renderer command queue is full".to_string(),
                 mpsc::TrySendError::Disconnected(_) => "renderer broker has exited".to_string(),
             });
+        if result.is_err() {
+            self.command_depth.finish_dequeue();
+        }
         self.wake.notify();
         result
     }
@@ -25,10 +29,14 @@ impl RendererSession {
         command: worker::BrokerCommand,
     ) -> Result<(), String> {
         self.wake.notify();
+        self.command_depth.begin_enqueue();
         let result = self
             .commands
             .send(command)
             .map_err(|_| "renderer broker has exited".to_string());
+        if result.is_err() {
+            self.command_depth.finish_dequeue();
+        }
         self.wake.notify();
         result
     }
@@ -121,11 +129,18 @@ impl RendererSession {
         input: DocumentInput,
     ) -> Result<Option<DocumentInput>, String> {
         input.validate().map_err(|error| error.to_string())?;
+        self.command_depth.begin_enqueue();
         let result = match self.commands.try_send(worker::BrokerCommand::Input(input)) {
             Ok(()) => Ok(None),
-            Err(mpsc::TrySendError::Full(worker::BrokerCommand::Input(input))) => Ok(Some(input)),
+            Err(mpsc::TrySendError::Full(worker::BrokerCommand::Input(input))) => {
+                self.command_depth.finish_dequeue();
+                Ok(Some(input))
+            }
             Err(mpsc::TrySendError::Full(_)) => unreachable!("only input commands are sent here"),
-            Err(mpsc::TrySendError::Disconnected(_)) => Err("renderer broker has exited".into()),
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.command_depth.finish_dequeue();
+                Err("renderer broker has exited".into())
+            }
         };
         self.wake.notify();
         result

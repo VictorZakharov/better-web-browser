@@ -40,6 +40,15 @@ pub(super) struct EventSender {
 }
 
 impl EventSender {
+    pub(super) fn pending(&self) -> usize {
+        self.queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .events
+            .len()
+    }
+
     pub(super) fn send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         if matches!(
             event,
@@ -212,6 +221,15 @@ pub(super) struct EventReceiver {
 }
 
 impl EventReceiver {
+    pub(super) fn pending(&self) -> usize {
+        self.queue
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .events
+            .len()
+    }
+
     pub(super) fn recv_timeout(
         &self,
         timeout: Duration,

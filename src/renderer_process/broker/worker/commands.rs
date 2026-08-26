@@ -63,7 +63,10 @@ impl Broker {
                 break;
             }
             let command = match self.resources().commands.try_recv() {
-                Ok(command) => command,
+                Ok(command) => {
+                    self.resources().command_depth.finish_dequeue();
+                    command
+                }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.begin_shutdown(None);

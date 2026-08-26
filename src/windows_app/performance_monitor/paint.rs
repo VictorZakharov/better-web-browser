@@ -215,6 +215,33 @@ impl BrowserState {
                 )
             },
         );
+        let task_line = renderer.as_ref().map_or_else(
+            || "Active task: unavailable".to_string(),
+            |renderer| match renderer.active_task.as_deref() {
+                Some(task) => format!(
+                    "Active task: {task} · {}",
+                    renderer
+                        .active_task_elapsed
+                        .map(|elapsed| format!("{:.0} ms", elapsed.as_secs_f64() * 1_000.0))
+                        .unwrap_or_else(|| "elapsed unavailable".into())
+                ),
+                None => "Active task: idle".into(),
+            },
+        );
+        let queue_line = renderer.as_ref().map_or_else(
+            || "Queues: unavailable".to_string(),
+            |renderer| {
+                let queues = &renderer.queues;
+                format!(
+                    "Queues: commands {} · IPC out/in {}/{} · events {} · state {}",
+                    queues.browser_commands,
+                    queues.renderer_commands,
+                    queues.renderer_messages,
+                    queues.browser_events,
+                    queues.state_updates
+                )
+            },
+        );
         let activity_line = format!(
             "Activity: {} nav \u{00b7} {} presentations \u{00b7} {} runtime \u{00b7} {} fetch batches",
             tab.incidents.navigations,
@@ -224,9 +251,15 @@ impl BrowserState {
         );
         SelectObject(dc, fonts.ui_small);
         SetTextColor(dc, CHROME_THEME.text);
-        for (index, line) in [renderer_line, state_line, activity_line]
-            .iter()
-            .enumerate()
+        for (index, line) in [
+            renderer_line,
+            task_line,
+            queue_line,
+            state_line,
+            activity_line,
+        ]
+        .iter()
+        .enumerate()
         {
             let top = self.scale(208 + index as i32 * 18);
             if top + self.scale(18) >= graph.top {

@@ -95,7 +95,7 @@ impl ChildConnection {
                     | BrowserMessage::Shutdown
                     | BrowserMessage::ProtocolFailure(_)
             );
-            if let Some(task) = renderer_task_label(&message) {
+            if let Some(task) = self.renderer_task_label(&message) {
                 let diagnostic = RendererDiagnostic::new(RENDERER_DIAGNOSTIC_TASK_STARTED, task)
                     .map_err(|error| error.to_string())?;
                 self.writer
@@ -125,6 +125,55 @@ impl ChildConnection {
             .map_err(|error| error.to_string())?;
         self.last_processed_work_ack = Instant::now();
         Ok(())
+    }
+
+    fn renderer_task_label(&self, message: &BrowserMessage) -> Option<String> {
+        let label = match message {
+            BrowserMessage::EndDocument(document) => format!(
+                "loading and presenting {}",
+                self.document_context(*document)
+            ),
+            BrowserMessage::StorageSnapshotEnd(update) => format!(
+                "installing storage for {}",
+                self.document_context(update.document)
+            ),
+            BrowserMessage::AdvanceTime { document, .. } => format!(
+                "running timers, promise jobs, and rendering mutations for {}",
+                self.document_context(*document)
+            ),
+            BrowserMessage::ViewportChanged { document, .. } => format!(
+                "laying out a viewport change for {}",
+                self.document_context(*document)
+            ),
+            BrowserMessage::Input(input) => format!(
+                "dispatching input and rendering mutations for {}",
+                self.document_context(input.document())
+            ),
+            BrowserMessage::FetchResponseChunk(_) => "delivering a streamed response chunk".into(),
+            BrowserMessage::FetchResponseEnd(_) => "completing a streamed response".into(),
+            BrowserMessage::FetchResponseAbort(_) => "aborting a streamed response".into(),
+            BrowserMessage::Test(command) => format!("running renderer test command {command:?}"),
+            _ => return None,
+        };
+        Some(label)
+    }
+
+    fn document_context(&self, document: DocumentId) -> String {
+        let url = self
+            .incoming_document
+            .as_ref()
+            .filter(|incoming| incoming.start.document == document)
+            .map(|incoming| incoming.start.url.as_str())
+            .or_else(|| {
+                self.document
+                    .as_ref()
+                    .filter(|runtime| runtime.id() == document)
+                    .map(DocumentRuntime::source_url)
+            });
+        match url {
+            Some(url) => format!("document {} ({url})", document.get()),
+            None => format!("document {}", document.get()),
+        }
     }
 
     pub(super) fn allocate_request_id(&mut self) -> u64 {
@@ -292,21 +341,6 @@ impl ChildConnection {
                 .writer
                 .send_renderer(&RendererMessage::Diagnostic(diagnostic));
         }
-    }
-}
-
-fn renderer_task_label(message: &BrowserMessage) -> Option<&'static str> {
-    match message {
-        BrowserMessage::EndDocument(_) => Some("loading and presenting a document"),
-        BrowserMessage::StorageSnapshotEnd(_) => Some("installing document storage"),
-        BrowserMessage::AdvanceTime { .. } => Some("running timers and rendering their mutations"),
-        BrowserMessage::ViewportChanged { .. } => Some("laying out a viewport change"),
-        BrowserMessage::Input(_) => Some("dispatching input and rendering its mutations"),
-        BrowserMessage::FetchResponseChunk(_) => Some("delivering a streamed response chunk"),
-        BrowserMessage::FetchResponseEnd(_) => Some("completing a streamed response"),
-        BrowserMessage::FetchResponseAbort(_) => Some("aborting a streamed response"),
-        BrowserMessage::Test(_) => Some("running a renderer test command"),
-        _ => None,
     }
 }
 

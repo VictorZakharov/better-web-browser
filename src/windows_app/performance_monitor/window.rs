@@ -141,6 +141,25 @@ impl BrowserState {
                 );
                 let _ = writeln!(
                     report,
+                    "Active task: {}; elapsed: {}",
+                    renderer.active_task.as_deref().unwrap_or("idle"),
+                    renderer
+                        .active_task_elapsed
+                        .map(format_ms)
+                        .unwrap_or_else(|| "n/a".into())
+                );
+                let queues = &renderer.queues;
+                let _ = writeln!(
+                    report,
+                    "Queue depths: browser commands={}; renderer commands={}; renderer messages={}; browser events={}; state updates={}",
+                    queues.browser_commands,
+                    queues.renderer_commands,
+                    queues.renderer_messages,
+                    queues.browser_events,
+                    queues.state_updates
+                );
+                let _ = writeln!(
+                    report,
                     "Memory: working_set={} bytes; private={} bytes; peak={} bytes; handles={}",
                     renderer.working_set,
                     renderer.private_memory,

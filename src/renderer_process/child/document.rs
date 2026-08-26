@@ -205,6 +205,10 @@ impl DocumentRuntime {
         self.id
     }
 
+    pub(super) fn source_url(&self) -> &str {
+        &self.page.source_url
+    }
+
     pub(super) fn replace_cookie_snapshot(&mut self, version: u64, header: &str) {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.replace_cookie_snapshot(version, header);
