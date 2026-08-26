@@ -152,8 +152,10 @@ drives a six-second, 16 ms scroll schedule through the same offscreen paint path
 includes input-to-paint latency plus per-sample script, resource, style, layout, invalidation, and
 paint activity plus bounded native host-call timing, making post-load responsiveness regressions
 reproducible without visible UI. While scrolling remains active, Breeze gives input priority over
-post-load timer and async-script tasks; deferred work resumes one task at a time after a 100 ms
-quiet period.
+post-load timer and async-script tasks; deferred timer work resumes in batches of at most eight
+callbacks after a 100 ms quiet period. Runtime-only progress crosses IPC without rebuilding or
+installing an immutable presentation; DOM/style/resource invalidation is required before the
+renderer emits new visual output.
 
 ### Web-platform regression suite
 

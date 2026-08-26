@@ -4,10 +4,13 @@ use super::fetch::{
 };
 use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD, MAX_URL_BYTES};
 use crate::renderer_protocol::document::*;
+use crate::renderer_protocol::presentation::codec::{
+    decode_load, decode_runtime, encode_load, encode_runtime,
+};
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{
     BrowserMessage, NavigationCause, NavigationDisposition, PointerCursor, PointerCursorResult,
-    ProtocolError, RendererMessage,
+    ProtocolError, RendererMessage, RendererRuntimeUpdate,
 };
 
 pub(super) fn encode_browser_document(
@@ -157,16 +160,15 @@ pub(super) fn encode_renderer_document(
             writer.u64(*revision);
             0x0116
         }
-        RendererMessage::TimeAdvanced {
-            document,
-            next_timer_micros,
-        } => {
-            writer.u64(document.get());
-            writer.bool(next_timer_micros.is_some());
-            if let Some(delay) = next_timer_micros {
-                writer.u64(*delay);
+        RendererMessage::RuntimeUpdate(update) => {
+            writer.u64(update.document.get());
+            encode_runtime(&mut writer, &update.runtime)?;
+            encode_load(&mut writer, update.load);
+            writer.bool(update.next_timer_micros.is_some());
+            if let Some(delay) = update.next_timer_micros {
+                writer.u64(delay);
             }
-            0x011c
+            0x0120
         }
         RendererMessage::DocumentFailed { document, detail } => {
             writer.u64(document.get());
@@ -235,10 +237,12 @@ pub(super) fn decode_renderer_document(
             document: DocumentId::new(reader.u64()?)?,
             revision: nonzero(reader.u64()?, "presentation revision")?,
         },
-        0x011c => RendererMessage::TimeAdvanced {
+        0x0120 => RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
             document: DocumentId::new(reader.u64()?)?,
+            runtime: decode_runtime(&mut reader)?,
+            load: decode_load(&mut reader)?,
             next_timer_micros: reader.bool()?.then(|| reader.u64()).transpose()?,
-        },
+        }),
         0x0118 => RendererMessage::DocumentFailed {
             document: DocumentId::new(reader.u64()?)?,
             detail: reader.string(MAX_CONTROL_PAYLOAD)?,

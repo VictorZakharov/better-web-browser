@@ -24,7 +24,7 @@ use crate::engine::{
 use crate::limits::{MAX_POST_LOAD_TIMER_CALLBACKS, PAGE_RESOURCE_BUDGET};
 use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
-    RendererPresentation,
+    RendererPresentation, RendererRuntimeUpdate,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -32,6 +32,11 @@ use std::time::{Duration, Instant};
 pub(super) enum LoadResult {
     Ready(Box<DocumentRuntime>, Box<RendererPresentation>),
     Navigate(String, Box<RendererTextSystem>),
+}
+
+pub(super) enum AdvanceResult {
+    Presentation(Box<RendererPresentation>),
+    Runtime(Box<RendererRuntimeUpdate>),
 }
 
 pub(super) struct DocumentRuntime {
@@ -248,13 +253,18 @@ impl DocumentRuntime {
         elapsed: Duration,
         max_callbacks: u32,
         connection: &mut ChildConnection,
-    ) -> Result<Option<RendererPresentation>, String> {
+    ) -> Result<AdvanceResult, String> {
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
-            return Ok(None);
+            return Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
+                document: self.id,
+                runtime: runtime_report(ScriptOutcome::default(), self.script_runtime.is_some()),
+                load: PageLoadReport::default(),
+                next_timer_micros: None,
+            })));
         }
         let mut outcome = ScriptOutcome::default();
         let mut resources_changed = false;
-        let performed_post_load_pass = self.has_post_load_work();
+        let mut script_time = Duration::ZERO;
         if let Some(pending) = self.pending_resource_preloads.take() {
             resources_changed |= self.finish_resource_preloads(connection, pending)?;
         }
@@ -270,12 +280,14 @@ impl DocumentRuntime {
                 self.text.register_web_fonts(&self.page.fonts);
             }
         }
+        let async_script_started = Instant::now();
         self.execute_pending_async_scripts(connection, &mut outcome)?;
+        script_time += async_script_started.elapsed();
         self.complete_pending_fetches(connection, &mut outcome)?;
         let document_url = self.page.source_url.clone();
         let document_root = self.page.dom.document.id();
         let worker_actions = std::mem::take(&mut self.pending_worker_actions);
-        let mut worker_activity = self.workers.drive(
+        self.workers.drive(
             worker_actions,
             workers::WorkerDriveContext {
                 connection,
@@ -292,16 +304,18 @@ impl DocumentRuntime {
             let mut loader = |url: &str, kind, options| {
                 fetch_script_source(connection, document, url, kind, options)
             };
+            let timer_started = Instant::now();
             let timed = runtime.advance_time_with_loader(
                 elapsed,
                 max_callbacks.min(MAX_POST_LOAD_TIMER_CALLBACKS as u32) as usize,
                 Some(&mut loader),
             );
+            script_time += timer_started.elapsed();
             merge_outcome(&mut outcome, timed, self.page.dom.document.id());
         }
         self.pending_fetches.append(&mut outcome.fetch_actions);
         let worker_actions = std::mem::take(&mut outcome.worker_actions);
-        worker_activity |= self.workers.drive(
+        self.workers.drive(
             worker_actions,
             workers::WorkerDriveContext {
                 connection,
@@ -315,19 +329,10 @@ impl DocumentRuntime {
         self.pending_fetches.append(&mut outcome.fetch_actions);
         connection.send_state_mutations(self.id, &mut outcome)?;
 
-        let needs_present = resources_changed
-            || performed_post_load_pass
-            || worker_activity
-            || outcome.render_requested
-            || outcome.executed > 0
-            || !outcome.errors.is_empty()
-            || !outcome.console.is_empty()
-            || !outcome.diagnostics.is_empty()
-            || outcome.navigation_url.is_some()
-            || !outcome.cookie_updates.is_empty();
-        if !needs_present {
-            return Ok(None);
-        }
+        // Script execution, console output, storage/cookie traffic, and worker progress are not
+        // visual invalidations. Sending a complete display-list snapshot for those tasks made
+        // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
+        let needs_present = resources_changed || outcome.render_requested;
         let style = if outcome.render_requested {
             self.page.refresh_resources_after_invalidation(
                 self.viewport.style_width,
@@ -341,10 +346,22 @@ impl DocumentRuntime {
             self.rebuild_layout();
         }
         let load = self.text.finish_load_report(PageLoadReport {
+            script_micros: micros(script_time),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
         });
-        self.presentation(outcome, style, load).map(Some)
+        if needs_present {
+            self.presentation(outcome, style, load)
+                .map(|presentation| AdvanceResult::Presentation(Box::new(presentation)))
+        } else {
+            let next_timer_micros = self.next_timer_micros();
+            Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
+                document: self.id,
+                runtime: runtime_report(outcome, self.script_runtime.is_some()),
+                load,
+                next_timer_micros,
+            })))
+        }
     }
 
     pub(super) fn resize(

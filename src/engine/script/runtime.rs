@@ -1,9 +1,7 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
 use super::dynamic_scripts::drain_dynamic_scripts;
-use super::execution::{
-    append_timer_summary, execute_additional_inner, execute_inner, settle_timer_slice,
-};
+use super::execution::{execute_additional_inner, execute_inner, settle_timer_slice};
 use super::runtime_guard::{
     finish_host, inactive_runtime_outcome, lifecycle_error, panic_detail, stopped_runtime_outcome,
 };
@@ -200,7 +198,6 @@ impl ScriptRuntime {
                 advance,
                 max_callbacks,
             );
-            append_timer_summary(&host, &mut outcome);
             outcome
         }));
         self.finish_guarded_run(result)
@@ -277,7 +274,6 @@ impl ScriptRuntime {
                 &mut dynamic_script_loader,
                 &mut self.total_script_bytes,
             );
-            append_timer_summary(&host, &mut outcome);
             outcome
         }));
         self.finish_guarded_run(result)
@@ -313,7 +309,6 @@ impl ScriptRuntime {
                 &mut dynamic_script_loader,
                 &mut self.total_script_bytes,
             );
-            append_timer_summary(&host, &mut outcome);
             outcome
         }));
         self.finish_guarded_run(result)

@@ -75,12 +75,9 @@ impl BrowserState {
                         state.activate_renderer_presentation(*presentation)
                     });
                 }
-                RendererEvent::TimeAdvanced {
-                    document,
-                    next_timer_micros,
-                } => {
+                RendererEvent::RuntimeUpdate(update) => {
                     self.process_for_tab(id, |state| {
-                        state.complete_renderer_time_advance(document, next_timer_micros)
+                        state.complete_renderer_runtime_update(*update)
                     });
                 }
                 RendererEvent::DocumentFailed { document, detail } => {

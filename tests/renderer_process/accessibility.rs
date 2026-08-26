@@ -264,7 +264,7 @@ fn wait_for_presentation(
             {
                 return *presentation;
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected accessibility renderer event: {event:?}"),
         }
     }

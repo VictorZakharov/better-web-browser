@@ -157,15 +157,9 @@ impl Broker {
             RendererMessage::PresentationEnd { document, revision } => {
                 self.finish_presentation(document, revision)?;
             }
-            RendererMessage::TimeAdvanced {
-                document,
-                next_timer_micros,
-            } => {
-                if self.active_document == Some(document) {
-                    self.emit_event(RendererEvent::TimeAdvanced {
-                        document,
-                        next_timer_micros,
-                    })?;
+            RendererMessage::RuntimeUpdate(update) => {
+                if self.active_document == Some(update.document) {
+                    self.emit_event(RendererEvent::RuntimeUpdate(Box::new(update)))?;
                 }
             }
             RendererMessage::DocumentFailed { document, detail } => {

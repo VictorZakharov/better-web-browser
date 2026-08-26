@@ -2,7 +2,7 @@ use super::*;
 use crate::document::Document;
 use crate::renderer_protocol::{
     AccessibilityUpdate, DocumentId, DocumentNodeId, PageLoadReport, PresentedLayout,
-    RendererPresentation, RuntimeReport, StyleReport,
+    RendererPresentation, RendererRuntimeUpdate, RuntimeReport, StyleReport,
 };
 
 fn presentation(revision: u64) -> RendererEvent {
@@ -47,6 +47,20 @@ fn presentation(revision: u64) -> RendererEvent {
     }))
 }
 
+fn runtime_update(scripts_executed: u64, console: &str) -> RendererEvent {
+    RendererEvent::RuntimeUpdate(Box::new(RendererRuntimeUpdate {
+        document: DocumentId::new(1).unwrap(),
+        runtime: RuntimeReport {
+            scripts_executed,
+            console: vec![console.into()],
+            runtime_active: true,
+            ..RuntimeReport::default()
+        },
+        load: PageLoadReport::default(),
+        next_timer_micros: Some(10_000),
+    }))
+}
+
 #[test]
 fn presentation_bursts_keep_only_the_newest_snapshot() {
     let (sender, receiver) = bounded();
@@ -80,6 +94,20 @@ fn presentation_bursts_keep_only_the_newest_snapshot() {
         receiver.try_recv(),
         Err(mpsc::TryRecvError::Empty)
     ));
+}
+
+#[test]
+fn adjacent_runtime_updates_coalesce_without_losing_ordered_output() {
+    let (sender, receiver) = bounded();
+    sender.try_send(runtime_update(1, "first")).unwrap();
+    sender.try_send(runtime_update(2, "second")).unwrap();
+
+    let RendererEvent::RuntimeUpdate(update) = receiver.try_recv().unwrap() else {
+        panic!("coalesced runtime update was not retained");
+    };
+    assert_eq!(update.runtime.scripts_executed, 3);
+    assert_eq!(update.runtime.console, ["first", "second"]);
+    assert!(receiver.try_recv().is_err());
 }
 
 #[test]

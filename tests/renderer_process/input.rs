@@ -359,7 +359,7 @@ fn wait_for_cursor(
             }
             RendererEvent::Presentation(_)
             | RendererEvent::Diagnostic { .. }
-            | RendererEvent::TimeAdvanced { .. } => {}
+            | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected renderer cursor event: {event:?}"),
         }
     }
@@ -377,7 +377,7 @@ fn wait_for_text(
                     return *presentation;
                 }
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected renderer input event: {event:?}"),
         }
     }

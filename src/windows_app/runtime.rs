@@ -2,21 +2,37 @@
 
 use super::*;
 
-pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 1;
+// A rendering opportunity does not have to follow every individual event-loop task. Drain a
+// small bounded batch of already-due timers so their DOM mutations share one style/layout pass.
+// The renderer watchdog still bounds the combined task, while the low cap preserves input turns.
+pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 8;
 
 impl BrowserState {
-    pub(super) unsafe fn complete_renderer_time_advance(
+    pub(super) unsafe fn complete_renderer_runtime_update(
         &mut self,
-        document: better_web_browser::renderer_protocol::DocumentId,
-        next_timer_micros: Option<u64>,
+        update: better_web_browser::renderer_protocol::RendererRuntimeUpdate,
     ) {
-        if !self.navigation.owns_document(document) || !self.renderer_work_pending {
+        if !self.navigation.owns_document(update.document) || !self.renderer_work_pending {
             return;
         }
-        self.renderer_next_timer = next_timer_micros.map(Duration::from_micros);
+        self.renderer_next_timer = update.next_timer_micros.map(Duration::from_micros);
         self.renderer_runtime_clock = Some(Instant::now());
         self.renderer_work_pending = false;
+        let benchmark_completed =
+            self.record_renderer_runtime_metrics(&update.runtime, update.load, false);
+        if let Some(url) = update.runtime.navigation_url.as_deref()
+            && self.allow_script_navigation(url)
+        {
+            self.begin_navigation(
+                url.to_string(),
+                super::browser_navigation::HistoryMode::Script,
+            );
+            return;
+        }
         self.schedule_script_runtime_wakeup();
+        if benchmark_completed {
+            self.finish_benchmark_after_completion();
+        }
     }
 
     pub(super) unsafe fn resume_script_runtime(&mut self) {
@@ -96,5 +112,14 @@ mod tests {
         assert_eq!(win32_timer_delay_ms(Duration::ZERO), 10);
         assert_eq!(win32_timer_delay_ms(Duration::from_millis(25)), 25);
         assert_eq!(win32_timer_delay_ms(Duration::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn timer_wakeups_batch_due_tasks_without_unbounded_renderer_turns() {
+        assert_eq!(TIMER_CALLBACKS_PER_WAKEUP, 8);
+        assert!(
+            TIMER_CALLBACKS_PER_WAKEUP
+                < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
+        );
     }
 }

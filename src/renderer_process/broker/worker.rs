@@ -182,7 +182,7 @@ impl Broker {
                     | RendererMessage::PresentationStart { .. }
                     | RendererMessage::PresentationChunk(_)
                     | RendererMessage::PresentationEnd { .. }
-                    | RendererMessage::TimeAdvanced { .. }
+                    | RendererMessage::RuntimeUpdate(_)
                     | RendererMessage::DocumentFailed { .. }
                     | RendererMessage::NavigationRequested { .. }
                     | RendererMessage::PointerCursor(_)

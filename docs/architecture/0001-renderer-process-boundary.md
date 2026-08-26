@@ -235,11 +235,17 @@ large families into focused modules, but it must preserve their authority and st
 | Permissions | `PermissionDecision`, `PermissionRevoked` | `RequestPermission` |
 | Input | `PointerInput`, `KeyboardInput`, `TextInput`, `FocusInput`, `ScrollInput` | Navigation/default-action results are explicit typed messages |
 | Presentation | `PresentationAcknowledged` | Length-declared immutable presentation revisions with controls, title, status, and diagnostics |
-| Lifecycle | `LifecycleInput`, `CancelDocument`, `Shutdown` | `TimeAdvanced`, `DocumentFailed`, `ShutdownComplete` |
+| Lifecycle | `LifecycleInput`, `CancelDocument`, `Shutdown` | `RuntimeUpdate`, `DocumentFailed`, `ShutdownComplete` |
 
 There is deliberately no generic “invoke browser API”, “execute script”, “set arbitrary header”, or
 “paint native handle” message. New browser authority requires a named message, validation rules, a
 budget, tests, and review of this ownership table.
+
+`RuntimeUpdate` carries bounded nonvisual progress such as console output, storage changes,
+navigation requests, load metrics, and the next timer deadline. Only a visual invalidation emits a
+presentation. The browser installs a presentation transactionally, preserves unchanged image and
+native-control state, and invalidates only the reported display-list damage. This separation keeps
+timer-heavy pages from repeatedly serializing and repainting an unchanged document.
 
 ## Initial limits
 

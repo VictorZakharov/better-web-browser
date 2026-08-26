@@ -6,7 +6,7 @@ mod state;
 use self::fetch::FetchState;
 pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
 use self::state::{IncomingDocumentState, IncomingStorageUpdate};
-use super::document::{DocumentRuntime, LoadResult, RendererTextSystem};
+use super::document::{AdvanceResult, DocumentRuntime, LoadResult, RendererTextSystem};
 use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
 use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
@@ -231,13 +231,12 @@ impl ChildConnection {
             runtime.advance(elapsed, max_callbacks, self)
         }));
         match result {
-            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
-            Ok(Ok(None)) => self
+            Ok(Ok(AdvanceResult::Presentation(presentation))) => {
+                self.send_presentation(&presentation)?
+            }
+            Ok(Ok(AdvanceResult::Runtime(update))) => self
                 .writer
-                .send_renderer(&RendererMessage::TimeAdvanced {
-                    document,
-                    next_timer_micros: runtime.next_timer_micros(),
-                })
+                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
                 .map_err(|error| error.to_string())?,
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;

@@ -1,7 +1,6 @@
 //! Trusted native-event dispatch into one retained document realm.
 
 use super::dynamic_scripts::drain_dynamic_scripts;
-use super::execution::append_timer_summary;
 use super::*;
 
 pub(super) fn dispatch(
@@ -34,7 +33,6 @@ pub(super) fn dispatch(
         dynamic_script_loader,
         total_script_bytes,
     );
-    append_timer_summary(host, &mut outcome);
     UserInputResult {
         outcome,
         default_allowed,

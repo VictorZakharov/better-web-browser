@@ -1,4 +1,6 @@
-use super::{PageLoadReport, RendererPresentation, RuntimeReport, StyleReport};
+use super::{
+    PageLoadReport, RendererPresentation, RendererRuntimeUpdate, RuntimeReport, StyleReport,
+};
 use crate::renderer_protocol::ProtocolError;
 
 impl RendererPresentation {
@@ -35,7 +37,7 @@ impl RendererPresentation {
 }
 
 impl RuntimeReport {
-    fn coalesce(mut self, mut next: Self) -> Self {
+    pub(crate) fn coalesce(mut self, mut next: Self) -> Self {
         next.scripts_executed = self.scripts_executed.saturating_add(next.scripts_executed);
         next.dom_mutations = self.dom_mutations.saturating_add(next.dom_mutations);
         self.errors.append(&mut next.errors);
@@ -74,7 +76,7 @@ impl StyleReport {
 }
 
 impl PageLoadReport {
-    fn coalesce(self, next: Self) -> Self {
+    pub(crate) fn coalesce(self, next: Self) -> Self {
         Self {
             parse_micros: self.parse_micros.saturating_add(next.parse_micros),
             html_parse_micros: self
@@ -118,6 +120,19 @@ impl PageLoadReport {
                 .presentation_decode_micros
                 .saturating_add(next.presentation_decode_micros),
         }
+    }
+}
+
+impl RendererRuntimeUpdate {
+    pub(crate) fn coalesce(self, mut next: Self) -> Result<Self, ProtocolError> {
+        if self.document != next.document {
+            return Err(ProtocolError::InvalidPayload(
+                "runtime-update coalescing document",
+            ));
+        }
+        next.runtime = self.runtime.coalesce(next.runtime);
+        next.load = self.load.coalesce(next.load);
+        Ok(next)
     }
 }
 

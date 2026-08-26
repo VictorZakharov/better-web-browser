@@ -12,6 +12,7 @@ use super::state::{
     StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
+use crate::renderer_protocol::RendererRuntimeUpdate;
 use std::fmt;
 
 pub const NONCE_LENGTH: usize = 32;
@@ -200,10 +201,7 @@ pub enum RendererMessage {
         document: DocumentId,
         revision: u64,
     },
-    TimeAdvanced {
-        document: DocumentId,
-        next_timer_micros: Option<u64>,
-    },
+    RuntimeUpdate(RendererRuntimeUpdate),
     DocumentFailed {
         document: DocumentId,
         detail: String,

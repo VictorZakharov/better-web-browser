@@ -1,7 +1,7 @@
 //! Validated immutable renderer output retained by the browser process.
 
 mod coalescing;
-mod codec;
+pub(super) mod codec;
 mod diagnostics;
 mod layout;
 mod reader;
@@ -27,6 +27,14 @@ pub struct RuntimeReport {
     pub runtime_active: bool,
     pub runtime_stopped: bool,
     pub render_requested: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RendererRuntimeUpdate {
+    pub document: DocumentId,
+    pub runtime: RuntimeReport,
+    pub load: PageLoadReport,
+    pub next_timer_micros: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

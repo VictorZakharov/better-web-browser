@@ -22,7 +22,7 @@ fn document_clock_survives_a_saturated_page_command_queue() {
 
     loop {
         match session.wait_for_event(Duration::from_secs(5)).unwrap() {
-            RendererEvent::TimeAdvanced { document, .. } if document == initial.document => break,
+            RendererEvent::RuntimeUpdate(update) if update.document == initial.document => break,
             RendererEvent::Presentation(presentation)
                 if presentation.document == initial.document =>
             {

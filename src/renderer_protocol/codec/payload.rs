@@ -165,7 +165,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::PresentationStart { .. }
         | RendererMessage::PresentationChunk(_)
         | RendererMessage::PresentationEnd { .. }
-        | RendererMessage::TimeAdvanced { .. }
+        | RendererMessage::RuntimeUpdate(_)
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
@@ -216,8 +216,8 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
                 RendererDiagnostic::new(get_u16(payload), decode_text(&payload[2..])?)?;
             Ok(RendererMessage::Diagnostic(diagnostic))
         }
-        0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a | 0x011c
-        | 0x011e => decode_renderer_document(kind, payload),
+        0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a | 0x011e
+        | 0x0120 => decode_renderer_document(kind, payload),
         0x0132 | 0x0134 => decode_renderer_state(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;

@@ -82,6 +82,17 @@ impl EventSender {
                 };
                 RendererEvent::Presentation(Box::new(next))
             }
+            RendererEvent::RuntimeUpdate(next) => {
+                if let Some(RendererEvent::RuntimeUpdate(previous)) = state.events.back_mut()
+                    && previous.document == next.document
+                {
+                    **previous = (**previous).clone().coalesce(*next)?;
+                    drop(state);
+                    self.queue.changed.notify_one();
+                    return Ok(());
+                }
+                RendererEvent::RuntimeUpdate(next)
+            }
             RendererEvent::PointerCursor(next) => {
                 if state.events.iter().any(|queued| {
                     matches!(
@@ -163,7 +174,6 @@ fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
 fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
     match event {
         RendererEvent::FetchBatch { document, .. }
-        | RendererEvent::TimeAdvanced { document, .. }
         | RendererEvent::DocumentFailed { document, .. }
         | RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
             document,
@@ -171,6 +181,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         })
         | RendererEvent::NavigationRequested { document, .. } => Some(*document),
         RendererEvent::Presentation(presentation) => Some(presentation.document),
+        RendererEvent::RuntimeUpdate(update) => Some(update.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }

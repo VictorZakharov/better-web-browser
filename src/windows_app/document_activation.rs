@@ -1,6 +1,9 @@
 //! Commits browser-fetched bytes to the page-owning renderer and installs validated output.
 
+mod metrics;
+
 use super::browser_navigation::HistoryMode;
+use super::paint_primitives::screen_rect;
 use super::*;
 use better_web_browser::renderer_protocol::{
     DocumentStart, DocumentState, PresentedViewport, RendererPresentation,
@@ -228,33 +231,46 @@ impl BrowserState {
         };
 
         let presentation_install_started = Instant::now();
-        let previous_layout = std::mem::take(&mut self.page_layout);
-        self.page_layout = std::mem::take(&mut presentation.layout).into_layout();
-        self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
-        let damage = DisplayListDamage::between(&previous_layout, &self.page_layout);
-        let retained_items = self.page_layout.items.clone();
-        self.paint_index.rebuild(&retained_items);
-        if !self.processing_background_tab {
-            self.metrics
-                .set_retained_draw_items(self.page_layout.items.len());
+        let next_layout = std::mem::take(&mut presentation.layout).into_layout();
+        let damage = DisplayListDamage::between(&self.page_layout, &next_layout);
+        let layout_changed = !damage.is_empty();
+        let controls_changed = first_presentation || self.page_layout.forms != next_layout.forms;
+        if layout_changed {
+            self.page_layout = next_layout;
+            let retained_items = self.page_layout.items.clone();
+            self.paint_index.rebuild(&retained_items);
+            if !self.processing_background_tab {
+                self.metrics
+                    .set_retained_draw_items(self.page_layout.items.len());
+            }
+            self.content_height =
+                (self.page_layout.content_height * self.page_scale()).ceil() as i32;
         }
-        self.content_height = (self.page_layout.content_height * self.page_scale()).ceil() as i32;
+        self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
         if first_presentation {
             self.presented_images.clear();
+            self.image_bitmaps.clear();
         }
+        let images_changed = !presentation.images.is_empty();
         for image in std::mem::take(&mut presentation.images) {
+            if !first_presentation {
+                self.image_bitmaps.remove(&image.url);
+            }
             self.presented_images.insert(image.url, image.image);
         }
-        if first_presentation || self.glyph_epoch != presentation.glyph_epoch {
+        let glyph_epoch_changed =
+            first_presentation || self.glyph_epoch != presentation.glyph_epoch;
+        if glyph_epoch_changed {
             self.glyph_epoch = presentation.glyph_epoch;
             self.presented_glyphs.clear();
             self.glyph_bitmaps.clear();
         }
-        if presentation
+        let glyphs_changed = !presentation.glyphs.is_empty();
+        let glyphs_redefined = presentation
             .glyphs
             .iter()
-            .any(|glyph| self.presented_glyphs.contains_key(&glyph.id))
-        {
+            .any(|glyph| self.presented_glyphs.contains_key(&glyph.id));
+        if glyphs_redefined {
             // Resource IDs are immutable within an epoch. A redefinition is contained by
             // dropping every surface derived from the old pixels before accepting the new batch.
             self.glyph_bitmaps.clear();
@@ -262,10 +278,11 @@ impl BrowserState {
         for glyph in std::mem::take(&mut presentation.glyphs) {
             self.presented_glyphs.insert(glyph.id, glyph);
         }
-        self.image_bitmaps.clear();
         self.reader_url.clone_from(&presentation.final_url);
         self.surface = Surface::Page;
-        self.scroll_y = self.scroll_y.min(self.content_height.max(0));
+        if layout_changed {
+            self.scroll_y = self.scroll_y.min(self.content_height.max(0));
+        }
         self.layout_dirty = false;
         self.navigation.mark_presented(presentation.document);
         self.crashed = false;
@@ -288,8 +305,12 @@ impl BrowserState {
             }
         }
         self.update_active_tab_title(&presentation.title);
-        self.update_scrollbar();
-        self.recreate_page_controls();
+        if layout_changed {
+            self.update_scrollbar();
+        }
+        if controls_changed {
+            self.recreate_page_controls();
+        }
 
         if let Some(benchmark) = self.benchmark.as_mut() {
             benchmark.presentation_install_time += presentation_install_started.elapsed();
@@ -311,14 +332,45 @@ impl BrowserState {
             presentation.status
         ));
 
-        if !self.processing_background_tab {
+        let visual_changed = first_presentation
+            || layout_changed
+            || images_changed
+            || glyph_epoch_changed
+            || glyphs_changed
+            || glyphs_redefined;
+        if !self.processing_background_tab && visual_changed {
             self.refresh_accessibility_document(&accessibility_update);
             let paint_started = Instant::now();
-            InvalidateRect(self.window, null(), 0);
+            if damage.full_repaint
+                || images_changed
+                || glyph_epoch_changed
+                || glyphs_changed
+                || glyphs_redefined
+            {
+                let mut client: Rect = std::mem::zeroed();
+                GetClientRect(self.window, &mut client);
+                let content = Rect {
+                    left: 0,
+                    top: self.toolbar_height(),
+                    right: client.right,
+                    bottom: (client.bottom - self.status_height()).max(self.toolbar_height()),
+                };
+                InvalidateRect(self.window, &content, 0);
+            } else if let Some(rect) = damage.rect {
+                let dirty = screen_rect(
+                    rect,
+                    self.scroll_y,
+                    self.toolbar_height(),
+                    self.page_scale(),
+                );
+                InvalidateRect(self.window, &dirty, 0);
+            }
             UpdateWindow(self.window);
             if first_presentation && let Some(benchmark) = self.benchmark.as_mut() {
                 benchmark.paint_time = paint_started.elapsed();
             }
+        } else if !self.processing_background_tab {
+            self.refresh_accessibility_document(&accessibility_update);
         }
         self.acknowledge_renderer_presentation(
             presentation.document,
@@ -334,105 +386,5 @@ impl BrowserState {
             self.finish_benchmark_after_completion();
         }
         self.document = Some(presentation.reader);
-    }
-
-    fn record_renderer_presentation_metrics(
-        &mut self,
-        presentation: &RendererPresentation,
-        damage: DisplayListDamage,
-        first: bool,
-    ) -> bool {
-        let script_time = Duration::from_micros(presentation.load.script_micros);
-        let style_time = Duration::from_micros(presentation.load.style_micros);
-        let layout_time = Duration::from_micros(presentation.load.layout_micros);
-        self.record_performance_activity(PerformanceActivity::Script, script_time);
-        self.record_performance_activity(PerformanceActivity::Style, style_time);
-        self.record_performance_activity(PerformanceActivity::Layout, layout_time);
-        let load = first.then(|| self.renderer_load_metrics.take()).flatten();
-        let reached_page_ready = load.is_some();
-        let Some(benchmark) = self.benchmark.as_mut() else {
-            return false;
-        };
-        if let Some(load) = load {
-            benchmark.final_url = presentation.final_url.clone();
-            benchmark.status = u32::from(load.status);
-            benchmark.bytes = load.bytes;
-            benchmark.network_time = load.network_time;
-            benchmark.parse_time = Duration::from_micros(presentation.load.parse_micros);
-            benchmark.html_parse_time = Duration::from_micros(presentation.load.html_parse_micros);
-            benchmark.resource_processing_time =
-                Duration::from_micros(presentation.load.resource_processing_micros);
-            benchmark.page_ready = benchmark.process_started.elapsed();
-        }
-        benchmark.script_time += script_time;
-        benchmark.style_refresh_time += style_time;
-        benchmark.layout_time += layout_time;
-        benchmark.layout_build_time += layout_time;
-        benchmark.layout_tree_time += layout_time;
-        benchmark.text_measure_count = benchmark
-            .text_measure_count
-            .saturating_add(presentation.load.text_measure_count as usize);
-        benchmark.text_shape_cache_hits = benchmark
-            .text_shape_cache_hits
-            .saturating_add(presentation.load.text_shape_cache_hits as usize);
-        benchmark.text_shape_cache_misses = benchmark
-            .text_shape_cache_misses
-            .saturating_add(presentation.load.text_shape_cache_misses as usize);
-        benchmark.text_shape_cache_flushes = benchmark
-            .text_shape_cache_flushes
-            .saturating_add(presentation.load.text_shape_cache_flushes as usize);
-        benchmark.text_shape_cache_entries = presentation.load.text_shape_cache_entries as usize;
-        benchmark.font_catalog_time += Duration::from_micros(presentation.load.font_catalog_micros);
-        benchmark.font_select_time += Duration::from_micros(presentation.load.font_select_micros);
-        benchmark.open_type_shape_time +=
-            Duration::from_micros(presentation.load.open_type_shape_micros);
-        benchmark.glyph_raster_time += Duration::from_micros(presentation.load.glyph_raster_micros);
-        benchmark.presentation_encode_time +=
-            Duration::from_micros(presentation.load.presentation_encode_micros);
-        benchmark.presentation_decode_time +=
-            Duration::from_micros(presentation.load.presentation_decode_micros);
-        benchmark.script_executed = benchmark
-            .script_executed
-            .saturating_add(presentation.runtime.scripts_executed as usize);
-        if reached_page_ready {
-            benchmark.script_executed_at_page_ready = benchmark.script_executed;
-        }
-        benchmark.script_mutations = benchmark
-            .script_mutations
-            .saturating_add(presentation.runtime.dom_mutations as usize);
-        benchmark
-            .script_errors
-            .extend(presentation.runtime.errors.iter().cloned());
-        let benchmark_completed = benchmark.record_script_console(&presentation.runtime.console);
-        benchmark
-            .script_diagnostics
-            .extend(presentation.runtime.diagnostics.iter().cloned());
-        benchmark.script_runtime_stopped |= presentation.runtime.runtime_stopped;
-        if !first && presentation.runtime.render_requested {
-            benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
-            benchmark.render_mutations = benchmark
-                .render_mutations
-                .saturating_add(presentation.runtime.dom_mutations as usize);
-            benchmark.invalidated_nodes = benchmark
-                .invalidated_nodes
-                .saturating_add(presentation.style.invalidated_nodes as usize);
-            benchmark.style_nodes_recomputed = benchmark
-                .style_nodes_recomputed
-                .saturating_add(presentation.style.recomputed_styles as usize);
-            benchmark.style_nodes_full_rebuild = benchmark
-                .style_nodes_full_rebuild
-                .saturating_add(presentation.style.total_styles as usize);
-            benchmark.full_style_rebuilds = benchmark
-                .full_style_rebuilds
-                .saturating_add(usize::from(presentation.style.full_rebuild));
-            benchmark.full_layout_rebuilds = benchmark.full_layout_rebuilds.saturating_add(1);
-            benchmark.display_items_invalidated = benchmark
-                .display_items_invalidated
-                .saturating_add(damage.changed_items);
-            benchmark.full_paint_repaints = benchmark
-                .full_paint_repaints
-                .saturating_add(usize::from(damage.full_repaint));
-        }
-        benchmark_completed
     }
 }

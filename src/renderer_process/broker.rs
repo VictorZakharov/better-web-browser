@@ -16,8 +16,9 @@ use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_
 use crate::renderer_protocol::{
     BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
     FrameWriter, NavigationCause, NavigationDisposition, PointerCursorResult, ProtocolError,
-    RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation, RendererSessionId,
-    RestrictionReport, StorageMutationRequest, TestCommand,
+    RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation,
+    RendererRuntimeUpdate, RendererSessionId, RestrictionReport, StorageMutationRequest,
+    TestCommand,
 };
 use diagnostics::SharedDiagnostics;
 pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
@@ -60,10 +61,7 @@ pub enum RendererEvent {
         requests: Vec<RendererFetchRequest>,
     },
     Presentation(Box<RendererPresentation>),
-    TimeAdvanced {
-        document: DocumentId,
-        next_timer_micros: Option<u64>,
-    },
+    RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {
         document: DocumentId,
         detail: String,

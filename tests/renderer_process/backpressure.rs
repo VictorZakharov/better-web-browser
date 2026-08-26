@@ -203,7 +203,7 @@ fn navigation_discards_a_queued_fetch_batch_from_the_replaced_document() {
             RendererEvent::FetchBatch { document, requests } => {
                 panic!("stale Fetch batch for {document:?} survived navigation: {requests:?}")
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected replacement event: {event:?}"),
         }
     };
@@ -325,7 +325,7 @@ fn wait_for_navigation(
                 disposition,
                 cause,
             } if event_document == document => return (url, disposition, cause),
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected navigation event: {event:?}"),
         }
     }
@@ -353,7 +353,7 @@ fn wait_for_text(
                     return *presentation;
                 }
             }
-            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. }) | Err(_) => {}
+            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_)) | Err(_) => {}
             Ok(event) => panic!("unexpected backpressure event: {event:?}"),
         }
     }
