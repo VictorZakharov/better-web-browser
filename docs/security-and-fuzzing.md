@@ -25,7 +25,7 @@ review can audit the complete policy without hunting through parsers and platfor
 | IPC | 256 KiB control frames; 8 MiB image frames; 16 KiB diagnostics | Reject frame headers before allocating payload buffers and truncate diagnostics at UTF-8 boundaries. |
 | Native document input | 64 KiB text values; monotonic per-document event sequence | Drop stale documents or sequences before DOM dispatch; retain the latest unsent continuous state within each run, with clicks, keys, focus, and lifecycle inputs as ordering barriers. |
 | Renderer process | one child; 1 GiB process/job memory | A Windows Job Object prevents child creation and terminates the renderer when containment is lost or a budget is exceeded. |
-| Renderer liveness | 10 s without heartbeat plus 2 s kill grace | Report unresponsive state, terminate the renderer Job automatically, preserve the browser process, and expose a reloadable crash surface. |
+| Renderer liveness | 3 s without heartbeat plus 1 s kill grace after first paint | Keep pipe writes off the broker watchdog, terminate the renderer Job automatically, preserve the browser process, and attempt one bounded reload of a previously presented document. First presentation has a separate 25 s ceiling. |
 
 Network response limits apply to bytes delivered by the WinHTTP transport after its protocol
 processing. Image, SVG, and font consumers enforce their own tighter decoded-form budgets as a

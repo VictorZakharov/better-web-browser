@@ -95,6 +95,7 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
         Some(StartupFault::Silent) => unreachable!(),
         None => {}
     }
+    let text = document::RendererTextSystem::new(96);
     writer
         .send_renderer(&RendererMessage::Ready {
             nonce,
@@ -102,7 +103,7 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
             containment: containment_report()?,
         })
         .map_err(|error| error.to_string())?;
-    connection::ChildConnection::new(reader, writer, options.test_mode).run()
+    connection::ChildConnection::new(reader, writer, options.test_mode, text).run()
 }
 
 pub(super) fn handle_test(

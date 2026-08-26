@@ -201,7 +201,7 @@ impl BrowserState {
                                 // The built-in `browser.local` document is trusted browser UI and
                                 // still uses the native UI fallback. Remote documents always have
                                 // an active renderer identity and can only paint validated glyphs.
-                                if glyphs.is_empty() && tab.renderer_document.is_none() {
+                                if glyphs.is_empty() && tab.navigation.active_document().is_none() {
                                     let font_handle = tab.dynamic_fonts.get_or_create(font, dpi);
                                     SelectObject(dc, font_handle);
                                     SetTextColor(dc, color.to_colorref());

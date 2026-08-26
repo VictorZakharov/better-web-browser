@@ -1,9 +1,7 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
-use super::dynamic_scripts::drain_dynamic_scripts;
-use super::execution::{
-    append_timer_summary, execute_additional_inner, execute_inner, settle_timer_slice,
-};
+use super::dynamic_scripts::drain_one_dynamic_script;
+use super::execution::{execute_additional_inner, execute_inner, settle_timer_slice};
 use super::runtime_guard::{
     finish_host, inactive_runtime_outcome, lifecycle_error, panic_detail, stopped_runtime_outcome,
 };
@@ -122,6 +120,10 @@ impl ScriptRuntime {
             .map(|due| due.saturating_sub(now))
     }
 
+    pub fn has_pending_dynamic_scripts(&self) -> bool {
+        !self.host.borrow().pending_dynamic_scripts.is_empty()
+    }
+
     /// Advances the realm clock without selecting a timer task for execution.
     pub fn elapse_time(&mut self, advance: Duration) {
         let mut host = self.host.borrow_mut();
@@ -191,27 +193,37 @@ impl ScriptRuntime {
         let mut outcome = ScriptOutcome::default();
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
-            settle_timer_slice(
-                context,
-                &host,
-                &mut outcome,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-                advance,
-                max_callbacks,
-            );
-            append_timer_summary(&host, &mut outcome);
+            if host.borrow().pending_dynamic_scripts.is_empty() {
+                let mut no_dynamic_script_loader = None;
+                settle_timer_slice(
+                    context,
+                    &host,
+                    &mut outcome,
+                    &mut no_dynamic_script_loader,
+                    &mut self.total_script_bytes,
+                    advance,
+                    max_callbacks,
+                );
+            } else {
+                let mut state = host.borrow_mut();
+                let horizon = state.timers.now().saturating_add(advance);
+                state.timers.advance_to(horizon);
+                drop(state);
+                drain_one_dynamic_script(
+                    context,
+                    &host,
+                    &mut outcome,
+                    &mut dynamic_script_loader,
+                    &mut self.total_script_bytes,
+                );
+            }
             outcome
         }));
         self.finish_guarded_run(result)
     }
 
     /// Dispatches one browser-normalized native event as a bounded task in this realm.
-    pub fn dispatch_user_input_with_loader(
-        &mut self,
-        event: UserInputEvent,
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> UserInputResult {
+    pub fn dispatch_user_input(&mut self, event: UserInputEvent) -> UserInputResult {
         if !self.initialized {
             return UserInputResult {
                 outcome: lifecycle_error("the document's initial scripts have not executed"),
@@ -225,15 +237,8 @@ impl ScriptRuntime {
             };
         };
         let host = Rc::clone(&self.host);
-        let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
-            super::user_events::dispatch(
-                context,
-                &host,
-                event,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-            )
+            super::user_events::dispatch(context, &host, event)
         }));
         match result {
             Ok(mut result) => {
@@ -270,14 +275,13 @@ impl ScriptRuntime {
                     .push(format!("Fetch completion callback: {error}"));
             }
             super::module_lifecycle::drain(context, &host, &mut outcome);
-            drain_dynamic_scripts(
+            drain_one_dynamic_script(
                 context,
                 &host,
                 &mut outcome,
                 &mut dynamic_script_loader,
                 &mut self.total_script_bytes,
             );
-            append_timer_summary(&host, &mut outcome);
             outcome
         }));
         self.finish_guarded_run(result)
@@ -306,14 +310,13 @@ impl ScriptRuntime {
                     .push(format!("Worker event callback: {error}"));
             }
             super::module_lifecycle::drain(context, &host, &mut outcome);
-            drain_dynamic_scripts(
+            drain_one_dynamic_script(
                 context,
                 &host,
                 &mut outcome,
                 &mut dynamic_script_loader,
                 &mut self.total_script_bytes,
             );
-            append_timer_summary(&host, &mut outcome);
             outcome
         }));
         self.finish_guarded_run(result)

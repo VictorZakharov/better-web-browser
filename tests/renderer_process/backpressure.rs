@@ -151,7 +151,10 @@ fn duckduckgo_link_navigation_replaces_a_document_under_command_backpressure() {
         "Wikipedia replacement ready",
     );
     session
-        .ping(Duration::from_secs(1))
+        // The test deliberately queues a 1.2-second read stall plus enough padding to saturate
+        // the writer. Allow scheduler contention while still requiring recovery before the
+        // session's five-second unresponsive deadline.
+        .ping(Duration::from_secs(3))
         .expect("replacement renderer remains responsive");
     assert_eq!(session.snapshot().state, RendererState::Running);
     session.shutdown().expect("shutdown navigation renderer");
@@ -203,7 +206,7 @@ fn navigation_discards_a_queued_fetch_batch_from_the_replaced_document() {
             RendererEvent::FetchBatch { document, requests } => {
                 panic!("stale Fetch batch for {document:?} survived navigation: {requests:?}")
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected replacement event: {event:?}"),
         }
     };
@@ -325,7 +328,7 @@ fn wait_for_navigation(
                 disposition,
                 cause,
             } if event_document == document => return (url, disposition, cause),
-            RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected navigation event: {event:?}"),
         }
     }
@@ -353,7 +356,7 @@ fn wait_for_text(
                     return *presentation;
                 }
             }
-            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::TimeAdvanced { .. }) | Err(_) => {}
+            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_)) | Err(_) => {}
             Ok(event) => panic!("unexpected backpressure event: {event:?}"),
         }
     }

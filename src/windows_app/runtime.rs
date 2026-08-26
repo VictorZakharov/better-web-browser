@@ -2,25 +2,55 @@
 
 use super::*;
 
+// Each callback is a distinct HTML event-loop task. Returning to the renderer command loop after
+// one task lets already-queued user input run before another due callback.
 pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 1;
 
 impl BrowserState {
-    pub(super) unsafe fn complete_renderer_time_advance(
+    pub(super) unsafe fn complete_renderer_runtime_update(
         &mut self,
-        document: better_web_browser::renderer_protocol::DocumentId,
-        next_timer_micros: Option<u64>,
+        update: better_web_browser::renderer_protocol::RendererRuntimeUpdate,
     ) {
-        if self.renderer_document != Some(document) || !self.renderer_work_pending {
+        if !self.navigation.owns_document(update.document) || !self.renderer_work_pending {
             return;
         }
-        self.renderer_next_timer = next_timer_micros.map(Duration::from_micros);
+        self.incidents.runtime_updates = self.incidents.runtime_updates.saturating_add(1);
+        if update.runtime.runtime_stopped
+            || !update.runtime.errors.is_empty()
+            || !update.runtime.diagnostics.is_empty()
+        {
+            self.incidents.record(
+                "runtime",
+                format!(
+                    "errors={}, diagnostics={}, stopped={}",
+                    update.runtime.errors.len(),
+                    update.runtime.diagnostics.len(),
+                    update.runtime.runtime_stopped
+                ),
+            );
+        }
+        self.renderer_next_timer = update.next_timer_micros.map(Duration::from_micros);
         self.renderer_runtime_clock = Some(Instant::now());
         self.renderer_work_pending = false;
+        let benchmark_completed =
+            self.record_renderer_runtime_metrics(&update.runtime, update.load, false);
+        if let Some(url) = update.runtime.navigation_url.as_deref()
+            && self.allow_script_navigation(url)
+        {
+            self.begin_navigation(
+                url.to_string(),
+                super::browser_navigation::HistoryMode::Script,
+            );
+            return;
+        }
         self.schedule_script_runtime_wakeup();
+        if benchmark_completed {
+            self.finish_benchmark_after_completion();
+        }
     }
 
     pub(super) unsafe fn resume_script_runtime(&mut self) {
-        if self.renderer_document.is_some() {
+        if self.navigation.active_document().is_some() {
             self.renderer_runtime_clock = Some(Instant::now());
             self.schedule_script_runtime_wakeup();
         }
@@ -28,7 +58,11 @@ impl BrowserState {
 
     pub(super) unsafe fn schedule_script_runtime_wakeup(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
-        let Some(next_delay) = self.renderer_document.and(self.renderer_next_timer) else {
+        let Some(next_delay) = self
+            .navigation
+            .active_document()
+            .and(self.renderer_next_timer)
+        else {
             return;
         };
         if SetTimer(
@@ -44,7 +78,7 @@ impl BrowserState {
 
     pub(super) unsafe fn pump_script_runtime(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
-        let Some(document) = self.renderer_document else {
+        let Some(document) = self.navigation.active_document() else {
             return;
         };
         let now = Instant::now();
@@ -92,5 +126,14 @@ mod tests {
         assert_eq!(win32_timer_delay_ms(Duration::ZERO), 10);
         assert_eq!(win32_timer_delay_ms(Duration::from_millis(25)), 25);
         assert_eq!(win32_timer_delay_ms(Duration::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn timer_wakeups_yield_between_event_loop_tasks() {
+        assert_eq!(TIMER_CALLBACKS_PER_WAKEUP, 1);
+        assert!(
+            TIMER_CALLBACKS_PER_WAKEUP
+                < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
+        );
     }
 }

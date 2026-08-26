@@ -180,6 +180,54 @@ fn retained_runtime_executes_an_additional_script_in_the_same_realm() {
 }
 
 #[test]
+fn retained_runtime_yields_between_dynamic_script_tasks() {
+    let dom = dom::parse_with_scripting(
+        "<html><head></head><body><div>waiting</div><script></script></body></html>",
+        true,
+    );
+    let node = dom.elements_named("script").next().unwrap();
+    let queues_two = input(
+        &node,
+        "async.js",
+        r#"for (const src of ['/first.js', '/second.js']) {
+            const script = document.createElement('script');
+            script.src = src;
+            document.head.appendChild(script);
+        }"#,
+        false,
+    );
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    assert!(runtime.execute_initial(&[]).errors.is_empty());
+    let queued = runtime.execute_additional_with_loader(&[queues_two], None);
+    assert!(queued.errors.is_empty(), "{:?}", queued.errors);
+    assert!(runtime.has_pending_dynamic_scripts());
+    let mut loader = |url: &str, _, _| {
+        let value = if url.ends_with("first.js") {
+            "first"
+        } else {
+            "second"
+        };
+        Ok(format!(
+            "document.querySelector('div').textContent = '{value}';"
+        ))
+    };
+    let first = runtime.advance_time_with_loader(Duration::ZERO, 8, Some(&mut loader));
+    assert!(first.errors.is_empty(), "{:?}", first.errors);
+    assert!(runtime.has_pending_dynamic_scripts());
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "first"
+    );
+    let second = runtime.advance_time_with_loader(Duration::ZERO, 8, Some(&mut loader));
+    assert!(second.errors.is_empty(), "{:?}", second.errors);
+    assert!(!runtime.has_pending_dynamic_scripts());
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "second"
+    );
+}
+
+#[test]
 fn a_failed_additional_script_does_not_poison_the_document_realm() {
     let dom = dom::parse_with_scripting(
         r#"<body><div>waiting</div><script></script><script></script>"#,

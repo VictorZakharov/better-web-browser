@@ -18,6 +18,7 @@ impl BrowserState {
         let status =
             format!("Page engine stopped after an internal error: {detail}. Reload to try again.");
         if let Some(tab) = self.tabs.get_mut(id) {
+            tab.incidents.record("fatal", &detail);
             tab.mark_crashed(status.clone());
         }
 
@@ -29,10 +30,16 @@ impl BrowserState {
         self.processing_background_tab = false;
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
         if self.tabs.active_id() == id {
+            self.apply_current_pointer_cursor();
             self.set_status(&status);
         }
         self.update_scrollbar();
         self.refresh_accessibility_full();
         InvalidateRect(self.window, null(), 0);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.error.get_or_insert(detail);
+            benchmark.page_ready = benchmark.process_started.elapsed();
+            self.schedule_benchmark_finish();
+        }
     }
 }

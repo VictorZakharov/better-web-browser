@@ -12,6 +12,9 @@ pub(super) struct OutgoingFetch {
 impl Broker {
     pub(super) fn process_fetch_stream(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
+            if !self.writer().has_page_command_capacity() {
+                break;
+            }
             let event = match self.resources().fetch_stream.try_recv() {
                 Ok(event) => event,
                 Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,

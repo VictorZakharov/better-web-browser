@@ -1,6 +1,7 @@
 //! Validated immutable renderer output retained by the browser process.
 
-mod codec;
+mod coalescing;
+pub(super) mod codec;
 mod diagnostics;
 mod layout;
 mod reader;
@@ -26,6 +27,14 @@ pub struct RuntimeReport {
     pub runtime_active: bool,
     pub runtime_stopped: bool,
     pub render_requested: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RendererRuntimeUpdate {
+    pub document: DocumentId,
+    pub runtime: RuntimeReport,
+    pub load: PageLoadReport,
+    pub next_timer_micros: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -145,7 +154,7 @@ mod tests {
     use crate::engine::{FontSpec, PositionedGlyph, RectF};
     use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};
 
-    fn sample() -> RendererPresentation {
+    pub(super) fn sample() -> RendererPresentation {
         let url = "https://example.test/".to_string();
         let accessibility_root = DocumentNodeId::new((1_u128 << 64) | 1).unwrap();
         RendererPresentation {

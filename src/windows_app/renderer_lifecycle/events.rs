@@ -1,9 +1,32 @@
 use super::*;
-use better_web_browser::renderer_process::{RendererEvent, RendererState};
+use crate::windows_app::navigation_transaction::PresentationDeadline;
+use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
 use better_web_browser::renderer_protocol::{NavigationCause, NavigationDisposition};
 use std::sync::Arc;
 
 impl BrowserState {
+    pub(super) unsafe fn enforce_first_presentation_deadline(&mut self, id: TabId) {
+        let action = self
+            .tabs
+            .get_mut(id)
+            .and_then(|tab| tab.navigation.deadline(Instant::now()));
+        match action {
+            Some(PresentationDeadline::Retry) => {
+                if self.tabs.active_id() == id {
+                    self.set_status("Renderer did not present the document; retrying once …");
+                }
+                self.replace_renderer_for_navigation(id);
+                self.start_renderer_for(id);
+                self.ensure_renderer_monitoring();
+            }
+            Some(PresentationDeadline::Failed) => self.contain_page_engine_failure(
+                id,
+                "renderer did not produce a first presentation after a clean retry".into(),
+            ),
+            None => {}
+        }
+    }
+
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
         self.flush_renderer_inputs_for(id);
         if let Some(tab) = self.tabs.get_mut(id) {
@@ -22,6 +45,9 @@ impl BrowserState {
         let Some((title, snapshot, events)) = snapshot_and_events else {
             return;
         };
+        if let Some(tab) = self.tabs.get_mut(id) {
+            tab.last_renderer_snapshot = Some(snapshot.clone());
+        }
         let mut exit = snapshot.exit.clone();
         self.update_renderer_status(id, &title, |status| {
             status.phase = match snapshot.state {
@@ -35,16 +61,34 @@ impl BrowserState {
         for event in events {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents
+                            .record("renderer", format!("diagnostic {code}: {text}"));
+                    }
                     self.update_renderer_status(id, &title, |status| {
                         status.last_diagnostic = Some(format!("{code}: {text}"));
                     });
                 }
                 RendererEvent::Unresponsive => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.record("renderer", "became unresponsive");
+                    }
                     self.update_renderer_status(id, &title, |status| {
                         status.phase = RendererLifecyclePhase::Unresponsive;
                     });
                 }
                 RendererEvent::FetchBatch { document, requests } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.fetch_batches = tab.incidents.fetch_batches.saturating_add(1);
+                        tab.incidents.record(
+                            "fetch",
+                            format!(
+                                "batch for document {}: {} requests",
+                                document.get(),
+                                requests.len()
+                            ),
+                        );
+                    }
                     self.begin_renderer_fetch_batch(id, document, requests);
                 }
                 RendererEvent::Presentation(presentation) => {
@@ -52,19 +96,16 @@ impl BrowserState {
                         state.activate_renderer_presentation(*presentation)
                     });
                 }
-                RendererEvent::TimeAdvanced {
-                    document,
-                    next_timer_micros,
-                } => {
+                RendererEvent::RuntimeUpdate(update) => {
                     self.process_for_tab(id, |state| {
-                        state.complete_renderer_time_advance(document, next_timer_micros)
+                        state.complete_renderer_runtime_update(*update)
                     });
                 }
                 RendererEvent::DocumentFailed { document, detail } => {
                     let current = self
                         .tabs
                         .get_mut(id)
-                        .is_some_and(|tab| tab.renderer_document == Some(document));
+                        .is_some_and(|tab| tab.navigation.owns_document(document));
                     if current {
                         self.contain_page_engine_failure(id, detail);
                     }
@@ -75,8 +116,12 @@ impl BrowserState {
                     disposition,
                     cause,
                 } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents
+                            .record("renderer-nav", format!("{cause:?}/{disposition:?}: {url}"));
+                    }
                     self.process_for_tab(id, |state| {
-                        if state.renderer_document != Some(document) {
+                        if !state.navigation.owns_document(document) {
                             return;
                         }
                         match disposition {
@@ -100,6 +145,9 @@ impl BrowserState {
                         }
                     });
                 }
+                RendererEvent::PointerCursor(result) => {
+                    self.process_for_tab(id, |state| state.apply_renderer_pointer_cursor(result));
+                }
                 RendererEvent::CookieMutation(mutation) => {
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
@@ -118,16 +166,87 @@ impl BrowserState {
                         self.contain_page_engine_failure(id, error);
                     }
                 }
-                RendererEvent::Exited(renderer_exit) => exit = Some(renderer_exit),
+                RendererEvent::Exited(renderer_exit) => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.record(
+                            "renderer",
+                            format!(
+                                "process {} exited {:#x}: {:?}",
+                                renderer_exit.process_id, renderer_exit.code, renderer_exit.reason
+                            ),
+                        );
+                    }
+                    exit = Some(renderer_exit);
+                }
             }
         }
 
         if let Some(exit) = exit {
             let crash_surface = exit.crash_surface();
+            let task_budget_exceeded =
+                matches!(exit.reason, RendererExitReason::TaskBudgetExceeded);
             self.update_renderer_status(id, &title, |status| {
                 status.phase = RendererLifecyclePhase::Exited;
                 status.last_exit = Some(exit);
             });
+            if task_budget_exceeded {
+                let recovery_url = self
+                    .tabs
+                    .get_mut(id)
+                    .and_then(|tab| tab.current_url().map(str::to_owned));
+                if let Some(url) = recovery_url
+                    && self
+                        .tabs
+                        .get_mut(id)
+                        .is_some_and(|tab| !tab.navigation.is_loading())
+                {
+                    if self.tabs.active_id() == id {
+                        self.set_status("Renderer stopped responding; reloading once …");
+                    }
+                    self.begin_navigation_for_tab(
+                        id,
+                        url,
+                        browser_navigation::HistoryMode::Recovery,
+                    );
+                    if self
+                        .tabs
+                        .get_mut(id)
+                        .is_some_and(|tab| tab.navigation.is_loading())
+                    {
+                        return;
+                    }
+                }
+            }
+            let recovery = self.tabs.get_mut(id).and_then(|tab| {
+                let recovery = tab.navigation.renderer_exited();
+                if recovery.is_some() {
+                    tab.renderer_session.take();
+                    tab.renderer_work_pending = false;
+                    tab.pointer_cursor_request = None;
+                    tab.pointer_cursor =
+                        better_web_browser::renderer_protocol::PointerCursor::Default;
+                }
+                recovery
+            });
+            match recovery {
+                Some(PresentationDeadline::Retry) => {
+                    if self.tabs.active_id() == id {
+                        self.apply_current_pointer_cursor();
+                        self.set_status("Renderer exited before first paint; retrying once …");
+                    }
+                    self.start_renderer_for(id);
+                    self.ensure_renderer_monitoring();
+                    return;
+                }
+                Some(PresentationDeadline::Failed) => {
+                    self.contain_page_engine_failure(
+                        id,
+                        "renderer exited before first paint after a clean retry".into(),
+                    );
+                    return;
+                }
+                None => {}
+            }
             let status = crash_surface.map(|surface| {
                 format!(
                     "{}: {}. Reload to restart the renderer.",
@@ -140,6 +259,11 @@ impl BrowserState {
                 } else {
                     tab.renderer_session.take();
                 }
+                tab.pointer_cursor_request = None;
+                tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
+            }
+            if self.tabs.active_id() == id {
+                self.apply_current_pointer_cursor();
             }
             if self.tabs.active_id() == id
                 && let Some(status) = status
@@ -157,7 +281,8 @@ impl BrowserState {
         requests: Vec<better_web_browser::renderer_protocol::RendererFetchRequest>,
     ) {
         let context = self.tabs.get_mut(id).and_then(|tab| {
-            (tab.renderer_document == Some(document))
+            tab.navigation
+                .owns_document(document)
                 .then(|| {
                     tab.renderer_session.as_ref().map(|session| {
                         (

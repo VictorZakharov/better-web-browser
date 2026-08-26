@@ -60,7 +60,9 @@ impl RendererSession {
     }
 
     pub fn update_cookie_snapshot(&self, snapshot: CookieStateSnapshot) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::UpdateCookieSnapshot(snapshot))
+        let result = self.state_updates.send_cookie(snapshot);
+        self.wake.notify();
+        result
     }
 
     pub fn update_storage_snapshot(
@@ -69,11 +71,9 @@ impl RendererSession {
         area: StorageAreaKind,
         snapshot: StorageAreaSnapshot,
     ) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::UpdateStorageSnapshot {
-            document,
-            area,
-            snapshot,
-        })
+        let result = self.state_updates.send_storage(document, area, snapshot);
+        self.wake.notify();
+        result
     }
 
     pub fn advance_time(

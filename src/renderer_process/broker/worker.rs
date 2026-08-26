@@ -1,4 +1,5 @@
 mod commands;
+mod deadlines;
 mod document;
 mod stream;
 
@@ -11,13 +12,11 @@ use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, CookieStateSnapshot, DocumentId, DocumentInput, DocumentStart, DocumentState,
-    FrameWriter, PresentedViewport, ProtocolError, RendererFetchRequest, RendererMessage,
-    RendererPresentation, RestrictionReport, TestCommand, TransferAssembler,
+    BrowserMessage, DocumentId, DocumentInput, DocumentStart, DocumentState, PresentedViewport,
+    ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport,
+    TestCommand, TransferAssembler,
 };
-use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
-use std::collections::HashMap;
-use std::fs::File;
+use std::collections::{HashMap, VecDeque};
 use std::os::windows::io::OwnedHandle;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -30,12 +29,6 @@ pub(super) enum BrokerCommand {
         reply: mpsc::Sender<Result<RestrictionReport, String>>,
     },
     Test(TestCommand),
-    UpdateCookieSnapshot(CookieStateSnapshot),
-    UpdateStorageSnapshot {
-        document: DocumentId,
-        area: StorageAreaKind,
-        snapshot: StorageAreaSnapshot,
-    },
     ViewportChanged {
         document: DocumentId,
         viewport: PresentedViewport,
@@ -58,12 +51,14 @@ pub(super) enum LifecycleCommand {
 pub(super) struct BrokerResources {
     pub(super) process: OwnedHandle,
     pub(super) job: Option<OwnedHandle>,
-    pub(super) writer: FrameWriter<File>,
+    pub(super) writer: super::outbound::Sender,
+    pub(super) writer_thread: JoinHandle<()>,
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
     pub(super) reader_thread: JoinHandle<()>,
     pub(super) commands: mpsc::Receiver<BrokerCommand>,
     pub(super) acknowledgements: super::acknowledgements::Receiver,
     pub(super) clock: super::clock::Receiver,
+    pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
     pub(super) events: super::events::EventSender,
@@ -87,12 +82,14 @@ struct Broker {
     shutdown_reply: Option<mpsc::Sender<Result<RendererExit, String>>>,
     shutdown_deadline: Option<Instant>,
     shutdown_acknowledged: bool,
+    document_load_deadline: Option<(DocumentId, Instant)>,
     exit_reason: Option<RendererExitReason>,
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
     active_document: Option<DocumentId>,
     retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
+    outgoing_state_update: Option<OutgoingStateUpdate>,
 }
 
 impl Broker {
@@ -108,19 +105,23 @@ impl Broker {
             shutdown_reply: None,
             shutdown_deadline: None,
             shutdown_acknowledged: false,
+            document_load_deadline: None,
             exit_reason: None,
             incoming_fetch: None,
             incoming_presentation: None,
             active_document: None,
             retired_document: None,
             outgoing_fetch: HashMap::new(),
+            outgoing_state_update: None,
         }
     }
 
     fn run(&mut self) {
         self.resources().wake.register_current();
         loop {
+            self.process_writer_failure();
             self.process_lifecycle_commands();
+            self.process_state_updates();
             self.process_presentation_acknowledgement();
             self.process_commands();
             self.process_document_clock();
@@ -178,9 +179,10 @@ impl Broker {
                     | RendererMessage::PresentationStart { .. }
                     | RendererMessage::PresentationChunk(_)
                     | RendererMessage::PresentationEnd { .. }
-                    | RendererMessage::TimeAdvanced { .. }
+                    | RendererMessage::RuntimeUpdate(_)
                     | RendererMessage::DocumentFailed { .. }
                     | RendererMessage::NavigationRequested { .. }
+                    | RendererMessage::PointerCursor(_)
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::StorageMutation(_)),
                 )) => {
@@ -226,66 +228,6 @@ impl Broker {
             }
             self.shutdown_deadline =
                 Some(Instant::now() + self.resources().options.shutdown_timeout);
-        }
-    }
-
-    fn enforce_deadlines(&mut self) {
-        let now = Instant::now();
-        if self
-            .shutdown_deadline
-            .is_some_and(|deadline| now >= deadline)
-        {
-            self.exit_reason = Some(RendererExitReason::ShutdownTimeout);
-            self.terminate_job(73);
-            self.shutdown_deadline = None;
-        }
-        let unresponsive = now.saturating_duration_since(self.shared().last_pong)
-            >= self.resources().options.unresponsive_timeout;
-        if unresponsive && self.shared().state == RendererState::Running {
-            self.shared().state = RendererState::Unresponsive;
-            if let Err(error) = self.emit_event(RendererEvent::Unresponsive) {
-                self.protocol_failure(error.to_string());
-            }
-        }
-        let task_budget = self
-            .resources()
-            .options
-            .unresponsive_timeout
-            .saturating_add(self.resources().options.unresponsive_kill_timeout);
-        if now.saturating_duration_since(self.shared().last_pong) >= task_budget
-            && self.shared().state == RendererState::Unresponsive
-            && self.exit_reason.is_none()
-        {
-            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded);
-            self.terminate_job(74);
-        }
-    }
-
-    fn send_heartbeat(&mut self) {
-        if self.shutdown_deadline.is_some()
-            || self.last_heartbeat.elapsed() < self.resources().options.heartbeat_interval
-        {
-            return;
-        }
-        self.last_heartbeat = Instant::now();
-        self.send_ping(None);
-    }
-
-    fn send_ping(&mut self, reply: Option<mpsc::Sender<Result<(), String>>>) {
-        let token = self.next_ping;
-        self.next_ping = self.next_ping.checked_add(1).unwrap_or(1);
-        match self.writer().send_browser(&BrowserMessage::Ping(token)) {
-            Ok(()) => {
-                if let Some(reply) = reply {
-                    self.pending_pings.insert(token, reply);
-                }
-            }
-            Err(error) => {
-                if let Some(reply) = reply {
-                    let _ = reply.send(Err(error.to_string()));
-                }
-                self.protocol_failure(error.to_string());
-            }
         }
     }
 
@@ -347,6 +289,7 @@ impl Broker {
         drop(resources.writer);
         drop(resources.job);
         drop(resources.process);
+        let _ = resources.writer_thread.join();
         let _ = resources.reader_thread.join();
     }
 
@@ -354,12 +297,8 @@ impl Broker {
         self.resources.as_ref().expect("broker resources available")
     }
 
-    fn writer(&mut self) -> &mut FrameWriter<File> {
-        &mut self
-            .resources
-            .as_mut()
-            .expect("broker resources available")
-            .writer
+    fn writer(&self) -> &super::outbound::Sender {
+        &self.resources().writer
     }
 
     fn shared(&self) -> std::sync::MutexGuard<'_, SharedDiagnostics> {
@@ -375,9 +314,28 @@ impl Broker {
         }
     }
 
+    fn process_writer_failure(&mut self) {
+        if let Some(error) = self.writer().take_failure()
+            && self.exit_reason.is_none()
+        {
+            self.protocol_failure(format!("renderer IPC writer stopped: {error}"));
+        }
+    }
+
     fn emit_event(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         self.resources().events.send(event)
     }
+
+    fn note_renderer_activity(&mut self) {
+        let mut shared = self.shared();
+        shared.last_pong = Instant::now();
+        shared.state = RendererState::Running;
+    }
+}
+
+struct OutgoingStateUpdate {
+    document: DocumentId,
+    messages: VecDeque<BrowserMessage>,
 }
 
 fn fail_pending(

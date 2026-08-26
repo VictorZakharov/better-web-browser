@@ -7,7 +7,6 @@ impl DocumentRuntime {
         &mut self,
         target: Option<&HitTarget>,
         input: PointerInput,
-        connection: &mut ChildConnection,
         outcome: &mut ScriptOutcome,
     ) -> Result<Option<(String, NavigationDisposition)>, String> {
         let Some(target) = target else {
@@ -26,15 +25,12 @@ impl DocumentRuntime {
             let Some(form_node) = self.page.dom.find_node(form_id) else {
                 return Ok(None);
             };
-            let reset = self.dispatch_user_input(
-                UserInputEvent::Simple {
-                    target: form_node,
-                    event_type: "reset",
-                    bubbles: true,
-                    cancelable: true,
-                },
-                connection,
-            )?;
+            let reset = self.dispatch_user_input(UserInputEvent::Simple {
+                target: form_node,
+                event_type: "reset",
+                bubbles: true,
+                cancelable: true,
+            })?;
             merge_outcome(outcome, reset.outcome, self.page.dom.document.id());
             return Ok(None);
         }
@@ -44,13 +40,12 @@ impl DocumentRuntime {
         let Some(form_id) = control.form_id else {
             return Ok(None);
         };
-        self.submit_form(form_id, Some(control.node_id), connection, outcome)
+        self.submit_form(form_id, Some(control.node_id), outcome)
     }
 
     pub(super) fn keyboard_default_action(
         &mut self,
         target: Option<NodeId>,
-        connection: &mut ChildConnection,
         outcome: &mut ScriptOutcome,
     ) -> Result<Option<(String, NavigationDisposition)>, String> {
         let Some(control) = target.and_then(|target| {
@@ -75,28 +70,24 @@ impl DocumentRuntime {
             }
             _ => None,
         });
-        self.submit_form(form_id, submitter, connection, outcome)
+        self.submit_form(form_id, submitter, outcome)
     }
 
     fn submit_form(
         &mut self,
         form_id: NodeId,
         submitter: Option<NodeId>,
-        connection: &mut ChildConnection,
         outcome: &mut ScriptOutcome,
     ) -> Result<Option<(String, NavigationDisposition)>, String> {
         let Some(form_node) = self.page.dom.find_node(form_id) else {
             return Ok(None);
         };
-        let submit = self.dispatch_user_input(
-            UserInputEvent::Simple {
-                target: form_node,
-                event_type: "submit",
-                bubbles: true,
-                cancelable: true,
-            },
-            connection,
-        )?;
+        let submit = self.dispatch_user_input(UserInputEvent::Simple {
+            target: form_node,
+            event_type: "submit",
+            bubbles: true,
+            cancelable: true,
+        })?;
         merge_outcome(outcome, submit.outcome, self.page.dom.document.id());
         if !submit.default_allowed {
             return Ok(None);

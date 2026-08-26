@@ -6,7 +6,7 @@ mod state;
 use self::fetch::FetchState;
 pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
 use self::state::{IncomingDocumentState, IncomingStorageUpdate};
-use super::document::{DocumentRuntime, LoadResult, RendererTextSystem};
+use super::document::{AdvanceResult, DocumentRuntime, LoadResult, RendererTextSystem};
 use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
 use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
@@ -41,6 +41,7 @@ impl ChildConnection {
         reader: FrameReader<File>,
         writer: FrameWriter<File>,
         test_mode: bool,
+        text: RendererTextSystem,
     ) -> Self {
         Self {
             reader,
@@ -52,9 +53,9 @@ impl ChildConnection {
             incoming_document: None,
             incoming_storage_update: None,
             document: None,
-            // Font discovery starts immediately after the renderer handshake, while the browser
-            // is still fetching the navigation. This keeps it off the page-ready critical path.
-            prepared_text: Some(RendererTextSystem::new(96)),
+            // Ready is sent only after this renderer-owned dependency is initialized. Otherwise
+            // the browser can submit a document to a process that is not actually command-ready.
+            prepared_text: Some(text),
             next_request_id: 1,
             next_batch_id: 1,
         }
@@ -230,13 +231,12 @@ impl ChildConnection {
             runtime.advance(elapsed, max_callbacks, self)
         }));
         match result {
-            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
-            Ok(Ok(None)) => self
+            Ok(Ok(AdvanceResult::Presentation(presentation))) => {
+                self.send_presentation(&presentation)?
+            }
+            Ok(Ok(AdvanceResult::Runtime(update))) => self
                 .writer
-                .send_renderer(&RendererMessage::TimeAdvanced {
-                    document,
-                    next_timer_micros: runtime.next_timer_micros(),
-                })
+                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
                 .map_err(|error| error.to_string())?,
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;
@@ -290,6 +290,11 @@ impl ChildConnection {
         let result = catch_unwind(AssertUnwindSafe(|| runtime.interact(input, self)));
         match result {
             Ok(Ok(result)) => {
+                if let Some(cursor) = result.cursor {
+                    self.writer
+                        .send_renderer(&RendererMessage::PointerCursor(cursor))
+                        .map_err(|error| error.to_string())?;
+                }
                 if let Some(presentation) = result.presentation {
                     self.send_presentation(&presentation)?;
                 }

@@ -232,7 +232,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     })
 }
 
-fn encode_runtime(writer: &mut WireWriter, report: &RuntimeReport) -> Result<(), ProtocolError> {
+pub(in crate::renderer_protocol) fn encode_runtime(
+    writer: &mut WireWriter,
+    report: &RuntimeReport,
+) -> Result<(), ProtocolError> {
     writer.u64(report.scripts_executed);
     writer.u64(report.dom_mutations);
     encode_strings(writer, &report.errors)?;
@@ -249,7 +252,9 @@ fn encode_runtime(writer: &mut WireWriter, report: &RuntimeReport) -> Result<(),
     Ok(())
 }
 
-fn decode_runtime(reader: &mut WireReader<'_>) -> Result<RuntimeReport, ProtocolError> {
+pub(in crate::renderer_protocol) fn decode_runtime(
+    reader: &mut WireReader<'_>,
+) -> Result<RuntimeReport, ProtocolError> {
     let scripts_executed = reader.u64()?;
     let dom_mutations = reader.u64()?;
     let errors = decode_strings(reader)?;
@@ -318,7 +323,7 @@ fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleReport, ProtocolErro
     })
 }
 
-fn encode_load(writer: &mut WireWriter, report: PageLoadReport) {
+pub(in crate::renderer_protocol) fn encode_load(writer: &mut WireWriter, report: PageLoadReport) {
     writer.u64(report.parse_micros);
     writer.u64(report.html_parse_micros);
     writer.u64(report.resource_processing_micros);
@@ -338,7 +343,9 @@ fn encode_load(writer: &mut WireWriter, report: PageLoadReport) {
     writer.u64(report.presentation_decode_micros);
 }
 
-fn decode_load(reader: &mut WireReader<'_>) -> Result<PageLoadReport, ProtocolError> {
+pub(in crate::renderer_protocol) fn decode_load(
+    reader: &mut WireReader<'_>,
+) -> Result<PageLoadReport, ProtocolError> {
     Ok(PageLoadReport {
         parse_micros: reader.u64()?,
         html_parse_micros: reader.u64()?,

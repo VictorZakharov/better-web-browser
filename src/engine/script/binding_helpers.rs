@@ -108,6 +108,25 @@ pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef>
         .collect()
 }
 
+pub(super) fn matches_selector_list(node: &NodeRef, selector: &str) -> bool {
+    node.element().is_some()
+        && selector_groups(selector)
+            .iter()
+            .any(|group| matches_selector(node, group))
+}
+
+pub(super) fn closest_matching_element(node: &NodeRef, selector: &str) -> Option<NodeRef> {
+    let groups = selector_groups(selector);
+    let mut candidate = Some(node.clone());
+    while let Some(node) = candidate {
+        candidate = node.parent();
+        if node.element().is_some() && groups.iter().any(|group| matches_selector(&node, group)) {
+            return Some(node);
+        }
+    }
+    None
+}
+
 fn selector_groups(selector: &str) -> Vec<Vec<&str>> {
     selector
         .split(',')
@@ -313,5 +332,25 @@ mod tests {
         assert_eq!(first.attr("id").as_deref(), Some("first"));
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].id(), first.id());
+    }
+
+    #[test]
+    fn matches_and_closest_test_candidates_without_rescanning_subtrees() {
+        let dom = crate::engine::dom::parse(
+            "<main class='shell'><section><a id='target' class='link'></a></section></main>",
+        );
+        let target = query_selector(&dom.document, "#target").unwrap();
+
+        assert!(matches_selector_list(&target, "main .link, button"));
+        assert!(!matches_selector_list(&target, "button, .missing"));
+        assert_eq!(
+            closest_matching_element(&target, ".shell")
+                .and_then(|node| node.tag_name().map(str::to_string)),
+            Some("main".to_string())
+        );
+        assert_eq!(
+            closest_matching_element(&target, ".link").map(|node| node.id()),
+            Some(target.id())
+        );
     }
 }

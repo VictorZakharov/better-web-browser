@@ -2,8 +2,8 @@ use super::windows::{
     AppContainerSid, LaunchAttributes, PipeSet, create_renderer_job, last_error, random_nonce, raw,
 };
 use crate::limits::{
-    RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT, RENDERER_STARTUP_TIMEOUT,
-    RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
+    RENDERER_FIRST_PRESENTATION_TIMEOUT, RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT,
+    RENDERER_STARTUP_TIMEOUT, RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
 };
 use crate::renderer_protocol::{BrowsingContextId, Nonce, RendererSessionId};
 use std::fs::{self, File};
@@ -40,6 +40,7 @@ pub struct RendererLaunchOptions {
     pub heartbeat_interval: Duration,
     pub unresponsive_timeout: Duration,
     pub unresponsive_kill_timeout: Duration,
+    pub first_presentation_timeout: Duration,
     pub test_mode: bool,
     pub startup_fault: Option<StartupFault>,
 }
@@ -54,6 +55,7 @@ impl RendererLaunchOptions {
             heartbeat_interval: RENDERER_HEARTBEAT_INTERVAL,
             unresponsive_timeout: RENDERER_UNRESPONSIVE_TIMEOUT,
             unresponsive_kill_timeout: RENDERER_UNRESPONSIVE_KILL_TIMEOUT,
+            first_presentation_timeout: RENDERER_FIRST_PRESENTATION_TIMEOUT,
             test_mode: false,
             startup_fault: None,
         }

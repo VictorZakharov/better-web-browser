@@ -1,6 +1,7 @@
 mod diagnostics;
 mod early_scroll;
 mod initialization;
+mod navigation;
 mod options;
 
 use super::benchmark_capture::ScrollPaintMetrics;
@@ -20,6 +21,9 @@ pub(super) struct BenchmarkRun {
     pub(super) initial_cpu_ticks: u64,
     pub(super) window_ready: Duration,
     pub(super) navigation_started: Option<Instant>,
+    pub(super) navigation_targets: Vec<navigation::BenchmarkNavigation>,
+    pub(super) navigation_delay: Duration,
+    pub(super) navigation_scheduled: bool,
     pub(super) page_ready: Duration,
     pub(super) network_time: Duration,
     pub(super) parse_time: Duration,
@@ -80,7 +84,7 @@ pub(super) struct BenchmarkRun {
 
 impl BrowserState {
     pub(super) fn finish_benchmark_after_completion(&self) {
-        post_benchmark_finish(self.window, Duration::ZERO);
+        initialization::post_benchmark_finish(self.window, Duration::ZERO);
     }
 
     pub(super) unsafe fn schedule_benchmark_finish(&mut self) {
@@ -112,7 +116,7 @@ impl BrowserState {
         if let Some(trace) = benchmark.early_scroll.as_mut() {
             trace.schedule(self.window, benchmark.settle, benchmark.activity);
         } else {
-            post_benchmark_finish(self.window, benchmark.settle);
+            initialization::post_benchmark_finish(self.window, benchmark.settle);
         }
     }
 
@@ -121,7 +125,7 @@ impl BrowserState {
         // cold hosts. Keep the window responsive while ensuring process metrics
         // include a renderer launch that is still resolving.
         self.finish_renderer_launch(self.tabs.active_id());
-        if self.renderer_launch_pending {
+        if self.renderer_launch_receiver.is_some() {
             let now = Instant::now();
             let should_wait = self.benchmark.as_mut().is_some_and(|benchmark| {
                 let deadline = benchmark
@@ -130,7 +134,7 @@ impl BrowserState {
                 now < *deadline
             });
             if should_wait {
-                post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
+                initialization::post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
                 return;
             }
         }
@@ -432,14 +436,4 @@ impl BrowserState {
         }
         DestroyWindow(self.window);
     }
-}
-
-fn post_benchmark_finish(window: Hwnd, delay: Duration) {
-    let window = window as isize;
-    std::thread::spawn(move || {
-        std::thread::sleep(delay);
-        unsafe {
-            PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
-        }
-    });
 }

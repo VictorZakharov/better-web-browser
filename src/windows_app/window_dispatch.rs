@@ -86,6 +86,7 @@ unsafe fn dispatch_window_message(
             };
             0
         }
+        WM_SETCURSOR if state.apply_page_cursor_for_hit_test(lparam) => 1,
         WM_SIZE => {
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();
@@ -268,6 +269,10 @@ unsafe fn dispatch_window_message(
             state.finish_benchmark();
             0
         }
+        WM_APP_BENCHMARK_NAVIGATE => {
+            state.run_benchmark_navigation();
+            0
+        }
         WM_APP_EARLY_SCROLL_TICK => {
             state.handle_early_scroll_tick(wparam);
             0
@@ -288,7 +293,13 @@ unsafe fn dispatch_window_message(
                 y: ((lparam >> 16) as u16) as i16 as i32,
             };
             state.update_tab_hover(point);
-            if state.update_tab_pointer(point)
+            state.track_pointer_leave();
+            let over_tab_strip = state.update_tab_pointer(point);
+            if over_tab_strip {
+                state.reset_pointer_cursor();
+            }
+            if over_tab_strip
+                || state.update_reader_pointer_cursor(point)
                 || state.route_content_pointer(
                     point.x,
                     point.y,
@@ -301,6 +312,10 @@ unsafe fn dispatch_window_message(
             } else {
                 DefWindowProcW(window, message, wparam, lparam)
             }
+        }
+        WM_MOUSELEAVE => {
+            state.reset_pointer_cursor();
+            0
         }
         WM_LBUTTONDOWN => {
             let point = Point {

@@ -82,7 +82,7 @@ impl BrowserState {
                 },
                 if tab.crashed {
                     rgb(190, 50, 50)
-                } else if tab.loading {
+                } else if tab.navigation.is_loading() {
                     CHROME_THEME.accent
                 } else {
                     CHROME_THEME.muted_text

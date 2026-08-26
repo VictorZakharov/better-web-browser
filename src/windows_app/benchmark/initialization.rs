@@ -2,6 +2,16 @@
 
 use super::*;
 
+pub(super) fn post_benchmark_finish(window: Hwnd, delay: Duration) {
+    let window = window as isize;
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        unsafe {
+            PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
+        }
+    });
+}
+
 impl BenchmarkRun {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::windows_app) fn new(
@@ -25,6 +35,9 @@ impl BenchmarkRun {
             initial_cpu_ticks: process_cpu_ticks().unwrap_or(0),
             window_ready: Duration::ZERO,
             navigation_started: None,
+            navigation_targets: Vec::new(),
+            navigation_delay: Duration::ZERO,
+            navigation_scheduled: false,
             page_ready: Duration::ZERO,
             network_time: Duration::ZERO,
             parse_time: Duration::ZERO,

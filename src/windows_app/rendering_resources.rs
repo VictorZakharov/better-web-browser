@@ -241,6 +241,23 @@ impl ImageBitmaps {
             }
         }
     }
+
+    pub(super) unsafe fn remove(&mut self, key: &str) {
+        let tint_prefix = format!("{key}#tint:");
+        let stale = self
+            .bitmaps
+            .keys()
+            .filter(|candidate| candidate.as_str() == key || candidate.starts_with(&tint_prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in stale {
+            if let Some(bitmap) = self.bitmaps.remove(&key)
+                && !bitmap.is_null()
+            {
+                DeleteObject(bitmap);
+            }
+        }
+    }
 }
 
 impl Drop for ImageBitmaps {

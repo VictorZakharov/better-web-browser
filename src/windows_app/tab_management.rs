@@ -89,6 +89,12 @@ impl BrowserState {
         if !self.tabs.contains(id) {
             return;
         }
+        if close_tab_action(self.tabs.len(), self.tabs.active_id() == id)
+            == CloseTabAction::CloseWindow
+        {
+            PostMessageW(self.window, WM_CLOSE, 0, 0);
+            return;
+        }
         if self.tabs.active_id() != id {
             if let Some(tab) = self.tabs.remove(id) {
                 self.app.tab_router.unbind(tab.id);
@@ -100,14 +106,7 @@ impl BrowserState {
             return;
         }
         self.suspend_active_tab_ui();
-        let tab = if self.tabs.len() == 1 {
-            let (replacement_id, removed) = self.tabs.replace_active(BrowserTab::new);
-            self.app.tab_router.bind(replacement_id, self.window);
-            self.register_renderer_tab(replacement_id);
-            removed
-        } else {
-            self.tabs.remove_active()
-        };
+        let tab = self.tabs.remove_active();
         self.app.tab_router.unbind(tab.id);
         self.remove_renderer_tab(tab.id);
         self.remember_closed_tab(ClosedTab::from(&tab));
@@ -158,6 +157,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
+        self.reset_pointer_cursor();
         self.route_renderer_lifecycle(
             better_web_browser::renderer_protocol::DocumentLifecycle::Hidden,
         );
@@ -184,6 +184,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn restore_active_tab_ui(&mut self) {
+        self.reset_pointer_cursor();
         self.route_renderer_lifecycle(
             better_web_browser::renderer_protocol::DocumentLifecycle::Active,
         );
@@ -361,5 +362,31 @@ impl BrowserState {
             bottom: self.scale(TAB_STRIP_HEIGHT_DIP),
         };
         InvalidateRect(self.window, &strip, 0);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseTabAction {
+    CloseTab,
+    CloseWindow,
+}
+
+fn close_tab_action(tab_count: usize, closes_active: bool) -> CloseTabAction {
+    if tab_count == 1 && closes_active {
+        CloseTabAction::CloseWindow
+    } else {
+        CloseTabAction::CloseTab
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_the_only_tab_closes_its_window() {
+        assert_eq!(close_tab_action(1, true), CloseTabAction::CloseWindow);
+        assert_eq!(close_tab_action(2, true), CloseTabAction::CloseTab);
+        assert_eq!(close_tab_action(2, false), CloseTabAction::CloseTab);
     }
 }

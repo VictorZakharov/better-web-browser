@@ -4,13 +4,15 @@ use super::document::{
     FetchResponseHead, PresentedViewport, TransferChunk,
 };
 use super::input::{
-    DocumentInput, NavigationCause, NavigationDisposition, PresentationAcknowledgement,
+    DocumentInput, NavigationCause, NavigationDisposition, PointerCursorResult,
+    PresentationAcknowledgement,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
     StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
+use crate::renderer_protocol::RendererRuntimeUpdate;
 use std::fmt;
 
 pub const NONCE_LENGTH: usize = 32;
@@ -199,10 +201,7 @@ pub enum RendererMessage {
         document: DocumentId,
         revision: u64,
     },
-    TimeAdvanced {
-        document: DocumentId,
-        next_timer_micros: Option<u64>,
-    },
+    RuntimeUpdate(RendererRuntimeUpdate),
     DocumentFailed {
         document: DocumentId,
         detail: String,
@@ -213,6 +212,7 @@ pub enum RendererMessage {
         disposition: NavigationDisposition,
         cause: NavigationCause,
     },
+    PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     Restrictions(RestrictionReport),

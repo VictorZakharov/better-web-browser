@@ -98,7 +98,7 @@ fn typed_state_snapshots_and_mutations_cross_the_renderer_boundary() {
             {
                 break *presentation;
             }
-            RendererEvent::TimeAdvanced { .. } | RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::RuntimeUpdate(_) | RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected renderer correction event: {event:?}"),
         }
     };

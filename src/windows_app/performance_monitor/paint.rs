@@ -3,8 +3,8 @@ use crate::windows_app::paint_primitives::{
     draw_text_in_rect, fill_color_rect, paint_rounded_panel,
 };
 
-const PANEL_WIDTH_DIP: i32 = 340;
-const PANEL_HEIGHT_DIP: i32 = 292;
+const PANEL_WIDTH_DIP: i32 = 480;
+const PANEL_HEIGHT_DIP: i32 = 430;
 
 pub(super) fn panel_size(state: &BrowserState) -> Size {
     Size {
@@ -36,7 +36,8 @@ impl BrowserState {
         let Some(fonts) = self.fonts.as_ref() else {
             return;
         };
-        let snapshot = self.tabs.active().performance.snapshot(Instant::now());
+        let tab = self.tabs.active();
+        let snapshot = tab.performance.snapshot(Instant::now());
         let displayed_fps = snapshot.fps.or(snapshot.last_scroll_fps);
         let label = displayed_fps
             .map(|fps| format!("FPS {:>2.0}", fps.min(999.0)))
@@ -111,7 +112,13 @@ impl BrowserState {
             return;
         };
         fill_color_rect(dc, client, CHROME_THEME.card);
-        let snapshot = self.tabs.active().performance.snapshot(Instant::now());
+        let tab = self.tabs.active();
+        let snapshot = tab.performance.snapshot(Instant::now());
+        let renderer = tab
+            .renderer_session
+            .as_ref()
+            .map(|session| session.snapshot())
+            .or_else(|| tab.last_renderer_snapshot.clone());
         SelectObject(dc, fonts.ui_semibold);
         SetTextColor(dc, CHROME_THEME.text);
         SetBkMode(dc, TRANSPARENT);
@@ -123,7 +130,7 @@ impl BrowserState {
         };
         draw_text_in_rect(
             dc,
-            "Current tab performance \u{00b7} rolling 2 s",
+            "Breeze diagnostics \u{00b7} F12",
             &mut heading,
             DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
@@ -183,6 +190,78 @@ impl BrowserState {
                 value,
                 &mut value_bounds,
                 DT_VCENTER | DT_SINGLELINE | DT_CENTER | DT_NOPREFIX,
+            );
+        }
+
+        let renderer_line = renderer.as_ref().map_or_else(
+            || "Renderer: unavailable".to_string(),
+            |renderer| {
+                format!(
+                    "Renderer: {:?} \u{00b7} PID {} \u{00b7} pong {:.0} ms",
+                    renderer.state,
+                    renderer.process_id,
+                    renderer.last_pong_age.as_secs_f64() * 1_000.0
+                )
+            },
+        );
+        let state_line = renderer.as_ref().map_or_else(
+            || "State sync: unavailable".to_string(),
+            |renderer| {
+                format!(
+                    "State sync: {} pending \u{00b7} {} submitted \u{00b7} {} coalesced",
+                    renderer.pending_state_updates,
+                    renderer.submitted_state_updates,
+                    renderer.coalesced_state_updates
+                )
+            },
+        );
+        let activity_line = format!(
+            "Activity: {} nav \u{00b7} {} presentations \u{00b7} {} runtime \u{00b7} {} fetch batches",
+            tab.incidents.navigations,
+            tab.incidents.presentations,
+            tab.incidents.runtime_updates,
+            tab.incidents.fetch_batches
+        );
+        SelectObject(dc, fonts.ui_small);
+        SetTextColor(dc, CHROME_THEME.text);
+        for (index, line) in [renderer_line, state_line, activity_line]
+            .iter()
+            .enumerate()
+        {
+            let top = self.scale(208 + index as i32 * 18);
+            if top + self.scale(18) >= graph.top {
+                break;
+            }
+            let mut bounds = Rect {
+                left: self.scale(16),
+                top,
+                right: client.right - self.scale(16),
+                bottom: top + self.scale(18),
+            };
+            draw_text_in_rect(
+                dc,
+                line,
+                &mut bounds,
+                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+            );
+        }
+        SetTextColor(dc, CHROME_THEME.muted_text);
+        for (index, line) in tab.incidents.recent_labels(3).iter().enumerate() {
+            let top = self.scale(268 + index as i32 * 18);
+            if top + self.scale(18) >= graph.top {
+                break;
+            }
+            let mut bounds = Rect {
+                left: self.scale(16),
+                top,
+                right: client.right - self.scale(16),
+                bottom: top + self.scale(18),
+            };
+            draw_text_in_rect(
+                dc,
+                line,
+                &mut bounds,
+                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
             );
         }
 

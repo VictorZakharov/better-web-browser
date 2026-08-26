@@ -4,10 +4,12 @@ use super::tabs::TabId;
 use super::*;
 use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
 
+#[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
     Push,
     Existing,
     Script,
+    Recovery,
 }
 
 impl BrowserState {
@@ -41,19 +43,27 @@ impl BrowserState {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;
             };
+            tab.incidents.navigations = tab.incidents.navigations.saturating_add(1);
+            tab.incidents
+                .record("navigation", format!("begin {history_mode:?}: {url}"));
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
-            if let (Some(session), Some(document)) =
-                (tab.renderer_session.as_ref(), tab.renderer_document)
-            {
-                let _ = session.cancel_document(document);
-            }
-            tab.pending_renderer_page = None;
-            tab.renderer_document = None;
+            let generation = match history_mode {
+                HistoryMode::Recovery => {
+                    let Some(generation) = tab.navigation.begin_recovery() else {
+                        return;
+                    };
+                    generation
+                }
+                _ => tab.navigation.begin(),
+            };
             tab.renderer_input_sequence = 0;
+            tab.pointer_cursor_request = None;
+            tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
             tab.renderer_revision = 0;
+            tab.last_renderer_snapshot = None;
             tab.renderer_load_metrics = None;
             tab.page_diagnostics = Default::default();
             tab.renderer_next_timer = None;
@@ -62,9 +72,6 @@ impl BrowserState {
             tab.last_scroll_activity = None;
             tab.performance = TabPerformance::default();
             tab.scroll_animation = Default::default();
-            if tab.loading {
-                tab.generation = tab.generation.wrapping_add(1);
-            }
             match history_mode {
                 HistoryMode::Push => {
                     tab.script_navigation.reset(&url);
@@ -76,21 +83,24 @@ impl BrowserState {
                         tab.history_index = tab.history.len() - 1;
                     }
                 }
-                HistoryMode::Existing => tab.script_navigation.reset(&url),
+                HistoryMode::Existing | HistoryMode::Recovery => tab.script_navigation.reset(&url),
                 HistoryMode::Script => {}
             }
-            tab.generation = tab.generation.wrapping_add(1);
-            tab.loading = true;
             tab.crashed = false;
             tab.omnibox_text.clone_from(&url);
             tab.title.clone_from(&url);
             tab.status_text = format!("Loading {url} …");
-            (tab.generation, tab.document_fetch.signal())
+            (generation, tab.document_fetch.signal())
         };
+        // A full document navigation is a renderer ownership boundary. The previous page may be
+        // inside uninterruptible script, layout, or IPC work, so do not let its process delay the
+        // replacement document or carry stale queued work across the navigation.
+        self.replace_renderer_for_navigation(id);
         self.start_renderer_for(id);
         self.ensure_renderer_monitoring();
         self.update_renderer_tab_title(id, &url);
         if is_active {
+            self.apply_current_pointer_cursor();
             self.update_active_tab_title(&url);
             KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
             self.update_history_buttons();
@@ -154,8 +164,10 @@ impl BrowserState {
             });
         if let Err(error) = navigation_thread {
             if let Some(tab) = self.tabs.get_mut(id) {
-                tab.loading = false;
+                tab.navigation.fail();
                 tab.status_text = format!("Could not start navigation: {error}");
+                tab.incidents
+                    .record("navigation", format!("thread start failed: {error}"));
             }
             if is_active {
                 self.set_status(&format!("Could not start navigation: {error}"));
@@ -180,7 +192,6 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reload(&mut self) {
-        self.start_renderer();
         if let Some(url) = self.history.get(self.history_index).cloned() {
             self.begin_navigation(url, HistoryMode::Existing);
         }

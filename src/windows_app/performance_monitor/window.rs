@@ -2,6 +2,7 @@
 
 use super::paint::{close_button_rect, copy_button_rect, format_ms, panel_size};
 use super::*;
+use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const REFRESH_INTERVAL_MS: u32 = 250;
@@ -73,7 +74,13 @@ impl BrowserState {
     }
 
     unsafe fn copy_performance_diagnostics(&self) -> Result<(), String> {
-        let snapshot = self.tabs.active().performance.snapshot(Instant::now());
+        let tab = self.tabs.active();
+        let snapshot = tab.performance.snapshot(Instant::now());
+        let renderer = tab
+            .renderer_session
+            .as_ref()
+            .map(|session| session.snapshot())
+            .or_else(|| tab.last_renderer_snapshot.clone());
         let captured_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -92,38 +99,91 @@ impl BrowserState {
             .map(|duration| format!("{:.1}", duration.as_secs_f64() * 1_000.0))
             .collect::<Vec<_>>()
             .join(", ");
-        let report = format!(
-            concat!(
-                "Breeze performance diagnostics\r\n",
-                "URL: {}\r\n",
-                "Captured (Unix ms): {}\r\n",
-                "Window: rolling 2 s\r\n",
-                "FPS (active scroll): {}\r\n",
-                "Last completed scroll FPS: {}\r\n",
-                "Frame interval p95: {}\r\n",
-                "Slowest interval: {}\r\n",
-                "Long frames (>33 ms): {}\r\n",
-                "Paint: {}\r\n",
-                "JavaScript: {}\r\n",
-                "Style: {}\r\n",
-                "Layout: {}\r\n",
-                "Resources: {}\r\n",
-                "Frame intervals (ms, oldest to newest): {}\r\n"
-            ),
-            self.current_url().unwrap_or("about:blank"),
-            captured_unix_ms,
-            active_fps,
-            last_scroll_fps,
-            format_ms(snapshot.frame_p95),
-            format_ms(snapshot.frame_maximum),
-            snapshot.long_frames,
-            format_ms(snapshot.paint_time),
-            format_ms(snapshot.script_time),
-            format_ms(snapshot.style_time),
-            format_ms(snapshot.layout_time),
-            format_ms(snapshot.resource_time),
-            frame_intervals,
+        let mut report = String::new();
+        let _ = writeln!(report, "Breeze incident diagnostics");
+        let _ = writeln!(report, "Version: {}", env!("CARGO_PKG_VERSION"));
+        let _ = writeln!(
+            report,
+            "URL: {}",
+            self.current_url().unwrap_or("about:blank")
         );
+        let _ = writeln!(report, "Captured (Unix ms): {captured_unix_ms}");
+        let _ = writeln!(report, "Tab status: {}", tab.status_text);
+        let _ = writeln!(report, "Crashed: {}", tab.crashed);
+        let _ = writeln!(
+            report,
+            "History: {} entries, index {}",
+            tab.history.len(),
+            tab.history_index
+        );
+        let _ = writeln!(
+            report,
+            "Document: revision={}, work_pending={}, next_timer_ms={}",
+            tab.renderer_revision,
+            tab.renderer_work_pending,
+            tab.renderer_next_timer
+                .map(|delay| format!("{:.1}", delay.as_secs_f64() * 1_000.0))
+                .unwrap_or_else(|| "none".into())
+        );
+        report.push_str("\nRenderer\n");
+        match renderer {
+            Some(renderer) => {
+                let _ = writeln!(
+                    report,
+                    "State: {:?}; PID: {}; session: {}; context: {}",
+                    renderer.state, renderer.process_id, renderer.session_id, renderer.context_id
+                );
+                let _ = writeln!(
+                    report,
+                    "Uptime: {}; last pong age: {}",
+                    format_ms(renderer.uptime),
+                    format_ms(renderer.last_pong_age)
+                );
+                let _ = writeln!(
+                    report,
+                    "Memory: working_set={} bytes; private={} bytes; peak={} bytes; handles={}",
+                    renderer.working_set,
+                    renderer.private_memory,
+                    renderer.peak_working_set,
+                    renderer.handle_count
+                );
+                let _ = writeln!(report, "CPU ticks: {}", renderer.cpu_ticks);
+                let _ = writeln!(
+                    report,
+                    "State sync: pending={}; submitted={}; coalesced={}",
+                    renderer.pending_state_updates,
+                    renderer.submitted_state_updates,
+                    renderer.coalesced_state_updates
+                );
+                let _ = writeln!(report, "Exit reason: {:?}", renderer.exit_reason);
+            }
+            None => report.push_str("Unavailable\n"),
+        }
+        report.push_str("\nPerformance (rolling 2 s)\n");
+        let _ = writeln!(report, "FPS (active scroll): {active_fps}");
+        let _ = writeln!(report, "Last completed scroll FPS: {last_scroll_fps}");
+        let _ = writeln!(
+            report,
+            "Frame interval p95: {}",
+            format_ms(snapshot.frame_p95)
+        );
+        let _ = writeln!(
+            report,
+            "Slowest interval: {}",
+            format_ms(snapshot.frame_maximum)
+        );
+        let _ = writeln!(report, "Long frames (>33 ms): {}", snapshot.long_frames);
+        let _ = writeln!(report, "Paint: {}", format_ms(snapshot.paint_time));
+        let _ = writeln!(report, "JavaScript: {}", format_ms(snapshot.script_time));
+        let _ = writeln!(report, "Style: {}", format_ms(snapshot.style_time));
+        let _ = writeln!(report, "Layout: {}", format_ms(snapshot.layout_time));
+        let _ = writeln!(report, "Resources: {}", format_ms(snapshot.resource_time));
+        let _ = writeln!(
+            report,
+            "Frame intervals (ms, oldest to newest): {frame_intervals}"
+        );
+        report.push_str("\nIncident history\n");
+        report.push_str(&tab.incidents.report());
         copy_unicode_text(self.window, &report)
     }
 }
@@ -160,7 +220,7 @@ pub(in crate::windows_app) unsafe extern "system" fn window_proc(
             GetClientRect(window, &mut client);
             if contains(copy_button_rect(state, &client), point) {
                 match state.copy_performance_diagnostics() {
-                    Ok(()) => state.set_status("Performance diagnostics copied"),
+                    Ok(()) => state.set_status("Incident diagnostics copied"),
                     Err(error) => state.set_status(&error),
                 }
                 InvalidateRect(window, null(), 0);

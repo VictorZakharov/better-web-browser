@@ -1,15 +1,11 @@
 //! Trusted native-event dispatch into one retained document realm.
 
-use super::dynamic_scripts::drain_dynamic_scripts;
-use super::execution::append_timer_summary;
 use super::*;
 
 pub(super) fn dispatch(
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
     event: UserInputEvent,
-    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_script_bytes: &mut usize,
 ) -> UserInputResult {
     let payload = payload(host, event);
     let invocation = format!(
@@ -27,14 +23,6 @@ pub(super) fn dispatch(
         }
     };
     super::module_lifecycle::drain(context, host, &mut outcome);
-    drain_dynamic_scripts(
-        context,
-        host,
-        &mut outcome,
-        dynamic_script_loader,
-        total_script_bytes,
-    );
-    append_timer_summary(host, &mut outcome);
     UserInputResult {
         outcome,
         default_allowed,

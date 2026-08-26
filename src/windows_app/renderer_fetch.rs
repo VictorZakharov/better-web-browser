@@ -380,7 +380,7 @@ impl BrowserState {
         &mut self,
         completion: RendererFetchCompletion,
     ) {
-        if self.renderer_document != Some(completion.document) {
+        if !self.navigation.owns_document(completion.document) {
             return;
         }
         let bytes = completion.bytes;

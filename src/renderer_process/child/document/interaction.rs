@@ -7,12 +7,19 @@ use crate::engine::dom::{NodeId, NodeRef};
 use crate::engine::{ControlKind, ControlSpec, DisplayItem, UserInputEvent, UserInputModifiers};
 use crate::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, InputModifiers, KeyPhase,
-    NavigationDisposition, PointerButton, PointerInput, PointerPhase, PresentationAcknowledgement,
+    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
+    PointerPhase, PresentationAcknowledgement,
 };
 
 pub(in crate::renderer_process::child) struct InteractionResult {
     pub(in crate::renderer_process::child) presentation: Option<RendererPresentation>,
     pub(in crate::renderer_process::child) navigation: Option<(String, NavigationDisposition)>,
+    pub(in crate::renderer_process::child) cursor: Option<PointerCursorResult>,
+}
+struct PointerInteraction {
+    outcome: ScriptOutcome,
+    navigation: Option<(String, NavigationDisposition)>,
+    cursor: Option<PointerCursorResult>,
 }
 
 impl DocumentRuntime {
@@ -26,13 +33,19 @@ impl DocumentRuntime {
             return Ok(InteractionResult {
                 presentation: None,
                 navigation: None,
+                cursor: None,
             });
         }
         self.last_input_sequence = input.sequence();
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
+        let mut cursor = None;
         let (mut outcome, navigation) = match input {
-            DocumentInput::Pointer(input) => self.pointer_input(input, connection)?,
+            DocumentInput::Pointer(input) => {
+                let interaction = self.pointer_input(input)?;
+                cursor = interaction.cursor;
+                (interaction.outcome, interaction.navigation)
+            }
             DocumentInput::Keyboard(input) => {
                 let key_code = key_code(&input.key);
                 let activates_form = input.phase == KeyPhase::Down && input.key == "Enter";
@@ -41,24 +54,21 @@ impl DocumentRuntime {
                     .and_then(|target| self.resolve_target(target))
                     .or_else(|| self.focused_node.and_then(|id| self.page.dom.find_node(id)));
                 let target_id = target.as_ref().map(|node| node.id());
-                let result = self.dispatch_user_input(
-                    UserInputEvent::Keyboard {
-                        target,
-                        phase: match input.phase {
-                            KeyPhase::Down => "down",
-                            KeyPhase::Up => "up",
-                        },
-                        key: input.key,
-                        code: input.code,
-                        key_code,
-                        repeat: input.repeat,
-                        modifiers: input.modifiers.into(),
+                let result = self.dispatch_user_input(UserInputEvent::Keyboard {
+                    target,
+                    phase: match input.phase {
+                        KeyPhase::Down => "down",
+                        KeyPhase::Up => "up",
                     },
-                    connection,
-                )?;
+                    key: input.key,
+                    code: input.code,
+                    key_code,
+                    repeat: input.repeat,
+                    modifiers: input.modifiers.into(),
+                })?;
                 let mut outcome = result.outcome;
                 let navigation = if activates_form && result.default_allowed {
-                    self.keyboard_default_action(target_id, connection, &mut outcome)?
+                    self.keyboard_default_action(target_id, &mut outcome)?
                 } else {
                     None
                 };
@@ -69,6 +79,7 @@ impl DocumentRuntime {
                     return Ok(InteractionResult {
                         presentation: None,
                         navigation: None,
+                        cursor: None,
                     });
                 };
                 self.accessibility_selection =
@@ -77,15 +88,12 @@ impl DocumentRuntime {
                     self.accessibility_values
                         .insert(target.id(), input.value.clone());
                 }
-                let result = self.dispatch_user_input(
-                    UserInputEvent::Text {
-                        target,
-                        value: input.value,
-                        selection_start: input.selection_start,
-                        selection_end: input.selection_end,
-                    },
-                    connection,
-                )?;
+                let result = self.dispatch_user_input(UserInputEvent::Text {
+                    target,
+                    value: input.value,
+                    selection_start: input.selection_start,
+                    selection_end: input.selection_end,
+                })?;
                 (result.outcome, None)
             }
             DocumentInput::Focus(input) => {
@@ -94,35 +102,26 @@ impl DocumentRuntime {
                     .focused
                     .then(|| target.as_ref().map(|node| node.id()))
                     .flatten();
-                let result = self.dispatch_user_input(
-                    UserInputEvent::Focus {
-                        target,
-                        focused: input.focused,
-                    },
-                    connection,
-                )?;
+                let result = self.dispatch_user_input(UserInputEvent::Focus {
+                    target,
+                    focused: input.focused,
+                })?;
                 (result.outcome, None)
             }
             DocumentInput::Scroll(input) => {
-                let result = self.dispatch_user_input(
-                    UserInputEvent::Scroll {
-                        x: input.x,
-                        y: input.y,
-                    },
-                    connection,
-                )?;
+                let result = self.dispatch_user_input(UserInputEvent::Scroll {
+                    x: input.x,
+                    y: input.y,
+                })?;
                 (result.outcome, None)
             }
             DocumentInput::Lifecycle(input) => {
                 let previous = lifecycle_name(self.lifecycle);
                 self.lifecycle = input.state;
-                let result = self.dispatch_user_input(
-                    UserInputEvent::Lifecycle {
-                        state: lifecycle_name(input.state),
-                        previous,
-                    },
-                    connection,
-                )?;
+                let result = self.dispatch_user_input(UserInputEvent::Lifecycle {
+                    state: lifecycle_name(input.state),
+                    previous,
+                })?;
                 (result.outcome, None)
             }
         };
@@ -132,6 +131,7 @@ impl DocumentRuntime {
         Ok(InteractionResult {
             presentation,
             navigation,
+            cursor,
         })
     }
 
@@ -154,15 +154,16 @@ impl DocumentRuntime {
         Ok(())
     }
 
-    fn pointer_input(
-        &mut self,
-        input: PointerInput,
-        connection: &mut ChildConnection,
-    ) -> Result<(ScriptOutcome, Option<(String, NavigationDisposition)>), String> {
+    fn pointer_input(&mut self, input: PointerInput) -> Result<PointerInteraction, String> {
         let target = input
             .target
             .and_then(|target| self.explicit_target(target))
             .or_else(|| self.hit_target(input.x, input.y));
+        let cursor = (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
+            document: self.id,
+            sequence: input.sequence,
+            cursor: cursor_for_target(target.as_ref()),
+        });
         let target_id = target.as_ref().map(|target| target.node.id());
         let activate = match input.phase {
             PointerPhase::Down => {
@@ -178,41 +179,41 @@ impl DocumentRuntime {
             }
             PointerPhase::Move => false,
         };
-        let result = self.dispatch_user_input(
-            UserInputEvent::Pointer {
-                target: target.as_ref().map(|target| target.node.clone()),
-                phase: match input.phase {
-                    PointerPhase::Move => "move",
-                    PointerPhase::Down => "down",
-                    PointerPhase::Up => "up",
-                    PointerPhase::Activate => "activate",
-                },
-                button: dom_button(input.button),
-                buttons: if matches!(input.phase, PointerPhase::Down) {
-                    dom_buttons(input.button)
-                } else {
-                    0
-                },
-                x: input.x,
-                y: input.y,
-                activate,
-                modifiers: input.modifiers.into(),
+        let result = self.dispatch_user_input(UserInputEvent::Pointer {
+            target: target.as_ref().map(|target| target.node.clone()),
+            phase: match input.phase {
+                PointerPhase::Move => "move",
+                PointerPhase::Down => "down",
+                PointerPhase::Up => "up",
+                PointerPhase::Activate => "activate",
             },
-            connection,
-        )?;
+            button: dom_button(input.button),
+            buttons: if matches!(input.phase, PointerPhase::Down) {
+                dom_buttons(input.button)
+            } else {
+                0
+            },
+            x: input.x,
+            y: input.y,
+            activate,
+            modifiers: input.modifiers.into(),
+        })?;
         let mut outcome = result.outcome;
         let navigation = if activate && result.default_allowed {
-            self.pointer_default_action(target.as_ref(), input, connection, &mut outcome)?
+            self.pointer_default_action(target.as_ref(), input, &mut outcome)?
         } else {
             None
         };
-        Ok((outcome, navigation))
+        Ok(PointerInteraction {
+            outcome,
+            navigation,
+            cursor,
+        })
     }
 
     pub(super) fn dispatch_user_input(
         &mut self,
         event: UserInputEvent,
-        connection: &mut ChildConnection,
     ) -> Result<crate::engine::UserInputResult, String> {
         let Some(runtime) = self.script_runtime.as_mut() else {
             return Ok(crate::engine::UserInputResult {
@@ -220,11 +221,7 @@ impl DocumentRuntime {
                 ..Default::default()
             });
         };
-        let document = self.id;
-        let mut loader = |url: &str, kind, options| {
-            fetch_script_source(connection, document, url, kind, options)
-        };
-        Ok(runtime.dispatch_user_input_with_loader(event, Some(&mut loader)))
+        Ok(runtime.dispatch_user_input(event))
     }
 
     pub(super) fn admit_user_input_outcome(
@@ -330,6 +327,18 @@ struct HitTarget {
     control: Option<ControlSpec>,
 }
 
+fn cursor_for_target(target: Option<&HitTarget>) -> PointerCursor {
+    cursor_for_link(target.is_some_and(|target| target.link.is_some()))
+}
+
+fn cursor_for_link(actionable_link: bool) -> PointerCursor {
+    if actionable_link {
+        PointerCursor::Pointer
+    } else {
+        PointerCursor::Default
+    }
+}
+
 impl From<InputModifiers> for UserInputModifiers {
     fn from(modifiers: InputModifiers) -> Self {
         Self {
@@ -382,5 +391,16 @@ fn key_code(key: &str) -> u32 {
             .next()
             .filter(|_| key.chars().count() == 1)
             .map_or(0, |c| c as u32),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
+        assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
+        assert_eq!(cursor_for_link(false), PointerCursor::Default);
     }
 }

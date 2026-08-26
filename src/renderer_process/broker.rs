@@ -4,7 +4,9 @@ mod acknowledgements;
 mod clock;
 mod diagnostics;
 mod events;
+mod outbound;
 mod session;
+mod state_updates;
 mod stream;
 #[cfg(test)]
 mod tests;
@@ -14,9 +16,10 @@ use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_for_process};
 use crate::renderer_protocol::{
     BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
-    FrameWriter, NavigationCause, NavigationDisposition, ProtocolError, RendererFetchRequest,
-    RendererLimits, RendererMessage, RendererPresentation, RendererSessionId, RestrictionReport,
-    StorageMutationRequest, TestCommand,
+    FrameWriter, NavigationCause, NavigationDisposition, PointerCursorResult, ProtocolError,
+    RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation,
+    RendererRuntimeUpdate, RendererSessionId, RestrictionReport, StorageMutationRequest,
+    TestCommand,
 };
 use diagnostics::SharedDiagnostics;
 pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
@@ -44,6 +47,9 @@ pub struct RendererSnapshot {
     pub handle_count: u32,
     pub uptime: Duration,
     pub last_pong_age: Duration,
+    pub pending_state_updates: usize,
+    pub submitted_state_updates: u64,
+    pub coalesced_state_updates: u64,
     pub exit_reason: Option<RendererExitReason>,
     pub exit: Option<RendererExit>,
 }
@@ -59,10 +65,7 @@ pub enum RendererEvent {
         requests: Vec<RendererFetchRequest>,
     },
     Presentation(Box<RendererPresentation>),
-    TimeAdvanced {
-        document: DocumentId,
-        next_timer_micros: Option<u64>,
-    },
+    RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {
         document: DocumentId,
         detail: String,
@@ -73,6 +76,7 @@ pub enum RendererEvent {
         disposition: NavigationDisposition,
         cause: NavigationCause,
     },
+    PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     Unresponsive,
@@ -83,6 +87,7 @@ pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
     acknowledgements: acknowledgements::Sender,
     clock: clock::Sender,
+    state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
@@ -168,11 +173,19 @@ impl RendererSession {
             exit_reason: None,
             exit: None,
         }));
+        let (outbound, writer_thread) = match outbound::spawn(writer, session, wake.clone()) {
+            Ok(writer) => writer,
+            Err(error) => {
+                terminate_startup(&launched.process, &launched.job, reader_thread);
+                return Err(error);
+            }
+        };
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
         // Browser-owned progress must not compete with bounded page-generated commands.
         let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
         let (clock_tx, clock_rx) = clock::bounded();
+        let (state_updates_tx, state_updates_rx) = state_updates::bounded();
         // Browser state serializes replacement to one lossless cancel plus one pending page.
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
@@ -187,12 +200,14 @@ impl RendererSession {
                 worker::run(worker::BrokerResources {
                     process: launched.process,
                     job: Some(launched.job),
-                    writer,
+                    writer: outbound,
+                    writer_thread,
                     incoming,
                     reader_thread,
                     commands: commands_rx,
                     acknowledgements: acknowledgements_rx,
                     clock: clock_rx,
+                    state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
                     events: events_tx,
@@ -206,6 +221,7 @@ impl RendererSession {
             commands: commands_tx,
             acknowledgements: acknowledgements_tx,
             clock: clock_tx,
+            state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,
@@ -218,10 +234,16 @@ impl RendererSession {
     }
 
     pub fn snapshot(&self) -> RendererSnapshot {
-        self.shared
+        let state_updates = self.state_updates.snapshot();
+        let mut snapshot = self
+            .shared
             .lock()
             .expect("renderer diagnostics lock poisoned")
-            .snapshot()
+            .snapshot();
+        snapshot.pending_state_updates = state_updates.pending;
+        snapshot.submitted_state_updates = state_updates.submitted;
+        snapshot.coalesced_state_updates = state_updates.coalesced;
+        snapshot
     }
 
     pub fn ping(&self, timeout: Duration) -> Result<(), String> {
@@ -303,16 +325,16 @@ impl RendererSession {
     /// intentionally bounded but can still take several seconds for an unresponsive renderer.
     pub fn terminate_in_background(mut self) {
         self.events.close();
+        // Termination is an ownership boundary, so end the Job before returning to the caller.
+        // Queueing a broker command here lets a saturated renderer overlap its replacement.
+        let _ = self.terminate();
         let Some(worker) = self.worker.take() else {
             return;
         };
-        let commands = self.commands.clone();
         let wake = self.wake.clone();
         let _ = std::thread::Builder::new()
             .name("breeze-renderer-reaper".into())
             .spawn(move || {
-                wake.notify();
-                let _ = commands.send(worker::BrokerCommand::Terminate);
                 wake.notify();
                 let _ = worker.join();
             });

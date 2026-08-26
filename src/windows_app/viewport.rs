@@ -27,7 +27,7 @@ pub(super) enum Surface {
 impl BrowserState {
     pub(super) unsafe fn rebuild_layout(&mut self) -> DisplayListDamage {
         if self.surface == Surface::Page {
-            let Some(document) = self.renderer_document else {
+            let Some(document) = self.navigation.active_document() else {
                 // The pending document carries the current viewport when it enters the renderer.
                 // There is intentionally no privileged in-process page-engine fallback.
                 self.layout_dirty = false;
@@ -85,6 +85,7 @@ impl BrowserState {
             Surface::Page => Surface::Reader,
             Surface::Reader => Surface::Page,
         };
+        self.reset_pointer_cursor();
         set_window_text(
             self.controls.reader,
             if self.surface == Surface::Reader {
