@@ -226,6 +226,10 @@ fn state_and_stream_messages_round_trip() {
     }
 
     let renderer = vec![
+        RendererMessage::FetchRequestAbort {
+            document,
+            request_id: 9,
+        },
         RendererMessage::CookieMutation(CookieMutation {
             document,
             assignment: "theme=light; Path=/".into(),
@@ -294,6 +298,7 @@ fn document_clock_messages_round_trip() {
     for expected in [
         RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
             document,
+            clock_advanced: true,
             runtime: RuntimeReport {
                 scripts_executed: 2,
                 console: vec!["clock advanced".into()],
@@ -308,6 +313,7 @@ fn document_clock_messages_round_trip() {
         }),
         RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
             document,
+            clock_advanced: false,
             runtime: RuntimeReport::default(),
             load: PageLoadReport::default(),
             next_timer_micros: None,
@@ -404,6 +410,7 @@ fn rejects_invalid_boolean_and_utf8_payloads() {
 
     let mut advanced = encoded_renderer(&RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
         document: DocumentId::new(1).unwrap(),
+        clock_advanced: false,
         runtime: RuntimeReport::default(),
         load: PageLoadReport::default(),
         next_timer_micros: Some(10),

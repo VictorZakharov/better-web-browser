@@ -64,6 +64,10 @@ pub enum RendererEvent {
         document: DocumentId,
         requests: Vec<RendererFetchRequest>,
     },
+    FetchAbort {
+        document: DocumentId,
+        request_id: u64,
+    },
     Presentation(Box<RendererPresentation>),
     RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {

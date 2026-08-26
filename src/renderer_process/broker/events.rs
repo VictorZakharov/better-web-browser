@@ -41,7 +41,10 @@ pub(super) struct EventSender {
 
 impl EventSender {
     pub(super) fn send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
-        if matches!(event, RendererEvent::FetchBatch { .. }) {
+        if matches!(
+            event,
+            RendererEvent::FetchBatch { .. } | RendererEvent::FetchAbort { .. }
+        ) {
             self.send_lossless_fetch(event)
         } else {
             self.try_send(event)
@@ -174,6 +177,7 @@ fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
 fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
     match event {
         RendererEvent::FetchBatch { document, .. }
+        | RendererEvent::FetchAbort { document, .. }
         | RendererEvent::DocumentFailed { document, .. }
         | RendererEvent::PointerCursor(crate::renderer_protocol::PointerCursorResult {
             document,

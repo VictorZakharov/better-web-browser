@@ -14,6 +14,8 @@ mod presentation;
 mod state;
 #[path = "renderer_process/state_backpressure.rs"]
 mod state_backpressure;
+#[path = "renderer_process/streaming_fetch.rs"]
+mod streaming_fetch;
 #[path = "renderer_process/support.rs"]
 mod support;
 #[path = "renderer_process/termination.rs"]

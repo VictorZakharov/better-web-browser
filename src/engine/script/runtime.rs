@@ -287,6 +287,41 @@ impl ScriptRuntime {
         self.finish_guarded_run(result)
     }
 
+    /// Delivers one response-head, body-chunk, or terminal Fetch event into this realm.
+    pub fn deliver_fetch_event_with_loader(
+        &mut self,
+        id: u32,
+        event: super::ScriptFetchEvent,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut dynamic_script_loader = dynamic_script_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let mut outcome = ScriptOutcome::default();
+            if let Err(error) = super::network::deliver_event(context, id, event) {
+                outcome
+                    .errors
+                    .push(format!("Fetch stream callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            drain_one_dynamic_script(
+                context,
+                &host,
+                &mut outcome,
+                &mut dynamic_script_loader,
+                &mut self.total_script_bytes,
+            );
+            outcome
+        }));
+        self.finish_guarded_run(result)
+    }
+
     /// Delivers a dedicated-worker message or error into this document's retained realm.
     pub fn complete_worker_event_with_loader(
         &mut self,

@@ -1,14 +1,14 @@
 //! Renderer-side resource installation and script-network completions.
 
-use super::fetch::{
-    into_fetch_result, page_resource_request, script_api_request, validate_script_response,
-};
+mod streaming;
+
+use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
 use super::{DocumentRuntime, merge_outcome};
 use crate::engine::script::ScriptInput;
-use crate::engine::{Page, PageResource, ScriptFetchAction, ScriptKind, ScriptOutcome};
+use crate::engine::{Page, PageResource, ScriptKind, ScriptOutcome};
 use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
 use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub(super) struct PendingResourceFetch {
     batch: PendingFetchBatch,
@@ -209,52 +209,6 @@ impl DocumentRuntime {
             // so the renderer can accept input between that task and this async script.
             let result = runtime.execute_additional_with_loader(&inputs, None);
             merge_outcome(outcome, result, self.page.dom.document.id());
-        }
-        Ok(())
-    }
-
-    pub(super) fn complete_pending_fetches(
-        &mut self,
-        connection: &mut ChildConnection,
-        outcome: &mut ScriptOutcome,
-    ) -> Result<(), String> {
-        let actions = std::mem::take(&mut self.pending_fetches);
-        let mut aborted = HashSet::new();
-        let mut requests = Vec::new();
-        let mut script_ids = HashMap::new();
-        for action in actions {
-            match action {
-                ScriptFetchAction::Abort { id } => {
-                    aborted.insert(id);
-                }
-                ScriptFetchAction::Start { id, request } if !aborted.contains(&id) => {
-                    let wire_id = connection.allocate_request_id();
-                    script_ids.insert(wire_id, id);
-                    requests.push(script_api_request(wire_id, self.id, *request));
-                }
-                ScriptFetchAction::Start { .. } => {}
-            }
-        }
-        if requests.is_empty() {
-            return Ok(());
-        }
-        let responses = connection.fetch_batch(self.id, requests)?;
-        for response in responses {
-            let Some(script_id) = script_ids.remove(&response.head.request_id) else {
-                return Err("browser returned an unknown script Fetch request".into());
-            };
-            if let Some(runtime) = self.script_runtime.as_mut() {
-                let document = self.id;
-                let mut loader = |url: &str, kind, options| {
-                    fetch_script_source(connection, document, url, kind, options)
-                };
-                let result = runtime.complete_fetch_with_loader(
-                    script_id,
-                    into_fetch_result(response),
-                    Some(&mut loader),
-                );
-                merge_outcome(outcome, result, self.page.dom.document.id());
-            }
         }
         Ok(())
     }

@@ -194,6 +194,10 @@ pub enum RendererMessage {
     },
     FetchRequestChunk(TransferChunk),
     FetchRequestEnd(u64),
+    FetchRequestAbort {
+        document: DocumentId,
+        request_id: u64,
+    },
     PresentationStart {
         document: DocumentId,
         revision: u64,

@@ -1,12 +1,14 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
+mod registry;
+
 use super::*;
 use better_web_browser::fetch::{
     Body, CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchSignal, FetchUrl,
     RedirectMode, Referrer, ReferrerPolicy, RequestCache, RequestDestination, RequestMode,
     ResponseType,
 };
-use better_web_browser::limits::MAX_PARALLEL_RENDERER_FETCHES;
+use better_web_browser::limits::{MAX_PARALLEL_RENDERER_FETCHES, MAX_RENDERER_FETCH_STREAM_BYTES};
 use better_web_browser::renderer_process::FetchResponseSink;
 use better_web_browser::renderer_protocol::{
     BrowserFetchError, BrowserFetchErrorKind, DocumentId, FetchCache, FetchCredentials,
@@ -28,9 +30,12 @@ pub(super) struct RendererFetchBatch {
     pub(super) requests: Vec<RendererFetchRequest>,
     pub(super) client: Arc<winhttp::HttpClient>,
     pub(super) signal: FetchSignal,
+    pub(super) registry: RendererFetchRegistry,
     pub(super) sink: FetchResponseSink,
     pub(super) tab_router: super::browser_app::TabMessageRouter,
 }
+
+pub(super) use registry::RendererFetchRegistry;
 
 pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String> {
     let RendererFetchBatch {
@@ -40,9 +45,18 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         requests,
         client,
         signal,
+        registry,
         sink,
         tab_router,
     } = batch;
+    let requests = requests
+        .into_iter()
+        .map(|request| {
+            let request_id = request.head.request_id;
+            let request_signal = registry.register(document, request_id);
+            (request, signal.any(&request_signal))
+        })
+        .collect::<Vec<_>>();
     std::thread::Builder::new()
         .name(format!("breeze-renderer-fetch-{}", tab_id.get()))
         .spawn(move || {
@@ -53,23 +67,26 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
                     batch
                         .iter()
                         .cloned()
-                        .map(|request| {
+                        .map(|(request, request_signal)| {
                             let request_id = request.head.request_id;
                             let client = Arc::clone(&client);
-                            let signal = signal.clone();
+                            let signal = request_signal.clone();
                             let sink = sink.clone();
+                            let registry = registry.clone();
                             let document_url = &document_url;
                             (
                                 request_id,
                                 scope.spawn(move || {
-                                    execute(
+                                    let bytes = execute(
                                         &client,
                                         &signal,
                                         &sink,
                                         document,
                                         document_url,
                                         request,
-                                    )
+                                    );
+                                    registry.complete(document, request_id);
+                                    bytes
                                 }),
                             )
                         })
@@ -169,6 +186,7 @@ fn reconstruct(
         }
         FetchInitiator::ScriptApi => {
             let mut request = FetchRequest::script(&head.url, authoritative_document_url)?;
+            request.response_body_limit = MAX_RENDERER_FETCH_STREAM_BYTES;
             request.destination = destination(head.destination);
             request.set_method(&head.method)?;
             for (name, value) in &head.headers {

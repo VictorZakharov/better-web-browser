@@ -23,6 +23,7 @@ impl RendererPresentation {
         }
 
         next.accessibility = self.accessibility.coalesce(next.accessibility)?;
+        next.clock_advanced |= self.clock_advanced;
         next.runtime = self.runtime.coalesce(next.runtime);
         next.style = self.style.coalesce(next.style);
         next.load = self.load.coalesce(next.load);
@@ -130,6 +131,7 @@ impl RendererRuntimeUpdate {
                 "runtime-update coalescing document",
             ));
         }
+        next.clock_advanced |= self.clock_advanced;
         next.runtime = self.runtime.coalesce(next.runtime);
         next.load = self.load.coalesce(next.load);
         Ok(next)
@@ -146,6 +148,7 @@ mod tests {
     #[test]
     fn preserves_ordered_deltas_and_one_shot_resources() {
         let mut first = sample();
+        first.clock_advanced = true;
         first.runtime = RuntimeReport {
             scripts_executed: 2,
             dom_mutations: 3,
@@ -202,6 +205,7 @@ mod tests {
 
         let combined = first.coalesce(next).unwrap();
         assert_eq!(combined.revision, 2);
+        assert!(combined.clock_advanced);
         assert_eq!(combined.title, "newest snapshot");
         assert_eq!(combined.runtime.scripts_executed, 6);
         assert_eq!(combined.runtime.dom_mutations, 8);

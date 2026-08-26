@@ -11,7 +11,7 @@ impl BrowserState {
         &mut self,
         update: better_web_browser::renderer_protocol::RendererRuntimeUpdate,
     ) {
-        if !self.navigation.owns_document(update.document) || !self.renderer_work_pending {
+        if !self.navigation.owns_document(update.document) {
             return;
         }
         self.incidents.runtime_updates = self.incidents.runtime_updates.saturating_add(1);
@@ -30,8 +30,11 @@ impl BrowserState {
             );
         }
         self.renderer_next_timer = update.next_timer_micros.map(Duration::from_micros);
-        self.renderer_runtime_clock = Some(Instant::now());
-        self.renderer_work_pending = false;
+        if update.clock_advanced {
+            self.renderer_runtime_clock = Some(Instant::now());
+            self.renderer_clock_pending = false;
+            self.renderer_work_pending = false;
+        }
         let benchmark_completed =
             self.record_renderer_runtime_metrics(&update.runtime, update.load, false);
         if let Some(url) = update.runtime.navigation_url.as_deref()
@@ -58,6 +61,9 @@ impl BrowserState {
 
     pub(super) unsafe fn schedule_script_runtime_wakeup(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+        if self.renderer_clock_pending {
+            return;
+        }
         let Some(next_delay) = self
             .navigation
             .active_document()
@@ -78,6 +84,9 @@ impl BrowserState {
 
     pub(super) unsafe fn pump_script_runtime(&mut self) {
         KillTimer(self.window, ID_RENDERER_RUNTIME_TIMER);
+        if self.renderer_clock_pending {
+            return;
+        }
         let Some(document) = self.navigation.active_document() else {
             return;
         };
@@ -88,6 +97,7 @@ impl BrowserState {
             .map(|previous| now.saturating_duration_since(previous))
             .unwrap_or_default();
         self.renderer_next_timer = None;
+        self.renderer_clock_pending = true;
         self.renderer_work_pending = true;
         let result = self
             .renderer_session

@@ -197,6 +197,7 @@ impl Broker {
             self.document_load_deadline = None;
             self.retired_document = Some(document);
             self.outgoing_fetch.clear();
+            self.fetch_response_streaming.clear();
         }
         if let Err(error) = self
             .writer()

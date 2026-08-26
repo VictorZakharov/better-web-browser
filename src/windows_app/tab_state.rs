@@ -52,6 +52,7 @@ pub(super) struct BrowserTab {
     pub(super) navigation: NavigationTransaction,
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
+    pub(super) renderer_fetches: renderer_fetch::RendererFetchRegistry,
     pub(super) session_storage: SessionStorage,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) last_renderer_snapshot: Option<RendererSnapshot>,
@@ -67,6 +68,7 @@ pub(super) struct BrowserTab {
     pub(super) page_diagnostics: better_web_browser::renderer_protocol::PageDiagnostics,
     pub(super) renderer_next_timer: Option<Duration>,
     pub(super) renderer_runtime_clock: Option<Instant>,
+    pub(super) renderer_clock_pending: bool,
     pub(super) renderer_work_pending: bool,
     pub(super) layout_dirty: bool,
     pub(super) render_dpi: u32,
@@ -106,6 +108,7 @@ impl BrowserTab {
             navigation: NavigationTransaction::new(LoadedPage::home()),
             crashed: false,
             document_fetch: FetchController::new(),
+            renderer_fetches: renderer_fetch::RendererFetchRegistry::default(),
             session_storage: SessionStorage::default(),
             renderer_session: None,
             last_renderer_snapshot: None,
@@ -121,6 +124,7 @@ impl BrowserTab {
             page_diagnostics: Default::default(),
             renderer_next_timer: None,
             renderer_runtime_clock: None,
+            renderer_clock_pending: false,
             renderer_work_pending: false,
             layout_dirty: true,
             render_dpi: DEFAULT_DPI,
@@ -150,6 +154,7 @@ impl BrowserTab {
         self.accessibility_document.clear();
         self.renderer_next_timer = None;
         self.renderer_runtime_clock = None;
+        self.renderer_clock_pending = false;
         self.renderer_work_pending = false;
         self.page_controls.clear();
         if let Some(session) = self.renderer_session.take() {

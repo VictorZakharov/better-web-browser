@@ -97,6 +97,9 @@ pub(super) struct FixtureResponse {
     reason: &'static str,
     content_type: &'static str,
     body: String,
+    stream_chunks: Option<Vec<Vec<u8>>>,
+    stream_chunk_delay: Duration,
+    allow_disconnect: bool,
     delay: Duration,
     headers: Vec<(String, String)>,
 }
@@ -108,6 +111,9 @@ impl FixtureResponse {
             reason: "OK",
             content_type: "text/html; charset=utf-8",
             body: body.into(),
+            stream_chunks: None,
+            stream_chunk_delay: Duration::ZERO,
+            allow_disconnect: false,
             delay: Duration::ZERO,
             headers: Vec::new(),
         }
@@ -119,6 +125,9 @@ impl FixtureResponse {
             reason: "OK",
             content_type: "text/javascript; charset=utf-8",
             body: body.into(),
+            stream_chunks: None,
+            stream_chunk_delay: Duration::ZERO,
+            allow_disconnect: false,
             delay,
             headers: Vec::new(),
         }
@@ -130,9 +139,35 @@ impl FixtureResponse {
             reason: "OK",
             content_type: "application/json; charset=utf-8",
             body: body.into(),
+            stream_chunks: None,
+            stream_chunk_delay: Duration::ZERO,
+            allow_disconnect: false,
             delay: Duration::ZERO,
             headers: Vec::new(),
         }
+    }
+
+    pub(super) fn streamed(
+        content_type: &'static str,
+        chunks: Vec<Vec<u8>>,
+        chunk_delay: Duration,
+    ) -> Self {
+        Self {
+            status: 200,
+            reason: "OK",
+            content_type,
+            body: String::new(),
+            stream_chunks: Some(chunks),
+            stream_chunk_delay: chunk_delay,
+            allow_disconnect: false,
+            delay: Duration::ZERO,
+            headers: Vec::new(),
+        }
+    }
+
+    pub(super) fn allow_disconnect(mut self) -> Self {
+        self.allow_disconnect = true;
+        self
     }
 
     pub(super) fn status(mut self, status: u16, reason: &'static str) -> Self {
@@ -232,18 +267,43 @@ fn write_fixture_response(
         .iter()
         .map(|(name, value)| format!("{name}: {value}\r\n"))
         .collect::<String>();
+    let content_length = response
+        .stream_chunks
+        .as_ref()
+        .map(|chunks| chunks.iter().map(Vec::len).sum())
+        .unwrap_or(response.body.len());
     let headers = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n",
-        response.status,
-        response.reason,
-        response.content_type,
-        extra_headers,
-        response.body.len()
+        response.status, response.reason, response.content_type, extra_headers, content_length
     );
-    stream
-        .write_all(headers.as_bytes())
-        .and_then(|_| stream.write_all(response.body.as_bytes()))
-        .map_err(|error| format!("write fixture response: {error}"))
+    if let Err(error) = stream.write_all(headers.as_bytes()) {
+        return handle_fixture_write_error(error, response.allow_disconnect);
+    }
+    let Some(chunks) = &response.stream_chunks else {
+        return stream
+            .write_all(response.body.as_bytes())
+            .map_err(|error| format!("write fixture response: {error}"));
+    };
+    for chunk in chunks {
+        if let Err(error) = stream.write_all(chunk).and_then(|_| stream.flush()) {
+            return handle_fixture_write_error(error, response.allow_disconnect);
+        }
+        thread::sleep(response.stream_chunk_delay);
+    }
+    Ok(())
+}
+
+fn handle_fixture_write_error(error: std::io::Error, allow_disconnect: bool) -> Result<(), String> {
+    if allow_disconnect
+        && matches!(
+            error.kind(),
+            ErrorKind::BrokenPipe | ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset
+        )
+    {
+        Ok(())
+    } else {
+        Err(format!("write fixture response: {error}"))
+    }
 }
 
 pub(super) fn wait_for_child(child: &mut std::process::Child, timeout: Duration) -> ExitStatus {

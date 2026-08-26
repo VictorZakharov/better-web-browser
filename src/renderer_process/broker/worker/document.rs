@@ -23,6 +23,7 @@ impl Broker {
             return Err("document transfer length does not match its declaration".into());
         }
         self.outgoing_fetch.clear();
+        self.fetch_response_streaming.clear();
         self.writer()
             .send_browser(&BrowserMessage::BeginDocument(start.clone()))
             .map_err(|error| error.to_string())?;
@@ -140,6 +141,24 @@ impl Broker {
             RendererMessage::FetchRequestEnd(request_id) => {
                 self.finish_fetch_request(request_id)?;
             }
+            RendererMessage::FetchRequestAbort {
+                document,
+                request_id,
+            } => {
+                let owns_document = self.active_document == Some(document)
+                    || self.retired_document == Some(document);
+                if !owns_document {
+                    return Err(ProtocolError::InvalidPayload(
+                        "renderer Fetch abort document",
+                    ));
+                }
+                if self.active_document == Some(document) {
+                    self.emit_event(RendererEvent::FetchAbort {
+                        document,
+                        request_id,
+                    })?;
+                }
+            }
             RendererMessage::PresentationStart {
                 document,
                 revision,
@@ -170,6 +189,7 @@ impl Broker {
                     self.active_document = None;
                     self.retired_document = None;
                     self.outgoing_fetch.clear();
+                    self.fetch_response_streaming.clear();
                     self.resources().state_updates.discard_document(document);
                     if self
                         .outgoing_state_update
@@ -351,6 +371,7 @@ impl Broker {
         if batch.requests.len() == batch.expected {
             let complete = self.incoming_fetch.take().expect("Fetch batch exists");
             if self.active_document == Some(complete.document) {
+                self.register_fetch_response_policies(&complete.requests)?;
                 self.emit_event(RendererEvent::FetchBatch {
                     document: complete.document,
                     requests: complete.requests,

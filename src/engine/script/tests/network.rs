@@ -116,6 +116,45 @@ fn retained_fetch_completion_resolves_response_body_and_headers() {
 }
 
 #[test]
+fn fetch_resolves_at_headers_and_streams_body_chunks() {
+    let (dom, mut runtime, id) = pending_runtime(
+        r#"fetch('/data').then(async response => {
+            document.querySelector('div').textContent = 'head:' + response.status;
+            const reader = response.body.getReader();
+            const first = await reader.read();
+            document.querySelector('div').textContent += '|one:' + new TextDecoder().decode(first.value);
+            const second = await reader.read();
+            document.querySelector('div').textContent += '|two:' + new TextDecoder().decode(second.value);
+            const end = await reader.read();
+            document.querySelector('div').textContent += '|done:' + end.done;
+        });"#,
+    );
+
+    let head = runtime.deliver_fetch_event_with_loader(
+        id,
+        ScriptFetchEvent::Head(Ok(test_response(b""))),
+        None,
+    );
+    assert!(head.errors.is_empty(), "{:?}", head.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "head:200"
+    );
+
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"ab".to_vec()), None);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "head:200|one:ab"
+    );
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"cd".to_vec()), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "head:200|one:ab|two:cd|done:true"
+    );
+}
+
+#[test]
 fn cancelled_document_discards_a_stale_fetch_completion() {
     let (dom, mut runtime, id) = pending_runtime(
         r#"fetch('/data').then(() => {
@@ -153,6 +192,56 @@ fn xhr_uses_fetch_and_dispatches_the_success_state_sequence() {
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "200|42|readystatechange:1,loadstart:1,readystatechange:2,readystatechange:3,progress:3,readystatechange:4,load:4,loadend:4"
+    );
+}
+
+#[test]
+fn xhr_reports_monotonic_progress_for_incremental_chunks() {
+    let (dom, mut runtime, id) = pending_runtime(
+        r#"const samples = [];
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/xhr');
+        xhr.onprogress = event => samples.push(event.loaded + '/' + event.total + '/' + event.lengthComputable);
+        xhr.onloadend = () => document.querySelector('div').textContent =
+            xhr.responseText + '|' + samples.join(',');
+        xhr.send();"#,
+    );
+    let mut response = test_response(b"");
+    response.headers.append("content-length", "6").unwrap();
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Head(Ok(response)), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"ab".to_vec()), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"cdef".to_vec()), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "abcdef|2/6/true,6/6/true"
+    );
+}
+
+#[test]
+fn xhr_reports_unknown_content_length_without_inventing_a_total() {
+    let (dom, mut runtime, id) = pending_runtime(
+        r#"const samples = [];
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/xhr');
+        xhr.onprogress = event => samples.push(event.loaded + '/' + event.total + '/' + event.lengthComputable);
+        xhr.onloadend = () => document.querySelector('div').textContent =
+            xhr.responseText + '|' + samples.join(',');
+        xhr.send();"#,
+    );
+    runtime.deliver_fetch_event_with_loader(
+        id,
+        ScriptFetchEvent::Head(Ok(test_response(b""))),
+        None,
+    );
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"ab".to_vec()), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::Chunk(b"cdef".to_vec()), None);
+    runtime.deliver_fetch_event_with_loader(id, ScriptFetchEvent::End, None);
+
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "abcdef|2/0/false,6/0/false"
     );
 }
 

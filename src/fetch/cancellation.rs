@@ -11,9 +11,9 @@ pub struct FetchController {
     aborted: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FetchSignal {
-    aborted: Arc<AtomicBool>,
+    aborted: Vec<Arc<AtomicBool>>,
 }
 
 impl FetchController {
@@ -23,7 +23,7 @@ impl FetchController {
 
     pub fn signal(&self) -> FetchSignal {
         FetchSignal {
-            aborted: Arc::clone(&self.aborted),
+            aborted: vec![Arc::clone(&self.aborted)],
         }
     }
 
@@ -38,7 +38,15 @@ impl FetchController {
 
 impl FetchSignal {
     pub fn is_aborted(&self) -> bool {
-        self.aborted.load(Ordering::Acquire)
+        self.aborted
+            .iter()
+            .any(|aborted| aborted.load(Ordering::Acquire))
+    }
+
+    pub fn any(&self, other: &Self) -> Self {
+        let mut aborted = self.aborted.clone();
+        aborted.extend(other.aborted.iter().cloned());
+        Self { aborted }
     }
 
     pub fn check(&self) -> Result<(), FetchError> {
@@ -47,5 +55,26 @@ impl FetchSignal {
         } else {
             Ok(())
         }
+    }
+}
+
+impl Default for FetchSignal {
+    fn default() -> Self {
+        FetchController::new().signal()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combined_signal_observes_either_controller() {
+        let document = FetchController::new();
+        let request = FetchController::new();
+        let combined = document.signal().any(&request.signal());
+        assert!(!combined.is_aborted());
+        request.abort();
+        assert!(combined.is_aborted());
     }
 }

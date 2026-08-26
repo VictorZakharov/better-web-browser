@@ -68,6 +68,7 @@ impl BrowserState {
             tab.page_diagnostics = Default::default();
             tab.renderer_next_timer = None;
             tab.renderer_runtime_clock = None;
+            tab.renderer_clock_pending = false;
             tab.renderer_work_pending = false;
             tab.last_scroll_activity = None;
             tab.performance = TabPerformance::default();

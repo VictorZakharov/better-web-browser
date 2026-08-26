@@ -46,7 +46,7 @@ mod workers;
 pub use execution::{execute, execute_with_loader};
 use host_call::host_call;
 use host_state::{HostState, HostStateLink};
-pub use network::ScriptFetchAction;
+pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use runtime::ScriptRuntime;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{

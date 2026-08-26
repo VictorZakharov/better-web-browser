@@ -51,7 +51,9 @@ pub(super) struct DocumentRuntime {
     loaded_resources: HashSet<PageResource>,
     resource_budget: u64,
     pending_fetches: Vec<ScriptFetchAction>,
+    active_script_fetches: HashMap<u64, u32>,
     pending_worker_actions: Vec<ScriptWorkerAction>,
+    deferred_network_load: PageLoadReport,
     workers: RendererWorkers,
     executed_async_scripts: HashSet<String>,
     pending_resource_preloads: Option<PendingResourceFetch>,
@@ -124,7 +126,9 @@ impl DocumentRuntime {
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
             pending_fetches: Vec::new(),
+            active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
+            deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
             executed_async_scripts: HashSet::new(),
             pending_resource_preloads: pending_deferred,
@@ -261,6 +265,7 @@ impl DocumentRuntime {
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
             return Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
+                clock_advanced: true,
                 runtime: runtime_report(ScriptOutcome::default(), self.script_runtime.is_some()),
                 load: PageLoadReport::default(),
                 next_timer_micros: None,
@@ -287,7 +292,7 @@ impl DocumentRuntime {
         let async_script_started = Instant::now();
         self.execute_pending_async_scripts(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
-        self.complete_pending_fetches(connection, &mut outcome)?;
+        self.start_pending_fetches(connection)?;
         let document_url = self.page.source_url.clone();
         let document_root = self.page.dom.document.id();
         let worker_actions = std::mem::take(&mut self.pending_worker_actions);
@@ -356,11 +361,15 @@ impl DocumentRuntime {
         });
         if needs_present {
             self.presentation(outcome, style, load)
-                .map(|presentation| AdvanceResult::Presentation(Box::new(presentation)))
+                .map(|mut presentation| {
+                    presentation.clock_advanced = true;
+                    AdvanceResult::Presentation(Box::new(presentation))
+                })
         } else {
             let next_timer_micros = self.next_timer_micros();
             Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
+                clock_advanced: true,
                 runtime: runtime_report(outcome, self.script_runtime.is_some()),
                 load,
                 next_timer_micros,
@@ -443,6 +452,7 @@ impl DocumentRuntime {
         Ok(RendererPresentation {
             document: self.id,
             revision: self.revision,
+            clock_advanced: false,
             title: self.page.title.clone(),
             final_url: self.page.source_url.clone(),
             status: self.status,

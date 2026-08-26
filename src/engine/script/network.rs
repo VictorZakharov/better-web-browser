@@ -16,6 +16,14 @@ pub enum ScriptFetchAction {
     Abort { id: u32 },
 }
 
+#[derive(Debug)]
+pub enum ScriptFetchEvent {
+    Head(Result<FetchResponse, FetchError>),
+    Chunk(Vec<u8>),
+    End,
+    Abort(FetchError),
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SerializedRequest {
@@ -179,60 +187,106 @@ pub(super) fn deliver_completion(
     id: u32,
     result: Result<FetchResponse, FetchError>,
 ) -> JsResult<()> {
-    let (metadata, body) = match result {
-        Ok(response) => {
-            let metadata = SerializedResponse {
-                ok: true,
-                url: response.final_url().as_str().to_string(),
-                status: response.status,
-                status_text: status_text(response.status),
-                response_type: response_type(response.response_type),
-                redirected: response.url_list.len() > 1,
-                headers: response
-                    .headers
-                    .iter()
-                    .map(|header| (header.name().to_string(), header.value().to_string()))
-                    .collect(),
-                error_name: None,
-                error_message: None,
-            };
-            let bytes = response.body.into_bytes();
-            let body = JsUint8Array::from_iter(bytes, context)?.into();
-            (metadata, body)
+    match result {
+        Ok(mut response) => {
+            let bytes =
+                std::mem::replace(&mut response.body, Body::from_bytes(Vec::new())).into_bytes();
+            deliver_event(context, id, ScriptFetchEvent::Head(Ok(response)))?;
+            if !bytes.is_empty() {
+                deliver_event(context, id, ScriptFetchEvent::Chunk(bytes))?;
+            }
+            deliver_event(context, id, ScriptFetchEvent::End)
         }
-        Err(error) => (
-            SerializedResponse {
-                ok: false,
-                url: String::new(),
-                status: 0,
-                status_text: "",
-                response_type: "error",
-                redirected: false,
-                headers: Vec::new(),
-                error_name: Some(if error.kind() == FetchErrorKind::Aborted {
-                    "AbortError"
-                } else {
-                    "TypeError"
-                }),
-                error_message: Some(error.to_string()),
-            },
-            JsValue::undefined(),
-        ),
-    };
-    let metadata = serde_json::to_string(&metadata)
-        .map_err(|error| JsNativeError::error().with_message(error.to_string()))?;
+        Err(error) => deliver_event(context, id, ScriptFetchEvent::Head(Err(error))),
+    }
+}
+
+pub(super) fn deliver_event(
+    context: &mut Context,
+    id: u32,
+    event: ScriptFetchEvent,
+) -> JsResult<()> {
+    match event {
+        ScriptFetchEvent::Head(result) => {
+            let metadata = serde_json::to_string(&serialized_response(result))
+                .map_err(|error| JsNativeError::error().with_message(error.to_string()))?;
+            call_network_hook(
+                context,
+                "__startFetch",
+                &[JsValue::from(id), js_string(metadata)],
+            )?;
+        }
+        ScriptFetchEvent::Chunk(bytes) => {
+            let body = JsUint8Array::from_iter(bytes, context)?.into();
+            call_network_hook(context, "__pushFetch", &[JsValue::from(id), body])?;
+        }
+        ScriptFetchEvent::End => {
+            call_network_hook(context, "__finishFetch", &[JsValue::from(id)])?;
+        }
+        ScriptFetchEvent::Abort(error) => {
+            let name = if error.kind() == FetchErrorKind::Aborted {
+                "AbortError"
+            } else {
+                "TypeError"
+            };
+            call_network_hook(
+                context,
+                "__abortFetch",
+                &[
+                    JsValue::from(id),
+                    js_string(name.to_string()),
+                    js_string(error.to_string()),
+                ],
+            )?;
+        }
+    }
+    context.run_jobs()
+}
+
+fn serialized_response(result: Result<FetchResponse, FetchError>) -> SerializedResponse {
+    match result {
+        Ok(response) => SerializedResponse {
+            ok: true,
+            url: response.final_url().as_str().to_string(),
+            status: response.status,
+            status_text: status_text(response.status),
+            response_type: response_type(response.response_type),
+            redirected: response.url_list.len() > 1,
+            headers: response
+                .headers
+                .iter()
+                .map(|header| (header.name().to_string(), header.value().to_string()))
+                .collect(),
+            error_name: None,
+            error_message: None,
+        },
+        Err(error) => SerializedResponse {
+            ok: false,
+            url: String::new(),
+            status: 0,
+            status_text: "",
+            response_type: "error",
+            redirected: false,
+            headers: Vec::new(),
+            error_name: Some(if error.kind() == FetchErrorKind::Aborted {
+                "AbortError"
+            } else {
+                "TypeError"
+            }),
+            error_message: Some(error.to_string()),
+        },
+    }
+}
+
+fn call_network_hook(context: &mut Context, name: &str, arguments: &[JsValue]) -> JsResult<()> {
     let callback = context
         .global_object()
-        .get(boa_engine::js_string!("__completeFetch"), context)?;
+        .get(boa_engine::JsString::from(name), context)?;
     let callback = callback
         .as_callable()
-        .ok_or_else(|| JsNativeError::typ().with_message("Fetch completion hook is unavailable"))?;
-    callback.call(
-        &JsValue::undefined(),
-        &[JsValue::from(id), js_string(metadata), body],
-        context,
-    )?;
-    context.run_jobs()
+        .ok_or_else(|| JsNativeError::typ().with_message(format!("{name} hook is unavailable")))?;
+    callback.call(&JsValue::undefined(), arguments, context)?;
+    Ok(())
 }
 
 fn response_type(response_type: ResponseType) -> &'static str {

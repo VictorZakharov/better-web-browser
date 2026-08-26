@@ -89,6 +89,7 @@ struct Broker {
     active_document: Option<DocumentId>,
     retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
+    fetch_response_streaming: HashMap<u64, bool>,
     outgoing_state_update: Option<OutgoingStateUpdate>,
 }
 
@@ -112,6 +113,7 @@ impl Broker {
             active_document: None,
             retired_document: None,
             outgoing_fetch: HashMap::new(),
+            fetch_response_streaming: HashMap::new(),
             outgoing_state_update: None,
         }
     }
@@ -187,6 +189,7 @@ impl Broker {
                     | RendererMessage::FetchRequestStart { .. }
                     | RendererMessage::FetchRequestChunk(_)
                     | RendererMessage::FetchRequestEnd(_)
+                    | RendererMessage::FetchRequestAbort { .. }
                     | RendererMessage::PresentationStart { .. }
                     | RendererMessage::PresentationChunk(_)
                     | RendererMessage::PresentationEnd { .. }
