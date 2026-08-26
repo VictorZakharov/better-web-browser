@@ -149,6 +149,22 @@ fn dispatch_host_call(
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &nodes, false)))
         }
+        "matches" => {
+            let selector = argument_string(args, 2, context)?;
+            let matches = state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| matches_selector_list(&node, &selector));
+            Ok(JsValue::from(matches))
+        }
+        "closest" => {
+            let selector = argument_string(args, 2, context)?;
+            let closest = state
+                .node(argument_id(args, 1))
+                .and_then(|node| closest_matching_element(&node, &selector));
+            Ok(JsValue::from(
+                closest.map(|node| state.id_for(&node)).unwrap_or_default(),
+            ))
+        }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {

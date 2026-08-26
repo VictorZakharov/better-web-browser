@@ -25,5 +25,6 @@ mod modules;
 mod mutations;
 mod network;
 mod network_body;
+mod selectors;
 mod tasks;
 mod workers;

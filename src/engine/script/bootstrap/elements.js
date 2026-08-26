@@ -63,11 +63,8 @@
             attributes.getNamedItem = name => attributes.find(attribute => attribute.name === String(name)) || null;
             return attributes;
         }
-        matches(selector) { return this.parentNode?.querySelectorAll(selector).includes(this) || false; }
-        closest(selector) {
-            for (let node = this; node?.nodeType === 1; node = node.parentElement) if (node.matches(selector)) return node;
-            return null;
-        }
+        matches(selector) { return host('matches', this.__id, String(selector)); }
+        closest(selector) { return wrap(host('closest', this.__id, String(selector))); }
         getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
         getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
         insertAdjacentHTML(position, html) {
