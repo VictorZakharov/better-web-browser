@@ -21,7 +21,10 @@ param(
     [string] $Locale = 'en-US',
     [switch] $FreshProfile,
     [string] $ProfileDirectory,
-    [string[]] $DiagnosticSelector = @()
+    [string[]] $DiagnosticSelector = @(),
+    [string[]] $NavigationTarget = @(),
+    [ValidateRange(0, 60000)]
+    [int] $NavigationDelayMs = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,6 +120,19 @@ if (-not [string]::IsNullOrWhiteSpace($Screenshot)) {
 foreach ($selector in $DiagnosticSelector) {
     $arguments.Add('--diagnostic-selector')
     $arguments.Add($selector)
+}
+foreach ($target in $NavigationTarget) {
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        throw '-NavigationTarget values cannot be empty.'
+    }
+    $arguments.Add('--navigate-after-ready')
+    $arguments.Add($target)
+}
+if ($NavigationTarget.Count -gt 0) {
+    $arguments.Add('--navigation-delay-ms')
+    $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
+} elseif ($NavigationDelayMs -ne 0) {
+    throw '-NavigationDelayMs requires at least one -NavigationTarget.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

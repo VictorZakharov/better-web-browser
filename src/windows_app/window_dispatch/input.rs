@@ -36,6 +36,10 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
         return false;
     }
     if matches!(message.message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+        if is_diagnostics_shortcut(message.message, message.wparam) {
+            state.toggle_performance_panel();
+            return true;
+        }
         let modifiers = KeyModifiers {
             control: GetKeyState(VK_CONTROL) < 0,
             shift: GetKeyState(VK_SHIFT) < 0,
@@ -149,6 +153,10 @@ fn is_select_all_shortcut(key: usize, modifiers: KeyModifiers) -> bool {
     key == b'A' as usize && modifiers.control && !modifiers.shift && !modifiers.alt
 }
 
+fn is_diagnostics_shortcut(message: u32, key: usize) -> bool {
+    message == WM_KEYDOWN && key == VK_F12
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,5 +176,12 @@ mod tests {
             }
         ));
         assert!(!is_select_all_shortcut(b'B' as usize, control));
+    }
+
+    #[test]
+    fn f12_toggles_diagnostics_only_on_key_down() {
+        assert!(is_diagnostics_shortcut(WM_KEYDOWN, VK_F12));
+        assert!(!is_diagnostics_shortcut(WM_KEYUP, VK_F12));
+        assert!(!is_diagnostics_shortcut(WM_KEYDOWN, VK_RETURN));
     }
 }

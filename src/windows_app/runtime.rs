@@ -15,6 +15,21 @@ impl BrowserState {
         if !self.navigation.owns_document(update.document) || !self.renderer_work_pending {
             return;
         }
+        self.incidents.runtime_updates = self.incidents.runtime_updates.saturating_add(1);
+        if update.runtime.runtime_stopped
+            || !update.runtime.errors.is_empty()
+            || !update.runtime.diagnostics.is_empty()
+        {
+            self.incidents.record(
+                "runtime",
+                format!(
+                    "errors={}, diagnostics={}, stopped={}",
+                    update.runtime.errors.len(),
+                    update.runtime.diagnostics.len(),
+                    update.runtime.runtime_stopped
+                ),
+            );
+        }
         self.renderer_next_timer = update.next_timer_micros.map(Duration::from_micros);
         self.renderer_runtime_clock = Some(Instant::now());
         self.renderer_work_pending = false;

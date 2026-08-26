@@ -241,6 +241,11 @@ impl BrowserState {
         if x < bounds.left || x >= bounds.right || y < bounds.top || y >= bounds.bottom {
             return false;
         }
+        self.toggle_performance_panel();
+        true
+    }
+
+    pub(super) unsafe fn toggle_performance_panel(&mut self) {
         self.performance_panel_visible = !self.performance_panel_visible;
         self.position_performance_window();
         if !self.performance_window.is_null() {
@@ -254,8 +259,8 @@ impl BrowserState {
             );
             InvalidateRect(self.performance_window, null(), 0);
         }
+        let bounds = self.performance_counter_rect();
         InvalidateRect(self.window, &bounds, 0);
-        true
     }
 
     pub(super) unsafe fn refresh_performance_monitor(&mut self) {

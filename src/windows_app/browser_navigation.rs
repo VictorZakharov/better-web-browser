@@ -4,7 +4,7 @@ use super::tabs::TabId;
 use super::*;
 use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
     Push,
     Existing,
@@ -43,6 +43,9 @@ impl BrowserState {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;
             };
+            tab.incidents.navigations = tab.incidents.navigations.saturating_add(1);
+            tab.incidents
+                .record("navigation", format!("begin {history_mode:?}: {url}"));
             tab.document_fetch.abort();
             tab.document_fetch = FetchController::new();
             let generation = match history_mode {
@@ -60,6 +63,7 @@ impl BrowserState {
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
             tab.renderer_revision = 0;
+            tab.last_renderer_snapshot = None;
             tab.renderer_load_metrics = None;
             tab.page_diagnostics = Default::default();
             tab.renderer_next_timer = None;
@@ -162,6 +166,8 @@ impl BrowserState {
             if let Some(tab) = self.tabs.get_mut(id) {
                 tab.navigation.fail();
                 tab.status_text = format!("Could not start navigation: {error}");
+                tab.incidents
+                    .record("navigation", format!("thread start failed: {error}"));
             }
             if is_active {
                 self.set_status(&format!("Could not start navigation: {error}"));

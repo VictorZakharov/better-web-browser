@@ -2,6 +2,35 @@ use super::*;
 use better_web_browser::renderer_protocol::{PageLoadReport, RuntimeReport};
 
 impl BrowserState {
+    pub(super) fn network_incident(page: &LoadedPage) -> String {
+        format!(
+            "network complete: {} (HTTP {}, {} bytes, {:.1} ms)",
+            page.final_url,
+            page.status,
+            page.bytes,
+            page.network_time.as_secs_f64() * 1_000.0
+        )
+    }
+
+    pub(super) fn record_renderer_presentation_incident(
+        &mut self,
+        presentation: &RendererPresentation,
+        first: bool,
+    ) {
+        self.incidents.presentations = self.incidents.presentations.saturating_add(1);
+        self.incidents.record(
+            "present",
+            format!(
+                "revision {} ({}, {} items, {} console, {} errors)",
+                presentation.revision,
+                if first { "first" } else { "update" },
+                presentation.layout.items.len(),
+                presentation.runtime.console.len(),
+                presentation.runtime.errors.len()
+            ),
+        );
+    }
+
     pub(in crate::windows_app) fn record_renderer_runtime_metrics(
         &mut self,
         runtime: &RuntimeReport,
@@ -14,6 +43,15 @@ impl BrowserState {
         self.record_performance_activity(PerformanceActivity::Script, script_time);
         self.record_performance_activity(PerformanceActivity::Style, style_time);
         self.record_performance_activity(PerformanceActivity::Layout, layout_time);
+        for message in runtime.console.iter().take(16) {
+            self.incidents.record("console", message);
+        }
+        for message in runtime.errors.iter().take(16) {
+            self.incidents.record("script-error", message);
+        }
+        for message in runtime.diagnostics.iter().take(16) {
+            self.incidents.record("script-diag", message);
+        }
         let Some(benchmark) = self.benchmark.as_mut() else {
             return false;
         };

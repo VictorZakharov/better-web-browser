@@ -45,6 +45,9 @@ impl BrowserState {
         let Some((title, snapshot, events)) = snapshot_and_events else {
             return;
         };
+        if let Some(tab) = self.tabs.get_mut(id) {
+            tab.last_renderer_snapshot = Some(snapshot.clone());
+        }
         let mut exit = snapshot.exit.clone();
         self.update_renderer_status(id, &title, |status| {
             status.phase = match snapshot.state {
@@ -58,16 +61,34 @@ impl BrowserState {
         for event in events {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents
+                            .record("renderer", format!("diagnostic {code}: {text}"));
+                    }
                     self.update_renderer_status(id, &title, |status| {
                         status.last_diagnostic = Some(format!("{code}: {text}"));
                     });
                 }
                 RendererEvent::Unresponsive => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.record("renderer", "became unresponsive");
+                    }
                     self.update_renderer_status(id, &title, |status| {
                         status.phase = RendererLifecyclePhase::Unresponsive;
                     });
                 }
                 RendererEvent::FetchBatch { document, requests } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.fetch_batches = tab.incidents.fetch_batches.saturating_add(1);
+                        tab.incidents.record(
+                            "fetch",
+                            format!(
+                                "batch for document {}: {} requests",
+                                document.get(),
+                                requests.len()
+                            ),
+                        );
+                    }
                     self.begin_renderer_fetch_batch(id, document, requests);
                 }
                 RendererEvent::Presentation(presentation) => {
@@ -95,6 +116,10 @@ impl BrowserState {
                     disposition,
                     cause,
                 } => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents
+                            .record("renderer-nav", format!("{cause:?}/{disposition:?}: {url}"));
+                    }
                     self.process_for_tab(id, |state| {
                         if !state.navigation.owns_document(document) {
                             return;
@@ -141,7 +166,18 @@ impl BrowserState {
                         self.contain_page_engine_failure(id, error);
                     }
                 }
-                RendererEvent::Exited(renderer_exit) => exit = Some(renderer_exit),
+                RendererEvent::Exited(renderer_exit) => {
+                    if let Some(tab) = self.tabs.get_mut(id) {
+                        tab.incidents.record(
+                            "renderer",
+                            format!(
+                                "process {} exited {:#x}: {:?}",
+                                renderer_exit.process_id, renderer_exit.code, renderer_exit.reason
+                            ),
+                        );
+                    }
+                    exit = Some(renderer_exit);
+                }
             }
         }
 

@@ -50,14 +50,17 @@ memory, handles, uptime, lifecycle state, restarts, and exit diagnostics; docume
 is reported separately. Select a live renderer row and click **End process** to exercise the same
 browser-owned termination and reload path used for an unresponsive renderer.
 
-## Performance monitor
+## F12 diagnostics
 
 The bottom-right status-bar counter reports completed content frames for the current tab's active
-scroll animation. Click it to toggle a native rolling two-second monitor with FPS, p95 and maximum
-frame interval, long-frame count, and paint, JavaScript, style, layout, and resource-processing
-time. **Copy diagnostics** exports the URL, summaries, and raw frame-interval series as text for a
-bug report. A 250 ms display timer repaints only browser chrome and the monitor surface; those
-updates are excluded from the content-frame sequence and cannot inflate its FPS.
+scroll animation. Press **F12** or click the counter to toggle the native incident panel. It combines
+rolling performance data with renderer health, browser-authoritative state-lane pressure, activity
+counters, and the newest entries from a bounded per-tab navigation/renderer/Fetch/storage/console
+timeline. **Copy diagnostics** exports those details, the last live renderer snapshot, and raw frame
+intervals as text for a bug report, including after a contained page failure. The recorder retains
+metadata and script diagnostics, not document bodies, and has fixed record and message limits. A
+250 ms display timer repaints only browser chrome and the panel surface; those updates are excluded
+from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 

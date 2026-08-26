@@ -12,6 +12,7 @@ use super::*;
 use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
+use better_web_browser::renderer_process::RendererSnapshot;
 use better_web_browser::renderer_protocol::{PointerCursor, PresentedGlyphRaster};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,6 +26,7 @@ pub(super) struct BrowserTab {
     pub(super) omnibox_text: String,
     pub(super) status_text: String,
     pub(super) performance: TabPerformance,
+    pub(super) incidents: IncidentLog,
     pub(super) focus: TabFocus,
     pub(super) accessibility_document: AccessibilityDocument,
     pub(super) dynamic_fonts: DynamicFonts,
@@ -52,6 +54,7 @@ pub(super) struct BrowserTab {
     pub(super) document_fetch: FetchController,
     pub(super) session_storage: SessionStorage,
     pub(super) renderer_session: Option<RendererSession>,
+    pub(super) last_renderer_snapshot: Option<RendererSnapshot>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
     pub(super) renderer_started_once: bool,
     pub(super) renderer_input_sequence: u64,
@@ -77,6 +80,7 @@ impl BrowserTab {
             omnibox_text: String::new(),
             status_text: "Ready".into(),
             performance: TabPerformance::default(),
+            incidents: IncidentLog::default(),
             focus: TabFocus::Address,
             accessibility_document: AccessibilityDocument::default(),
             dynamic_fonts: DynamicFonts::default(),
@@ -104,6 +108,7 @@ impl BrowserTab {
             document_fetch: FetchController::new(),
             session_storage: SessionStorage::default(),
             renderer_session: None,
+            last_renderer_snapshot: None,
             renderer_launch_receiver: None,
             renderer_started_once: false,
             renderer_input_sequence: 0,

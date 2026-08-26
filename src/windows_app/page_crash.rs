@@ -18,6 +18,7 @@ impl BrowserState {
         let status =
             format!("Page engine stopped after an internal error: {detail}. Reload to try again.");
         if let Some(tab) = self.tabs.get_mut(id) {
+            tab.incidents.record("fatal", &detail);
             tab.mark_crashed(status.clone());
         }
 

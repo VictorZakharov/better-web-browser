@@ -113,6 +113,7 @@ pub(super) const VK_UP: usize = 0x26;
 pub(super) const VK_RIGHT: usize = 0x27;
 pub(super) const VK_DOWN: usize = 0x28;
 pub(super) const VK_DELETE: usize = 0x2E;
+pub(super) const VK_F12: usize = 0x7B;
 pub(super) const VK_SHIFT: i32 = 0x10;
 pub(super) const VK_CONTROL: i32 = 0x11;
 pub(super) const VK_MENU: i32 = 0x12;

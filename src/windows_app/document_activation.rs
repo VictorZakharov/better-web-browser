@@ -49,9 +49,11 @@ impl BrowserState {
     pub(super) unsafe fn finish_navigation(&mut self, message: LoadMessage) {
         match message.result {
             Ok(page) => {
+                let completed = Self::network_incident(&page);
                 if !self.navigation.accept_page(message.generation, page) {
                     return;
                 }
+                self.incidents.record("navigation", completed);
                 self.submit_pending_renderer_document();
             }
             Err(error) => {
@@ -59,6 +61,8 @@ impl BrowserState {
                     return;
                 }
                 self.navigation.fail();
+                self.incidents
+                    .record("navigation", format!("load failed: {error}"));
                 self.set_status(&format!("Load failed: {error}"));
                 if let Some(benchmark) = self.benchmark.as_mut() {
                     benchmark.error = Some(error);
@@ -200,6 +204,7 @@ impl BrowserState {
         }
         let first_presentation = self.renderer_revision == 0;
         self.renderer_revision = presentation.revision;
+        self.record_renderer_presentation_incident(&presentation, first_presentation);
 
         if let Some(url) = presentation.runtime.navigation_url.as_deref()
             && url != presentation.final_url

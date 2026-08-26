@@ -14,6 +14,9 @@ impl BrowserState {
         if !self.navigation.owns_document(mutation.document) {
             return Ok(());
         }
+        self.incidents.cookie_mutations = self.incidents.cookie_mutations.saturating_add(1);
+        self.incidents
+            .record("cookie", "renderer mutation received");
         if let Err(error) = self
             .http_client
             .set_cookie(&self.reader_url, &mutation.assignment)
@@ -33,6 +36,16 @@ impl BrowserState {
             session
                 .update_cookie_snapshot(correction)
                 .map_err(|error| format!("synchronize document.cookie: {error}"))?;
+            let telemetry = session.snapshot();
+            self.incidents.record(
+                "cookie",
+                format!(
+                    "authoritative state queued; pending={}, submitted={}, coalesced={}",
+                    telemetry.pending_state_updates,
+                    telemetry.submitted_state_updates,
+                    telemetry.coalesced_state_updates
+                ),
+            );
         }
         Ok(())
     }
@@ -44,6 +57,14 @@ impl BrowserState {
         if !self.navigation.owns_document(request.document) {
             return Ok(());
         }
+        self.incidents.storage_mutations = self.incidents.storage_mutations.saturating_add(1);
+        self.incidents.record(
+            "storage",
+            format!(
+                "{:?} mutation received at version {}",
+                request.mutation.area, request.mutation.expected_version
+            ),
+        );
         let document_url = self.reader_url.clone();
         let result = match request.mutation.area {
             StorageAreaKind::Local => self.local_storage.apply(&document_url, &request.mutation),
@@ -63,6 +84,17 @@ impl BrowserState {
             session
                 .update_storage_snapshot(request.document, request.mutation.area, snapshot)
                 .map_err(|error| format!("synchronize Web Storage: {error}"))?;
+            let telemetry = session.snapshot();
+            self.incidents.record(
+                "storage",
+                format!(
+                    "authoritative {:?} state queued; pending={}, submitted={}, coalesced={}",
+                    request.mutation.area,
+                    telemetry.pending_state_updates,
+                    telemetry.submitted_state_updates,
+                    telemetry.coalesced_state_updates
+                ),
+            );
         }
         Ok(())
     }
