@@ -7,6 +7,8 @@ pub(super) fn apply_declaration(
     declaration: &Declaration,
     parent: Option<&ComputedStyle>,
     base_url: &str,
+    viewport_width: f32,
+    viewport_height: f32,
 ) {
     let value = declaration.value.trim();
     let inherited_font_size = parent
@@ -124,7 +126,12 @@ pub(super) fn apply_declaration(
         }
         "background" => apply_background_shorthand(style, value, base_url),
         "font-size" => {
-            if let Some(size) = parse_font_size(value, inherited_font_size) {
+            if let Some(size) = parse_font_size_for_viewport(
+                value,
+                inherited_font_size,
+                viewport_width,
+                viewport_height,
+            ) {
                 style.font_size = size;
                 style.line_height = size * 1.2;
             }
@@ -139,19 +146,40 @@ pub(super) fn apply_declaration(
         }
         "font-style" => style.italic = matches!(value, "italic" | "oblique"),
         "font-family" => style.font_family = first_font_family(value),
-        "font" => apply_font_shorthand(style, value, inherited_font_size),
+        "font" => apply_font_shorthand(
+            style,
+            value,
+            inherited_font_size,
+            viewport_width,
+            viewport_height,
+        ),
         "letter-spacing" => {
-            if let Some(spacing) = parse_text_spacing(value, style.font_size) {
+            if let Some(spacing) = parse_text_spacing_for_viewport(
+                value,
+                style.font_size,
+                viewport_width,
+                viewport_height,
+            ) {
                 style.letter_spacing = spacing;
             }
         }
         "word-spacing" => {
-            if let Some(spacing) = parse_text_spacing(value, style.font_size) {
+            if let Some(spacing) = parse_text_spacing_for_viewport(
+                value,
+                style.font_size,
+                viewport_width,
+                viewport_height,
+            ) {
                 style.word_spacing = spacing;
             }
         }
         "line-height" => {
-            if let Some(line_height) = parse_line_height(value, style.font_size) {
+            if let Some(line_height) = parse_line_height_for_viewport(
+                value,
+                style.font_size,
+                viewport_width,
+                viewport_height,
+            ) {
                 style.line_height = line_height;
             }
         }
@@ -322,8 +350,21 @@ pub(super) fn apply_declaration(
 }
 
 pub(super) fn parse_text_spacing(value: &str, font_size: f32) -> Option<f32> {
+    parse_text_spacing_for_viewport(value, font_size, font_size, font_size)
+}
+
+pub(super) fn parse_text_spacing_for_viewport(
+    value: &str,
+    font_size: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
     if value.eq_ignore_ascii_case("normal") {
         return Some(0.0);
     }
-    parse_length(value).and_then(|length| length.resolve(font_size, font_size))
+    parse_length(value).and_then(|length| {
+        length
+            .resolve_viewport_units(viewport_width, viewport_height)
+            .resolve(font_size, font_size)
+    })
 }

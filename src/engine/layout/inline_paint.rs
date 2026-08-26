@@ -18,7 +18,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             TextAlign::End => x + (width - line_width).max(0.0),
         };
         for measured in line {
-            self.paint_atom(measured, cursor_x, y, line_height);
+            self.paint_atom(measured, cursor_x, y, line_height, width);
             cursor_x += measured.width;
         }
         y + line_height
@@ -30,6 +30,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         y: f32,
         line_height: f32,
+        containing_width: f32,
     ) {
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         match measured.atom {
@@ -139,7 +140,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 self.output.items.push(DisplayItem::Control(Box::new(spec)));
             }
             InlineAtom::InlineBox { children, style } => {
-                let metrics = self.measure_inline_box(measured.atom, children, style);
+                let metrics =
+                    self.measure_inline_box(measured.atom, children, style, containing_width);
                 let border_x = x + metrics.margin.left;
                 let border_y = atom_y + metrics.margin.top;
                 let border_rect = RectF {
@@ -218,8 +220,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     if matches!(child, InlineAtom::Break) {
                         continue;
                     }
-                    let child = self.measure_atom(child, index == 0);
-                    self.paint_atom(&child, child_x, content_y, content_height.max(child.height));
+                    let child = self.measure_atom(child, index == 0, content_width);
+                    self.paint_atom(
+                        &child,
+                        child_x,
+                        content_y,
+                        content_height.max(child.height),
+                        content_width,
+                    );
                     child_x += child.width;
                 }
             }

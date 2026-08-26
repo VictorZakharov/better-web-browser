@@ -179,6 +179,19 @@
         for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.length; }
         return output;
     };
+    const normalizedBlobType = value => {
+        const type = String(value || '').toLowerCase();
+        return [...type].every(character => {
+            const code = character.charCodeAt(0);
+            return code >= 0x20 && code <= 0x7e;
+        }) ? type : '';
+    };
+    const initializeBlob = (blob, chunks, type) => {
+        blob.__chunks = chunks.length ? chunks : [new Uint8Array()];
+        blob.__size = chunks.reduce((total, chunk) => total + chunk.length, 0);
+        blob.__type = normalizedBlobType(type);
+        return blob;
+    };
     const bytesToBase64 = bytes => {
         let binary = '';
         for (let start = 0; start < bytes.length; start += 0x4000)
@@ -190,14 +203,19 @@
         constructor(parts = [], options = {}) {
             const chunks = [];
             for (const part of parts) {
-                if (part instanceof Blob) chunks.push(part.__bytes);
+                // Blob byte sequences are immutable, so another Blob's owned chunks can be
+                // shared without changing the observable snapshot.
+                if (part instanceof Blob) chunks.push(...part.__chunks);
                 else chunks.push(copyBytes(part) || encoder.encode(String(part)));
             }
-            this.__bytes = concatBytes(chunks);
-            const type = String(options?.type || '').toLowerCase();
-            this.__type = /^[\x20-\x7e]*$/.test(type) ? type : '';
+            initializeBlob(this, chunks, options?.type);
         }
-        get size() { return this.__bytes.length; }
+        __materializeBytes() {
+            if (this.__chunks.length > 1) this.__chunks = [concatBytes(this.__chunks)];
+            return this.__chunks[0];
+        }
+        get __bytes() { return this.__materializeBytes(); }
+        get size() { return this.__size; }
         get type() { return this.__type; }
         slice(start = 0, end = this.size, type = '') {
             const normalize = value => value < 0 ? Math.max(this.size + value, 0) : Math.min(value, this.size);
@@ -213,6 +231,11 @@
         }
         text() { return Promise.resolve(decoder.decode(this.__bytes)); }
     }
+    // Network-delivered chunks are already private immutable snapshots. Adopting them avoids a
+    // second full-body copy merely to expose Blob.size to an XHR load handler.
+    const blobFromOwnedBytes = (chunks, type) =>
+        initializeBlob(Object.create(Blob.prototype), chunks, type);
+    Object.defineProperty(Blob, '__fromOwnedBytes', { value: blobFromOwnedBytes });
     class File extends Blob {
         constructor(parts, name, options = {}) {
             super(parts, options);

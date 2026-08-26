@@ -133,7 +133,10 @@ fn watchdog_survives_a_blocked_renderer_command_pipe() {
     let exit = session
         .wait_for_exit(Duration::from_secs(3))
         .expect("watchdog terminated the blocked renderer");
-    assert_eq!(exit.reason, RendererExitReason::TaskBudgetExceeded);
+    assert!(matches!(
+        exit.reason,
+        RendererExitReason::TaskBudgetExceeded(_)
+    ));
 }
 
 const SYNCHRONIZE: u32 = 0x0010_0000;

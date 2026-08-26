@@ -45,6 +45,11 @@ fn dispatch_host_call(
     {
         return Ok(value);
     }
+    if let Some(value) =
+        super::text_encoding_host::text_encoding_host_call(operation, args, context)?
+    {
+        return Ok(value);
+    }
 
     match operation {
         "parent" => {

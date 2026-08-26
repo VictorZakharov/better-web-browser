@@ -25,11 +25,11 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
     measurer: &mut M,
 ) -> LayoutOutput {
     let computed_styles;
-    let cached_styles = page.cached_style(style_viewport_width);
+    let cached_styles = page.cached_style_for_viewport(style_viewport_width, viewport_height);
     let styles = if let Some(cached_styles) = cached_styles {
         cached_styles
     } else {
-        computed_styles = page.style(style_viewport_width);
+        computed_styles = page.style_for_viewport(style_viewport_width, viewport_height);
         &computed_styles
     };
     let mut engine = LayoutEngine {
@@ -72,8 +72,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) page: &'a Page,
     pub(super) styles: &'a StyleSet,
     pub(super) measurer: &'a mut M,
-    pub(super) measurement_cache: HashMap<(usize, bool), CachedAtomMeasurement>,
-    pub(super) inline_box_cache: HashMap<usize, InlineBoxMetrics>,
+    pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
+    pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,
 }

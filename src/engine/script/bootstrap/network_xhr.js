@@ -2,6 +2,7 @@
     'use strict';
     const windowObject = globalThis;
     const markTrusted = globalThis.__markTrustedEvent;
+    const blobFromOwnedBytes = Blob.__fromOwnedBytes;
     const forbiddenResponseHeaders = new Set(['set-cookie', 'set-cookie2']);
     const methodPattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
     const forbiddenMethods = new Set(['CONNECT', 'TRACE', 'TRACK']);
@@ -70,6 +71,7 @@
             super();
             this.__readyState = XMLHttpRequest.UNSENT;
             this.__response = null; this.__responseText = ''; this.__responseXML = null;
+            this.__responseTextChunks = []; this.__responseTextDirty = false;
             this.__responseType = ''; this.__responseURL = '';
             this.__status = 0; this.__statusText = '';
             this.__timeout = 0; this.__withCredentials = false;
@@ -88,7 +90,7 @@
             if (this.__responseType !== '' && this.__responseType !== 'text')
                 throw new DOMException('responseText is unavailable for this responseType', 'InvalidStateError');
             return this.__readyState === XMLHttpRequest.LOADING || this.__readyState === XMLHttpRequest.DONE
-                ? this.__responseText : '';
+                ? this.__materializeResponseText() : '';
         }
         get responseType() { return this.__responseType; }
         set responseType(value) {
@@ -127,8 +129,23 @@
         }
         __resetResponse() {
             this.__response = null; this.__responseText = ''; this.__responseXML = null;
+            this.__responseTextChunks = []; this.__responseTextDirty = false;
             this.__responseURL = ''; this.__status = 0; this.__statusText = '';
             this.__responseHeaders = new Headers();
+        }
+        __appendResponseText(text) {
+            if (!text) return;
+            this.__responseTextChunks.push(text);
+            this.__responseTextDirty = true;
+        }
+        __materializeResponseText() {
+            if (!this.__responseTextDirty) return this.__responseText;
+            this.__responseText = this.__responseTextChunks.join('');
+            // Collapse already-observed chunks so a later LOADING read only joins the newly
+            // received suffix. Unobserved streaming responses retain linear append cost.
+            this.__responseTextChunks = this.__responseText ? [this.__responseText] : [];
+            this.__responseTextDirty = false;
+            return this.__responseText;
         }
         __cancelSilently() {
             if (this.__timeoutHandle) clearTimeout(this.__timeoutHandle);
@@ -245,21 +262,19 @@
             const binaryResponse = this.__responseType === 'arraybuffer' || this.__responseType === 'blob';
             const textResponse = !binaryResponse;
             const decoder = new TextDecoder();
-            let streamedText = '';
             try {
                 if (reader) {
                     while (this.__send) {
                         const { value, done } = await reader.read();
                         if (done) break;
                         if (!(value instanceof Uint8Array)) throw new TypeError('XHR body chunks must be bytes');
-                        const chunk = new Uint8Array(value);
+                        // Network stream chunks are private to this response. Retain the
+                        // owned view directly so binary downloads do not copy every byte.
+                        const chunk = value;
                         if (binaryResponse) chunks.push(chunk);
                         loaded += chunk.length;
-                        if (textResponse) {
-                            streamedText += decoder.decode(chunk, { stream: true });
-                            if (this.__responseType === '' || this.__responseType === 'text')
-                                this.__responseText = streamedText;
-                        }
+                        if (textResponse)
+                            this.__appendResponseText(decoder.decode(chunk, { stream: true }));
                         const now = performance.now();
                         if (now - lastProgressAt >= 50) {
                             this.dispatchEvent(progress('progress', loaded, total));
@@ -277,23 +292,22 @@
             if (loaded !== lastProgressLoaded)
                 this.dispatchEvent(progress('progress', loaded, total));
             const contentType = this.__mime || this.__responseHeaders.get('content-type') || '';
-            const text = textResponse ? streamedText + decoder.decode() : '';
-            this.__responseText = text;
+            if (textResponse) this.__appendResponseText(decoder.decode());
             if (this.__responseType === 'arraybuffer') {
                 const bytes = concatBytes(chunks);
                 this.__response = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
             } else if (this.__responseType === 'blob') {
-                // Blob performs the one required consolidation. Concatenating here first doubled
-                // peak memory and serialized several large speed-test responses on the JS thread.
-                this.__response = new Blob(chunks, { type: contentType });
+                this.__response = blobFromOwnedBytes(chunks, contentType);
             }
             else if (this.__responseType === 'json') {
+                const text = this.__materializeResponseText();
                 try { this.__response = JSON.parse(text); } catch (_) { this.__response = null; }
             } else if (this.__responseType === 'document') {
+                const text = this.__materializeResponseText();
                 const parser = typeof DOMParser === 'function' ? new DOMParser() : null;
                 try { this.__response = this.__responseXML = parser?.parseFromString(text, contentType) || null; }
                 catch (_) { this.__response = this.__responseXML = null; }
-            } else this.__response = text;
+            }
             this.__finishSuccess(loaded, total);
         }
         abort() {

@@ -76,7 +76,7 @@ pub struct Page {
     pub scripts: Vec<PageScript>,
     pub external_stylesheets: Vec<String>,
     stylesheet_sources: Vec<(String, String)>,
-    cached_styles: Option<(f32, StyleSet)>,
+    cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
@@ -291,22 +291,6 @@ impl Page {
             };
             let _ = self.add_image(url, &bytes);
         }
-    }
-
-    pub fn style(&self, viewport_width: f32) -> StyleSet {
-        StyleSet::from_sources(
-            &self.dom,
-            &self.base_url,
-            &self.stylesheet_sources,
-            viewport_width,
-        )
-    }
-
-    pub fn cached_style(&self, viewport_width: f32) -> Option<&StyleSet> {
-        self.cached_styles
-            .as_ref()
-            .filter(|(width, _)| (*width - viewport_width).abs() < 0.5)
-            .map(|(_, styles)| styles)
     }
 
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {

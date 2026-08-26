@@ -6,6 +6,37 @@ use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
 impl Page {
+    pub fn style(&self, viewport_width: f32) -> StyleSet {
+        self.style_for_viewport(viewport_width, viewport_width)
+    }
+
+    pub fn style_for_viewport(&self, viewport_width: f32, viewport_height: f32) -> StyleSet {
+        StyleSet::from_sources_for_viewport(
+            &self.dom,
+            &self.base_url,
+            &self.stylesheet_sources,
+            viewport_width,
+            viewport_height,
+        )
+    }
+
+    pub fn cached_style(&self, viewport_width: f32) -> Option<&StyleSet> {
+        self.cached_style_for_viewport(viewport_width, viewport_width)
+    }
+
+    pub fn cached_style_for_viewport(
+        &self,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> Option<&StyleSet> {
+        self.cached_styles
+            .as_ref()
+            .filter(|(width, height, _)| {
+                (*width - viewport_width).abs() < 0.5 && (*height - viewport_height).abs() < 0.5
+            })
+            .map(|(_, _, styles)| styles)
+    }
+
     pub fn resource_blocks_first_paint(&self, resource: &PageResource) -> bool {
         match resource {
             PageResource::Script {
@@ -24,8 +55,17 @@ impl Page {
     }
 
     pub fn refresh_resources(&mut self, viewport_width: f32) -> StyleRefreshStats {
-        self.refresh_resources_after_invalidation(
+        self.refresh_resources_for_viewport(viewport_width, viewport_width)
+    }
+
+    pub fn refresh_resources_for_viewport(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> StyleRefreshStats {
+        self.refresh_resources_after_invalidation_for_viewport(
             viewport_width,
+            viewport_height,
             &RenderInvalidation::full(self.dom.document.id()),
         )
     }
@@ -33,6 +73,19 @@ impl Page {
     pub fn refresh_resources_after_invalidation(
         &mut self,
         viewport_width: f32,
+        invalidation: &RenderInvalidation,
+    ) -> StyleRefreshStats {
+        self.refresh_resources_after_invalidation_for_viewport(
+            viewport_width,
+            viewport_width,
+            invalidation,
+        )
+    }
+
+    pub fn refresh_resources_after_invalidation_for_viewport(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
         invalidation: &RenderInvalidation,
     ) -> StyleRefreshStats {
         self.base_url = document_base_url(&self.dom, &self.source_url);
@@ -51,6 +104,7 @@ impl Page {
             available_faces.extend(discover_font_faces(css, source_url));
         }
         let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
         let invalidated_nodes = invalidation
             .root
             .and_then(|root| self.dom.find_node(root))
@@ -58,9 +112,10 @@ impl Page {
             .unwrap_or_else(|| Node::descendants(&self.dom.document).count());
         let cached = self.cached_styles.take();
         let (mut styles, style_stats) = match cached {
-            Some((cached_width, mut styles))
+            Some((cached_width, cached_height, mut styles))
                 if !invalidation.rebuild_style_rules
-                    && (cached_width - viewport_width).abs() < 0.5 =>
+                    && (cached_width - viewport_width).abs() < 0.5
+                    && (cached_height - viewport_height).abs() < 0.5 =>
             {
                 let stats = if invalidation.impact.affects_style() {
                     let root = invalidation
@@ -78,11 +133,12 @@ impl Page {
                 (styles, stats)
             }
             _ => {
-                let styles = StyleSet::from_sources(
+                let styles = StyleSet::from_sources_for_viewport(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,
                     viewport_width,
+                    viewport_height,
                 );
                 let count = styles.styles.len();
                 (
@@ -153,7 +209,7 @@ impl Page {
         }
         self.install_embedded_images();
         self.add_requested_fonts(available_faces, requested_faces);
-        self.cached_styles = Some((viewport_width, styles));
+        self.cached_styles = Some((viewport_width, viewport_height, styles));
         self.refresh_inline_svgs();
         style_stats
     }

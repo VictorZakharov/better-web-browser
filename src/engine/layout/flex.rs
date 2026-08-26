@@ -132,7 +132,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     current_line = 0.0;
                     line_start = true;
                 } else {
-                    current_line += self.measure_atom(atom, line_start).width;
+                    current_line += self.measure_atom(atom, line_start, available_width).width;
                     line_start = false;
                 }
             }

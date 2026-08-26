@@ -79,6 +79,93 @@ fn evaluates_media_queries_against_the_style_viewport() {
 }
 
 #[test]
+fn resolves_viewport_units_against_the_correct_viewport_axis() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .box { width: 10vw; height: 10vh; background: #0c0 }
+            .label { font-size: 10vh }
+        </style>
+        <div class="box"></div><div class="label">Speed</div>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 1000.0, 400.0, &mut measurer);
+    let box_rect = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 204, 0) => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let label_size = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Text { text, font, .. } if text == "Speed" => Some(font.size),
+            _ => None,
+        })
+        .unwrap();
+
+    assert!((box_rect.width - 100.0).abs() < 0.1);
+    assert!((box_rect.height - 40.0).abs() < 0.1);
+    assert!((label_size - 40.0).abs() < 0.1);
+}
+
+#[test]
+fn resolves_inline_block_percentages_against_the_line_containing_block() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .result { width: 500px }
+            .value {
+                display: inline-block;
+                width: 64%;
+                height: 20px;
+                background: #c00;
+            }
+            .units {
+                display: inline-block;
+                width: 34%;
+                height: 20px;
+                background: #00c;
+            }
+        </style>
+        <div class="result"><span class="value"></span><span class="units"></span></div>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 1000.0, 600.0, &mut measurer);
+    let red = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(204, 0, 0) => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let blue = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 0, 204) => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    assert!((red.width - 320.0).abs() < 0.01, "{red:?}");
+    assert!((blue.width - 170.0).abs() < 0.01, "{blue:?}");
+    assert!((blue.x - red.right()).abs() < 0.01, "{red:?} {blue:?}");
+}
+
+#[test]
 fn block_text_flows_beside_an_active_float() {
     let page = Page::parse(
         r#"<style>

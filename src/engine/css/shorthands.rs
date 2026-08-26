@@ -257,12 +257,18 @@ pub(super) fn apply_font_shorthand(
     style: &mut ComputedStyle,
     value: &str,
     inherited_font_size: f32,
+    viewport_width: f32,
+    viewport_height: f32,
 ) {
     let tokens = value.split_ascii_whitespace().collect::<Vec<_>>();
     let Some(size_index) = tokens.iter().position(|token| {
         token.contains("px")
             || token.contains("pt")
             || token.contains("em")
+            || token.contains("vw")
+            || token.contains("vh")
+            || token.contains("vmin")
+            || token.contains("vmax")
             || token.contains('%')
             || matches!(*token, "small" | "medium" | "large")
     }) else {
@@ -284,10 +290,14 @@ pub(super) fn apply_font_shorthand(
         .split_once('/')
         .map(|(size, line)| (size, Some(line)))
         .unwrap_or((size_and_line, None));
-    if let Some(size) = parse_font_size(size, inherited_font_size) {
+    if let Some(size) =
+        parse_font_size_for_viewport(size, inherited_font_size, viewport_width, viewport_height)
+    {
         style.font_size = size;
         style.line_height = line_height
-            .and_then(|line| parse_line_height(line, size))
+            .and_then(|line| {
+                parse_line_height_for_viewport(line, size, viewport_width, viewport_height)
+            })
             .unwrap_or(size * 1.2);
     }
     if size_index + 1 < tokens.len() {
@@ -296,6 +306,15 @@ pub(super) fn apply_font_shorthand(
 }
 
 pub(super) fn parse_font_size(value: &str, inherited_size: f32) -> Option<f32> {
+    parse_font_size_for_viewport(value, inherited_size, inherited_size, inherited_size)
+}
+
+pub(super) fn parse_font_size_for_viewport(
+    value: &str,
+    inherited_size: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
     match value.trim() {
         "xx-small" => Some(9.0),
         "x-small" => Some(10.0),
@@ -306,20 +325,35 @@ pub(super) fn parse_font_size(value: &str, inherited_size: f32) -> Option<f32> {
         "xx-large" => Some(32.0),
         "smaller" => Some(inherited_size * 0.833),
         "larger" => Some(inherited_size * 1.2),
-        value => {
-            parse_length(value).and_then(|length| length.resolve(inherited_size, inherited_size))
-        }
+        value => parse_length(value).and_then(|length| {
+            length
+                .resolve_viewport_units(viewport_width, viewport_height)
+                .resolve(inherited_size, inherited_size)
+        }),
     }
 }
 
 pub(super) fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
+    parse_line_height_for_viewport(value, font_size, font_size, font_size)
+}
+
+pub(super) fn parse_line_height_for_viewport(
+    value: &str,
+    font_size: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
     if value == "normal" {
         return Some(font_size * 1.2);
     }
     if let Ok(multiplier) = value.parse::<f32>() {
         return Some(font_size * multiplier);
     }
-    parse_length(value).and_then(|length| length.resolve(font_size, font_size))
+    parse_length(value).and_then(|length| {
+        length
+            .resolve_viewport_units(viewport_width, viewport_height)
+            .resolve(font_size, font_size)
+    })
 }
 
 pub(super) fn first_font_family(value: &str) -> String {

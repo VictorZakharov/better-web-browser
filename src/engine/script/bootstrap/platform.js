@@ -131,15 +131,12 @@
             return { read, written };
         }
     }
-    const decoderInputBytes = input => {
-        if (input === undefined) return [];
-        if (input instanceof ArrayBuffer) return [...new Uint8Array(input)];
-        if (ArrayBuffer.isView?.(input)) return [...new Uint8Array(input.buffer, input.byteOffset, input.byteLength)];
+    const decoderInputView = input => {
+        if (input === undefined) return new Uint8Array();
+        if (input instanceof ArrayBuffer) return new Uint8Array(input);
+        if (ArrayBuffer.isView?.(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
         throw new TypeError('input must be an ArrayBuffer or an ArrayBuffer view');
     };
-    const scalarString = scalar => scalar <= 0xFFFF
-        ? String.fromCharCode(scalar)
-        : String.fromCharCode(0xD800 + ((scalar - 0x10000) >> 10), 0xDC00 + ((scalar - 0x10000) & 0x3FF));
     class TextDecoder {
         constructor(label = 'utf-8', options = {}) {
             label = String(label).trim().toLowerCase();
@@ -148,7 +145,7 @@
             }
             this.__fatal = !!options.fatal;
             this.__ignoreBOM = !!options.ignoreBOM;
-            this.__pending = [];
+            this.__pending = new Uint8Array();
             this.__streaming = false;
             this.__bomSeen = false;
         }
@@ -157,68 +154,23 @@
         get ignoreBOM() { return this.__ignoreBOM; }
         decode(input, options = {}) {
             const stream = !!options.stream;
-            const bytes = (this.__streaming ? this.__pending : []).concat(decoderInputBytes(input));
-            this.__pending = [];
-            let output = '';
-            let index = 0;
-            const emit = scalar => {
-                if (!this.__bomSeen) {
-                    this.__bomSeen = true;
-                    if (!this.__ignoreBOM && scalar === 0xFEFF) return;
-                }
-                output += scalarString(scalar);
-            };
-            const fail = () => {
-                if (this.__fatal) throw new TypeError('The encoded data was not valid UTF-8');
-                emit(0xFFFD);
-            };
-            while (index < bytes.length) {
-                const first = bytes[index];
-                if (first <= 0x7F) {
-                    emit(first);
-                    index++;
-                    continue;
-                }
-                let needed = 0;
-                let scalar = 0;
-                let minimum = 0;
-                if (first >= 0xC2 && first <= 0xDF) {
-                    needed = 1; scalar = first & 0x1F; minimum = 0x80;
-                } else if (first >= 0xE0 && first <= 0xEF) {
-                    needed = 2; scalar = first & 0x0F; minimum = 0x800;
-                } else if (first >= 0xF0 && first <= 0xF4) {
-                    needed = 3; scalar = first & 0x07; minimum = 0x10000;
-                } else {
-                    fail();
-                    index++;
-                    continue;
-                }
-                if (index + needed >= bytes.length) {
-                    if (stream) this.__pending = bytes.slice(index);
-                    else fail();
-                    index = bytes.length;
-                    break;
-                }
-                let valid = true;
-                for (let offset = 1; offset <= needed; offset++) {
-                    const continuation = bytes[index + offset];
-                    if ((continuation & 0xC0) !== 0x80) { valid = false; break; }
-                    scalar = (scalar << 6) | (continuation & 0x3F);
-                }
-                if (!valid || scalar < minimum || scalar > 0x10FFFF || (scalar >= 0xD800 && scalar <= 0xDFFF)) {
-                    fail();
-                    index++;
-                    continue;
-                }
-                emit(scalar);
-                index += needed + 1;
-            }
+            const result = host(
+                'utf8Decode',
+                decoderInputView(input),
+                this.__streaming ? this.__pending : new Uint8Array(),
+                stream,
+                this.__fatal,
+                this.__ignoreBOM,
+                this.__bomSeen
+            );
+            this.__pending = result[1];
             this.__streaming = stream;
+            this.__bomSeen = result[2];
             if (!stream) {
-                this.__pending = [];
+                this.__pending = new Uint8Array();
                 this.__bomSeen = false;
             }
-            return output;
+            return result[0];
         }
     }
     windowObject.TextEncoder = TextEncoder;

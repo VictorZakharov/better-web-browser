@@ -32,8 +32,9 @@ pub use input::{
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
-    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR, RendererDiagnostic,
-    RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
+    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR,
+    RENDERER_DIAGNOSTIC_TASK_STARTED, RendererDiagnostic, RendererLimits, RendererMessage,
+    RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
     NodeDiagnostics, PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage,

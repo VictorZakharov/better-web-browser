@@ -160,7 +160,7 @@ impl DocumentRuntime {
         let mut loader = |url: &str, kind: ScriptKind, options| {
             fetch_script_source(connection, document, url, kind, options)
         };
-        let (script_runtime, mut outcome) = runtime
+        let (mut script_runtime, mut outcome) = runtime
             .page
             .start_first_paint_script_runtime_with_document_state(
                 &mut loader,
@@ -170,6 +170,9 @@ impl DocumentRuntime {
                 state.session_storage,
             )
             .map_err(|error| error.to_string())?;
+        if let Some(script_runtime) = script_runtime.as_mut() {
+            script_runtime.set_host_call_profiling(!runtime.diagnostic_selectors.is_empty());
+        }
         connection.send_state_mutations(document, &mut outcome)?;
         runtime.script_runtime = script_runtime;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
@@ -177,7 +180,9 @@ impl DocumentRuntime {
         let script_time = script_started.elapsed();
 
         let style_started = Instant::now();
-        let style = runtime.page.refresh_resources(runtime.viewport.style_width);
+        let style = runtime
+            .page
+            .refresh_resources_for_viewport(runtime.viewport.style_width, runtime.viewport.height);
         let style_time = style_started.elapsed();
         runtime.text.register_web_fonts(&runtime.page.fonts);
         let layout_started = Instant::now();
@@ -343,8 +348,9 @@ impl DocumentRuntime {
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
         let needs_present = resources_changed || outcome.render_requested;
         let style = if outcome.render_requested {
-            self.page.refresh_resources_after_invalidation(
+            self.page.refresh_resources_after_invalidation_for_viewport(
                 self.viewport.style_width,
+                self.viewport.height,
                 &outcome.invalidation,
             )
         } else {
@@ -392,7 +398,9 @@ impl DocumentRuntime {
             })?
             .outcome;
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        let style = self.page.refresh_resources(viewport.style_width);
+        let style = self
+            .page
+            .refresh_resources_for_viewport(viewport.style_width, viewport.height);
         let started = Instant::now();
         self.rebuild_layout();
         let load = self.text.finish_load_report(PageLoadReport {
@@ -440,6 +448,7 @@ impl DocumentRuntime {
             &self.layout,
             &self.diagnostic_selectors,
             self.viewport.style_width,
+            self.viewport.height,
         );
         let accessibility = self.accessibility.update(
             &self.page,

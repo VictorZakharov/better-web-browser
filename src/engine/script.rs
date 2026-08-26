@@ -35,6 +35,7 @@ mod runtime;
 mod runtime_guard;
 mod style_cache;
 mod style_host;
+mod text_encoding_host;
 mod types;
 mod user_events;
 mod worker_bootstrap;

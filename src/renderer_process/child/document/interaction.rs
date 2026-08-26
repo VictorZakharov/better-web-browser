@@ -252,8 +252,9 @@ impl DocumentRuntime {
             return Ok(None);
         }
         let style = if outcome.render_requested {
-            self.page.refresh_resources_after_invalidation(
+            self.page.refresh_resources_after_invalidation_for_viewport(
                 self.viewport.style_width,
+                self.viewport.height,
                 &outcome.invalidation,
             )
         } else {

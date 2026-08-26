@@ -363,7 +363,10 @@ fn hung_task_is_detected_and_terminated_without_blocking_the_browser() {
         }
     }
     let exit = session.wait_for_exit(Duration::from_secs(3)).unwrap();
-    assert_eq!(exit.reason, RendererExitReason::TaskBudgetExceeded);
+    assert!(matches!(
+        exit.reason,
+        RendererExitReason::TaskBudgetExceeded(_)
+    ));
     let surface = exit
         .crash_surface()
         .expect("recoverable task-budget surface");

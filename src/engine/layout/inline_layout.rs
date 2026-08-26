@@ -31,7 +31,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_height = 0.0;
                 continue;
             }
-            let measured = self.measure_atom(atom, line.is_empty());
+            let measured = self.measure_atom(atom, line.is_empty(), width);
             let should_wrap = !line.is_empty()
                 && line_width + measured.width > width
                 && measured.break_before
@@ -51,7 +51,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_height = 0.0;
             }
             let measured = if should_wrap {
-                self.measure_atom(atom, true)
+                self.measure_atom(atom, true, width)
             } else {
                 measured
             };
@@ -84,8 +84,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         atom: &'a InlineAtom,
         line_start: bool,
+        containing_width: f32,
     ) -> MeasuredAtom<'a> {
-        let cache_key = (atom as *const InlineAtom as usize, line_start);
+        let containing_width = containing_width.max(0.0);
+        // Only inline boxes resolve percentage sizing against the containing block. Text,
+        // replaced content, and placeholders keep identical measurements across box passes.
+        let containing_width_key = if matches!(atom, InlineAtom::InlineBox { .. }) {
+            containing_width.to_bits()
+        } else {
+            0
+        };
+        let cache_key = (
+            atom as *const InlineAtom as usize,
+            line_start,
+            containing_width_key,
+        );
         if let Some(measured) = self.measurement_cache.get(&cache_key) {
             return measured.for_atom(atom);
         }
@@ -128,7 +141,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 glyphs: Vec::new(),
             },
             InlineAtom::InlineBox { children, style } => {
-                let metrics = self.measure_inline_box(atom, children, style);
+                let metrics = self.measure_inline_box(atom, children, style, containing_width);
                 MeasuredAtom {
                     atom,
                     text: None,
@@ -152,40 +165,49 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         atom: &InlineAtom,
         children: &[InlineAtom],
         style: &ComputedStyle,
+        containing_width: f32,
     ) -> InlineBoxMetrics {
-        let cache_key = atom as *const InlineAtom as usize;
+        let containing_width = containing_width.max(0.0);
+        let cache_key = (
+            atom as *const InlineAtom as usize,
+            containing_width.to_bits(),
+        );
         if let Some(metrics) = self.inline_box_cache.get(&cache_key) {
             return *metrics;
         }
+
+        let margin = style.margin.resolve(containing_width, style.font_size);
+        let border = style
+            .border_width
+            .resolve(containing_width, style.font_size);
+        let padding = style.padding.resolve(containing_width, style.font_size);
+        let horizontal_insets = border.horizontal() + padding.horizontal();
+        let vertical_insets = border.vertical() + padding.vertical();
+        let specified_width = resolve_outer_size(
+            style.width,
+            containing_width,
+            style.font_size,
+            horizontal_insets,
+            style.box_sizing,
+        );
+        let child_containing_width = specified_width
+            .map(|width| (width - horizontal_insets).max(0.0))
+            .unwrap_or(containing_width);
         let mut children_width = 0.0_f32;
         let mut children_height = 0.0_f32;
         for (index, child) in children.iter().enumerate() {
             if matches!(child, InlineAtom::Break) {
                 continue;
             }
-            let measured = self.measure_atom(child, index == 0);
+            let measured = self.measure_atom(child, index == 0, child_containing_width);
             children_width += measured.width;
             children_height = children_height.max(measured.height);
         }
 
-        let margin = style.margin.resolve(self.viewport.width, style.font_size);
-        let border = style
-            .border_width
-            .resolve(self.viewport.width, style.font_size);
-        let padding = style.padding.resolve(self.viewport.width, style.font_size);
-        let horizontal_insets = border.horizontal() + padding.horizontal();
-        let vertical_insets = border.vertical() + padding.vertical();
-        let mut border_box_width = resolve_outer_size(
-            style.width,
-            self.viewport.width,
-            style.font_size,
-            horizontal_insets,
-            style.box_sizing,
-        )
-        .unwrap_or(children_width + horizontal_insets);
+        let mut border_box_width = specified_width.unwrap_or(children_width + horizontal_insets);
         if let Some(minimum) = resolve_outer_size(
             style.min_width,
-            self.viewport.width,
+            containing_width,
             style.font_size,
             horizontal_insets,
             style.box_sizing,
@@ -194,7 +216,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if let Some(maximum) = resolve_outer_size(
             style.max_width,
-            self.viewport.width,
+            containing_width,
             style.font_size,
             horizontal_insets,
             style.box_sizing,

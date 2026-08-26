@@ -194,7 +194,7 @@ impl BrowserState {
         if let Some(exit) = exit {
             let crash_surface = exit.crash_surface();
             let task_budget_exceeded =
-                matches!(exit.reason, RendererExitReason::TaskBudgetExceeded);
+                matches!(exit.reason, RendererExitReason::TaskBudgetExceeded(_));
             self.update_renderer_status(id, &title, |status| {
                 status.phase = RendererLifecyclePhase::Exited;
                 status.last_exit = Some(exit);
