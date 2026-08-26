@@ -7,14 +7,15 @@ use self::fetch::FetchState;
 pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
 use self::state::{IncomingDocumentState, IncomingStorageUpdate};
 use super::document::{AdvanceResult, DocumentRuntime, LoadResult, RendererTextSystem};
-use super::{CHILD_EXIT_PROTOCOL_ERROR, handle_test};
+use super::handle_test;
 use crate::limits::{
     MAX_RENDERER_PRESENTATION_BYTES, MAX_RESPONSE_BODY_BYTES, MAX_SCRIPT_LOOP_ITERATIONS,
 };
 use crate::renderer_protocol::{
     BrowserMessage, DocumentId, DocumentInput, DocumentStart, FrameReader, FrameWriter,
     NavigationCause, NavigationDisposition, PresentationAcknowledgement, ProtocolError,
-    RendererMessage, RendererPresentation, TransferAssembler, TransferChunk,
+    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR, RendererDiagnostic,
+    RendererMessage, RendererPresentation, TestCommand, TransferAssembler, TransferChunk,
 };
 use std::collections::VecDeque;
 use std::fs::File;
@@ -31,6 +32,7 @@ pub(super) struct ChildConnection {
     incoming_document: Option<IncomingDocument>,
     incoming_storage_update: Option<IncomingStorageUpdate>,
     document: Option<DocumentRuntime>,
+    failed_document: Option<DocumentId>,
     prepared_text: Option<RendererTextSystem>,
     next_request_id: u64,
     next_batch_id: u64,
@@ -53,6 +55,7 @@ impl ChildConnection {
             incoming_document: None,
             incoming_storage_update: None,
             document: None,
+            failed_document: None,
             // Ready is sent only after this renderer-owned dependency is initialized. Otherwise
             // the browser can submit a document to a process that is not actually command-ready.
             prepared_text: Some(text),
@@ -74,7 +77,10 @@ impl ChildConnection {
                     return Err(error.to_string());
                 }
             };
-            self.handle(message)?;
+            if let Err(error) = self.handle(message) {
+                self.send_diagnostic(RENDERER_DIAGNOSTIC_INTERNAL_ERROR, &error);
+                return Err(error);
+            }
         }
         Ok(())
     }
@@ -93,6 +99,16 @@ impl ChildConnection {
                 .map_err(|error| error.to_string()),
             BrowserMessage::Shutdown => self.shutdown(),
             BrowserMessage::ProtocolFailure(_) => Err("browser rejected renderer IPC".into()),
+            BrowserMessage::Test(TestCommand::DocumentError) if self.test_mode => {
+                let document =
+                    self.document
+                        .as_ref()
+                        .map(DocumentRuntime::id)
+                        .ok_or_else(|| {
+                            "document error injection requires an active document".to_string()
+                        })?;
+                self.send_document_failure(document, "injected document error".into())
+            }
             BrowserMessage::Test(command) if self.test_mode => {
                 handle_test(command, &mut self.writer)
             }
@@ -147,6 +163,7 @@ impl ChildConnection {
         if self.incoming_document.is_some() || self.document.is_some() {
             return Err("renderer already owns a document".into());
         }
+        self.failed_document = None;
         self.incoming_document = Some(IncomingDocument {
             body: TransferAssembler::new(
                 start.document.get(),
@@ -397,6 +414,7 @@ impl ChildConnection {
         detail: String,
     ) -> Result<(), String> {
         self.document.take();
+        self.failed_document = Some(document);
         let detail = bounded_detail(&detail);
         self.writer
             .send_renderer(&RendererMessage::DocumentFailed { document, detail })
@@ -414,10 +432,11 @@ impl ChildConnection {
     }
 
     fn send_protocol_diagnostic(&mut self, error: &ProtocolError) {
-        if let Ok(diagnostic) = crate::renderer_protocol::RendererDiagnostic::new(
-            CHILD_EXIT_PROTOCOL_ERROR as u16,
-            error.to_string(),
-        ) {
+        self.send_diagnostic(RENDERER_DIAGNOSTIC_PROTOCOL_ERROR, &error.to_string());
+    }
+
+    fn send_diagnostic(&mut self, code: u16, detail: &str) {
+        if let Ok(diagnostic) = RendererDiagnostic::new(code, bounded_detail(detail)) {
             let _ = self
                 .writer
                 .send_renderer(&RendererMessage::Diagnostic(diagnostic));

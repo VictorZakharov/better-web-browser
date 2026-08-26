@@ -31,7 +31,8 @@ pub use input::{
     ScrollInput, TextInput,
 };
 pub use message::{
-    BrowserMessage, BrowsingContextId, ContainmentReport, Nonce, RendererDiagnostic,
+    BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
+    RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR, RendererDiagnostic,
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{

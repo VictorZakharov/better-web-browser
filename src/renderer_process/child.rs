@@ -20,8 +20,6 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, GetCurrentProcess, OpenProcessToken,
 };
 
-pub(super) const CHILD_EXIT_PROTOCOL_ERROR: i32 = 70;
-
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     std::panic::set_hook(Box::new(|_| {}));
     let options = ChildOptions::parse(arguments)?;
@@ -111,6 +109,10 @@ pub(super) fn handle_test(
     writer: &mut FrameWriter<File>,
 ) -> Result<(), String> {
     match command {
+        TestCommand::InternalError => Err("injected renderer internal error".into()),
+        TestCommand::DocumentError => {
+            Err("document error injection requires an active document".into())
+        }
         TestCommand::Crash => std::process::abort(),
         TestCommand::AccessViolation => raise_access_violation(),
         TestCommand::OutOfMemory => terminate_for_out_of_memory(),

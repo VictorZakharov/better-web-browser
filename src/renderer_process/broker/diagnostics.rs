@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 pub enum RendererExitReason {
     CleanShutdown,
     Crash,
+    InternalFailure(String),
     ProtocolFailure(String),
     ShutdownTimeout,
     TaskBudgetExceeded,
@@ -33,6 +34,9 @@ impl RendererExit {
         let reason = match &self.reason {
             RendererExitReason::CleanShutdown => return None,
             RendererExitReason::Crash => "crashed".to_string(),
+            RendererExitReason::InternalFailure(error) => {
+                format!("stopped after an internal error: {error}")
+            }
             RendererExitReason::ProtocolFailure(error) => {
                 format!("violated the IPC protocol: {error}")
             }

@@ -190,6 +190,9 @@ impl super::ChildConnection {
             return incoming.state.cookie(snapshot);
         }
         snapshot.validate().map_err(|error| error.to_string())?;
+        if self.failed_document == Some(snapshot.document) {
+            return Ok(());
+        }
         let runtime = self
             .document
             .as_mut()
@@ -205,6 +208,13 @@ impl super::ChildConnection {
     ) -> Result<(), String> {
         if let Some(incoming) = self.incoming_document.as_mut() {
             return incoming.state.storage_start(start);
+        }
+        if self.failed_document == Some(start.document) {
+            if self.incoming_storage_update.is_some() {
+                return Err("nested storage snapshot".into());
+            }
+            self.incoming_storage_update = Some(IncomingStorageUpdate::new(start)?);
+            return Ok(());
         }
         if self.incoming_storage_update.is_some()
             || !self
@@ -244,6 +254,9 @@ impl super::ChildConnection {
             .ok_or_else(|| "unsolicited storage snapshot completion".to_string())?;
         let document = update.document();
         let (area, snapshot) = update.finish(end)?;
+        if self.failed_document == Some(document) {
+            return Ok(());
+        }
         self.document
             .as_mut()
             .filter(|runtime| runtime.id() == document)

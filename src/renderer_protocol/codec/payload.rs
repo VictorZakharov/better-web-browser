@@ -61,6 +61,8 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         | BrowserMessage::StorageSnapshotEnd(_) => return encode_browser_state(message),
         BrowserMessage::Test(command) => {
             match command {
+                TestCommand::InternalError => payload.push(10),
+                TestCommand::DocumentError => payload.push(11),
                 TestCommand::Crash => payload.push(1),
                 TestCommand::Hang => payload.push(2),
                 TestCommand::WriteMalformedFrame => payload.push(3),
@@ -239,6 +241,8 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
 
 fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
     match payload {
+        [10] => Ok(TestCommand::InternalError),
+        [11] => Ok(TestCommand::DocumentError),
         [1] => Ok(TestCommand::Crash),
         [2] => Ok(TestCommand::Hang),
         [3] => Ok(TestCommand::WriteMalformedFrame),
