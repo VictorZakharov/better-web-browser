@@ -10,8 +10,40 @@ pub enum RendererExitReason {
     InternalFailure(String),
     ProtocolFailure(String),
     ShutdownTimeout,
-    TaskBudgetExceeded(String),
+    TaskBudgetExceeded(RendererTaskTimeout),
     Terminated,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RendererQueueDepths {
+    pub browser_commands: usize,
+    pub renderer_commands: usize,
+    pub renderer_messages: usize,
+    pub browser_events: usize,
+    pub state_updates: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RendererTaskTimeout {
+    pub task: String,
+    pub elapsed: Duration,
+    pub queues: RendererQueueDepths,
+}
+
+impl std::fmt::Display for RendererTaskTimeout {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} for {:.0} ms; queue depths: browser commands {}, renderer commands {}, renderer messages {}, browser events {}, state updates {}",
+            self.task,
+            self.elapsed.as_secs_f64() * 1_000.0,
+            self.queues.browser_commands,
+            self.queues.renderer_commands,
+            self.queues.renderer_messages,
+            self.queues.browser_events,
+            self.queues.state_updates,
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -41,8 +73,8 @@ impl RendererExit {
                 format!("violated the IPC protocol: {error}")
             }
             RendererExitReason::ShutdownTimeout => "did not shut down in time".to_string(),
-            RendererExitReason::TaskBudgetExceeded(task) => {
-                format!("exceeded its unresponsive-task budget while {task}")
+            RendererExitReason::TaskBudgetExceeded(timeout) => {
+                format!("exceeded its unresponsive-task budget while {timeout}")
             }
             RendererExitReason::Terminated => "was terminated by the browser".to_string(),
         };
@@ -66,6 +98,7 @@ pub(super) struct SharedDiagnostics {
     pub(super) started: Instant,
     pub(super) last_pong: Instant,
     pub(super) active_task: Option<String>,
+    pub(super) active_task_started: Option<Instant>,
     pub(super) exit_reason: Option<RendererExitReason>,
     pub(super) exit: Option<RendererExit>,
 }
@@ -85,6 +118,11 @@ impl SharedDiagnostics {
             handle_count: self.sample.handle_count,
             uptime: now.saturating_duration_since(self.started),
             last_pong_age: now.saturating_duration_since(self.last_pong),
+            active_task: self.active_task.clone(),
+            active_task_elapsed: self
+                .active_task_started
+                .map(|started| now.saturating_duration_since(started)),
+            queues: RendererQueueDepths::default(),
             pending_state_updates: 0,
             submitted_state_updates: 0,
             coalesced_state_updates: 0,

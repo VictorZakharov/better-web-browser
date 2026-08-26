@@ -3,6 +3,7 @@ mod early_scroll;
 mod initialization;
 mod navigation;
 mod options;
+mod renderer_diagnostics;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
@@ -208,6 +209,7 @@ impl BrowserState {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let renderer_diagnostics = renderer_diagnostics::to_json(&renderer_snapshots);
         let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
         let browser_cpu_ticks = process_cpu_ticks()
@@ -334,6 +336,7 @@ impl BrowserState {
                 "  \"display_items_invalidated\": {},\n",
                 "  \"full_paint_repaints\": {},\n",
                 "  \"renderer_launch_errors\": {},\n",
+                "  \"renderer_diagnostics\": {},\n",
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
@@ -412,6 +415,7 @@ impl BrowserState {
             benchmark.display_items_invalidated,
             benchmark.full_paint_repaints,
             renderer_launch_errors,
+            renderer_diagnostics,
             script_errors,
             script_console,
             script_diagnostics,

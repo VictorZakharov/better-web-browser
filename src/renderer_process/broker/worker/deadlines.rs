@@ -3,6 +3,16 @@
 use super::*;
 
 impl Broker {
+    fn queue_depths(&self) -> RendererQueueDepths {
+        RendererQueueDepths {
+            browser_commands: self.resources().command_depth.pending(),
+            renderer_commands: self.writer().pending(),
+            renderer_messages: self.resources().incoming_depth.pending(),
+            browser_events: self.resources().events.pending(),
+            state_updates: self.resources().state_updates.pending(),
+        }
+    }
+
     pub(super) fn enforce_deadlines(&mut self) {
         let now = Instant::now();
         if self
@@ -32,12 +42,23 @@ impl Broker {
         ) && self.shared().state == RendererState::Unresponsive
             && self.exit_reason.is_none()
         {
-            let task = self
-                .shared()
-                .active_task
-                .clone()
-                .unwrap_or_else(|| "processing an unidentified renderer task".into());
-            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded(task));
+            let (task, started) = {
+                let shared = self.shared();
+                (
+                    shared
+                        .active_task
+                        .clone()
+                        .unwrap_or_else(|| "processing an unidentified renderer task".into()),
+                    shared.active_task_started.unwrap_or(shared.last_pong),
+                )
+            };
+            self.exit_reason = Some(RendererExitReason::TaskBudgetExceeded(
+                RendererTaskTimeout {
+                    task,
+                    elapsed: now.saturating_duration_since(started),
+                    queues: self.queue_depths(),
+                },
+            ));
             self.terminate_job(74);
         }
     }

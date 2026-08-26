@@ -24,11 +24,16 @@ pub(super) struct Sender {
     wake: BrokerWake,
 }
 
+#[derive(Clone)]
+pub(super) struct Diagnostics {
+    state: Arc<Mutex<State>>,
+}
+
 pub(super) fn spawn(
     writer: FrameWriter<File>,
     session: RendererSessionId,
     wake: BrokerWake,
-) -> Result<(Sender, JoinHandle<()>), String> {
+) -> Result<(Sender, Diagnostics, JoinHandle<()>), String> {
     let (messages, receiver) = mpsc::channel();
     let state = Arc::new(Mutex::new(State {
         open: true,
@@ -40,17 +45,31 @@ pub(super) fn spawn(
         .name(format!("breeze-renderer-ipc-write-{}", session.get()))
         .spawn(move || run(writer, receiver, worker_state, worker_wake))
         .map_err(|error| format!("start renderer IPC writer: {error}"))?;
+    let diagnostics = Diagnostics {
+        state: Arc::clone(&state),
+    };
     Ok((
         Sender {
             messages,
             state,
             wake,
         },
+        diagnostics,
         handle,
     ))
 }
 
+impl Diagnostics {
+    pub(super) fn pending(&self) -> usize {
+        lock(&self.state).queued
+    }
+}
+
 impl Sender {
+    pub(super) fn pending(&self) -> usize {
+        lock(&self.state).queued
+    }
+
     pub(super) fn send_browser(&self, message: &BrowserMessage) -> Result<(), String> {
         {
             let mut state = lock(&self.state);

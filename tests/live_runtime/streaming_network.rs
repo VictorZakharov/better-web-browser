@@ -151,6 +151,18 @@ fn eight_streams_report_progress_and_an_abort_can_retry_without_blocking() {
         report.contains("\"javascript_errors\": []"),
         "streaming fixture reported JavaScript errors:\n{report}"
     );
+    assert_eq!(
+        json_integer(&report, "process_count"),
+        Some(2),
+        "finite stream, abort, and retry work terminated the renderer:\n{report}"
+    );
+    let report_json: serde_json::Value =
+        serde_json::from_str(&report).expect("parse streaming benchmark report");
+    assert_eq!(
+        report_json["javascript_runtime_stopped"].as_bool(),
+        Some(false),
+        "finite work stopped the JavaScript runtime:\n{report}"
+    );
     assert!(
         json_integer(&report, "renderer_peak_working_set_bytes")
             .is_some_and(|bytes| bytes < 128 * 1024 * 1024),

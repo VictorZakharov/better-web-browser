@@ -2,9 +2,11 @@
 
 mod acknowledgements;
 mod clock;
+mod control;
 mod diagnostics;
 mod events;
 mod outbound;
+mod queue_depth;
 mod session;
 mod state_updates;
 mod stream;
@@ -22,7 +24,20 @@ use crate::renderer_protocol::{
     TestCommand,
 };
 use diagnostics::SharedDiagnostics;
-pub use diagnostics::{RendererCrashSurface, RendererExit, RendererExitReason};
+pub use diagnostics::{
+    RendererCrashSurface, RendererExit, RendererExitReason, RendererQueueDepths,
+};
+pub type RendererTaskTimeout = diagnostics::RendererTaskTimeout;
+
+impl RendererExitReason {
+    pub fn task_timeout(&self) -> Option<&RendererTaskTimeout> {
+        match self {
+            Self::TaskBudgetExceeded(timeout) => Some(timeout),
+            _ => None,
+        }
+    }
+}
+use queue_depth::QueueDepth;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -47,6 +62,9 @@ pub struct RendererSnapshot {
     pub handle_count: u32,
     pub uptime: Duration,
     pub last_pong_age: Duration,
+    pub active_task: Option<String>,
+    pub active_task_elapsed: Option<Duration>,
+    pub queues: RendererQueueDepths,
     pub pending_state_updates: usize,
     pub submitted_state_updates: u64,
     pub coalesced_state_updates: u64,
@@ -89,12 +107,15 @@ pub enum RendererEvent {
 
 pub struct RendererSession {
     commands: mpsc::SyncSender<worker::BrokerCommand>,
+    command_depth: QueueDepth,
     acknowledgements: acknowledgements::Sender,
     clock: clock::Sender,
     state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
     events: events::EventReceiver,
+    incoming_depth: QueueDepth,
+    outbound_diagnostics: outbound::Diagnostics,
     wake: wake::BrokerWake,
     shared: Arc<Mutex<SharedDiagnostics>>,
     termination_job: std::os::windows::io::OwnedHandle,
@@ -110,7 +131,7 @@ impl RendererSession {
         let process_id = launched.process_id;
         let mut writer = FrameWriter::new(launched.browser_output, session);
         let wake = wake::BrokerWake::default();
-        let (incoming, reader_thread) =
+        let (incoming, incoming_depth, reader_thread) =
             spawn_reader(launched.browser_input, session, wake.clone())?;
         let limits = RendererLimits {
             heartbeat_millis: duration_millis(options.heartbeat_interval),
@@ -175,16 +196,19 @@ impl RendererSession {
             started: now,
             last_pong: now,
             active_task: None,
+            active_task_started: None,
             exit_reason: None,
             exit: None,
         }));
-        let (outbound, writer_thread) = match outbound::spawn(writer, session, wake.clone()) {
-            Ok(writer) => writer,
-            Err(error) => {
-                terminate_startup(&launched.process, &launched.job, reader_thread);
-                return Err(error);
-            }
-        };
+        let (outbound, outbound_diagnostics, writer_thread) =
+            match outbound::spawn(writer, session, wake.clone()) {
+                Ok(writer) => writer,
+                Err(error) => {
+                    terminate_startup(&launched.process, &launched.job, reader_thread);
+                    return Err(error);
+                }
+            };
+        let command_depth = QueueDepth::default();
         let (commands_tx, commands_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_BROWSER_COMMANDS);
         // Browser-owned progress must not compete with bounded page-generated commands.
@@ -199,6 +223,8 @@ impl RendererSession {
         let worker_shared = Arc::clone(&shared);
         let worker_options = options.clone();
         let worker_wake = wake.clone();
+        let worker_command_depth = command_depth.clone();
+        let worker_incoming_depth = incoming_depth.clone();
         let handle = std::thread::Builder::new()
             .name("breeze-renderer-broker".into())
             .spawn(move || {
@@ -208,8 +234,10 @@ impl RendererSession {
                     writer: outbound,
                     writer_thread,
                     incoming,
+                    incoming_depth: worker_incoming_depth,
                     reader_thread,
                     commands: commands_rx,
+                    command_depth: worker_command_depth,
                     acknowledgements: acknowledgements_rx,
                     clock: clock_rx,
                     state_updates: state_updates_rx,
@@ -224,169 +252,21 @@ impl RendererSession {
             .map_err(|error| format!("start renderer broker thread: {error}"))?;
         Ok(Self {
             commands: commands_tx,
+            command_depth,
             acknowledgements: acknowledgements_tx,
             clock: clock_tx,
             state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
             events: events_rx,
+            incoming_depth,
+            outbound_diagnostics,
             wake,
             shared,
             termination_job,
             worker: Some(handle),
             shutdown_timeout: options.shutdown_timeout,
         })
-    }
-
-    pub fn snapshot(&self) -> RendererSnapshot {
-        let state_updates = self.state_updates.snapshot();
-        let mut snapshot = self
-            .shared
-            .lock()
-            .expect("renderer diagnostics lock poisoned")
-            .snapshot();
-        snapshot.pending_state_updates = state_updates.pending;
-        snapshot.submitted_state_updates = state_updates.submitted;
-        snapshot.coalesced_state_updates = state_updates.coalesced;
-        snapshot
-    }
-
-    pub fn ping(&self, timeout: Duration) -> Result<(), String> {
-        let (reply, response) = mpsc::channel();
-        self.send_command(worker::BrokerCommand::Ping(reply))?;
-        response
-            .recv_timeout(timeout)
-            .map_err(|_| "renderer ping timed out".to_string())?
-    }
-
-    pub fn probe_restrictions(
-        &self,
-        loopback_port: u16,
-        timeout: Duration,
-    ) -> Result<RestrictionReport, String> {
-        let (reply, response) = mpsc::channel();
-        self.send_command(worker::BrokerCommand::ProbeRestrictions {
-            loopback_port,
-            reply,
-        })?;
-        response
-            .recv_timeout(timeout)
-            .map_err(|_| "renderer restriction probe timed out".to_string())?
-    }
-
-    pub fn send_test_command(&self, command: TestCommand) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::Test(command))
-    }
-
-    pub fn wait_for_event(&self, timeout: Duration) -> Result<RendererEvent, String> {
-        self.events
-            .recv_timeout(timeout)
-            .map_err(|_| "renderer event timed out".to_string())
-    }
-
-    pub fn try_event(&self) -> Result<Option<RendererEvent>, String> {
-        match self.events.try_recv() {
-            Ok(event) => Ok(Some(event)),
-            Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => Err("renderer broker has exited".into()),
-        }
-    }
-
-    pub fn wait_for_exit(&self, timeout: Duration) -> Result<RendererExit, String> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if let Some(exit) = self.snapshot().exit {
-                return Ok(exit);
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err("renderer exit timed out".into());
-            }
-            if let RendererEvent::Exited(exit) = self.wait_for_event(remaining)? {
-                return Ok(exit);
-            }
-        }
-    }
-
-    pub fn terminate(&self) -> Result<(), String> {
-        let mut shared = self
-            .shared
-            .lock()
-            .map_err(|_| "renderer diagnostics lock poisoned".to_string())?;
-        if shared.state == RendererState::Exited {
-            return Err("renderer has already exited".into());
-        }
-        terminate_job_checked(&self.termination_job, 74)
-            .map_err(|error| format!("terminate renderer Job: {error}"))?;
-        shared.exit_reason = Some(RendererExitReason::Terminated);
-        drop(shared);
-        self.wake.notify();
-        Ok(())
-    }
-
-    /// Requests immediate renderer termination without waiting on the caller's thread.
-    ///
-    /// Browser UI recovery paths use this instead of `Drop`, whose graceful shutdown wait is
-    /// intentionally bounded but can still take several seconds for an unresponsive renderer.
-    pub fn terminate_in_background(mut self) {
-        self.events.close();
-        // Termination is an ownership boundary, so end the Job before returning to the caller.
-        // Queueing a broker command here lets a saturated renderer overlap its replacement.
-        let _ = self.terminate();
-        let Some(worker) = self.worker.take() else {
-            return;
-        };
-        let wake = self.wake.clone();
-        let _ = std::thread::Builder::new()
-            .name("breeze-renderer-reaper".into())
-            .spawn(move || {
-                wake.notify();
-                let _ = worker.join();
-            });
-    }
-
-    #[doc(hidden)]
-    pub fn close_job_for_test(&self) -> Result<(), String> {
-        let (reply, response) = mpsc::channel();
-        self.send_command(worker::BrokerCommand::CloseJobForTest(reply))?;
-        response
-            .recv_timeout(Duration::from_secs(1))
-            .map_err(|_| "renderer Job close timed out".to_string())?
-    }
-
-    pub fn shutdown(&mut self) -> Result<RendererExit, String> {
-        self.events.close();
-        let (reply, response) = mpsc::channel();
-        self.send_blocking_command(worker::BrokerCommand::Shutdown(reply))?;
-        let result = response
-            .recv_timeout(self.shutdown_timeout + Duration::from_secs(1))
-            .map_err(|_| "renderer shutdown timed out".to_string())?;
-        self.join_worker();
-        result
-    }
-
-    fn join_worker(&mut self) {
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
-}
-
-impl Drop for RendererSession {
-    fn drop(&mut self) {
-        if self.worker.is_none() {
-            return;
-        }
-        self.events.close();
-        let (reply, response) = mpsc::channel();
-        let _ = self.send_blocking_command(worker::BrokerCommand::Shutdown(reply));
-        if response
-            .recv_timeout(self.shutdown_timeout + Duration::from_secs(1))
-            .is_err()
-        {
-            let _ = self.send_blocking_command(worker::BrokerCommand::Terminate);
-        }
-        self.join_worker();
     }
 }
 
@@ -396,8 +276,10 @@ fn spawn_reader(
     input: std::fs::File,
     session: RendererSessionId,
     wake: wake::BrokerWake,
-) -> Result<(RendererIncoming, JoinHandle<()>), String> {
+) -> Result<(RendererIncoming, QueueDepth, JoinHandle<()>), String> {
     let (sender, receiver) = mpsc::sync_channel(crate::limits::MAX_QUEUED_RENDERER_IPC_MESSAGES);
+    let depth = QueueDepth::default();
+    let reader_depth = depth.clone();
     let handle = std::thread::Builder::new()
         .name("breeze-renderer-ipc-read".into())
         .spawn(move || {
@@ -405,8 +287,10 @@ fn spawn_reader(
             loop {
                 let message = reader.read_renderer();
                 let failed = message.is_err();
+                reader_depth.begin_enqueue();
                 wake.notify();
                 if sender.send(message).is_err() {
+                    reader_depth.finish_dequeue();
                     break;
                 }
                 wake.notify();
@@ -416,7 +300,7 @@ fn spawn_reader(
             }
         })
         .map_err(|error| format!("start renderer IPC reader: {error}"))?;
-    Ok((receiver, handle))
+    Ok((receiver, depth, handle))
 }
 
 fn validate_ready(

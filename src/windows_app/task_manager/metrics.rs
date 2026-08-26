@@ -79,6 +79,15 @@ pub(super) fn renderer_process_row(
         .snapshot
         .as_ref()
         .map(|snapshot| {
+            if let Some(task) = snapshot.active_task.as_deref() {
+                return format!(
+                    "Active for {}: {task}",
+                    snapshot
+                        .active_task_elapsed
+                        .map(format_duration)
+                        .unwrap_or_else(|| "an unknown duration".into())
+                );
+            }
             format!(
                 "PID {} · session {} · {phase} · restarts {}",
                 snapshot.process_id, snapshot.session_id, status.restart_count

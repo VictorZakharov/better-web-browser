@@ -133,10 +133,59 @@ fn watchdog_survives_a_blocked_renderer_command_pipe() {
     let exit = session
         .wait_for_exit(Duration::from_secs(3))
         .expect("watchdog terminated the blocked renderer");
-    assert!(matches!(
-        exit.reason,
-        RendererExitReason::TaskBudgetExceeded(_)
-    ));
+    let timeout = exit
+        .reason
+        .task_timeout()
+        .expect("watchdog exit includes task diagnostics");
+    assert!(
+        timeout.task.contains("renderer test command Hang"),
+        "unexpected active task: {}",
+        timeout.task
+    );
+    assert!(timeout.elapsed >= Duration::from_millis(400));
+    assert!(
+        timeout.queues.browser_commands > 0 || timeout.queues.renderer_commands > 0,
+        "saturated command path was absent from timeout diagnostics: {timeout:?}"
+    );
+    let surface = exit.crash_surface().expect("recoverable watchdog surface");
+    assert!(surface.detail.contains("queue depths:"), "{surface:?}");
+}
+
+#[test]
+fn a_timed_out_renderer_does_not_block_its_sibling() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let hung = RendererSession::launch(hung_task_options()).expect("launch hung renderer");
+    let mut sibling = RendererSession::launch(options()).expect("launch sibling renderer");
+    load_inline_document(&sibling, 124);
+
+    hung.send_test_command(TestCommand::Hang)
+        .expect("hang first renderer");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        sibling
+            .ping(Duration::from_millis(250))
+            .expect("sibling renderer remains responsive");
+        if matches!(
+            hung.wait_for_event(Duration::from_millis(100)),
+            Ok(RendererEvent::Unresponsive)
+        ) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "hung renderer was not detected"
+        );
+    }
+    let exit = hung
+        .wait_for_exit(Duration::from_secs(2))
+        .expect("watchdog stops only the hung renderer");
+    assert!(exit.reason.task_timeout().is_some());
+    sibling
+        .ping(Duration::from_millis(500))
+        .expect("sibling remains usable after watchdog termination");
+    sibling.shutdown().expect("shutdown sibling renderer");
 }
 
 const SYNCHRONIZE: u32 = 0x0010_0000;

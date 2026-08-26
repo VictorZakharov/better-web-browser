@@ -139,6 +139,11 @@ impl Sender {
 }
 
 impl Receiver {
+    pub(super) fn pending(&self) -> usize {
+        let state = lock(&self.state);
+        state.pending.len() + usize::from(state.in_flight)
+    }
+
     pub(super) fn take(&self) -> Option<StateUpdate> {
         let mut state = lock(&self.state);
         if state.in_flight {
