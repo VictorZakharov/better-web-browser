@@ -164,6 +164,8 @@ impl Broker {
             }
             RendererMessage::DocumentFailed { document, detail } => {
                 if self.active_document == Some(document) {
+                    // Retire browser-to-renderer work before publishing the failure to the UI;
+                    // otherwise the UI can enqueue a state correction for a runtime already gone.
                     self.document_load_deadline = None;
                     self.active_document = None;
                     self.retired_document = None;

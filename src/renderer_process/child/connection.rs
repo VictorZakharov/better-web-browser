@@ -32,6 +32,8 @@ pub(super) struct ChildConnection {
     incoming_document: Option<IncomingDocument>,
     incoming_storage_update: Option<IncomingStorageUpdate>,
     document: Option<DocumentRuntime>,
+    // Browser-authoritative corrections can already be in the pipe when DocumentFailed retires
+    // the runtime. Keep its identity long enough to validate and drain those transfers.
     failed_document: Option<DocumentId>,
     prepared_text: Option<RendererTextSystem>,
     next_request_id: u64,
