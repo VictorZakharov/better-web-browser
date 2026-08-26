@@ -241,6 +241,10 @@ Browser-authoritative cookie and Web Storage corrections use a separate newest-w
 with one cookie slot and one slot per storage area. The broker drains an accepted snapshot as an
 ordered transfer before returning to ordinary page commands. Input or viewport bursts can delay and
 coalesce corrections, but cannot turn temporary command-channel saturation into a page failure.
+`DocumentFailed` retires the broker's active document before the failure reaches the UI. Pending
+corrections are discarded; a correction transfer already written to the child pipe is still fully
+validated and drained, then ignored by the failed document. This expected asynchronous race must
+not be reclassified as unsolicited IPC or escalate a contained page failure into renderer exit.
 
 There is deliberately no generic “invoke browser API”, “execute script”, “set arbitrary header”, or
 “paint native handle” message. New browser authority requires a named message, validation rules, a
@@ -464,6 +468,9 @@ pipe I/O; the nonblocking broker owns heartbeats, process accounting, shutdown d
 termination. The UI thread consumes typed events; Task Manager presents the browser and per-tab
 renderers as a process tree. Abnormal exit preserves the browser and sibling tabs, and Reload starts
 a replacement process with fresh session and document identities.
+Catchable renderer-loop failures send a bounded diagnostic before exit, allowing the broker to
+preserve the internal failure detail instead of collapsing every clean `0x46` termination into an
+opaque crash. Native faults and broken output pipes remain diagnosable only by their process exit.
 
 ### Stage 3: Broker navigation, Fetch, cookies, and storage
 

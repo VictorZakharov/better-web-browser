@@ -156,6 +156,17 @@ impl Broker {
                     }
                 }
                 Ok(Ok(RendererMessage::Diagnostic(diagnostic))) => {
+                    if self.exit_reason.is_none() {
+                        self.exit_reason = match diagnostic.code {
+                            crate::renderer_protocol::RENDERER_DIAGNOSTIC_INTERNAL_ERROR => {
+                                Some(RendererExitReason::InternalFailure(diagnostic.text.clone()))
+                            }
+                            crate::renderer_protocol::RENDERER_DIAGNOSTIC_PROTOCOL_ERROR => {
+                                Some(RendererExitReason::ProtocolFailure(diagnostic.text.clone()))
+                            }
+                            _ => None,
+                        };
+                    }
                     if let Err(error) = self.emit_event(RendererEvent::Diagnostic {
                         code: diagnostic.code,
                         text: diagnostic.text,

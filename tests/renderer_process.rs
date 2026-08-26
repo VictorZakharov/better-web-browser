@@ -179,6 +179,39 @@ fn crashed_tab_renderer_preserves_its_sibling_and_can_be_reloaded() {
 }
 
 #[test]
+fn renderer_internal_errors_preserve_the_failure_detail() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("launch renderer");
+    session
+        .send_test_command(TestCommand::InternalError)
+        .expect("inject renderer internal error");
+    match session
+        .wait_for_event(Duration::from_secs(3))
+        .expect("renderer fatal diagnostic")
+    {
+        RendererEvent::Diagnostic { code, text } => {
+            assert_eq!(
+                code,
+                better_web_browser::renderer_protocol::RENDERER_DIAGNOSTIC_INTERNAL_ERROR
+            );
+            assert_eq!(text, "injected renderer internal error");
+        }
+        event => panic!("unexpected event before renderer exit: {event:?}"),
+    }
+    let exit = session.wait_for_exit(Duration::from_secs(3)).unwrap();
+    assert_eq!(
+        exit.reason,
+        RendererExitReason::InternalFailure("injected renderer internal error".into())
+    );
+    assert_eq!(exit.code, 70);
+    let surface = exit.crash_surface().expect("recoverable crash surface");
+    assert!(surface.can_reload);
+    assert!(surface.detail.contains("injected renderer internal error"));
+}
+
+#[test]
 fn fatal_native_failures_are_tab_local_and_reload_with_fresh_identity() {
     let _serial = SERIAL
         .lock()

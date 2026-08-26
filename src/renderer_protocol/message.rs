@@ -16,6 +16,8 @@ use crate::renderer_protocol::RendererRuntimeUpdate;
 use std::fmt;
 
 pub const NONCE_LENGTH: usize = 32;
+pub const RENDERER_DIAGNOSTIC_INTERNAL_ERROR: u16 = 70;
+pub const RENDERER_DIAGNOSTIC_PROTOCOL_ERROR: u16 = 71;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Nonce([u8; NONCE_LENGTH]);
@@ -158,6 +160,8 @@ pub enum BrowserMessage {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TestCommand {
+    InternalError,
+    DocumentError,
     Crash,
     AccessViolation,
     OutOfMemory,

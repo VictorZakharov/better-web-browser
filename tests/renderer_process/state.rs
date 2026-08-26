@@ -3,6 +3,7 @@ use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
     CookieStateSnapshot, DocumentId, DocumentState, RendererPresentation, StorageMutationRequest,
+    TestCommand,
 };
 use better_web_browser::storage::{
     StorageAreaKind, StorageAreaSnapshot, StorageEntry, StorageOperation,
@@ -108,6 +109,54 @@ fn typed_state_snapshots_and_mutations_cross_the_renderer_boundary() {
         presentation_text(&corrected)
     );
     session.shutdown().expect("shutdown renderer");
+}
+
+#[test]
+fn corrections_after_document_failure_do_not_exit_the_renderer() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let presentation = load_inline_document(&session, 93);
+    session
+        .send_test_command(TestCommand::DocumentError)
+        .expect("inject document failure");
+    loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::DocumentFailed { document, detail }
+                if document == presentation.document =>
+            {
+                assert_eq!(detail, "injected document error");
+                break;
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            event => panic!("unexpected document failure event: {event:?}"),
+        }
+    }
+
+    session
+        .update_cookie_snapshot(CookieStateSnapshot {
+            document: presentation.document,
+            version: 2,
+            header: "late=1".into(),
+        })
+        .unwrap();
+    session
+        .update_storage_snapshot(
+            presentation.document,
+            StorageAreaKind::Local,
+            state_snapshot(2, "late", "browser"),
+        )
+        .unwrap();
+    session
+        .ping(Duration::from_secs(1))
+        .expect("renderer remains responsive after stale corrections");
+    assert_eq!(session.snapshot().pending_state_updates, 0);
+    let exit = session.shutdown().expect("clean renderer shutdown");
+    assert_eq!(
+        exit.reason,
+        better_web_browser::renderer_process::RendererExitReason::CleanShutdown
+    );
 }
 
 fn state_snapshot(version: u64, key: &str, value: &str) -> StorageAreaSnapshot {

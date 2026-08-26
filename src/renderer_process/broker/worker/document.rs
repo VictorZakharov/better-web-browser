@@ -164,8 +164,21 @@ impl Broker {
             }
             RendererMessage::DocumentFailed { document, detail } => {
                 if self.active_document == Some(document) {
+                    // Retire browser-to-renderer work before publishing the failure to the UI;
+                    // otherwise the UI can enqueue a state correction for a runtime already gone.
                     self.document_load_deadline = None;
+                    self.active_document = None;
                     self.retired_document = None;
+                    self.outgoing_fetch.clear();
+                    self.resources().state_updates.discard_document(document);
+                    if self
+                        .outgoing_state_update
+                        .as_ref()
+                        .is_some_and(|update| update.document == document)
+                    {
+                        self.outgoing_state_update = None;
+                        self.resources().state_updates.complete();
+                    }
                     self.emit_event(RendererEvent::DocumentFailed { document, detail })?;
                 }
             }
