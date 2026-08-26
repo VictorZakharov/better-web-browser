@@ -2,10 +2,9 @@
 
 use super::*;
 
-// A rendering opportunity does not have to follow every individual event-loop task. Drain a
-// small bounded batch of already-due timers so their DOM mutations share one style/layout pass.
-// The renderer watchdog still bounds the combined task, while the low cap preserves input turns.
-pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 8;
+// Each callback is a distinct HTML event-loop task. Returning to the renderer command loop after
+// one task lets already-queued user input run before another due callback.
+pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 1;
 
 impl BrowserState {
     pub(super) unsafe fn complete_renderer_runtime_update(
@@ -130,8 +129,8 @@ mod tests {
     }
 
     #[test]
-    fn timer_wakeups_batch_due_tasks_without_unbounded_renderer_turns() {
-        assert_eq!(TIMER_CALLBACKS_PER_WAKEUP, 8);
+    fn timer_wakeups_yield_between_event_loop_tasks() {
+        assert_eq!(TIMER_CALLBACKS_PER_WAKEUP, 1);
         assert!(
             TIMER_CALLBACKS_PER_WAKEUP
                 < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32

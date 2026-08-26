@@ -242,6 +242,10 @@ impl DocumentRuntime {
             || !self.pending_fetches.is_empty()
             || !self.pending_worker_actions.is_empty()
             || self.workers.has_work()
+            || self
+                .script_runtime
+                .as_ref()
+                .is_some_and(ScriptRuntime::has_pending_dynamic_scripts)
             || self.page.scripts.iter().any(|script| {
                 !script.blocks_first_paint
                     && !self.executed_async_scripts.contains(&script.source_url)
@@ -372,14 +376,11 @@ impl DocumentRuntime {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
         self.text.set_dpi(viewport.dpi);
         let mut outcome = self
-            .dispatch_user_input(
-                crate::engine::UserInputEvent::Viewport {
-                    width: viewport.width,
-                    height: viewport.height,
-                    scale: viewport.dpi as f32 / 96.0,
-                },
-                connection,
-            )?
+            .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
+                width: viewport.width,
+                height: viewport.height,
+                scale: viewport.dpi as f32 / 96.0,
+            })?
             .outcome;
         self.admit_user_input_outcome(&mut outcome, connection)?;
         let style = self.page.refresh_resources(viewport.style_width);

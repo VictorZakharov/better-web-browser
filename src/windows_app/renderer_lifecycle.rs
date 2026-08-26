@@ -129,6 +129,7 @@ impl BrowserState {
             if tab.renderer_launch_receiver.is_some() || tab.renderer_session.is_some() {
                 return;
             }
+            tab.incidents.record("renderer", "launch requested");
             tab.title.clone()
         };
         self.update_renderer_status(id, &title, |status| {
@@ -212,6 +213,8 @@ impl BrowserState {
             tab.renderer_started_once = true;
             tab.renderer_session = Some(session);
             tab.crashed = false;
+            tab.incidents
+                .record("renderer", format!("ready process {}", snapshot.process_id));
             (tab.title.clone(), restarted)
         };
         self.update_renderer_status(id, &title, |status| {

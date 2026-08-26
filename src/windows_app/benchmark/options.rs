@@ -1,7 +1,7 @@
 //! Command-line parsing for interactive launch and hidden benchmark modes.
 
 use super::super::*;
-use super::{BenchmarkRun, diagnostics};
+use super::{BenchmarkRun, diagnostics, navigation::BenchmarkNavigation};
 
 pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
@@ -79,7 +79,16 @@ impl LaunchOptions {
                     diagnostics::validate_selector_count(&diagnostic_selectors)?;
                 }
                 "--navigate-after-ready" => {
-                    navigation_targets.push(required(&mut arguments, &argument)?);
+                    navigation_targets.push(BenchmarkNavigation::Address(required(
+                        &mut arguments,
+                        &argument,
+                    )?));
+                }
+                "--activate-link-after-ready" => {
+                    navigation_targets.push(BenchmarkNavigation::ActivateLink(required(
+                        &mut arguments,
+                        &argument,
+                    )?));
                 }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
@@ -211,6 +220,8 @@ mod tests {
                 "https://example.test/second",
                 "--navigate-after-ready",
                 "https://example.test/final",
+                "--activate-link-after-ready",
+                "https://example.test/clicked",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -222,8 +233,9 @@ mod tests {
         assert_eq!(
             benchmark.navigation_targets,
             [
-                "https://example.test/second".to_string(),
-                "https://example.test/final".to_string(),
+                BenchmarkNavigation::Address("https://example.test/second".to_string()),
+                BenchmarkNavigation::Address("https://example.test/final".to_string()),
+                BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
             ]
         );
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));

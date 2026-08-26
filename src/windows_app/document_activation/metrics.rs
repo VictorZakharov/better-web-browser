@@ -21,14 +21,39 @@ impl BrowserState {
         self.incidents.record(
             "present",
             format!(
-                "revision {} ({}, {} items, {} console, {} errors)",
+                "revision {} ({}, {} items, {} accessibility nodes, {} console, {} errors)",
                 presentation.revision,
                 if first { "first" } else { "update" },
                 presentation.layout.items.len(),
+                presentation.accessibility.nodes.len(),
                 presentation.runtime.console.len(),
                 presentation.runtime.errors.len()
             ),
         );
+    }
+
+    pub(super) fn record_renderer_submission(
+        &mut self,
+        document: better_web_browser::renderer_protocol::DocumentId,
+        bytes: u32,
+    ) {
+        self.incidents.record(
+            "renderer",
+            format!("submitted document {} ({bytes} bytes)", document.get()),
+        );
+    }
+
+    pub(super) fn record_presentation_install_incident(&mut self, first: bool, duration: Duration) {
+        if first || duration >= Duration::from_millis(50) {
+            self.incidents.record(
+                "ui-install",
+                format!(
+                    "{} presentation installed in {:.1} ms",
+                    if first { "first" } else { "updated" },
+                    duration.as_secs_f64() * 1_000.0
+                ),
+            );
+        }
     }
 
     pub(in crate::windows_app) fn record_renderer_runtime_metrics(

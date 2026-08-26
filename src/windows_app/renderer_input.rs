@@ -1,5 +1,7 @@
 //! Browser-to-renderer native input translation and document-scoped sequencing.
 
+mod keyboard;
+
 use super::renderer_input_queue::QueueResult;
 use super::tab_state::TabFocus;
 use super::tabs::TabId;
@@ -11,6 +13,7 @@ use better_web_browser::renderer_protocol::{
     KeyboardInput, LifecycleInput, PointerButton, PointerInput, PointerPhase,
     PresentationAcknowledgement, ScrollInput, TextInput,
 };
+use keyboard::key_and_code;
 
 const RENDERER_INPUT_POLL_BUDGET: u8 = 16;
 
@@ -105,6 +108,8 @@ impl BrowserState {
             modifiers: pointer_modifiers(wparam),
             target: None,
         }));
+        self.incidents
+            .record_pointer(accepted, phase, button, sequence);
         if accepted && phase == PointerPhase::Move {
             self.pointer_cursor_request = Some(sequence);
         }
@@ -336,7 +341,7 @@ impl BrowserState {
     }
 }
 
-fn wire_node(node: NodeId) -> Option<DocumentNodeId> {
+pub(super) fn wire_node(node: NodeId) -> Option<DocumentNodeId> {
     DocumentNodeId::new(node.to_wire()).ok()
 }
 
@@ -367,34 +372,5 @@ unsafe fn current_modifiers() -> InputModifiers {
         shift: GetKeyState(VK_SHIFT) < 0,
         alt: GetKeyState(VK_MENU) < 0,
         meta: false,
-    }
-}
-
-fn key_and_code(key: usize, shift: bool) -> (String, String) {
-    match key {
-        VK_BACK => ("Backspace".into(), "Backspace".into()),
-        VK_TAB => ("Tab".into(), "Tab".into()),
-        VK_RETURN => ("Enter".into(), "Enter".into()),
-        VK_ESCAPE => ("Escape".into(), "Escape".into()),
-        VK_SPACE => (" ".into(), "Space".into()),
-        VK_LEFT => ("ArrowLeft".into(), "ArrowLeft".into()),
-        VK_UP => ("ArrowUp".into(), "ArrowUp".into()),
-        VK_RIGHT => ("ArrowRight".into(), "ArrowRight".into()),
-        VK_DOWN => ("ArrowDown".into(), "ArrowDown".into()),
-        VK_DELETE => ("Delete".into(), "Delete".into()),
-        value @ 0x30..=0x39 => (
-            (value as u8 as char).to_string(),
-            format!("Digit{}", value - 0x30),
-        ),
-        value @ 0x41..=0x5a => {
-            let letter = value as u8 as char;
-            let key = if shift {
-                letter
-            } else {
-                letter.to_ascii_lowercase()
-            };
-            (key.to_string(), format!("Key{letter}"))
-        }
-        _ => (format!("Unidentified-{key:02x}"), "Unidentified".into()),
     }
 }

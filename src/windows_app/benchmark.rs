@@ -21,7 +21,7 @@ pub(super) struct BenchmarkRun {
     pub(super) initial_cpu_ticks: u64,
     pub(super) window_ready: Duration,
     pub(super) navigation_started: Option<Instant>,
-    pub(super) navigation_targets: Vec<String>,
+    pub(super) navigation_targets: Vec<navigation::BenchmarkNavigation>,
     pub(super) navigation_delay: Duration,
     pub(super) navigation_scheduled: bool,
     pub(super) page_ready: Duration,

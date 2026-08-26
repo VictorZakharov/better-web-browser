@@ -158,33 +158,31 @@ impl DocumentRuntime {
             .filter(|script| !script.blocks_first_paint)
             .filter(|script| !self.executed_async_scripts.contains(&script.source_url))
             .map(|script| (script.source_url.clone(), script.kind, script.fetch_options))
-            .collect::<Vec<_>>();
-        if pending.is_empty() {
+            .next();
+        let Some((url, kind, fetch_options)) = pending else {
             return Ok(());
-        }
-        for (url, kind, fetch_options) in &pending {
-            if self.page.scripts.iter().any(|script| {
-                script.source_url == *url
-                    && script.kind == *kind
-                    && script.fetch_options == *fetch_options
-                    && script.code.is_none()
-            }) {
-                let resource = PageResource::Script {
-                    url: url.clone(),
-                    kind: *kind,
-                    fetch_options: *fetch_options,
-                };
-                let result = if self.loaded_resources.contains(&resource) {
-                    Err("script could not be loaded".to_string())
-                } else {
-                    fetch_script_source(connection, self.id, url, *kind, *fetch_options)
-                };
-                match result {
-                    Ok(code) => {
-                        self.page.add_script(url, *kind, *fetch_options, code);
-                    }
-                    Err(error) => outcome.errors.push(format!("{url}: {error}")),
+        };
+        if self.page.scripts.iter().any(|script| {
+            script.source_url == url
+                && script.kind == kind
+                && script.fetch_options == fetch_options
+                && script.code.is_none()
+        }) {
+            let resource = PageResource::Script {
+                url: url.clone(),
+                kind,
+                fetch_options,
+            };
+            let result = if self.loaded_resources.contains(&resource) {
+                Err("script could not be loaded".to_string())
+            } else {
+                fetch_script_source(connection, self.id, &url, kind, fetch_options)
+            };
+            match result {
+                Ok(code) => {
+                    self.page.add_script(&url, kind, fetch_options, code);
                 }
+                Err(error) => outcome.errors.push(format!("{url}: {error}")),
             }
         }
         let inputs = self
@@ -203,16 +201,13 @@ impl DocumentRuntime {
                     finish_lifecycle: true,
                 })
             })
+            .take(1)
             .collect::<Vec<_>>();
-        for (url, ..) in pending {
-            self.executed_async_scripts.insert(url);
-        }
+        self.executed_async_scripts.insert(url);
         if let Some(runtime) = self.script_runtime.as_mut() {
-            let document = self.id;
-            let mut loader = |url: &str, kind, options| {
-                fetch_script_source(connection, document, url, kind, options)
-            };
-            let result = runtime.execute_additional_with_loader(&inputs, Some(&mut loader));
+            // A dynamically inserted external script is a later event-loop task. Keep it queued
+            // so the renderer can accept input between that task and this async script.
+            let result = runtime.execute_additional_with_loader(&inputs, None);
             merge_outcome(outcome, result, self.page.dom.document.id());
         }
         Ok(())

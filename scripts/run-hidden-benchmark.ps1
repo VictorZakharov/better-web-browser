@@ -23,6 +23,7 @@ param(
     [string] $ProfileDirectory,
     [string[]] $DiagnosticSelector = @(),
     [string[]] $NavigationTarget = @(),
+    [string[]] $LinkActivationTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -128,11 +129,18 @@ foreach ($target in $NavigationTarget) {
     $arguments.Add('--navigate-after-ready')
     $arguments.Add($target)
 }
-if ($NavigationTarget.Count -gt 0) {
+foreach ($target in $LinkActivationTarget) {
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        throw '-LinkActivationTarget values cannot be empty.'
+    }
+    $arguments.Add('--activate-link-after-ready')
+    $arguments.Add($target)
+}
+if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one -NavigationTarget.'
+    throw '-NavigationDelayMs requires at least one navigation or link-activation target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

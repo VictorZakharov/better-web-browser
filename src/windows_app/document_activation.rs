@@ -157,6 +157,7 @@ impl BrowserState {
                 self.renderer_next_timer = None;
                 self.renderer_runtime_clock = Some(Instant::now());
                 self.renderer_work_pending = true;
+                self.record_renderer_submission(document, body_length);
                 self.status_text = "Rendering in the isolated page process …".into();
                 if !self.processing_background_tab {
                     self.set_status("Rendering in the isolated page process …");
@@ -203,6 +204,7 @@ impl BrowserState {
             return;
         }
         let first_presentation = self.renderer_revision == 0;
+        let presentation_install_started = Instant::now();
         self.renderer_revision = presentation.revision;
         self.record_renderer_presentation_incident(&presentation, first_presentation);
 
@@ -235,7 +237,6 @@ impl BrowserState {
             }
         };
 
-        let presentation_install_started = Instant::now();
         let next_layout = std::mem::take(&mut presentation.layout).into_layout();
         let damage = DisplayListDamage::between(&self.page_layout, &next_layout);
         let layout_changed = !damage.is_empty();
@@ -317,12 +318,6 @@ impl BrowserState {
             self.recreate_page_controls();
         }
 
-        if let Some(benchmark) = self.benchmark.as_mut() {
-            benchmark.presentation_install_time += presentation_install_started.elapsed();
-        }
-
-        let benchmark_completed =
-            self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
         let error_count = presentation.runtime.errors.len();
         let script_status = if presentation.runtime.scripts_executed == 0 && error_count == 0 {
             String::new()
@@ -377,6 +372,13 @@ impl BrowserState {
         } else if !self.processing_background_tab {
             self.refresh_accessibility_document(&accessibility_update);
         }
+        let presentation_install_time = presentation_install_started.elapsed();
+        self.record_presentation_install_incident(first_presentation, presentation_install_time);
+        if let Some(benchmark) = self.benchmark.as_mut() {
+            benchmark.presentation_install_time += presentation_install_time;
+        }
+        let benchmark_completed =
+            self.record_renderer_presentation_metrics(&presentation, damage, first_presentation);
         self.acknowledge_renderer_presentation(
             presentation.document,
             presentation.revision,

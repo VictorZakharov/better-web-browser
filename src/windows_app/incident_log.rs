@@ -1,5 +1,6 @@
 //! Bounded per-tab incident history exported by the F12 diagnostics panel.
 
+use better_web_browser::renderer_protocol::{PointerButton, PointerPhase};
 use std::collections::VecDeque;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
@@ -40,6 +41,21 @@ impl Default for IncidentLog {
 }
 
 impl IncidentLog {
+    pub(super) fn record_pointer(
+        &mut self,
+        accepted: bool,
+        phase: PointerPhase,
+        button: PointerButton,
+        sequence: u64,
+    ) {
+        if accepted && phase != PointerPhase::Move {
+            self.record(
+                "input",
+                format!("pointer {phase:?}/{button:?} sequence {sequence}"),
+            );
+        }
+    }
+
     pub(super) fn record(&mut self, category: &'static str, detail: impl AsRef<str>) {
         let detail = detail
             .as_ref()

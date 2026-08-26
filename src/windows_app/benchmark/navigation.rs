@@ -1,6 +1,15 @@
 //! Hidden in-process navigation sequences for lifecycle regression coverage.
 
 use super::super::*;
+use better_web_browser::renderer_protocol::{
+    DocumentInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
+};
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::windows_app) enum BenchmarkNavigation {
+    Address(String),
+    ActivateLink(String),
+}
 
 impl BrowserState {
     pub(in crate::windows_app) fn schedule_benchmark_navigation(&mut self) -> bool {
@@ -18,12 +27,67 @@ impl BrowserState {
     pub(in crate::windows_app) unsafe fn run_benchmark_navigation(&mut self) {
         let target = self.benchmark.as_mut().and_then(|benchmark| {
             benchmark.navigation_scheduled = false;
+            benchmark.navigation_started = Some(Instant::now());
             (!benchmark.navigation_targets.is_empty())
                 .then(|| benchmark.navigation_targets.remove(0))
         });
         if let Some(target) = target {
-            self.begin_navigation(target, browser_navigation::HistoryMode::Push);
+            let result = match target {
+                BenchmarkNavigation::Address(url) => {
+                    self.begin_navigation(url, browser_navigation::HistoryMode::Push);
+                    Ok(())
+                }
+                BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
+            };
+            if let Err(error) = result {
+                if let Some(benchmark) = self.benchmark.as_mut() {
+                    benchmark.error = Some(error);
+                    benchmark.page_ready = benchmark.process_started.elapsed();
+                }
+                self.schedule_benchmark_finish();
+            }
         }
+    }
+
+    fn activate_benchmark_link(&mut self, expected_url: &str) -> Result<(), String> {
+        let (x, y, target) = self
+            .page_layout
+            .items
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::Text {
+                    rect,
+                    link: Some(url),
+                    node_id: Some(node),
+                    ..
+                } if url == expected_url => renderer_input::wire_node(*node).map(|target| {
+                    (
+                        rect.x + rect.width / 2.0,
+                        rect.y + rect.height / 2.0,
+                        target,
+                    )
+                }),
+                _ => None,
+            })
+            .ok_or_else(|| format!("benchmark link was not presented: {expected_url}"))?;
+        for phase in [PointerPhase::Down, PointerPhase::Up] {
+            let (document, sequence) = self
+                .next_renderer_input()
+                .ok_or_else(|| "benchmark link has no active renderer document".to_string())?;
+            if !self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+                document,
+                sequence,
+                phase,
+                button: PointerButton::Primary,
+                x,
+                y,
+                modifiers: InputModifiers::default(),
+                target: Some(target),
+            })) {
+                return Err("benchmark link activation was rejected by the renderer".into());
+            }
+        }
+        Ok(())
     }
 }
 
