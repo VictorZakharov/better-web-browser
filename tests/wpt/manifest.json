@@ -227,6 +227,11 @@
       "expected": "pass"
     },
     {
+      "path": "xhr/progressevent-constructor.html",
+      "area": "XMLHttpRequest",
+      "expected": "pass"
+    },
+    {
       "path": "fetch/api/headers/headers-basic.any.js",
       "area": "Fetch API",
       "expected": "pass"

@@ -1,15 +1,40 @@
 //! Broker-side ordering, quotas, and stale-document filtering for Fetch streams.
 
 use super::*;
-use crate::limits::{MAX_FETCH_STREAM_CHUNK_BYTES, MAX_RESPONSE_BODY_BYTES};
+use crate::limits::{
+    MAX_FETCH_STREAM_CHUNK_BYTES, MAX_RENDERER_FETCH_STREAM_BYTES, MAX_RESPONSE_BODY_BYTES,
+};
 use crate::renderer_protocol::FetchResponseResult;
+use crate::renderer_protocol::{FetchInitiator, RendererFetchRequest};
 
 pub(super) struct OutgoingFetch {
     offset: usize,
     allows_body: bool,
+    streaming: bool,
 }
 
 impl Broker {
+    pub(super) fn register_fetch_response_policies(
+        &mut self,
+        requests: &[RendererFetchRequest],
+    ) -> Result<(), ProtocolError> {
+        for request in requests {
+            if self
+                .fetch_response_streaming
+                .insert(
+                    request.head.request_id,
+                    request.head.initiator == FetchInitiator::ScriptApi,
+                )
+                .is_some()
+            {
+                return Err(ProtocolError::InvalidPayload(
+                    "renderer reused a pending Fetch response identifier",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn process_fetch_stream(&mut self) {
         for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
             if !self.writer().has_page_command_capacity() {
@@ -36,6 +61,10 @@ impl Broker {
                 if request_id == 0 || self.outgoing_fetch.contains_key(&request_id) {
                     return Err("duplicate Fetch response stream".into());
                 }
+                let streaming = self
+                    .fetch_response_streaming
+                    .remove(&request_id)
+                    .ok_or_else(|| "browser returned an unrequested Fetch response".to_string())?;
                 let allows_body = matches!(head.result, FetchResponseResult::Success { .. });
                 self.writer()
                     .send_browser(&BrowserMessage::FetchResponseStart(head))
@@ -45,6 +74,7 @@ impl Broker {
                     OutgoingFetch {
                         offset: 0,
                         allows_body,
+                        streaming,
                     },
                 );
             }
@@ -64,7 +94,12 @@ impl Broker {
                     || chunk.offset as usize != outgoing.offset
                     || chunk.bytes.is_empty()
                     || chunk.bytes.len() > MAX_FETCH_STREAM_CHUNK_BYTES
-                    || next > MAX_RESPONSE_BODY_BYTES
+                    || next
+                        > if outgoing.streaming {
+                            MAX_RENDERER_FETCH_STREAM_BYTES
+                        } else {
+                            MAX_RESPONSE_BODY_BYTES
+                        }
                 {
                     return Err("Fetch response stream chunk violated its contract".into());
                 }

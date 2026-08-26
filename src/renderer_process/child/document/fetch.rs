@@ -9,7 +9,8 @@ use crate::fetch::{
 use crate::renderer_protocol::{
     BrowserFetchErrorKind, BrowserFetchResponse, DocumentId, FetchCache, FetchCredentials,
     FetchInitiator, FetchMode, FetchRedirect, FetchReferrer, FetchReferrerPolicy, FetchRequestHead,
-    FetchResponseResult, FetchResponseType, RendererFetchRequest, ResourceDestination,
+    FetchResponseHead, FetchResponseResult, FetchResponseType, RendererFetchRequest,
+    ResourceDestination,
 };
 
 pub(super) fn page_resource_request(
@@ -147,6 +148,17 @@ pub(super) fn into_fetch_result(
             error.message,
         )),
     }
+}
+
+pub(super) fn into_fetch_head_result(head: FetchResponseHead) -> Result<FetchResponse, FetchError> {
+    into_fetch_result(BrowserFetchResponse {
+        head,
+        body: Vec::new(),
+    })
+}
+
+pub(super) fn into_fetch_error(error: crate::renderer_protocol::BrowserFetchError) -> FetchError {
+    FetchError::new(error_kind_from_wire(error.kind), error.message)
 }
 
 /// HTML delegates module-script MIME checking to the MIME Sniffing Standard's

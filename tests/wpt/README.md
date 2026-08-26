@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 80 curated cases run with one offline command:
+After the fixtures exist, all 81 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -52,15 +52,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 80 passing files
-and 570 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 81 passing files
+and 580 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 80 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 81 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -69,7 +69,7 @@ follows:
 | DOM and mutation | 5 | Owned nodes, lookup, names, and live mutation |
 | Events, Abort API, and event loop | 16 | Dispatch semantics, cancellation, listeners, and microtasks |
 | URLs | 5 | URL and URLSearchParams bindings |
-| Fetch and XMLHttpRequest | 30 | Headers, request/response objects, bodies, guards, and CORS-facing behavior |
+| Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
 | CSS cascade, selectors, and layout | 10 | Cascade, `:first-child`, flex display, and CSSOM geometry |
 | Forms | 2 | Form collections and select value behavior |

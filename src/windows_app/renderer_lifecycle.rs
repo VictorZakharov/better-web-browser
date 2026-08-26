@@ -113,6 +113,7 @@ impl BrowserState {
     pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
         let session = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_launch_receiver.take();
+            tab.renderer_clock_pending = false;
             tab.renderer_work_pending = false;
             tab.renderer_session.take()
         });

@@ -67,6 +67,9 @@ pub const MAX_CONTROL_PAYLOAD: usize = 256 * 1024;
 pub const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
 pub const MAX_FETCH_STREAM_CHUNK_BYTES: usize = 64 * 1024;
 pub const MAX_QUEUED_FETCH_STREAM_CHUNKS: usize = 8;
+/// Script API responses are delivered incrementally, so this is a total-transfer safety quota,
+/// not a resident-memory allocation. Buffered resources keep the smaller response-body limit.
+pub const MAX_RENDERER_FETCH_STREAM_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_FETCH_REQUESTS_PER_BATCH: usize = 256;
 pub const MAX_PARALLEL_RENDERER_FETCHES: usize = 8;
 pub const MAX_RENDERER_FETCH_BATCH_BODY_BYTES: usize = 32 * 1024 * 1024;

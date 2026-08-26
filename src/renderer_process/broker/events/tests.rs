@@ -16,6 +16,7 @@ fn presentation(revision: u64) -> RendererEvent {
     RendererEvent::Presentation(Box::new(RendererPresentation {
         document: DocumentId::new(1).unwrap(),
         revision,
+        clock_advanced: false,
         title: String::new(),
         final_url: "https://example.test/".into(),
         status: 200,
@@ -50,6 +51,7 @@ fn presentation(revision: u64) -> RendererEvent {
 fn runtime_update(scripts_executed: u64, console: &str) -> RendererEvent {
     RendererEvent::RuntimeUpdate(Box::new(RendererRuntimeUpdate {
         document: DocumentId::new(1).unwrap(),
+        clock_advanced: false,
         runtime: RuntimeReport {
             scripts_executed,
             console: vec![console.into()],
@@ -64,7 +66,12 @@ fn runtime_update(scripts_executed: u64, console: &str) -> RendererEvent {
 #[test]
 fn presentation_bursts_keep_only_the_newest_snapshot() {
     let (sender, receiver) = bounded();
-    sender.try_send(presentation(1)).unwrap();
+    let mut first = presentation(1);
+    let RendererEvent::Presentation(value) = &mut first else {
+        unreachable!()
+    };
+    value.clock_advanced = true;
+    sender.try_send(first).unwrap();
     sender
         .try_send(RendererEvent::Diagnostic {
             code: 7,
@@ -82,6 +89,7 @@ fn presentation_bursts_keep_only_the_newest_snapshot() {
         panic!("newest presentation was not retained");
     };
     assert_eq!(presentation.revision, 3);
+    assert!(presentation.clock_advanced);
     assert!(presentation.accessibility.full);
     assert_eq!(presentation.accessibility.nodes[0].name, "revision 3");
     assert_eq!(presentation.runtime.scripts_executed, 3);
@@ -99,7 +107,12 @@ fn presentation_bursts_keep_only_the_newest_snapshot() {
 #[test]
 fn adjacent_runtime_updates_coalesce_without_losing_ordered_output() {
     let (sender, receiver) = bounded();
-    sender.try_send(runtime_update(1, "first")).unwrap();
+    let mut first = runtime_update(1, "first");
+    let RendererEvent::RuntimeUpdate(value) = &mut first else {
+        unreachable!()
+    };
+    value.clock_advanced = true;
+    sender.try_send(first).unwrap();
     sender.try_send(runtime_update(2, "second")).unwrap();
 
     let RendererEvent::RuntimeUpdate(update) = receiver.try_recv().unwrap() else {
@@ -107,6 +120,7 @@ fn adjacent_runtime_updates_coalesce_without_losing_ordered_output() {
     };
     assert_eq!(update.runtime.scripts_executed, 3);
     assert_eq!(update.runtime.console, ["first", "second"]);
+    assert!(update.clock_advanced);
     assert!(receiver.try_recv().is_err());
 }
 

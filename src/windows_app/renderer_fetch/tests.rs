@@ -34,6 +34,7 @@ fn reconstructs_client_referrer_from_the_authoritative_document() {
         request.referrer,
         Referrer::Url(FetchUrl::parse("https://example.test/page").unwrap())
     );
+    assert_eq!(request.response_body_limit, MAX_RENDERER_FETCH_STREAM_BYTES);
 }
 
 #[test]

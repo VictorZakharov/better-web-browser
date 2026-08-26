@@ -347,7 +347,10 @@ fn encode_font(writer: &mut WireWriter, font: &FontSpec) -> Result<(), ProtocolE
 
 fn decode_font(reader: &mut WireReader<'_>) -> Result<FontSpec, ProtocolError> {
     let family = reader.string(MAX_FAMILY_BYTES)?;
-    let size = finite(reader.f32()?, 1.0, 768.0, "font size")?;
+    // CSS font sizes are non-negative and may legitimately be zero or subpixel-sized. Text
+    // rasterization applies its own implementation floor, but the checked wire contract must not
+    // reject valid computed values before the presentation reaches that boundary.
+    let size = finite(reader.f32()?, 0.0, 768.0, "font size")?;
     let weight = reader.u16()?;
     if !(1..=1000).contains(&weight) {
         return Err(ProtocolError::InvalidPayload("font weight"));

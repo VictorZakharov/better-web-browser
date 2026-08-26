@@ -139,6 +139,14 @@ pub(super) fn encode_renderer_document(
             writer.u64(*request_id);
             0x0108
         }
+        RendererMessage::FetchRequestAbort {
+            document,
+            request_id,
+        } => {
+            writer.u64(document.get());
+            writer.u64(*request_id);
+            0x010a
+        }
         RendererMessage::PresentationStart {
             document,
             revision,
@@ -162,6 +170,7 @@ pub(super) fn encode_renderer_document(
         }
         RendererMessage::RuntimeUpdate(update) => {
             writer.u64(update.document.get());
+            writer.bool(update.clock_advanced);
             encode_runtime(&mut writer, &update.runtime)?;
             encode_load(&mut writer, update.load);
             writer.bool(update.next_timer_micros.is_some());
@@ -226,6 +235,10 @@ pub(super) fn decode_renderer_document(
         },
         0x0106 => RendererMessage::FetchRequestChunk(decode_chunk(&mut reader)?),
         0x0108 => RendererMessage::FetchRequestEnd(nonzero(reader.u64()?, "Fetch request")?),
+        0x010a => RendererMessage::FetchRequestAbort {
+            document: DocumentId::new(reader.u64()?)?,
+            request_id: nonzero(reader.u64()?, "Fetch request")?,
+        },
         0x0112 => RendererMessage::PresentationStart {
             document: DocumentId::new(reader.u64()?)?,
             revision: nonzero(reader.u64()?, "presentation revision")?,
@@ -239,6 +252,7 @@ pub(super) fn decode_renderer_document(
         },
         0x0120 => RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
             document: DocumentId::new(reader.u64()?)?,
+            clock_advanced: reader.bool()?,
             runtime: decode_runtime(&mut reader)?,
             load: decode_load(&mut reader)?,
             next_timer_micros: reader.bool()?.then(|| reader.u64()).transpose()?,

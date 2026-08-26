@@ -156,6 +156,7 @@ impl BrowserState {
                 self.renderer_load_metrics = Some(metrics);
                 self.renderer_next_timer = None;
                 self.renderer_runtime_clock = Some(Instant::now());
+                self.renderer_clock_pending = false;
                 self.renderer_work_pending = true;
                 self.record_renderer_submission(document, body_length);
                 self.status_text = "Rendering in the isolated page process …".into();
@@ -293,8 +294,15 @@ impl BrowserState {
         self.navigation.mark_presented(presentation.document);
         self.crashed = false;
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
-        self.renderer_runtime_clock = Some(Instant::now());
-        self.renderer_work_pending = false;
+        if first_presentation || presentation.clock_advanced {
+            self.renderer_runtime_clock = Some(Instant::now());
+        }
+        if presentation.clock_advanced {
+            self.renderer_clock_pending = false;
+        }
+        // Every presentation completes one renderer task. A separately in-flight clock advance
+        // remains work until its clock-marked output arrives.
+        self.renderer_work_pending = self.renderer_clock_pending;
         self.renderer_input_poll_budget = 0;
 
         if first_presentation {

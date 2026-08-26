@@ -91,6 +91,16 @@ impl BrowserState {
                     }
                     self.begin_renderer_fetch_batch(id, document, requests);
                 }
+                RendererEvent::FetchAbort {
+                    document,
+                    request_id,
+                } => {
+                    if let Some(tab) = self.tabs.get_mut(id)
+                        && tab.navigation.owns_document(document)
+                    {
+                        tab.renderer_fetches.abort(document, request_id);
+                    }
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)
@@ -221,6 +231,7 @@ impl BrowserState {
                 let recovery = tab.navigation.renderer_exited();
                 if recovery.is_some() {
                     tab.renderer_session.take();
+                    tab.renderer_clock_pending = false;
                     tab.renderer_work_pending = false;
                     tab.pointer_cursor_request = None;
                     tab.pointer_cursor =
@@ -239,10 +250,18 @@ impl BrowserState {
                     return;
                 }
                 Some(PresentationDeadline::Failed) => {
-                    self.contain_page_engine_failure(
-                        id,
-                        "renderer exited before first paint after a clean retry".into(),
-                    );
+                    let detail = crash_surface
+                        .as_ref()
+                        .map(|surface| {
+                            format!(
+                                "renderer exited before first paint after a clean retry: {}",
+                                surface.detail
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            "renderer exited before first paint after a clean retry".into()
+                        });
+                    self.contain_page_engine_failure(id, detail);
                     return;
                 }
                 None => {}
@@ -289,12 +308,13 @@ impl BrowserState {
                             tab.reader_url.clone(),
                             tab.document_fetch.signal(),
                             session.fetch_response_sink(document),
+                            tab.renderer_fetches.clone(),
                         )
                     })
                 })
                 .flatten()
         });
-        let Some((document_url, signal, sink)) = context else {
+        let Some((document_url, signal, sink, registry)) = context else {
             return;
         };
         let result = renderer_fetch::spawn_fetch_batch(renderer_fetch::RendererFetchBatch {
@@ -304,6 +324,7 @@ impl BrowserState {
             requests,
             client: Arc::clone(&self.http_client),
             signal,
+            registry,
             sink,
             tab_router: self.app.tab_router.clone(),
         });

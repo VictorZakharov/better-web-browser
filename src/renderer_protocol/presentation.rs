@@ -32,6 +32,8 @@ pub struct RuntimeReport {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RendererRuntimeUpdate {
     pub document: DocumentId,
+    /// True only when this output completes a browser-requested monotonic clock advance.
+    pub clock_advanced: bool,
     pub runtime: RuntimeReport,
     pub load: PageLoadReport,
     pub next_timer_micros: Option<u64>,
@@ -120,6 +122,8 @@ pub struct PresentedGlyphRaster {
 pub struct RendererPresentation {
     pub document: DocumentId,
     pub revision: u64,
+    /// True only when this output completes a browser-requested monotonic clock advance.
+    pub clock_advanced: bool,
     pub title: String,
     pub final_url: String,
     pub status: u16,
@@ -160,6 +164,7 @@ mod tests {
         RendererPresentation {
             document: DocumentId::new(1).unwrap(),
             revision: 1,
+            clock_advanced: false,
             title: "glyphs".into(),
             final_url: url.clone(),
             status: 200,
@@ -291,6 +296,38 @@ mod tests {
         assert_eq!(decoded.load.presentation_decode_micros, 16);
         assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
         assert_eq!(decoded.accessibility, sample().accessibility);
+    }
+
+    #[test]
+    fn nonnegative_subpixel_font_sizes_round_trip_through_the_checked_codec() {
+        for size in [0.0, 0.25] {
+            let mut presentation = sample();
+            let DisplayItem::Text { font, .. } = &mut presentation.layout.items[0] else {
+                panic!("sample presentation should contain text");
+            };
+            font.size = size;
+
+            let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+            let DisplayItem::Text { font, .. } = &decoded.layout.items[0] else {
+                panic!("text item was not preserved");
+            };
+            assert_eq!(font.size, size);
+        }
+    }
+
+    #[test]
+    fn negative_font_sizes_still_fail_closed() {
+        let mut presentation = sample();
+        let DisplayItem::Text { font, .. } = &mut presentation.layout.items[0] else {
+            panic!("sample presentation should contain text");
+        };
+        font.size = -0.25;
+        let bytes = presentation.encode().unwrap();
+
+        assert!(matches!(
+            RendererPresentation::decode(&bytes),
+            Err(ProtocolError::InvalidPayload("font size"))
+        ));
     }
 
     #[test]

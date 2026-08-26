@@ -7,6 +7,12 @@
     const forbiddenMethods = new Set(['CONNECT', 'TRACE', 'TRACK']);
     const standardMethods = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT']);
     const responseTypes = new Set(['', 'arraybuffer', 'blob', 'document', 'json', 'text']);
+    const double = (value, fallback = 0) => {
+        if (value === undefined) return fallback;
+        const number = Number(value);
+        if (!Number.isFinite(number)) throw new TypeError('ProgressEvent values must be finite');
+        return number;
+    };
     const byteString = (value, description) => {
         if (typeof value === 'symbol') throw new TypeError(description + ' is not a ByteString');
         const string = String(value);
@@ -19,8 +25,8 @@
         constructor(type, init = {}) {
             super(type, init);
             this.__lengthComputable = !!init.lengthComputable;
-            this.__loaded = Math.max(0, Number(init.loaded) || 0);
-            this.__total = Math.max(0, Number(init.total) || 0);
+            this.__loaded = double(init.loaded);
+            this.__total = double(init.total);
         }
         get lengthComputable() { return this.__lengthComputable; }
         get loaded() { return this.__loaded; }
@@ -41,6 +47,13 @@
     const progress = (type, loaded = 0, total = 0) => markTrusted(new ProgressEvent(type, {
         lengthComputable: total > 0, loaded, total
     }));
+    const concatBytes = chunks => {
+        const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        return bytes;
+    };
     const normalizeMethod = value => {
         const method = String(value);
         if (!methodPattern.test(method)) throw new DOMException('Invalid HTTP method', 'SyntaxError');
@@ -223,16 +236,57 @@
             this.__responseURL = responseUrl(response.url); this.__responseHeaders = response.headers;
             this.__changeState(XMLHttpRequest.HEADERS_RECEIVED);
             this.__changeState(XMLHttpRequest.LOADING);
-            let bytes;
-            try { bytes = await response.bytes(); }
-            catch (_) { this.__requestError('error'); return; }
+            const chunks = [];
+            let loaded = 0;
+            let lastProgressLoaded = 0;
+            let lastProgressAt = -Infinity;
+            const total = Number(this.__responseHeaders.get('content-length')) || 0;
+            const reader = response.body?.getReader() || null;
+            const binaryResponse = this.__responseType === 'arraybuffer' || this.__responseType === 'blob';
+            const textResponse = !binaryResponse;
+            const decoder = new TextDecoder();
+            let streamedText = '';
+            try {
+                if (reader) {
+                    while (this.__send) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        if (!(value instanceof Uint8Array)) throw new TypeError('XHR body chunks must be bytes');
+                        const chunk = new Uint8Array(value);
+                        if (binaryResponse) chunks.push(chunk);
+                        loaded += chunk.length;
+                        if (textResponse) {
+                            streamedText += decoder.decode(chunk, { stream: true });
+                            if (this.__responseType === '' || this.__responseType === 'text')
+                                this.__responseText = streamedText;
+                        }
+                        const now = performance.now();
+                        if (now - lastProgressAt >= 50) {
+                            this.dispatchEvent(progress('progress', loaded, total));
+                            lastProgressLoaded = loaded; lastProgressAt = now;
+                        }
+                    }
+                }
+            } catch (error) {
+                if (this.__send) this.__requestError(error?.name === 'AbortError' ? 'abort' : 'error');
+                return;
+            }
             if (!this.__send) return;
+            // XHR throttles progress to roughly 50 ms, but end-of-body must expose the final
+            // byte count even when the last chunks arrived within one notification interval.
+            if (loaded !== lastProgressLoaded)
+                this.dispatchEvent(progress('progress', loaded, total));
             const contentType = this.__mime || this.__responseHeaders.get('content-type') || '';
-            const text = new TextDecoder().decode(bytes);
+            const text = textResponse ? streamedText + decoder.decode() : '';
             this.__responseText = text;
-            if (this.__responseType === 'arraybuffer')
+            if (this.__responseType === 'arraybuffer') {
+                const bytes = concatBytes(chunks);
                 this.__response = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            else if (this.__responseType === 'blob') this.__response = new Blob([bytes], { type: contentType });
+            } else if (this.__responseType === 'blob') {
+                // Blob performs the one required consolidation. Concatenating here first doubled
+                // peak memory and serialized several large speed-test responses on the JS thread.
+                this.__response = new Blob(chunks, { type: contentType });
+            }
             else if (this.__responseType === 'json') {
                 try { this.__response = JSON.parse(text); } catch (_) { this.__response = null; }
             } else if (this.__responseType === 'document') {
@@ -240,9 +294,7 @@
                 try { this.__response = this.__responseXML = parser?.parseFromString(text, contentType) || null; }
                 catch (_) { this.__response = this.__responseXML = null; }
             } else this.__response = text;
-            const total = Number(this.__responseHeaders.get('content-length')) || 0;
-            this.dispatchEvent(progress('progress', bytes.length, total));
-            this.__finishSuccess(bytes.length, total);
+            this.__finishSuccess(loaded, total);
         }
         abort() {
             const active = this.__send || this.__readyState === XMLHttpRequest.HEADERS_RECEIVED ||

@@ -19,6 +19,7 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
     let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
+    writer.bool(value.clock_advanced);
     writer.string(&value.title)?;
     writer.string(&value.final_url)?;
     writer.u16(value.status);
@@ -105,6 +106,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     if revision == 0 {
         return Err(ProtocolError::InvalidPayload("zero presentation revision"));
     }
+    let clock_advanced = reader.bool()?;
     let title = reader.string(MAX_RENDERED_TEXT_BYTES)?;
     let final_url = reader.string(MAX_URL_BYTES)?;
     let status = reader.u16()?;
@@ -214,6 +216,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     Ok(RendererPresentation {
         document,
         revision,
+        clock_advanced,
         title,
         final_url,
         status,

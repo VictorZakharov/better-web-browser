@@ -260,7 +260,8 @@
             response.__headers = new Headers(metadata.headers
                 .filter(([name]) => !['set-cookie', 'set-cookie2'].includes(String(name).toLowerCase())))
                 .__setGuard('immutable');
-            initializeBody(response, nullBody ? data.extractBody(null) : data.extractBody(body));
+            initializeBody(response, nullBody ? data.extractBody(null) :
+                body instanceof ReadableStream ? { bytes: null, stream: body, type: '' } : data.extractBody(body));
             return response;
         }
     }
