@@ -16,6 +16,8 @@ pub const MAX_CSS_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_CSS_RULES: usize = 20_000;
 pub const MAX_CSS_NESTING_DEPTH: usize = 64;
 pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 256;
+pub const MAX_ADOPTED_STYLESHEETS: usize = 256;
+pub const MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 
 pub const MAX_URL_BYTES: usize = 16 * 1024;
 pub const MAX_RESPONSE_BODY_BYTES: usize = 16 * 1024 * 1024;

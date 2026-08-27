@@ -254,6 +254,43 @@ fn stylesheet_text_mutation_forces_rule_rebuild_without_stale_style() {
     );
 }
 
+#[test]
+fn constructed_stylesheet_replacement_forces_rule_rebuild_without_stale_style() {
+    let mut page = Page::parse_scripted(
+        r#"<p id=target>text</p><script>
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync('#target{color:#102030}');
+            document.adoptedStyleSheets = [sheet];
+            setTimeout(() => sheet.replaceSync('#target{color:#abcdef}'), 2000);
+        </script>"#,
+        "https://example.com/",
+    );
+    let mut loader = |_url: &str, _kind: ScriptKind, _options: ScriptFetchOptions| {
+        Err("unexpected dynamic script".to_string())
+    };
+    let (runtime, initial) = page.start_first_paint_script_runtime_with_loader(&mut loader);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let mut runtime = runtime.unwrap();
+    page.refresh_resources(800.0);
+    let target = element_with_id(&page, "p", "target");
+    assert_eq!(
+        page.cached_style(800.0).unwrap().get(&target).color,
+        Color::rgb(0x10, 0x20, 0x30)
+    );
+
+    let outcome = runtime.advance_time(std::time::Duration::from_millis(500), 128);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.invalidation.rebuild_style_rules);
+    assert_eq!(outcome.invalidation.root, Some(page.dom.document.id()));
+    let stats = page.refresh_resources_after_invalidation(800.0, &outcome.invalidation);
+
+    assert!(stats.full_rebuild);
+    assert_eq!(
+        page.cached_style(800.0).unwrap().get(&target).color,
+        Color::rgb(0xab, 0xcd, 0xef)
+    );
+}
+
 fn solid_rect_y(items: &[DisplayItem], color: Color) -> f32 {
     items
         .iter()

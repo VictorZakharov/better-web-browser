@@ -15,6 +15,7 @@
     { "id": "media-fonts", "path": "/media-fonts.html", "role": "Images, SVG, and webfont loading", "early_scroll": false, "max_visual_difference": 0.15 },
     { "id": "async-mutation", "path": "/async-mutation.html", "role": "Asynchronous DOM mutation", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "custom-elements", "path": "/custom-elements.html", "role": "Autonomous custom-element component bootstrap", "early_scroll": false, "max_visual_difference": 0.16 },
-    { "id": "shadow-components", "path": "/shadow-components.html", "role": "Nested Shadow DOM, slots, scoped styles, and composed events", "early_scroll": false, "max_visual_difference": 0.20 }
+    { "id": "shadow-components", "path": "/shadow-components.html", "role": "Nested Shadow DOM, slots, scoped styles, and composed events", "early_scroll": false, "max_visual_difference": 0.20 },
+    { "id": "constructed-stylesheets", "path": "/constructed-stylesheets.html", "role": "Constructed CSSStyleSheet adoption, live rules, and Shadow DOM scoping", "early_scroll": false, "max_visual_difference": 0.12 }
   ]
 }

@@ -103,6 +103,14 @@ impl Page {
         for (source_url, css) in &self.stylesheet_sources {
             available_faces.extend(discover_font_faces(css, source_url));
         }
+        for root in Node::shadow_including_descendants(&self.dom.document) {
+            for stylesheet in root.adopted_stylesheets() {
+                available_faces.extend(discover_font_faces(
+                    &stylesheet.source,
+                    &stylesheet.base_url,
+                ));
+            }
+        }
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
         let invalidated_nodes = invalidation

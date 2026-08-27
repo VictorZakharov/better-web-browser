@@ -7,6 +7,7 @@ pub mod layout;
 pub mod page;
 pub mod scheduler;
 pub mod script;
+mod stylesheet;
 
 pub use css::StyleRefreshStats;
 pub use display_list::DisplayListDamage;
@@ -21,3 +22,4 @@ pub use script::{
     ScriptRuntime, ScriptWorkerAction, UserInputEvent, UserInputModifiers, UserInputResult,
     WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
+pub(crate) use stylesheet::AdoptedStyleSheet;
