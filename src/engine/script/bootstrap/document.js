@@ -33,6 +33,7 @@
         if (localName === 'progress') return HTMLProgressElement;
         if (localName === 'meter') return HTMLMeterElement;
         if (localName === 'template') return HTMLTemplateElement;
+        if (localName === 'slot') return HTMLSlotElement;
         if (localName === 'form') return HTMLFormElement;
         return knownHtmlElements.has(localName) || localName.includes('-')
             ? HTMLElement
@@ -147,7 +148,9 @@
             node = new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
         }
         else if (type === 10) node = new DocumentType(id, type, metadata[1], null, null);
-        else if (type === 11) node = new DocumentFragment(id, type, metadata[1], null, null);
+        else if (type === 11) node = metadata[4] === 'shadow'
+            ? new ShadowRoot(id, type, metadata[1], null, null, shadowRootConstructionToken)
+            : new DocumentFragment(id, type, metadata[1], null, null);
         else node = type === 8
             ? new Comment(id, type, metadata[1], null, null)
             : new Text(id, type, metadata[1], null, null);
@@ -197,6 +200,8 @@
     windowObject.Comment = Comment;
     windowObject.DocumentType = DocumentType;
     windowObject.DocumentFragment = DocumentFragment;
+    windowObject.ShadowRoot = ShadowRoot;
+    windowObject.HTMLSlotElement = HTMLSlotElement;
     windowObject.DOMImplementation = DOMImplementation;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;

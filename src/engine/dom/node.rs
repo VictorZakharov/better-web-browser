@@ -10,6 +10,21 @@ pub type NodeRef = Rc<Node>;
 
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowRootMode {
+    Open,
+    Closed,
+}
+
+impl ShadowRootMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
+}
+
 /// A stable, opaque node identity composed of its allocation namespace and local sequence number.
 /// The namespace remains stable when DOM adoption changes `ownerDocument`; values are never reused
 /// during the process lifetime and can cross an IPC boundary as a `u128`.
@@ -123,6 +138,7 @@ impl fmt::Debug for Node {
 #[derive(Debug)]
 pub enum NodeData {
     Document,
+    ShadowRoot(ShadowRootData),
     Doctype {
         name: String,
         public_id: String,
@@ -142,7 +158,17 @@ pub struct ElementData {
     pub name: QualName,
     pub attrs: RefCell<Vec<Attribute>>,
     pub template_contents: RefCell<Option<NodeRef>>,
+    pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,
+}
+
+#[derive(Debug)]
+pub struct ShadowRootData {
+    pub(super) host: Weak<Node>,
+    pub mode: ShadowRootMode,
+    pub delegates_focus: bool,
+    pub serializable: bool,
+    pub clonable: bool,
 }
 
 impl Node {
@@ -177,10 +203,10 @@ impl Node {
     pub(super) fn mark_mutated(&self) {
         let mut ancestors = Vec::new();
         let mut root_identity = Rc::clone(&self.identity);
-        let mut ancestor = self.parent();
+        let mut ancestor = self.shadow_including_parent();
         while let Some(node) = ancestor {
             root_identity = Rc::clone(&node.identity);
-            ancestor = node.parent();
+            ancestor = node.shadow_including_parent();
             ancestors.push(node);
         }
         let version = root_identity.bump_mutation_version();
@@ -238,6 +264,18 @@ impl Node {
         let upgraded = parent.as_ref().and_then(Weak::upgrade);
         self.parent.set(parent);
         upgraded
+    }
+
+    pub fn shadow_host(&self) -> Option<NodeRef> {
+        match &self.data {
+            NodeData::ShadowRoot(shadow) => shadow.host.upgrade(),
+            _ => None,
+        }
+    }
+
+    pub fn shadow_root(&self) -> Option<NodeRef> {
+        self.element()
+            .and_then(|element| element.shadow_root.borrow().clone())
     }
 
     pub fn text_content(&self) -> String {

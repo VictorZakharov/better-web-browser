@@ -26,6 +26,7 @@ impl Node {
 fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> NodeRef {
     let data = match &source.data {
         NodeData::Document => NodeData::Document,
+        NodeData::ShadowRoot(_) => NodeData::Document,
         NodeData::Doctype {
             name,
             public_id,
@@ -51,6 +52,9 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
                     .as_ref()
                     .map(|_| Node::new_in(Rc::clone(&identity), NodeData::Document)),
             ),
+            // DOM cloning excludes an attached shadow tree unless the separate clonable-shadow
+            // algorithm is explicitly requested. cloneNode() therefore starts without one.
+            shadow_root: RefCell::new(None),
             mathml_annotation_xml_integration_point: element
                 .mathml_annotation_xml_integration_point,
         }),

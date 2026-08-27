@@ -124,6 +124,7 @@ fn push_children(stack: &mut Vec<WorkItem>, parent: &NodeRef, depth: usize) {
 fn append_node_line(output: &mut String, node: &NodeRef, depth: usize) {
     let description = match &node.data {
         NodeData::Document => "#document".to_string(),
+        NodeData::ShadowRoot(_) => "#shadow-root".to_string(),
         NodeData::Doctype {
             name,
             public_id,

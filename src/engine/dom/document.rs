@@ -109,6 +109,9 @@ impl Dom {
                 return Some(node);
             }
             stack.extend(node.children.borrow().iter().rev().cloned());
+            if let Some(shadow) = node.shadow_root() {
+                stack.push(shadow);
+            }
             if let Some(contents) = node
                 .element()
                 .and_then(|element| element.template_contents.borrow().clone())

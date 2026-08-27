@@ -34,6 +34,7 @@ mod network;
 mod render_invalidation;
 mod runtime;
 mod runtime_guard;
+mod shadow_host;
 mod style_cache;
 mod style_host;
 mod text_encoding_host;

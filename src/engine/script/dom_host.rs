@@ -284,6 +284,7 @@ fn node_type(state: &HostState, node: Option<&NodeRef>) -> u8 {
         NodeData::Element(_) => 1,
         NodeData::Text(_) => 3,
         NodeData::Comment(_) => 8,
+        NodeData::ShadowRoot(_) => 11,
         NodeData::Document if is_document_root(state, node) => 9,
         NodeData::Document => 11,
         NodeData::Doctype { .. } => 10,
@@ -296,6 +297,7 @@ fn node_name(state: &HostState, node: &NodeRef) -> String {
         NodeData::Element(_) => element_qualified_name(state, node),
         NodeData::Text(_) => "#text".to_string(),
         NodeData::Comment(_) => "#comment".to_string(),
+        NodeData::ShadowRoot(_) => "#document-fragment".to_string(),
         NodeData::Document if is_document_root(state, node) => "#document".to_string(),
         NodeData::Document => "#document-fragment".to_string(),
         NodeData::Doctype { name, .. } => name.clone(),
@@ -305,11 +307,16 @@ fn node_name(state: &HostState, node: &NodeRef) -> String {
 
 fn node_metadata(state: &HostState, node: &NodeRef) -> String {
     format!(
-        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
         node_type(state, Some(node)),
         node_name(state, node),
         node.tag_name().unwrap_or_default(),
         node.namespace_uri().unwrap_or_default(),
+        if matches!(node.data, NodeData::ShadowRoot(_)) {
+            "shadow"
+        } else {
+            ""
+        },
     )
 }
 

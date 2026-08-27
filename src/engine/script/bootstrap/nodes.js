@@ -35,6 +35,7 @@
         get ownerDocument() { return wrap(host('ownerDocument', this.__id)); }
         get parentNode() { return wrap(host('parent', this.__id)); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }
+        get assignedSlot() { return wrap(host('assignedSlot', this.__id)); }
         get firstChild() { return wrap(host('firstChild', this.__id)); }
         get lastChild() { return wrap(host('lastChild', this.__id)); }
         get nextSibling() { return wrap(host('nextSibling', this.__id)); }
@@ -53,15 +54,11 @@
             host('textSet', this.__id, value == null ? '' : String(value));
             for (const child of removedChildren) disconnectCustomElementTree(child);
             queueMutationRecord(this, characterData ? 'characterData' : 'childList', { oldValue });
+            scheduleSlotChangeCheck();
             if (namedAccessChanged) refreshWindowNamedProperties();
         }
         get isConnected() {
-            let node = this;
-            while (node) {
-                if (node.nodeType === 9) return true;
-                node = node.parentNode;
-            }
-            return false;
+            return this.getRootNode({ composed: true })?.nodeType === 9;
         }
         appendChild(child) {
             if (!(child instanceof Node)) throw new TypeError('appendChild requires a Node');
@@ -69,6 +66,7 @@
             const inserted = wrap(host('appendChild', this.__id, child.__id));
             if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
+            if (inserted) scheduleSlotChangeCheck();
             return inserted;
         }
         append(...items) {
@@ -89,6 +87,7 @@
             const inserted = wrap(host('insertBefore', this.__id, child.__id, reference?.__id || 0));
             if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
+            if (inserted) scheduleSlotChangeCheck();
             return inserted;
         }
         removeChild(child) {
@@ -97,6 +96,7 @@
             if (!(child instanceof Node) || !host('removeChild', this.__id, child.__id)) throw new Error('node is not a child');
             if (wasConnected) disconnectCustomElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties();
+            scheduleSlotChangeCheck();
             return child;
         }
         remove() {
@@ -106,12 +106,14 @@
                 disconnectCustomElementTree(this);
                 refreshWindowNamedProperties();
             }
+            if (removed) scheduleSlotChangeCheck();
         }
         contains(other) {
             for (let node = other; node; node = node.parentNode) if (node === this) return true;
             return false;
         }
         hasChildNodes() { return !!this.firstChild; }
+        getRootNode(options = {}) { return wrap(host('rootNode', this.__id, !!Object(options).composed)); }
         querySelector(selector) { return wrap(host('query', this.__id, String(selector))); }
         querySelectorAll(selector) { return list(host('queryAll', this.__id, String(selector))); }
         cloneNode(deep = false) {

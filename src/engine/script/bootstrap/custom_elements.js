@@ -63,6 +63,8 @@
             if (node instanceof Element) elements.push(node);
             const children = node.childNodes;
             for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
+            const shadowRoot = shadowRootForTraversal(node);
+            if (shadowRoot) pending.push(shadowRoot);
         }
         return elements;
     };

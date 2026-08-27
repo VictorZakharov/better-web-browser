@@ -28,6 +28,8 @@
     let disconnectCustomElementTree = () => {};
     let adoptCustomElementTree = () => {};
     let customElementAttributeChanged = () => {};
+    let scheduleSlotChangeCheck = () => {};
+    let shadowRootForTraversal = () => null;
     let constructCustomElement = () => { throw new TypeError('Illegal constructor'); };
     const list = value => {
         if (!value) return [];

@@ -42,6 +42,7 @@ impl Node {
                 name: QualName::new(prefix, namespace, LocalName::from(local_name)),
                 attrs: RefCell::new(Vec::new()),
                 template_contents: RefCell::new(template_contents),
+                shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             }),
         )
@@ -57,6 +58,7 @@ impl Node {
                 name: QualName::new(None, ns!(html), LocalName::from(local_name.clone())),
                 attrs: RefCell::new(Vec::new()),
                 template_contents: RefCell::new(template_contents),
+                shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             }),
         )
@@ -190,15 +192,20 @@ impl Node {
     }
 
     pub fn replace_inner_html(node: &NodeRef, html: &str, scripting_enabled: bool) {
-        let Some(context) = node.element() else {
+        let context_node = node.shadow_host().unwrap_or_else(|| node.clone());
+        let Some(context) = context_node.element() else {
             clear_children(node);
             return;
         };
-        let target = context
-            .template_contents
-            .borrow()
-            .clone()
-            .unwrap_or_else(|| node.clone());
+        let target = if node.shadow_host().is_some() {
+            node.clone()
+        } else {
+            context
+                .template_contents
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| node.clone())
+        };
         let sink = Dom::with_identity(Rc::clone(&node.identity));
         let identity = Rc::clone(&sink.identity);
         let start_nodes = identity.allocated_nodes();

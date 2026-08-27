@@ -195,6 +195,7 @@ impl HostState {
         while let Some(node) = stack.pop() {
             self.owner_documents.insert(node.id(), owner_identity);
             stack.extend(node.children.borrow().iter().rev().cloned());
+            stack.extend(node.shadow_root());
             if let Some(contents) = node
                 .element()
                 .and_then(|element| element.template_contents.borrow().clone())
@@ -214,6 +215,7 @@ impl HostState {
             self.owner_documents.insert(node.id(), owner_identity);
             self.id_for(&node);
             stack.extend(node.children.borrow().iter().rev().cloned());
+            stack.extend(node.shadow_root());
             if let Some(contents) = node
                 .element()
                 .and_then(|element| element.template_contents.borrow().clone())
@@ -287,7 +289,7 @@ impl HostState {
                 connected = true;
                 break;
             }
-            current = node.parent();
+            current = node.shadow_including_parent();
         }
         connected
     }
@@ -358,7 +360,7 @@ impl HostState {
             if node.id() == self.document.id() {
                 return true;
             }
-            current = node.parent();
+            current = node.shadow_including_parent();
         }
         false
     }
