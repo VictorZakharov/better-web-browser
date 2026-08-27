@@ -13,6 +13,7 @@
     { "id": "forms-storage", "path": "/forms-storage.html", "role": "Forms and Web Storage", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "layout-matrix", "path": "/layout-matrix.html", "role": "Flex, grid, table, and float layout", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "media-fonts", "path": "/media-fonts.html", "role": "Images, SVG, and webfont loading", "early_scroll": false, "max_visual_difference": 0.15 },
-    { "id": "async-mutation", "path": "/async-mutation.html", "role": "Asynchronous DOM mutation", "early_scroll": false, "max_visual_difference": 0.12 }
+    { "id": "async-mutation", "path": "/async-mutation.html", "role": "Asynchronous DOM mutation", "early_scroll": false, "max_visual_difference": 0.12 },
+    { "id": "custom-elements", "path": "/custom-elements.html", "role": "Autonomous custom-element component bootstrap", "early_scroll": false, "max_visual_difference": 0.16 }
   ]
 }

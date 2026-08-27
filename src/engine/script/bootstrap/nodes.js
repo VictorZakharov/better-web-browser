@@ -1,3 +1,19 @@
+    const insertionRecords = child => {
+        // A standards-compliant fragment insertion moves its children and empties the fragment,
+        // so lifecycle state must be captured before crossing the host boundary.
+        const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
+        return nodes.map(node => ({ node, wasConnected: node.isConnected, oldDocument: node.ownerDocument }));
+    };
+    const finishInsertion = records => withCustomElementReactions(() => {
+        for (const { node, wasConnected, oldDocument } of records) {
+            if (wasConnected) disconnectCustomElementTree(node);
+            if (oldDocument !== node.ownerDocument)
+                adoptCustomElementTree(node, oldDocument, node.ownerDocument);
+            if (node.isConnected) connectCustomElementTree(node);
+            else upgradeCustomElementTree(node);
+        }
+    });
+
     class Node extends EventTarget {
         constructor(id, type, name, localName, namespaceURI) {
             super();
@@ -33,7 +49,9 @@
             const characterData = this.nodeType === 3;
             const oldValue = characterData ? this.textContent : null;
             const namedAccessChanged = this.isConnected && this.firstElementChild !== null;
+            const removedChildren = !characterData && this.isConnected ? [...this.childNodes] : [];
             host('textSet', this.__id, value == null ? '' : String(value));
+            for (const child of removedChildren) disconnectCustomElementTree(child);
             queueMutationRecord(this, characterData ? 'characterData' : 'childList', { oldValue });
             if (namedAccessChanged) refreshWindowNamedProperties();
         }
@@ -47,7 +65,9 @@
         }
         appendChild(child) {
             if (!(child instanceof Node)) throw new TypeError('appendChild requires a Node');
+            const records = insertionRecords(child);
             const inserted = wrap(host('appendChild', this.__id, child.__id));
+            if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
             return inserted;
         }
@@ -65,19 +85,27 @@
         insertBefore(child, reference) {
             if (!(child instanceof Node)) throw new TypeError('insertBefore requires a Node');
             if (reference != null && !(reference instanceof Node)) throw new TypeError('reference must be a Node');
+            const records = insertionRecords(child);
             const inserted = wrap(host('insertBefore', this.__id, child.__id, reference?.__id || 0));
+            if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
             return inserted;
         }
         removeChild(child) {
             const namedAccessChanged = this.isConnected;
+            const wasConnected = child instanceof Node && child.isConnected;
             if (!(child instanceof Node) || !host('removeChild', this.__id, child.__id)) throw new Error('node is not a child');
+            if (wasConnected) disconnectCustomElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties();
             return child;
         }
         remove() {
             const namedAccessChanged = this.isConnected;
-            if (host('remove', this.__id) && namedAccessChanged) refreshWindowNamedProperties();
+            const removed = host('remove', this.__id);
+            if (removed && namedAccessChanged) {
+                disconnectCustomElementTree(this);
+                refreshWindowNamedProperties();
+            }
         }
         contains(other) {
             for (let node = other; node; node = node.parentNode) if (node === this) return true;
@@ -86,7 +114,11 @@
         hasChildNodes() { return !!this.firstChild; }
         querySelector(selector) { return wrap(host('query', this.__id, String(selector))); }
         querySelectorAll(selector) { return list(host('queryAll', this.__id, String(selector))); }
-        cloneNode(deep = false) { return wrap(host('cloneNode', this.__id, !!deep)); }
+        cloneNode(deep = false) {
+            const clone = wrap(host('cloneNode', this.__id, !!deep));
+            upgradeCustomElementTree(clone);
+            return clone;
+        }
     }
 
     class Text extends Node {

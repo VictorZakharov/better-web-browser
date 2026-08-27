@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Component Newsroom</title><link rel="stylesheet" href="/common.css"><style>
+component-card { display: block; } component-card .status { margin-top: 12px; } .component-summary { margin-bottom: 20px; }
+</style></head><body><header class="site-header"><h1>Component Newsroom</h1><p>Reusable autonomous elements upgrade parsed and script-created content</p></header><main id="main" class="page"><section class="hero"><h2>Morning briefing</h2><p class="component-summary">The component registry must populate every card and deliver later attribute updates.</p></section><section id="component-grid" class="cards"><component-card data-title="Standards foundation" data-state="Ready">Live DOM wrappers preserve component identity.</component-card><component-card data-title="Lifecycle delivery" data-state="Ready">Connected and attribute callbacks run in order.</component-card></section><p id="fixture-status">Loading</p></main><footer class="site-footer">Deterministic component bootstrap fixture</footer>
+<script>
+class ComponentCard extends HTMLElement {
+  static get observedAttributes() { return ['data-title', 'data-state']; }
+  connectedCallback() {
+    if (this.querySelector('.card')) return;
+    const description = this.textContent.trim();
+    this.innerHTML = '<article class="card"><h3></h3><p class="description"></p><p class="status"><span class="badge"></span></p></article>';
+    this.querySelector('.description').textContent = description;
+    this.renderAttributes();
+  }
+  attributeChangedCallback() { this.renderAttributes(); }
+  renderAttributes() {
+    const title = this.querySelector('h3');
+    const state = this.querySelector('.badge');
+    if (title) title.textContent = this.getAttribute('data-title') || '';
+    if (state) state.textContent = this.getAttribute('data-state') || '';
+  }
+}
+customElements.define('component-card', ComponentCard);
+const created = document.createElement('component-card');
+created.setAttribute('data-title', 'Script-created card');
+created.setAttribute('data-state', 'Starting');
+created.textContent = 'Document APIs construct the registered component immediately.';
+document.getElementById('component-grid').appendChild(created);
+setTimeout(() => created.setAttribute('data-state', 'Ready'), 40);
+</script><script src="/fixture.js"></script></body></html>
