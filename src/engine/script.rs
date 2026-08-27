@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
+mod cssom_host;
 mod dom_host;
 mod dynamic_scripts;
 mod execution;

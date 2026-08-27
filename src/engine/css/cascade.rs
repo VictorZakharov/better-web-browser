@@ -1,6 +1,7 @@
 //! Style-set construction and cascade ordering.
 
 mod presentational;
+mod sheets;
 #[cfg(test)]
 mod tests;
 
@@ -111,46 +112,12 @@ impl StyleSet {
     ) -> Self {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
-        let mut rules = Vec::new();
-        let mut next_order = 0_u32;
-        for style_element in
-            dom::Node::descendants(document).filter(|node| node.tag_name() == Some("style"))
-        {
-            parse_stylesheet(
-                &style_element.text_content(),
-                document_base_url,
-                viewport_width,
-                &mut next_order,
-                &mut rules,
-                RuleScope::Document,
-            );
-        }
-        for (source_url, stylesheet) in external_stylesheets {
-            parse_stylesheet(
-                stylesheet,
-                source_url,
-                viewport_width,
-                &mut next_order,
-                &mut rules,
-                RuleScope::Document,
-            );
-        }
-        for shadow in Node::shadow_including_descendants(document)
-            .filter(|node| matches!(node.data, NodeData::ShadowRoot(_)))
-        {
-            for style_element in
-                Node::descendants(&shadow).filter(|node| node.tag_name() == Some("style"))
-            {
-                parse_stylesheet(
-                    &style_element.text_content(),
-                    document_base_url,
-                    viewport_width,
-                    &mut next_order,
-                    &mut rules,
-                    RuleScope::Shadow(shadow.id()),
-                );
-            }
-        }
+        let rules = sheets::collect(
+            document,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+        );
         let rule_index = RuleIndex::new(&rules);
         Self {
             styles: HashMap::new(),

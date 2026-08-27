@@ -1,5 +1,6 @@
 //! DOM node identity, data model, read access, and traversal.
 
+use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
 use std::cell::{Cell, RefCell};
 use std::fmt;
@@ -121,6 +122,7 @@ pub struct Node {
     subtree_mutation_version: Cell<u64>,
     pub parent: Cell<Option<Weak<Node>>>,
     pub children: RefCell<Vec<NodeRef>>,
+    adopted_stylesheets: RefCell<Vec<AdoptedStyleSheet>>,
     pub data: NodeData,
 }
 
@@ -184,8 +186,21 @@ impl Node {
             subtree_mutation_version: Cell::new(0),
             parent: Cell::new(None),
             children: RefCell::new(Vec::new()),
+            adopted_stylesheets: RefCell::new(Vec::new()),
             data,
         })
+    }
+
+    pub(crate) fn adopted_stylesheets(&self) -> Vec<AdoptedStyleSheet> {
+        self.adopted_stylesheets.borrow().clone()
+    }
+
+    pub(crate) fn set_adopted_stylesheets(&self, stylesheets: Vec<AdoptedStyleSheet>) {
+        if *self.adopted_stylesheets.borrow() == stylesheets {
+            return;
+        }
+        *self.adopted_stylesheets.borrow_mut() = stylesheets;
+        self.mark_mutated();
     }
 
     pub fn id(&self) -> NodeId {

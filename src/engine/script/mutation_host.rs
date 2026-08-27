@@ -350,7 +350,8 @@ fn child_list_kind(root: &NodeRef) -> MutationKind<'static> {
 }
 
 fn subtree_contains_style(root: &NodeRef) -> bool {
-    Node::descendants(root).any(|node| node.tag_name() == Some("style"))
+    Node::shadow_including_descendants(root)
+        .any(|node| node.tag_name() == Some("style") || !node.adopted_stylesheets().is_empty())
 }
 
 fn contains_ascii_tag(html: &str, tag: &str) -> bool {

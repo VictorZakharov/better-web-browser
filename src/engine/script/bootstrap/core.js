@@ -1,6 +1,6 @@
 (() => {
     'use strict';
-    const host = (...args) => __hostCall(...args);
+    const host = function () { return __hostCall.apply(null, arguments); };
     const isolatedIframeWindow = globalThis.__iframeWindow;
     delete globalThis.__iframeWindow;
     if (typeof String.prototype.substr !== 'function') {

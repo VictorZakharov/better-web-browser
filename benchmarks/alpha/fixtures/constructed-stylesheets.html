@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Constructed stylesheet components</title>
+  <link rel="stylesheet" href="/common.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Constructed stylesheet components</h1>
+    <p>Shared document themes, isolated component styles, and live rule replacement</p>
+  </header>
+  <main id="main" class="page">
+    <section class="constructed-hero">
+      <span class="constructed-badge">CSSOM ready</span>
+      <h2>One stylesheet can theme a complete document</h2>
+      <p>Constructed sheets preserve object identity while their rules update every adopter.</p>
+    </section>
+    <section class="constructed-grid">
+      <article class="constructed-card">
+        <h3>Document adoption</h3>
+        <p>The first sheet is appended through the observable adopted stylesheet array.</p>
+      </article>
+      <theme-card id="component">
+        <strong slot="title">Shadow adoption</strong>
+        <span>Scoped rules style this content through a component boundary.</span>
+      </theme-card>
+      <article class="constructed-card" id="live-card">
+        <h3>Live replacement</h3>
+        <p id="fixture-status">Waiting for asynchronous stylesheet replacement</p>
+      </article>
+    </section>
+  </main>
+  <footer class="site-footer">Deterministic constructable stylesheet fixture</footer>
+  <script>
+    const documentSheet = new CSSStyleSheet({ media: 'screen' });
+    documentSheet.replaceSync(`
+      .constructed-hero { background: #e7f1fa; border: 1px solid #8cb9dc;
+        border-radius: 10px; padding: 26px; margin-bottom: 22px; }
+      .constructed-hero h2 { margin: 8px 0; color: #17324d; }
+      .constructed-badge { display: inline-block; padding: 3px 10px;
+        border-radius: 12px; background: #dff4e6; color: #185c32; font-weight: 700; }
+      .constructed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .constructed-card { background: white; border: 1px solid #d5dde8;
+        border-radius: 8px; padding: 18px; }
+      .constructed-card h3 { margin-top: 0; color: #175f9e; }
+    `);
+    document.adoptedStyleSheets.push(documentSheet);
+
+    const component = document.getElementById('component');
+    const root = component.attachShadow({ mode: 'open' });
+    root.innerHTML = '<article><h3><slot name="title"></slot></h3><p><slot></slot></p></article>';
+    const componentSheet = new CSSStyleSheet();
+    componentSheet.replaceSync(`
+      :host { display: block; }
+      article { height: 100%; background: #f0fdf4; border: 1px solid #86c69a;
+        border-radius: 8px; padding: 18px; }
+      h3 { margin-top: 0; color: #176b35; }
+    `);
+    root.adoptedStyleSheets = [componentSheet];
+
+    const liveSheet = new CSSStyleSheet();
+    document.adoptedStyleSheets.push(liveSheet);
+    liveSheet.replace('#live-card { border-color: #c29b45; background: #fff9e8; }')
+      .then(sheet => {
+        sheet.cssRules[0].style.setProperty('box-shadow', '0 2px 8px #d9c58a');
+        document.getElementById('fixture-status').textContent =
+          'Asynchronous replacement and live CSSRule editing passed';
+        document.documentElement.dataset.fixtureReady = 'true';
+      });
+  </script>
+</body>
+</html>
