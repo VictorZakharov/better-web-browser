@@ -223,6 +223,8 @@ jobs:
         run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
       - name: Build Chromium baseline harness
         run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
+      - name: Test shadow-aware Chromium capture classifier
+        run: dotnet run --project benchmarks/chromium-tests/ChromiumBaseline.Tests.csproj -c Release
       - name: Run deterministic public-alpha matrix headlessly
         shell: pwsh
         run: >-

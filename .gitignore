@@ -2,6 +2,8 @@
 /benchmark-results/
 /benchmarks/chromium/bin/
 /benchmarks/chromium/obj/
+/benchmarks/chromium-tests/bin/
+/benchmarks/chromium-tests/obj/
 /fuzz/artifacts/
 /fuzz/coverage/
 /fuzz/target/

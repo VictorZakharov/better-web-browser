@@ -7,6 +7,8 @@ internal static class BrowserScripts
           url: location.href,
           bodyTextLength: (document.body?.innerText || '').trim().length,
           elementCount: document.querySelectorAll('*').length,
+          browserErrorSurface: location.protocol === 'chrome-error:' ||
+            document.documentURI.startsWith('chrome-error://'),
           documentHeight: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0),
           fixtureReady: document.documentElement.dataset.fixtureReady === 'true',
           innerWidth: window.innerWidth,

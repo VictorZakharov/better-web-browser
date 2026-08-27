@@ -97,7 +97,7 @@ internal sealed class Options
         };
     }
 
-    private static string FindChrome()
+    internal static string FindChrome()
     {
         var programFiles = new[]
         {
