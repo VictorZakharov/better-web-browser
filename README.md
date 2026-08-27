@@ -64,7 +64,7 @@ from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against nine deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against eleven deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3

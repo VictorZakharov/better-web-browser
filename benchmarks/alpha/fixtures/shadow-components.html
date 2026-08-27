@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Shadow component newsroom</title>
+  <link rel="stylesheet" href="/common.css">
+  <style>
+    shadow-news { display: block; }
+    .component-summary { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <h1>Shadow component newsroom</h1>
+    <p>Nested roots, distributed content, scoped styles, and composed events</p>
+  </header>
+  <main id="main" class="page">
+    <section class="hero">
+      <h2>Component platform contract</h2>
+      <p class="component-summary">The visible card below is assembled through the composed tree.</p>
+    </section>
+    <shadow-news id="news">
+      <h3 class="headline" slot="heading">Standards foundation</h3>
+      <p>Light DOM remains queryable by its host while slots control where it is painted.</p>
+    </shadow-news>
+    <p id="fixture-status">Checking component behavior</p>
+  </main>
+  <footer class="site-footer">Deterministic nested Shadow DOM fixture</footer>
+  <script>
+    const news = document.getElementById('news');
+    const root = news.attachShadow({ mode: 'open' });
+    root.innerHTML = '<style>:host { display: block; } article { border: 1px solid #bfdbfe; border-radius: 12px; padding: 22px; background: #eff6ff; } header { display: flex; justify-content: space-between; align-items: center; } ::slotted(.headline) { color: #1d4ed8; margin: 0; } button { margin-top: 12px; padding: 8px 14px; }</style><article><header><slot name="heading"></slot><status-chip></status-chip></header><slot></slot><button type="button">Verify event path</button></article>';
+    const chip = root.querySelector('status-chip');
+    const chipRoot = chip.attachShadow({ mode: 'closed' });
+    chipRoot.innerHTML = '<style>:host { display: inline-block; } span { font-weight: 700; color: #065f46; }</style><span>Ready</span>';
+
+    const button = root.querySelector('button');
+    let retargeted = false;
+    news.addEventListener('click', event => { retargeted = event.target === news; }, { once: true });
+    button.dispatchEvent(new Event('click', { bubbles: true, composed: true }));
+    const update = document.createElement('p');
+    update.textContent = 'Dynamic light content was redistributed without replacing the host.';
+    news.appendChild(update);
+    const slots = root.querySelectorAll('slot');
+    const valid = root.getElementById('missing') === null &&
+      document.querySelector('status-chip') === null && chip.shadowRoot === null &&
+      slots[0].assignedElements()[0] === news.querySelector('.headline') &&
+      slots[1].assignedElements().length === 2 && retargeted;
+    document.getElementById('fixture-status').textContent =
+      valid ? 'Shadow DOM checks passed' : 'Shadow DOM checks failed';
+    document.documentElement.dataset.fixtureReady = 'true';
+  </script>
+</body>
+</html>

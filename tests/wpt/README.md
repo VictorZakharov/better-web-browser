@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 83 curated cases run with one offline command:
+After the fixtures exist, all 86 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -52,15 +52,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 83 passing files
-and 595 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 86 passing files
+and 610 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 83 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 86 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -75,6 +75,7 @@ follows:
 | Forms | 2 | Form collections and select value behavior |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
 | Custom Elements | 1 | Registry isolation, definition lookup, and when-defined promises |
+| Shadow DOM | 3 | Root connectivity, detached slot assignment, and composed event retargeting |
 
 The revision `f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476` (2026-08-14 upstream commit)
 is pinned by full hash so sparse preparation and later offline runs are reproducible. Selection is
