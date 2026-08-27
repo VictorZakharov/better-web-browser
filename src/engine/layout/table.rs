@@ -38,18 +38,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
 pub(super) fn table_rows(node: &NodeRef) -> Vec<NodeRef> {
     let mut rows = Vec::new();
-    let mut stack = node
-        .children
-        .borrow()
-        .iter()
+    let mut stack = Node::composed_children(node)
+        .into_iter()
         .rev()
-        .cloned()
         .collect::<Vec<_>>();
     while let Some(candidate) = stack.pop() {
         if candidate.tag_name() == Some("tr") {
             rows.push(candidate);
         } else if matches!(candidate.tag_name(), Some("thead" | "tbody" | "tfoot")) {
-            stack.extend(candidate.children.borrow().iter().rev().cloned());
+            stack.extend(Node::composed_children(&candidate).into_iter().rev());
         }
     }
     rows

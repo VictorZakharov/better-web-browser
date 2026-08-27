@@ -1,4 +1,5 @@
 use super::support::*;
+use better_web_browser::engine::{ControlKind, DisplayItem};
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
     DocumentInput, FocusInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
@@ -227,6 +228,74 @@ fn renderer_publishes_bounded_semantics_and_incremental_focus_and_value_updates(
     session.shutdown().expect("shutdown renderer");
 }
 
+#[test]
+fn composed_tree_drives_accessibility_hit_testing_and_event_retargeting() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let initial = load_html_document(
+        &session,
+        122,
+        r#"<!doctype html><title>Shadow interaction</title>
+        <x-panel id="host"><h2 slot="heading">Slotted heading</h2></x-panel>
+        <p id="output">waiting</p>
+        <script>
+          const host = document.querySelector('#host');
+          const root = host.attachShadow({ mode: 'open' });
+          root.innerHTML = '<section><slot name="heading"></slot><button type="button">Shadow action</button></section>';
+          host.addEventListener('click', event => {
+            document.querySelector('#output').textContent =
+              event.target === host ? 'retargeted' : 'leaked';
+          });
+        </script>"#,
+    );
+
+    assert!(
+        initial
+            .accessibility
+            .nodes
+            .iter()
+            .any(|node| { node.role == SemanticRole::Heading && node.name == "Slotted heading" })
+    );
+    assert!(
+        initial
+            .accessibility
+            .nodes
+            .iter()
+            .any(|node| { node.role == SemanticRole::Button && node.name == "Shadow action" })
+    );
+    let button = initial
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Control(control) if control.kind == ControlKind::Button => {
+                Some(control.rect)
+            }
+            _ => None,
+        })
+        .expect("shadow button layout target");
+
+    acknowledge(&session, &initial);
+    session
+        .send_input(DocumentInput::Pointer(PointerInput {
+            document: initial.document,
+            sequence: 1,
+            phase: PointerPhase::Activate,
+            button: PointerButton::Primary,
+            x: button.x + button.width / 2.0,
+            y: button.y + button.height / 2.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
+        .unwrap();
+
+    let updated = wait_for_text(&session, initial.document, "retargeted");
+    assert!(!presentation_text(&updated).contains("leaked"));
+    session.shutdown().expect("shutdown renderer");
+}
+
 fn node_with_role(
     update: &better_web_browser::renderer_protocol::AccessibilityUpdate,
     role: SemanticRole,
@@ -268,4 +337,37 @@ fn wait_for_presentation(
             event => panic!("unexpected accessibility renderer event: {event:?}"),
         }
     }
+}
+
+fn wait_for_text(
+    session: &RendererSession,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    expected: &str,
+) -> better_web_browser::renderer_protocol::RendererPresentation {
+    loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                if presentation_text(&presentation).contains(expected) {
+                    return *presentation;
+                }
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            event => panic!("unexpected shadow renderer event: {event:?}"),
+        }
+    }
+}
+
+fn presentation_text(
+    presentation: &better_web_browser::renderer_protocol::RendererPresentation,
+) -> String {
+    presentation
+        .layout
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

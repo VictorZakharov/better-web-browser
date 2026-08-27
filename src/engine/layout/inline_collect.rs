@@ -63,7 +63,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             }
                             let mut children = Vec::new();
                             let mut child_pending_space = false;
-                            for child in node.children.borrow().iter() {
+                            for child in Node::composed_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),
@@ -82,7 +82,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             {
                                 output.push(InlineAtom::Break);
                             }
-                            for child in node.children.borrow().iter() {
+                            for child in Node::composed_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),
@@ -97,7 +97,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                                 output.push(InlineAtom::Break);
                             }
                         } else {
-                            for child in node.children.borrow().iter() {
+                            for child in Node::composed_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),

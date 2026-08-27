@@ -45,6 +45,39 @@ fn important_author_rules_beat_normal_inline_styles() {
 }
 
 #[test]
+fn scopes_shadow_rules_and_inherits_through_slots_in_the_composed_tree() {
+    let dom = dom::parse(
+        r#"<style>.inside { color: red } .light { font-size: 11px }</style>
+            <x-card id="host" class="theme"><span class="light">Light</span></x-card>"#,
+    );
+    let host = dom.elements_named("x-card").next().unwrap();
+    let light = dom.elements_named("span").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        r#"<style>:host(.theme) { color: #123456 } .inside { color: green }
+            ::slotted(.light) { font-size: 24px }</style>
+            <div class="inside">Shadow</div><slot></slot>"#,
+        true,
+    );
+    let inside = Node::descendants(&root)
+        .find(|node| node.has_class("inside"))
+        .unwrap();
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+
+    assert_eq!(styles.get(&host).color, Color::rgb(0x12, 0x34, 0x56));
+    assert_eq!(styles.get(&inside).color, Color::rgb(0, 128, 0));
+    assert_eq!(styles.get(&light).font_size, 24.0);
+}
+
+#[test]
 fn resolves_author_relative_font_sizes_against_the_parent() {
     let dom = dom::parse(
         r#"<style>

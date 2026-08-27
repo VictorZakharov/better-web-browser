@@ -298,3 +298,47 @@ fn paints_block_level_replaced_images_at_their_specified_size() {
             if url.ends_with("logo.png") && rect.width == 40.0 && rect.height == 20.0)
     }));
 }
+
+#[test]
+fn renders_shadow_content_and_assigned_nodes_once_in_composed_order() {
+    let mut page = Page::parse(
+        r#"<x-card><strong slot="title">Light title</strong><span>Light body</span></x-card>
+            <p>After</p>"#,
+        "https://example.com/",
+    );
+    let host = page.dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        r#"<style>.frame { display: block }</style><div class="frame">
+            <slot name="title">Fallback title</slot><slot>Fallback body</slot>
+        </div>"#,
+        true,
+    );
+    page.refresh_resources(800.0);
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+    let text = output
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(normalized.contains("Light title"), "{text}");
+    assert!(normalized.contains("Light body"), "{text}");
+    assert!(text.contains("After"), "{text}");
+    assert!(!text.contains("Fallback"), "{text}");
+    assert_eq!(normalized.matches("Light title").count(), 1, "{text}");
+}

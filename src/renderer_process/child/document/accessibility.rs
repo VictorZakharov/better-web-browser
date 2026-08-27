@@ -128,7 +128,7 @@ fn collect_bounds(
         })
         .collect::<Vec<_>>();
     let mut used = vec![false; images.len()];
-    for node in Node::descendants(&page.dom.document)
+    for node in Node::composed_descendants(&page.dom.document)
         .filter(|node| matches!(node.tag_name(), Some("img" | "image" | "svg")))
     {
         let alternative = node
@@ -147,10 +147,10 @@ fn collect_bounds(
         }
     }
 
-    let descendants = Node::descendants(&page.dom.document).collect::<Vec<_>>();
+    let descendants = Node::composed_descendants(&page.dom.document).collect::<Vec<_>>();
     for node in descendants.iter().rev() {
         if let Some(rect) = bounds.get(&node.id()).copied()
-            && let Some(parent) = node.parent()
+            && let Some(parent) = Node::composed_parent(node)
         {
             union_bound(&mut bounds, parent.id(), rect);
         }
@@ -195,7 +195,7 @@ fn build_nodes(
     let included =
         node.id() == page.dom.document.id() || (role.is_some() && bounds.contains_key(&node.id()));
     let mut children = Vec::new();
-    for child in node.children.borrow().iter() {
+    for child in Node::composed_children(node).iter() {
         children.extend(build_nodes(
             child,
             page,
