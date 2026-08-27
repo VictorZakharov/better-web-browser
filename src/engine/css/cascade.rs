@@ -1,7 +1,12 @@
-//! Style-set construction, cascade ordering, and presentational hints.
+//! Style-set construction and cascade ordering.
+
+mod presentational;
+#[cfg(test)]
+mod tests;
 
 use super::rule_index::RuleIndex;
 use super::*;
+use presentational::apply_presentational_hints;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StyleRefreshStats {
@@ -117,6 +122,7 @@ impl StyleSet {
                 viewport_width,
                 &mut next_order,
                 &mut rules,
+                RuleScope::Document,
             );
         }
         for (source_url, stylesheet) in external_stylesheets {
@@ -126,7 +132,24 @@ impl StyleSet {
                 viewport_width,
                 &mut next_order,
                 &mut rules,
+                RuleScope::Document,
             );
+        }
+        for shadow in Node::shadow_including_descendants(document)
+            .filter(|node| matches!(node.data, NodeData::ShadowRoot(_)))
+        {
+            for style_element in
+                Node::descendants(&shadow).filter(|node| node.tag_name() == Some("style"))
+            {
+                parse_stylesheet(
+                    &style_element.text_content(),
+                    document_base_url,
+                    viewport_width,
+                    &mut next_order,
+                    &mut rules,
+                    RuleScope::Shadow(shadow.id()),
+                );
+            }
         }
         let rule_index = RuleIndex::new(&rules);
         Self {
@@ -145,9 +168,8 @@ impl StyleSet {
 
     pub(crate) fn computed_style_for_node(&mut self, node: &NodeRef) -> Option<&ComputedStyle> {
         if !self.styles.contains_key(&node_id(node)) {
-            let mut ancestors =
-                std::iter::successors(Some(node.clone()), |current| current.parent())
-                    .collect::<Vec<_>>();
+            let mut ancestors = std::iter::successors(Some(node.clone()), Node::composed_parent)
+                .collect::<Vec<_>>();
             ancestors.reverse();
             let mut parent_style = None;
             for ancestor in ancestors {
@@ -185,20 +207,22 @@ impl StyleSet {
         requested_root: &NodeRef,
         removed_nodes: &[NodeId],
     ) -> StyleRefreshStats {
-        let root = if is_descendant_of(requested_root, document) {
-            requested_root.clone()
+        let requested_root = requested_root
+            .shadow_host()
+            .unwrap_or_else(|| requested_root.clone());
+        let root = if is_descendant_of(&requested_root, document) {
+            requested_root
         } else {
             document.clone()
         };
-        let parent_style = root
-            .parent()
+        let parent_style = Node::composed_parent(&root)
             .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
         let mut stats = StyleRefreshStats::default();
         self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
 
         // A node may be removed and reinserted before the rendering checkpoint. Its identifier
         // remains in the removal log, but its newly recomputed style must remain available.
-        let connected_nodes = Node::descendants(document)
+        let connected_nodes = Node::shadow_including_descendants(document)
             .map(|node| node_id(&node))
             .collect::<HashSet<_>>();
         stats.removed_styles = removed_nodes
@@ -217,7 +241,8 @@ impl StyleSet {
             let style = if node_id(&node) == root {
                 self.compute_style(&node, parent)
             } else {
-                let parent = node.parent().expect("connected subtree child has a parent");
+                let parent = Node::composed_parent(&node)
+                    .expect("connected composed-tree child has a parent");
                 let parent_style = self
                     .styles
                     .get(&node_id(&parent))
@@ -225,7 +250,7 @@ impl StyleSet {
                 self.compute_style(&node, Some(parent_style))
             };
             self.styles.insert(node_id(&node), style);
-            pending.extend(node.children.borrow().iter().rev().cloned());
+            pending.extend(Node::composed_children(&node).into_iter().rev());
         }
     }
 
@@ -241,7 +266,8 @@ impl StyleSet {
             let style = if node_id(&node) == root {
                 self.compute_style(&node, parent)
             } else {
-                let parent = node.parent().expect("connected subtree child has a parent");
+                let parent = Node::composed_parent(&node)
+                    .expect("connected composed-tree child has a parent");
                 let parent_style = self
                     .styles
                     .get(&node_id(&parent))
@@ -262,7 +288,7 @@ impl StyleSet {
                 _ => {}
             }
             self.styles.insert(node_id(&node), style);
-            pending.extend(node.children.borrow().iter().rev().cloned());
+            pending.extend(Node::composed_children(&node).into_iter().rev());
         }
     }
 
@@ -275,6 +301,7 @@ impl StyleSet {
             .candidates(node)
             .into_iter()
             .filter_map(|index| self.rules.get(index))
+            .filter(|rule| rule_applies_to(rule, node))
             .filter(|rule| selector_matches(&rule.selector, node))
             .collect::<Vec<_>>();
         matching.sort_by(|left, right| {
@@ -348,103 +375,23 @@ impl StyleSet {
 }
 
 fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
-    std::iter::successors(Some(node.clone()), |current| current.parent())
-        .any(|current| current.id() == ancestor.id())
+    std::iter::successors(Some(node.clone()), |current| {
+        current.shadow_including_parent()
+    })
+    .any(|current| current.id() == ancestor.id())
 }
 
-fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedStyle) {
-    if let Some(align) = node.attr("align") {
-        style.text_align = match align.to_ascii_lowercase().as_str() {
-            "center" | "middle" => TextAlign::Center,
-            "right" => TextAlign::End,
-            _ => TextAlign::Start,
-        };
-    }
-    if node.attr("nowrap").is_some() {
-        style.white_space = WhiteSpace::NoWrap;
-    }
-    if style.width == Length::Auto
-        && let Some(width) = node
-            .attr("width")
-            .and_then(|value| parse_html_length(&value))
-    {
-        style.width = width;
-    }
-    if style.height == Length::Auto
-        && let Some(height) = node
-            .attr("height")
-            .and_then(|value| parse_html_length(&value))
-    {
-        style.height = height;
-    }
-    if let Some(color) = node.attr("color").and_then(|value| parse_color(&value)) {
-        style.color = color;
-    }
-    if let Some(background) = node.attr("bgcolor").and_then(|value| parse_color(&value)) {
-        style.background_color = background;
-    }
-    if node.tag_name() == Some("font") {
-        if let Some(face) = node.attr("face") {
-            style.font_family = first_font_family(&face);
+fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {
+    match rule.scope {
+        RuleScope::Document => !matches!(Node::tree_root(node).data, NodeData::ShadowRoot(_)),
+        RuleScope::Shadow(root) => Node::tree_root(node).id() == root,
+        RuleScope::Host(root) => node.shadow_root().is_some_and(|shadow| shadow.id() == root),
+        RuleScope::Slotted(root) => {
+            Node::assigned_slot(node).is_some_and(|slot| Node::tree_root(&slot).id() == root)
         }
-        if let Some(size) = node
-            .attr("size")
-            .and_then(|value| value.parse::<i32>().ok())
-        {
-            const LEGACY_SIZES: [f32; 7] = [10.0, 13.0, 16.0, 18.0, 24.0, 32.0, 48.0];
-            style.font_size = LEGACY_SIZES[(size.clamp(1, 7) - 1) as usize];
-            style.line_height = style.font_size * 1.2;
-        }
-    }
-}
-
-fn parse_html_length(value: &str) -> Option<Length> {
-    let value = value.trim();
-    if let Some(percent) = value.strip_suffix('%') {
-        percent.parse::<f32>().ok().map(Length::Percent)
-    } else {
-        value
-            .trim_end_matches("px")
-            .parse::<f32>()
-            .ok()
-            .map(Length::Px)
     }
 }
 
 fn node_id(node: &NodeRef) -> NodeId {
     node.id()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::limits::MAX_DOM_DEPTH;
-
-    #[test]
-    fn computes_the_bounded_maximum_dom_depth_without_recursive_style_walks() {
-        let mut html = String::from("<main>");
-        for _ in 0..MAX_DOM_DEPTH + 32 {
-            html.push_str("<div>");
-        }
-        for _ in 0..MAX_DOM_DEPTH + 32 {
-            html.push_str("</div>");
-        }
-        let dom = dom::parse(&html);
-        let node_count = Node::descendants(&dom.document).count();
-        let styles = StyleSet::from_dom(&dom, &[], 800.0);
-
-        assert_eq!(styles.styles.len(), node_count);
-    }
-
-    #[test]
-    fn lazily_hydrates_a_newly_connected_subtree() {
-        let dom = dom::parse("<main></main>");
-        let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
-        let main = dom.elements_named("main").next().unwrap();
-        let child = Node::create_element_for(&dom.document, "section");
-        assert!(Node::append_child(&main, child.clone()));
-
-        assert!(styles.computed_style_for_node(&child).is_some());
-        assert!(styles.styles.contains_key(&child.id()));
-    }
 }

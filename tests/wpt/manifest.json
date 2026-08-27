@@ -422,6 +422,21 @@
       "expected": "pass"
     },
     {
+      "path": "dom/nodes/Node-isConnected-shadow-dom.html",
+      "area": "Shadow DOM",
+      "expected": "pass"
+    },
+    {
+      "path": "shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html",
+      "area": "Shadow DOM",
+      "expected": "pass"
+    },
+    {
+      "path": "shadow-dom/event-inside-shadow-tree.html",
+      "area": "Shadow DOM",
+      "expected": "pass"
+    },
+    {
       "path": "custom-elements/registries/scoped-registry-registry-define-get-etc.html",
       "area": "Custom Elements",
       "expected": "pass"

@@ -43,6 +43,9 @@ fn dispatch_host_call(
     if let Some(value) = super::dom_host::dom_host_call(operation, args, context, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::shadow_host::shadow_host_call(operation, args, context, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::style_host::style_host_call(operation, args, context, state)? {
         return Ok(value);
     }

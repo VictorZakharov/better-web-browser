@@ -9,12 +9,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         style: &ComputedStyle,
     ) -> f32 {
-        let has_direct_text = node.children.borrow().iter().any(
+        let composed_children = Node::composed_children(node);
+        let has_direct_text = composed_children.iter().any(
             |child| matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()),
         );
-        let element_children = node
-            .children
-            .borrow()
+        let element_children = composed_children
             .iter()
             .filter(|child| {
                 child.element().is_some()
@@ -76,7 +75,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> f32 {
         let mut atoms = Vec::new();
         let mut pending_space = false;
-        for child in node.children.borrow().iter() {
+        for child in Node::composed_children(node).iter() {
             self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
         }
         let alignment = if style.justify_content_end || style.float == Float::Right {
@@ -119,7 +118,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             let mut atoms = Vec::new();
             let mut pending_space = false;
-            for child in node.children.borrow().iter() {
+            for child in Node::composed_children(node).iter() {
                 self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
             }
             self.begin_inline_measurement_context();

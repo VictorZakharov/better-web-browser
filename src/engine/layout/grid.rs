@@ -37,7 +37,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let mut placements = Vec::new();
         let mut automatic_index = 0_usize;
-        for child in node.children.borrow().iter() {
+        for child in Node::composed_children(node).iter() {
             if child.element().is_none() {
                 continue;
             }

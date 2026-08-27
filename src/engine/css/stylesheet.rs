@@ -12,6 +12,15 @@ pub(super) struct Rule {
     pub(super) declarations: Vec<Declaration>,
     pub(super) order: u32,
     pub(super) base_url: String,
+    pub(super) scope: RuleScope,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RuleScope {
+    Document,
+    Shadow(NodeId),
+    Host(NodeId),
+    Slotted(NodeId),
 }
 
 #[derive(Debug, Clone)]
@@ -27,10 +36,11 @@ pub(super) fn parse_stylesheet(
     viewport_width: f32,
     next_order: &mut u32,
     output: &mut Vec<Rule>,
+    scope: RuleScope,
 ) {
     let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
     let css = strip_comments(css);
-    parse_rule_list(&css, base_url, viewport_width, next_order, output, 0);
+    parse_rule_list(&css, base_url, viewport_width, next_order, output, scope, 0);
 }
 
 pub(super) fn parse_rule_list(
@@ -39,6 +49,7 @@ pub(super) fn parse_rule_list(
     viewport_width: f32,
     next_order: &mut u32,
     output: &mut Vec<Rule>,
+    scope: RuleScope,
     nesting_depth: usize,
 ) {
     if nesting_depth >= MAX_CSS_NESTING_DEPTH || output.len() >= MAX_CSS_RULES {
@@ -66,6 +77,7 @@ pub(super) fn parse_rule_list(
                     viewport_width,
                     next_order,
                     output,
+                    scope,
                     nesting_depth + 1,
                 );
             }
@@ -77,6 +89,7 @@ pub(super) fn parse_rule_list(
                     viewport_width,
                     next_order,
                     output,
+                    scope,
                     nesting_depth + 1,
                 );
             }
@@ -86,12 +99,18 @@ pub(super) fn parse_rule_list(
                 if output.len() >= MAX_CSS_RULES {
                     break;
                 }
-                if let Some(selector) = parse_selector(selector_text.trim()) {
+                let Some((selector_text, rule_scope)) =
+                    scoped_selector(selector_text.trim(), scope)
+                else {
+                    continue;
+                };
+                if let Some(selector) = parse_selector(selector_text) {
                     output.push(Rule {
                         selector,
                         declarations: declarations.clone(),
                         order: *next_order,
                         base_url: base_url.to_string(),
+                        scope: rule_scope,
                     });
                     *next_order = next_order.wrapping_add(1);
                 }
@@ -99,6 +118,33 @@ pub(super) fn parse_rule_list(
         }
         cursor = close + 1;
     }
+}
+
+fn scoped_selector(selector: &str, scope: RuleScope) -> Option<(&str, RuleScope)> {
+    let RuleScope::Shadow(root) = scope else {
+        return Some((selector, scope));
+    };
+    if selector == ":host" {
+        return Some(("*", RuleScope::Host(root)));
+    }
+    if let Some(condition) = selector
+        .strip_prefix(":host(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Some((condition.trim(), RuleScope::Host(root)));
+    }
+    if let Some(slotted) = selector
+        .strip_prefix("::slotted(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Some((slotted.trim(), RuleScope::Slotted(root)));
+    }
+    // Complex :host/::slotted selectors need selector-tree boundary representation. Ignoring
+    // them is safer than leaking a shadow rule into the document tree.
+    if selector.contains(":host") || selector.contains("::slotted") {
+        return None;
+    }
+    Some((selector, scope))
 }
 
 pub(super) fn strip_comments(css: &str) -> String {

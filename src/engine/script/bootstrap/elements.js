@@ -5,10 +5,36 @@
         get prefix() { return host('prefix', this.__id); }
         get id() { return this.getAttribute('id') || ''; }
         set id(value) { this.setAttribute('id', value); }
+        get slot() { return this.getAttribute('slot') || ''; }
+        set slot(value) { this.setAttribute('slot', value); }
         get className() { return this.getAttribute('class') || ''; }
         set className(value) { this.setAttribute('class', value); }
         get classList() { return this.__classList ||= new DOMTokenList(this, 'class'); }
         get style() { return this.__style ||= styleProxy(this); }
+        attachShadow(init) {
+            if (init == null) throw new TypeError('attachShadow requires an options dictionary');
+            init = Object(init);
+            const mode = String(init.mode);
+            if (mode !== 'open' && mode !== 'closed') throw new TypeError('mode must be open or closed');
+            const slotAssignment = init.slotAssignment === undefined ? 'named' : String(init.slotAssignment);
+            if (slotAssignment !== 'named')
+                throw new DOMException('Manual slot assignment is not implemented', 'NotSupportedError');
+            const validBuiltIn = new Set([
+                'article', 'aside', 'blockquote', 'body', 'div', 'footer', 'h1', 'h2', 'h3',
+                'h4', 'h5', 'h6', 'header', 'main', 'nav', 'p', 'section', 'span'
+            ]).has(this.localName);
+            const validCustomName = /^[a-z][.0-9_a-z-]*-[.0-9_a-z-]*$/.test(this.localName) &&
+                !new Set(['annotation-xml', 'color-profile', 'font-face', 'font-face-src',
+                    'font-face-uri', 'font-face-format', 'font-face-name', 'missing-glyph']).has(this.localName);
+            if (this.namespaceURI !== htmlNamespace || (!validBuiltIn && !validCustomName))
+                throw new DOMException('This element cannot host a shadow tree', 'NotSupportedError');
+            const root = wrap(host('attachShadow', this.__id, mode, !!init.delegatesFocus,
+                !!init.serializable, !!init.clonable));
+            if (!root) throw new DOMException('This element already hosts a shadow tree', 'NotSupportedError');
+            scheduleSlotChangeCheck();
+            return root;
+        }
+        get shadowRoot() { return wrap(host('shadowRoot', this.__id)); }
         get innerHTML() { return host('innerHtmlGet', this.__id); }
         set innerHTML(value) {
             const wasConnected = this.isConnected;
@@ -20,6 +46,7 @@
                 else upgradeCustomElementTree(child);
             }
             if (wasConnected) refreshWindowNamedProperties();
+            scheduleSlotChangeCheck();
         }
         get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
         set outerHTML(value) {
@@ -46,6 +73,7 @@
             const current = recordByQualifiedName(this, name);
             queueAttributeMutation(this, current, oldValue);
             maybeRefreshNamedProperties(this, current.namespace, current.localName);
+            scheduleSlotChangeCheck();
         }
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
@@ -56,6 +84,7 @@
             const current = recordByNamespace(this, extracted.namespace, extracted.localName);
             queueAttributeMutation(this, current, oldValue);
             maybeRefreshNamedProperties(this, current.namespace, current.localName);
+            scheduleSlotChangeCheck();
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
@@ -66,6 +95,7 @@
             detachAttribute(this, record, attribute);
             queueAttributeMutation(this, record, record.value);
             maybeRefreshNamedProperties(this, record.namespace, record.localName);
+            scheduleSlotChangeCheck();
         }
         removeAttributeNS(namespace, localName) {
             const record = recordByNamespace(this, namespace, localName);
@@ -75,6 +105,7 @@
             detachAttribute(this, record, attribute);
             queueAttributeMutation(this, record, record.value);
             maybeRefreshNamedProperties(this, record.namespace, record.localName);
+            scheduleSlotChangeCheck();
         }
         hasAttribute(name) { return host('attrHas', this.__id, normalizedQualifiedName(this, name)); }
         hasAttributeNS(namespace, localName) {

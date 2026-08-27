@@ -200,10 +200,47 @@
             if (event.__immediate) break;
         }
     };
+    const shadowIncludingContains = (ancestor, node) => {
+        if (!(ancestor instanceof Node) || !(node instanceof Node)) return false;
+        for (let current = node; current; current = current.parentNode ||
+            (current instanceof ShadowRoot ? current.host : null)) {
+            if (current === ancestor) return true;
+        }
+        return false;
+    };
+    const retarget = (target, against) => {
+        let adjusted = target;
+        while (adjusted instanceof Node) {
+            const root = adjusted.getRootNode();
+            if (!(root instanceof ShadowRoot) ||
+                (against instanceof Node && shadowIncludingContains(root, against))) return adjusted;
+            adjusted = root.host;
+        }
+        return adjusted;
+    };
+    const closedShadowHidden = (node, currentTarget) => {
+        if (!(node instanceof Node)) return false;
+        let root = node.getRootNode();
+        while (root instanceof ShadowRoot) {
+            if (root.mode === 'closed' && !shadowIncludingContains(root, currentTarget)) return true;
+            root = root.host.getRootNode();
+        }
+        return false;
+    };
+    Event.prototype.composedPath = function() {
+        return this.__path.filter(node => !closedShadowHidden(node, this.__currentTarget));
+    };
     const eventParent = (target, event) => {
         if (!(target instanceof Node)) return null;
+        if (target.assignedSlot) return target.assignedSlot;
         const parent = target.parentNode;
         if (parent) return parent;
+        if (target instanceof ShadowRoot) {
+            const targetRoot = event.__originalTarget instanceof Node
+                ? event.__originalTarget.getRootNode()
+                : null;
+            return event.composed || targetRoot !== target ? target.host : null;
+        }
         if (target.nodeType === 9 && event.type !== 'load') return target.defaultView;
         return null;
     };
@@ -282,21 +319,28 @@
                 throw new DOMException('The event is already being dispatched or is not initialized', 'InvalidStateError');
             const target = receiverFor(storageFor(this));
             event.__dispatching = true;
+            event.__originalTarget = target;
             event.__target = target;
             try {
                 const path = eventPath(target, event);
                 event.__path = [...path];
-                for (let index = path.length - 1; index > 0; index--)
+                for (let index = path.length - 1; index > 0; index--) {
+                    event.__target = retarget(target, path[index]);
                     invokeListeners(path[index], event, Event.CAPTURING_PHASE, true);
+                }
                 // The target participates in both listener passes even when the event does not
                 // bubble; both passes expose AT_TARGET.
+                event.__target = target;
                 invokeListeners(target, event, Event.AT_TARGET, true);
                 invokeListeners(target, event, Event.AT_TARGET, false);
                 if (event.bubbles) {
-                    for (let index = 1; index < path.length; index++)
+                    for (let index = 1; index < path.length; index++) {
+                        event.__target = retarget(target, path[index]);
                         invokeListeners(path[index], event, Event.BUBBLING_PHASE, false);
+                    }
                 }
             } finally {
+                event.__target = target;
                 event.__phase = Event.NONE;
                 event.__currentTarget = null;
                 event.__path = [];

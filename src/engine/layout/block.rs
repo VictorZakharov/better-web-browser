@@ -302,7 +302,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 no_wrap: false,
             });
         }
-        for child in node.children.borrow().iter() {
+        for child in Node::composed_children(node).iter() {
             if y >= float_bottom {
                 left_float_width = 0.0;
                 right_float_width = 0.0;

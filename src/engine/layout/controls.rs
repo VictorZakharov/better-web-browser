@@ -353,7 +353,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 text.push_str(&value.borrow());
                 return;
             }
-            for child in node.children.borrow().iter() {
+            for child in Node::composed_children(node).iter() {
                 append(engine, child, text);
             }
         }
@@ -364,27 +364,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     fn control_mask_icon(&self, node: &NodeRef) -> Option<(String, f32, f32)> {
-        Node::descendants(node).skip(1).find_map(|descendant| {
-            let style = self.styles.get(&descendant);
-            let url = style.mask_image.as_ref()?;
-            let image = self.page.images.get(url)?;
-            Some((
-                url.clone(),
-                element_length(
-                    &descendant,
-                    "width",
-                    style.width,
-                    image.width as f32,
-                    style.font_size,
-                ),
-                element_length(
-                    &descendant,
-                    "height",
-                    style.height,
-                    image.height as f32,
-                    style.font_size,
-                ),
-            ))
-        })
+        Node::composed_descendants(node)
+            .skip(1)
+            .find_map(|descendant| {
+                let style = self.styles.get(&descendant);
+                let url = style.mask_image.as_ref()?;
+                let image = self.page.images.get(url)?;
+                Some((
+                    url.clone(),
+                    element_length(
+                        &descendant,
+                        "width",
+                        style.width,
+                        image.width as f32,
+                        style.font_size,
+                    ),
+                    element_length(
+                        &descendant,
+                        "height",
+                        style.height,
+                        image.height as f32,
+                        style.font_size,
+                    ),
+                ))
+            })
     }
 }

@@ -108,8 +108,8 @@ impl Page {
         let invalidated_nodes = invalidation
             .root
             .and_then(|root| self.dom.find_node(root))
-            .map(|root| Node::descendants(&root).count())
-            .unwrap_or_else(|| Node::descendants(&self.dom.document).count());
+            .map(|root| Node::shadow_including_descendants(&root).count())
+            .unwrap_or_else(|| Node::shadow_including_descendants(&self.dom.document).count());
         let cached = self.cached_styles.take();
         let (mut styles, style_stats) = match cached {
             Some((cached_width, cached_height, mut styles))
@@ -165,7 +165,7 @@ impl Page {
             .collect::<HashSet<_>>();
         let mut requested_faces = Vec::<(String, u16, bool)>::new();
         let mut discovered_style_images = 0_usize;
-        for node in Node::descendants(&self.dom.document) {
+        for node in Node::shadow_including_descendants(&self.dom.document) {
             // Dynamic DOM work can connect a previously detached subtree at a rendering
             // checkpoint. Hydrate any missing ancestor chain defensively instead of letting a
             // stale incremental root turn untrusted page input into a browser-process panic.

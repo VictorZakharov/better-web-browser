@@ -24,7 +24,7 @@ pub use values::{
     Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, TextAlign, WhiteSpace,
 };
 
-use super::dom::{self, Dom, Node, NodeId, NodeRef};
+use super::dom::{self, Dom, Node, NodeData, NodeId, NodeRef};
 pub(crate) use cssom::resolved_property_value;
 use cssparser::color::{parse_hash_color, parse_named_color};
 use cssparser::{Parser, ParserInput, ToCss, Token};
@@ -36,7 +36,7 @@ use selector_parser::parse_selector;
 use shorthands::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use stylesheet::{Declaration, Rule, parse_declarations, parse_stylesheet};
+use stylesheet::{Declaration, Rule, RuleScope, parse_declarations, parse_stylesheet};
 use syntax::*;
 use user_agent::apply_user_agent_defaults;
 pub(crate) use user_agent::is_hidden_by_html_rendering;

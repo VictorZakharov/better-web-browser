@@ -29,9 +29,9 @@ impl PendingInvalidation {
             return;
         };
         let root = match kind {
-            MutationKind::Attribute(_) | MutationKind::CharacterData => {
-                target.parent().unwrap_or_else(|| target.clone())
-            }
+            MutationKind::Attribute(_) | MutationKind::CharacterData => target
+                .shadow_including_parent()
+                .unwrap_or_else(|| target.clone()),
             MutationKind::ChildList => target.clone(),
             MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
         };
@@ -48,7 +48,7 @@ impl PendingInvalidation {
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
         self.removed_nodes
-            .extend(Node::descendants(root).map(|node| node.id()));
+            .extend(Node::shadow_including_descendants(root).map(|node| node.id()));
     }
 
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
@@ -69,15 +69,18 @@ impl PendingInvalidation {
 }
 
 fn is_in_style_element(node: &NodeRef) -> bool {
-    std::iter::successors(Some(node.clone()), |current| current.parent())
-        .any(|current| current.tag_name() == Some("style"))
+    std::iter::successors(Some(node.clone()), |current| {
+        current.shadow_including_parent()
+    })
+    .any(|current| current.tag_name() == Some("style"))
 }
 
 fn common_ancestor(left: &NodeRef, right: &NodeRef) -> NodeRef {
-    let left_ancestors = std::iter::successors(Some(left.clone()), |node| node.parent())
-        .map(|node| (node.id(), node))
-        .collect::<HashMap<_, _>>();
-    std::iter::successors(Some(right.clone()), |node| node.parent())
+    let left_ancestors =
+        std::iter::successors(Some(left.clone()), |node| node.shadow_including_parent())
+            .map(|node| (node.id(), node))
+            .collect::<HashMap<_, _>>();
+    std::iter::successors(Some(right.clone()), |node| node.shadow_including_parent())
         .find_map(|node| left_ancestors.get(&node.id()).cloned())
         .unwrap_or_else(|| left.clone())
 }

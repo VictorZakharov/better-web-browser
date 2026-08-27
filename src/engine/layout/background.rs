@@ -9,7 +9,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if color.alpha > 0 {
                 colors.push(color);
             }
-            candidate = current.parent();
+            candidate = Node::composed_parent(&current);
         }
         colors
             .into_iter()
