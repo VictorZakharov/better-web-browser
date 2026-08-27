@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
+mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
 mod dom_host;

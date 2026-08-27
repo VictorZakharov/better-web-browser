@@ -184,6 +184,8 @@
                 if (node !== target && !options.subtree) continue;
                 if (type === 'characterData' && !options.characterData) continue;
                 if (type === 'attributes' && !options.attributes) continue;
+                if (type === 'attributes' && options.attributeFilter &&
+                    !options.attributeFilter.includes(details.attributeName)) continue;
                 if (type === 'childList' && !options.childList) continue;
                 observer.records.push({
                     type,
@@ -193,7 +195,7 @@
                     previousSibling: details.previousSibling || null,
                     nextSibling: details.nextSibling || null,
                     attributeName: details.attributeName || null,
-                    attributeNamespace: null,
+                    attributeNamespace: details.attributeNamespace ?? null,
                     oldValue: (type === 'characterData' && options.characterDataOldValue) ||
                         (type === 'attributes' && options.attributeOldValue) ? details.oldValue ?? null : null
                 });
@@ -219,6 +221,8 @@
                     ? options.attributeOldValue !== undefined || options.attributeFilter !== undefined
                     : !!options.attributes,
                 attributeOldValue: !!options.attributeOldValue,
+                attributeFilter: options.attributeFilter === undefined
+                    ? null : Array.from(options.attributeFilter, String),
                 characterData: options.characterData === undefined
                     ? options.characterDataOldValue !== undefined
                     : !!options.characterData,

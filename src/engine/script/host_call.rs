@@ -35,6 +35,11 @@ fn dispatch_host_call(
     if let Some(value) = super::workers::worker_host_call(operation, args, context, state)? {
         return Ok(value);
     }
+    if let Some(value) =
+        super::attribute_host::attribute_host_call(operation, args, context, state)?
+    {
+        return Ok(value);
+    }
     if let Some(value) = super::dom_host::dom_host_call(operation, args, context, state)? {
         return Ok(value);
     }
@@ -98,37 +103,6 @@ fn dispatch_host_call(
                 .map(|node| node.text_content())
                 .unwrap_or_default();
             Ok(js_string(value))
-        }
-        "attrGet" => {
-            let name = argument_string(args, 2, context)?;
-            let value = state
-                .node(argument_id(args, 1))
-                .and_then(|node| node.attr(&name));
-            Ok(value.map_or_else(JsValue::null, js_string))
-        }
-        "attrHas" => {
-            let name = argument_string(args, 2, context)?;
-            let present = state
-                .node(argument_id(args, 1))
-                .is_some_and(|node| node.attr(&name).is_some());
-            Ok(JsValue::from(present))
-        }
-        "attrNames" => {
-            let names = state
-                .node(argument_id(args, 1))
-                .and_then(|node| {
-                    node.element().map(|element| {
-                        element
-                            .attrs
-                            .borrow()
-                            .iter()
-                            .map(|attribute| attribute.name.local.to_string())
-                            .collect::<Vec<_>>()
-                            .join("\u{1f}")
-                    })
-                })
-                .unwrap_or_default();
-            Ok(js_string(names))
         }
         "innerHtmlGet" => {
             let value = state

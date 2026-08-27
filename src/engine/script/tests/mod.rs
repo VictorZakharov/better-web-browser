@@ -18,6 +18,7 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
     (dom, outcome)
 }
 
+mod attributes;
 mod bindings;
 mod compatibility;
 mod events;
