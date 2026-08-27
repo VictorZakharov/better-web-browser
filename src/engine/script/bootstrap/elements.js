@@ -11,8 +11,15 @@
         get style() { return this.__style ||= styleProxy(this); }
         get innerHTML() { return host('innerHtmlGet', this.__id); }
         set innerHTML(value) {
+            const wasConnected = this.isConnected;
+            const removedChildren = wasConnected ? [...this.childNodes] : [];
             host('innerHtmlSet', this.__id, value == null ? '' : String(value));
-            if (this.isConnected) refreshWindowNamedProperties();
+            for (const child of removedChildren) disconnectCustomElementTree(child);
+            for (const child of this.childNodes) {
+                if (wasConnected) connectCustomElementTree(child);
+                else upgradeCustomElementTree(child);
+            }
+            if (wasConnected) refreshWindowNamedProperties();
         }
         get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
         set outerHTML(value) {
@@ -98,7 +105,12 @@
         insertAdjacentHTML(position, html) {
             position = String(position).toLowerCase();
             if (position === 'beforeend') {
+                const previousChildren = new Set(this.childNodes.map(child => child.__id));
                 host('innerHtmlAppend', this.__id, String(html));
+                for (const child of this.childNodes) if (!previousChildren.has(child.__id)) {
+                    if (this.isConnected) connectCustomElementTree(child);
+                    else upgradeCustomElementTree(child);
+                }
                 if (this.isConnected) refreshWindowNamedProperties();
             }
             else if (position === 'afterbegin') this.innerHTML = String(html) + this.innerHTML;
@@ -191,6 +203,10 @@
         }
     });
     class HTMLElement extends Element {
+        constructor(id, ...metadata) {
+            if (id === undefined) return constructCustomElement(new.target);
+            super(id, ...metadata);
+        }
         get dataset() { return this.__dataset ||= datasetFor(this); }
     }
     class HTMLDivElement extends HTMLElement {}

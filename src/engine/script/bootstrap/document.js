@@ -57,9 +57,13 @@
             this.activeElement = null;
             this._currentScript = null;
         }
-        createElement(name) { return wrap(host('createElement', this.__id, String(name))); }
+        createElement(name) {
+            return maybeUpgradeCustomElement(wrap(host('createElement', this.__id, String(name))), true);
+        }
         createElementNS(namespace, name) {
-            return wrap(host('createElementNS', this.__id, namespace == null ? '' : String(namespace), String(name)));
+            const element = wrap(host('createElementNS', this.__id,
+                namespace == null ? '' : String(namespace), String(name)));
+            return maybeUpgradeCustomElement(element, true);
         }
         createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
         createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
@@ -110,6 +114,7 @@
                 documentWriteRefreshQueued = true;
                 Promise.resolve().then(() => {
                     documentWriteRefreshQueued = false;
+                    upgradeCustomElementTree(document);
                     refreshWindowNamedProperties();
                 });
             }

@@ -167,11 +167,15 @@
         if (element.isConnected && namespace === null && (localName === 'id' || localName === 'name'))
             refreshWindowNamedProperties();
     };
-    const queueAttributeMutation = (element, record, oldValue) => queueMutationRecord(element, 'attributes', {
-        attributeName: record.localName,
-        attributeNamespace: record.namespace,
-        oldValue
-    });
+    const queueAttributeMutation = (element, record, oldValue) => {
+        queueMutationRecord(element, 'attributes', {
+            attributeName: record.localName,
+            attributeNamespace: record.namespace,
+            oldValue
+        });
+        const current = recordByNamespace(element, record.namespace, record.localName);
+        customElementAttributeChanged(element, record.localName, oldValue, current?.value ?? null, record.namespace);
+    };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));
         attribute.__detach(record.value);

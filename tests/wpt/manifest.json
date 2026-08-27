@@ -420,6 +420,11 @@
       "path": "css/cssom-view/cssom-getBoundingClientRect-002.html",
       "area": "CSS layout",
       "expected": "pass"
+    },
+    {
+      "path": "custom-elements/registries/scoped-registry-registry-define-get-etc.html",
+      "area": "Custom Elements",
+      "expected": "pass"
     }
   ]
 }

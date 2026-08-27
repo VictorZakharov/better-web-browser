@@ -22,6 +22,13 @@
     }
     const cache = new Map();
     let refreshWindowNamedProperties = () => {};
+    let maybeUpgradeCustomElement = element => element;
+    let upgradeCustomElementTree = () => {};
+    let connectCustomElementTree = () => {};
+    let disconnectCustomElementTree = () => {};
+    let adoptCustomElementTree = () => {};
+    let customElementAttributeChanged = () => {};
+    let constructCustomElement = () => { throw new TypeError('Illegal constructor'); };
     const list = value => {
         if (!value) return [];
         const result = value.split(',').filter(Boolean).map(id => wrap(Number(id)));
