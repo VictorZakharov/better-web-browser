@@ -49,6 +49,16 @@ internal sealed class BenchmarkResult
     public int ProcessCount { get; set; }
     public int BodyTextLength { get; set; }
     public int ElementCount { get; set; }
+    public int ComposedTextLength { get; set; }
+    public int ComposedElementCount { get; set; }
+    public int ShadowRootCount { get; set; }
+    public int LayoutNodeCount { get; set; }
+    public int AccessibilityTextLength { get; set; }
+    public int AccessibilityNodeCount { get; set; }
+    public int ScreenshotDistinctColors { get; set; }
+    public double PaintedPixelRatio { get; set; }
+    public bool BrowserErrorSurface { get; set; }
+    public double CompatibilityCaptureMs { get; set; }
     public int DocumentHeightCssPx { get; set; }
     public bool FixtureReady { get; set; }
     public string? Screenshot { get; set; }

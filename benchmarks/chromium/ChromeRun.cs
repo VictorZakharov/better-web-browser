@@ -74,10 +74,20 @@ internal static class ChromeRun
             result.NavigationMs = (stopwatch.Elapsed - navigationStarted).TotalMilliseconds;
             result.Error = navigationError;
 
+            var firstPaint = await EvaluateAsync(cdp, nextId++, BrowserScripts.FirstPaint, timeout);
+            result.FirstUsablePaintMs = firstPaint.ValueKind == JsonValueKind.Number
+                ? firstPaint.GetDouble()
+                : result.NavigationMs;
+            var beforeSettle = ProcessTree.Sample(chrome.Id);
+            await Task.Delay(options.SettleMs);
+            var afterSettle = ProcessTree.Sample(chrome.Id);
+            result.AverageCpuPercent = CpuPercent(beforeSettle, afterSettle, options.SettleMs);
+
             var probe = await EvaluateAsync(cdp, nextId++, BrowserScripts.DocumentProbe, timeout);
             result.FinalUrl = probe.GetProperty("url").GetString() ?? options.Url;
             result.BodyTextLength = probe.GetProperty("bodyTextLength").GetInt32();
             result.ElementCount = probe.GetProperty("elementCount").GetInt32();
+            result.BrowserErrorSurface = probe.GetProperty("browserErrorSurface").GetBoolean();
             result.DocumentHeightCssPx = probe.GetProperty("documentHeight").GetInt32();
             result.FixtureReady = probe.GetProperty("fixtureReady").GetBoolean();
             var innerWidth = probe.GetProperty("innerWidth").GetInt32();
@@ -89,25 +99,26 @@ internal static class ChromeRun
             if (Math.Abs(innerWidth - options.ViewportWidth) > 1 ||
                 Math.Abs(innerHeight - options.ViewportHeight) > 1)
             {
-                result.Error = $"Chromium viewport was {innerWidth}x{innerHeight}, expected {options.ViewportWidth}x{options.ViewportHeight}.";
-            }
-            if (result.BodyTextLength < 20 || result.ElementCount < 5)
-            {
-                result.Error = "Chromium produced a blank or structurally empty document.";
+                result.Error ??= $"Chromium viewport was {innerWidth}x{innerHeight}, expected {options.ViewportWidth}x{options.ViewportHeight}.";
             }
             if (options.RequireFixtureReady && !result.FixtureReady)
             {
-                result.Error = "Fixture readiness marker was not observed.";
+                result.Error ??= "Fixture readiness marker was not observed.";
             }
 
-            var firstPaint = await EvaluateAsync(cdp, nextId++, BrowserScripts.FirstPaint, timeout);
-            result.FirstUsablePaintMs = firstPaint.ValueKind == JsonValueKind.Number
-                ? firstPaint.GetDouble()
-                : result.NavigationMs;
-            var beforeSettle = ProcessTree.Sample(chrome.Id);
-            await Task.Delay(options.SettleMs);
-            var afterSettle = ProcessTree.Sample(chrome.Id);
-            result.AverageCpuPercent = CpuPercent(beforeSettle, afterSettle, options.SettleMs);
+            var compatibilityStarted = stopwatch.Elapsed;
+            var compatibility = await CompatibilityCapture.CollectAsync(cdp, nextId, timeout);
+            nextId = compatibility.NextCommandId;
+            compatibility.ApplyTo(result);
+            result.CompatibilityCaptureMs = (stopwatch.Elapsed - compatibilityStarted).TotalMilliseconds;
+            if (!string.IsNullOrWhiteSpace(options.Screenshot))
+            {
+                var screenshot = Path.GetFullPath(options.Screenshot);
+                Directory.CreateDirectory(Path.GetDirectoryName(screenshot)!);
+                await File.WriteAllBytesAsync(screenshot, compatibility.ScreenshotPng);
+                result.Screenshot = screenshot;
+            }
+            result.Error ??= PageClassification.Classify(result);
 
             if (options.ScrollSamples > 0)
             {
@@ -132,21 +143,6 @@ internal static class ChromeRun
             result.StyleRefreshMs = Metric(metrics, "RecalcStyleDuration") * 1_000;
             result.LayoutMs = Metric(metrics, "LayoutDuration") * 1_000;
             result.TaskMs = Metric(metrics, "TaskDuration") * 1_000;
-            if (!string.IsNullOrWhiteSpace(options.Screenshot))
-            {
-                var captureStarted = stopwatch.Elapsed;
-                var capture = await cdp.CallAsync(nextId++, "Page.captureScreenshot", new
-                {
-                    format = "png",
-                    fromSurface = true,
-                    captureBeyondViewport = false
-                }, timeout);
-                var screenshot = Path.GetFullPath(options.Screenshot);
-                Directory.CreateDirectory(Path.GetDirectoryName(screenshot)!);
-                await File.WriteAllBytesAsync(screenshot, Convert.FromBase64String(capture.GetProperty("data").GetString()!));
-                result.PaintCaptureMs = (stopwatch.Elapsed - captureStarted).TotalMilliseconds;
-                result.Screenshot = screenshot;
-            }
 
             var finalSample = ProcessTree.Sample(chrome.Id);
             result.WorkingSetBytes = finalSample.WorkingSetBytes;

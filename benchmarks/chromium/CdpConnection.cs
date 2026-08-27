@@ -75,7 +75,12 @@ internal sealed class CdpConnection : IDisposable
             stream.Write(buffer, 0, result.Count);
         } while (!result.EndOfMessage);
         stream.Position = 0;
-        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellation);
+        // DOM.getDocument is the one CDP response that preserves tree nesting;
+        // ordinary production pages can exceed System.Text.Json's default depth.
+        return await JsonDocument.ParseAsync(
+            stream,
+            new JsonDocumentOptions { MaxDepth = 512 },
+            cancellation);
     }
 
     public void Dispose() => socket.Dispose();
