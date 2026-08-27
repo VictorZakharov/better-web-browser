@@ -64,6 +64,8 @@
         createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
         createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
         createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
+        createAttribute(localName) { return createAttributeFor(this, localName); }
+        createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
         importNode(node, deep = false) {
             if (!(node instanceof Node)) throw new TypeError('importNode requires a Node');
             const imported = wrap(host('importNode', this.__id, node.__id, !!deep));
@@ -158,6 +160,8 @@
     windowObject.document = document;
     windowObject.Node = Node;
     windowObject.Element = Element;
+    windowObject.Attr = Attr;
+    windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
     windowObject.HTMLUnknownElement = HTMLUnknownElement;
@@ -251,6 +255,8 @@
         baseURI: 'about:blank',
         createElement: name => document.createElement(name),
         createElementNS: (_namespace, name) => document.createElement(name),
+        createAttribute: name => document.createAttribute(name),
+        createAttributeNS: (namespace, name) => document.createAttributeNS(namespace, name),
         createTextNode: text => document.createTextNode(text),
         querySelector: selector => document.querySelector(selector),
         querySelectorAll: selector => document.querySelectorAll(selector)

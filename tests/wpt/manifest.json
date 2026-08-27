@@ -42,6 +42,11 @@
       "expected": "pass"
     },
     {
+      "path": "dom/nodes/attributes-namednodemap.html",
+      "area": "DOM attributes",
+      "expected": "pass"
+    },
+    {
       "path": "dom/nodes/Node-nodeName.html",
       "area": "DOM",
       "expected": "pass"

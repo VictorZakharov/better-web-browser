@@ -21,8 +21,11 @@ pub(super) fn mutation_host_call(
         "removeChild" => remove_child(args, state),
         "remove" => remove(args, state),
         "textSet" => set_text(args, context, state)?,
-        "attrSet" => set_attribute(args, context, state)?,
-        "attrRemove" => remove_attribute(args, context, state)?,
+        "attrSet" => super::attribute_host::set_attribute(args, context, state)?,
+        "attrSetNs" => super::attribute_host::set_attribute_ns(args, context, state, false)?,
+        "attrReplaceNs" => super::attribute_host::set_attribute_ns(args, context, state, true)?,
+        "attrRemove" => super::attribute_host::remove_attribute(args, context, state)?,
+        "attrRemoveNs" => super::attribute_host::remove_attribute_ns(args, context, state)?,
         "innerHtmlSet" => set_inner_html(args, context, state)?,
         "innerHtmlAppend" => append_inner_html(args, context, state)?,
         "documentWrite" => queue_document_write(args, context, state)?,
@@ -263,46 +266,6 @@ fn set_text(args: &[JsValue], context: &mut Context, state: &mut HostState) -> J
         state.record_mutation(node.as_ref(), kind);
         if let Some(node) = node {
             state.diagnose(format!("set textContent on {}", node_label(&node)));
-        }
-    }
-    Ok(JsValue::from(changed))
-}
-
-fn set_attribute(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let name = argument_string(args, 2, context)?;
-    let value = argument_string(args, 3, context)?;
-    let node = state.node(argument_id(args, 1));
-    let changed = node
-        .as_ref()
-        .is_some_and(|node| node.set_attr(&name, &value));
-    if changed {
-        state.record_mutation(node.as_ref(), MutationKind::Attribute(&name));
-        if let Some(node) = node {
-            state.diagnose(format!("set {} on {}", name, node_label(&node)));
-            if name.eq_ignore_ascii_case("src") {
-                state.queue_dynamic_script(&node);
-            }
-        }
-    }
-    Ok(JsValue::from(changed))
-}
-
-fn remove_attribute(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let name = argument_string(args, 2, context)?;
-    let node = state.node(argument_id(args, 1));
-    let changed = node.as_ref().is_some_and(|node| node.remove_attr(&name));
-    if changed {
-        state.record_mutation(node.as_ref(), MutationKind::Attribute(&name));
-        if let Some(node) = node {
-            state.diagnose(format!("remove {} from {}", name, node_label(&node)));
         }
     }
     Ok(JsValue::from(changed))

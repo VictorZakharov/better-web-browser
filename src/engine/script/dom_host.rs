@@ -50,6 +50,11 @@ pub(super) fn dom_host_call(
             .node(argument_id(args, 1))
             .and_then(|node| node.namespace_uri().map(str::to_string))
             .map_or_else(JsValue::null, js_string),
+        "isHtmlDocument" => JsValue::from(
+            state
+                .node(argument_id(args, 1))
+                .is_some_and(|node| state.is_html_document_for(&node)),
+        ),
         "ownerDocument" => {
             let owner = state.node(argument_id(args, 1)).and_then(|node| {
                 state

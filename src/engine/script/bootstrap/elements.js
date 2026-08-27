@@ -23,46 +23,74 @@
             for (const child of [...holder.childNodes]) parent.insertBefore(child, this);
             parent.removeChild(this);
         }
-        getAttribute(name) { return host('attrGet', this.__id, String(name)); }
+        getAttribute(name) {
+            name = normalizedQualifiedName(this, name);
+            return host('attrGet', this.__id, name);
+        }
+        getAttributeNS(namespace, localName) {
+            namespace = normalizedNamespace(namespace);
+            return host('attrGetNs', this.__id, namespace || '', String(localName));
+        }
         setAttribute(name, value) {
-            name = String(name);
+            name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
+            const record = recordByQualifiedName(this, name);
+            const oldValue = record?.value ?? null;
             host('attrSet', this.__id, name, String(value));
-            if (this.isConnected && (name.toLowerCase() === 'id' || name.toLowerCase() === 'name'))
-                refreshWindowNamedProperties();
+            const current = recordByQualifiedName(this, name);
+            queueAttributeMutation(this, current, oldValue);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName);
+        }
+        setAttributeNS(namespace, qualifiedName, value) {
+            const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
+            const record = recordByNamespace(this, extracted.namespace, extracted.localName);
+            const oldValue = record?.value ?? null;
+            host('attrSetNs', this.__id, extracted.namespace || '', extracted.prefix || '',
+                extracted.localName, String(value));
+            const current = recordByNamespace(this, extracted.namespace, extracted.localName);
+            queueAttributeMutation(this, current, oldValue);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName);
         }
         removeAttribute(name) {
-            name = String(name);
+            name = normalizedQualifiedName(this, name);
+            const record = recordByQualifiedName(this, name);
+            if (!record) return;
+            const attribute = attrForRecord(this, record);
             host('attrRemove', this.__id, name);
-            if (this.isConnected && (name.toLowerCase() === 'id' || name.toLowerCase() === 'name'))
-                refreshWindowNamedProperties();
+            detachAttribute(this, record, attribute);
+            queueAttributeMutation(this, record, record.value);
+            maybeRefreshNamedProperties(this, record.namespace, record.localName);
         }
-        hasAttribute(name) { return host('attrHas', this.__id, String(name)); }
+        removeAttributeNS(namespace, localName) {
+            const record = recordByNamespace(this, namespace, localName);
+            if (!record) return;
+            const attribute = attrForRecord(this, record);
+            host('attrRemoveNs', this.__id, record.namespace || '', record.localName);
+            detachAttribute(this, record, attribute);
+            queueAttributeMutation(this, record, record.value);
+            maybeRefreshNamedProperties(this, record.namespace, record.localName);
+        }
+        hasAttribute(name) { return host('attrHas', this.__id, normalizedQualifiedName(this, name)); }
+        hasAttributeNS(namespace, localName) {
+            namespace = normalizedNamespace(namespace);
+            return host('attrHasNs', this.__id, namespace || '', String(localName));
+        }
+        hasAttributes() { return this.attributes.length !== 0; }
         toggleAttribute(name, force) {
+            name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
             const present = this.hasAttribute(name);
             if (force === true || (!present && force !== false)) { this.setAttribute(name, ''); return true; }
             if (present) this.removeAttribute(name);
             return false;
         }
         getAttributeNames() {
-            const names = host('attrNames', this.__id);
-            return names ? names.split('\u001f') : [];
+            return attributeRecords(this).map(record => record.qualifiedName);
         }
-        get attributes() {
-            const element = this;
-            const attributes = this.getAttributeNames().map(name => ({
-                name,
-                nodeName: name,
-                get value() { return element.getAttribute(name) || ''; },
-                set value(value) { element.setAttribute(name, value); },
-                get nodeValue() { return this.value; },
-                set nodeValue(value) { this.value = value; },
-                ownerElement: element,
-                specified: true
-            }));
-            attributes.item = index => attributes[index] || null;
-            attributes.getNamedItem = name => attributes.find(attribute => attribute.name === String(name)) || null;
-            return attributes;
-        }
+        get attributes() { return attributeMapFor(this); }
+        getAttributeNode(qualifiedName) { return getAttributeNodeFor(this, qualifiedName); }
+        getAttributeNodeNS(namespace, localName) { return getAttributeNodeNsFor(this, namespace, localName); }
+        setAttributeNode(attribute) { return setAttributeNodeFor(this, attribute); }
+        setAttributeNodeNS(attribute) { return setAttributeNodeFor(this, attribute); }
+        removeAttributeNode(attribute) { return removeAttributeNodeFor(this, attribute); }
         matches(selector) { return host('matches', this.__id, String(selector)); }
         closest(selector) { return wrap(host('closest', this.__id, String(selector))); }
         getElementsByTagName(name) { return this.querySelectorAll(String(name)); }

@@ -1,5 +1,7 @@
 //! Node creation and tree/attribute mutation operations.
 
+mod attributes;
+
 use super::budget::enforce;
 use super::document::Dom;
 use super::document::chunk_end;
