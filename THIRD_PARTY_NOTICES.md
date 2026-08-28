@@ -57,9 +57,9 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/flate2-rs) |
 | `float-cmp` | 0.9.0 | MIT | [upstream](https://github.com/mikedilger/float-cmp) |
 | `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
-| `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `font-types` | 0.11.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `font-types` | 0.12.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
+| `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `futures-channel` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
 | `futures-concurrency` | 7.7.1 | MIT OR Apache-2.0 | [upstream](https://github.com/yoshuawuyts/futures-concurrency) |
@@ -83,8 +83,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `idna` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
 | `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/idna_adapter) |
 | `image` | 0.25.10 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image) |
-| `imagesize` | 0.15.0 | MIT | [upstream](https://github.com/Roughsketch/imagesize) |
 | `image-webp` | 0.2.4 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-webp) |
+| `imagesize` | 0.15.0 | MIT | [upstream](https://github.com/Roughsketch/imagesize) |
 | `indexmap` | 2.14.0 | Apache-2.0 OR MIT | [upstream](https://github.com/indexmap-rs/indexmap) |
 | `intrusive-collections` | 0.9.7 | Apache-2.0/MIT | [upstream](https://github.com/Amanieu/intrusive-rs) |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-itertools/itertools) |
@@ -102,12 +102,12 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
 | `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
-| `num_enum` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
-| `num_enum_derive` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
 | `num-bigint` | 0.4.8 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-bigint) |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/num-conv) |
 | `num-integer` | 0.1.47 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-integer) |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
+| `num_enum` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
+| `num_enum_derive` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 | [upstream](https://github.com/matklad/once_cell) |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/parking) |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
@@ -131,8 +131,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/powerfmt) |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 | [upstream](https://github.com/cryptocorrosion/cryptocorrosion) |
 | `precomputed-hash` | 0.1.1 | MIT | [upstream](https://github.com/emilio/precomputed-hash) |
-| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/proc-macro2) |
 | `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bkchr/proc-macro-crate) |
+| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/proc-macro2) |
 | `psl2` | 0.1.18 | MIT OR Apache-2.0 | [upstream](https://github.com/KarpelesLab/psl2) |
 | `pxfm` | 0.1.30 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/pxfm) |
 | `quick-error` | 2.0.1 | MIT/Apache-2.0 | [upstream](http://github.com/tailhook/quick-error) |
@@ -227,7 +227,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 ## Bundled sources and data
 
-- `boa_ast` and `boa_engine` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate's `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.
+- `boa_ast`, `boa_engine`, and `boa_parser` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate's `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.
 - Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.

@@ -29,10 +29,21 @@ while ($queue.Count -gt 0) {
 
 $packages = @($metadata.packages | Where-Object {
     $reachable.ContainsKey([string] $_.id) -and [string] $_.id -ne [string] $metadata.resolve.root
-} | Sort-Object name, version)
+} | Sort-Object `
+    @{ Expression = { [BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes([string] $_.name)) } }, `
+    @{ Expression = { [BitConverter]::ToString([Text.Encoding]::UTF8.GetBytes([string] $_.version)) } })
 if ($packages.Count -eq 0) { throw 'The Windows release dependency graph is empty.' }
 
-$lockHash = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+# Git may materialize CRLF on Windows and LF on CI. Hash the canonical repository text so the
+# generated notice is identical across hosts.
+$lockText = [IO.File]::ReadAllText((Join-Path $repoRoot 'Cargo.lock'))
+$canonicalLockBytes = [Text.Encoding]::UTF8.GetBytes($lockText.Replace("`r`n", "`n").Replace("`r", "`n"))
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $lockHash = [BitConverter]::ToString($sha256.ComputeHash($canonicalLockBytes)).Replace('-', '').ToLowerInvariant()
+} finally {
+    $sha256.Dispose()
+}
 $markdown = [Text.StringBuilder]::new()
 [void] $markdown.AppendLine('# Third-party notices')
 [void] $markdown.AppendLine()
@@ -62,7 +73,7 @@ foreach ($package in $packages) {
 [void] $markdown.AppendLine()
 [void] $markdown.AppendLine('## Bundled sources and data')
 [void] $markdown.AppendLine()
-[void] $markdown.AppendLine('- `boa_ast` and `boa_engine` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate''s `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.')
+[void] $markdown.AppendLine('- `boa_ast`, `boa_engine`, and `boa_parser` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate''s `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.')
 [void] $markdown.AppendLine('- Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.')
 [void] $markdown.AppendLine('- `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.')
 [void] $markdown.AppendLine('- The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.')
