@@ -43,6 +43,7 @@ pub struct RendererLaunchOptions {
     pub first_presentation_timeout: Duration,
     pub test_mode: bool,
     pub startup_fault: Option<StartupFault>,
+    prohibit_dynamic_code: bool,
 }
 
 impl RendererLaunchOptions {
@@ -58,6 +59,7 @@ impl RendererLaunchOptions {
             first_presentation_timeout: RENDERER_FIRST_PRESENTATION_TIMEOUT,
             test_mode: false,
             startup_fault: None,
+            prohibit_dynamic_code: true,
         }
     }
 
@@ -65,6 +67,15 @@ impl RendererLaunchOptions {
         std::env::current_exe()
             .map(Self::new)
             .map_err(|error| format!("locate renderer executable: {error}"))
+    }
+
+    /// Allows JIT code generation only for the contained V8 feasibility probe.
+    ///
+    /// Production renderers retain the dynamic-code prohibition until the engine decision and
+    /// compensating controls are reviewed.
+    #[cfg(feature = "v8-engine-spike")]
+    pub fn permit_dynamic_code_for_engine_spike(&mut self) {
+        self.prohibit_dynamic_code = false;
     }
 }
 
@@ -87,7 +98,13 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     let pipes = PipeSet::create()?;
     let job = create_renderer_job()?;
     let sid = AppContainerSid::create_or_open()?;
-    let attributes = LaunchAttributes::new(&pipes.child_input, &pipes.child_output, &job, &sid)?;
+    let attributes = LaunchAttributes::new(
+        &pipes.child_input,
+        &pipes.child_output,
+        &job,
+        &sid,
+        options.prohibit_dynamic_code,
+    )?;
 
     let application = wide_path(&options.executable);
     let mut command_line = wide(&command_line(options, nonce, session));

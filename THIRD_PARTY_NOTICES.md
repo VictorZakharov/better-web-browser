@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `cf4e34e3ae85cca05e2119d1afca476a2b27dce60c3549e6798db66e792dc0ac`
+- Cargo.lock SHA-256: `7435aaf9b8f1f50bc0c44bdfd8807076fc4b4e9bd1cccd4926f911f18d309e2b`
 - Third-party packages: 216
 
 | Package | Version | License expression | Source |
@@ -74,12 +74,12 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `hashbrown` | 0.17.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/hashbrown) |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `icu_collections` | 2.0.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
-| `icu_locale_core` | 2.2.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_locale_core` | 2.3.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `icu_normalizer` | 2.0.1 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `icu_normalizer_data` | 2.0.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `icu_properties` | 2.0.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `icu_properties_data` | 2.0.1 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
-| `icu_provider` | 2.2.0 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `icu_provider` | 2.3.1 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `idna` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
 | `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/idna_adapter) |
 | `image` | 0.25.10 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image) |
@@ -181,7 +181,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `time-macros` | 0.2.32 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
 | `tiny-skia` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia) |
 | `tiny-skia-path` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia/tree/master/path) |
-| `tinystr` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `tinystr` | 0.8.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
 | `toml_edit` | 0.25.13+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
 | `toml_parser` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/toml-rs/toml) |
@@ -210,7 +210,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `windows-threading` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
 | `winnow` | 1.0.4 | MIT | [upstream](https://github.com/winnow-rs/winnow) |
 | `write16` | 1.0.0 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/write16) |
-| `writeable` | 0.6.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `writeable` | 0.6.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
 | `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `yoke-derive` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
@@ -218,9 +218,9 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `zerocopy` | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT | [upstream](https://github.com/google/zerocopy) |
 | `zerofrom` | 0.1.8 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `zerofrom-derive` | 0.1.7 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
-| `zerotrie` | 0.2.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
-| `zerovec` | 0.11.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
-| `zerovec-derive` | 0.11.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerotrie` | 0.2.5 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerovec` | 0.11.8 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `zerovec-derive` | 0.11.6 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `zmij` | 1.0.23 | MIT | [upstream](https://github.com/dtolnay/zmij) |
 | `zune-core` | 0.5.3 | MIT OR Apache-2.0 OR Zlib | [upstream](https://github.com/etemesi254/zune-image) |
 | `zune-jpeg` | 0.5.15 | MIT OR Apache-2.0 OR Zlib | [upstream](https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg) |

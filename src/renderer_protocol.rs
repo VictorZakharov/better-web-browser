@@ -36,6 +36,8 @@ pub use message::{
     RENDERER_DIAGNOSTIC_TASK_STAGE, RENDERER_DIAGNOSTIC_TASK_STARTED, RendererDiagnostic,
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
+#[cfg(feature = "v8-engine-spike")]
+pub use message::{JavaScriptEngineProbe, RENDERER_DIAGNOSTIC_ENGINE_PROBE};
 pub use presentation::{
     NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
     PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,

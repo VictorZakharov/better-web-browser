@@ -23,6 +23,8 @@ mod bootstrap;
 mod cssom_host;
 mod dom_host;
 mod dynamic_scripts;
+#[cfg(feature = "v8-engine-spike")]
+mod engine_probe;
 mod execution;
 mod host_call;
 mod host_profiling;
@@ -48,6 +50,8 @@ mod worker_module;
 mod worker_runtime;
 mod workers;
 
+#[cfg(feature = "v8-engine-spike")]
+pub(crate) use engine_probe::run_engine_probe;
 pub use execution::{execute, execute_with_loader};
 use host_call::host_call;
 use host_state::{HostState, HostStateLink};

@@ -257,11 +257,12 @@ impl LaunchAttributes {
         child_output: &OwnedHandle,
         job: &OwnedHandle,
         sid: &AppContainerSid,
+        prohibit_dynamic_code: bool,
     ) -> Result<Self, String> {
         let handles = Box::new([raw(child_input), raw(child_output)]);
         let jobs = Box::new([raw(job)]);
         let child_policy = Box::new(PROCESS_CREATION_CHILD_PROCESS_RESTRICTED);
-        let mitigations = Box::new(renderer_mitigations());
+        let mitigations = Box::new(renderer_mitigations(prohibit_dynamic_code));
         let security = Box::new(sid.security_capabilities());
         let mut list = AttributeList::new(5)?;
         list.update(
@@ -358,8 +359,10 @@ impl Drop for AttributeList {
 
 // Values are from the PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY table. Win32k is intentionally not
 // disabled until the renderer no longer needs the current GDI/font bridge (ADR 0001).
-fn renderer_mitigations() -> u64 {
-    0x1 // DEP
+const PROHIBIT_DYNAMIC_CODE: u64 = 0x1 << 36;
+
+fn renderer_mitigations(prohibit_dynamic_code: bool) -> u64 {
+    let policies = 0x1 // DEP
         | 0x4 // SEHOP
         | (0x3 << 8) // force relocation and require relocations
         | (0x1 << 12) // terminate on heap corruption
@@ -367,10 +370,14 @@ fn renderer_mitigations() -> u64 {
         | (0x1 << 20) // high-entropy ASLR
         | (0x1 << 24) // strict handle checks
         | (0x1 << 32) // disable extension points
-        | (0x1 << 36) // prohibit dynamic code
         | (0x1 << 40) // enable Control Flow Guard
         | (0x1 << 52) // prohibit remote image loads
-        | (0x1 << 56) // prohibit low-integrity image loads
+        | (0x1 << 56); // prohibit low-integrity image loads
+    if prohibit_dynamic_code {
+        policies | PROHIBIT_DYNAMIC_CODE
+    } else {
+        policies
+    }
 }
 
 pub(super) fn raw(handle: &OwnedHandle) -> HANDLE {
@@ -384,3 +391,6 @@ unsafe fn owned(handle: HANDLE) -> OwnedHandle {
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
+
+#[cfg(test)]
+mod tests;

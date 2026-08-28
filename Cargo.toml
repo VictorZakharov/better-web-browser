@@ -20,6 +20,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", default-features = false, features = ["std"] }
 url = "2.5.8"
+v8 = { version = "=152.2.0", default-features = false, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 accesskit = "0.24.1"
@@ -79,3 +80,9 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+[features]
+default = []
+# Temporary, non-shipping feasibility path for issue #113. Production remains on Boa only while
+# the V8 Web bindings are ported; completing the migration removes Boa and this spike feature.
+v8-engine-spike = ["dep:v8"]
