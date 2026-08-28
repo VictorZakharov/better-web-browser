@@ -142,6 +142,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
             style_width: 800.0,
             dpi: 96,
         },
+        prefers_dark_color_scheme: true,
     };
     let message = BrowserMessage::BeginDocument(start.clone());
     let decoded = FrameReader::new(Cursor::new(encoded_browser(&message)), session())

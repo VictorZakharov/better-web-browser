@@ -32,6 +32,7 @@ pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) document_url: String,
     pub(super) document_character_set: String,
+    pub(super) stylesheet_sources: HashMap<String, String>,
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
@@ -67,6 +68,8 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    pub(super) media_viewport_width: f32,
+    pub(super) prefers_dark_color_scheme: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
 
@@ -88,6 +91,7 @@ impl HostState {
             document,
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
+            stylesheet_sources: HashMap::new(),
             module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
@@ -123,6 +127,8 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            media_viewport_width: 1280.0,
+            prefers_dark_color_scheme: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
@@ -308,6 +314,14 @@ impl HostState {
         } else {
             self.timers.queue_task(TaskSource::Timer, delay, id)
         };
+        self.timer_handles.insert(id, handle);
+    }
+
+    pub(super) fn schedule_idle_callback(&mut self, id: u32, delay: Duration) {
+        if let Some(previous) = self.timer_handles.remove(&id) {
+            self.timers.cancel(previous);
+        }
+        let handle = self.timers.queue_task(TaskSource::IdleTask, delay, id);
         self.timer_handles.insert(id, handle);
     }
 

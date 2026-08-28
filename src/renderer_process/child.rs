@@ -21,7 +21,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
-    std::panic::set_hook(Box::new(|_| {}));
+    crate::engine::script::install_runtime_panic_hook();
     let options = ChildOptions::parse(arguments)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };

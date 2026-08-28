@@ -53,6 +53,7 @@ pub struct DocumentStart {
     pub diagnostic_selectors: Vec<String>,
     pub body_length: u32,
     pub viewport: PresentedViewport,
+    pub prefers_dark_color_scheme: bool,
 }
 
 impl DocumentStart {

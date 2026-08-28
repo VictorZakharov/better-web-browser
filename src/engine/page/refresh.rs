@@ -11,12 +11,13 @@ impl Page {
     }
 
     pub fn style_for_viewport(&self, viewport_width: f32, viewport_height: f32) -> StyleSet {
-        StyleSet::from_sources_for_viewport(
+        StyleSet::from_sources_for_viewport_with_color_scheme(
             &self.dom,
             &self.base_url,
             &self.stylesheet_sources,
             viewport_width,
             viewport_height,
+            self.prefers_dark_color_scheme,
         )
     }
 
@@ -141,12 +142,13 @@ impl Page {
                 (styles, stats)
             }
             _ => {
-                let styles = StyleSet::from_sources_for_viewport(
+                let styles = StyleSet::from_sources_for_viewport_with_color_scheme(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,
                     viewport_width,
                     viewport_height,
+                    self.prefers_dark_color_scheme,
                 );
                 let count = styles.styles.len();
                 (

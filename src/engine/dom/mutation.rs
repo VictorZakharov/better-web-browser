@@ -160,7 +160,7 @@ impl Node {
         remove_from_parent(&child);
         child.parent.set(Some(Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child);
-        parent.mark_mutated();
+        parent.mark_children_mutated();
         true
     }
 
@@ -287,7 +287,7 @@ pub(super) fn append_node(parent: &NodeRef, child: NodeRef) {
     debug_assert!(child.parent().is_none());
     child.parent.set(Some(Rc::downgrade(parent)));
     parent.children.borrow_mut().push(child);
-    parent.mark_mutated();
+    parent.mark_children_mutated();
 }
 
 pub(super) fn append_to_existing_text(node: &NodeRef, text: &str) -> bool {
@@ -314,7 +314,7 @@ pub(super) fn remove_from_parent(target: &NodeRef) {
     if let Some((parent, index)) = parent_and_index(target) {
         parent.children.borrow_mut().remove(index);
         target.parent.set(None);
-        parent.mark_mutated();
+        parent.mark_children_mutated();
     }
 }
 
@@ -326,6 +326,6 @@ fn clear_children(node: &NodeRef) {
     }
     drop(children);
     if changed {
-        node.mark_mutated();
+        node.mark_children_mutated();
     }
 }

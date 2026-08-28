@@ -7,6 +7,7 @@ pub(super) fn collect(
     document_base_url: &str,
     external_stylesheets: &[(String, String)],
     viewport_width: f32,
+    prefers_dark_color_scheme: bool,
 ) -> Vec<Rule> {
     let mut rules = Vec::new();
     let mut next_order = 0_u32;
@@ -16,6 +17,7 @@ pub(super) fn collect(
             &style_element.text_content(),
             document_base_url,
             viewport_width,
+            prefers_dark_color_scheme,
             &mut next_order,
             &mut rules,
             RuleScope::Document,
@@ -26,6 +28,7 @@ pub(super) fn collect(
             stylesheet,
             source_url,
             viewport_width,
+            prefers_dark_color_scheme,
             &mut next_order,
             &mut rules,
             RuleScope::Document,
@@ -34,6 +37,7 @@ pub(super) fn collect(
     append_adopted(
         document,
         viewport_width,
+        prefers_dark_color_scheme,
         &mut next_order,
         &mut rules,
         RuleScope::Document,
@@ -48,6 +52,7 @@ pub(super) fn collect(
                 &style_element.text_content(),
                 document_base_url,
                 viewport_width,
+                prefers_dark_color_scheme,
                 &mut next_order,
                 &mut rules,
                 RuleScope::Shadow(shadow.id()),
@@ -56,6 +61,7 @@ pub(super) fn collect(
         append_adopted(
             &shadow,
             viewport_width,
+            prefers_dark_color_scheme,
             &mut next_order,
             &mut rules,
             RuleScope::Shadow(shadow.id()),
@@ -67,12 +73,18 @@ pub(super) fn collect(
 fn append_adopted(
     root: &NodeRef,
     viewport_width: f32,
+    prefers_dark_color_scheme: bool,
     next_order: &mut u32,
     rules: &mut Vec<Rule>,
     scope: RuleScope,
 ) {
     for stylesheet in root.adopted_stylesheets() {
-        if !stylesheet.media.trim().is_empty() && !media_matches(&stylesheet.media, viewport_width)
+        if !stylesheet.media.trim().is_empty()
+            && !media::media_matches_with_color_scheme(
+                &stylesheet.media,
+                viewport_width,
+                prefers_dark_color_scheme,
+            )
         {
             continue;
         }
@@ -80,6 +92,7 @@ fn append_adopted(
             &stylesheet.source,
             &stylesheet.base_url,
             viewport_width,
+            prefers_dark_color_scheme,
             next_order,
             rules,
             scope,

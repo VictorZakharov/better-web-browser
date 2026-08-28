@@ -1,4 +1,5 @@
 use crate::limits::MAX_URL_BYTES;
+use serde::Serialize;
 use std::fmt;
 use url::{Host, Url, form_urlencoded};
 
@@ -163,6 +164,95 @@ pub fn resolve_web_url(base: &str, reference: &str) -> Option<String> {
     let base = Url::parse(base).ok()?;
     let resolved = base.join(reference).ok()?;
     let serialized = resolved.to_string();
+    (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebUrlParts {
+    pub href: String,
+    pub protocol: String,
+    pub username: String,
+    pub password: String,
+    pub host: String,
+    pub hostname: String,
+    pub port: String,
+    pub pathname: String,
+    pub search: String,
+    pub hash: String,
+    pub origin: String,
+}
+
+/// Returns the serialized components exposed by the Web `URL` interface.
+pub fn web_url_parts(value: &str) -> Option<WebUrlParts> {
+    if value.len() > MAX_URL_BYTES {
+        return None;
+    }
+    let parsed = Url::parse(value).ok()?;
+    let hostname = parsed.host_str().unwrap_or_default().to_string();
+    let port = parsed
+        .port()
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let host = if port.is_empty() {
+        hostname.clone()
+    } else {
+        format!("{hostname}:{port}")
+    };
+    Some(WebUrlParts {
+        href: parsed.as_str().to_string(),
+        protocol: format!("{}:", parsed.scheme()),
+        username: parsed.username().to_string(),
+        password: parsed.password().unwrap_or_default().to_string(),
+        host,
+        hostname,
+        port,
+        pathname: parsed.path().to_string(),
+        search: parsed
+            .query()
+            .map(|value| format!("?{value}"))
+            .unwrap_or_default(),
+        hash: parsed
+            .fragment()
+            .map(|value| format!("#{value}"))
+            .unwrap_or_default(),
+        origin: parsed.origin().ascii_serialization(),
+    })
+}
+
+/// Applies one of the mutable Web `URL` component setters and serializes the result.
+pub fn set_web_url_component(value: &str, component: &str, input: &str) -> Option<String> {
+    if value.len() > MAX_URL_BYTES || input.len() > MAX_URL_BYTES {
+        return None;
+    }
+    let mut parsed = Url::parse(value).ok()?;
+    match component {
+        "href" => return resolve_web_url(value, input),
+        "protocol" => parsed.set_scheme(input.trim_end_matches(':')).ok()?,
+        "username" => parsed.set_username(input).ok()?,
+        "password" => parsed
+            .set_password((!input.is_empty()).then_some(input))
+            .ok()?,
+        "host" => {
+            let replacement = Url::parse(&format!("{}://{input}/", parsed.scheme())).ok()?;
+            parsed.set_host(replacement.host_str()).ok()?;
+            parsed.set_port(replacement.port()).ok()?;
+        }
+        "hostname" => parsed.set_host(Some(input)).ok()?,
+        "port" => {
+            let port = if input.is_empty() {
+                None
+            } else {
+                Some(input.parse().ok()?)
+            };
+            parsed.set_port(port).ok()?;
+        }
+        "pathname" => parsed.set_path(input),
+        "search" => parsed.set_query((!input.is_empty()).then(|| input.trim_start_matches('?'))),
+        "hash" => parsed.set_fragment((!input.is_empty()).then(|| input.trim_start_matches('#'))),
+        _ => return None,
+    }
+    let serialized = parsed.to_string();
     (serialized.len() <= MAX_URL_BYTES).then_some(serialized)
 }
 

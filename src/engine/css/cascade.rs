@@ -39,6 +39,7 @@ impl StyleSet {
         Self::from_document(&dom.document, "", &sources, viewport_width)
     }
 
+    #[cfg(test)]
     pub(crate) fn from_sources_for_viewport(
         dom: &Dom,
         document_base_url: &str,
@@ -46,12 +47,31 @@ impl StyleSet {
         viewport_width: f32,
         viewport_height: f32,
     ) -> Self {
+        Self::from_sources_for_viewport_with_color_scheme(
+            dom,
+            document_base_url,
+            external_stylesheets,
+            viewport_width,
+            viewport_height,
+            false,
+        )
+    }
+
+    pub(crate) fn from_sources_for_viewport_with_color_scheme(
+        dom: &Dom,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        viewport_width: f32,
+        viewport_height: f32,
+        prefers_dark_color_scheme: bool,
+    ) -> Self {
         Self::from_document_for_viewport(
             &dom.document,
             document_base_url,
             external_stylesheets,
             viewport_width,
             viewport_height,
+            prefers_dark_color_scheme,
         )
     }
 
@@ -67,6 +87,7 @@ impl StyleSet {
             external_stylesheets,
             viewport_width,
             viewport_width,
+            false,
         )
     }
 
@@ -76,6 +97,7 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
         viewport_height: f32,
+        prefers_dark_color_scheme: bool,
     ) -> Self {
         let mut set = Self::for_computed_style_for_viewport(
             document,
@@ -83,24 +105,10 @@ impl StyleSet {
             external_stylesheets,
             viewport_width,
             viewport_height,
+            prefers_dark_color_scheme,
         );
         set.compute_subtree(document, None);
         set
-    }
-
-    pub(crate) fn for_computed_style(
-        document: &NodeRef,
-        document_base_url: &str,
-        external_stylesheets: &[(String, String)],
-        viewport_width: f32,
-    ) -> Self {
-        Self::for_computed_style_for_viewport(
-            document,
-            document_base_url,
-            external_stylesheets,
-            viewport_width,
-            viewport_width,
-        )
     }
 
     pub(crate) fn for_computed_style_for_viewport(
@@ -109,6 +117,7 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         viewport_width: f32,
         viewport_height: f32,
+        prefers_dark_color_scheme: bool,
     ) -> Self {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
@@ -117,6 +126,7 @@ impl StyleSet {
             document_base_url,
             external_stylesheets,
             viewport_width,
+            prefers_dark_color_scheme,
         );
         let rule_index = RuleIndex::new(&rules);
         Self {
@@ -158,11 +168,12 @@ impl StyleSet {
             .expect("style should exist for every DOM node")
     }
 
-    /// Uses the engine selector parser for opt-in inspection and future DOM query APIs.
+    /// Uses the engine selector parser for opt-in composed-page inspection. This deliberately
+    /// crosses shadow boundaries for browser diagnostics; DOM query APIs retain tree scoping.
     pub fn query_selector_all(&self, dom: &Dom, input: &str) -> Option<Vec<NodeRef>> {
         let selector = parse_selector(input.trim())?;
         Some(
-            dom::Node::descendants(&dom.document)
+            dom::Node::shadow_including_descendants(&dom.document)
                 .filter(|node| selector_matches(&selector, node))
                 .collect(),
         )
@@ -349,14 +360,20 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
 }
 
 fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {
-    match rule.scope {
+    let scope_matches = match rule.scope {
         RuleScope::Document => !matches!(Node::tree_root(node).data, NodeData::ShadowRoot(_)),
         RuleScope::Shadow(root) => Node::tree_root(node).id() == root,
         RuleScope::Host(root) => node.shadow_root().is_some_and(|shadow| shadow.id() == root),
         RuleScope::Slotted(root) => {
             Node::assigned_slot(node).is_some_and(|slot| Node::tree_root(&slot).id() == root)
         }
-    }
+    };
+    scope_matches
+        && rule.host_condition.as_ref().is_none_or(|condition| {
+            Node::tree_root(node)
+                .shadow_host()
+                .is_some_and(|host| selector_matches(condition, &host))
+        })
 }
 
 fn node_id(node: &NodeRef) -> NodeId {

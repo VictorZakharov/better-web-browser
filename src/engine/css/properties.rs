@@ -33,7 +33,7 @@ pub(super) fn apply_declaration(
             "background-image" => style
                 .background_image
                 .clone_from(&inherited.background_image),
-            "mask-image" | "-webkit-mask-image" => {
+            "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
                 style.mask_image.clone_from(&inherited.mask_image)
             }
             "background-repeat" => {
@@ -62,9 +62,11 @@ pub(super) fn apply_declaration(
         "display" => {
             style.display = match value.split_ascii_whitespace().next().unwrap_or("") {
                 "none" => Display::None,
+                "contents" => Display::Contents,
                 "block" => Display::Block,
                 "inline" => Display::Inline,
                 "inline-block" | "inline-box" => Display::InlineBlock,
+                "inline-flex" | "-webkit-inline-flex" => Display::InlineFlex,
                 "flex" | "-webkit-flex" | "-webkit-box" => Display::Flex,
                 "grid" | "-ms-grid" => Display::Grid,
                 "table" => Display::Table,
@@ -99,7 +101,7 @@ pub(super) fn apply_declaration(
             }
         }
         "background-image" => style.background_image = parse_background_image(value, base_url),
-        "mask-image" | "-webkit-mask-image" => {
+        "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             style.mask_image = parse_background_image(value, base_url)
         }
         "background-repeat" => assign_background_repeat(style, value),
@@ -290,6 +292,14 @@ pub(super) fn apply_declaration(
                 _ => AlignItems::Stretch,
             };
         }
+        "justify-self" => {
+            style.justify_self = match value {
+                "center" => AlignItems::Center,
+                "end" | "flex-end" | "right" => AlignItems::End,
+                "start" | "flex-start" | "left" => AlignItems::Start,
+                _ => AlignItems::Stretch,
+            };
+        }
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             style.flex_direction = if value.starts_with("column") {
                 FlexDirection::Column
@@ -298,6 +308,7 @@ pub(super) fn apply_declaration(
             }
         }
         "flex-wrap" | "-webkit-flex-wrap" | "-moz-flex-wrap" => style.flex_wrap = value != "nowrap",
+        "flex-flow" | "-webkit-flex-flow" | "-moz-flex-flow" => assign_flex_flow(style, value),
         "flex-grow" | "-webkit-flex-grow" | "-moz-flex-grow" | "-webkit-box-flex" => {
             style.flex_grow = value.parse::<f32>().unwrap_or(style.flex_grow).max(0.0)
         }
@@ -346,6 +357,31 @@ pub(super) fn apply_declaration(
         "grid-row" => assign_grid_axis(&mut style.grid_row_start, &mut style.grid_row_end, value),
         "grid-area" => assign_grid_area(style, value),
         _ => {}
+    }
+}
+
+fn assign_flex_flow(style: &mut ComputedStyle, value: &str) {
+    let mut direction = None;
+    let mut wrap = None;
+    for token in value.split_ascii_whitespace() {
+        match token {
+            "row" | "row-reverse" if direction.is_none() => direction = Some(FlexDirection::Row),
+            "column" | "column-reverse" if direction.is_none() => {
+                direction = Some(FlexDirection::Column)
+            }
+            "nowrap" if wrap.is_none() => wrap = Some(false),
+            "wrap" | "wrap-reverse" if wrap.is_none() => wrap = Some(true),
+            _ => return,
+        }
+    }
+    if direction.is_none() && wrap.is_none() {
+        return;
+    }
+    if let Some(direction) = direction {
+        style.flex_direction = direction;
+    }
+    if let Some(wrap) = wrap {
+        style.flex_wrap = wrap;
     }
 }
 

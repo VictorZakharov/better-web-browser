@@ -163,9 +163,9 @@
         return attributeRecords(element).find(record =>
             record.namespace === namespace && record.localName === localName) || null;
     };
-    const maybeRefreshNamedProperties = (element, namespace, localName) => {
+    const maybeRefreshNamedProperties = (element, namespace, localName, oldValue, newValue) => {
         if (element.isConnected && namespace === null && (localName === 'id' || localName === 'name'))
-            refreshWindowNamedProperties();
+            refreshWindowNamedPropertyValues([oldValue, newValue]);
     };
     const queueAttributeMutation = (element, record, oldValue) => {
         queueMutationRecord(element, 'attributes', {
@@ -188,7 +188,8 @@
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
         }, oldValue);
-        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName);
+        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
+            oldValue, attribute.value);
     };
 
     class NamedNodeMap {
@@ -309,7 +310,8 @@
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
         }, oldValue);
-        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName);
+        maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
+            oldValue, attribute.value);
         return oldAttribute;
     };
     const removeAttributeNodeFor = (element, attribute) => {
@@ -326,6 +328,6 @@
         host('attrRemoveNs', element.__id, record.namespace || '', record.localName);
         detachAttribute(element, record, attribute);
         queueAttributeMutation(element, record, record.value);
-        maybeRefreshNamedProperties(element, record.namespace, record.localName);
+        maybeRefreshNamedProperties(element, record.namespace, record.localName, record.value, null);
         return attribute;
     };

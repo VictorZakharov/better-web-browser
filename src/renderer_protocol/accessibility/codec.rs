@@ -1,12 +1,10 @@
 use super::*;
 use crate::limits::{
-    MAX_ACCESSIBILITY_EDGES, MAX_ACCESSIBILITY_NODE_TEXT_BYTES, MAX_ACCESSIBILITY_NODES,
-    MAX_ACCESSIBILITY_TOTAL_TEXT_BYTES,
+    MAX_ACCESSIBILITY_COORDINATE, MAX_ACCESSIBILITY_EDGES, MAX_ACCESSIBILITY_NODE_TEXT_BYTES,
+    MAX_ACCESSIBILITY_NODES, MAX_ACCESSIBILITY_TOTAL_TEXT_BYTES,
 };
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use std::collections::HashSet;
-
-const MAX_COORDINATE: f32 = 10_000_000.0;
 
 pub(super) fn encode(
     writer: &mut WireWriter,
@@ -229,10 +227,10 @@ fn validate_rect(rect: RectF) -> Result<(), ProtocolError> {
         && rect.y.is_finite()
         && rect.width.is_finite()
         && rect.height.is_finite()
-        && (-MAX_COORDINATE..=MAX_COORDINATE).contains(&rect.x)
-        && (-MAX_COORDINATE..=MAX_COORDINATE).contains(&rect.y)
-        && (0.0..=MAX_COORDINATE).contains(&rect.width)
-        && (0.0..=MAX_COORDINATE).contains(&rect.height)
+        && (-MAX_ACCESSIBILITY_COORDINATE..=MAX_ACCESSIBILITY_COORDINATE).contains(&rect.x)
+        && (-MAX_ACCESSIBILITY_COORDINATE..=MAX_ACCESSIBILITY_COORDINATE).contains(&rect.y)
+        && (0.0..=MAX_ACCESSIBILITY_COORDINATE).contains(&rect.width)
+        && (0.0..=MAX_ACCESSIBILITY_COORDINATE).contains(&rect.height)
     {
         Ok(())
     } else {

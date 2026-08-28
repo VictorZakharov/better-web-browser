@@ -14,11 +14,11 @@ use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::time::Duration;
 
 const MINIMUM_REPEAT_INTERVAL: Duration = Duration::from_nanos(1);
-
 /// Identifies the specification-defined source of a queued task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TaskSource {
     Timer,
+    IdleTask,
     Networking,
     UserInteraction,
     Lifecycle,

@@ -1,6 +1,6 @@
 //! Constructed stylesheet snapshots installed on document and shadow roots.
 
-use super::binding_helpers::{argument_id, argument_string};
+use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
 use crate::engine::AdoptedStyleSheet;
 use crate::limits::{
@@ -22,8 +22,28 @@ pub(super) fn cssom_host_call(
     context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
-    if operation != "adoptedStyleSheetsSet" {
-        return Ok(None);
+    match operation {
+        "stylesheetSource" => {
+            let url = argument_string(args, 1, context)?;
+            return Ok(Some(
+                state
+                    .stylesheet_sources
+                    .get(&url)
+                    .map_or_else(JsValue::null, |source| js_string(source.clone())),
+            ));
+        }
+        "stylesheetSameOrigin" => {
+            let url = argument_string(args, 1, context)?;
+            let same_origin = crate::fetch::Origin::parse(&url)
+                .and_then(|origin| {
+                    crate::fetch::Origin::parse(&state.document_url)
+                        .map(|document_origin| origin.is_same_origin(&document_origin))
+                })
+                .unwrap_or(false);
+            return Ok(Some(JsValue::from(same_origin)));
+        }
+        "adoptedStyleSheetsSet" => {}
+        _ => return Ok(None),
     }
     let Some(root) = state.node(argument_id(args, 1)) else {
         return Err(JsNativeError::typ()

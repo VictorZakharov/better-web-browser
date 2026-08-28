@@ -82,6 +82,7 @@ struct EarlyScrollSample {
 pub(in crate::windows_app) struct EarlyScrollTrace {
     duration: Duration,
     started: Option<Instant>,
+    initial_scroll_y: Option<i32>,
     previous_activity: BenchmarkActivity,
     samples: Vec<EarlyScrollSample>,
     direction: i32,
@@ -92,16 +93,21 @@ impl EarlyScrollTrace {
         Self {
             duration: Duration::from_secs(6),
             started: None,
+            initial_scroll_y: None,
             previous_activity: BenchmarkActivity::default(),
             samples: Vec::new(),
             direction: 1,
         }
     }
 
-    pub(super) fn schedule(&mut self, window: Hwnd, settle: Duration, activity: BenchmarkActivity) {
-        let started = Instant::now();
-        self.started = Some(started);
-        self.previous_activity = activity;
+    pub(super) fn schedule(
+        &mut self,
+        window: Hwnd,
+        settle: Duration,
+        activity: BenchmarkActivity,
+        initial_scroll_y: i32,
+    ) {
+        let started = self.begin(activity, initial_scroll_y);
         let duration = self.duration;
         let window = window as usize;
         std::thread::spawn(move || {
@@ -127,6 +133,18 @@ impl EarlyScrollTrace {
                 PostMessageW(window as Hwnd, WM_APP_BENCHMARK_FINISH, 0, 0);
             }
         });
+    }
+
+    pub(super) fn initial_scroll_y(&self) -> Option<i32> {
+        self.initial_scroll_y
+    }
+
+    fn begin(&mut self, activity: BenchmarkActivity, initial_scroll_y: i32) -> Instant {
+        let started = Instant::now();
+        self.started = Some(started);
+        self.initial_scroll_y = Some(initial_scroll_y);
+        self.previous_activity = activity;
+        started
     }
 
     fn target_scroll(&mut self, current: i32, maximum: i32, step: i32) -> i32 {
@@ -283,5 +301,20 @@ impl BrowserState {
             benchmark.activity.layout_rebuilds += 1;
             benchmark.activity.display_items_invalidated += damage.changed_items;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trace_preserves_the_scroll_position_from_before_sampling() {
+        let mut trace = EarlyScrollTrace::six_seconds();
+        assert_eq!(trace.initial_scroll_y(), None);
+
+        trace.begin(BenchmarkActivity::default(), 240);
+
+        assert_eq!(trace.initial_scroll_y(), Some(240));
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::dom::Node;
 
 mod invalidation;
 mod scripts;
@@ -24,6 +25,36 @@ fn discovers_and_resolves_page_resources() {
             }
         ]
     );
+}
+
+#[test]
+fn discovers_stylesheets_and_images_inside_shadow_trees() {
+    let mut page = Page::parse("<x-card></x-card>", "https://example.com/app/");
+    let host = page.dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    let stylesheet = Node::create_element_for(&root, "link");
+    stylesheet.set_attr("rel", "stylesheet");
+    stylesheet.set_attr("href", "components/card.css");
+    Node::append_child(&root, stylesheet);
+    let image = Node::create_element_for(&root, "img");
+    image.set_attr("src", "images/story.jpg");
+    Node::append_child(&root, image);
+
+    page.refresh_resources(800.0);
+
+    assert!(page.resources.contains(&PageResource::Stylesheet {
+        url: "https://example.com/app/components/card.css".into()
+    }));
+    assert!(page.resources.contains(&PageResource::Image {
+        url: "https://example.com/app/images/story.jpg".into()
+    }));
 }
 
 #[test]

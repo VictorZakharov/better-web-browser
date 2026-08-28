@@ -14,6 +14,7 @@ better-web-browser = { path = ".." }
 libfuzzer-sys = "=0.4.13"
 
 [patch.crates-io]
+boa_ast = { path = "../vendor/boa_ast" }
 boa_engine = { path = "../vendor/boa_engine" }
 
 [workspace]

@@ -50,6 +50,8 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             "background"
                 | "background-color"
                 | "background-image"
+                | "mask"
+                | "-webkit-mask"
                 | "mask-image"
                 | "-webkit-mask-image"
                 | "background-repeat"
@@ -76,9 +78,12 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "display" => matches!(
             value.as_str(),
             "none"
+                | "contents"
                 | "block"
                 | "inline"
                 | "inline-block"
+                | "inline-flex"
+                | "-webkit-inline-flex"
                 | "flex"
                 | "-webkit-flex"
                 | "-webkit-box"
@@ -128,7 +133,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "-webkit-flex-basis"
         | "-moz-flex-basis" => parse_length(&value).is_some(),
         "opacity" => value.parse::<f32>().is_ok_and(f32::is_finite),
-        "background-image" | "mask-image" | "-webkit-mask-image" => {
+        "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             value == "none" || value.starts_with("url(")
         }
         "background-position" => parse_background_position(&value).is_some(),
@@ -180,12 +185,17 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             value.as_str(),
             "stretch" | "start" | "flex-start" | "end" | "flex-end" | "center"
         ),
+        "justify-self" => matches!(
+            value.as_str(),
+            "stretch" | "start" | "flex-start" | "left" | "end" | "flex-end" | "right" | "center"
+        ),
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             matches!(value.as_str(), "row" | "column")
         }
         "flex-wrap" | "-webkit-flex-wrap" | "-moz-flex-wrap" => {
             matches!(value.as_str(), "nowrap" | "wrap")
         }
+        "flex-flow" | "-webkit-flex-flow" | "-moz-flex-flow" => flex_flow_supported(&value),
         "flex-grow"
         | "-webkit-flex-grow"
         | "-moz-flex-grow"
@@ -197,6 +207,21 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             .is_ok_and(|number| number.is_finite() && number >= 0.0),
         _ => false,
     }
+}
+
+fn flex_flow_supported(value: &str) -> bool {
+    let mut direction = false;
+    let mut wrap = false;
+    let mut count = 0;
+    for token in value.split_ascii_whitespace() {
+        count += 1;
+        match token {
+            "row" | "column" if !direction => direction = true,
+            "nowrap" | "wrap" if !wrap => wrap = true,
+            _ => return false,
+        }
+    }
+    (1..=2).contains(&count)
 }
 
 fn edge_lengths_supported(value: &str) -> bool {
@@ -274,5 +299,6 @@ mod tests {
         assert!(!supports_matches(
             "@supports (grid-template-columns: subgrid)"
         ));
+        assert!(supports_matches("@supports (justify-self: center)"));
     }
 }

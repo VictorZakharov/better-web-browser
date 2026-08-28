@@ -16,6 +16,10 @@ pub(in crate::renderer_process::child) struct PendingFetchBatch {
 }
 
 impl PendingFetchBatch {
+    pub(in crate::renderer_process::child) fn is_empty(&self) -> bool {
+        self.expected.is_empty()
+    }
+
     pub(in crate::renderer_process::child) fn split(
         self,
         first: HashSet<u64>,
@@ -169,6 +173,13 @@ impl ChildConnection {
             return Err("renderer is shutting down".into());
         }
         self.fetches.take(pending)
+    }
+
+    pub(in crate::renderer_process::child) fn take_ready_fetch_batch(
+        &mut self,
+        pending: &mut PendingFetchBatch,
+    ) -> Result<Vec<BrowserFetchResponse>, String> {
+        self.fetches.take_completed(pending)
     }
 
     pub(super) fn handle_fetch_message(

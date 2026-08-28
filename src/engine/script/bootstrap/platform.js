@@ -41,13 +41,6 @@
     windowObject.scrollY = windowObject.pageYOffset = 0;
     windowObject.scrollTo = windowObject.scrollBy = () => {};
 
-    const started = Date.now();
-    windowObject.performance = {
-        timeOrigin: started,
-        now() { return Date.now() - started; },
-        mark() {}, measure() {}, getEntriesByType() { return []; },
-        timing: { navigationStart: started }
-    };
     const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     windowObject.atob = value => {
         const input = String(value).replace(/[\t\n\f\r ]/g, '').replace(/=+$/, '');
@@ -176,7 +169,11 @@
     windowObject.TextEncoder = TextEncoder;
     windowObject.TextDecoder = TextDecoder;
     const makeConsole = level => (...args) => host('console', level, args.map(value => {
-        try { return typeof value === 'string' ? value : JSON.stringify(value); }
+        try {
+            if (typeof value === 'string') return value;
+            if (value instanceof Error) return value.stack || value.message || String(value);
+            return JSON.stringify(value);
+        }
         catch (_) { return String(value); }
     }).join(' '));
     windowObject.console = {

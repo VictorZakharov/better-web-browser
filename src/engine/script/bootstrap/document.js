@@ -12,6 +12,8 @@
     ).split(/\s+/));
     const htmlElementConstructor = localName => {
         if (localName === 'div') return HTMLDivElement;
+        if (localName === 'style') return HTMLStyleElement;
+        if (localName === 'link') return HTMLLinkElement;
         if (localName === 'time') return HTMLTimeElement;
         if (localName === 'data') return HTMLDataElement;
         if (localName === 'a') return HTMLAnchorElement;
@@ -49,6 +51,17 @@
     }
 
     let documentWriteRefreshQueued = false;
+    const documentCollections = new WeakMap();
+
+    const documentCollection = (document, name, selector) => {
+        let collections = documentCollections.get(document);
+        if (!collections) {
+            collections = new Map();
+            documentCollections.set(document, collections);
+        }
+        if (!collections.has(name)) collections.set(name, selectorCollection(document, selector));
+        return collections.get(name);
+    };
 
     class Document extends Node {
         constructor(id = 0, ...metadata) {
@@ -77,6 +90,20 @@
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
             return imported;
         }
+        adoptNode(node) {
+            if (!(node instanceof Node)) throw new TypeError('adoptNode requires a Node');
+            if (node instanceof Document)
+                throw new DOMException('Documents cannot be adopted', 'NotSupportedError');
+            const oldDocument = node.ownerDocument;
+            const oldParent = node.parentNode;
+            const wasConnected = node.isConnected;
+            if (wasConnected) disconnectCustomElementTree(node);
+            const adopted = wrap(host('adoptNode', this.__id, node.__id));
+            if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
+            markChildCollectionsChanged(oldParent);
+            if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
+            return adopted;
+        }
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
@@ -85,9 +112,19 @@
             return event;
         }
         getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
-        getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
-        getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
+        getElementsByTagName(name) { return selectorCollection(this, String(name)); }
+        getElementsByClassName(name) {
+            return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
+        }
         getElementsByName(name) { return this.querySelectorAll('[name="' + String(name).replace(/"/g, '\\"') + '"]'); }
+        // These document collections are live and retain identity as required by HTML.
+        // https://html.spec.whatwg.org/multipage/dom.html#dom-document-scripts
+        get images() { return documentCollection(this, 'images', 'img'); }
+        get embeds() { return documentCollection(this, 'embeds', 'embed'); }
+        get plugins() { return this.embeds; }
+        get links() { return documentCollection(this, 'links', 'a[href],area[href]'); }
+        get forms() { return documentCollection(this, 'forms', 'form'); }
+        get scripts() { return documentCollection(this, 'scripts', 'script'); }
         get documentElement() { return this.children[0] || null; }
         get doctype() { return wrap(host('doctype', this.__id)); }
         get head() { return this.querySelector('head'); }
@@ -115,6 +152,7 @@
                 documentWriteRefreshQueued = true;
                 Promise.resolve().then(() => {
                     documentWriteRefreshQueued = false;
+                    markChildCollectionsChanged(document, document.body);
                     upgradeCustomElementTree(document);
                     refreshWindowNamedProperties();
                 });
@@ -172,6 +210,8 @@
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
+    windowObject.HTMLStyleElement = HTMLStyleElement;
+    windowObject.HTMLLinkElement = HTMLLinkElement;
     windowObject.HTMLUnknownElement = HTMLUnknownElement;
     windowObject.HTMLTimeElement = HTMLTimeElement;
     windowObject.HTMLDataElement = HTMLDataElement;
@@ -203,6 +243,7 @@
     windowObject.ShadowRoot = ShadowRoot;
     windowObject.HTMLSlotElement = HTMLSlotElement;
     windowObject.DOMImplementation = DOMImplementation;
+    windowObject.HTMLCollection = HTMLCollection;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;
     windowObject.MessageEvent = MessageEvent;
@@ -225,29 +266,51 @@
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
 
     const installedWindowNames = new Map();
-    refreshWindowNamedProperties = () => {
-        const names = new Set(JSON.parse(host('namedPropertyNames')));
-        for (const [name, getter] of installedWindowNames) {
-            if (names.has(name)) continue;
-            if (Object.getOwnPropertyDescriptor(windowObject, name)?.get === getter) delete windowObject[name];
+    const synchronizeWindowName = name => {
+        name = String(name || '');
+        if (!name) return;
+        const objects = list(host('namedProperty', name));
+        const installedGetter = installedWindowNames.get(name);
+        if (!objects.length) {
+            if (installedGetter && Object.getOwnPropertyDescriptor(windowObject, name)?.get === installedGetter)
+                delete windowObject[name];
             installedWindowNames.delete(name);
+            return;
         }
-        for (const name of names) {
-            if (name in windowObject) continue;
-            const getter = () => {
-                const objects = list(host('namedProperty', name));
-                return objects.length > 1 ? objects : objects[0];
-            };
-            const setter = value => {
-                Object.defineProperty(windowObject, name, {
-                    configurable: true, enumerable: true, writable: true, value
-                });
-                installedWindowNames.delete(name);
-            };
+        if (installedGetter || name in windowObject) return;
+        const getter = () => {
+            const current = list(host('namedProperty', name));
+            return current.length > 1 ? current : current[0];
+        };
+        const setter = value => {
             Object.defineProperty(windowObject, name, {
-                configurable: true, enumerable: true, get: getter, set: setter
+                configurable: true, enumerable: true, writable: true, value
             });
-            installedWindowNames.set(name, getter);
+            installedWindowNames.delete(name);
+        };
+        Object.defineProperty(windowObject, name, {
+            configurable: true, enumerable: true, get: getter, set: setter
+        });
+        installedWindowNames.set(name, getter);
+    };
+    refreshWindowNamedPropertyValues = values => {
+        for (const name of new Set(values)) synchronizeWindowName(name);
+    };
+    refreshWindowNamedProperties = roots => {
+        if (roots !== undefined) {
+            roots = Array.isArray(roots) ? roots : [roots];
+            const names = new Set();
+            for (const root of roots) {
+                if (!(root instanceof Node)) continue;
+                for (const name of JSON.parse(host('namedPropertyCandidates', root.__id))) names.add(name);
+            }
+            refreshWindowNamedPropertyValues(names);
+            return;
+        }
+        const names = new Set(JSON.parse(host('namedPropertyNames')));
+        for (const name of installedWindowNames.keys()) if (!names.has(name)) synchronizeWindowName(name);
+        for (const name of names) {
+            synchronizeWindowName(name);
         }
     };
 
@@ -276,17 +339,7 @@
     iframeWindow.document = iframeDocument;
 
     let currentUrl = host('documentUrl');
-    const parseUrl = value => {
-        const match = String(value).match(/^([a-z]+:)?\/\/([^/?#]+)?([^?#]*)?(\?[^#]*)?(#.*)?$/i);
-        return {
-            protocol: match?.[1] || '',
-            host: match?.[2] || '',
-            hostname: (match?.[2] || '').split(':')[0],
-            pathname: match?.[3] || '/',
-            search: match?.[4] || '',
-            hash: match?.[5] || ''
-        };
-    };
+    const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
     const location = {
         get href() { return currentUrl; },
         set href(value) { currentUrl = host('navigate', String(value)); },

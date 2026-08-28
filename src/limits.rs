@@ -39,6 +39,9 @@ pub const MAX_STORAGE_BYTES_PER_ORIGIN: usize = 5 * 1024 * 1024;
 pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
 
 pub const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
+/// Aggregate source admitted by one window realm. Individual scripts retain the smaller boundary
+/// above while component-heavy applications can load multiple independently bounded bundles.
+pub const MAX_PAGE_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_DOCUMENT_WRITE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DYNAMIC_SCRIPTS: usize = 32;
 pub const MAX_DOM_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
@@ -95,6 +98,8 @@ pub const MAX_DEFERRED_RENDERER_MESSAGES: usize = 64;
 /// Maximum validated immutable presentation retained by the browser for one revision.
 pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;
+pub const MAX_RUNTIME_REPORT_ENTRIES: usize = 512;
+pub const MAX_RUNTIME_REPORT_TEXT_BYTES: usize = 64 * 1024;
 /// Maximum normalized native-control text carried in one browser-to-renderer input event.
 pub const MAX_RENDERER_TEXT_INPUT_BYTES: usize = 64 * 1024;
 /// Maximum semantic nodes retained for one active renderer document.
@@ -104,6 +109,14 @@ pub const MAX_ACCESSIBILITY_NODES: usize = MAX_DOM_NODES;
 pub const MAX_ACCESSIBILITY_EDGES: usize = MAX_ACCESSIBILITY_NODES * 2;
 pub const MAX_ACCESSIBILITY_NODE_TEXT_BYTES: usize = 64 * 1024;
 pub const MAX_ACCESSIBILITY_TOTAL_TEXT_BYTES: usize = 4 * 1024 * 1024;
+/// Finite document-space extent accepted for renderer presentation geometry. Layout can produce
+/// non-finite intermediate values for unsupported or cyclic CSS; the renderer sanitizes those
+/// before IPC while the browser decoder retains this fail-closed boundary for untrusted payloads.
+pub const MAX_PRESENTATION_COORDINATE: f32 = 10_000_000.0;
+/// Finite document-space extent accepted for native accessibility geometry. Page layout may
+/// calculate larger or non-finite intermediate rectangles; the renderer sanitizes those before
+/// crossing IPC while the decoder retains this fail-closed boundary for untrusted payloads.
+pub const MAX_ACCESSIBILITY_COORDINATE: f32 = 10_000_000.0;
 pub const MAX_PAGE_DIAGNOSTIC_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTORS: usize = 32;
 pub const MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES: usize = 4 * 1024;
@@ -112,10 +125,11 @@ pub const RENDERER_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const RENDERER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 pub const RENDERER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 // First presentation has its own larger allowance below. Once a page is interactive, a command
-// task that cannot answer the control-plane heartbeat for this budget is not allowed to leave the
-// tab apparently frozen for Chromium-scale tens of seconds.
+// task that cannot answer the control-plane heartbeat is reported quickly. Boa can still need
+// several seconds to finish a large but finite Promise checkpoint on script-heavy pages, so keep
+// the browser UI responsive while giving that isolated renderer a bounded recovery window.
 pub const RENDERER_UNRESPONSIVE_TIMEOUT: Duration = Duration::from_secs(3);
-pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(1);
+pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(12);
 /// A first document can synchronously parse, execute blocking scripts, shape text, and lay out
 /// before the renderer returns to its control pipe. The browser owns the shorter interactive
 /// recovery deadline; this broker ceiling prevents the generic heartbeat from killing valid
@@ -144,5 +158,13 @@ mod tests {
         let (prefix, truncated) = bounded_utf8_prefix("a🦀b", 4);
         assert_eq!(prefix, "a");
         assert!(truncated);
+    }
+
+    #[test]
+    fn page_script_budget_preserves_source_and_resource_boundaries() {
+        const {
+            assert!(MAX_SCRIPT_BYTES < MAX_PAGE_SCRIPT_BYTES);
+            assert!(MAX_PAGE_SCRIPT_BYTES <= PAGE_RESOURCE_BUDGET as usize);
+        }
     }
 }

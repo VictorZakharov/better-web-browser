@@ -24,6 +24,7 @@ mod compatibility;
 mod cssom;
 mod custom_elements;
 mod events;
+mod intersection_observer;
 mod modules;
 mod mutations;
 mod network;

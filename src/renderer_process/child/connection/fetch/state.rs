@@ -307,10 +307,30 @@ impl FetchState {
 
     pub(super) fn take(
         &mut self,
-        pending: PendingFetchBatch,
+        mut pending: PendingFetchBatch,
     ) -> Result<Vec<BrowserFetchResponse>, String> {
-        let mut responses = Vec::with_capacity(pending.expected.len());
-        for request_id in pending.expected {
+        if !self.is_complete(&pending) {
+            return Err("browser omitted a Fetch response".into());
+        }
+        let responses = self.take_completed(&mut pending)?;
+        if !pending.is_empty() {
+            return Err("browser omitted a Fetch response".into());
+        }
+        Ok(responses)
+    }
+
+    pub(super) fn take_completed(
+        &mut self,
+        pending: &mut PendingFetchBatch,
+    ) -> Result<Vec<BrowserFetchResponse>, String> {
+        let ready = pending
+            .expected
+            .iter()
+            .filter(|request_id| self.completed.contains_key(request_id))
+            .copied()
+            .collect::<Vec<_>>();
+        let mut responses = Vec::with_capacity(ready.len());
+        for request_id in ready {
             let tracked = self
                 .requests
                 .remove(&request_id)
@@ -326,6 +346,7 @@ impl FetchState {
                     .remove(&request_id)
                     .ok_or_else(|| "browser omitted a Fetch response".to_string())?,
             );
+            pending.expected.remove(&request_id);
         }
         self.cleanup_batch(pending.batch_id);
         Ok(responses)

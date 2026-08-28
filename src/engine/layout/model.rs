@@ -171,9 +171,11 @@ pub struct LayoutOutput {
     pub content_height: f32,
     pub background: Color,
     pub forms: HashMap<NodeId, FormSpec>,
+    /// Renderer-local element border boxes used only by opt-in page diagnostics.
+    pub node_bounds: HashMap<NodeId, RectF>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) enum InlineAtom {
     Text {
         text: String,
@@ -317,7 +319,8 @@ pub(super) struct GridTemplateAreas {
 
 #[derive(Clone)]
 pub(super) struct FlexItem {
-    pub(super) node: NodeRef,
+    pub(super) node: Option<NodeRef>,
+    pub(super) anonymous_atoms: Vec<InlineAtom>,
     pub(super) basis: f32,
     pub(super) grow: f32,
     pub(super) shrink: f32,

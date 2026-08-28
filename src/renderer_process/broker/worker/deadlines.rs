@@ -143,4 +143,26 @@ mod tests {
             Duration::from_millis(150),
         ));
     }
+
+    #[test]
+    fn production_renderer_allows_a_finite_slow_task_to_recover() {
+        let started = Instant::now();
+        let unresponsive = crate::limits::RENDERER_UNRESPONSIVE_TIMEOUT;
+        let recovery = crate::limits::RENDERER_UNRESPONSIVE_KILL_TIMEOUT;
+
+        assert!(!task_budget_exceeded(
+            started + Duration::from_secs(5),
+            started,
+            None,
+            unresponsive,
+            recovery,
+        ));
+        assert!(task_budget_exceeded(
+            started + unresponsive + recovery,
+            started,
+            None,
+            unresponsive,
+            recovery,
+        ));
+    }
 }

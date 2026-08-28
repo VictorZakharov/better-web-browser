@@ -51,11 +51,11 @@ pub(super) fn drain_one_dynamic_script(
             return true;
         }
     };
-    if total_bytes.saturating_add(code.len()) > MAX_SCRIPT_BYTES {
+    if total_bytes.saturating_add(code.len()) > MAX_PAGE_SCRIPT_BYTES {
         outcome.errors.push(format!(
             "{}: skipped because the page exceeds the {} MiB JavaScript limit",
             pending_script.source_url,
-            MAX_SCRIPT_BYTES / 1024 / 1024
+            MAX_PAGE_SCRIPT_BYTES / 1024 / 1024
         ));
         return true;
     }

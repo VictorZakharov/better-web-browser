@@ -20,7 +20,9 @@ pub(super) fn discover_resources(
 ) -> (Vec<PageResource>, Vec<PageScript>) {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
-    for link in dom.elements_named("link") {
+    for link in Node::shadow_including_descendants(&dom.document)
+        .filter(|node| node.tag_name() == Some("link"))
+    {
         let rel = link.attr("rel").unwrap_or_default();
         if !rel
             .split_ascii_whitespace()
@@ -41,7 +43,7 @@ pub(super) fn discover_resources(
     }
 
     let mut seen_images = HashSet::new();
-    for node in Node::descendants(&dom.document) {
+    for node in Node::shadow_including_descendants(&dom.document) {
         if !matches!(node.tag_name(), Some("img" | "image")) {
             continue;
         }

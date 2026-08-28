@@ -153,7 +153,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             content_y + height
         } else {
             match style.display {
-                Display::Flex => {
+                Display::Flex | Display::InlineFlex => {
                     self.layout_flex(node, content_x, content_y, content_width, &style)
                 }
                 Display::Grid => {
@@ -180,6 +180,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             width: border_box_width,
             height: border_box_height,
         };
+        self.output.node_bounds.insert(node_id(node), rect);
         let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
         if let Some(index) = background_index
             && let DisplayItem::SolidRect {
@@ -302,7 +303,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 no_wrap: false,
             });
         }
-        for child in Node::composed_children(node).iter() {
+        for child in self.block_formatting_children(node).iter() {
             if y >= float_bottom {
                 left_float_width = 0.0;
                 right_float_width = 0.0;

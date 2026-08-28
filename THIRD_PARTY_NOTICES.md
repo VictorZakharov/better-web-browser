@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `f3a4500513f64507516140a043ea7cf955346f99cb8aad1dc551d609f2c13c09`
+- Cargo.lock SHA-256: `cf4e34e3ae85cca05e2119d1afca476a2b27dce60c3549e6798db66e792dc0ac`
 - Third-party packages: 216
 
 | Package | Version | License expression | Source |
@@ -102,12 +102,12 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 | [upstream](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/moxcms.git) |
 | `new_debug_unreachable` | 1.0.6 | MIT | [upstream](https://github.com/mbrubeck/rust-debug-unreachable) |
-| `num_enum` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
-| `num_enum_derive` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
 | `num-bigint` | 0.4.8 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-bigint) |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/num-conv) |
 | `num-integer` | 0.1.47 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-integer) |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-num/num-traits) |
+| `num_enum` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
+| `num_enum_derive` | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | [upstream](https://github.com/illicitonion/num_enum) |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 | [upstream](https://github.com/matklad/once_cell) |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/parking) |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
@@ -227,7 +227,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 ## Bundled sources and data
 
-- `boa_engine` is a locally modified path dependency from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in `vendor/boa_engine/LOCAL_CHANGES.md`; both upstream license texts are preserved beside the source and copied into release archives.
+- `boa_ast`, `boa_engine`, and `boa_parser` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate's `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.
 - Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.

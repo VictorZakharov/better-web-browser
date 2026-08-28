@@ -63,10 +63,10 @@ pub(super) fn evaluate_module(
                     continue;
                 }
             };
-            if total_bytes.saturating_add(source.len()) > MAX_SCRIPT_BYTES {
+            if total_bytes.saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES {
                 result = Err(format!(
                     "{url}: module graph exceeds the {} MiB JavaScript limit",
-                    MAX_SCRIPT_BYTES / 1024 / 1024
+                    MAX_PAGE_SCRIPT_BYTES / 1024 / 1024
                 ));
                 continue;
             }

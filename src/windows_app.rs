@@ -8,6 +8,7 @@ mod browser_navigation;
 mod browser_window;
 mod chrome_controls;
 mod chrome_paint;
+mod color_scheme;
 mod document_activation;
 mod document_navigation;
 mod document_state;

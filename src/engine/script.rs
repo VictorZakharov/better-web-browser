@@ -3,7 +3,7 @@ use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::invalidation::{InvalidationImpact, MutationKind, RenderInvalidation};
 use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
 use crate::limits::{
-    MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS,
+    MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
     MAX_SCRIPT_LOOP_ITERATIONS as MAX_LOOP_ITERATIONS,
 };
@@ -39,6 +39,7 @@ mod shadow_host;
 mod style_cache;
 mod style_host;
 mod text_encoding_host;
+mod timer_execution;
 mod types;
 mod user_events;
 mod worker_bootstrap;
@@ -52,6 +53,7 @@ use host_call::host_call;
 use host_state::{HostState, HostStateLink};
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use runtime::ScriptRuntime;
+pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
     DynamicScriptLoader, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome,

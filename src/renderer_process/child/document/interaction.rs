@@ -127,7 +127,7 @@ impl DocumentRuntime {
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
         let presentation =
-            self.presentation_after_user_input(outcome, force_accessibility_update)?;
+            self.presentation_after_user_input(outcome, force_accessibility_update, connection)?;
         Ok(InteractionResult {
             presentation,
             navigation,
@@ -239,6 +239,7 @@ impl DocumentRuntime {
         &mut self,
         outcome: ScriptOutcome,
         force_accessibility_update: bool,
+        connection: &mut ChildConnection,
     ) -> Result<Option<RendererPresentation>, String> {
         let needs_present = force_accessibility_update
             || outcome.render_requested
@@ -260,6 +261,7 @@ impl DocumentRuntime {
         } else {
             StyleRefreshStats::default()
         };
+        self.start_presentational_preloads(connection)?;
         let started = Instant::now();
         if outcome.render_requested {
             self.rebuild_layout();

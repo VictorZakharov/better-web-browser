@@ -19,6 +19,7 @@ pub const NONCE_LENGTH: usize = 32;
 pub const RENDERER_DIAGNOSTIC_INTERNAL_ERROR: u16 = 70;
 pub const RENDERER_DIAGNOSTIC_PROTOCOL_ERROR: u16 = 71;
 pub const RENDERER_DIAGNOSTIC_TASK_STARTED: u16 = 72;
+pub const RENDERER_DIAGNOSTIC_TASK_STAGE: u16 = 73;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Nonce([u8; NONCE_LENGTH]);

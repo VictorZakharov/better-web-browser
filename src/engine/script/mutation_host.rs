@@ -3,6 +3,7 @@
 use super::binding_helpers::{append_html_fragment, argument_id, argument_string, node_label};
 use super::*;
 use crate::limits::{MAX_DOCUMENT_WRITE_BYTES, MAX_DOM_MUTATIONS_PER_TASK};
+use std::path::Path;
 
 pub(super) fn mutation_host_call(
     operation: &str,
@@ -20,6 +21,7 @@ pub(super) fn mutation_host_call(
         "insertBefore" => insert_before(args, state),
         "removeChild" => remove_child(args, state),
         "remove" => remove(args, state),
+        "adoptNode" => adopt_node(args, state),
         "textSet" => set_text(args, context, state)?,
         "attrSet" => super::attribute_host::set_attribute(args, context, state)?,
         "attrSetNs" => super::attribute_host::set_attribute_ns(args, context, state, false)?,
@@ -72,8 +74,9 @@ pub(super) fn eval_with_writes(
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
     source: &str,
+    source_url: &str,
 ) -> JsResult<JsValue> {
-    let result = context.eval(Source::from_bytes(source));
+    let result = context.eval(Source::from_bytes(source).with_path(Path::new(source_url)));
     flush_document_write(&mut host.borrow_mut());
     result
 }
@@ -225,6 +228,38 @@ fn remove(args: &[JsValue], state: &mut HostState) -> JsValue {
         state.diagnose("remove node".into());
     }
     JsValue::from(changed)
+}
+
+fn adopt_node(args: &[JsValue], state: &mut HostState) -> JsValue {
+    let owner = state.node(argument_id(args, 1));
+    let node = state.node(argument_id(args, 2));
+    let valid = owner
+        .as_ref()
+        .zip(node.as_ref())
+        .is_some_and(|(owner, node)| {
+            matches!(owner.data, NodeData::Document)
+                && !(matches!(node.data, NodeData::Document)
+                    && state
+                        .document_for(node)
+                        .is_some_and(|document| document.id() == node.id()))
+                && !matches!(node.data, NodeData::ShadowRoot(_))
+        });
+    if !valid {
+        return JsValue::from(0);
+    }
+    let owner = owner.expect("validated owner");
+    let node = node.expect("validated node");
+    let parent = node.parent();
+    let requires_render = state.mutation_requires_render(&node);
+    let kind = child_list_kind(&node);
+    if let Some(parent) = parent.as_ref() {
+        Node::remove_from_parent(&node);
+        state.record_removed_subtree(&node);
+        state.record_mutation_with_render(Some(parent), kind, requires_render);
+        state.diagnose("adopt and detach node".into());
+    }
+    state.adopt_subtree(&owner, &node);
+    JsValue::from(state.id_for(&node))
 }
 
 fn set_text(args: &[JsValue], context: &mut Context, state: &mut HostState) -> JsResult<JsValue> {

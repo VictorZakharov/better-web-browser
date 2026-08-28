@@ -81,6 +81,7 @@ pub struct Page {
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
     responsive_viewport_width: f32,
+    prefers_dark_color_scheme: bool,
 }
 
 impl Page {
@@ -133,9 +134,18 @@ impl Page {
             fonts: Vec::new(),
             diagnostics,
             responsive_viewport_width,
+            prefers_dark_color_scheme: false,
         };
         page.install_embedded_images();
         page
+    }
+
+    pub fn set_media_environment(&mut self, viewport_width: f32, prefers_dark_color_scheme: bool) {
+        self.responsive_viewport_width = viewport_width.max(1.0);
+        if self.prefers_dark_color_scheme != prefers_dark_color_scheme {
+            self.prefers_dark_color_scheme = prefers_dark_color_scheme;
+            self.cached_styles = None;
+        }
     }
 
     pub fn add_stylesheet(&mut self, css: String) -> bool {

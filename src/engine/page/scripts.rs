@@ -31,7 +31,7 @@ impl Page {
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
         cookie_header: &str,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
-        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header, None)
+        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header, None, true)
             .expect("empty Web Storage state is valid")
     }
 
@@ -48,6 +48,7 @@ impl Page {
             Some(dynamic_script_loader),
             cookie_header,
             Some((cookie_version, local_storage, session_storage)),
+            true,
         )
     }
 
@@ -56,7 +57,7 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        self.start_script_phase(first_paint_only, dynamic_script_loader, "", None)
+        self.start_script_phase(first_paint_only, dynamic_script_loader, "", None, false)
             .expect("empty Web Storage state is valid")
             .1
     }
@@ -71,6 +72,7 @@ impl Page {
             crate::storage::StorageAreaSnapshot,
             crate::storage::StorageAreaSnapshot,
         )>,
+        defer_dynamic_scripts: bool,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
@@ -105,12 +107,21 @@ impl Page {
                 &self.source_url,
                 &self.character_set,
             );
+            runtime.set_media_environment(
+                self.responsive_viewport_width,
+                self.prefers_dark_color_scheme,
+            );
+            runtime.set_document_stylesheets(&self.stylesheet_sources);
             if let Some((cookie_version, local, session)) = document_state {
                 runtime.set_document_state(cookie_version, cookie_header, local, session)?;
             } else {
                 runtime.set_document_cookie_header(cookie_header);
             }
-            let outcome = runtime.execute_initial_with_loader(&inputs, dynamic_script_loader);
+            let outcome = if defer_dynamic_scripts {
+                runtime.execute_initial_deferred(&inputs, dynamic_script_loader)
+            } else {
+                runtime.execute_initial_with_loader(&inputs, dynamic_script_loader)
+            };
             (runtime.is_active().then_some(runtime), outcome)
         };
         for missing in self

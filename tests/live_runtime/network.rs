@@ -54,6 +54,17 @@ onmessage = event => {
   setTimeout(() => postMessage({ answer: event.data.base + moduleDelta + data.fetchDelta }), 25);
 };"#;
 const WORKER_DEPENDENCY: &str = "export const moduleDelta = 1;";
+const SLOW_WORKER_HTML: &str = r#"<!doctype html>
+<title>slow worker pending</title>
+<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
+<script>
+  const worker = new Worker('/slow-worker.js');
+  worker.onmessage = () => {
+    document.body.style.backgroundColor = 'rgb(17, 170, 34)';
+    document.title = 'slow worker complete';
+    worker.terminate();
+  };
+</script>"#;
 const ORDERING_HTML: &str = r#"<!doctype html>
 <title>ordering pending</title>
 <style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
@@ -169,6 +180,41 @@ fn module_worker_queues_messages_while_top_level_fetch_is_pending() {
         "Worker run reported JavaScript errors:\n{report}"
     );
     assert_green_capture(&artifacts, "Worker did not repaint its owning document");
+}
+
+#[test]
+fn slow_worker_script_fetch_does_not_block_the_page_renderer() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+    let address = listener.local_addr().expect("read fixture address");
+    let server = thread::spawn(move || {
+        serve_parallel_fixtures(listener, 2, |request| {
+            if request.contains("GET /slow-worker.js ") {
+                FixtureResponse::script("postMessage('ready');", Duration::from_millis(4_500))
+            } else {
+                FixtureResponse::html(SLOW_WORKER_HTML)
+            }
+        })
+    });
+    let artifacts = TestArtifacts::new();
+    let url = format!("http://{address}/slow-worker-runtime");
+
+    let mut child = hidden_benchmark(&url, &artifacts, 5_500);
+    let status = wait_for_child(&mut child, Duration::from_secs(20));
+    server
+        .join()
+        .expect("fixture server panicked")
+        .expect("fixture server failed");
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+
+    let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
+    assert!(
+        report.contains("\"javascript_errors\": []"),
+        "slow Worker run reported JavaScript errors:\n{report}"
+    );
+    assert_green_capture(
+        &artifacts,
+        "slow Worker did not complete after its non-blocking script fetch",
+    );
 }
 
 #[test]

@@ -27,11 +27,29 @@ pub struct NodeDiagnostics {
     pub tag: Option<String>,
     pub id: Option<String>,
     pub class: Option<String>,
+    pub parent: Option<NodeIdentityDiagnostics>,
+    pub composed_parent: Option<NodeIdentityDiagnostics>,
     pub child_count: u64,
     pub text_length: u64,
+    pub shadow_root: Option<ShadowRootDiagnostics>,
     pub element_image: Option<ResourceDiagnostics>,
     pub style: StyleDiagnostics,
+    pub layout_rect: Option<RectF>,
     pub control_rect: Option<RectF>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NodeIdentityDiagnostics {
+    pub tag: Option<String>,
+    pub id: Option<String>,
+    pub class: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShadowRootDiagnostics {
+    pub child_count: u64,
+    pub descendant_count: u64,
+    pub text_length: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -39,6 +57,13 @@ pub struct StyleDiagnostics {
     pub display: String,
     pub position: String,
     pub float: String,
+    pub flex_direction: String,
+    pub flex_wrap: bool,
+    pub flex_grow: f32,
+    pub flex_shrink: f32,
+    pub flex_basis: String,
+    pub align_items: String,
+    pub justify_content: String,
     pub visibility: bool,
     pub opacity: f32,
     pub overflow_hidden: bool,
@@ -102,11 +127,31 @@ impl NodeDiagnostics {
             "tag": self.tag,
             "id": self.id,
             "class": self.class,
+            "parent": self.parent.as_ref().map(NodeIdentityDiagnostics::to_json),
+            "composed_parent": self.composed_parent.as_ref().map(NodeIdentityDiagnostics::to_json),
             "child_count": self.child_count,
             "text_length": self.text_length,
+            "shadow_root": self.shadow_root.as_ref().map(ShadowRootDiagnostics::to_json),
             "element_image": self.element_image.as_ref().map(ResourceDiagnostics::to_json),
             "style": self.style.to_json(),
+            "layout_rect": self.layout_rect.map(rect_value),
             "control_rect": self.control_rect.map(rect_value),
+        })
+    }
+}
+
+impl NodeIdentityDiagnostics {
+    fn to_json(&self) -> Value {
+        json!({ "tag": self.tag, "id": self.id, "class": self.class })
+    }
+}
+
+impl ShadowRootDiagnostics {
+    fn to_json(&self) -> Value {
+        json!({
+            "child_count": self.child_count,
+            "descendant_count": self.descendant_count,
+            "text_length": self.text_length,
         })
     }
 }
@@ -117,6 +162,13 @@ impl StyleDiagnostics {
             "display": self.display,
             "position": self.position,
             "float": self.float,
+            "flex_direction": self.flex_direction,
+            "flex_wrap": self.flex_wrap,
+            "flex_grow": self.flex_grow,
+            "flex_shrink": self.flex_shrink,
+            "flex_basis": self.flex_basis,
+            "align_items": self.align_items,
+            "justify_content": self.justify_content,
             "visibility": self.visibility,
             "opacity": self.opacity,
             "overflow_hidden": self.overflow_hidden,

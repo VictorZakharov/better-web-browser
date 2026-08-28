@@ -151,6 +151,16 @@ fn dispatch_host_call(
             ))
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
+        "mediaMatches" => {
+            let query = argument_string(args, 1, context)?;
+            Ok(JsValue::from(
+                crate::engine::css::media_query_matches_with_color_scheme(
+                    &query,
+                    state.media_viewport_width,
+                    state.prefers_dark_color_scheme,
+                ),
+            ))
+        }
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
             state.set_cookie(argument_string(args, 1, context)?);
@@ -216,6 +226,25 @@ fn dispatch_host_call(
             })?;
             Ok(js_string(resolved))
         }
+        "parseWebUrl" => {
+            let value = argument_string(args, 1, context)?;
+            let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
+                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
+            })?;
+            Ok(js_string(
+                serde_json::to_string(&parts).expect("URL parts serialize"),
+            ))
+        }
+        "setWebUrlComponent" => {
+            let value = argument_string(args, 1, context)?;
+            let component = argument_string(args, 2, context)?;
+            let input = argument_string(args, 3, context)?;
+            let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
+                .ok_or_else(|| {
+                    JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
+                })?;
+            Ok(js_string(resolved))
+        }
         "navigate" => {
             let value = argument_string(args, 1, context)?;
             let resolved = state.resolved_url(&value);
@@ -232,6 +261,16 @@ fn dispatch_host_call(
             let delay = argument_duration(args, 2);
             let repeat = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
             state.schedule_timer(id, delay, repeat);
+            Ok(JsValue::from(id))
+        }
+        "idleSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("idle callback identifiers must be positive integers")
+                    .into());
+            }
+            state.schedule_idle_callback(id, argument_duration(args, 2));
             Ok(JsValue::from(id))
         }
         "timerCancel" => {

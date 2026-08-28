@@ -14,8 +14,8 @@ use crate::limits::MAX_RENDERER_PRESENTATION_BYTES;
 use crate::renderer_protocol::{
     BrowserMessage, DocumentId, DocumentStart, FrameReader, FrameWriter, ProtocolError,
     RENDERER_DIAGNOSTIC_INTERNAL_ERROR, RENDERER_DIAGNOSTIC_PROTOCOL_ERROR,
-    RENDERER_DIAGNOSTIC_TASK_STARTED, RendererDiagnostic, RendererMessage, RendererPresentation,
-    TestCommand, TransferAssembler, TransferChunk,
+    RENDERER_DIAGNOSTIC_TASK_STAGE, RENDERER_DIAGNOSTIC_TASK_STARTED, RendererDiagnostic,
+    RendererMessage, RendererPresentation, TestCommand, TransferAssembler, TransferChunk,
 };
 use std::collections::VecDeque;
 use std::fs::File;
@@ -125,6 +125,17 @@ impl ChildConnection {
             .map_err(|error| error.to_string())?;
         self.last_processed_work_ack = Instant::now();
         Ok(())
+    }
+
+    pub(super) fn report_renderer_task_stage(
+        &mut self,
+        stage: impl Into<String>,
+    ) -> Result<(), String> {
+        let diagnostic = RendererDiagnostic::new(RENDERER_DIAGNOSTIC_TASK_STAGE, stage)
+            .map_err(|error| error.to_string())?;
+        self.writer
+            .send_renderer(&RendererMessage::Diagnostic(diagnostic))
+            .map_err(|error| error.to_string())
     }
 
     fn renderer_task_label(&self, message: &BrowserMessage) -> Option<String> {
@@ -248,6 +259,7 @@ impl ChildConnection {
                 if let Some(delivery) = self.handle_fetch_message(message)? {
                     self.deliver_script_fetch(delivery)?;
                 }
+                self.complete_document_resource_preloads()?;
                 Ok(())
             }
             BrowserMessage::Hello { .. } => Err("duplicate renderer Hello".into()),

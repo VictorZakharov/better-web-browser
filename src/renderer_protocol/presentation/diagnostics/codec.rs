@@ -1,9 +1,12 @@
 use super::super::super::wire::{WireReader, WireWriter};
 use super::*;
+
+mod geometry;
 use crate::limits::{
     MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTORS,
 };
 use crate::renderer_protocol::ProtocolError;
+use geometry::{decode_optional_rect, decode_rects, encode_optional_rect, encode_rects};
 
 const MAX_MATCHES_PER_SELECTOR: usize = 32;
 const MAX_DIAGNOSTIC_TEXT_BYTES: usize = 512;
@@ -108,26 +111,84 @@ fn encode_node(writer: &mut WireWriter, value: &NodeDiagnostics) -> Result<(), P
     optional_string(writer, value.tag.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
     optional_string(writer, value.id.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
     optional_string(writer, value.class.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    encode_optional_identity(writer, value.parent.as_ref())?;
+    encode_optional_identity(writer, value.composed_parent.as_ref())?;
     writer.u64(value.child_count);
     writer.u64(value.text_length);
+    writer.bool(value.shadow_root.is_some());
+    if let Some(shadow) = &value.shadow_root {
+        writer.u64(shadow.child_count);
+        writer.u64(shadow.descendant_count);
+        writer.u64(shadow.text_length);
+    }
     encode_optional_resource(writer, value.element_image.as_ref())?;
     encode_style(writer, &value.style)?;
+    encode_optional_rect(writer, value.layout_rect)?;
     encode_optional_rect(writer, value.control_rect)?;
     Ok(())
 }
 
 fn decode_node(reader: &mut WireReader<'_>) -> Result<NodeDiagnostics, ProtocolError> {
+    let node_id = reader.u128()?;
+    let tag = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let id = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let class = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let parent = decode_optional_identity(reader)?;
+    let composed_parent = decode_optional_identity(reader)?;
+    let child_count = reader.u64()?;
+    let text_length = reader.u64()?;
+    let shadow_root = if reader.bool()? {
+        Some(ShadowRootDiagnostics {
+            child_count: reader.u64()?,
+            descendant_count: reader.u64()?,
+            text_length: reader.u64()?,
+        })
+    } else {
+        None
+    };
     Ok(NodeDiagnostics {
-        node_id: reader.u128()?,
-        tag: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        id: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        class: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        child_count: reader.u64()?,
-        text_length: reader.u64()?,
+        node_id,
+        tag,
+        id,
+        class,
+        parent,
+        composed_parent,
+        child_count,
+        text_length,
+        shadow_root,
         element_image: decode_optional_resource(reader)?,
         style: decode_style(reader)?,
+        layout_rect: decode_optional_rect(reader)?,
         control_rect: decode_optional_rect(reader)?,
     })
+}
+
+fn encode_optional_identity(
+    writer: &mut WireWriter,
+    value: Option<&NodeIdentityDiagnostics>,
+) -> Result<(), ProtocolError> {
+    writer.bool(value.is_some());
+    if let Some(value) = value {
+        optional_string(writer, value.tag.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
+        optional_string(writer, value.id.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
+        optional_string(writer, value.class.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    }
+    Ok(())
+}
+
+fn decode_optional_identity(
+    reader: &mut WireReader<'_>,
+) -> Result<Option<NodeIdentityDiagnostics>, ProtocolError> {
+    reader
+        .bool()?
+        .then(|| {
+            Ok(NodeIdentityDiagnostics {
+                tag: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
+                id: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
+                class: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
+            })
+        })
+        .transpose()
 }
 
 fn encode_style(writer: &mut WireWriter, value: &StyleDiagnostics) -> Result<(), ProtocolError> {
@@ -135,6 +196,10 @@ fn encode_style(writer: &mut WireWriter, value: &StyleDiagnostics) -> Result<(),
         &value.display,
         &value.position,
         &value.float,
+        &value.flex_direction,
+        &value.flex_basis,
+        &value.align_items,
+        &value.justify_content,
         &value.list_style_type,
         &value.width,
         &value.height,
@@ -152,6 +217,13 @@ fn encode_style(writer: &mut WireWriter, value: &StyleDiagnostics) -> Result<(),
     }
     writer.f32(value.opacity);
     writer.bool(value.overflow_hidden);
+    writer.bool(value.flex_wrap);
+    for number in [value.flex_grow, value.flex_shrink] {
+        if !number.is_finite() || number < 0.0 {
+            return invalid();
+        }
+        writer.f32(number);
+    }
     encode_optional_resource(writer, value.background_image.as_ref())?;
     encode_optional_resource(writer, value.mask_image.as_ref())?;
     Ok(())
@@ -161,6 +233,10 @@ fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleDiagnostics, Protoco
     let display = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let position = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let float = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let flex_direction = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let flex_basis = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let align_items = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let justify_content = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let list_style_type = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let width = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let height = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
@@ -174,13 +250,27 @@ fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleDiagnostics, Protoco
     if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
         return invalid();
     }
+    let overflow_hidden = reader.bool()?;
+    let flex_wrap = reader.bool()?;
+    let flex_grow = reader.f32()?;
+    let flex_shrink = reader.f32()?;
+    if !flex_grow.is_finite() || flex_grow < 0.0 || !flex_shrink.is_finite() || flex_shrink < 0.0 {
+        return invalid();
+    }
     Ok(StyleDiagnostics {
         display,
         position,
         float,
+        flex_direction,
+        flex_wrap,
+        flex_grow,
+        flex_shrink,
+        flex_basis,
+        align_items,
+        justify_content,
         visibility,
         opacity,
-        overflow_hidden: reader.bool()?,
+        overflow_hidden,
         list_style_type,
         width,
         height,
@@ -234,70 +324,6 @@ fn decode_optional_resource(
         paint_rects: decode_rects(reader)?,
         control_rects: decode_rects(reader)?,
     }))
-}
-
-fn encode_rects(writer: &mut WireWriter, values: &[RectF]) -> Result<(), ProtocolError> {
-    count(values.len(), MAX_RESOURCE_RECTS)?;
-    writer.u32(values.len() as u32);
-    for value in values {
-        encode_rect(writer, *value)?;
-    }
-    Ok(())
-}
-
-fn decode_rects(reader: &mut WireReader<'_>) -> Result<Vec<RectF>, ProtocolError> {
-    let count = bounded_count(reader.u32()?, MAX_RESOURCE_RECTS)?;
-    (0..count).map(|_| decode_rect(reader)).collect()
-}
-
-fn encode_optional_rect(
-    writer: &mut WireWriter,
-    value: Option<RectF>,
-) -> Result<(), ProtocolError> {
-    writer.bool(value.is_some());
-    if let Some(value) = value {
-        encode_rect(writer, value)?;
-    }
-    Ok(())
-}
-
-fn decode_optional_rect(reader: &mut WireReader<'_>) -> Result<Option<RectF>, ProtocolError> {
-    reader.bool()?.then(|| decode_rect(reader)).transpose()
-}
-
-fn encode_rect(writer: &mut WireWriter, rect: RectF) -> Result<(), ProtocolError> {
-    validate_rect(rect)?;
-    writer.f32(rect.x);
-    writer.f32(rect.y);
-    writer.f32(rect.width);
-    writer.f32(rect.height);
-    Ok(())
-}
-
-fn decode_rect(reader: &mut WireReader<'_>) -> Result<RectF, ProtocolError> {
-    let rect = RectF {
-        x: reader.f32()?,
-        y: reader.f32()?,
-        width: reader.f32()?,
-        height: reader.f32()?,
-    };
-    validate_rect(rect)?;
-    Ok(rect)
-}
-
-fn validate_rect(rect: RectF) -> Result<(), ProtocolError> {
-    if !rect.x.is_finite()
-        || !rect.y.is_finite()
-        || rect.x.abs() > MAX_COORDINATE
-        || rect.y.abs() > MAX_COORDINATE
-        || !rect.width.is_finite()
-        || !rect.height.is_finite()
-        || !(0.0..=MAX_COORDINATE).contains(&rect.width)
-        || !(0.0..=MAX_COORDINATE).contains(&rect.height)
-    {
-        return invalid();
-    }
-    Ok(())
 }
 
 fn string(writer: &mut WireWriter, value: &str, maximum: usize) -> Result<(), ProtocolError> {

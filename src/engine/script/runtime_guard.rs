@@ -2,12 +2,36 @@
 
 use super::*;
 
+thread_local! {
+    static LAST_PANIC_SITE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+pub(crate) fn install_runtime_panic_hook() {
+    std::panic::set_hook(Box::new(|information| {
+        let site = information
+            .location()
+            .map(|location| {
+                format!(
+                    "{}:{}:{}",
+                    location.file(),
+                    location.line(),
+                    location.column()
+                )
+            })
+            .unwrap_or_else(|| "unknown source location".to_string());
+        LAST_PANIC_SITE.with(|slot| *slot.borrow_mut() = Some(site));
+    }));
+}
+
 pub(super) fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
-    payload
+    let detail = payload
         .downcast_ref::<&str>()
         .map(|message| (*message).to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "unknown evaluator panic".to_string())
+        .unwrap_or_else(|| "unknown evaluator panic".to_string());
+    LAST_PANIC_SITE
+        .with(|slot| slot.borrow_mut().take())
+        .map_or(detail.clone(), |site| format!("{detail} at {site}"))
 }
 
 pub(super) fn stopped_runtime_outcome(detail: String) -> ScriptOutcome {

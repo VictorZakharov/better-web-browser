@@ -1,4 +1,8 @@
 use super::*;
+
+mod flex_flow;
+mod queries;
+mod shadow;
 use crate::engine::dom;
 
 #[test]
@@ -42,39 +46,6 @@ fn important_author_rules_beat_normal_inline_styles() {
     assert_eq!(style.opacity, 0.5);
     assert_eq!(style.font_size, 18.0);
     assert_eq!(style.line_height, 36.0);
-}
-
-#[test]
-fn scopes_shadow_rules_and_inherits_through_slots_in_the_composed_tree() {
-    let dom = dom::parse(
-        r#"<style>.inside { color: red } .light { font-size: 11px }</style>
-            <x-card id="host" class="theme"><span class="light">Light</span></x-card>"#,
-    );
-    let host = dom.elements_named("x-card").next().unwrap();
-    let light = dom.elements_named("span").next().unwrap();
-    let root = Node::attach_shadow(
-        &host,
-        crate::engine::dom::ShadowRootMode::Open,
-        false,
-        false,
-        false,
-    )
-    .unwrap();
-    Node::replace_inner_html(
-        &root,
-        r#"<style>:host(.theme) { color: #123456 } .inside { color: green }
-            ::slotted(.light) { font-size: 24px }</style>
-            <div class="inside">Shadow</div><slot></slot>"#,
-        true,
-    );
-    let inside = Node::descendants(&root)
-        .find(|node| node.has_class("inside"))
-        .unwrap();
-    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
-
-    assert_eq!(styles.get(&host).color, Color::rgb(0x12, 0x34, 0x56));
-    assert_eq!(styles.get(&inside).color, Color::rgb(0, 128, 0));
-    assert_eq!(styles.get(&light).font_size, 24.0);
 }
 
 #[test]
@@ -180,6 +151,28 @@ fn resolves_standard_and_prefixed_mask_images() {
 }
 
 #[test]
+fn resolves_mask_shorthand_images_after_custom_property_substitution() {
+    let dom = dom::parse(r#"<span class="icon"></span>"#);
+    let stylesheets = vec![(
+        "https://cdn.example/assets/css/icons.css".to_string(),
+        ".icon { --logo: url('../menu.svg'); mask: var(--logo) center no-repeat }".to_string(),
+    )];
+    let styles = StyleSet::from_sources_for_viewport(
+        &dom,
+        "https://example.com/",
+        &stylesheets,
+        1000.0,
+        1000.0,
+    );
+    let icon = dom.elements_named("span").next().unwrap();
+
+    assert_eq!(
+        styles.get(&icon).mask_image.as_deref(),
+        Some("https://cdn.example/assets/menu.svg")
+    );
+}
+
+#[test]
 fn matches_descendants_children_compounds_and_not() {
     let dom = dom::parse(
         r#"<style>
@@ -237,73 +230,6 @@ fn matches_functional_selector_lists_and_root_conservatively() {
 }
 
 #[test]
-fn applies_media_width_queries() {
-    let dom =
-        dom::parse(r#"<style>@media (max-width: 600px) { body { color: green } }</style><p>x</p>"#);
-    let narrow = StyleSet::from_dom(&dom, &[], 500.0);
-    let wide = StyleSet::from_dom(&dom, &[], 900.0);
-    let body = dom.elements_named("body").next().unwrap();
-    assert_eq!(narrow.get(&body).color, Color::rgb(0, 128, 0));
-    assert_eq!(wide.get(&body).color, Color::BLACK);
-}
-
-#[test]
-fn applies_calculated_media_breakpoints_to_responsive_sidebar_rules() {
-    let dom = dom::parse(
-        r#"<style>
-            .client-js .pinned { display: none }
-            @media screen and (max-width: calc(1120px - 1px)) {
-                .client-js .pinned { display: none }
-            }
-            @media screen and (min-width: 1120px) {
-                .client-js.feature-pinned .column .pinned { display: block }
-            }
-        </style>
-        <html class="client-js feature-pinned">
-            <body><aside class="column"><nav class="pinned">Contents</nav></aside></body>
-        </html>"#,
-    );
-    let pinned = dom.elements_named("nav").next().unwrap();
-
-    assert_eq!(
-        StyleSet::from_dom(&dom, &[], 1118.0).get(&pinned).display,
-        Display::None
-    );
-    assert_eq!(
-        StyleSet::from_dom(&dom, &[], 1868.0).get(&pinned).display,
-        Display::Block
-    );
-}
-
-#[test]
-fn evaluates_css_supports_against_implemented_property_values() {
-    let dom = dom::parse(
-        r#"<style>
-            .grid { display: none }
-            @supports (display: grid) { .grid { display: block } }
-            @supports (position: sticky) { .sticky { display: none } }
-            @supports (display: grid) and (position: sticky) { .compound { display: none } }
-            @supports not (position: sticky) { .negated { display: none } }
-        </style>
-        <div class="grid"></div><div class="sticky"></div>
-        <div class="compound"></div><div class="negated"></div>"#,
-    );
-    let styles = StyleSet::from_dom(&dom, &[], 1200.0);
-    let display = |class| {
-        let node = dom
-            .elements_named("div")
-            .find(|node| node.has_class(class))
-            .unwrap();
-        styles.get(&node).display
-    };
-
-    assert_eq!(display("grid"), Display::Block);
-    assert_eq!(display("sticky"), Display::Block);
-    assert_eq!(display("compound"), Display::Block);
-    assert_eq!(display("negated"), Display::None);
-}
-
-#[test]
 fn matches_attribute_selectors_instead_of_treating_them_as_wildcards() {
     let dom = dom::parse(
         r#"<style>
@@ -328,22 +254,6 @@ fn matches_attribute_selectors_instead_of_treating_them_as_wildcards() {
     );
     assert_eq!(styles.get(&hidden).display, Display::None);
     assert_eq!(styles.get(&hidden).color, Color::rgb(255, 0, 0));
-}
-
-#[test]
-fn rejects_vendor_media_queries_for_other_engines() {
-    let dom = dom::parse(
-        r#"<style>
-                body { color: green; }
-                @media screen and (-ms-high-contrast: active),
-                       screen and (-ms-high-contrast: none) {
-                    body { color: red; }
-                }
-               </style><p>x</p>"#,
-    );
-    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
-    let body = dom.elements_named("body").next().unwrap();
-    assert_eq!(styles.get(&body).color, Color::rgb(0, 128, 0));
 }
 
 #[test]

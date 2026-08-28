@@ -7,12 +7,10 @@ use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
     MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
-    MAX_RENDERER_PRESENTATION_BYTES, MAX_URL_BYTES,
+    MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
+    MAX_URL_BYTES,
 };
 use std::collections::HashSet;
-
-const MAX_REPORT_ENTRIES: usize = 512;
-const MAX_REPORT_TEXT: usize = 64 * 1024;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
@@ -283,12 +281,12 @@ pub(in crate::renderer_protocol) fn decode_runtime(
 }
 
 fn encode_strings(writer: &mut WireWriter, values: &[String]) -> Result<(), ProtocolError> {
-    if values.len() > MAX_REPORT_ENTRIES {
+    if values.len() > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("runtime report count"));
     }
     writer.u32(values.len() as u32);
     for value in values {
-        if value.len() > MAX_REPORT_TEXT {
+        if value.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
             return Err(ProtocolError::InvalidPayload("runtime report text"));
         }
         writer.string(value)?;
@@ -298,10 +296,12 @@ fn encode_strings(writer: &mut WireWriter, values: &[String]) -> Result<(), Prot
 
 fn decode_strings(reader: &mut WireReader<'_>) -> Result<Vec<String>, ProtocolError> {
     let count = reader.u32()? as usize;
-    if count > MAX_REPORT_ENTRIES {
+    if count > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("runtime report count"));
     }
-    (0..count).map(|_| reader.string(MAX_REPORT_TEXT)).collect()
+    (0..count)
+        .map(|_| reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES))
+        .collect()
 }
 
 fn encode_style(writer: &mut WireWriter, report: StyleReport) {

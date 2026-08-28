@@ -1,12 +1,12 @@
 //! Script evaluation and bounded event-loop settlement for an owned document realm.
 
 use super::dynamic_scripts::drain_dynamic_scripts;
+use super::timer_execution::{
+    TimerSlice, append_timer_summary, settle_startup_timer_slice, settle_timer_slice,
+};
 use super::*;
 
-// Each callback and its microtask checkpoint are one indivisible HTML task. Yield between tasks
-// after this wall-clock slice so rendering and the renderer control plane get an opportunity to
-// run even when many timers became due while another command was in flight.
-const TIMER_TASK_WALL_SLICE: Duration = Duration::from_millis(25);
+const SCRIPT_TASK_TIMER_SLICE: Duration = Duration::from_millis(16);
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
     execute_impl(document, document_url, scripts, None)
 }
@@ -39,6 +39,7 @@ pub(super) fn execute_inner(
     host: &Rc<RefCell<HostState>>,
     total_bytes: &mut usize,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    defer_dynamic_scripts: bool,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
     context
@@ -105,11 +106,11 @@ pub(super) fn execute_inner(
         state.begin_task();
     }
     for script in scripts {
-        if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
+        if total_bytes.saturating_add(script.code.len()) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
-                MAX_SCRIPT_BYTES / 1024 / 1024
+                MAX_PAGE_SCRIPT_BYTES / 1024 / 1024
             ));
             break;
         }
@@ -124,12 +125,31 @@ pub(super) fn execute_inner(
             total_bytes,
         );
         super::module_lifecycle::drain(context, host, &mut outcome);
-        drain_dynamic_scripts(
+        // External and module scripts execute as event-loop tasks rather than one monolithic
+        // page task. Give already-requested rendering/timer work one turn before the next script
+        // task so animation-frame queues cannot grow without bound behind network execution.
+        if script.node.attr("src").is_some() || script.kind == ScriptKind::Module {
+            let mut no_dynamic_script_loader = None;
+            settle_timer_slice(
+                context,
+                host,
+                &mut outcome,
+                &mut no_dynamic_script_loader,
+                total_bytes,
+                TimerSlice {
+                    advance: SCRIPT_TASK_TIMER_SLICE,
+                    max_callbacks: 1,
+                },
+                None,
+            );
+        }
+        drain_dynamic_scripts_for_initial_task(
             context,
             host,
             &mut outcome,
             dynamic_script_loader,
             total_bytes,
+            defer_dynamic_scripts,
         );
     }
 
@@ -148,26 +168,60 @@ pub(super) fn execute_inner(
         outcome.errors.push(format!("finish promise jobs: {error}"));
     }
     super::module_lifecycle::drain(context, host, &mut outcome);
-    drain_dynamic_scripts(
+    drain_dynamic_scripts_for_initial_task(
         context,
         host,
         &mut outcome,
         dynamic_script_loader,
         total_bytes,
+        defer_dynamic_scripts,
     );
     for _ in 0..STARTUP_TIMER_PASSES {
-        settle_startup_timer_slice(
-            context,
-            host,
-            &mut outcome,
-            dynamic_script_loader,
-            total_bytes,
-        );
+        if defer_dynamic_scripts {
+            let mut no_dynamic_script_loader = None;
+            settle_startup_timer_slice(
+                context,
+                host,
+                &mut outcome,
+                &mut no_dynamic_script_loader,
+                total_bytes,
+            );
+        } else {
+            settle_startup_timer_slice(
+                context,
+                host,
+                &mut outcome,
+                dynamic_script_loader,
+                total_bytes,
+            );
+        }
     }
 
     append_timer_summary(host, &mut outcome);
 
     outcome
+}
+
+fn drain_dynamic_scripts_for_initial_task(
+    context: &mut Context,
+    host: &Rc<RefCell<HostState>>,
+    outcome: &mut ScriptOutcome,
+    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
+    total_bytes: &mut usize,
+    defer_dynamic_scripts: bool,
+) {
+    if defer_dynamic_scripts {
+        let mut no_dynamic_script_loader = None;
+        drain_dynamic_scripts(
+            context,
+            host,
+            outcome,
+            &mut no_dynamic_script_loader,
+            total_bytes,
+        );
+    } else {
+        drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+    }
 }
 
 pub(super) fn execute_additional_inner(
@@ -186,11 +240,11 @@ pub(super) fn execute_additional_inner(
         state.begin_task();
     }
     for script in scripts {
-        if total_bytes.saturating_add(script.code.len()) > MAX_SCRIPT_BYTES {
+        if total_bytes.saturating_add(script.code.len()) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
-                MAX_SCRIPT_BYTES / 1024 / 1024
+                MAX_PAGE_SCRIPT_BYTES / 1024 / 1024
             ));
             continue;
         }
@@ -236,82 +290,6 @@ pub(super) fn execute_additional_inner(
     outcome
 }
 
-pub(super) fn append_timer_summary(host: &Rc<RefCell<HostState>>, outcome: &mut ScriptOutcome) {
-    let timer_summary = host.borrow().timer_summary();
-    if !timer_summary.is_empty() {
-        outcome
-            .diagnostics
-            .push(format!("JavaScript timers after settling: {timer_summary}"));
-    }
-}
-
-fn settle_startup_timer_slice(
-    context: &mut Context,
-    host: &Rc<RefCell<HostState>>,
-    outcome: &mut ScriptOutcome,
-    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
-) {
-    settle_timer_slice(
-        context,
-        host,
-        outcome,
-        dynamic_script_loader,
-        total_bytes,
-        STARTUP_TIMER_SLICE,
-        MAX_TIMER_CALLBACKS_PER_SLICE,
-    );
-}
-
-pub(super) fn settle_timer_slice(
-    context: &mut Context,
-    host: &Rc<RefCell<HostState>>,
-    outcome: &mut ScriptOutcome,
-    dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
-    advance: Duration,
-    max_callbacks: usize,
-) {
-    let horizon = host.borrow().timers.now().saturating_add(advance);
-    let slice_started = Instant::now();
-
-    for _ in 0..max_callbacks {
-        let timer_id = {
-            let mut host = host.borrow_mut();
-            let due = host.timers.next_due_time();
-            due.filter(|due| *due <= horizon).and_then(|due| {
-                host.timers.advance_to(due);
-                host.take_ready_timer()
-            })
-        };
-        let Some(timer_id) = timer_id else {
-            break;
-        };
-
-        host.borrow_mut().begin_task();
-        let invocation = format!("__runTimer({timer_id});");
-        if let Err(error) = context.eval(Source::from_bytes(&invocation)) {
-            outcome
-                .errors
-                .push(format!("JavaScript timer {timer_id}: {error}"));
-        }
-        // HTML performs a microtask checkpoint after every task. Boa owns the Promise job queue,
-        // so drain it here rather than once after a whole batch of timer callbacks.
-        if let Err(error) = context.run_jobs() {
-            outcome
-                .errors
-                .push(format!("JavaScript timer {timer_id} promise job: {error}"));
-        }
-        super::module_lifecycle::drain(context, host, outcome);
-        drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
-        if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
-            break;
-        }
-    }
-
-    host.borrow_mut().timers.advance_to(horizon);
-}
-
 pub(super) fn evaluate_script(
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
@@ -342,24 +320,25 @@ pub(super) fn evaluate_script(
     }
 
     let script_started = Instant::now();
-    let succeeded = match mutation_host::eval_with_writes(context, host, &script.code) {
-        Ok(_) => {
-            outcome.executed += 1;
-            host.borrow_mut().executed += 1;
-            if let Err(error) = context.run_jobs() {
+    let succeeded =
+        match mutation_host::eval_with_writes(context, host, &script.code, &script.source_url) {
+            Ok(_) => {
+                outcome.executed += 1;
+                host.borrow_mut().executed += 1;
+                if let Err(error) = context.run_jobs() {
+                    outcome
+                        .errors
+                        .push(format!("{}: promise job: {error}", script.source_url));
+                }
+                true
+            }
+            Err(error) => {
                 outcome
                     .errors
-                    .push(format!("{}: promise job: {error}", script.source_url));
+                    .push(format!("{}: {error}", script.source_url));
+                false
             }
-            true
-        }
-        Err(error) => {
-            outcome
-                .errors
-                .push(format!("{}: {error}", script.source_url));
-            false
-        }
-    };
+        };
     let script_time = script_started.elapsed();
     if script_time.as_millis() >= 1 {
         outcome.diagnostics.push(format!(

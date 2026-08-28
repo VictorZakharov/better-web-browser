@@ -24,6 +24,42 @@ fn url_constructor_resolves_relative_inputs_and_rejects_invalid_urls() {
 }
 
 #[test]
+fn url_components_and_search_params_remain_live_when_mutated() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div></div><script>
+            const url = new URL('https://user:pass@example.com:8443/path?old=1#before');
+            const params = url.searchParams;
+            url.search = '?b=2&a=1';
+            params.sort();
+            params.append('space', 'a b');
+            url.pathname = '/next';
+            url.hash = 'after';
+            document.querySelector('div').textContent = [
+                url.href,
+                params === url.searchParams,
+                params.get('old'),
+                url.protocol,
+                url.username,
+                url.password,
+                url.host,
+                url.hostname,
+                url.port,
+                url.pathname,
+                url.search,
+                url.hash,
+                url.origin
+            ].join('|');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "https://user:pass@example.com:8443/next?a=1&b=2&space=a+b#after|true||https:|user|pass|example.com:8443|example.com|8443|/next|?a=1&b=2&space=a+b|#after|https://example.com:8443"
+    );
+}
+
+#[test]
 fn fetch_translates_web_request_options_into_the_shared_policy_model() {
     let (dom, outcome) = execute_html(
         r#"<body><div></div><script>

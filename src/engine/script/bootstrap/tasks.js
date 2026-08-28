@@ -1,9 +1,19 @@
     const timers = new Map();
-    const queueTimer = (callback, delay, repeat, args) => {
+    const describeTimerCallback = callback => {
+        if (typeof callback !== 'function') return 'string callback';
+        const name = String(callback.name || '').trim();
+        try {
+            const source = Function.prototype.toString.call(callback).replace(/\s+/g, ' ').trim();
+            return (name ? name + ': ' + source : source || 'anonymous callback').slice(0, 160);
+        }
+        catch (_) { return (name || 'anonymous callback').slice(0, 160); }
+    };
+    const queueTimer = (callback, delay, repeat, args, label = describeTimerCallback(callback),
+        scheduleOperation = 'timerSchedule') => {
         const id = nextTimer++;
         delay = Math.max(0, Number(delay) || 0);
-        timers.set(id, { callback, repeat, args });
-        host('timerSchedule', id, delay, repeat);
+        timers.set(id, { callback, repeat, args, label });
+        host(scheduleOperation, id, delay, repeat);
         return id;
     };
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
@@ -13,8 +23,38 @@
         timers.delete(id);
         host('timerCancel', id);
     };
-    windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
+    windowObject.requestAnimationFrame = callback => queueTimer(
+        () => callback(performance.now()), 16, false, [], 'requestAnimationFrame: ' + describeTimerCallback(callback));
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
+    // Idle periods are user-agent defined and capped at 50 ms by the cooperative scheduling
+    // specification. Breeze opens one only after a quiet 50 ms task window; an earlier explicit
+    // timeout wins the race and receives a zero-length, timed-out deadline.
+    // https://w3c.github.io/requestidlecallback/#idle-periods
+    const idleCallbackDelay = 50;
+    const idleDeadlineToken = {};
+    windowObject.IdleDeadline = class IdleDeadline {
+        constructor(token, deadline, didTimeout) {
+            if (token !== idleDeadlineToken) throw new TypeError('Illegal constructor');
+            this.__deadline = deadline;
+            this.__didTimeout = didTimeout;
+        }
+        get didTimeout() { return this.__didTimeout; }
+        timeRemaining() { return Math.max(0, this.__deadline - performance.now()); }
+    };
+    Object.defineProperty(windowObject.IdleDeadline.prototype, Symbol.toStringTag,
+        { value: 'IdleDeadline', configurable: true });
+    windowObject.requestIdleCallback = (callback, options = {}) => {
+        if (typeof callback !== 'function') throw new TypeError('requestIdleCallback requires a callback');
+        options = Object(options);
+        const convertedTimeout = options.timeout === undefined ? null : Math.max(0, Number(options.timeout) || 0);
+        const didTimeout = convertedTimeout !== null && convertedTimeout > 0 && convertedTimeout <= idleCallbackDelay;
+        const delay = didTimeout ? convertedTimeout : idleCallbackDelay;
+        return queueTimer(() => {
+            const deadline = performance.now() + (didTimeout ? 0 : idleCallbackDelay);
+            callback(new IdleDeadline(idleDeadlineToken, deadline, didTimeout));
+        }, delay, false, [], 'requestIdleCallback: ' + describeTimerCallback(callback), 'idleSchedule');
+    };
+    windowObject.cancelIdleCallback = windowObject.clearTimeout;
     const reportGlobalException = error => {
         const message = error?.message === undefined ? String(error) : String(error.message);
         const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
@@ -27,6 +67,10 @@
             catch (error) { reportGlobalException(error); }
         });
     };
+    windowObject.__timerLabel = id => {
+        const timer = timers.get(Number(id));
+        return timer ? timer.label : 'missing callback';
+    };
     windowObject.__runTimer = id => {
         const timer = timers.get(Number(id));
         if (!timer) return false;
@@ -34,96 +78,6 @@
         if (typeof timer.callback === 'function') timer.callback(...timer.args);
         else (0, eval)(String(timer.callback));
         return true;
-    };
-
-    const formUrlDecode = value => decodeURIComponent(String(value).replace(/\+/g, ' '));
-    const formUrlEncode = value => encodeURIComponent(String(value))
-        .replace(/[!'()~]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())
-        .replace(/%20/g, '+');
-    class URLSearchParams {
-        constructor(init = '') {
-            this._entries = [];
-            if (typeof init === 'string') {
-                const source = init.replace(/^\?/, '');
-                if (source) for (const part of source.split('&')) {
-                    const split = part.indexOf('=');
-                    const key = split < 0 ? part : part.slice(0, split);
-                    const value = split < 0 ? '' : part.slice(split + 1);
-                    this._entries.push([formUrlDecode(key), formUrlDecode(value)]);
-                }
-            } else if (init != null && typeof init[Symbol.iterator] === 'function') {
-                for (const pair of init) {
-                    const values = [...pair];
-                    if (values.length !== 2) throw new TypeError('URLSearchParams pairs must contain two items');
-                    this.append(values[0], values[1]);
-                }
-            } else if (init != null) {
-                for (const key of Object.keys(Object(init))) this.append(key, init[key]);
-            }
-        }
-        get size() { return this._entries.length; }
-        append(key, value) { this._entries.push([String(key), String(value)]); }
-        set(key, value) {
-            key = String(key);
-            value = String(value);
-            let replaced = false;
-            this._entries = this._entries.filter(entry => {
-                if (entry[0] !== key) return true;
-                if (replaced) return false;
-                entry[1] = value;
-                replaced = true;
-                return true;
-            });
-            if (!replaced) this._entries.push([key, value]);
-        }
-        get(key) { return this._entries.find(entry => entry[0] === String(key))?.[1] ?? null; }
-        getAll(key) { return this._entries.filter(entry => entry[0] === String(key)).map(entry => entry[1]); }
-        has(key, value = undefined) {
-            key = String(key);
-            return value === undefined
-                ? this._entries.some(entry => entry[0] === key)
-                : this._entries.some(entry => entry[0] === key && entry[1] === String(value));
-        }
-        delete(key, value = undefined) {
-            key = String(key);
-            this._entries = value === undefined
-                ? this._entries.filter(entry => entry[0] !== key)
-                : this._entries.filter(entry => entry[0] !== key || entry[1] !== String(value));
-        }
-        sort() { this._entries.sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0); }
-        forEach(callback, thisArg = undefined) {
-            for (const [key, value] of this._entries) callback.call(thisArg, value, key, this);
-        }
-        toString() { return this._entries.map(([key, value]) => formUrlEncode(key) + '=' + formUrlEncode(value)).join('&'); }
-        entries() { return this._entries[Symbol.iterator](); }
-        keys() { return this._entries.map(entry => entry[0])[Symbol.iterator](); }
-        values() { return this._entries.map(entry => entry[1])[Symbol.iterator](); }
-        [Symbol.iterator]() { return this.entries(); }
-    }
-    windowObject.URLSearchParams = URLSearchParams;
-    const missingUrlValue = {};
-    windowObject.URL = class URL {
-        constructor(value = missingUrlValue, base = currentUrl) {
-            if (value === missingUrlValue) throw new TypeError('URL requires an input');
-            this.href = host('strictResolveUrl', String(value), String(base));
-        }
-        static canParse(value, base = currentUrl) {
-            try { host('strictResolveUrl', String(value), String(base)); return true; }
-            catch (_) { return false; }
-        }
-        static parse(value, base = currentUrl) {
-            try { return new URL(value, base); } catch (_) { return null; }
-        }
-        toString() { return this.href; }
-        toJSON() { return this.href; }
-        get protocol() { return parseUrl(this.href).protocol; }
-        get host() { return parseUrl(this.href).host; }
-        get hostname() { return parseUrl(this.href).hostname; }
-        get pathname() { return parseUrl(this.href).pathname; }
-        get search() { return parseUrl(this.href).search; }
-        get hash() { return parseUrl(this.href).hash; }
-        get origin() { const parsed = parseUrl(this.href); return parsed.protocol + '//' + parsed.host; }
-        get searchParams() { return new URLSearchParams(this.search); }
     };
 
     const computedStyleProxy = element => new Proxy({
@@ -142,7 +96,10 @@
         }
     });
     windowObject.getComputedStyle = element => computedStyleProxy(element);
-    windowObject.matchMedia = query => ({ media: String(query), matches: false, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } });
+    windowObject.matchMedia = query => {
+        query = String(query);
+        return { media: query, matches: host('mediaMatches', query), onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
+    };
     windowObject.CSS = { supports() { return false; }, escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); } };
     windowObject.Image = class Image extends HTMLImageElement {
         constructor() {
@@ -243,7 +200,6 @@
         }
         takeRecords() { return this.records.splice(0); }
     };
-    windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
     windowObject.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} };
     windowObject.crypto = {
         getRandomValues(array) {

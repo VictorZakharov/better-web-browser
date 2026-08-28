@@ -111,6 +111,7 @@ mod tests {
             content_height: 100.0,
             background: Color::WHITE,
             forms: HashMap::new(),
+            node_bounds: HashMap::new(),
         }
     }
 

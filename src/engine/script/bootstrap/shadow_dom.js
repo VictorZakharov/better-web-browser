@@ -19,6 +19,7 @@
             const wasConnected = this.isConnected;
             const removedChildren = wasConnected ? [...this.childNodes] : [];
             host('innerHtmlSet', this.__id, value == null ? '' : String(value));
+            markChildCollectionsChanged(this);
             for (const child of removedChildren) disconnectCustomElementTree(child);
             for (const child of this.childNodes) {
                 if (wasConnected) connectCustomElementTree(child);

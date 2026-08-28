@@ -16,6 +16,10 @@ The local delta is intentionally small:
 - The Stage 4 `Error.isError` implementation is enabled independently of Boa's
   broader experimental feature set, so Web IDL `DOMException` objects retain
   their required Error identity without enabling unrelated proposals.
+- Native errors capture their JavaScript backtrace before entering a local
+  `catch` block, and the resulting opaque Error exposes the de-facto `stack`
+  property. This preserves actionable source locations for caught failures in
+  site code as well as uncaught exceptions.
 
 To review the exact patch against an unpacked crate from Cargo's registry:
 
