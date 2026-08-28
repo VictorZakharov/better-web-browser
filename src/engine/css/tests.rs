@@ -78,6 +78,26 @@ fn scopes_shadow_rules_and_inherits_through_slots_in_the_composed_tree() {
 }
 
 #[test]
+fn opt_in_style_diagnostics_find_elements_inside_shadow_trees() {
+    let dom = dom::parse("<x-card></x-card>");
+    let host = dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(&root, r#"<section id="inside">Shadow</section>"#, true);
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+
+    let matches = styles.query_selector_all(&dom, "#inside").unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].tag_name(), Some("section"));
+}
+
+#[test]
 fn resolves_author_relative_font_sizes_against_the_parent() {
     let dom = dom::parse(
         r#"<style>

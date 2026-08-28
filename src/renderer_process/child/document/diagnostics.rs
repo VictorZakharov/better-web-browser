@@ -66,6 +66,16 @@ fn node_details(
         DisplayItem::Control(control) if control.node_id == node.id() => Some(control.rect),
         _ => None,
     });
+    let shadow_root = node.shadow_root().map(|root| {
+        let child_count = root.children.borrow().len() as u64;
+        let descendant_count = crate::engine::dom::Node::descendants(&root).skip(1).count() as u64;
+        let text_length = root.text_content().chars().count() as u64;
+        crate::renderer_protocol::ShadowRootDiagnostics {
+            child_count,
+            descendant_count,
+            text_length,
+        }
+    });
     NodeDiagnostics {
         node_id: node.id().to_wire(),
         tag: node.tag_name().map(diagnostic_text),
@@ -73,6 +83,7 @@ fn node_details(
         class: node.attr("class").map(|value| diagnostic_text(&value)),
         child_count: node.children.borrow().len() as u64,
         text_length: node.text_content().chars().count() as u64,
+        shadow_root,
         element_image: resource_details(page, layout, page.image_url(node).as_deref()),
         style: StyleDiagnostics {
             display: debug_keyword(style.display),

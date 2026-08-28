@@ -6,6 +6,102 @@ fn result(dom: &super::super::super::dom::Dom) -> Option<String> {
         .and_then(|body| body.attr("data-result"))
 }
 
+fn execute_html_with_stylesheets(
+    html: &str,
+    stylesheets: Vec<(String, String)>,
+) -> (super::super::super::dom::Dom, ScriptOutcome) {
+    let dom = crate::engine::dom::parse_with_scripting(html, true);
+    let scripts = dom
+        .elements_named("script")
+        .map(|node| ScriptInput {
+            source_url: "https://example.com/#inline".into(),
+            code: node.text_content(),
+            node,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        })
+        .collect::<Vec<_>>();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_document_stylesheets(&stylesheets);
+    let outcome = runtime.execute_initial(&scripts);
+    (dom, outcome)
+}
+
+#[test]
+fn document_stylesheets_are_live_same_object_and_owned_by_style_elements() {
+    let (dom, outcome) = execute_html(
+        r#"<head><style id="first" media="screen">body { color: red; }</style></head>
+        <body><script>
+            const failures = [];
+            const check = (name, condition) => { if (!condition) failures.push(name); };
+            const list = document.styleSheets;
+            const owner = document.getElementById('first');
+            const sheet = owner.sheet;
+            check('constructors', owner instanceof HTMLStyleElement &&
+                list instanceof StyleSheetList);
+            check('same-object', list === document.styleSheets && sheet === list[0] &&
+                list.item(0) === sheet);
+            check('metadata', sheet.ownerNode === owner && sheet.href === null &&
+                sheet.media.mediaText === 'screen');
+            check('rules', sheet.cssRules.length === 1 &&
+                sheet.cssRules[0].selectorText === 'body');
+            owner.textContent = 'main { display: block; }';
+            check('live-source', owner.sheet === sheet && list[0] === sheet &&
+                sheet.cssRules[0].selectorText === 'main');
+            const second = document.createElement('style');
+            second.textContent = 'p { color: blue; }';
+            document.head.appendChild(second);
+            check('live-add', list.length === 2 && Array.from(list)[1] === second.sheet);
+            second.remove();
+            check('live-remove', list.length === 1 && second.sheet === null);
+            document.body.setAttribute('data-result', failures.length ? failures.join(',') : 'pass');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
+fn linked_stylesheets_expose_loaded_same_origin_rules_and_guard_cross_origin_rules() {
+    let (dom, outcome) = execute_html_with_stylesheets(
+        r#"<head>
+            <link id="local" rel="alternate STYLESHEET" href="/site.css" title="Site">
+            <link id="remote" rel="stylesheet" href="https://cdn.example.net/site.css">
+        </head><body><script>
+            const failures = [];
+            const check = (name, condition) => { if (!condition) failures.push(name); };
+            const local = document.getElementById('local');
+            const remote = document.getElementById('remote');
+            check('constructors', local instanceof HTMLLinkElement && remote instanceof HTMLLinkElement);
+            check('list', document.styleSheets.length === 2 && document.styleSheets[0] === local.sheet);
+            check('local-metadata', local.sheet.href === 'https://example.com/site.css' &&
+                local.sheet.ownerNode === local && local.sheet.title === 'Site');
+            check('local-rules', local.sheet.cssRules.length === 1 &&
+                local.sheet.cssRules[0].selectorText === 'body');
+            try { remote.sheet.cssRules; failures.push('cross-origin:missing'); }
+            catch (error) { if (error.name !== 'SecurityError') failures.push('cross-origin:' + error.name); }
+            try { local.sheet.replaceSync('body {}'); failures.push('replace:missing'); }
+            catch (error) { if (error.name !== 'NotAllowedError') failures.push('replace:' + error.name); }
+            document.body.setAttribute('data-result', failures.length ? failures.join(',') : 'pass');
+        </script></body>"#,
+        vec![
+            (
+                "https://example.com/site.css".into(),
+                "body { color: green; }".into(),
+            ),
+            (
+                "https://cdn.example.net/site.css".into(),
+                "body { color: purple; }".into(),
+            ),
+        ],
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
 #[test]
 fn constructed_stylesheets_expose_live_rules_and_apply_to_document_and_shadow_roots() {
     let (dom, outcome) = execute_html(

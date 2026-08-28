@@ -52,6 +52,7 @@ use host_call::host_call;
 use host_state::{HostState, HostStateLink};
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use runtime::ScriptRuntime;
+pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
     DynamicScriptLoader, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome,

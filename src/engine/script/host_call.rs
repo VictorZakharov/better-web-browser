@@ -216,6 +216,25 @@ fn dispatch_host_call(
             })?;
             Ok(js_string(resolved))
         }
+        "parseWebUrl" => {
+            let value = argument_string(args, 1, context)?;
+            let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
+                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
+            })?;
+            Ok(js_string(
+                serde_json::to_string(&parts).expect("URL parts serialize"),
+            ))
+        }
+        "setWebUrlComponent" => {
+            let value = argument_string(args, 1, context)?;
+            let component = argument_string(args, 2, context)?;
+            let input = argument_string(args, 3, context)?;
+            let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
+                .ok_or_else(|| {
+                    JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
+                })?;
+            Ok(js_string(resolved))
+        }
         "navigate" => {
             let value = argument_string(args, 1, context)?;
             let resolved = state.resolved_url(&value);

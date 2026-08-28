@@ -255,8 +255,13 @@
             super(styleSheetConstructionToken);
             options = Object(options || {});
             this.__constructorDocument = document;
+            this.__constructed = true;
             this.__baseUrl = options.baseURL == null ? document.baseURI :
                 host('strictResolveUrl', String(options.baseURL), document.baseURI);
+            this.__href = null;
+            this.__ownerNode = null;
+            this.__title = null;
+            this.__originClean = true;
             this.__disabled = !!options.disabled;
             this.__rules = [];
             this.__ruleList = readonlyRuleList(this.__rules);
@@ -265,10 +270,10 @@
             this.__media = new MediaList(options.media || '', () => this.__notifyRoots());
         }
         get type() { return 'text/css'; }
-        get href() { return null; }
-        get ownerNode() { return null; }
+        get href() { return this.__href; }
+        get ownerNode() { return this.__ownerNode; }
         get parentStyleSheet() { return null; }
-        get title() { return null; }
+        get title() { return this.__title; }
         get ownerRule() { return null; }
         get media() { return this.__media; }
         set media(value) { this.__media.mediaText = value; }
@@ -277,9 +282,10 @@
             value = !!value;
             if (value !== this.__disabled) { this.__disabled = value; this.__notifyRoots(); }
         }
-        get cssRules() { return this.__ruleList; }
-        get rules() { return this.__ruleList; }
+        get cssRules() { this.__assertOriginClean(); return this.__ruleList; }
+        get rules() { this.__assertOriginClean(); return this.__ruleList; }
         insertRule(rule, index = 0) {
+            this.__assertOriginClean();
             index = Number(index) >>> 0;
             if (index > this.__rules.length)
                 throw new DOMException('Rule index is outside the list', 'IndexSizeError');
@@ -294,6 +300,7 @@
             return index;
         }
         deleteRule(index) {
+            this.__assertOriginClean();
             index = Number(index) >>> 0;
             if (index >= this.__rules.length)
                 throw new DOMException('Rule index is outside the list', 'IndexSizeError');
@@ -301,11 +308,15 @@
             this.__rulesChanged();
         }
         replaceSync(text) {
+            this.__assertConstructed();
             if (this.__modifying)
                 throw new DOMException('Stylesheet replacement is already active', 'NotAllowedError');
             this.__setText(text);
         }
         replace(text) {
+            if (!this.__constructed)
+                return Promise.reject(new DOMException(
+                    'Only constructed stylesheets can be replaced', 'NotAllowedError'));
             if (this.__modifying)
                 return Promise.reject(new DOMException(
                     'Stylesheet replacement is already active', 'NotAllowedError'));
@@ -323,6 +334,28 @@
             const rules = parseCssRules(this, String(text));
             this.__rules.splice(0, this.__rules.length, ...rules);
             this.__notifyRoots();
+        }
+        __setOwner(ownerNode, href, title, media, originClean, text) {
+            this.__constructed = false;
+            this.__constructorDocument = null;
+            this.__ownerNode = ownerNode;
+            this.__href = href;
+            this.__title = title || null;
+            this.__baseUrl = href || ownerNode.ownerDocument.baseURI;
+            this.__originClean = !!originClean;
+            this.__disabled = ownerNode.hasAttribute('disabled');
+            this.__media.mediaText = media || '';
+            this.__setText(text);
+        }
+        __assertOriginClean() {
+            if (!this.__originClean)
+                throw new DOMException('Stylesheet rules are not accessible across origins',
+                    'SecurityError');
+        }
+        __assertConstructed() {
+            if (!this.__constructed)
+                throw new DOMException('Only constructed stylesheets can be replaced',
+                    'NotAllowedError');
         }
         __serialize() { return this.__rules.map(rule => rule.cssText).join('\n'); }
         __rulesChanged() { this.__notifyRoots(); }

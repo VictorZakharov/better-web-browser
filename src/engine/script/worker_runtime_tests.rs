@@ -74,6 +74,38 @@ fn isolated_worker_exposes_dom_exception_legacy_codes() {
 }
 
 #[test]
+fn isolated_worker_url_components_and_search_params_are_live() {
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    let (runtime, outcome) = WorkerRuntime::start(
+        "https://example.com/worker.js",
+        r#"const url = new URL('https://user:pass@example.com:8443/path?old=1#before');
+           const params = url.searchParams;
+           url.search = '?b=2&a=1';
+           params.sort();
+           params.append('space', 'a b');
+           url.pathname = '/next';
+           url.hash = 'after';
+           postMessage({
+               href: url.href, same: params === url.searchParams, old: params.get('old'),
+               username: url.username, password: url.password, host: url.host,
+               pathname: url.pathname, search: url.search, hash: url.hash, origin: url.origin
+           });"#,
+        "",
+        ScriptKind::Classic,
+        loader,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        outcome.messages,
+        [
+            "{\"t\":\"object\",\"id\":1,\"n\":false,\"v\":[[\"href\",\"https://user:pass@example.com:8443/next?a=1&b=2&space=a+b#after\"],[\"same\",true],[\"old\",null],[\"username\",\"user\"],[\"password\",\"pass\"],[\"host\",\"example.com:8443\"],[\"pathname\",\"/next\"],[\"search\",\"?a=1&b=2&space=a+b\"],[\"hash\",\"#after\"],[\"origin\",\"https://example.com:8443\"]]}"
+        ],
+    );
+    assert!(runtime.is_some());
+}
+
+#[test]
 fn module_worker_loads_a_relative_dependency() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, kind| {
         assert_eq!(kind, ScriptKind::Module);

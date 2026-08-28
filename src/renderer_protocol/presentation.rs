@@ -7,7 +7,8 @@ mod layout;
 mod reader;
 
 pub use diagnostics::{
-    NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, StyleDiagnostics,
+    NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics,
+    ShadowRootDiagnostics, StyleDiagnostics,
 };
 
 use super::{AccessibilityUpdate, DocumentId, ProtocolError};
@@ -237,6 +238,14 @@ mod tests {
                 selectors: vec![SelectorDiagnostics {
                     selector: "#main".into(),
                     total_matches: 1,
+                    matches: vec![NodeDiagnostics {
+                        shadow_root: Some(ShadowRootDiagnostics {
+                            child_count: 1,
+                            descendant_count: 3,
+                            text_length: 12,
+                        }),
+                        ..NodeDiagnostics::default()
+                    }],
                     ..SelectorDiagnostics::default()
                 }],
             },

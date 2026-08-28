@@ -110,6 +110,12 @@ fn encode_node(writer: &mut WireWriter, value: &NodeDiagnostics) -> Result<(), P
     optional_string(writer, value.class.as_deref(), MAX_DIAGNOSTIC_TEXT_BYTES)?;
     writer.u64(value.child_count);
     writer.u64(value.text_length);
+    writer.bool(value.shadow_root.is_some());
+    if let Some(shadow) = &value.shadow_root {
+        writer.u64(shadow.child_count);
+        writer.u64(shadow.descendant_count);
+        writer.u64(shadow.text_length);
+    }
     encode_optional_resource(writer, value.element_image.as_ref())?;
     encode_style(writer, &value.style)?;
     encode_optional_rect(writer, value.control_rect)?;
@@ -117,13 +123,29 @@ fn encode_node(writer: &mut WireWriter, value: &NodeDiagnostics) -> Result<(), P
 }
 
 fn decode_node(reader: &mut WireReader<'_>) -> Result<NodeDiagnostics, ProtocolError> {
+    let node_id = reader.u128()?;
+    let tag = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let id = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let class = decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let child_count = reader.u64()?;
+    let text_length = reader.u64()?;
+    let shadow_root = if reader.bool()? {
+        Some(ShadowRootDiagnostics {
+            child_count: reader.u64()?,
+            descendant_count: reader.u64()?,
+            text_length: reader.u64()?,
+        })
+    } else {
+        None
+    };
     Ok(NodeDiagnostics {
-        node_id: reader.u128()?,
-        tag: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        id: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        class: decode_optional_string(reader, MAX_DIAGNOSTIC_TEXT_BYTES)?,
-        child_count: reader.u64()?,
-        text_length: reader.u64()?,
+        node_id,
+        tag,
+        id,
+        class,
+        child_count,
+        text_length,
+        shadow_root,
         element_image: decode_optional_resource(reader)?,
         style: decode_style(reader)?,
         control_rect: decode_optional_rect(reader)?,

@@ -13,6 +13,13 @@
             else upgradeCustomElementTree(node);
         }
     });
+    const convertNodes = items => {
+        const fragment = document.createDocumentFragment();
+        for (const item of items) {
+            fragment.appendChild(item instanceof Node ? item : document.createTextNode(String(item)));
+        }
+        return fragment;
+    };
 
     class Node extends EventTarget {
         constructor(id, type, name, localName, namespaceURI) {
@@ -63,11 +70,12 @@
         appendChild(child) {
             if (!(child instanceof Node)) throw new TypeError('appendChild requires a Node');
             const records = insertionRecords(child);
-            const inserted = wrap(host('appendChild', this.__id, child.__id));
+            const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
+            const inserted = nodes.every(node => !!host('appendChild', this.__id, node.__id));
             if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
             if (inserted) scheduleSlotChangeCheck();
-            return inserted;
+            return inserted ? child : null;
         }
         append(...items) {
             for (const item of items) this.appendChild(item instanceof Node ? item : document.createTextNode(String(item)));
@@ -84,11 +92,13 @@
             if (!(child instanceof Node)) throw new TypeError('insertBefore requires a Node');
             if (reference != null && !(reference instanceof Node)) throw new TypeError('reference must be a Node');
             const records = insertionRecords(child);
-            const inserted = wrap(host('insertBefore', this.__id, child.__id, reference?.__id || 0));
+            const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
+            const inserted = nodes.every(node =>
+                !!host('insertBefore', this.__id, node.__id, reference?.__id || 0));
             if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties();
             if (inserted) scheduleSlotChangeCheck();
-            return inserted;
+            return inserted ? child : null;
         }
         removeChild(child) {
             const namedAccessChanged = this.isConnected;
@@ -107,6 +117,22 @@
                 refreshWindowNamedProperties();
             }
             if (removed) scheduleSlotChangeCheck();
+        }
+        replaceWith(...items) {
+            const parent = this.parentNode;
+            if (!parent) return;
+            let viableNextSibling = this.nextSibling;
+            const itemNodes = items.filter(item => item instanceof Node);
+            while (viableNextSibling && itemNodes.includes(viableNextSibling)) {
+                viableNextSibling = viableNextSibling.nextSibling;
+            }
+            const replacement = convertNodes(items);
+            if (this.parentNode === parent) {
+                parent.insertBefore(replacement, this);
+                parent.removeChild(this);
+            } else {
+                parent.insertBefore(replacement, viableNextSibling);
+            }
         }
         contains(other) {
             for (let node = other; node; node = node.parentNode) if (node === this) return true;

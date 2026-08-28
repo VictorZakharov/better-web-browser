@@ -36,96 +36,6 @@
         return true;
     };
 
-    const formUrlDecode = value => decodeURIComponent(String(value).replace(/\+/g, ' '));
-    const formUrlEncode = value => encodeURIComponent(String(value))
-        .replace(/[!'()~]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())
-        .replace(/%20/g, '+');
-    class URLSearchParams {
-        constructor(init = '') {
-            this._entries = [];
-            if (typeof init === 'string') {
-                const source = init.replace(/^\?/, '');
-                if (source) for (const part of source.split('&')) {
-                    const split = part.indexOf('=');
-                    const key = split < 0 ? part : part.slice(0, split);
-                    const value = split < 0 ? '' : part.slice(split + 1);
-                    this._entries.push([formUrlDecode(key), formUrlDecode(value)]);
-                }
-            } else if (init != null && typeof init[Symbol.iterator] === 'function') {
-                for (const pair of init) {
-                    const values = [...pair];
-                    if (values.length !== 2) throw new TypeError('URLSearchParams pairs must contain two items');
-                    this.append(values[0], values[1]);
-                }
-            } else if (init != null) {
-                for (const key of Object.keys(Object(init))) this.append(key, init[key]);
-            }
-        }
-        get size() { return this._entries.length; }
-        append(key, value) { this._entries.push([String(key), String(value)]); }
-        set(key, value) {
-            key = String(key);
-            value = String(value);
-            let replaced = false;
-            this._entries = this._entries.filter(entry => {
-                if (entry[0] !== key) return true;
-                if (replaced) return false;
-                entry[1] = value;
-                replaced = true;
-                return true;
-            });
-            if (!replaced) this._entries.push([key, value]);
-        }
-        get(key) { return this._entries.find(entry => entry[0] === String(key))?.[1] ?? null; }
-        getAll(key) { return this._entries.filter(entry => entry[0] === String(key)).map(entry => entry[1]); }
-        has(key, value = undefined) {
-            key = String(key);
-            return value === undefined
-                ? this._entries.some(entry => entry[0] === key)
-                : this._entries.some(entry => entry[0] === key && entry[1] === String(value));
-        }
-        delete(key, value = undefined) {
-            key = String(key);
-            this._entries = value === undefined
-                ? this._entries.filter(entry => entry[0] !== key)
-                : this._entries.filter(entry => entry[0] !== key || entry[1] !== String(value));
-        }
-        sort() { this._entries.sort((left, right) => left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0); }
-        forEach(callback, thisArg = undefined) {
-            for (const [key, value] of this._entries) callback.call(thisArg, value, key, this);
-        }
-        toString() { return this._entries.map(([key, value]) => formUrlEncode(key) + '=' + formUrlEncode(value)).join('&'); }
-        entries() { return this._entries[Symbol.iterator](); }
-        keys() { return this._entries.map(entry => entry[0])[Symbol.iterator](); }
-        values() { return this._entries.map(entry => entry[1])[Symbol.iterator](); }
-        [Symbol.iterator]() { return this.entries(); }
-    }
-    windowObject.URLSearchParams = URLSearchParams;
-    const missingUrlValue = {};
-    windowObject.URL = class URL {
-        constructor(value = missingUrlValue, base = currentUrl) {
-            if (value === missingUrlValue) throw new TypeError('URL requires an input');
-            this.href = host('strictResolveUrl', String(value), String(base));
-        }
-        static canParse(value, base = currentUrl) {
-            try { host('strictResolveUrl', String(value), String(base)); return true; }
-            catch (_) { return false; }
-        }
-        static parse(value, base = currentUrl) {
-            try { return new URL(value, base); } catch (_) { return null; }
-        }
-        toString() { return this.href; }
-        toJSON() { return this.href; }
-        get protocol() { return parseUrl(this.href).protocol; }
-        get host() { return parseUrl(this.href).host; }
-        get hostname() { return parseUrl(this.href).hostname; }
-        get pathname() { return parseUrl(this.href).pathname; }
-        get search() { return parseUrl(this.href).search; }
-        get hash() { return parseUrl(this.href).hash; }
-        get origin() { const parsed = parseUrl(this.href); return parsed.protocol + '//' + parsed.host; }
-        get searchParams() { return new URLSearchParams(this.search); }
-    };
-
     const computedStyleProxy = element => new Proxy({
         getPropertyValue(name) {
             name = String(name).toLowerCase();
@@ -243,7 +153,6 @@
         }
         takeRecords() { return this.records.splice(0); }
     };
-    windowObject.IntersectionObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
     windowObject.ResizeObserver = class { constructor(callback) { this.callback = callback; } observe() {} unobserve() {} disconnect() {} };
     windowObject.crypto = {
         getRandomValues(array) {

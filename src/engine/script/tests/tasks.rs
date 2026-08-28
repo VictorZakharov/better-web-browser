@@ -156,6 +156,14 @@ fn a_throwing_timer_does_not_prevent_the_next_task() {
         "{:?}",
         outcome.errors
     );
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.contains("https://example.com/#inline")),
+        "{:?}",
+        outcome.errors
+    );
 }
 
 #[test]

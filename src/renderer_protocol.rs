@@ -39,7 +39,7 @@ pub use message::{
 pub use presentation::{
     NodeDiagnostics, PageDiagnostics, PageLoadReport, PresentedGlyphRaster, PresentedImage,
     PresentedLayout, RendererPresentation, RendererRuntimeUpdate, ResourceDiagnostics,
-    RuntimeReport, SelectorDiagnostics, StyleDiagnostics, StyleReport,
+    RuntimeReport, SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
 };
 pub use state::{
     CookieMutation, CookieStateSnapshot, DocumentState, StorageMutationRequest, StorageSnapshotEnd,

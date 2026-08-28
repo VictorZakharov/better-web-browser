@@ -158,11 +158,12 @@ impl StyleSet {
             .expect("style should exist for every DOM node")
     }
 
-    /// Uses the engine selector parser for opt-in inspection and future DOM query APIs.
+    /// Uses the engine selector parser for opt-in composed-page inspection. This deliberately
+    /// crosses shadow boundaries for browser diagnostics; DOM query APIs retain tree scoping.
     pub fn query_selector_all(&self, dom: &Dom, input: &str) -> Option<Vec<NodeRef>> {
         let selector = parse_selector(input.trim())?;
         Some(
-            dom::Node::descendants(&dom.document)
+            dom::Node::shadow_including_descendants(&dom.document)
                 .filter(|node| selector_matches(&selector, node))
                 .collect(),
         )

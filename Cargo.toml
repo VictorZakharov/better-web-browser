@@ -45,6 +45,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [patch.crates-io]
+boa_ast = { path = "vendor/boa_ast" }
 boa_engine = { path = "vendor/boa_engine" }
 # Boa 0.21 still names the archived `paste` crate. This maintained,
 # version-compatible fork preserves the macro API without an advisory ignore.

@@ -180,6 +180,56 @@ fn retained_runtime_executes_an_additional_script_in_the_same_realm() {
 }
 
 #[test]
+fn class_constructor_scopes_do_not_stop_the_document_runtime() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><div>waiting</div><script>
+            class A {
+                constructor() {
+                    const value = 1;
+                    this.value = value;
+                }
+            }
+            const B = class {
+                constructor(components) {
+                    const { getHasher } = components;
+                    this.run = () => getHasher('sha2-256');
+                }
+            };
+            const nested = new (class {
+                constructor() {
+                    class D {}
+                    this.value = D.name;
+                }
+            })();
+            const staticBlock = class {
+                static {
+                    class D {}
+                    this.value = D.name;
+                }
+            };
+            document.querySelector('div').textContent = [
+                new A().value,
+                new B({ getHasher: value => value }).run(),
+                nested.value,
+                staticBlock.value
+            ].join('|');
+        </script></body>"#,
+        true,
+    );
+    let scripts = script_inputs(&dom);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+
+    let outcome = runtime.execute_initial(&scripts);
+
+    assert!(!outcome.runtime_stopped, "{:?}", outcome.errors);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "1|sha2-256|D|D"
+    );
+}
+
+#[test]
 fn retained_runtime_yields_between_dynamic_script_tasks() {
     let dom = dom::parse_with_scripting(
         "<html><head></head><body><div>waiting</div><script></script></body></html>",

@@ -141,6 +141,10 @@ impl ScriptRuntime {
             .replace_cookies_from_header(cookie_header);
     }
 
+    pub(crate) fn set_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
+        self.host.borrow_mut().stylesheet_sources = stylesheets.iter().cloned().collect();
+    }
+
     pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {
         self.host
             .borrow_mut()

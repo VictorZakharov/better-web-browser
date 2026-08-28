@@ -52,3 +52,37 @@ fn document_write_moves_every_fragment_child_without_reborrowing_its_parent() {
         ["one", "two"]
     );
 }
+
+#[test]
+fn replace_with_accepts_nodes_and_strings_and_preserves_argument_order() {
+    let (dom, outcome) = execute_html(
+        r#"<body><main id="parent"><i id="before"></i><b id="old"></b><i id="after"></i></main>
+        <script>
+            const old = document.getElementById('old');
+            const replacement = document.createElement('span');
+            replacement.id = 'replacement';
+            old.replaceWith('left', replacement, 'right');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let parent = dom
+        .elements_named("main")
+        .find(|node| node.attr("id").as_deref() == Some("parent"))
+        .unwrap();
+    let children = parent.children.borrow();
+    assert_eq!(
+        children
+            .iter()
+            .map(|node| node.text_content())
+            .collect::<String>(),
+        "leftright"
+    );
+    assert_eq!(
+        children
+            .iter()
+            .filter_map(|node| node.attr("id"))
+            .collect::<Vec<_>>(),
+        ["before", "replacement", "after"]
+    );
+}

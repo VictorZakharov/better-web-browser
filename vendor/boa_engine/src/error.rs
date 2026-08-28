@@ -374,7 +374,17 @@ impl JsError {
     /// ```
     pub fn to_opaque(&self, context: &mut Context) -> JsValue {
         match &self.inner {
-            Repr::Native(e) => e.to_opaque(context).into(),
+            Repr::Native(e) => {
+                let object = e.to_opaque(context);
+                if self.backtrace.is_some() {
+                    object.create_non_enumerable_data_property_or_throw(
+                        js_string!("stack"),
+                        JsString::from(self.to_string()),
+                        context,
+                    );
+                }
+                object.into()
+            }
             Repr::Opaque(v) => v.clone(),
         }
     }

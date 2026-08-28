@@ -12,6 +12,8 @@
     ).split(/\s+/));
     const htmlElementConstructor = localName => {
         if (localName === 'div') return HTMLDivElement;
+        if (localName === 'style') return HTMLStyleElement;
+        if (localName === 'link') return HTMLLinkElement;
         if (localName === 'time') return HTMLTimeElement;
         if (localName === 'data') return HTMLDataElement;
         if (localName === 'a') return HTMLAnchorElement;
@@ -49,6 +51,17 @@
     }
 
     let documentWriteRefreshQueued = false;
+    const documentCollections = new WeakMap();
+
+    const documentCollection = (document, name, selector) => {
+        let collections = documentCollections.get(document);
+        if (!collections) {
+            collections = new Map();
+            documentCollections.set(document, collections);
+        }
+        if (!collections.has(name)) collections.set(name, selectorCollection(document, selector));
+        return collections.get(name);
+    };
 
     class Document extends Node {
         constructor(id = 0, ...metadata) {
@@ -77,6 +90,18 @@
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
             return imported;
         }
+        adoptNode(node) {
+            if (!(node instanceof Node)) throw new TypeError('adoptNode requires a Node');
+            if (node instanceof Document)
+                throw new DOMException('Documents cannot be adopted', 'NotSupportedError');
+            const oldDocument = node.ownerDocument;
+            const wasConnected = node.isConnected;
+            if (wasConnected) disconnectCustomElementTree(node);
+            const adopted = wrap(host('adoptNode', this.__id, node.__id));
+            if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
+            if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
+            return adopted;
+        }
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
@@ -85,9 +110,19 @@
             return event;
         }
         getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
-        getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
-        getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
+        getElementsByTagName(name) { return selectorCollection(this, String(name)); }
+        getElementsByClassName(name) {
+            return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
+        }
         getElementsByName(name) { return this.querySelectorAll('[name="' + String(name).replace(/"/g, '\\"') + '"]'); }
+        // These document collections are live and retain identity as required by HTML.
+        // https://html.spec.whatwg.org/multipage/dom.html#dom-document-scripts
+        get images() { return documentCollection(this, 'images', 'img'); }
+        get embeds() { return documentCollection(this, 'embeds', 'embed'); }
+        get plugins() { return this.embeds; }
+        get links() { return documentCollection(this, 'links', 'a[href],area[href]'); }
+        get forms() { return documentCollection(this, 'forms', 'form'); }
+        get scripts() { return documentCollection(this, 'scripts', 'script'); }
         get documentElement() { return this.children[0] || null; }
         get doctype() { return wrap(host('doctype', this.__id)); }
         get head() { return this.querySelector('head'); }
@@ -172,6 +207,8 @@
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
+    windowObject.HTMLStyleElement = HTMLStyleElement;
+    windowObject.HTMLLinkElement = HTMLLinkElement;
     windowObject.HTMLUnknownElement = HTMLUnknownElement;
     windowObject.HTMLTimeElement = HTMLTimeElement;
     windowObject.HTMLDataElement = HTMLDataElement;
@@ -203,6 +240,7 @@
     windowObject.ShadowRoot = ShadowRoot;
     windowObject.HTMLSlotElement = HTMLSlotElement;
     windowObject.DOMImplementation = DOMImplementation;
+    windowObject.HTMLCollection = HTMLCollection;
     windowObject.Event = Event;
     windowObject.CustomEvent = CustomEvent;
     windowObject.MessageEvent = MessageEvent;
@@ -276,17 +314,7 @@
     iframeWindow.document = iframeDocument;
 
     let currentUrl = host('documentUrl');
-    const parseUrl = value => {
-        const match = String(value).match(/^([a-z]+:)?\/\/([^/?#]+)?([^?#]*)?(\?[^#]*)?(#.*)?$/i);
-        return {
-            protocol: match?.[1] || '',
-            host: match?.[2] || '',
-            hostname: (match?.[2] || '').split(':')[0],
-            pathname: match?.[3] || '/',
-            search: match?.[4] || '',
-            hash: match?.[5] || ''
-        };
-    };
+    const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
     const location = {
         get href() { return currentUrl; },
         set href(value) { currentUrl = host('navigate', String(value)); },

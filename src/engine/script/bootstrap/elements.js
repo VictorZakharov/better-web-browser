@@ -131,8 +131,10 @@
         removeAttributeNode(attribute) { return removeAttributeNodeFor(this, attribute); }
         matches(selector) { return host('matches', this.__id, String(selector)); }
         closest(selector) { return wrap(host('closest', this.__id, String(selector))); }
-        getElementsByTagName(name) { return this.querySelectorAll(String(name)); }
-        getElementsByClassName(name) { return this.querySelectorAll('.' + String(name).trim().replace(/\s+/g, '.')); }
+        getElementsByTagName(name) { return selectorCollection(this, String(name)); }
+        getElementsByClassName(name) {
+            return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
+        }
         insertAdjacentHTML(position, html) {
             position = String(position).toLowerCase();
             if (position === 'beforeend') {
@@ -241,6 +243,25 @@
         get dataset() { return this.__dataset ||= datasetFor(this); }
     }
     class HTMLDivElement extends HTMLElement {}
+    class HTMLStyleElement extends HTMLElement {
+        get media() { return this.getAttribute('media') || ''; }
+        set media(value) { this.setAttribute('media', value); }
+        get type() { return this.getAttribute('type') || ''; }
+        set type(value) { this.setAttribute('type', value); }
+        get disabled() { return this.hasAttribute('disabled'); }
+        set disabled(value) { this.toggleAttribute('disabled', !!value); }
+    }
+    class HTMLLinkElement extends HTMLElement {
+        get rel() { return this.getAttribute('rel') || ''; }
+        set rel(value) { this.setAttribute('rel', value); }
+        get relList() { return this.__relList ||= new DOMTokenList(this, 'rel'); }
+        get media() { return this.getAttribute('media') || ''; }
+        set media(value) { this.setAttribute('media', value); }
+        get type() { return this.getAttribute('type') || ''; }
+        set type(value) { this.setAttribute('type', value); }
+        get disabled() { return this.hasAttribute('disabled'); }
+        set disabled(value) { this.toggleAttribute('disabled', !!value); }
+    }
     Object.defineProperties(HTMLElement.prototype, {
         translate: {
             configurable: true,

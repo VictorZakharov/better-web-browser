@@ -64,57 +64,137 @@
     Object.assign(globalThis, { Event, MessageEvent, ErrorEvent, EventTarget });
 
     const formDecode = value => decodeURIComponent(String(value).replace(/\+/g, ' '));
-    const formEncode = value => encodeURIComponent(String(value)).replace(/%20/g, '+');
+    const formEncode = value => encodeURIComponent(String(value))
+        .replace(/[!'()~]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())
+        .replace(/%20/g, '+');
     class URLSearchParams {
-        constructor(init = '') {
+        constructor(init = '', update = null) {
+            this.__entries = [];
+            this.__update = typeof update === 'function' ? update : null;
+            this.__replace(init);
+        }
+        __replace(init) {
             this.__entries = [];
             if (typeof init === 'string') {
                 const source = init.replace(/^\?/, '');
                 if (source) for (const part of source.split('&')) {
                     const split = part.indexOf('=');
-                    this.append(formDecode(split < 0 ? part : part.slice(0, split)), formDecode(split < 0 ? '' : part.slice(split + 1)));
+                    const key = split < 0 ? part : part.slice(0, split);
+                    const value = split < 0 ? '' : part.slice(split + 1);
+                    this.__entries.push([formDecode(key), formDecode(value)]);
                 }
             } else if (init != null && typeof init[Symbol.iterator] === 'function') {
-                for (const pair of init) this.append(pair[0], pair[1]);
-            } else if (init != null) for (const key of Object.keys(Object(init))) this.append(key, init[key]);
+                for (const pair of init) {
+                    const values = [...pair];
+                    if (values.length !== 2) throw new TypeError('URLSearchParams pairs must contain two items');
+                    this.__entries.push([String(values[0]), String(values[1])]);
+                }
+            } else if (init != null) {
+                for (const key of Object.keys(Object(init))) this.__entries.push([String(key), String(init[key])]);
+            }
         }
-        append(name, value) { this.__entries.push([String(name), String(value)]); }
-        delete(name) { name = String(name); this.__entries = this.__entries.filter(entry => entry[0] !== name); }
+        __changed() { this.__update?.(this.toString()); }
+        get size() { return this.__entries.length; }
+        append(name, value) {
+            this.__entries.push([String(name), String(value)]);
+            this.__changed();
+        }
+        set(name, value) {
+            name = String(name);
+            value = String(value);
+            let replaced = false;
+            this.__entries = this.__entries.filter(entry => {
+                if (entry[0] !== name) return true;
+                if (replaced) return false;
+                entry[1] = value;
+                replaced = true;
+                return true;
+            });
+            if (!replaced) this.__entries.push([name, value]);
+            this.__changed();
+        }
         get(name) { return this.__entries.find(entry => entry[0] === String(name))?.[1] ?? null; }
         getAll(name) { return this.__entries.filter(entry => entry[0] === String(name)).map(entry => entry[1]); }
-        has(name) { return this.__entries.some(entry => entry[0] === String(name)); }
-        set(name, value) { this.delete(name); this.append(name, value); }
-        sort() { this.__entries.sort((a, b) => a[0].localeCompare(b[0])); }
-        forEach(callback, thisArg) { for (const [name, value] of this.__entries) callback.call(thisArg, value, name, this); }
-        entries() { return this.__entries.map(entry => [...entry])[Symbol.iterator](); }
+        has(name, value = undefined) {
+            name = String(name);
+            return value === undefined
+                ? this.__entries.some(entry => entry[0] === name)
+                : this.__entries.some(entry => entry[0] === name && entry[1] === String(value));
+        }
+        delete(name, value = undefined) {
+            name = String(name);
+            this.__entries = value === undefined
+                ? this.__entries.filter(entry => entry[0] !== name)
+                : this.__entries.filter(entry => entry[0] !== name || entry[1] !== String(value));
+            this.__changed();
+        }
+        sort() {
+            this.__entries = this.__entries
+                .map((entry, index) => ({ entry, index }))
+                .sort((left, right) => left.entry[0] < right.entry[0] ? -1
+                    : left.entry[0] > right.entry[0] ? 1 : left.index - right.index)
+                .map(item => item.entry);
+            this.__changed();
+        }
+        forEach(callback, thisArg = undefined) {
+            for (const [name, value] of this.__entries) callback.call(thisArg, value, name, this);
+        }
+        entries() { return this.__entries[Symbol.iterator](); }
         keys() { return this.__entries.map(entry => entry[0])[Symbol.iterator](); }
         values() { return this.__entries.map(entry => entry[1])[Symbol.iterator](); }
         [Symbol.iterator]() { return this.entries(); }
         toString() { return this.__entries.map(([name, value]) => formEncode(name) + '=' + formEncode(value)).join('&'); }
     }
     const missingUrlValue = {};
+    const workerUrl = host('workerLocation');
+    const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
     class URL {
-        constructor(value = missingUrlValue, base = host('workerLocation')) {
+        constructor(value = missingUrlValue, base = workerUrl) {
             if (value === missingUrlValue) throw new TypeError('URL requires an input');
-            this.href = host('strictResolveUrl', String(value), String(base));
+            this.__href = host('strictResolveUrl', String(value), String(base));
+            this.__searchParams = new URLSearchParams(this.search, value => this.__setSearchFromParams(value));
         }
-        static canParse(value, base = host('workerLocation')) {
+        static canParse(value, base = workerUrl) {
             try { host('strictResolveUrl', String(value), String(base)); return true; }
             catch (_) { return false; }
         }
-        static parse(value, base = host('workerLocation')) {
+        static parse(value, base = workerUrl) {
             try { return new URL(value, base); } catch (_) { return null; }
         }
-        toString() { return this.href; }
-        toJSON() { return this.href; }
-        get protocol() { return this.href.match(/^([^:]+:)/)?.[1] || ''; }
-        get origin() { return this.href.match(/^([^:]+:\/\/[^/]+)/)?.[1] || 'null'; }
-        get host() { return this.href.match(/^[^:]+:\/\/([^/]+)/)?.[1] || ''; }
-        get hostname() { return this.host.replace(/:\d+$/, ''); }
-        get pathname() { return this.href.match(/^[^:]+:\/\/[^/]+([^?#]*)/)?.[1] || '/'; }
-        get search() { return this.href.match(/(\?[^#]*)/)?.[1] || ''; }
-        get hash() { return this.href.match(/(#.*)$/)?.[1] || ''; }
-        get searchParams() { return new URLSearchParams(this.search); }
+        __parts() { return parseUrl(this.__href); }
+        __set(component, value, updateParams = false) {
+            try { this.__href = host('setWebUrlComponent', this.__href, component, String(value)); }
+            catch (_) { return; }
+            if (updateParams) this.__searchParams.__replace(this.search);
+        }
+        __setSearchFromParams(value) { this.__set('search', value); }
+        toString() { return this.__href; }
+        toJSON() { return this.__href; }
+        get href() { return this.__href; }
+        set href(value) {
+            this.__href = host('setWebUrlComponent', this.__href, 'href', String(value));
+            this.__searchParams.__replace(this.search);
+        }
+        get protocol() { return this.__parts().protocol; }
+        set protocol(value) { this.__set('protocol', value); }
+        get username() { return this.__parts().username; }
+        set username(value) { this.__set('username', value); }
+        get password() { return this.__parts().password; }
+        set password(value) { this.__set('password', value); }
+        get host() { return this.__parts().host; }
+        set host(value) { this.__set('host', value); }
+        get hostname() { return this.__parts().hostname; }
+        set hostname(value) { this.__set('hostname', value); }
+        get port() { return this.__parts().port; }
+        set port(value) { this.__set('port', value); }
+        get pathname() { return this.__parts().pathname; }
+        set pathname(value) { this.__set('pathname', value); }
+        get search() { return this.__parts().search; }
+        set search(value) { this.__set('search', value, true); }
+        get hash() { return this.__parts().hash; }
+        set hash(value) { this.__set('hash', value); }
+        get origin() { return this.__parts().origin; }
+        get searchParams() { return this.__searchParams; }
     }
     Object.assign(globalThis, { URL, URLSearchParams });
 

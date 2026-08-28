@@ -29,9 +29,17 @@ pub struct NodeDiagnostics {
     pub class: Option<String>,
     pub child_count: u64,
     pub text_length: u64,
+    pub shadow_root: Option<ShadowRootDiagnostics>,
     pub element_image: Option<ResourceDiagnostics>,
     pub style: StyleDiagnostics,
     pub control_rect: Option<RectF>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShadowRootDiagnostics {
+    pub child_count: u64,
+    pub descendant_count: u64,
+    pub text_length: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -104,9 +112,20 @@ impl NodeDiagnostics {
             "class": self.class,
             "child_count": self.child_count,
             "text_length": self.text_length,
+            "shadow_root": self.shadow_root.as_ref().map(ShadowRootDiagnostics::to_json),
             "element_image": self.element_image.as_ref().map(ResourceDiagnostics::to_json),
             "style": self.style.to_json(),
             "control_rect": self.control_rect.map(rect_value),
+        })
+    }
+}
+
+impl ShadowRootDiagnostics {
+    fn to_json(&self) -> Value {
+        json!({
+            "child_count": self.child_count,
+            "descendant_count": self.descendant_count,
+            "text_length": self.text_length,
         })
     }
 }

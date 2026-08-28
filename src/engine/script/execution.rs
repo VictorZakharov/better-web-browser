@@ -342,24 +342,25 @@ pub(super) fn evaluate_script(
     }
 
     let script_started = Instant::now();
-    let succeeded = match mutation_host::eval_with_writes(context, host, &script.code) {
-        Ok(_) => {
-            outcome.executed += 1;
-            host.borrow_mut().executed += 1;
-            if let Err(error) = context.run_jobs() {
+    let succeeded =
+        match mutation_host::eval_with_writes(context, host, &script.code, &script.source_url) {
+            Ok(_) => {
+                outcome.executed += 1;
+                host.borrow_mut().executed += 1;
+                if let Err(error) = context.run_jobs() {
+                    outcome
+                        .errors
+                        .push(format!("{}: promise job: {error}", script.source_url));
+                }
+                true
+            }
+            Err(error) => {
                 outcome
                     .errors
-                    .push(format!("{}: promise job: {error}", script.source_url));
+                    .push(format!("{}: {error}", script.source_url));
+                false
             }
-            true
-        }
-        Err(error) => {
-            outcome
-                .errors
-                .push(format!("{}: {error}", script.source_url));
-            false
-        }
-    };
+        };
     let script_time = script_started.elapsed();
     if script_time.as_millis() >= 1 {
         outcome.diagnostics.push(format!(
