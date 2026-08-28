@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `c2a08242183dbca7f57f9c8930e3ef90f9e483edba3a3a036f0259d5fcc811a9`
+- Cargo.lock SHA-256: `cf4e34e3ae85cca05e2119d1afca476a2b27dce60c3549e6798db66e792dc0ac`
 - Third-party packages: 216
 
 | Package | Version | License expression | Source |
@@ -57,9 +57,9 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/flate2-rs) |
 | `float-cmp` | 0.9.0 | MIT | [upstream](https://github.com/mikedilger/float-cmp) |
 | `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
+| `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `font-types` | 0.11.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
 | `font-types` | 0.12.3 | MIT OR Apache-2.0 | [upstream](https://github.com/googlefonts/fontations) |
-| `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `futures-channel` | 0.3.34 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/futures-rs) |
 | `futures-concurrency` | 7.7.1 | MIT OR Apache-2.0 | [upstream](https://github.com/yoshuawuyts/futures-concurrency) |
@@ -83,8 +83,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `idna` | 1.1.0 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
 | `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/idna_adapter) |
 | `image` | 0.25.10 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image) |
-| `image-webp` | 0.2.4 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-webp) |
 | `imagesize` | 0.15.0 | MIT | [upstream](https://github.com/Roughsketch/imagesize) |
+| `image-webp` | 0.2.4 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-webp) |
 | `indexmap` | 2.14.0 | Apache-2.0 OR MIT | [upstream](https://github.com/indexmap-rs/indexmap) |
 | `intrusive-collections` | 0.9.7 | Apache-2.0/MIT | [upstream](https://github.com/Amanieu/intrusive-rs) |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-itertools/itertools) |
@@ -131,8 +131,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/powerfmt) |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 | [upstream](https://github.com/cryptocorrosion/cryptocorrosion) |
 | `precomputed-hash` | 0.1.1 | MIT | [upstream](https://github.com/emilio/precomputed-hash) |
-| `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bkchr/proc-macro-crate) |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/proc-macro2) |
+| `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/bkchr/proc-macro-crate) |
 | `psl2` | 0.1.18 | MIT OR Apache-2.0 | [upstream](https://github.com/KarpelesLab/psl2) |
 | `pxfm` | 0.1.30 | BSD-3-Clause OR Apache-2.0 | [upstream](https://github.com/awxkee/pxfm) |
 | `quick-error` | 2.0.1 | MIT/Apache-2.0 | [upstream](http://github.com/tailhook/quick-error) |
