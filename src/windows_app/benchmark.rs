@@ -110,12 +110,18 @@ impl BrowserState {
                     .get_or_insert_with(|| format!("prepare retained scroll surface: {error}"));
             }
         }
+        let initial_scroll_y = self.scroll_y;
         let Some(benchmark) = self.benchmark.as_mut() else {
             return;
         };
         benchmark.finish_scheduled = true;
         if let Some(trace) = benchmark.early_scroll.as_mut() {
-            trace.schedule(self.window, benchmark.settle, benchmark.activity);
+            trace.schedule(
+                self.window,
+                benchmark.settle,
+                benchmark.activity,
+                initial_scroll_y,
+            );
         } else {
             initialization::post_benchmark_finish(self.window, benchmark.settle);
         }
@@ -138,6 +144,16 @@ impl BrowserState {
                 initialization::post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
                 return;
             }
+        }
+
+        let initial_scroll_y = self
+            .benchmark
+            .as_ref()
+            .and_then(|benchmark| benchmark.early_scroll.as_ref())
+            .and_then(EarlyScrollTrace::initial_scroll_y);
+        if let Some(initial_scroll_y) = initial_scroll_y {
+            let maximum_scroll = (self.content_height - self.viewport_height()).max(0);
+            self.scroll_y = initial_scroll_y.clamp(0, maximum_scroll);
         }
 
         let scroll_sample_count = self
