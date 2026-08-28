@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `f3a4500513f64507516140a043ea7cf955346f99cb8aad1dc551d609f2c13c09`
+- Cargo.lock SHA-256: `c2a08242183dbca7f57f9c8930e3ef90f9e483edba3a3a036f0259d5fcc811a9`
 - Third-party packages: 216
 
 | Package | Version | License expression | Source |
@@ -227,7 +227,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 
 ## Bundled sources and data
 
-- `boa_engine` is a locally modified path dependency from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in `vendor/boa_engine/LOCAL_CHANGES.md`; both upstream license texts are preserved beside the source and copied into release archives.
+- `boa_ast` and `boa_engine` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate's `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.
 - Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.
 - `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.
 - The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.
