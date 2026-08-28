@@ -6,6 +6,9 @@ mod accessibility;
 mod backpressure;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
+#[cfg(feature = "v8-engine-spike")]
+#[path = "renderer_process/engine_probe.rs"]
+mod engine_probe;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/presentation.rs"]
