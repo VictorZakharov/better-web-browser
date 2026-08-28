@@ -48,7 +48,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "button" => self.collect_button(node, style, output),
                     "svg" => self.collect_svg(node, style, output),
                     _ => {
-                        if style.display == Display::InlineBlock
+                        if matches!(style.display, Display::InlineBlock | Display::InlineFlex)
                             || style.margin.left != Length::Px(0.0)
                             || style.margin.right != Length::Px(0.0)
                             || style.padding != Edges::ZERO
@@ -63,7 +63,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             }
                             let mut children = Vec::new();
                             let mut child_pending_space = false;
-                            for child in Node::composed_children(node).iter() {
+                            for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),
@@ -82,7 +82,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             {
                                 output.push(InlineAtom::Break);
                             }
-                            for child in Node::composed_children(node).iter() {
+                            for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),
@@ -97,7 +97,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                                 output.push(InlineAtom::Break);
                             }
                         } else {
-                            for child in Node::composed_children(node).iter() {
+                            for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,
                                     link.clone(),

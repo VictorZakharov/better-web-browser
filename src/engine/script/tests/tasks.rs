@@ -1,6 +1,43 @@
 use super::*;
 use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
 
+mod idle;
+
+#[test]
+fn match_media_uses_the_document_color_scheme_environment() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        r#"<body><script>
+            document.body.setAttribute('data-result', [
+                matchMedia('(prefers-color-scheme: dark)').matches,
+                matchMedia('(prefers-color-scheme: light)').matches,
+                matchMedia('(min-width: 700px)').matches
+            ].join(':'));
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/#inline".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_media_environment(800.0, true);
+    let outcome = runtime.execute_initial(&[input]);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .and_then(|body| body.attr("data-result"))
+            .as_deref(),
+        Some("true:false:true")
+    );
+}
+
 #[test]
 fn drains_short_timers_before_layout() {
     let (dom, outcome) = execute_html(

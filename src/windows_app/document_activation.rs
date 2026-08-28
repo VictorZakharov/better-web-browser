@@ -113,6 +113,7 @@ impl BrowserState {
                 .unwrap_or_default(),
             body_length,
             viewport: self.renderer_viewport(),
+            prefers_dark_color_scheme: self.app.prefers_dark_color_scheme,
         };
         let state = match (
             self.http_client.document_cookie_snapshot(&page.final_url),

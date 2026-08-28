@@ -189,6 +189,10 @@ impl Broker {
                         shared.active_task_started = Some(Instant::now());
                         continue;
                     }
+                    if diagnostic.code == crate::renderer_protocol::RENDERER_DIAGNOSTIC_TASK_STAGE {
+                        self.shared().active_task = Some(diagnostic.text);
+                        continue;
+                    }
                     if self.exit_reason.is_none() {
                         self.exit_reason = match diagnostic.code {
                             crate::renderer_protocol::RENDERER_DIAGNOSTIC_INTERNAL_ERROR => {

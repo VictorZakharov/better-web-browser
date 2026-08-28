@@ -201,3 +201,20 @@ fn mutation_versions_track_document_and_affected_subtrees() {
     assert_eq!(section.subtree_mutation_version(), reinsertion_version);
     assert_eq!(span.id(), dom.elements_named("span").next().unwrap().id());
 }
+
+#[test]
+fn child_list_versions_ignore_attribute_changes_and_track_tree_changes() {
+    let dom = parse("<main><span></span></main>");
+    let main = dom.elements_named("main").next().unwrap();
+    let span = dom.elements_named("span").next().unwrap();
+    let initial = main.child_list_version();
+
+    main.set_attr("data-state", "ready");
+    assert_eq!(main.child_list_version(), initial);
+
+    assert!(Node::remove_child(&main, &span));
+    assert!(main.child_list_version() > initial);
+    let removed = main.child_list_version();
+    assert!(Node::append_child(&main, span));
+    assert!(main.child_list_version() > removed);
+}

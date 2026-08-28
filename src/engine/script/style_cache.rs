@@ -21,7 +21,14 @@ impl HostState {
                 // the page resource layer until those lifetimes are unified. Compute only the
                 // requested node's ancestor chain; getComputedStyle must not cascade every node in
                 // a large document merely to inspect one feature-test element.
-                StyleSet::for_computed_style(&self.document, &self.document_url, &[], 1024.0)
+                StyleSet::for_computed_style_for_viewport(
+                    &self.document,
+                    &self.document_url,
+                    &[],
+                    self.media_viewport_width,
+                    self.media_viewport_width,
+                    self.prefers_dark_color_scheme,
+                )
             }
         };
         let value = styles

@@ -309,6 +309,7 @@ fn encode_document_start(
     }
     writer.u32(start.body_length);
     encode_viewport(writer, start.viewport);
+    writer.bool(start.prefers_dark_color_scheme);
     Ok(())
 }
 
@@ -331,6 +332,7 @@ fn decode_document_start(reader: &mut WireReader<'_>) -> Result<DocumentStart, P
         },
         body_length: reader.u32()?,
         viewport: decode_viewport(reader)?,
+        prefers_dark_color_scheme: reader.bool()?,
     };
     start.validate()?;
     Ok(start)

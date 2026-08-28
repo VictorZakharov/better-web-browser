@@ -1,14 +1,18 @@
 //! Dedicated Worker realms hosted inside the document's AppContainer process.
 
-use super::fetch::{into_fetch_result, script_api_request, validate_script_response};
+mod network;
+
+use self::network::{
+    PendingWorkerFetch, WorkerNetworkRequest, finish_ready_network_batches, request_network,
+    start_ready_network_batch, worker_source_request,
+};
+use super::fetch::validate_script_response;
 use super::{fetch_script_source, merge_outcome};
 use crate::engine::{
     ScriptKind, ScriptOutcome, ScriptRuntime, ScriptWorkerAction, WorkerRuntime,
     WorkerRuntimeOutcome, WorkerSourceLoader,
 };
-use crate::fetch::{
-    CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchResponse, RequestMode,
-};
+use crate::fetch::CredentialsMode;
 use crate::renderer_process::child::connection::ChildConnection;
 use crate::renderer_protocol::DocumentId;
 use std::collections::HashMap;
@@ -16,12 +20,12 @@ use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 const MAX_DEDICATED_WORKERS: usize = 16;
-const MAX_WORKER_SERVICE_WAVES: usize = 64;
 
 pub(super) struct RendererWorkers {
     handles: HashMap<u32, WorkerHandle>,
     network_sender: mpsc::Sender<WorkerNetworkRequest>,
     network: mpsc::Receiver<WorkerNetworkRequest>,
+    pending_network: Vec<PendingWorkerFetch>,
     event_sender: mpsc::Sender<WorkerEvent>,
     events: mpsc::Receiver<WorkerEvent>,
 }
@@ -43,13 +47,14 @@ impl RendererWorkers {
             handles: HashMap::new(),
             network_sender,
             network,
+            pending_network: Vec::new(),
             event_sender,
             events,
         }
     }
 
     pub(super) fn has_work(&self) -> bool {
-        !self.handles.is_empty()
+        !self.handles.is_empty() || !self.pending_network.is_empty()
     }
 
     pub(super) fn drive(
@@ -66,72 +71,48 @@ impl RendererWorkers {
             outcome,
         } = context;
         self.apply(actions, document_url, outcome)?;
+        finish_ready_network_batches(connection, &mut self.pending_network)?;
+        start_ready_network_batch(
+            connection,
+            document,
+            &self.network,
+            &mut self.pending_network,
+        )?;
         let mut delivered = false;
-        for wave in 0..MAX_WORKER_SERVICE_WAVES {
-            let wait = if wave == 0 && self.has_work() {
-                Duration::from_millis(10)
-            } else {
-                Duration::from_millis(2)
-            };
-            let mut requests = Vec::new();
-            match self.network.recv_timeout(wait) {
-                Ok(request) => requests.push(request),
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err("renderer Worker network channel disconnected".into());
-                }
+        for event in self.events.try_iter() {
+            delivered = true;
+            if event.closed
+                && let Some(handle) = self.handles.remove(&event.id)
+            {
+                handle.terminate();
             }
-            requests.extend(self.network.try_iter());
-            let had_requests = !requests.is_empty();
-            if had_requests {
-                self.complete_network_batch(connection, document, requests)?;
-            }
-
-            let events = self.events.try_iter().collect::<Vec<_>>();
-            let had_events = !events.is_empty();
-            for event in events {
-                delivered = true;
-                if event.closed
-                    && let Some(handle) = self.handles.remove(&event.id)
-                {
-                    handle.terminate();
-                }
-                let Some(runtime) = runtime.as_mut() else {
-                    continue;
-                };
-                let mut loader = |url: &str, kind, options| {
-                    fetch_script_source(connection, document, url, kind, options)
-                };
-                for message in event.messages {
-                    let worker = runtime.complete_worker_event_with_loader(
-                        event.id,
-                        message,
-                        Some(&mut loader),
-                    );
-                    merge_outcome(outcome, worker, document_root);
-                }
-                outcome.console.extend(
-                    event
-                        .console
-                        .into_iter()
-                        .map(|entry| format!("Worker {}: {entry}", event.id)),
-                );
-                outcome.errors.extend(
-                    event
-                        .errors
-                        .into_iter()
-                        .map(|error| format!("Worker {}: {error}", event.id)),
-                );
-            }
-            let actions = std::mem::take(&mut outcome.worker_actions);
-            let had_actions = !actions.is_empty();
-            if had_actions {
-                self.apply(actions, document_url, outcome)?;
+            let Some(runtime) = runtime.as_mut() else {
                 continue;
+            };
+            let mut loader = |url: &str, kind, options| {
+                fetch_script_source(connection, document, url, kind, options)
+            };
+            for message in event.messages {
+                let worker =
+                    runtime.complete_worker_event_with_loader(event.id, message, Some(&mut loader));
+                merge_outcome(outcome, worker, document_root);
             }
-            if !had_requests && !had_events {
-                break;
-            }
+            outcome.console.extend(
+                event
+                    .console
+                    .into_iter()
+                    .map(|entry| format!("Worker {}: {entry}", event.id)),
+            );
+            outcome.errors.extend(
+                event
+                    .errors
+                    .into_iter()
+                    .map(|error| format!("Worker {}: {error}", event.id)),
+            );
+        }
+        let actions = std::mem::take(&mut outcome.worker_actions);
+        if !actions.is_empty() {
+            self.apply(actions, document_url, outcome)?;
         }
         Ok(delivered)
     }
@@ -189,36 +170,6 @@ impl RendererWorkers {
         }
         Ok(())
     }
-
-    fn complete_network_batch(
-        &mut self,
-        connection: &mut ChildConnection,
-        document: DocumentId,
-        requests: Vec<WorkerNetworkRequest>,
-    ) -> Result<(), String> {
-        let mut replies = HashMap::new();
-        let wire = requests
-            .into_iter()
-            .map(|request| {
-                let request_id = connection.allocate_request_id();
-                replies.insert(request_id, request.reply);
-                script_api_request(request_id, document, request.request)
-            })
-            .collect::<Vec<_>>();
-        for response in connection.fetch_batch(document, wire)? {
-            let Some(reply) = replies.remove(&response.head.request_id) else {
-                return Err("browser returned an unknown Worker Fetch response".into());
-            };
-            let _ = reply.send(into_fetch_result(response));
-        }
-        for (_, reply) in replies {
-            let _ = reply.send(Err(FetchError::new(
-                FetchErrorKind::Network,
-                "browser omitted a Worker Fetch response",
-            )));
-        }
-        Ok(())
-    }
 }
 
 impl Drop for RendererWorkers {
@@ -242,11 +193,6 @@ impl WorkerHandle {
 enum WorkerCommand {
     Message(String),
     Terminate,
-}
-
-struct WorkerNetworkRequest {
-    request: FetchRequest,
-    reply: mpsc::Sender<Result<FetchResponse, FetchError>>,
 }
 
 struct WorkerEvent {
@@ -378,35 +324,6 @@ fn append_worker_outcome(target: &mut WorkerRuntimeOutcome, mut source: WorkerRu
     target.console.append(&mut source.console);
     target.errors.append(&mut source.errors);
     target.closed |= source.closed;
-}
-
-fn worker_source_request(
-    network: &mpsc::Sender<WorkerNetworkRequest>,
-    document_url: &str,
-    url: &str,
-    kind: ScriptKind,
-    credentials: CredentialsMode,
-) -> Result<FetchResponse, FetchError> {
-    let mut request = FetchRequest::script(url, document_url)?;
-    request.mode = match kind {
-        ScriptKind::Classic => RequestMode::SameOrigin,
-        ScriptKind::Module => RequestMode::Cors,
-    };
-    request.credentials = credentials;
-    request_network(network, request)
-}
-
-fn request_network(
-    network: &mpsc::Sender<WorkerNetworkRequest>,
-    request: FetchRequest,
-) -> Result<FetchResponse, FetchError> {
-    let (reply, response) = mpsc::channel();
-    network
-        .send(WorkerNetworkRequest { request, reply })
-        .map_err(|_| FetchError::new(FetchErrorKind::Network, "Worker broker disconnected"))?;
-    response
-        .recv()
-        .map_err(|_| FetchError::new(FetchErrorKind::Network, "Worker broker stopped"))?
 }
 
 fn emit(config: &WorkerConfig, outcome: WorkerRuntimeOutcome) {

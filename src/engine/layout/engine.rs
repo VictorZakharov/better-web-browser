@@ -49,6 +49,7 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
             content_height: viewport_height,
             background: Color::WHITE,
             forms: collect_forms(page),
+            node_bounds: HashMap::new(),
         },
     };
 
@@ -81,4 +82,71 @@ pub(super) struct LayoutEngine<'a, M> {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BlockMetrics {
     pub(super) bottom: f32,
+}
+
+impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    /// Returns box-tree children, flattening `display: contents` wrappers such as Shadow DOM
+    /// slots while preserving the assigned nodes' own block, flex, grid, or inline display.
+    pub(super) fn box_children(&self, node: &NodeRef) -> Vec<NodeRef> {
+        fn append<M: TextMeasurer>(
+            engine: &LayoutEngine<'_, M>,
+            node: &NodeRef,
+            output: &mut Vec<NodeRef>,
+        ) {
+            for child in Node::composed_children(node) {
+                if child.element().is_some()
+                    && engine.styles.get(&child).display == Display::Contents
+                {
+                    append(engine, &child, output);
+                } else {
+                    output.push(child);
+                }
+            }
+        }
+
+        let mut output = Vec::new();
+        append(self, node, &mut output);
+        output
+    }
+
+    /// Returns children participating in a block formatting context. A boxless inline wrapper
+    /// around a block child is split by that block and therefore does not force the descendant
+    /// subtree into one inline run (CSS 2.1 section 9.2.1.1).
+    pub(super) fn block_formatting_children(&self, node: &NodeRef) -> Vec<NodeRef> {
+        fn append<M: TextMeasurer>(
+            engine: &LayoutEngine<'_, M>,
+            child: NodeRef,
+            output: &mut Vec<NodeRef>,
+        ) {
+            let style = engine.styles.get(&child);
+            let children = engine.box_children(&child);
+            let boxless_inline = child.element().is_some()
+                && child.tag_name() != Some("a")
+                && style.display == Display::Inline
+                && style.margin.left == Length::Px(0.0)
+                && style.margin.right == Length::Px(0.0)
+                && style.padding == Edges::ZERO
+                && style.border_width == Edges::ZERO
+                && style.background_color.alpha == 0
+                && style.background_image.is_none()
+                && style.mask_image.is_none();
+            if boxless_inline
+                && children
+                    .iter()
+                    .any(|descendant| is_block_level(engine.styles.get(descendant).display))
+            {
+                for descendant in children {
+                    append(engine, descendant, output);
+                }
+            } else {
+                output.push(child);
+            }
+        }
+
+        let mut output = Vec::new();
+        for child in self.box_children(node) {
+            append(self, child, &mut output);
+        }
+        output
+    }
 }

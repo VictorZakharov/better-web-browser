@@ -71,6 +71,14 @@ impl BrowserState {
         else {
             return;
         };
+        // Resource-only presentations do not advance the renderer's logical clock. Preserve wall
+        // time elapsed since the last acknowledged clock advance instead of restarting a pending
+        // JavaScript timer at its original delay after every image or font arrives.
+        let elapsed = self
+            .renderer_runtime_clock
+            .map(|started| started.elapsed())
+            .unwrap_or_default();
+        let next_delay = remaining_renderer_delay(next_delay, elapsed);
         if SetTimer(
             self.window,
             ID_RENDERER_RUNTIME_TIMER,
@@ -127,6 +135,10 @@ fn win32_timer_delay_ms(delay: Duration) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
+fn remaining_renderer_delay(next: Duration, elapsed: Duration) -> Duration {
+    next.saturating_sub(elapsed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +156,18 @@ mod tests {
         assert!(
             TIMER_CALLBACKS_PER_WAKEUP
                 < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
+        );
+    }
+
+    #[test]
+    fn resource_presentations_preserve_elapsed_renderer_timer_time() {
+        assert_eq!(
+            remaining_renderer_delay(Duration::from_millis(1600), Duration::from_millis(900)),
+            Duration::from_millis(700)
+        );
+        assert_eq!(
+            remaining_renderer_delay(Duration::from_millis(1600), Duration::from_millis(1700)),
+            Duration::ZERO
         );
     }
 }

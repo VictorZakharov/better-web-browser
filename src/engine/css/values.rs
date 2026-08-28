@@ -1,7 +1,6 @@
 //! Computed CSS value types and inherited/initial style state.
 
 use super::*;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Color {
     pub red: u8,
@@ -204,9 +203,11 @@ impl ResolvedEdges {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Display {
     None,
+    Contents,
     Block,
     Inline,
     InlineBlock,
+    InlineFlex,
     Flex,
     Grid,
     Table,
@@ -218,9 +219,11 @@ impl Display {
     pub(crate) const fn css_keyword(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::Contents => "contents",
             Self::Block => "block",
             Self::Inline => "inline",
             Self::InlineBlock => "inline-block",
+            Self::InlineFlex => "inline-flex",
             Self::Flex => "flex",
             Self::Grid => "grid",
             Self::Table => "table",
@@ -350,6 +353,7 @@ pub struct ComputedStyle {
     pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub justify_self: AlignItems,
     pub flex_wrap: bool,
     pub flex_grow: f32,
     pub flex_shrink: f32,
@@ -417,6 +421,7 @@ impl ComputedStyle {
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            justify_self: AlignItems::Stretch,
             flex_wrap: false,
             flex_grow: 0.0,
             flex_shrink: 1.0,

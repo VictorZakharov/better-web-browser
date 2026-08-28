@@ -151,6 +151,16 @@ fn dispatch_host_call(
             ))
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
+        "mediaMatches" => {
+            let query = argument_string(args, 1, context)?;
+            Ok(JsValue::from(
+                crate::engine::css::media_query_matches_with_color_scheme(
+                    &query,
+                    state.media_viewport_width,
+                    state.prefers_dark_color_scheme,
+                ),
+            ))
+        }
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
             state.set_cookie(argument_string(args, 1, context)?);
@@ -251,6 +261,16 @@ fn dispatch_host_call(
             let delay = argument_duration(args, 2);
             let repeat = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
             state.schedule_timer(id, delay, repeat);
+            Ok(JsValue::from(id))
+        }
+        "idleSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("idle callback identifiers must be positive integers")
+                    .into());
+            }
+            state.schedule_idle_callback(id, argument_duration(args, 2));
             Ok(JsValue::from(id))
         }
         "timerCancel" => {

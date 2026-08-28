@@ -22,6 +22,7 @@
     }
     const cache = new Map();
     let refreshWindowNamedProperties = () => {};
+    let refreshWindowNamedPropertyValues = () => {};
     let maybeUpgradeCustomElement = element => element;
     let upgradeCustomElementTree = () => {};
     let connectCustomElementTree = () => {};
@@ -36,4 +37,28 @@
         const result = value.split(',').filter(Boolean).map(id => wrap(Number(id)));
         result.item = index => result[index] || null;
         return result;
+    };
+    const childCollectionCache = new WeakMap();
+    const childCollectionVersions = new WeakMap();
+    const markChildCollectionsChanged = (...nodes) => {
+        for (const node of nodes.flat()) {
+            if (!node || (typeof node !== 'object' && typeof node !== 'function')) continue;
+            childCollectionVersions.set(node, (childCollectionVersions.get(node) || 0) + 1);
+        }
+    };
+    const childCollection = (node, elements) => {
+        const version = childCollectionVersions.get(node) || 0;
+        let records = childCollectionCache.get(node);
+        if (!records) childCollectionCache.set(node, records = {});
+        const key = elements ? 'elements' : 'nodes';
+        let record = records[key];
+        if (!record) {
+            const value = list(host(elements ? 'elementChildren' : 'children', node.__id));
+            records[key] = record = { version, value };
+        } else if (record.version !== version) {
+            const next = list(host(elements ? 'elementChildren' : 'children', node.__id));
+            record.value.splice(0, record.value.length, ...next);
+            record.version = version;
+        }
+        return record.value;
     };

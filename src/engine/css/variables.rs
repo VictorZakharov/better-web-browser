@@ -91,47 +91,46 @@ pub(super) fn substitute_component_values<'i, 't>(
         let token = parser.next_including_whitespace().ok()?.clone();
         match &token {
             Token::Function(name) if name.eq_ignore_ascii_case("var") => {
-                let arguments = parser
-                    .parse_nested_block(|nested| {
-                        let start = nested.position();
-                        while !nested.is_exhausted() {
-                            nested.next_including_whitespace_and_comments()?;
+                let replacement = parser
+                    .parse_nested_block(|nested| -> Result<String, cssparser::ParseError<'i, ()>> {
+                        let name = nested.expect_ident_cloned()?.to_string();
+                        if !name.starts_with("--") {
+                            return Err(nested.new_custom_error(()));
                         }
-                        Ok::<_, cssparser::ParseError<'i, ()>>(nested.slice_from(start).to_string())
+                        nested.skip_whitespace();
+                        let has_fallback = if nested.is_exhausted() {
+                            false
+                        } else {
+                            nested.expect_comma()?;
+                            true
+                        };
+
+                        let replacement = if stack.iter().any(|active| active == &name) {
+                            None
+                        } else if let Some(custom_value) = custom_properties.get(&name) {
+                            stack.push(name.clone());
+                            let replacement = substitute_variable_references(
+                                custom_value,
+                                custom_properties,
+                                stack,
+                                depth + 1,
+                            );
+                            stack.pop();
+                            replacement
+                        } else {
+                            None
+                        };
+                        if let Some(replacement) = replacement {
+                            consume_component_values(nested)?;
+                            Ok(replacement)
+                        } else if has_fallback {
+                            substitute_component_values(nested, custom_properties, stack, depth + 1)
+                                .ok_or_else(|| nested.new_custom_error(()))
+                        } else {
+                            Err(nested.new_custom_error(()))
+                        }
                     })
                     .ok()?;
-                let (name, fallback) = split_css_once(&arguments, ',')
-                    .map(|(name, fallback)| (name.trim(), Some(fallback.trim())))
-                    .unwrap_or((arguments.trim(), None));
-                if !name.starts_with("--") {
-                    return None;
-                }
-
-                let replacement = if stack.iter().any(|active| active == name) {
-                    None
-                } else if let Some(custom_value) = custom_properties.get(name) {
-                    stack.push(name.to_string());
-                    let replacement = substitute_variable_references(
-                        custom_value,
-                        custom_properties,
-                        stack,
-                        depth + 1,
-                    );
-                    stack.pop();
-                    replacement
-                } else {
-                    None
-                }
-                .or_else(|| {
-                    fallback.and_then(|fallback| {
-                        substitute_variable_references(
-                            fallback,
-                            custom_properties,
-                            stack,
-                            depth + 1,
-                        )
-                    })
-                })?;
                 output.push_str(&replacement);
             }
             Token::Function(_)
@@ -156,4 +155,22 @@ pub(super) fn substitute_component_values<'i, 't>(
         }
     }
     Some(output)
+}
+
+fn consume_component_values<'i, 't>(
+    parser: &mut Parser<'i, 't>,
+) -> Result<(), cssparser::ParseError<'i, ()>> {
+    while !parser.is_exhausted() {
+        let token = parser.next_including_whitespace_and_comments()?.clone();
+        if matches!(
+            token,
+            Token::Function(_)
+                | Token::ParenthesisBlock
+                | Token::SquareBracketBlock
+                | Token::CurlyBracketBlock
+        ) {
+            parser.parse_nested_block(consume_component_values)?;
+        }
+    }
+    Ok(())
 }

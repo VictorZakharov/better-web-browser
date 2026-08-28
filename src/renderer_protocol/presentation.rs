@@ -4,11 +4,12 @@ mod coalescing;
 pub(super) mod codec;
 mod diagnostics;
 mod layout;
+mod layout_sanitize;
 mod reader;
 
 pub use diagnostics::{
-    NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics,
-    ShadowRootDiagnostics, StyleDiagnostics,
+    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, ResourceDiagnostics,
+    SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics,
 };
 
 use super::{AccessibilityUpdate, DocumentId, ProtocolError};
@@ -82,12 +83,7 @@ pub struct PresentedLayout {
 
 impl PresentedLayout {
     pub fn from_layout(layout: LayoutOutput) -> Self {
-        Self {
-            items: layout.items,
-            content_height: layout.content_height,
-            background: layout.background,
-            forms: layout.forms.into_values().collect(),
-        }
+        layout_sanitize::sanitize(layout)
     }
 
     pub fn into_layout(self) -> LayoutOutput {
@@ -100,6 +96,7 @@ impl PresentedLayout {
                 .into_iter()
                 .map(|form| (form.node_id, form))
                 .collect(),
+            node_bounds: Default::default(),
         }
     }
 }

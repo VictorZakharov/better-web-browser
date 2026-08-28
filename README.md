@@ -237,5 +237,5 @@ As of 2026-08-13, the hidden release build completes HTML5test and renders a sco
 
 ## License
 
-Breeze is available under the MIT License. The modified vendored Boa engine and
-its local patch inventory are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Breeze is available under the MIT License. The modified vendored Boa crates and
+their local patch inventories are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

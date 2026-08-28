@@ -120,6 +120,7 @@ pub struct Node {
     id: NodeId,
     pub(super) identity: Rc<NodeIdAllocator>,
     subtree_mutation_version: Cell<u64>,
+    child_list_version: Cell<u64>,
     pub parent: Cell<Option<Weak<Node>>>,
     pub children: RefCell<Vec<NodeRef>>,
     adopted_stylesheets: RefCell<Vec<AdoptedStyleSheet>>,
@@ -184,6 +185,7 @@ impl Node {
             id,
             identity,
             subtree_mutation_version: Cell::new(0),
+            child_list_version: Cell::new(0),
             parent: Cell::new(None),
             children: RefCell::new(Vec::new()),
             adopted_stylesheets: RefCell::new(Vec::new()),
@@ -213,6 +215,20 @@ impl Node {
 
     pub fn subtree_mutation_version(&self) -> u64 {
         self.subtree_mutation_version.get()
+    }
+
+    pub fn child_list_version(&self) -> u64 {
+        self.child_list_version.get()
+    }
+
+    pub(super) fn mark_children_mutated(&self) {
+        self.child_list_version.set(
+            self.child_list_version
+                .get()
+                .checked_add(1)
+                .expect("DOM child-list version space exhausted"),
+        );
+        self.mark_mutated();
     }
 
     pub(super) fn mark_mutated(&self) {

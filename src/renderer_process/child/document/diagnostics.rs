@@ -3,7 +3,8 @@
 use crate::engine::{DisplayItem, LayoutOutput, Page};
 use crate::limits::{MAX_PAGE_DIAGNOSTIC_BYTES, bounded_utf8_prefix};
 use crate::renderer_protocol::{
-    NodeDiagnostics, PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, StyleDiagnostics,
+    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, ResourceDiagnostics,
+    SelectorDiagnostics, StyleDiagnostics,
 };
 
 const MAX_MATCHES_PER_SELECTOR: usize = 32;
@@ -81,6 +82,9 @@ fn node_details(
         tag: node.tag_name().map(diagnostic_text),
         id: node.attr("id").map(|value| diagnostic_text(&value)),
         class: node.attr("class").map(|value| diagnostic_text(&value)),
+        parent: node.parent().map(|parent| node_identity(&parent)),
+        composed_parent: crate::engine::dom::Node::composed_parent(node)
+            .map(|parent| node_identity(&parent)),
         child_count: node.children.borrow().len() as u64,
         text_length: node.text_content().chars().count() as u64,
         shadow_root,
@@ -89,6 +93,13 @@ fn node_details(
             display: debug_keyword(style.display),
             position: debug_keyword(style.position),
             float: debug_keyword(style.float),
+            flex_direction: debug_keyword(style.flex_direction),
+            flex_wrap: style.flex_wrap,
+            flex_grow: style.flex_grow,
+            flex_shrink: style.flex_shrink,
+            flex_basis: diagnostic_debug(style.flex_basis),
+            align_items: debug_keyword(style.align_items),
+            justify_content: debug_keyword(style.justify_content),
             visibility: style.visibility,
             opacity: style.opacity,
             overflow_hidden: style.overflow_hidden,
@@ -103,7 +114,16 @@ fn node_details(
             background_image: resource_details(page, layout, style.background_image.as_deref()),
             mask_image: resource_details(page, layout, style.mask_image.as_deref()),
         },
+        layout_rect: layout.node_bounds.get(&node.id()).copied(),
         control_rect,
+    }
+}
+
+fn node_identity(node: &crate::engine::dom::NodeRef) -> NodeIdentityDiagnostics {
+    NodeIdentityDiagnostics {
+        tag: node.tag_name().map(diagnostic_text),
+        id: node.attr("id").map(|value| diagnostic_text(&value)),
+        class: node.attr("class").map(|value| diagnostic_text(&value)),
     }
 }
 

@@ -8,6 +8,7 @@ use self::semantics::{
 use super::*;
 use crate::engine::dom::{Node, NodeId, NodeRef};
 use crate::engine::{ControlSpec, DisplayItem, RectF};
+use crate::limits::MAX_ACCESSIBILITY_COORDINATE;
 use crate::renderer_protocol::{
     AccessibilityUpdate, DocumentNodeId, PresentedViewport, SemanticNode, SemanticRole,
     SemanticSelection,
@@ -168,6 +169,9 @@ fn collect_bounds(
 }
 
 fn union_bound(bounds: &mut HashMap<NodeId, RectF>, id: NodeId, next: RectF) {
+    let Some(next) = sanitize_bound(next) else {
+        return;
+    };
     bounds
         .entry(id)
         .and_modify(|current| {
@@ -175,10 +179,40 @@ fn union_bound(bounds: &mut HashMap<NodeId, RectF>, id: NodeId, next: RectF) {
             let bottom = current.bottom().max(next.bottom());
             current.x = current.x.min(next.x);
             current.y = current.y.min(next.y);
-            current.width = (right - current.x).max(0.0);
-            current.height = (bottom - current.y).max(0.0);
+            current.width = (right - current.x).clamp(0.0, MAX_ACCESSIBILITY_COORDINATE);
+            current.height = (bottom - current.y).clamp(0.0, MAX_ACCESSIBILITY_COORDINATE);
         })
         .or_insert(next);
+}
+
+fn sanitize_bound(rect: RectF) -> Option<RectF> {
+    if !rect.x.is_finite()
+        || !rect.y.is_finite()
+        || !rect.width.is_finite()
+        || !rect.height.is_finite()
+    {
+        return None;
+    }
+    let x = rect
+        .x
+        .clamp(-MAX_ACCESSIBILITY_COORDINATE, MAX_ACCESSIBILITY_COORDINATE);
+    let y = rect
+        .y
+        .clamp(-MAX_ACCESSIBILITY_COORDINATE, MAX_ACCESSIBILITY_COORDINATE);
+    let right = (f64::from(rect.x) + f64::from(rect.width)).clamp(
+        f64::from(-MAX_ACCESSIBILITY_COORDINATE),
+        f64::from(MAX_ACCESSIBILITY_COORDINATE),
+    ) as f32;
+    let bottom = (f64::from(rect.y) + f64::from(rect.height)).clamp(
+        f64::from(-MAX_ACCESSIBILITY_COORDINATE),
+        f64::from(MAX_ACCESSIBILITY_COORDINATE),
+    ) as f32;
+    Some(RectF {
+        x,
+        y,
+        width: (right - x).clamp(0.0, MAX_ACCESSIBILITY_COORDINATE),
+        height: (bottom - y).clamp(0.0, MAX_ACCESSIBILITY_COORDINATE),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -245,4 +279,32 @@ fn build_nodes(
 
 fn wire_id(id: NodeId) -> Result<DocumentNodeId, String> {
     DocumentNodeId::new(id.to_wire()).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_derived_accessibility_bounds_are_sanitized_before_ipc() {
+        assert!(
+            sanitize_bound(RectF {
+                x: f32::INFINITY,
+                ..RectF::default()
+            })
+            .is_none()
+        );
+
+        let rect = sanitize_bound(RectF {
+            x: -20_000_000.0,
+            y: 20_000_000.0,
+            width: 40_000_000.0,
+            height: -1.0,
+        })
+        .expect("finite geometry is clipped instead of killing the renderer");
+        assert_eq!(rect.x, -MAX_ACCESSIBILITY_COORDINATE);
+        assert_eq!(rect.y, MAX_ACCESSIBILITY_COORDINATE);
+        assert_eq!(rect.width, MAX_ACCESSIBILITY_COORDINATE);
+        assert_eq!(rect.height, 0.0);
+    }
 }

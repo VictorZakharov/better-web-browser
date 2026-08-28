@@ -210,6 +210,16 @@ impl BrowserState {
                 .join(", ")
         );
         let renderer_diagnostics = renderer_diagnostics::to_json(&renderer_snapshots);
+        let renderer_exits: Vec<_> = renderer_registry
+            .renderers
+            .iter()
+            .filter_map(|renderer| renderer.last_exit.as_ref())
+            .collect();
+        let renderer_exit_diagnostics = renderer_diagnostics::exits_to_json(&renderer_exits);
+        let effective_error = benchmark
+            .error
+            .clone()
+            .or_else(|| renderer_diagnostics::first_failure(&renderer_exits));
         let process_count = 1 + renderer_snapshots.len();
         let elapsed = benchmark.process_started.elapsed();
         let browser_cpu_ticks = process_cpu_ticks()
@@ -337,6 +347,7 @@ impl BrowserState {
                 "  \"full_paint_repaints\": {},\n",
                 "  \"renderer_launch_errors\": {},\n",
                 "  \"renderer_diagnostics\": {},\n",
+                "  \"renderer_exits\": {},\n",
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
@@ -349,8 +360,7 @@ impl BrowserState {
             self.page_scale(),
             json_string(&benchmark.requested_url),
             json_string(&benchmark.final_url),
-            benchmark
-                .error
+            effective_error
                 .as_deref()
                 .map(json_string)
                 .unwrap_or_else(|| "null".into()),
@@ -416,6 +426,7 @@ impl BrowserState {
             benchmark.full_paint_repaints,
             renderer_launch_errors,
             renderer_diagnostics,
+            renderer_exit_diagnostics,
             script_errors,
             script_console,
             script_diagnostics,

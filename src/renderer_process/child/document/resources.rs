@@ -6,13 +6,23 @@ use super::fetch::{into_fetch_result, page_resource_request, validate_script_res
 use super::{DocumentRuntime, merge_outcome};
 use crate::engine::script::ScriptInput;
 use crate::engine::{Page, PageResource, ScriptKind, ScriptOutcome};
+use crate::limits::bounded_utf8_prefix;
 use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
 use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
 use std::collections::HashMap;
 
+const MAX_RESOURCE_DIAGNOSTICS: usize = 32;
+const MAX_RESOURCE_DIAGNOSTIC_BYTES: usize = 512;
+
 pub(super) struct PendingResourceFetch {
     batch: PendingFetchBatch,
     by_request: HashMap<u64, PageResource>,
+}
+
+impl PendingResourceFetch {
+    fn contains(&self, resource: &PageResource) -> bool {
+        self.by_request.values().any(|pending| pending == resource)
+    }
 }
 
 pub(super) fn start_resource_preloads(
@@ -66,9 +76,78 @@ impl DocumentRuntime {
         if resources.is_empty() {
             return Ok(false);
         }
-        let (requests, by_request) = resource_requests(connection, self.id, resources);
+        let (requests, mut by_request) = resource_requests(connection, self.id, resources);
         let responses = connection.fetch_batch(self.id, requests)?;
-        self.install_resource_responses(responses, by_request, false)
+        self.install_resource_responses(responses, &mut by_request, false)
+    }
+
+    pub(super) fn start_presentational_preloads(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        if self.pending_resource_preloads.is_some() {
+            return Ok(());
+        }
+        let resources = self
+            .page
+            .resources
+            .iter()
+            .filter(|resource| !self.loaded_resources.contains(*resource))
+            .filter(|resource| is_presentational_resource(resource))
+            .cloned()
+            .collect::<Vec<_>>();
+        let (requests, by_request) = resource_requests(connection, self.id, resources);
+        let Some(batch) = connection.start_fetch_batch(self.id, requests)? else {
+            return Ok(());
+        };
+        self.pending_resource_preloads = Some(PendingResourceFetch { batch, by_request });
+        Ok(())
+    }
+
+    pub(in crate::renderer_process::child) fn finish_completed_resource_preloads(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<Option<crate::renderer_protocol::RendererPresentation>, String> {
+        let Some(changed) = self.finish_ready_resource_preloads(connection)? else {
+            return Ok(None);
+        };
+        if !changed {
+            return Ok(None);
+        }
+        self.text.register_web_fonts(&self.page.fonts);
+        let style = self
+            .page
+            .refresh_resources_for_viewport(self.viewport.style_width, self.viewport.height);
+        self.start_presentational_preloads(connection)?;
+        let layout_started = std::time::Instant::now();
+        self.rebuild_layout();
+        let load = self
+            .text
+            .finish_load_report(crate::renderer_protocol::PageLoadReport {
+                layout_micros: super::micros(layout_started.elapsed()),
+                ..crate::renderer_protocol::PageLoadReport::default()
+            });
+        self.presentation(crate::engine::ScriptOutcome::default(), style, load)
+            .map(Some)
+    }
+
+    pub(super) fn finish_ready_resource_preloads(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<Option<bool>, String> {
+        let Some(mut pending) = self.pending_resource_preloads.take() else {
+            return Ok(None);
+        };
+        let responses = connection.take_ready_fetch_batch(&mut pending.batch)?;
+        if responses.is_empty() {
+            self.pending_resource_preloads = Some(pending);
+            return Ok(None);
+        }
+        let changed = self.install_resource_responses(responses, &mut pending.by_request, true)?;
+        if !pending.batch.is_empty() {
+            self.pending_resource_preloads = Some(pending);
+        }
+        Ok(Some(changed))
     }
 
     pub(super) fn finish_resource_preloads(
@@ -77,13 +156,14 @@ impl DocumentRuntime {
         pending: PendingResourceFetch,
     ) -> Result<bool, String> {
         let responses = connection.finish_fetch_batch(pending.batch)?;
-        self.install_resource_responses(responses, pending.by_request, true)
+        let mut by_request = pending.by_request;
+        self.install_resource_responses(responses, &mut by_request, true)
     }
 
     fn install_resource_responses(
         &mut self,
         responses: Vec<BrowserFetchResponse>,
-        mut by_request: HashMap<u64, PageResource>,
+        by_request: &mut HashMap<u64, PageResource>,
         require_authoritative_match: bool,
     ) -> Result<bool, String> {
         let mut retained = false;
@@ -91,59 +171,92 @@ impl DocumentRuntime {
             let Some(resource) = by_request.remove(&response.head.request_id) else {
                 return Err("browser returned an unknown resource request".into());
             };
+            let label = resource_label(&resource);
             if require_authoritative_match && !self.page.resources.contains(&resource) {
                 continue;
             }
             self.loaded_resources.insert(resource.clone());
-            let Ok(response) = into_fetch_result(response) else {
-                continue;
+            let response = match into_fetch_result(response) {
+                Ok(response) => response,
+                Err(error) => {
+                    self.record_resource_diagnostic(format!("{label}: {error}"));
+                    continue;
+                }
             };
             if !response.is_success() {
+                self.record_resource_diagnostic(format!(
+                    "{label}: server returned HTTP {}",
+                    response.status
+                ));
                 continue;
             }
             if let PageResource::Script { kind, .. } = &resource
-                && validate_script_response(&response, *kind).is_err()
+                && let Err(error) = validate_script_response(&response, *kind)
             {
+                self.record_resource_diagnostic(format!("{label}: {error}"));
                 continue;
             }
             let size = response.body.len() as u64;
             if size > self.resource_budget {
+                self.record_resource_diagnostic(format!(
+                    "{label}: skipped {size} bytes because only {} page-resource bytes remain",
+                    self.resource_budget
+                ));
                 continue;
             }
             let content_type = response.content_type().map(str::to_string);
             let bytes = response.body.into_bytes();
             let installed = match resource {
-                PageResource::Stylesheet { url } => self.page.add_stylesheet_from(
-                    &url,
-                    crate::winhttp::decode_text(&bytes, content_type.as_deref()),
-                ),
-                PageResource::Image { url } => self.page.add_image(url, &bytes).is_ok(),
+                PageResource::Stylesheet { url } => self
+                    .page
+                    .add_stylesheet_from(
+                        &url,
+                        crate::winhttp::decode_text(&bytes, content_type.as_deref()),
+                    )
+                    .then_some(())
+                    .ok_or_else(|| "stylesheet was not installed".to_string()),
+                PageResource::Image { url } => self.page.add_image(url, &bytes),
                 PageResource::Script {
                     url,
                     kind,
                     fetch_options,
-                } => self.page.add_script(
-                    &url,
-                    kind,
-                    fetch_options,
-                    crate::winhttp::decode_text(&bytes, content_type.as_deref()),
-                ),
+                } => self
+                    .page
+                    .add_script(
+                        &url,
+                        kind,
+                        fetch_options,
+                        crate::winhttp::decode_text(&bytes, content_type.as_deref()),
+                    )
+                    .then_some(())
+                    .ok_or_else(|| "script was not installed".to_string()),
                 PageResource::Font {
                     url,
                     family,
                     weight,
                     italic,
-                } => self
-                    .page
-                    .add_font(url, family, weight, italic, &bytes)
-                    .is_ok(),
+                } => self.page.add_font(url, family, weight, italic, &bytes),
             };
-            if installed {
-                retained = true;
-                self.resource_budget = self.resource_budget.saturating_sub(size);
+            match installed {
+                Ok(()) => {
+                    retained = true;
+                    self.resource_budget = self.resource_budget.saturating_sub(size);
+                }
+                Err(error) => self.record_resource_diagnostic(format!("{label}: {error}")),
             }
         }
         Ok(retained)
+    }
+
+    fn record_resource_diagnostic(&mut self, message: String) {
+        if self.page.diagnostics.len() >= MAX_RESOURCE_DIAGNOSTICS {
+            return;
+        }
+        self.page.diagnostics.push(
+            bounded_utf8_prefix(&message, MAX_RESOURCE_DIAGNOSTIC_BYTES)
+                .0
+                .to_string(),
+        );
     }
 
     pub(super) fn execute_pending_async_scripts(
@@ -173,6 +286,16 @@ impl DocumentRuntime {
                 kind,
                 fetch_options,
             };
+            // The parser preload and the retained event loop share this resource record. Wait for
+            // the in-flight preload rather than issuing a duplicate blocking request on every
+            // renderer wakeup.
+            if self
+                .pending_resource_preloads
+                .as_ref()
+                .is_some_and(|pending| pending.contains(&resource))
+            {
+                return Ok(());
+            }
             let result = if self.loaded_resources.contains(&resource) {
                 Err("script could not be loaded".to_string())
             } else {
@@ -203,15 +326,44 @@ impl DocumentRuntime {
             })
             .take(1)
             .collect::<Vec<_>>();
+        if self.script_runtime.is_some() {
+            connection.report_renderer_task_stage(format!("executing async script {url}"))?;
+        }
         self.executed_async_scripts.insert(url);
         if let Some(runtime) = self.script_runtime.as_mut() {
             // A dynamically inserted external script is a later event-loop task. Keep it queued
             // so the renderer can accept input between that task and this async script.
-            let result = runtime.execute_additional_with_loader(&inputs, None);
+            let result = if inputs.iter().any(|input| input.kind == ScriptKind::Module) {
+                let document = self.id;
+                let mut loader = |url: &str, kind, options| {
+                    fetch_script_source(connection, document, url, kind, options)
+                };
+                runtime.execute_additional_with_loader(&inputs, Some(&mut loader))
+            } else {
+                runtime.execute_additional_with_loader(&inputs, None)
+            };
             merge_outcome(outcome, result, self.page.dom.document.id());
         }
         Ok(())
     }
+}
+
+fn is_presentational_resource(resource: &PageResource) -> bool {
+    matches!(
+        resource,
+        PageResource::Stylesheet { .. } | PageResource::Image { .. } | PageResource::Font { .. }
+    )
+}
+
+fn resource_label(resource: &PageResource) -> String {
+    let (kind, url) = match resource {
+        PageResource::Stylesheet { url } => ("stylesheet", url),
+        PageResource::Image { url } => ("image", url),
+        PageResource::Script { url, .. } => ("script", url),
+        PageResource::Font { url, .. } => ("font", url),
+    };
+    let url = bounded_utf8_prefix(url, 384).0;
+    format!("{kind} {url}")
 }
 
 fn resource_requests(

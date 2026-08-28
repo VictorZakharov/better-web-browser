@@ -1,10 +1,11 @@
 //! Retained JavaScript realm ownership and guarded incremental execution.
 
 use super::dynamic_scripts::drain_one_dynamic_script;
-use super::execution::{execute_additional_inner, execute_inner, settle_timer_slice};
+use super::execution::{execute_additional_inner, execute_inner};
 use super::runtime_guard::{
     finish_host, inactive_runtime_outcome, lifecycle_error, panic_detail, stopped_runtime_outcome,
 };
+use super::timer_execution::{TimerSlice, settle_timer_slice};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -16,6 +17,7 @@ pub struct ScriptRuntime {
     pub(super) host: Rc<RefCell<HostState>>,
     total_script_bytes: usize,
     initialized: bool,
+    prefer_timer_task: bool,
 }
 
 impl ScriptRuntime {
@@ -47,6 +49,7 @@ impl ScriptRuntime {
             host,
             total_script_bytes: 0,
             initialized: false,
+            prefer_timer_task: true,
         }
     }
 
@@ -75,6 +78,34 @@ impl ScriptRuntime {
                 &host,
                 &mut self.total_script_bytes,
                 &mut dynamic_script_loader,
+                false,
+            )
+        }));
+        self.finish_guarded_run(result)
+    }
+
+    pub(crate) fn execute_initial_deferred(
+        &mut self,
+        scripts: &[ScriptInput],
+        module_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
+        if self.initialized {
+            return lifecycle_error("the document's initial scripts have already executed");
+        }
+        self.initialized = true;
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let mut module_loader = module_loader;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            execute_inner(
+                scripts,
+                context,
+                &host,
+                &mut self.total_script_bytes,
+                &mut module_loader,
+                true,
             )
         }));
         self.finish_guarded_run(result)
@@ -145,6 +176,17 @@ impl ScriptRuntime {
         self.host.borrow_mut().stylesheet_sources = stylesheets.iter().cloned().collect();
     }
 
+    pub(crate) fn set_media_environment(
+        &mut self,
+        viewport_width: f32,
+        prefers_dark_color_scheme: bool,
+    ) {
+        let mut host = self.host.borrow_mut();
+        host.media_viewport_width = viewport_width.max(1.0);
+        host.prefers_dark_color_scheme = prefers_dark_color_scheme;
+        host.computed_styles = None;
+    }
+
     pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {
         self.host
             .borrow_mut()
@@ -187,6 +229,21 @@ impl ScriptRuntime {
         max_callbacks: usize,
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        self.advance_time_with_loader_and_stage_reporter(
+            advance,
+            max_callbacks,
+            dynamic_script_loader,
+            None,
+        )
+    }
+
+    pub(crate) fn advance_time_with_loader_and_stage_reporter(
+        &mut self,
+        advance: Duration,
+        max_callbacks: usize,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+        mut stage_reporter: Option<&mut dyn FnMut(&str)>,
+    ) -> ScriptOutcome {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -196,8 +253,27 @@ impl ScriptRuntime {
         let host = Rc::clone(&self.host);
         let mut outcome = ScriptOutcome::default();
         let mut dynamic_script_loader = dynamic_script_loader;
+        let horizon = {
+            let state = host.borrow();
+            state.timers.now().saturating_add(advance)
+        };
+        let has_dynamic_script = !host.borrow().pending_dynamic_scripts.is_empty();
+        let has_ready_timer = {
+            let mut state = host.borrow_mut();
+            state
+                .timers
+                .next_due_time()
+                .is_some_and(|due| due <= horizon)
+        };
+        let run_timer =
+            has_ready_timer && max_callbacks > 0 && (!has_dynamic_script || self.prefer_timer_task);
+        if run_timer {
+            self.prefer_timer_task = false;
+        } else if has_dynamic_script {
+            self.prefer_timer_task = true;
+        }
         let result = catch_unwind(AssertUnwindSafe(|| {
-            if host.borrow().pending_dynamic_scripts.is_empty() {
+            if run_timer || !has_dynamic_script {
                 let mut no_dynamic_script_loader = None;
                 settle_timer_slice(
                     context,
@@ -205,12 +281,14 @@ impl ScriptRuntime {
                     &mut outcome,
                     &mut no_dynamic_script_loader,
                     &mut self.total_script_bytes,
-                    advance,
-                    max_callbacks,
+                    TimerSlice {
+                        advance,
+                        max_callbacks: if has_dynamic_script { 1 } else { max_callbacks },
+                    },
+                    stage_reporter.take(),
                 );
             } else {
                 let mut state = host.borrow_mut();
-                let horizon = state.timers.now().saturating_add(advance);
                 state.timers.advance_to(horizon);
                 drop(state);
                 drain_one_dynamic_script(

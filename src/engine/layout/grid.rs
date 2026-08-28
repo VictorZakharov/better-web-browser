@@ -37,7 +37,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let mut placements = Vec::new();
         let mut automatic_index = 0_usize;
-        for child in Node::composed_children(node).iter() {
+        for child in self.box_children(node).iter() {
             if child.element().is_none() {
                 continue;
             }
@@ -120,8 +120,28 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     .iter()
                     .sum::<f32>()
                     + column_gap * placement.column_end.saturating_sub(placement.column + 1) as f32;
-                let metrics = self.layout_block(&placement.node, cell_x, cursor_y, cell_width);
                 let child_style = self.styles.get(&placement.node);
+                let (item_x, item_width) = match child_style.justify_self {
+                    AlignItems::Stretch => (cell_x, cell_width),
+                    alignment => {
+                        // A non-stretch grid item with an automatic inline size is fit-content.
+                        // Reuse the flex intrinsic contribution calculation: it resolves an
+                        // explicit width when present and otherwise measures the composed subtree.
+                        // https://drafts.csswg.org/css-grid/#grid-item-sizing
+                        let item_width = self
+                            .flex_item_basis(&placement.node, child_style, cell_width)
+                            .min(cell_width)
+                            .max(0.0);
+                        let free_space = (cell_width - item_width).max(0.0);
+                        let offset = match alignment {
+                            AlignItems::Center => free_space / 2.0,
+                            AlignItems::End => free_space,
+                            AlignItems::Start | AlignItems::Stretch => 0.0,
+                        };
+                        (cell_x + offset, item_width)
+                    }
+                };
+                let metrics = self.layout_block(&placement.node, item_x, cursor_y, item_width);
                 if !matches!(child_style.position, Position::Absolute | Position::Fixed) {
                     let span = placement.row_end.saturating_sub(placement.row).max(1) as f32;
                     natural_height =

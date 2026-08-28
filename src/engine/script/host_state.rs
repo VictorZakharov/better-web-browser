@@ -68,6 +68,8 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    pub(super) media_viewport_width: f32,
+    pub(super) prefers_dark_color_scheme: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
 
@@ -125,6 +127,8 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            media_viewport_width: 1280.0,
+            prefers_dark_color_scheme: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
@@ -310,6 +314,14 @@ impl HostState {
         } else {
             self.timers.queue_task(TaskSource::Timer, delay, id)
         };
+        self.timer_handles.insert(id, handle);
+    }
+
+    pub(super) fn schedule_idle_callback(&mut self, id: u32, delay: Duration) {
+        if let Some(previous) = self.timer_handles.remove(&id) {
+            self.timers.cancel(previous);
+        }
+        let handle = self.timers.queue_task(TaskSource::IdleTask, delay, id);
         self.timer_handles.insert(id, handle);
     }
 

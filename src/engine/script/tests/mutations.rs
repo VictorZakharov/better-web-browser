@@ -18,6 +18,36 @@ fn executes_script_and_mutates_the_owned_dom() {
 }
 
 #[test]
+fn child_collections_keep_identity_and_refresh_after_tree_mutations() {
+    let (dom, outcome) = execute_html(
+        r#"<body><main id="parent"><span></span></main><script>
+            const parent = document.getElementById('parent');
+            const childNodes = parent.childNodes;
+            const children = parent.children;
+            const sameBefore = childNodes === parent.childNodes && children === parent.children;
+            parent.setAttribute('data-state', 'ready');
+            const sameAfterAttribute = childNodes === parent.childNodes && children === parent.children;
+            parent.appendChild(document.createTextNode('text'));
+            parent.appendChild(document.createElement('strong'));
+            const sameAfterInsertion = childNodes === parent.childNodes && children === parent.children;
+            document.body.setAttribute('data-result', [
+                sameBefore, sameAfterAttribute, sameAfterInsertion,
+                childNodes.length, children.length
+            ].join(':'));
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .and_then(|body| body.attr("data-result"))
+            .as_deref(),
+        Some("true:true:true:3:2")
+    );
+}
+
+#[test]
 fn executes_classic_scripts_with_html_like_comments() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">waiting</div><script>

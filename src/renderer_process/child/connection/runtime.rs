@@ -13,6 +13,32 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 impl ChildConnection {
+    pub(super) fn complete_document_resource_preloads(&mut self) -> Result<(), String> {
+        let Some(mut runtime) = self.document.take() else {
+            return Ok(());
+        };
+        let document = runtime.id();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            runtime.finish_completed_resource_preloads(self)
+        }));
+        match result {
+            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
+            Ok(Ok(None)) => {}
+            Ok(Err(error)) => {
+                self.send_document_failure(document, error)?;
+                return Ok(());
+            }
+            Err(payload) => {
+                self.send_document_failure(document, panic_detail(payload))?;
+                return Ok(());
+            }
+        }
+        if !self.stopping {
+            self.document = Some(runtime);
+        }
+        Ok(())
+    }
+
     pub(super) fn deliver_script_fetch(
         &mut self,
         delivery: ScriptFetchDelivery,

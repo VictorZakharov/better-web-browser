@@ -9,52 +9,53 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         style: &ComputedStyle,
     ) -> f32 {
-        let composed_children = Node::composed_children(node);
-        let has_direct_text = composed_children.iter().any(
-            |child| matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()),
-        );
-        let element_children = composed_children
-            .iter()
-            .filter(|child| {
-                child.element().is_some()
-                    && self.styles.get(child).display != Display::None
-                    && self.styles.get(child).visibility
-                    && !style_collapses_overflow(self.styles.get(child), self.viewport)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if element_children.is_empty() || has_direct_text {
-            return self.layout_flattened_flex_content(node, x, y, width, style);
-        }
-
-        for child in element_children.iter().filter(|child| {
-            matches!(
-                self.styles.get(child).position,
-                Position::Absolute | Position::Fixed
-            )
-        }) {
-            self.layout_block(child, x, y, width);
-        }
-        let items = element_children
-            .into_iter()
-            .filter(|child| {
-                !matches!(
-                    self.styles.get(child).position,
-                    Position::Absolute | Position::Fixed
-                )
-            })
-            .map(|child| {
+        let composed_children = self.box_children(node);
+        let mut items = Vec::new();
+        let mut anonymous_atoms = Vec::new();
+        let mut pending_space = false;
+        for child in composed_children {
+            if child.element().is_none() {
+                if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
+                    self.collect_inline(
+                        &child,
+                        None,
+                        &mut anonymous_atoms,
+                        &mut pending_space,
+                        false,
+                    );
+                }
+                continue;
+            }
+            if !anonymous_atoms.is_empty() {
+                let atoms = std::mem::take(&mut anonymous_atoms);
+                items.push(self.anonymous_flex_item(atoms, width));
+                pending_space = false;
+            }
+            let child_style = self.styles.get(&child).clone();
+            if child_style.display == Display::None
+                || !child_style.visibility
+                || style_collapses_overflow(&child_style, self.viewport)
+            {
+                continue;
+            }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                self.layout_block(&child, x, y, width);
+            } else {
                 let child_style = self.styles.get(&child).clone();
-                FlexItem {
+                items.push(FlexItem {
                     basis: self.flex_item_basis(&child, &child_style, width),
                     grow: child_style.flex_grow,
                     shrink: child_style.flex_shrink,
                     margin_start_auto: child_style.margin.left == Length::Auto,
                     margin_end_auto: child_style.margin.right == Length::Auto,
-                    node: child,
-                }
-            })
-            .collect::<Vec<_>>();
+                    node: Some(child),
+                    anonymous_atoms: Vec::new(),
+                });
+            }
+        }
+        if !anonymous_atoms.is_empty() {
+            items.push(self.anonymous_flex_item(anonymous_atoms, width));
+        }
         if items.is_empty() {
             return y;
         }
@@ -63,27 +64,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             FlexDirection::Column => self.layout_flex_column(&items, x, y, width, style),
             FlexDirection::Row => self.layout_flex_rows(&items, x, y, width, style),
         }
-    }
-
-    pub(super) fn layout_flattened_flex_content(
-        &mut self,
-        node: &NodeRef,
-        x: f32,
-        y: f32,
-        width: f32,
-        style: &ComputedStyle,
-    ) -> f32 {
-        let mut atoms = Vec::new();
-        let mut pending_space = false;
-        for child in Node::composed_children(node).iter() {
-            self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
-        }
-        let alignment = if style.justify_content_end || style.float == Float::Right {
-            TextAlign::End
-        } else {
-            style.text_align
-        };
-        self.layout_inline_atoms(&atoms, x, y, width, alignment, style.line_height)
     }
 
     pub(super) fn flex_item_basis(
@@ -115,27 +95,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         };
         let intrinsic_width = if specified.is_some() {
             0.0
+        } else if matches!(style.display, Display::Flex | Display::InlineFlex) {
+            self.flex_container_intrinsic_width(node, style, available_width)
         } else {
-            let mut atoms = Vec::new();
-            let mut pending_space = false;
-            for child in Node::composed_children(node).iter() {
-                self.collect_inline(child, None, &mut atoms, &mut pending_space, false);
-            }
-            self.begin_inline_measurement_context();
-            let mut intrinsic_width = 0.0_f32;
-            let mut current_line = 0.0_f32;
-            let mut line_start = true;
-            for atom in &atoms {
-                if matches!(atom, InlineAtom::Break) {
-                    intrinsic_width = intrinsic_width.max(current_line);
-                    current_line = 0.0;
-                    line_start = true;
-                } else {
-                    current_line += self.measure_atom(atom, line_start, available_width).width;
-                    line_start = false;
-                }
-            }
-            intrinsic_width.max(current_line)
+            self.block_container_intrinsic_width(node, available_width)
         };
         let mut basis =
             specified.unwrap_or(intrinsic_width + insets).max(0.0) + margin.horizontal();
@@ -160,6 +123,120 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         basis
     }
 
+    fn block_container_intrinsic_width(&mut self, node: &NodeRef, available_width: f32) -> f32 {
+        let mut widest = 0.0_f32;
+        let mut inline_atoms = Vec::new();
+        let mut pending_space = false;
+        for child in self.box_children(node) {
+            let child_style = self.styles.get(&child).clone();
+            if child.element().is_some()
+                && is_block_level(child_style.display)
+                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
+            {
+                if !inline_atoms.is_empty() {
+                    widest = widest.max(self.inline_intrinsic_width(
+                        &std::mem::take(&mut inline_atoms),
+                        available_width,
+                    ));
+                    pending_space = false;
+                }
+                widest = widest.max(self.flex_item_basis(&child, &child_style, available_width));
+            } else {
+                self.collect_inline(&child, None, &mut inline_atoms, &mut pending_space, false);
+            }
+        }
+        if !inline_atoms.is_empty() {
+            widest = widest.max(self.inline_intrinsic_width(&inline_atoms, available_width));
+        }
+        widest
+    }
+
+    fn flex_container_intrinsic_width(
+        &mut self,
+        node: &NodeRef,
+        style: &ComputedStyle,
+        available_width: f32,
+    ) -> f32 {
+        let mut contributions = Vec::new();
+        let mut anonymous_atoms = Vec::new();
+        let mut pending_space = false;
+        for child in self.box_children(node) {
+            if child.element().is_none() {
+                if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
+                    self.collect_inline(
+                        &child,
+                        None,
+                        &mut anonymous_atoms,
+                        &mut pending_space,
+                        false,
+                    );
+                }
+                continue;
+            }
+            if !anonymous_atoms.is_empty() {
+                contributions.push(self.inline_intrinsic_width(
+                    &std::mem::take(&mut anonymous_atoms),
+                    available_width,
+                ));
+                pending_space = false;
+            }
+            let child_style = self.styles.get(&child).clone();
+            if child_style.display == Display::None
+                || !child_style.visibility
+                || matches!(child_style.position, Position::Absolute | Position::Fixed)
+                || style_collapses_overflow(&child_style, self.viewport)
+            {
+                continue;
+            }
+            contributions.push(self.flex_item_basis(&child, &child_style, available_width));
+        }
+        if !anonymous_atoms.is_empty() {
+            contributions.push(self.inline_intrinsic_width(&anonymous_atoms, available_width));
+        }
+        let gap = style
+            .grid_column_gap
+            .resolve(available_width, style.font_size)
+            .unwrap_or(0.0)
+            .max(0.0);
+        match style.flex_direction {
+            FlexDirection::Row => {
+                contributions.iter().sum::<f32>()
+                    + gap * contributions.len().saturating_sub(1) as f32
+            }
+            FlexDirection::Column => contributions.into_iter().fold(0.0, f32::max),
+        }
+    }
+
+    fn anonymous_flex_item(&mut self, atoms: Vec<InlineAtom>, available_width: f32) -> FlexItem {
+        FlexItem {
+            basis: self.inline_intrinsic_width(&atoms, available_width),
+            grow: 0.0,
+            shrink: 1.0,
+            margin_start_auto: false,
+            margin_end_auto: false,
+            node: None,
+            anonymous_atoms: atoms,
+        }
+    }
+
+    fn inline_intrinsic_width(&mut self, atoms: &[InlineAtom], available_width: f32) -> f32 {
+        self.begin_inline_measurement_context();
+        let mut widest = 0.0_f32;
+        let mut current = 0.0_f32;
+        let mut line_start = true;
+        for atom in atoms {
+            if matches!(atom, InlineAtom::Break) {
+                widest = widest.max(current);
+                current = 0.0;
+                line_start = true;
+            } else {
+                current += self.measure_atom(atom, line_start, available_width).width;
+                line_start = false;
+            }
+        }
+        widest.max(current)
+    }
+
     pub(super) fn layout_flex_column(
         &mut self,
         items: &[FlexItem],
@@ -174,7 +251,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .unwrap_or(0.0)
             .max(0.0);
         for (index, item) in items.iter().enumerate() {
-            y = self.layout_flex_item(&item.node, x, y, width).bottom;
+            let item_width = item
+                .node
+                .as_ref()
+                .filter(|node| self.styles.get(node).width != Length::Auto)
+                .map_or(width, |_| item.basis.min(width).max(1.0));
+            let offset_x = match style.align_items {
+                AlignItems::Center => (width - item_width) / 2.0,
+                AlignItems::End => width - item_width,
+                AlignItems::Stretch | AlignItems::Start => 0.0,
+            };
+            y = self
+                .layout_flex_item(item, x + offset_x, y, item_width, style)
+                .bottom;
             if index + 1 < items.len() {
                 y += gap;
             }
@@ -307,7 +396,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 cursor_x += automatic_margin;
             }
             let output_start = self.output.items.len();
-            let metrics = self.layout_flex_item(&item.node, cursor_x, y, item_width.max(1.0));
+            let metrics = self.layout_flex_item(item, cursor_x, y, item_width.max(1.0), style);
             let output_end = self.output.items.len();
             let item_height = (metrics.bottom - y).max(0.0);
             row_height = row_height.max(item_height);
@@ -339,11 +428,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
     pub(super) fn layout_flex_item(
         &mut self,
-        node: &NodeRef,
+        item: &FlexItem,
         x: f32,
         y: f32,
         width: f32,
+        container_style: &ComputedStyle,
     ) -> BlockMetrics {
+        let Some(node) = item.node.as_ref() else {
+            let bottom = self.layout_inline_atoms(
+                &item.anonymous_atoms,
+                x,
+                y,
+                width,
+                container_style.text_align,
+                container_style.line_height,
+            );
+            return BlockMetrics { bottom };
+        };
         let tag = node.tag_name().unwrap_or_default();
         if !matches!(
             tag,

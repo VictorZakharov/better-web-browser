@@ -3,15 +3,29 @@
 use super::*;
 
 pub(crate) fn media_matches(prelude: &str, viewport_width: f32) -> bool {
+    media_matches_with_color_scheme(prelude, viewport_width, false)
+}
+
+pub(crate) fn media_matches_with_color_scheme(
+    prelude: &str,
+    viewport_width: f32,
+    prefers_dark_color_scheme: bool,
+) -> bool {
     let queries = prelude
         .trim()
         .strip_prefix("@media")
         .unwrap_or(prelude)
         .trim();
-    split_css_top_level(queries, ',').any(|query| media_query_matches(query, viewport_width))
+    split_css_top_level(queries, ',').any(|query| {
+        media_query_matches_with_color_scheme(query, viewport_width, prefers_dark_color_scheme)
+    })
 }
 
-pub(super) fn media_query_matches(query: &str, viewport_width: f32) -> bool {
+pub(crate) fn media_query_matches_with_color_scheme(
+    query: &str,
+    viewport_width: f32,
+    prefers_dark_color_scheme: bool,
+) -> bool {
     let mut query = query.trim().to_ascii_lowercase();
     let negated = query.starts_with("not ");
     if negated {
@@ -41,7 +55,11 @@ pub(super) fn media_query_matches(query: &str, viewport_width: f32) -> bool {
         };
         found_condition = true;
         let condition = query[open + 1..close].trim();
-        if !media_condition_matches(condition, viewport_width) {
+        if !media_condition_matches_with_color_scheme(
+            condition,
+            viewport_width,
+            prefers_dark_color_scheme,
+        ) {
             conditions_match = false;
             break;
         }
@@ -56,7 +74,14 @@ pub(super) fn media_query_matches(query: &str, viewport_width: f32) -> bool {
     matches
 }
 
-pub(super) fn media_condition_matches(condition: &str, viewport_width: f32) -> bool {
+fn media_condition_matches_with_color_scheme(
+    condition: &str,
+    viewport_width: f32,
+    prefers_dark_color_scheme: bool,
+) -> bool {
+    if condition.trim() == "prefers-color-scheme" {
+        return true;
+    }
     let Some((feature, value)) = condition.split_once(':') else {
         return false;
     };
@@ -74,6 +99,11 @@ pub(super) fn media_condition_matches(condition: &str, viewport_width: f32) -> b
             .is_some_and(|expected| (viewport_width - expected).abs() < 0.5),
         "hover" | "any-hover" => value == "hover",
         "pointer" | "any-pointer" => value == "fine",
+        "prefers-color-scheme" => match value {
+            "dark" => prefers_dark_color_scheme,
+            "light" => !prefers_dark_color_scheme,
+            _ => false,
+        },
         // Unknown media features are false per CSS media-query evaluation. In particular,
         // vendor-only fallbacks must never leak into the normal standards style set.
         _ => false,
@@ -93,5 +123,24 @@ mod tests {
         let styles = StyleSet::from_dom(&dom, &[], 1088.0);
         let logo = dom.elements_named("img").next().unwrap();
         assert_eq!(styles.get(&logo).display, Display::Block);
+    }
+
+    #[test]
+    fn evaluates_the_preferred_color_scheme_from_the_media_environment() {
+        assert!(media_query_matches_with_color_scheme(
+            "(prefers-color-scheme: dark)",
+            1088.0,
+            true
+        ));
+        assert!(!media_query_matches_with_color_scheme(
+            "(prefers-color-scheme: light)",
+            1088.0,
+            true
+        ));
+        assert!(media_query_matches_with_color_scheme(
+            "(prefers-color-scheme: light)",
+            1088.0,
+            false
+        ));
     }
 }

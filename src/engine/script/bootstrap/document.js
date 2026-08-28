@@ -95,10 +95,12 @@
             if (node instanceof Document)
                 throw new DOMException('Documents cannot be adopted', 'NotSupportedError');
             const oldDocument = node.ownerDocument;
+            const oldParent = node.parentNode;
             const wasConnected = node.isConnected;
             if (wasConnected) disconnectCustomElementTree(node);
             const adopted = wrap(host('adoptNode', this.__id, node.__id));
             if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
+            markChildCollectionsChanged(oldParent);
             if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
             return adopted;
         }
@@ -150,6 +152,7 @@
                 documentWriteRefreshQueued = true;
                 Promise.resolve().then(() => {
                     documentWriteRefreshQueued = false;
+                    markChildCollectionsChanged(document, document.body);
                     upgradeCustomElementTree(document);
                     refreshWindowNamedProperties();
                 });
@@ -263,29 +266,51 @@
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
 
     const installedWindowNames = new Map();
-    refreshWindowNamedProperties = () => {
-        const names = new Set(JSON.parse(host('namedPropertyNames')));
-        for (const [name, getter] of installedWindowNames) {
-            if (names.has(name)) continue;
-            if (Object.getOwnPropertyDescriptor(windowObject, name)?.get === getter) delete windowObject[name];
+    const synchronizeWindowName = name => {
+        name = String(name || '');
+        if (!name) return;
+        const objects = list(host('namedProperty', name));
+        const installedGetter = installedWindowNames.get(name);
+        if (!objects.length) {
+            if (installedGetter && Object.getOwnPropertyDescriptor(windowObject, name)?.get === installedGetter)
+                delete windowObject[name];
             installedWindowNames.delete(name);
+            return;
         }
-        for (const name of names) {
-            if (name in windowObject) continue;
-            const getter = () => {
-                const objects = list(host('namedProperty', name));
-                return objects.length > 1 ? objects : objects[0];
-            };
-            const setter = value => {
-                Object.defineProperty(windowObject, name, {
-                    configurable: true, enumerable: true, writable: true, value
-                });
-                installedWindowNames.delete(name);
-            };
+        if (installedGetter || name in windowObject) return;
+        const getter = () => {
+            const current = list(host('namedProperty', name));
+            return current.length > 1 ? current : current[0];
+        };
+        const setter = value => {
             Object.defineProperty(windowObject, name, {
-                configurable: true, enumerable: true, get: getter, set: setter
+                configurable: true, enumerable: true, writable: true, value
             });
-            installedWindowNames.set(name, getter);
+            installedWindowNames.delete(name);
+        };
+        Object.defineProperty(windowObject, name, {
+            configurable: true, enumerable: true, get: getter, set: setter
+        });
+        installedWindowNames.set(name, getter);
+    };
+    refreshWindowNamedPropertyValues = values => {
+        for (const name of new Set(values)) synchronizeWindowName(name);
+    };
+    refreshWindowNamedProperties = roots => {
+        if (roots !== undefined) {
+            roots = Array.isArray(roots) ? roots : [roots];
+            const names = new Set();
+            for (const root of roots) {
+                if (!(root instanceof Node)) continue;
+                for (const name of JSON.parse(host('namedPropertyCandidates', root.__id))) names.add(name);
+            }
+            refreshWindowNamedPropertyValues(names);
+            return;
+        }
+        const names = new Set(JSON.parse(host('namedPropertyNames')));
+        for (const name of installedWindowNames.keys()) if (!names.has(name)) synchronizeWindowName(name);
+        for (const name of names) {
+            synchronizeWindowName(name);
         }
     };
 

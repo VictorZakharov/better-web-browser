@@ -2,7 +2,12 @@
         // A standards-compliant fragment insertion moves its children and empties the fragment,
         // so lifecycle state must be captured before crossing the host boundary.
         const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
-        return nodes.map(node => ({ node, wasConnected: node.isConnected, oldDocument: node.ownerDocument }));
+        return nodes.map(node => ({
+            node,
+            wasConnected: node.isConnected,
+            oldDocument: node.ownerDocument,
+            oldParent: node.parentNode
+        }));
     };
     const finishInsertion = records => withCustomElementReactions(() => {
         for (const { node, wasConnected, oldDocument } of records) {
@@ -47,8 +52,8 @@
         get lastChild() { return wrap(host('lastChild', this.__id)); }
         get nextSibling() { return wrap(host('nextSibling', this.__id)); }
         get previousSibling() { return wrap(host('previousSibling', this.__id)); }
-        get childNodes() { return list(host('children', this.__id)); }
-        get children() { return list(host('elementChildren', this.__id)); }
+        get childNodes() { return childCollection(this, false); }
+        get children() { return childCollection(this, true); }
         get firstElementChild() { return this.children[0] || null; }
         get lastElementChild() { const children = this.children; return children[children.length - 1] || null; }
         get childElementCount() { return this.children.length; }
@@ -59,10 +64,11 @@
             const namedAccessChanged = this.isConnected && this.firstElementChild !== null;
             const removedChildren = !characterData && this.isConnected ? [...this.childNodes] : [];
             host('textSet', this.__id, value == null ? '' : String(value));
+            if (!characterData) markChildCollectionsChanged(this);
             for (const child of removedChildren) disconnectCustomElementTree(child);
+            if (namedAccessChanged) refreshWindowNamedProperties(removedChildren);
             queueMutationRecord(this, characterData ? 'characterData' : 'childList', { oldValue });
             scheduleSlotChangeCheck();
-            if (namedAccessChanged) refreshWindowNamedProperties();
         }
         get isConnected() {
             return this.getRootNode({ composed: true })?.nodeType === 9;
@@ -72,8 +78,10 @@
             const records = insertionRecords(child);
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node => !!host('appendChild', this.__id, node.__id));
+            if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
+                records.map(record => record.oldParent));
             if (inserted) finishInsertion(records);
-            if (inserted && this.isConnected) refreshWindowNamedProperties();
+            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
             if (inserted) scheduleSlotChangeCheck();
             return inserted ? child : null;
         }
@@ -95,8 +103,10 @@
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node =>
                 !!host('insertBefore', this.__id, node.__id, reference?.__id || 0));
+            if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
+                records.map(record => record.oldParent));
             if (inserted) finishInsertion(records);
-            if (inserted && this.isConnected) refreshWindowNamedProperties();
+            if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
             if (inserted) scheduleSlotChangeCheck();
             return inserted ? child : null;
         }
@@ -104,17 +114,20 @@
             const namedAccessChanged = this.isConnected;
             const wasConnected = child instanceof Node && child.isConnected;
             if (!(child instanceof Node) || !host('removeChild', this.__id, child.__id)) throw new Error('node is not a child');
+            markChildCollectionsChanged(this);
             if (wasConnected) disconnectCustomElementTree(child);
-            if (namedAccessChanged) refreshWindowNamedProperties();
+            if (namedAccessChanged) refreshWindowNamedProperties(child);
             scheduleSlotChangeCheck();
             return child;
         }
         remove() {
             const namedAccessChanged = this.isConnected;
+            const parent = this.parentNode;
             const removed = host('remove', this.__id);
+            if (removed) markChildCollectionsChanged(parent);
             if (removed && namedAccessChanged) {
                 disconnectCustomElementTree(this);
-                refreshWindowNamedProperties();
+                refreshWindowNamedProperties(this);
             }
             if (removed) scheduleSlotChangeCheck();
         }

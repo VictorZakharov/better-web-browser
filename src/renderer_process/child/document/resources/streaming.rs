@@ -149,6 +149,7 @@ impl DocumentRuntime {
         } else {
             StyleRefreshStats::default()
         };
+        self.start_presentational_preloads(connection)?;
         let layout_started = Instant::now();
         if needs_present {
             self.rebuild_layout();

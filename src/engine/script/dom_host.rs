@@ -223,6 +223,9 @@ pub(super) fn dom_host_call(
             JsValue::from(node.map(|node| state.id_for(&node)).unwrap_or_default())
         }
         "namedPropertyNames" => js_string(named_property_names(state)),
+        "namedPropertyCandidates" => {
+            js_string(named_property_candidates(state, argument_id(args, 1)))
+        }
         "namedProperty" => {
             let wanted = argument_string(args, 1, context)?;
             let nodes = named_property_nodes(state, &wanted);
@@ -345,6 +348,18 @@ fn named_property_names(state: &HostState) -> String {
             }
         }
     }
+    serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn named_property_candidates(state: &HostState, root_id: u32) -> String {
+    let Some(root) = state.node(root_id) else {
+        return "[]".to_string();
+    };
+    let mut seen = HashSet::new();
+    let names = Node::descendants(&root)
+        .flat_map(|node| named_values(&node))
+        .filter(|name| seen.insert(name.clone()))
+        .collect::<Vec<_>>();
     serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
 }
 

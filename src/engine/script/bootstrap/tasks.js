@@ -1,9 +1,19 @@
     const timers = new Map();
-    const queueTimer = (callback, delay, repeat, args) => {
+    const describeTimerCallback = callback => {
+        if (typeof callback !== 'function') return 'string callback';
+        const name = String(callback.name || '').trim();
+        try {
+            const source = Function.prototype.toString.call(callback).replace(/\s+/g, ' ').trim();
+            return (name ? name + ': ' + source : source || 'anonymous callback').slice(0, 160);
+        }
+        catch (_) { return (name || 'anonymous callback').slice(0, 160); }
+    };
+    const queueTimer = (callback, delay, repeat, args, label = describeTimerCallback(callback),
+        scheduleOperation = 'timerSchedule') => {
         const id = nextTimer++;
         delay = Math.max(0, Number(delay) || 0);
-        timers.set(id, { callback, repeat, args });
-        host('timerSchedule', id, delay, repeat);
+        timers.set(id, { callback, repeat, args, label });
+        host(scheduleOperation, id, delay, repeat);
         return id;
     };
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
@@ -13,8 +23,38 @@
         timers.delete(id);
         host('timerCancel', id);
     };
-    windowObject.requestAnimationFrame = callback => queueTimer(() => callback(performance.now()), 16, false, []);
+    windowObject.requestAnimationFrame = callback => queueTimer(
+        () => callback(performance.now()), 16, false, [], 'requestAnimationFrame: ' + describeTimerCallback(callback));
     windowObject.cancelAnimationFrame = windowObject.clearTimeout;
+    // Idle periods are user-agent defined and capped at 50 ms by the cooperative scheduling
+    // specification. Breeze opens one only after a quiet 50 ms task window; an earlier explicit
+    // timeout wins the race and receives a zero-length, timed-out deadline.
+    // https://w3c.github.io/requestidlecallback/#idle-periods
+    const idleCallbackDelay = 50;
+    const idleDeadlineToken = {};
+    windowObject.IdleDeadline = class IdleDeadline {
+        constructor(token, deadline, didTimeout) {
+            if (token !== idleDeadlineToken) throw new TypeError('Illegal constructor');
+            this.__deadline = deadline;
+            this.__didTimeout = didTimeout;
+        }
+        get didTimeout() { return this.__didTimeout; }
+        timeRemaining() { return Math.max(0, this.__deadline - performance.now()); }
+    };
+    Object.defineProperty(windowObject.IdleDeadline.prototype, Symbol.toStringTag,
+        { value: 'IdleDeadline', configurable: true });
+    windowObject.requestIdleCallback = (callback, options = {}) => {
+        if (typeof callback !== 'function') throw new TypeError('requestIdleCallback requires a callback');
+        options = Object(options);
+        const convertedTimeout = options.timeout === undefined ? null : Math.max(0, Number(options.timeout) || 0);
+        const didTimeout = convertedTimeout !== null && convertedTimeout > 0 && convertedTimeout <= idleCallbackDelay;
+        const delay = didTimeout ? convertedTimeout : idleCallbackDelay;
+        return queueTimer(() => {
+            const deadline = performance.now() + (didTimeout ? 0 : idleCallbackDelay);
+            callback(new IdleDeadline(idleDeadlineToken, deadline, didTimeout));
+        }, delay, false, [], 'requestIdleCallback: ' + describeTimerCallback(callback), 'idleSchedule');
+    };
+    windowObject.cancelIdleCallback = windowObject.clearTimeout;
     const reportGlobalException = error => {
         const message = error?.message === undefined ? String(error) : String(error.message);
         const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
@@ -26,6 +66,10 @@
             try { callback(); }
             catch (error) { reportGlobalException(error); }
         });
+    };
+    windowObject.__timerLabel = id => {
+        const timer = timers.get(Number(id));
+        return timer ? timer.label : 'missing callback';
     };
     windowObject.__runTimer = id => {
         const timer = timers.get(Number(id));
@@ -52,7 +96,10 @@
         }
     });
     windowObject.getComputedStyle = element => computedStyleProxy(element);
-    windowObject.matchMedia = query => ({ media: String(query), matches: false, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } });
+    windowObject.matchMedia = query => {
+        query = String(query);
+        return { media: query, matches: host('mediaMatches', query), onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
+    };
     windowObject.CSS = { supports() { return false; }, escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); } };
     windowObject.Image = class Image extends HTMLImageElement {
         constructor() {
