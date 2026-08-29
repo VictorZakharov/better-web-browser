@@ -31,6 +31,9 @@ impl LaunchOptions {
         let mut benchmark_url = None;
         let mut output = None;
         let mut screenshot = None;
+        let mut filmstrip_directory = None;
+        let mut filmstrip_interval_ms = None;
+        let mut filmstrip_duration_ms = None;
         let mut settle_ms = 2_000_u64;
         let mut completion_marker = None;
         let mut scroll_samples = 0_usize;
@@ -47,6 +50,17 @@ impl LaunchOptions {
                 "--output" => output = Some(PathBuf::from(required(&mut arguments, &argument)?)),
                 "--screenshot" => {
                     screenshot = Some(PathBuf::from(required(&mut arguments, &argument)?));
+                }
+                "--filmstrip-directory" => {
+                    filmstrip_directory = Some(PathBuf::from(required(&mut arguments, &argument)?));
+                }
+                "--filmstrip-interval-ms" => {
+                    filmstrip_interval_ms =
+                        Some(number::<u64>(&mut arguments, &argument)?.clamp(100, 10_000));
+                }
+                "--filmstrip-duration-ms" => {
+                    filmstrip_duration_ms =
+                        Some(number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000));
                 }
                 "--settle-ms" => {
                     settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000);
@@ -121,10 +135,30 @@ impl LaunchOptions {
             );
             benchmark.navigation_targets = navigation_targets;
             benchmark.navigation_delay = Duration::from_millis(navigation_delay_ms);
+            benchmark.filmstrip = filmstrip_directory
+                .map(|directory| {
+                    super::filmstrip::Filmstrip::new(
+                        directory,
+                        Duration::from_millis(filmstrip_interval_ms.unwrap_or(500)),
+                        Duration::from_millis(filmstrip_duration_ms.unwrap_or(10_000)),
+                    )
+                })
+                .transpose()?;
+            if benchmark.filmstrip.is_none()
+                && (filmstrip_interval_ms.is_some() || filmstrip_duration_ms.is_some())
+            {
+                return Err("filmstrip timing requires --filmstrip-directory".into());
+            }
             Some(benchmark)
         } else {
             if screenshot.is_some() {
                 return Err("--screenshot requires --benchmark".to_string());
+            }
+            if filmstrip_directory.is_some()
+                || filmstrip_interval_ms.is_some()
+                || filmstrip_duration_ms.is_some()
+            {
+                return Err("filmstrip options require --benchmark".to_string());
             }
             if scroll_samples > 0 {
                 return Err("--scroll-samples requires --benchmark".to_string());
@@ -205,6 +239,32 @@ mod tests {
         assert!(benchmark.early_scroll.is_some());
         assert_eq!(benchmark.diagnostic_selectors, ["#main"]);
         assert_eq!(benchmark.completion_marker.as_deref(), Some("__DONE__"));
+    }
+
+    #[test]
+    fn parses_navigation_anchored_filmstrip_options() {
+        let options = LaunchOptions::parse_from(
+            Instant::now(),
+            [
+                "--benchmark",
+                "https://example.test",
+                "--output",
+                "report.json",
+                "--filmstrip-directory",
+                "frames",
+                "--filmstrip-interval-ms",
+                "500",
+                "--filmstrip-duration-ms",
+                "5000",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .unwrap();
+        let filmstrip = options.benchmark.unwrap().filmstrip.unwrap();
+        assert_eq!(filmstrip.interval, Duration::from_millis(500));
+        assert_eq!(filmstrip.duration, Duration::from_secs(5));
+        assert_eq!(filmstrip.frame_count, 10);
     }
 
     #[test]

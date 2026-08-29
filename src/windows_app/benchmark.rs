@@ -1,5 +1,6 @@
 mod diagnostics;
 mod early_scroll;
+mod filmstrip;
 mod initialization;
 mod navigation;
 mod options;
@@ -74,6 +75,7 @@ pub(super) struct BenchmarkRun {
     pub(super) finish_scheduled: bool,
     pub(super) renderer_wait_deadline: Option<Instant>,
     pub(super) screenshot: Option<PathBuf>,
+    pub(super) filmstrip: Option<filmstrip::Filmstrip>,
     pub(super) scroll_samples: usize,
     pub(super) early_scroll: Option<EarlyScrollTrace>,
     pub(super) scroll_surface: Option<benchmark_capture::OffscreenSurface>,
@@ -123,7 +125,17 @@ impl BrowserState {
                 initial_scroll_y,
             );
         } else {
-            initialization::post_benchmark_finish(self.window, benchmark.settle);
+            let delay = benchmark
+                .filmstrip
+                .as_ref()
+                .and_then(|filmstrip| {
+                    benchmark
+                        .navigation_started
+                        .map(|started| filmstrip.remaining(started))
+                })
+                .map(|remaining| remaining.max(benchmark.settle))
+                .unwrap_or(benchmark.settle);
+            initialization::post_benchmark_finish(self.window, delay);
         }
     }
 

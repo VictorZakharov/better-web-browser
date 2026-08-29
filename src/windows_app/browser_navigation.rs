@@ -36,6 +36,7 @@ impl BrowserState {
         history_mode: HistoryMode,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
+        let mut schedule_filmstrip = false;
         if is_active {
             self.cancel_scroll_animation();
         }
@@ -109,11 +110,15 @@ impl BrowserState {
                 && benchmark.navigation_started.is_none()
             {
                 benchmark.navigation_started = Some(Instant::now());
+                schedule_filmstrip = true;
             }
             set_window_text(self.controls.address, &url);
             self.set_status(&format!("Loading {url} …"));
         } else {
             InvalidateRect(self.window, null(), 0);
+        }
+        if schedule_filmstrip {
+            self.schedule_benchmark_filmstrip();
         }
 
         let tab_router = self.app.tab_router.clone();
