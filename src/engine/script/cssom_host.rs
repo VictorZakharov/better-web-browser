@@ -6,16 +6,6 @@ use crate::engine::AdoptedStyleSheet;
 use crate::limits::{
     MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES, MAX_ADOPTED_STYLESHEETS, MAX_CSS_SOURCE_BYTES,
 };
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AdoptedSheetPayload {
-    base_url: String,
-    media: String,
-    source: String,
-}
-
 pub(super) fn cssom_host_call(
     operation: &str,
     args: &[JsValue],
@@ -58,14 +48,7 @@ pub(super) fn cssom_host_call(
             .with_message("adoptedStyleSheets requires a document or shadow root")
             .into());
     }
-    let payload = argument_string(args, 2)?;
-    if payload.len() > MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES {
-        return Err(JsNativeError::range()
-            .with_message("adopted stylesheet payload exceeds the document limit")
-            .into());
-    }
-    let sheets = serde_json::from_str::<Vec<AdoptedSheetPayload>>(&payload)
-        .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
+    let sheets = adopted_sheet_payloads(args.get(2))?;
     if sheets.len() > MAX_ADOPTED_STYLESHEETS {
         return Err(JsNativeError::range()
             .with_message("too many adopted stylesheets on one root")
@@ -94,6 +77,50 @@ pub(super) fn cssom_host_call(
     Ok(Some(JsValue::undefined()))
 }
 
+fn adopted_sheet_payloads(value: Option<&JsValue>) -> JsResult<Vec<AdoptedStyleSheet>> {
+    let Some(JsValue::Array(records)) = value else {
+        return Err(JsNativeError::typ()
+            .with_message("adopted stylesheet payload must be an array")
+            .into());
+    };
+    let mut payload_bytes = 0_usize;
+    let mut sheets = Vec::with_capacity(records.len());
+    for record in records {
+        let JsValue::Array(fields) = record else {
+            return Err(invalid_adopted_sheet_payload());
+        };
+        let [
+            JsValue::String(base_url),
+            JsValue::String(media),
+            JsValue::String(source),
+        ] = fields.as_slice()
+        else {
+            return Err(invalid_adopted_sheet_payload());
+        };
+        payload_bytes = payload_bytes
+            .saturating_add(base_url.len())
+            .saturating_add(media.len())
+            .saturating_add(source.len());
+        if payload_bytes > MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES {
+            return Err(JsNativeError::range()
+                .with_message("adopted stylesheet payload exceeds the document limit")
+                .into());
+        }
+        sheets.push(AdoptedStyleSheet {
+            base_url: base_url.clone(),
+            media: media.clone(),
+            source: source.clone(),
+        });
+    }
+    Ok(sheets)
+}
+
+fn invalid_adopted_sheet_payload() -> JsError {
+    JsNativeError::typ()
+        .with_message("adopted stylesheet entries must contain base URL, media, and source strings")
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,10 +140,11 @@ mod tests {
         let args = [
             js_string("adoptedStyleSheetsSet".to_string()),
             JsValue::from(document),
-            js_string(
-                r#"[{"baseUrl":"https://example.com/","media":"","source":"main{color:red}"}]"#
-                    .to_string(),
-            ),
+            JsValue::Array(vec![JsValue::Array(vec![
+                js_string("https://example.com/".to_string()),
+                js_string(String::new()),
+                js_string("main{color:red}".to_string()),
+            ])]),
         ];
         let value = cssom_host_call("adoptedStyleSheetsSet", &args, &mut state)
             .expect("valid stylesheet payload");
@@ -124,5 +152,22 @@ mod tests {
         assert!(value.is_some());
         assert_eq!(dom.document.adopted_stylesheets().len(), 1);
         assert!(state.pending_invalidation.snapshot(1).rebuild_style_rules);
+    }
+
+    #[test]
+    fn native_snapshot_rejects_malformed_and_oversized_entries() {
+        let malformed = JsValue::Array(vec![JsValue::Array(vec![js_string(
+            "https://example.com/".to_string(),
+        )])]);
+        let error = adopted_sheet_payloads(Some(&malformed)).expect_err("malformed entry");
+        assert!(error.to_string().starts_with("TypeError:"));
+
+        let oversized = JsValue::Array(vec![JsValue::Array(vec![
+            js_string("https://example.com/".to_string()),
+            js_string(String::new()),
+            js_string("x".repeat(MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES + 1)),
+        ])]);
+        let error = adopted_sheet_payloads(Some(&oversized)).expect_err("oversized entry");
+        assert!(error.to_string().starts_with("RangeError:"));
     }
 }

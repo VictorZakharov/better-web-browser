@@ -70,16 +70,19 @@ pub(super) fn settle_timer_slice(
         };
 
         host.borrow_mut().begin_task();
-        let label = context
-            .eval(Source::from_bytes(format!("__timerLabel({timer_id});")))
-            .and_then(|value| value.to_string(context))
-            .map(|value| value.to_std_string_escaped())
-            .unwrap_or_else(|_| "unknown callback".to_string());
+        let label = if stage_reporter.is_some() {
+            context
+                .call_global("__timerLabel", &[timer_id.into()])
+                .and_then(|value| value.to_string(context))
+                .map(|value| value.to_std_string_escaped())
+                .unwrap_or_else(|_| "unknown callback".to_string())
+        } else {
+            String::new()
+        };
         if let Some(reporter) = stage_reporter.as_deref_mut() {
             reporter(&format!("executing JavaScript timer {timer_id}: {label}"));
         }
-        let invocation = format!("__runTimer({timer_id});");
-        if let Err(error) = context.eval(Source::from_bytes(&invocation)) {
+        if let Err(error) = context.call_global("__runTimer", &[timer_id.into()]) {
             outcome
                 .errors
                 .push(format!("JavaScript timer {timer_id}: {error}"));

@@ -79,6 +79,7 @@ pub(in crate::engine::script) enum JsValue {
     String(String),
     Bytes(Vec<u8>),
     Array(Vec<JsValue>),
+    Object(Vec<(String, JsValue)>),
 }
 
 impl JsValue {
@@ -117,7 +118,7 @@ impl JsValue {
             Self::Boolean(value) => *value,
             Self::Number(value) => *value != 0.0 && !value.is_nan(),
             Self::String(value) => !value.is_empty(),
-            Self::Bytes(_) | Self::Array(_) => true,
+            Self::Bytes(_) | Self::Array(_) | Self::Object(_) => true,
         }
     }
 
@@ -141,6 +142,7 @@ impl JsValue {
                 .map(Self::string_value)
                 .collect::<Vec<_>>()
                 .join(","),
+            Self::Object(_) => "[object Object]".into(),
         }
     }
 }
