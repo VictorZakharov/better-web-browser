@@ -446,22 +446,3 @@ fn rejects_limits_above_the_protocol_contract() {
         Err(ProtocolError::InvalidPayload("renderer limits"))
     ));
 }
-
-#[cfg(feature = "v8-engine-spike")]
-#[test]
-fn javascript_engine_probe_commands_round_trip() {
-    for engine in [
-        JavaScriptEngineProbe::Boa,
-        JavaScriptEngineProbe::V8Jitless,
-        JavaScriptEngineProbe::V8Jit,
-    ] {
-        let message = BrowserMessage::Test(TestCommand::ProbeJavaScriptEngine { engine });
-        let bytes = encoded_browser(&message);
-        assert_eq!(
-            FrameReader::new(Cursor::new(bytes), session())
-                .read_browser()
-                .unwrap(),
-            message
-        );
-    }
-}

@@ -86,18 +86,18 @@ The original compile/test path's initial sub-two-minute target is not yet met; i
 misses it by 20 seconds. The later public-alpha gate now determines pull-request wall clock at
 roughly five minutes. On its measured run, an exact Cargo registry-source cache hit took 41 seconds
 to extract, and the serial nine-fixture matrix took 1m50s after both browser builds. The uncached
-workspace outputs, Cargo fingerprinting, the vendored Boa path dependency, and MSVC linking still
-leave the compile-heavy workers clustered around two minutes.
+workspace outputs, V8 archive extraction and Cargo fingerprinting, and MSVC linking still leave the
+compile-heavy workers clustered around two minutes.
 Adding more compiler workers was measured and rejected: remote-cache read latency doubled and the
 end-to-end result regressed.
 
 The next public-alpha investigation should evaluate isolated fixture shards or a shared browser
 artifact without contaminating same-runner performance comparisons or increasing compiler-cache
-contention. The broader build investigation should make the vendored-engine input and workspace
+contention. The broader build investigation should make V8 archive reuse and the workspace
 output graph cheaper to fingerprint and link, then remove the serial classification delay if branch
 protection can remain fail-safe. A larger or persistent runner is an operational fallback, not a
-source-level fix. Direct caching of `target` remains excluded because checkout timestamps invalidate
-the vendored path dependency and make that archive expensive without producing reliable hits.
+source-level fix. Direct caching of `target` remains excluded because it has not produced reliable
+hits for the native-engine and workspace build graph.
 
 ## References
 

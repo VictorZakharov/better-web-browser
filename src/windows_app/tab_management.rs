@@ -327,7 +327,7 @@ impl BrowserState {
 
     // Presentation installation still reuses the active-tab UI helpers. Select a background tab
     // internally, suppress shared Win32 controls, then restore the visible tab before dispatching
-    // another window message; hostile Page/DOM/Boa state remains in that tab's renderer process.
+    // another window message; hostile Page/DOM/V8 state remains in that tab's renderer process.
     pub(super) unsafe fn process_for_tab(&mut self, id: TabId, process: impl FnOnce(&mut Self)) {
         if !self.tabs.contains(id) {
             return;

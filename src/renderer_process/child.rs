@@ -3,8 +3,6 @@ use crate::renderer_protocol::{
     MAX_CONTROL_PAYLOAD, Nonce, PROTOCOL_MAJOR, PROTOCOL_MINOR, RendererMessage, RendererSessionId,
     RestrictionReport, TestCommand,
 };
-#[cfg(feature = "v8-engine-spike")]
-use crate::renderer_protocol::{RENDERER_DIAGNOSTIC_ENGINE_PROBE, RendererDiagnostic};
 use std::fs::File;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
@@ -141,15 +139,6 @@ pub(super) fn handle_test(
             let report = probe_restrictions(loopback_port);
             writer
                 .send_renderer(&RendererMessage::Restrictions(report))
-                .map_err(|error| error.to_string())
-        }
-        #[cfg(feature = "v8-engine-spike")]
-        TestCommand::ProbeJavaScriptEngine { engine } => {
-            let report = crate::engine::script::run_engine_probe(engine)?;
-            let diagnostic = RendererDiagnostic::new(RENDERER_DIAGNOSTIC_ENGINE_PROBE, report)
-                .map_err(|error| error.to_string())?;
-            writer
-                .send_renderer(&RendererMessage::Diagnostic(diagnostic))
                 .map_err(|error| error.to_string())
         }
     }

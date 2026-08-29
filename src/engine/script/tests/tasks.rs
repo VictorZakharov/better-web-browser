@@ -403,7 +403,7 @@ fn propagates_uncatchable_runtime_limits_from_promise_jobs() {
         outcome
             .errors
             .iter()
-            .any(|error| error.contains("loop iteration limit")),
+            .any(|error| error.contains("execution time limit")),
         "{:?}",
         outcome.errors
     );

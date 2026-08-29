@@ -7,11 +7,10 @@ use crate::engine::dom::ShadowRootMode;
 pub(super) fn shadow_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
-        "attachShadow" => attach_shadow(args, context, state)?,
+        "attachShadow" => attach_shadow(args, state)?,
         "shadowRoot" => {
             let root = state
                 .node(argument_id(args, 1))
@@ -85,15 +84,11 @@ pub(super) fn shadow_host_call(
     Ok(Some(value))
 }
 
-fn attach_shadow(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
+fn attach_shadow(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let Some(host) = state.node(argument_id(args, 1)) else {
         return Ok(JsValue::from(0));
     };
-    let mode = match argument_string(args, 2, context)?.as_str() {
+    let mode = match argument_string(args, 2)?.as_str() {
         "open" => ShadowRootMode::Open,
         "closed" => ShadowRootMode::Closed,
         _ => return Ok(JsValue::from(0)),

@@ -125,9 +125,9 @@ pub const RENDERER_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 pub const RENDERER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 pub const RENDERER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 // First presentation has its own larger allowance below. Once a page is interactive, a command
-// task that cannot answer the control-plane heartbeat is reported quickly. Boa can still need
-// several seconds to finish a large but finite Promise checkpoint on script-heavy pages, so keep
-// the browser UI responsive while giving that isolated renderer a bounded recovery window.
+// task that cannot answer the control-plane heartbeat is reported quickly. The in-process V8
+// watchdog has a shorter per-execution deadline; this outer boundary still contains native work
+// and failures outside JavaScript while giving the isolated renderer a bounded recovery window.
 pub const RENDERER_UNRESPONSIVE_TIMEOUT: Duration = Duration::from_secs(3);
 pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(12);
 /// A first document can synchronously parse, execute blocking scripts, shape text, and lay out

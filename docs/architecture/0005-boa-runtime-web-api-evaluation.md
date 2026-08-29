@@ -1,6 +1,6 @@
 # ADR 0005: Boa runtime Web API evaluation
 
-- Status: Accepted
+- Status: Superseded by [ADR 0006](0006-v8-engine-selection.md)
 - Date: 2026-08-23
 - Issues: [#55](https://github.com/VictorZakharov/better-web-browser/issues/55),
   [#47](https://github.com/VictorZakharov/better-web-browser/issues/47)

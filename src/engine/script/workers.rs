@@ -44,14 +44,13 @@ fn same_origin_credentials() -> String {
 pub(super) fn worker_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "workerStart" => {
-            let url = state.resolved_url(&argument_string(args, 1, context)?);
-            let options: WorkerOptions = serde_json::from_str(&argument_string(args, 2, context)?)
-                .map_err(|error| {
+            let url = state.resolved_url(&argument_string(args, 1)?);
+            let options: WorkerOptions =
+                serde_json::from_str(&argument_string(args, 2)?).map_err(|error| {
                     JsNativeError::typ().with_message(format!("invalid Worker options: {error}"))
                 })?;
             let kind = match options.worker_type.as_str() {
@@ -93,7 +92,7 @@ pub(super) fn worker_host_call(
                 .pending_worker_actions
                 .push(ScriptWorkerAction::PostMessage {
                     id: argument_id(args, 1),
-                    serialized: argument_string(args, 2, context)?,
+                    serialized: argument_string(args, 2)?,
                 });
             Ok(Some(JsValue::undefined()))
         }
@@ -114,24 +113,17 @@ pub(super) fn deliver_worker_event(
     id: u32,
     event: Result<String, String>,
 ) -> JsResult<()> {
-    let callback = context
-        .global_object()
-        .get(boa_engine::js_string!("__completeWorkerEvent"), context)?;
-    let callback = callback
-        .as_callable()
-        .ok_or_else(|| JsNativeError::typ().with_message("Worker event hook is unavailable"))?;
     let (kind, payload) = match event {
         Ok(message) => ("message", message),
         Err(error) => ("error", error),
     };
-    callback.call(
-        &JsValue::undefined(),
+    context.call_global(
+        "__completeWorkerEvent",
         &[
             JsValue::from(id),
             js_string(kind.to_string()),
             js_string(payload),
         ],
-        context,
     )?;
     context.run_jobs()
 }

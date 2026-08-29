@@ -7,7 +7,6 @@ use crate::fetch::{
     Referrer, ReferrerPolicy, RequestCache, RequestMode, ResponseType,
 };
 use crate::limits::MAX_RESPONSE_BODY_BYTES;
-use boa_engine::object::builtins::JsUint8Array;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -58,12 +57,11 @@ struct SerializedResponse {
 pub(super) fn network_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "fetchStart" => {
-            let serialized = argument_string(args, 1, context)?;
+            let serialized = argument_string(args, 1)?;
             let request = request_from_serialized(&state.document_url, &serialized)?;
             let id = state.next_fetch_id;
             state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {
@@ -217,7 +215,7 @@ pub(super) fn deliver_event(
             )?;
         }
         ScriptFetchEvent::Chunk(bytes) => {
-            let body = JsUint8Array::from_iter(bytes, context)?.into();
+            let body = JsValue::Bytes(bytes);
             call_network_hook(context, "__pushFetch", &[JsValue::from(id), body])?;
         }
         ScriptFetchEvent::End => {
@@ -279,13 +277,7 @@ fn serialized_response(result: Result<FetchResponse, FetchError>) -> SerializedR
 }
 
 fn call_network_hook(context: &mut Context, name: &str, arguments: &[JsValue]) -> JsResult<()> {
-    let callback = context
-        .global_object()
-        .get(boa_engine::JsString::from(name), context)?;
-    let callback = callback
-        .as_callable()
-        .ok_or_else(|| JsNativeError::typ().with_message(format!("{name} hook is unavailable")))?;
-    callback.call(&JsValue::undefined(), arguments, context)?;
+    context.call_global(name, arguments)?;
     Ok(())
 }
 
@@ -332,11 +324,11 @@ fn status_text(status: u16) -> &'static str {
     }
 }
 
-fn fetch_error(error: FetchError) -> boa_engine::JsError {
+fn fetch_error(error: FetchError) -> JsError {
     type_error(error.to_string())
 }
 
-fn type_error(message: impl Into<String>) -> boa_engine::JsError {
+fn type_error(message: impl Into<String>) -> JsError {
     JsNativeError::typ().with_message(message.into()).into()
 }
 

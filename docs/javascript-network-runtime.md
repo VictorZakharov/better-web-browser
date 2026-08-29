@@ -37,7 +37,7 @@ absolute URL specifiers, cache each module by URL, enforce CORS and JavaScript M
 Document lifecycle completion and script `load`/`error` events wait for asynchronous module
 evaluation to settle.
 
-`Worker` creates an isolated Boa realm on a background thread. Classic and module dedicated workers
+`Worker` creates an isolated V8 realm on a background thread. Classic and module dedicated workers
 support structured-clone messaging and transfers, timers, Fetch/XHR, relative static imports,
 `importScripts` for classic workers, top-level await for module workers, and deterministic
 termination. Messages sent while a module worker is evaluating are queued until its top-level

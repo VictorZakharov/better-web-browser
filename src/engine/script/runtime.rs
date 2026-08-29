@@ -37,13 +37,10 @@ impl ScriptRuntime {
             character_set,
             Rc::clone(&module_loader),
         )));
-        let mut context = Box::new(
-            Context::builder()
-                .module_loader(module_loader)
-                .build()
-                .expect("the default JavaScript context configuration is valid"),
+        let context = Box::new(
+            Context::new(HostBridge::Document(Rc::downgrade(&host)))
+                .expect("the V8 document realm can be initialized"),
         );
-        context.insert_data(HostStateLink(Rc::downgrade(&host)));
         Self {
             context: Some(context),
             host,
@@ -461,12 +458,9 @@ impl ScriptRuntime {
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(payload) => {
-                // Some evaluator failures leave Boa's garbage-collected maps borrowed. Leaking
-                // only that damaged context avoids a double-panic abort. Its host link is weak, so
-                // dropping this runtime still releases the document and scheduler.
-                if let Some(context) = self.context.take() {
-                    std::mem::forget(context);
-                }
+                // The V8 entry guard restores isolate state during unwinding, so the damaged
+                // document realm can be released normally instead of leaking engine memory.
+                self.context.take();
                 stopped_runtime_outcome(panic_detail(payload))
             }
         };

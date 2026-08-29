@@ -179,7 +179,8 @@ try {
             $visualCeiling = if ($Live) { 1.0 } else { [double] $case.max_visual_difference }
             $visual = & (Join-Path $PSScriptRoot 'visual-compare.ps1') `
                 -BreezeScreenshot $breezePng -ChromiumScreenshot $chromiumPng `
-                -BreezeReport $breezeJson -MaximumDifference $visualCeiling
+                -BreezeReport $breezeJson -MaximumDifference $visualCeiling `
+                -DiagnosticOnly:$Live
             if (-not $Live) {
                 $pageReadyPassed = [double] $breeze.page_ready_ms -le 2 * [double] $chromium.page_ready_ms
                 if (-not $pageReadyPassed) { throw "$($case.id) Breeze page-ready exceeded 2x Chromium." }

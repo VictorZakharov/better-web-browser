@@ -1,4 +1,4 @@
-// These responsibility-based chunks share one IIFE and are concatenated before Boa parses them.
+// These responsibility-based chunks share one IIFE and are concatenated before V8 compiles them.
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/core.js"),

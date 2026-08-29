@@ -2,18 +2,16 @@
 
 use super::binding_helpers::js_string;
 use super::*;
-use boa_engine::object::builtins::{JsArray, JsArrayBuffer, JsUint8Array};
 
 pub(super) fn text_encoding_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
 ) -> JsResult<Option<JsValue>> {
     if operation != "utf8Decode" {
         return Ok(None);
     }
-    let mut bytes = typed_array_bytes(args, 2, context)?;
-    let input = typed_array_bytes(args, 1, context)?;
+    let mut bytes = typed_array_bytes(args, 2)?;
+    let input = typed_array_bytes(args, 1)?;
     bytes.extend_from_slice(&input);
     let stream = boolean_argument(args, 3);
     let fatal = boolean_argument(args, 4);
@@ -21,16 +19,12 @@ pub(super) fn text_encoding_host_call(
     let bom_seen = boolean_argument(args, 6);
     let (text, pending, bom_seen) = decode_utf8(&bytes, stream, fatal, ignore_bom, bom_seen)
         .map_err(|()| JsNativeError::typ().with_message("The encoded data was not valid UTF-8"))?;
-    let pending = JsUint8Array::from_iter(pending, context)?;
-    let result = JsArray::from_iter(
-        [
-            js_string(text),
-            JsValue::from(pending),
-            JsValue::from(bom_seen),
-        ],
-        context,
-    );
-    Ok(Some(result.into()))
+    let result = JsValue::Array(vec![
+        js_string(text),
+        JsValue::Bytes(pending),
+        JsValue::from(bom_seen),
+    ]);
+    Ok(Some(result))
 }
 
 fn boolean_argument(args: &[JsValue], index: usize) -> bool {
@@ -39,29 +33,15 @@ fn boolean_argument(args: &[JsValue], index: usize) -> bool {
         .unwrap_or(false)
 }
 
-fn typed_array_bytes(args: &[JsValue], index: usize, context: &mut Context) -> JsResult<Vec<u8>> {
-    let object = args
-        .get(index)
-        .and_then(JsValue::as_object)
-        .ok_or_else(|| JsNativeError::typ().with_message("decoder input is not a Uint8Array"))?;
-    let view = JsUint8Array::from_object(object)?;
-    let offset = view.byte_offset(context)?;
-    let length = view.byte_length(context)?;
-    let buffer = view
-        .buffer(context)?
-        .as_object()
-        .ok_or_else(|| JsNativeError::typ().with_message("decoder input buffer is missing"))?;
-    let buffer = JsArrayBuffer::from_object(buffer)?;
-    let data = buffer
-        .data()
-        .ok_or_else(|| JsNativeError::typ().with_message("decoder input buffer is detached"))?;
-    let end = offset
-        .checked_add(length)
-        .filter(|end| *end <= data.len())
+fn typed_array_bytes(args: &[JsValue], index: usize) -> JsResult<Vec<u8>> {
+    args.get(index)
+        .and_then(JsValue::as_bytes)
+        .map(<[u8]>::to_vec)
         .ok_or_else(|| {
-            JsNativeError::range().with_message("decoder input view is out of bounds")
-        })?;
-    Ok(data[offset..end].to_vec())
+            JsNativeError::typ()
+                .with_message("decoder input is not a Uint8Array")
+                .into()
+        })
 }
 
 fn decode_utf8(

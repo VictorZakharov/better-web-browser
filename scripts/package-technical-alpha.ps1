@@ -110,10 +110,6 @@ source: $repository
         if ($licenseFiles.Count -eq 0) {
             $fallback = @('ABOUT.md', 'README.md') | ForEach-Object { Join-Path $sourceDirectory $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
             if ($null -ne $fallback) { Copy-ReleaseText $fallback (Join-Path $destination 'PACKAGE-SOURCE-NOTICE.md') }
-            if ([string] $package.repository -like 'https://github.com/boa-dev/boa*') {
-                Copy-ReleaseText (Join-Path $repoRoot 'vendor\boa_engine\LICENSE-MIT') (Join-Path $destination 'LICENSE-MIT')
-                Copy-ReleaseText (Join-Path $repoRoot 'vendor\boa_engine\LICENSE-UNLICENSE') (Join-Path $destination 'LICENSE-UNLICENSE')
-            }
         }
     }
 

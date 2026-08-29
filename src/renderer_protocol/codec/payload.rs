@@ -82,12 +82,6 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
                     payload.extend_from_slice(&bytes.to_le_bytes());
                     payload.resize(3 + usize::from(*bytes), 0);
                 }
-                #[cfg(feature = "v8-engine-spike")]
-                TestCommand::ProbeJavaScriptEngine { engine } => payload.push(match engine {
-                    crate::renderer_protocol::JavaScriptEngineProbe::Boa => 12,
-                    crate::renderer_protocol::JavaScriptEngineProbe::V8Jitless => 13,
-                    crate::renderer_protocol::JavaScriptEngineProbe::V8Jit => 14,
-                }),
             }
             0x8001
         }
@@ -250,18 +244,6 @@ fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
     match payload {
         [10] => Ok(TestCommand::InternalError),
         [11] => Ok(TestCommand::DocumentError),
-        #[cfg(feature = "v8-engine-spike")]
-        [12] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::Boa,
-        }),
-        #[cfg(feature = "v8-engine-spike")]
-        [13] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::V8Jitless,
-        }),
-        #[cfg(feature = "v8-engine-spike")]
-        [14] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::V8Jit,
-        }),
         [1] => Ok(TestCommand::Crash),
         [2] => Ok(TestCommand::Hang),
         [3] => Ok(TestCommand::WriteMalformedFrame),

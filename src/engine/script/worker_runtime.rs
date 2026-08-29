@@ -1,7 +1,7 @@
 //! Isolated JavaScript realm and event loop for one dedicated worker.
 
 use super::module_loader::WebModuleLoader;
-use super::worker_host::{WorkerHostLink, WorkerHostState, WorkerSourceLoader};
+use super::worker_host::{WorkerHostState, WorkerSourceLoader};
 use super::*;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -40,27 +40,10 @@ impl WorkerRuntime {
             source_loader,
         )));
         let mut context = Box::new(
-            Context::builder()
-                .module_loader(Rc::clone(&module_loader))
-                .build()
-                .expect("the default Worker JavaScript context configuration is valid"),
+            Context::new(HostBridge::Worker(Rc::downgrade(&host)))
+                .expect("the V8 Worker realm can be initialized"),
         );
-        context.insert_data(WorkerHostLink(Rc::downgrade(&host)));
-        context
-            .runtime_limits_mut()
-            .set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
-        context.runtime_limits_mut().set_recursion_limit(128);
         let mut outcome = WorkerRuntimeOutcome::default();
-        if let Err(error) = context.register_global_builtin_callable(
-            boa_engine::js_string!("__hostCall"),
-            1,
-            NativeFunction::from_fn_ptr(super::worker_host::worker_runtime_host_call),
-        ) {
-            outcome
-                .errors
-                .push(format!("initialize Worker host: {error}"));
-            return (None, outcome);
-        }
         if let Err(error) = context.eval(Source::from_bytes(
             super::worker_bootstrap::WORKER_BOOTSTRAP,
         )) {
@@ -210,17 +193,9 @@ impl WorkerRuntime {
     }
 
     fn dispatch_message_now(&mut self, serialized: &str) -> JsResult<()> {
-        let callback = self.context.global_object().get(
-            boa_engine::js_string!("__dispatchWorkerMessage"),
-            &mut self.context,
-        )?;
-        let callback = callback.as_callable().ok_or_else(|| {
-            JsNativeError::typ().with_message("Worker message hook is unavailable")
-        })?;
-        callback.call(
-            &JsValue::undefined(),
+        self.context.call_global(
+            "__dispatchWorkerMessage",
             &[JsValue::from(JsString::from(serialized))],
-            &mut self.context,
         )?;
         self.context.run_jobs()
     }

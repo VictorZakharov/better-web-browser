@@ -1,4 +1,4 @@
-//! Per-document native state shared with the Boa realm.
+//! Per-document native state shared with the V8 realm.
 
 use super::*;
 
@@ -72,12 +72,6 @@ pub(super) struct HostState {
     pub(super) prefers_dark_color_scheme: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
-
-/// A Boa context owns only a weak link to native document state. If an evaluator panic requires
-/// leaking the damaged context, the page DOM and scheduler can still be released normally.
-#[derive(Clone, Finalize, JsData, Trace)]
-#[boa_gc(unsafe_empty_trace)]
-pub(super) struct HostStateLink(pub(super) Weak<RefCell<HostState>>);
 
 impl HostState {
     pub(super) fn new(

@@ -6,14 +6,13 @@ use super::*;
 pub(super) fn style_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     if operation != "computedStyle" {
         return Ok(None);
     }
     let node = state.node(argument_id(args, 1));
-    let property = argument_string(args, 2, context)?.to_ascii_lowercase();
+    let property = argument_string(args, 2)?.to_ascii_lowercase();
     let value = node
         .and_then(|node| state.computed_style_property(&node, &property))
         .unwrap_or_default();

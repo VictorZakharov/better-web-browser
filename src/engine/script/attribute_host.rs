@@ -6,27 +6,26 @@ use super::*;
 pub(super) fn attribute_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
         "attrGet" => {
-            let name = argument_string(args, 2, context)?;
+            let name = argument_string(args, 2)?;
             state
                 .node(argument_id(args, 1))
                 .and_then(|node| node.attr_qualified(&name))
                 .map_or_else(JsValue::null, js_string)
         }
         "attrGetNs" => {
-            let namespace = argument_string(args, 2, context)?;
-            let local_name = argument_string(args, 3, context)?;
+            let namespace = argument_string(args, 2)?;
+            let local_name = argument_string(args, 3)?;
             state
                 .node(argument_id(args, 1))
                 .and_then(|node| node.attr_ns(optional(&namespace), &local_name))
                 .map_or_else(JsValue::null, js_string)
         }
         "attrHas" => {
-            let name = argument_string(args, 2, context)?;
+            let name = argument_string(args, 2)?;
             JsValue::from(
                 state
                     .node(argument_id(args, 1))
@@ -34,8 +33,8 @@ pub(super) fn attribute_host_call(
             )
         }
         "attrHasNs" => {
-            let namespace = argument_string(args, 2, context)?;
-            let local_name = argument_string(args, 3, context)?;
+            let namespace = argument_string(args, 2)?;
+            let local_name = argument_string(args, 3)?;
             JsValue::from(
                 state
                     .node(argument_id(args, 1))
@@ -48,13 +47,9 @@ pub(super) fn attribute_host_call(
     Ok(Some(value))
 }
 
-pub(super) fn set_attribute(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let name = argument_string(args, 2, context)?;
-    let value = argument_string(args, 3, context)?;
+pub(super) fn set_attribute(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let name = argument_string(args, 2)?;
+    let value = argument_string(args, 3)?;
     let node = state.node(argument_id(args, 1));
     let changed = node
         .as_ref()
@@ -65,14 +60,13 @@ pub(super) fn set_attribute(
 
 pub(super) fn set_attribute_ns(
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
     replace: bool,
 ) -> JsResult<JsValue> {
-    let namespace = argument_string(args, 2, context)?;
-    let prefix = argument_string(args, 3, context)?;
-    let local_name = argument_string(args, 4, context)?;
-    let value = argument_string(args, 5, context)?;
+    let namespace = argument_string(args, 2)?;
+    let prefix = argument_string(args, 3)?;
+    let local_name = argument_string(args, 4)?;
+    let value = argument_string(args, 5)?;
     let node = state.node(argument_id(args, 1));
     let changed = node.as_ref().is_some_and(|node| {
         if replace {
@@ -91,12 +85,8 @@ pub(super) fn set_attribute_ns(
     Ok(JsValue::from(changed))
 }
 
-pub(super) fn remove_attribute(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let name = argument_string(args, 2, context)?;
+pub(super) fn remove_attribute(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let name = argument_string(args, 2)?;
     let node = state.node(argument_id(args, 1));
     let changed = node
         .as_ref()
@@ -105,13 +95,9 @@ pub(super) fn remove_attribute(
     Ok(JsValue::from(changed))
 }
 
-pub(super) fn remove_attribute_ns(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let namespace = argument_string(args, 2, context)?;
-    let local_name = argument_string(args, 3, context)?;
+pub(super) fn remove_attribute_ns(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let namespace = argument_string(args, 2)?;
+    let local_name = argument_string(args, 3)?;
     let node = state.node(argument_id(args, 1));
     let changed = node
         .as_ref()

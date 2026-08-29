@@ -71,7 +71,7 @@ pub(super) fn settle_timer_slice(
 
         host.borrow_mut().begin_task();
         let label = context
-            .eval(Source::from_bytes(&format!("__timerLabel({timer_id});")))
+            .eval(Source::from_bytes(format!("__timerLabel({timer_id});")))
             .and_then(|value| value.to_string(context))
             .map(|value| value.to_std_string_escaped())
             .unwrap_or_else(|_| "unknown callback".to_string());
@@ -84,7 +84,7 @@ pub(super) fn settle_timer_slice(
                 .errors
                 .push(format!("JavaScript timer {timer_id}: {error}"));
         }
-        // HTML performs a microtask checkpoint after every task. Boa owns the Promise job queue,
+        // HTML performs a microtask checkpoint after every task. V8 owns the Promise job queue,
         // so drain it here rather than once after a whole batch of timer callbacks.
         if let Some(reporter) = stage_reporter.as_deref_mut() {
             reporter(&format!(
