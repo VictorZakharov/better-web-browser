@@ -16,6 +16,13 @@ pub(super) const STARTUP_TIMER_SLICE: Duration = Duration::from_millis(250);
 pub type DynamicScriptLoader<'a> =
     dyn FnMut(&str, ScriptKind, ScriptFetchOptions) -> Result<String, String> + 'a;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DynamicScriptRequest {
+    pub source_url: String,
+    pub kind: ScriptKind,
+    pub fetch_options: ScriptFetchOptions,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScriptKind {
     Classic,
@@ -106,6 +113,15 @@ pub struct ScriptOutcome {
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
+}
+
+impl ScriptOutcome {
+    pub(super) fn record_timing(&mut self, label: &str, elapsed: Duration) {
+        if elapsed.as_millis() >= 1 {
+            self.diagnostics
+                .push(format!("{label} {:.3} ms", elapsed.as_secs_f64() * 1_000.0));
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

@@ -82,11 +82,13 @@ pub(super) fn settle_timer_slice(
         if let Some(reporter) = stage_reporter.as_deref_mut() {
             reporter(&format!("executing JavaScript timer {timer_id}: {label}"));
         }
+        let callback_started = Instant::now();
         if let Err(error) = context.call_global("__runTimer", &[timer_id.into()]) {
             outcome
                 .errors
                 .push(format!("JavaScript timer {timer_id}: {error}"));
         }
+        outcome.record_timing("JavaScript timer callback", callback_started.elapsed());
         // HTML performs a microtask checkpoint after every task. V8 owns the Promise job queue,
         // so drain it here rather than once after a whole batch of timer callbacks.
         if let Some(reporter) = stage_reporter.as_deref_mut() {
@@ -94,11 +96,13 @@ pub(super) fn settle_timer_slice(
                 "draining promise jobs after JavaScript timer {timer_id}: {label}"
             ));
         }
+        let jobs_started = Instant::now();
         if let Err(error) = context.run_jobs() {
             outcome
                 .errors
                 .push(format!("JavaScript timer {timer_id} promise job: {error}"));
         }
+        outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
         if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {

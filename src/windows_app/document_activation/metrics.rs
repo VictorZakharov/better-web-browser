@@ -63,6 +63,7 @@ impl BrowserState {
         reached_page_ready: bool,
     ) -> bool {
         let script_time = Duration::from_micros(load.script_micros);
+        let script_fetch_time = Duration::from_micros(load.script_fetch_micros);
         let style_time = Duration::from_micros(load.style_micros);
         let layout_time = Duration::from_micros(load.layout_micros);
         self.record_performance_activity(PerformanceActivity::Script, script_time);
@@ -81,6 +82,7 @@ impl BrowserState {
             return false;
         };
         benchmark.script_time += script_time;
+        benchmark.script_fetch_time += script_fetch_time;
         benchmark.style_refresh_time += style_time;
         benchmark.layout_time += layout_time;
         benchmark.layout_build_time += layout_time;
@@ -115,6 +117,14 @@ impl BrowserState {
         benchmark.script_mutations = benchmark
             .script_mutations
             .saturating_add(runtime.dom_mutations as usize);
+        benchmark.runtime_timeline.record(
+            benchmark.navigation_started,
+            benchmark.script_executed,
+            benchmark.script_mutations,
+            benchmark.script_time,
+            benchmark.script_fetch_time,
+            runtime.render_requested,
+        );
         benchmark
             .script_errors
             .extend(runtime.errors.iter().cloned());

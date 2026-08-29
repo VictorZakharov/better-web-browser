@@ -2,6 +2,7 @@
 
 mod accessibility;
 mod diagnostics;
+mod dynamic_scripts;
 mod fetch;
 mod interaction;
 mod load;
@@ -11,6 +12,9 @@ mod text;
 mod workers;
 
 use self::accessibility::RendererAccessibility;
+use self::dynamic_scripts::{
+    PendingDynamicScriptFetch, advance_dynamic_script_slice, start_dynamic_script_preloads,
+};
 use self::reporting::{merge_outcome, micros, runtime_report, style_report};
 use self::resources::{
     PendingResourceFetch, discard_resource_preloads, fetch_script_source, start_resource_preloads,
@@ -59,6 +63,7 @@ pub(super) struct DocumentRuntime {
     deferred_network_load: PageLoadReport,
     workers: RendererWorkers,
     executed_async_scripts: HashSet<String>,
+    pending_dynamic_script_fetch: Option<PendingDynamicScriptFetch>,
     pending_resource_preloads: Option<PendingResourceFetch>,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
     accessibility: RendererAccessibility,
@@ -156,6 +161,7 @@ impl DocumentRuntime {
             })));
         }
         let mut outcome = ScriptOutcome::default();
+        let mut script_fetch_time = Duration::ZERO;
         let resources_changed = self
             .finish_ready_resource_preloads(connection)?
             .unwrap_or(false);
@@ -168,7 +174,7 @@ impl DocumentRuntime {
             "checking deferred scripts for {}",
             self.page.source_url
         ))?;
-        self.execute_pending_async_scripts(connection, &mut outcome)?;
+        self.execute_pending_async_scripts(connection, &mut outcome, &mut script_fetch_time)?;
         script_time += async_script_started.elapsed();
         self.start_pending_fetches(connection)?;
         let document_url = self.page.source_url.clone();
@@ -188,6 +194,19 @@ impl DocumentRuntime {
             },
         )?;
 
+        if self.pending_dynamic_script_fetch.is_none()
+            && let Some(runtime) = self.script_runtime.as_ref()
+        {
+            // Dynamic script elements are force-async. Start their network work together, while
+            // retaining one script execution per event-loop task below:
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            self.pending_dynamic_script_fetch = start_dynamic_script_preloads(
+                connection,
+                self.id,
+                runtime.pending_dynamic_script_requests(),
+            )?;
+        }
+
         if let Some(runtime) = self.script_runtime.as_mut() {
             let document = self.id;
             connection.report_renderer_task_stage(format!(
@@ -197,10 +216,16 @@ impl DocumentRuntime {
             let timer_started = Instant::now();
             let callback_limit = max_callbacks.min(MAX_POST_LOAD_TIMER_CALLBACKS as u32) as usize;
             let timed = if runtime.has_pending_dynamic_scripts() {
-                let mut loader = |url: &str, kind, options| {
-                    fetch_script_source(connection, document, url, kind, options)
-                };
-                runtime.advance_time_with_loader(elapsed, callback_limit, Some(&mut loader))
+                advance_dynamic_script_slice(
+                    runtime,
+                    &mut self.pending_dynamic_script_fetch,
+                    connection,
+                    document,
+                    document_root,
+                    elapsed,
+                    callback_limit,
+                    &mut script_fetch_time,
+                )
             } else {
                 let document_url = self.page.source_url.clone();
                 let mut reporter = |stage: &str| {
@@ -271,6 +296,7 @@ impl DocumentRuntime {
         }
         let load = self.text.finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
+            script_fetch_micros: micros(script_fetch_time),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
         });

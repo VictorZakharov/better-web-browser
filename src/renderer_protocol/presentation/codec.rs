@@ -331,6 +331,7 @@ pub(in crate::renderer_protocol) fn encode_load(writer: &mut WireWriter, report:
     writer.u64(report.html_parse_micros);
     writer.u64(report.resource_processing_micros);
     writer.u64(report.script_micros);
+    writer.u64(report.script_fetch_micros);
     writer.u64(report.style_micros);
     writer.u64(report.layout_micros);
     writer.u64(report.text_measure_count);
@@ -354,6 +355,7 @@ pub(in crate::renderer_protocol) fn decode_load(
         html_parse_micros: reader.u64()?,
         resource_processing_micros: reader.u64()?,
         script_micros: reader.u64()?,
+        script_fetch_micros: reader.u64()?,
         style_micros: reader.u64()?,
         layout_micros: reader.u64()?,
         text_measure_count: reader.u64()?,

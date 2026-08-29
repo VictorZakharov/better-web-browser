@@ -5,6 +5,7 @@ mod initialization;
 mod navigation;
 mod options;
 mod renderer_diagnostics;
+mod runtime_timeline;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
@@ -32,6 +33,7 @@ pub(super) struct BenchmarkRun {
     pub(super) html_parse_time: Duration,
     pub(super) resource_processing_time: Duration,
     pub(super) script_time: Duration,
+    pub(super) script_fetch_time: Duration,
     pub(super) style_refresh_time: Duration,
     pub(super) layout_time: Duration,
     pub(super) layout_build_time: Duration,
@@ -70,6 +72,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
     pub(super) script_runtime_stopped: bool,
+    pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
     pub(super) completion_marker: Option<String>,
     pub(super) completion_observed: bool,
     pub(super) finish_scheduled: bool,
@@ -326,6 +329,7 @@ impl BrowserState {
                 "  \"html_parse_ms\": {:.3},\n",
                 "  \"resource_processing_ms\": {:.3},\n",
                 "  \"javascript_ms\": {:.3},\n",
+                "  \"javascript_fetch_wait_ms\": {:.3},\n",
                 "  \"style_refresh_ms\": {:.3},\n",
                 "  \"layout_and_paint_ms\": {:.3},\n",
                 "  \"layout_build_ms\": {:.3},\n",
@@ -380,6 +384,7 @@ impl BrowserState {
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
+                "  \"renderer_runtime_timeline\": {},\n",
                 "  \"diagnostics\": {},\n",
                 "  \"retained_draw_items\": {}\n",
                 "}}\n"
@@ -403,6 +408,7 @@ impl BrowserState {
             benchmark.html_parse_time.as_secs_f64() * 1_000.0,
             benchmark.resource_processing_time.as_secs_f64() * 1_000.0,
             benchmark.script_time.as_secs_f64() * 1_000.0,
+            benchmark.script_fetch_time.as_secs_f64() * 1_000.0,
             benchmark.style_refresh_time.as_secs_f64() * 1_000.0,
             benchmark.layout_time.as_secs_f64() * 1_000.0,
             benchmark.layout_build_time.as_secs_f64() * 1_000.0,
@@ -459,6 +465,7 @@ impl BrowserState {
             script_console,
             script_diagnostics,
             benchmark.script_runtime_stopped,
+            benchmark.runtime_timeline.to_json(),
             diagnostics,
             metrics.retained_draw_items,
         );
