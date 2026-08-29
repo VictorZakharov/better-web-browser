@@ -32,6 +32,11 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
         computed_styles = page.style_for_viewport(style_viewport_width, viewport_height);
         &computed_styles
     };
+    let fullscreen_root = Node::descendants(&page.dom.document).find(|node| node.is_fullscreen());
+    let root = fullscreen_root
+        .or_else(|| page.dom.elements_named("body").next())
+        .or_else(|| page.dom.elements_named("html").next())
+        .unwrap_or_else(|| page.dom.document.clone());
     let mut engine = LayoutEngine {
         page,
         styles,
@@ -53,13 +58,11 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
         },
     };
 
-    let root = page
-        .dom
-        .elements_named("body")
-        .next()
-        .or_else(|| page.dom.elements_named("html").next())
-        .unwrap_or_else(|| page.dom.document.clone());
-    if let Some(body_style) = engine.styles.styles.get(&node_id(&root))
+    if root.is_fullscreen() {
+        // A fullscreen element is painted in the top layer over the default black backdrop.
+        // Selecting it as the layout root also excludes page siblings from display and hit testing.
+        engine.output.background = Color::BLACK;
+    } else if let Some(body_style) = engine.styles.styles.get(&node_id(&root))
         && body_style.background_color.alpha > 0
     {
         engine.output.background = body_style.background_color.composite_over(Color::WHITE);

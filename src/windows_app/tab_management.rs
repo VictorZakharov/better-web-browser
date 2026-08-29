@@ -157,6 +157,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn suspend_active_tab_ui(&mut self) {
+        self.exit_page_fullscreen();
         self.reset_pointer_cursor();
         self.route_renderer_lifecycle(
             better_web_browser::renderer_protocol::DocumentLifecycle::Hidden,

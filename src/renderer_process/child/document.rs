@@ -4,6 +4,7 @@ mod accessibility;
 mod diagnostics;
 mod dynamic_scripts;
 mod fetch;
+mod fullscreen;
 mod interaction;
 mod load;
 mod media_environment;

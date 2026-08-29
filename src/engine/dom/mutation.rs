@@ -44,6 +44,7 @@ impl Node {
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
+                fullscreen: std::cell::Cell::new(false),
             }),
         )
     }
@@ -60,6 +61,7 @@ impl Node {
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
+                fullscreen: std::cell::Cell::new(false),
             }),
         )
     }

@@ -62,6 +62,19 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn EndPaint(window: Hwnd, paint: *const PaintStruct) -> i32;
     pub(in crate::windows_app) fn GetClientRect(window: Hwnd, rectangle: *mut Rect) -> i32;
     pub(in crate::windows_app) fn GetWindowRect(window: Hwnd, rectangle: *mut Rect) -> i32;
+    pub(in crate::windows_app) fn GetWindowPlacement(
+        window: Hwnd,
+        placement: *mut WindowPlacement,
+    ) -> i32;
+    pub(in crate::windows_app) fn SetWindowPlacement(
+        window: Hwnd,
+        placement: *const WindowPlacement,
+    ) -> i32;
+    pub(in crate::windows_app) fn MonitorFromWindow(window: Hwnd, flags: u32) -> Hmonitor;
+    pub(in crate::windows_app) fn GetMonitorInfoW(
+        monitor: Hmonitor,
+        information: *mut MonitorInfo,
+    ) -> i32;
     pub(in crate::windows_app) fn MoveWindow(
         window: Hwnd,
         x: i32,

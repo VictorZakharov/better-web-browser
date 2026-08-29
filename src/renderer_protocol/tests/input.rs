@@ -118,3 +118,52 @@ fn document_input_rejects_stale_sequences_and_unbounded_values() {
         ))
     ));
 }
+
+#[test]
+fn fullscreen_requests_and_responses_round_trip_and_validate_identity() {
+    let document = DocumentId::new(17).unwrap();
+    let request = RendererMessage::FullscreenRequest(FullscreenRequest {
+        document,
+        request_id: 8,
+        action: FullscreenAction::Enter,
+    });
+    let response = BrowserMessage::FullscreenResponse(FullscreenResponse {
+        document,
+        request_id: 8,
+        disposition: FullscreenDisposition::Entered,
+    });
+
+    let mut renderer_bytes = Vec::new();
+    FrameWriter::new(&mut renderer_bytes, session())
+        .send_renderer(&request)
+        .unwrap();
+    assert_eq!(
+        FrameReader::new(Cursor::new(renderer_bytes), session())
+            .read_renderer()
+            .unwrap(),
+        request
+    );
+
+    let mut browser_bytes = Vec::new();
+    FrameWriter::new(&mut browser_bytes, session())
+        .send_browser(&response)
+        .unwrap();
+    assert_eq!(
+        FrameReader::new(Cursor::new(browser_bytes), session())
+            .read_browser()
+            .unwrap(),
+        response
+    );
+
+    let invalid = BrowserMessage::FullscreenResponse(FullscreenResponse {
+        document,
+        request_id: 0,
+        disposition: FullscreenDisposition::Denied,
+    });
+    assert!(matches!(
+        FrameWriter::new(Vec::new(), session()).send_browser(&invalid),
+        Err(ProtocolError::InvalidPayload(
+            "fullscreen response identifier"
+        ))
+    ));
+}

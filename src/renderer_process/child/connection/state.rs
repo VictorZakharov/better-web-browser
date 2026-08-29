@@ -301,6 +301,21 @@ impl super::ChildConnection {
         document: DocumentId,
         outcome: &mut crate::engine::ScriptOutcome,
     ) -> Result<(), String> {
+        for action in outcome.fullscreen_actions.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::FullscreenRequest(
+                    crate::renderer_protocol::FullscreenRequest {
+                        document,
+                        request_id: action.request_id,
+                        action: if action.enter {
+                            crate::renderer_protocol::FullscreenAction::Enter
+                        } else {
+                            crate::renderer_protocol::FullscreenAction::Exit
+                        },
+                    },
+                ))
+                .map_err(|error| error.to_string())?;
+        }
         for assignment in outcome.cookie_updates.drain(..) {
             self.writer
                 .send_renderer(&RendererMessage::CookieMutation(CookieMutation {

@@ -197,6 +197,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::RuntimeUpdate(update) => Some(update.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
+        RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }
         | RendererEvent::Unresponsive
         | RendererEvent::Exited(_) => None,

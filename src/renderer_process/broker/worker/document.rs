@@ -224,6 +224,12 @@ impl Broker {
                     self.emit_event(RendererEvent::PointerCursor(result))?;
                 }
             }
+            RendererMessage::FullscreenRequest(request) => {
+                let request = request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::FullscreenRequested(request))?;
+                }
+            }
             RendererMessage::CookieMutation(mutation) => {
                 if self.active_document != Some(mutation.document) {
                     // Cancellation and pipe delivery can race. A well-formed mutation from the

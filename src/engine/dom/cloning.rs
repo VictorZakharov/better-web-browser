@@ -57,6 +57,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             shadow_root: RefCell::new(None),
             mathml_annotation_xml_integration_point: element
                 .mathml_annotation_xml_integration_point,
+            fullscreen: std::cell::Cell::new(false),
         }),
     };
     let clone = Node::new_in(identity, data);

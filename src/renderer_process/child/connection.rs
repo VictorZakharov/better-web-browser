@@ -234,6 +234,7 @@ impl ChildConnection {
             BrowserMessage::PresentationAcknowledged(acknowledgement) => {
                 self.acknowledge_presentation(acknowledgement)
             }
+            BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
             BrowserMessage::CancelDocument(document) => {
                 self.cancel_document_fetches(document);
                 if self

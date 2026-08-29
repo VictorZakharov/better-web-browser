@@ -12,6 +12,7 @@ mod color_scheme;
 mod document_activation;
 mod document_navigation;
 mod document_state;
+mod fullscreen;
 mod incident_log;
 mod navigation_transaction;
 mod page_controls;

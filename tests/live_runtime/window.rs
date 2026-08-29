@@ -28,7 +28,27 @@ pub(super) fn reload_repeatedly_when_title_contains(
     }
 }
 
+pub(super) fn escape_when_title_contains(
+    child: &std::process::Child,
+    expected: &str,
+    delay: Duration,
+    timeout: Duration,
+) -> Result<(), String> {
+    let window = wait_for_title_until(child.id(), expected, timeout)
+        .ok_or_else(|| format!("hidden browser did not reach title {expected:?} before Escape"))?;
+    thread::sleep(delay);
+    let posted = unsafe { PostMessageW(window as *mut c_void, WM_KEYDOWN, VK_ESCAPE, 0) };
+    (posted != 0)
+        .then_some(())
+        .ok_or_else(|| "could not post Escape to hidden browser".to_string())
+}
+
 fn wait_for_title(process_id: u32, expected: &str, timeout: Duration) -> usize {
+    wait_for_title_until(process_id, expected, timeout)
+        .unwrap_or_else(|| panic!("hidden browser did not reach title {expected:?} before reload"))
+}
+
+fn wait_for_title_until(process_id: u32, expected: &str, timeout: Duration) -> Option<usize> {
     let deadline = Instant::now() + timeout;
     loop {
         if let Some(window) = browser_window(process_id) {
@@ -42,13 +62,12 @@ fn wait_for_title(process_id: u32, expected: &str, timeout: Duration) -> usize {
             };
             let title = String::from_utf16_lossy(&title[..length.max(0) as usize]);
             if title.contains(expected) {
-                return window;
+                return Some(window);
             }
         }
-        assert!(
-            Instant::now() < deadline,
-            "hidden browser did not reach title {expected:?} before reload"
-        );
+        if Instant::now() >= deadline {
+            return None;
+        }
         thread::sleep(Duration::from_millis(25));
     }
 }
@@ -87,6 +106,8 @@ struct WindowSearch {
 }
 
 const WM_COMMAND: u32 = 0x0111;
+const WM_KEYDOWN: u32 = 0x0100;
+const VK_ESCAPE: usize = 0x1b;
 const RELOAD_COMMAND_ID: usize = 1003;
 
 #[link(name = "user32")]

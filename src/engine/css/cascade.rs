@@ -354,6 +354,12 @@ impl StyleSet {
         if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
             style.display = Display::None;
         }
+        super::fullscreen::apply_fullscreen_ua_style(
+            node,
+            &mut style,
+            self.viewport_width,
+            self.viewport_height,
+        );
         style.line_height = style.line_height.max(style.font_size);
         style
     }

@@ -4,8 +4,8 @@ use super::document::{
     FetchResponseHead, PresentedViewport, TransferChunk,
 };
 use super::input::{
-    DocumentInput, NavigationCause, NavigationDisposition, PointerCursorResult,
-    PresentationAcknowledgement,
+    DocumentInput, FullscreenRequest, FullscreenResponse, NavigationCause, NavigationDisposition,
+    PointerCursorResult, PresentationAcknowledgement,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
@@ -156,6 +156,7 @@ pub enum BrowserMessage {
     },
     Input(DocumentInput),
     PresentationAcknowledged(PresentationAcknowledgement),
+    FullscreenResponse(FullscreenResponse),
     CancelDocument(DocumentId),
     Test(TestCommand),
 }
@@ -224,6 +225,7 @@ pub enum RendererMessage {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    FullscreenRequest(FullscreenRequest),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     StateSnapshotApplied(StateSnapshotApplied),

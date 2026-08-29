@@ -78,6 +78,9 @@ pub(super) fn finish_host(
     outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
+    outcome
+        .fullscreen_actions
+        .append(&mut state.pending_fullscreen_actions);
     outcome.render_requested = state.timers.take_render_request();
     outcome.invalidation = state.pending_invalidation.take(outcome.mutation_count);
     outcome

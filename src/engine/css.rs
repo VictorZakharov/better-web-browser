@@ -3,6 +3,7 @@
 mod cascade;
 mod change;
 mod cssom;
+mod fullscreen;
 pub(crate) mod media;
 mod properties;
 mod rule_index;

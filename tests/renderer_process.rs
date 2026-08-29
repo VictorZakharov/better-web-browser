@@ -6,6 +6,8 @@ mod accessibility;
 mod backpressure;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
+#[path = "renderer_process/fullscreen.rs"]
+mod fullscreen;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/presentation.rs"]

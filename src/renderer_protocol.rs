@@ -25,7 +25,8 @@ pub use document::{
     TransferChunk,
 };
 pub use input::{
-    DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
+    DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
+    FullscreenDisposition, FullscreenRequest, FullscreenResponse, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
     PointerCursor, PointerCursorResult, PointerInput, PointerPhase, PresentationAcknowledgement,
     ScrollInput, TextInput,
@@ -50,7 +51,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 4;
-pub const PROTOCOL_MINOR: u16 = 4;
+pub const PROTOCOL_MINOR: u16 = 5;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

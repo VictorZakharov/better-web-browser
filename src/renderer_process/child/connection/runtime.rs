@@ -6,8 +6,9 @@ use crate::renderer_process::child::document::{
     AdvanceResult, DocumentRuntime, LoadResult, RendererTextSystem,
 };
 use crate::renderer_protocol::{
-    DocumentId, DocumentInput, DocumentStart, NavigationCause, NavigationDisposition,
-    PresentationAcknowledgement, RendererMessage, TransferAssembler, TransferChunk,
+    DocumentId, DocumentInput, DocumentStart, FullscreenResponse, NavigationCause,
+    NavigationDisposition, PresentationAcknowledgement, RendererMessage, TransferAssembler,
+    TransferChunk,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
@@ -246,6 +247,40 @@ impl ChildConnection {
                         .map_err(|error| error.to_string())?;
                 }
             }
+            Ok(Err(error)) => {
+                self.send_document_failure(document, error)?;
+                return Ok(());
+            }
+            Err(payload) => {
+                self.send_document_failure(document, panic_detail(payload))?;
+                return Ok(());
+            }
+        }
+        if !self.stopping {
+            self.document = Some(runtime);
+        }
+        Ok(())
+    }
+
+    pub(super) fn fullscreen_response(
+        &mut self,
+        response: FullscreenResponse,
+    ) -> Result<(), String> {
+        let response = response.validate().map_err(|error| error.to_string())?;
+        let document = response.document;
+        let Some(mut runtime) = self.document.take() else {
+            return Ok(());
+        };
+        if runtime.id() != document {
+            self.document = Some(runtime);
+            return Ok(());
+        }
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            runtime.apply_fullscreen_response(response, self)
+        }));
+        match result {
+            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
+            Ok(Ok(None)) => {}
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;
                 return Ok(());

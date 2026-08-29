@@ -163,6 +163,7 @@ pub struct ElementData {
     pub template_contents: RefCell<Option<NodeRef>>,
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,
+    pub fullscreen: Cell<bool>,
 }
 
 #[derive(Debug)]
@@ -251,6 +252,20 @@ impl Node {
         match &self.data {
             NodeData::Element(element) => Some(element),
             _ => None,
+        }
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.element()
+            .is_some_and(|element| element.fullscreen.get())
+    }
+
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        let Some(element) = self.element() else {
+            return;
+        };
+        if element.fullscreen.replace(fullscreen) != fullscreen {
+            self.mark_mutated();
         }
     }
 

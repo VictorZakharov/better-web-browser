@@ -99,6 +99,7 @@ pub enum RendererEvent {
         cause: NavigationCause,
     },
     PointerCursor(PointerCursorResult),
+    FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     Unresponsive,

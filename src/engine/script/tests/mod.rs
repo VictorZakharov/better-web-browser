@@ -24,6 +24,7 @@ mod compatibility;
 mod cssom;
 mod custom_elements;
 mod events;
+mod fullscreen;
 mod intersection_observer;
 mod media_queries;
 mod modules;

@@ -235,7 +235,7 @@ impl DocumentRuntime {
         connection.send_state_mutations(self.id, outcome)
     }
 
-    fn presentation_after_user_input(
+    pub(super) fn presentation_after_user_input(
         &mut self,
         outcome: ScriptOutcome,
         force_accessibility_update: bool,
