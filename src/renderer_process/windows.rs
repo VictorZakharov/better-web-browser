@@ -61,6 +61,22 @@ pub(crate) struct PipeSet {
     pub(crate) browser_output: OwnedHandle,
 }
 
+pub(crate) struct InheritedInputPipe {
+    pub(crate) child_input: OwnedHandle,
+    pub(crate) browser_output: OwnedHandle,
+}
+
+impl InheritedInputPipe {
+    pub(crate) fn create(role: &str) -> Result<Self, String> {
+        let (child_input, browser_output) = create_pipe(&format!("create {role} pipe"))?;
+        clear_inherit(&browser_output)?;
+        Ok(Self {
+            child_input,
+            browser_output,
+        })
+    }
+}
+
 impl PipeSet {
     pub(crate) fn create() -> Result<Self, String> {
         let (child_input, browser_output) = create_pipe("create browser-to-renderer pipe")?;
@@ -139,7 +155,7 @@ fn create_contained_job(memory_limit: usize, role: &str) -> Result<OwnedHandle, 
 
 pub(crate) struct LaunchAttributes {
     list: AttributeList,
-    _handles: Box<[HANDLE; 2]>,
+    _handles: Box<[HANDLE]>,
     _jobs: Box<[HANDLE; 1]>,
     _child_policy: Box<u32>,
     _mitigations: Box<u64>,
@@ -153,7 +169,21 @@ impl LaunchAttributes {
         job: &OwnedHandle,
         sid: &AppContainerSid,
     ) -> Result<Self, String> {
-        let handles = Box::new([raw(child_input), raw(child_output)]);
+        Self::with_inherited(child_input, child_output, &[], job, sid)
+    }
+
+    pub(crate) fn with_inherited(
+        child_input: &OwnedHandle,
+        child_output: &OwnedHandle,
+        additional: &[&OwnedHandle],
+        job: &OwnedHandle,
+        sid: &AppContainerSid,
+    ) -> Result<Self, String> {
+        let mut handles = Vec::with_capacity(2 + additional.len());
+        handles.push(raw(child_input));
+        handles.push(raw(child_output));
+        handles.extend(additional.iter().map(|handle| raw(handle)));
+        let handles = handles.into_boxed_slice();
         let jobs = Box::new([raw(job)]);
         let child_policy = Box::new(PROCESS_CREATION_CHILD_PROCESS_RESTRICTED);
         let mitigations = Box::new(renderer_mitigations());

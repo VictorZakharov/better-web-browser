@@ -1,7 +1,8 @@
 use super::{ContainmentReport, MediaProtocolError, Nonce};
 use crate::limits::{
     MAX_MEDIA_CONTROL_PAYLOAD, MAX_MEDIA_DECODED_FRAME_BYTES, MAX_MEDIA_DECODED_FRAMES,
-    MAX_MEDIA_DECODER_CANDIDATES, MAX_MEDIA_DIMENSION, MAX_MEDIA_ENCODED_BYTES,
+    MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DECODED_SOURCE_BYTES, MAX_MEDIA_DECODER_CANDIDATES,
+    MAX_MEDIA_DIMENSION, MAX_MEDIA_DURATION_100NS, MAX_MEDIA_ENCODED_BYTES,
     MAX_MEDIA_ENCODED_QUEUE_BYTES, MAX_MEDIA_TRACKS, MEDIA_COMMAND_TIMEOUT,
 };
 
@@ -148,6 +149,127 @@ impl MediaCapabilityReport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u16)]
+pub enum MediaCodecFamily {
+    H264 = 1,
+    AacLc = 2,
+}
+
+impl MediaCodecFamily {
+    pub(crate) const fn wire_code(self) -> u16 {
+        self as u16
+    }
+
+    pub(crate) fn from_wire(value: u16) -> Result<Self, MediaProtocolError> {
+        match value {
+            1 => Ok(Self::H264),
+            2 => Ok(Self::AacLc),
+            _ => Err(MediaProtocolError::InvalidPayload("codec family")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MediaDecodeReport {
+    pub encoded_bytes: u64,
+    pub video_codec: MediaCodecFamily,
+    pub audio_codec: MediaCodecFamily,
+    pub source_reader_hresult: i32,
+    pub video_decode_hresult: i32,
+    pub audio_decode_hresult: i32,
+    pub video_width: u32,
+    pub video_height: u32,
+    pub audio_sample_rate: u32,
+    pub audio_channels: u16,
+    pub video_samples: u32,
+    pub audio_samples: u32,
+    pub video_decoded_bytes: u64,
+    pub audio_decoded_bytes: u64,
+    pub video_first_timestamp_100ns: i64,
+    pub video_last_timestamp_100ns: i64,
+    pub audio_first_timestamp_100ns: i64,
+    pub audio_last_timestamp_100ns: i64,
+    pub duration_100ns: u64,
+    pub decode_micros: u64,
+}
+
+impl MediaDecodeReport {
+    pub fn validate(self, limits: MediaLimits) -> Result<(), MediaProtocolError> {
+        limits.validate()?;
+        if self.encoded_bytes == 0 || self.encoded_bytes > limits.max_encoded_bytes {
+            return Err(MediaProtocolError::InvalidPayload("decoded source length"));
+        }
+        if self.video_codec != MediaCodecFamily::H264 || self.audio_codec != MediaCodecFamily::AacLc
+        {
+            return Err(MediaProtocolError::InvalidPayload("decoded codec family"));
+        }
+        if self.source_reader_hresult < 0
+            || self.video_decode_hresult < 0
+            || self.audio_decode_hresult < 0
+        {
+            return Err(MediaProtocolError::InvalidPayload("decode HRESULT"));
+        }
+        if self.video_width == 0
+            || self.video_height == 0
+            || self.video_width > limits.max_dimension
+            || self.video_height > limits.max_dimension
+        {
+            return Err(MediaProtocolError::InvalidPayload(
+                "decoded video dimensions",
+            ));
+        }
+        if self.audio_sample_rate == 0
+            || self.audio_sample_rate > 384_000
+            || self.audio_channels == 0
+            || self.audio_channels > 32
+        {
+            return Err(MediaProtocolError::InvalidPayload("decoded audio format"));
+        }
+        if self.video_samples == 0
+            || self.audio_samples == 0
+            || self.video_samples as usize > MAX_MEDIA_DECODED_SAMPLES
+            || self.audio_samples as usize > MAX_MEDIA_DECODED_SAMPLES
+        {
+            return Err(MediaProtocolError::InvalidPayload("decoded sample count"));
+        }
+        let decoded_bytes = self
+            .video_decoded_bytes
+            .checked_add(self.audio_decoded_bytes)
+            .ok_or(MediaProtocolError::InvalidPayload("decoded byte count"))?;
+        if decoded_bytes == 0 || decoded_bytes > MAX_MEDIA_DECODED_SOURCE_BYTES {
+            return Err(MediaProtocolError::InvalidPayload("decoded byte count"));
+        }
+        if self.duration_100ns == 0 || self.duration_100ns > MAX_MEDIA_DURATION_100NS {
+            return Err(MediaProtocolError::InvalidPayload("decoded duration"));
+        }
+        for (first, last) in [
+            (
+                self.video_first_timestamp_100ns,
+                self.video_last_timestamp_100ns,
+            ),
+            (
+                self.audio_first_timestamp_100ns,
+                self.audio_last_timestamp_100ns,
+            ),
+        ] {
+            if first > last
+                || first.unsigned_abs() > MAX_MEDIA_DURATION_100NS
+                || last.unsigned_abs() > MAX_MEDIA_DURATION_100NS
+            {
+                return Err(MediaProtocolError::InvalidPayload(
+                    "decoded timestamp bounds",
+                ));
+            }
+        }
+        let maximum_decode_micros = u64::from(limits.probe_timeout_millis) * 1_000;
+        if self.decode_micros > maximum_decode_micros {
+            return Err(MediaProtocolError::InvalidPayload("decode duration"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MediaRestrictionReport {
     pub child_launch_denied: bool,
     pub loopback_denied: bool,
@@ -168,10 +290,20 @@ pub enum MediaTestCommand {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BrowserMediaMessage {
-    Hello { nonce: Nonce, limits: MediaLimits },
+    Hello {
+        nonce: Nonce,
+        limits: MediaLimits,
+    },
     Ping(u64),
     Shutdown,
-    Probe { request_id: u64 },
+    Probe {
+        request_id: u64,
+    },
+    DecodeSource {
+        request_id: u64,
+        source_id: u64,
+        encoded_length: u64,
+    },
     Test(MediaTestCommand),
 }
 
@@ -186,6 +318,10 @@ pub enum WorkerMediaMessage {
     Capability {
         request_id: u64,
         report: MediaCapabilityReport,
+    },
+    Decoded {
+        request_id: u64,
+        report: MediaDecodeReport,
     },
     Restrictions(MediaRestrictionReport),
 }

@@ -10,6 +10,8 @@ pub mod renderer_protocol;
 pub mod storage;
 
 #[cfg(target_os = "windows")]
+pub(crate) mod media_data_protocol;
+#[cfg(target_os = "windows")]
 pub mod media_process;
 pub mod media_protocol;
 

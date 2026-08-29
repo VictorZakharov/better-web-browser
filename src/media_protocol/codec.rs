@@ -18,6 +18,8 @@ pub(super) const BROWSER_SHUTDOWN: u16 = 5;
 pub(super) const WORKER_SHUTDOWN_COMPLETE: u16 = 6;
 pub(super) const BROWSER_PROBE: u16 = 7;
 pub(super) const WORKER_CAPABILITY: u16 = 8;
+pub(super) const BROWSER_DECODE_SOURCE: u16 = 9;
+pub(super) const WORKER_DECODED: u16 = 10;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -223,7 +225,12 @@ impl Direction {
         match self {
             Self::Browser => matches!(
                 kind,
-                BROWSER_HELLO | BROWSER_PING | BROWSER_SHUTDOWN | BROWSER_PROBE | BROWSER_TEST
+                BROWSER_HELLO
+                    | BROWSER_PING
+                    | BROWSER_SHUTDOWN
+                    | BROWSER_PROBE
+                    | BROWSER_DECODE_SOURCE
+                    | BROWSER_TEST
             ),
             Self::Worker => matches!(
                 kind,
@@ -231,6 +238,7 @@ impl Direction {
                     | WORKER_PONG
                     | WORKER_SHUTDOWN_COMPLETE
                     | WORKER_CAPABILITY
+                    | WORKER_DECODED
                     | WORKER_RESTRICTIONS
             ),
         }

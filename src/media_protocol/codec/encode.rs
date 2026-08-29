@@ -1,9 +1,10 @@
 use super::wire::{
-    boolean, encode_limits, encode_test, require_nonzero, vec_i32, vec_u16, vec_u64,
+    boolean, encode_limits, encode_test, require_nonzero, vec_i32, vec_i64, vec_u16, vec_u64,
 };
 use super::{
-    BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError,
-    WORKER_CAPABILITY, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE, BROWSER_SHUTDOWN,
+    BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED, WORKER_PONG, WORKER_READY,
+    WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{BrowserMediaMessage, MediaLimits, WorkerMediaMessage};
 
@@ -25,6 +26,22 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             require_nonzero(request_id, "probe request")?;
             vec_u64(&mut payload, request_id);
             BROWSER_PROBE
+        }
+        BrowserMediaMessage::DecodeSource {
+            request_id,
+            source_id,
+            encoded_length,
+        } => {
+            require_nonzero(request_id, "decode request")?;
+            require_nonzero(source_id, "media source")?;
+            require_nonzero(encoded_length, "encoded length")?;
+            if encoded_length > MediaLimits::default().max_encoded_queue_bytes {
+                return Err(MediaProtocolError::InvalidPayload("encoded length"));
+            }
+            vec_u64(&mut payload, request_id);
+            vec_u64(&mut payload, source_id);
+            vec_u64(&mut payload, encoded_length);
+            BROWSER_DECODE_SOURCE
         }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);
@@ -60,6 +77,32 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_u16(&mut payload, report.aac_decoders);
             vec_u64(&mut payload, report.probe_micros);
             WORKER_CAPABILITY
+        }
+        WorkerMediaMessage::Decoded { request_id, report } => {
+            require_nonzero(request_id, "decode request")?;
+            report.validate(MediaLimits::default())?;
+            vec_u64(&mut payload, request_id);
+            vec_u64(&mut payload, report.encoded_bytes);
+            vec_u16(&mut payload, report.video_codec.wire_code());
+            vec_u16(&mut payload, report.audio_codec.wire_code());
+            vec_i32(&mut payload, report.source_reader_hresult);
+            vec_i32(&mut payload, report.video_decode_hresult);
+            vec_i32(&mut payload, report.audio_decode_hresult);
+            super::wire::vec_u32(&mut payload, report.video_width);
+            super::wire::vec_u32(&mut payload, report.video_height);
+            super::wire::vec_u32(&mut payload, report.audio_sample_rate);
+            vec_u16(&mut payload, report.audio_channels);
+            super::wire::vec_u32(&mut payload, report.video_samples);
+            super::wire::vec_u32(&mut payload, report.audio_samples);
+            vec_u64(&mut payload, report.video_decoded_bytes);
+            vec_u64(&mut payload, report.audio_decoded_bytes);
+            vec_i64(&mut payload, report.video_first_timestamp_100ns);
+            vec_i64(&mut payload, report.video_last_timestamp_100ns);
+            vec_i64(&mut payload, report.audio_first_timestamp_100ns);
+            vec_i64(&mut payload, report.audio_last_timestamp_100ns);
+            vec_u64(&mut payload, report.duration_100ns);
+            vec_u64(&mut payload, report.decode_micros);
+            WORKER_DECODED
         }
         WorkerMediaMessage::Restrictions(report) => {
             boolean(&mut payload, report.child_launch_denied);
