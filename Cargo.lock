@@ -93,6 +93,7 @@ dependencies = [
  "unicode-segmentation",
  "url",
  "v8",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

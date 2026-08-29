@@ -140,6 +140,23 @@ pub const RENDERER_UNRESPONSIVE_KILL_TIMEOUT: Duration = Duration::from_secs(12)
 /// first-paint work prematurely.
 pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25);
 
+// Media-process budgets are deliberately independent from page-renderer limits. A later decode
+// slice may reduce these further after measuring real H.264/AAC queues; raising one requires a
+// hostile-media review and an update to ADR 0007.
+pub const MAX_MEDIA_CONTROL_PAYLOAD: usize = 4 * 1024;
+pub const MAX_MEDIA_SESSIONS_PER_TAB: usize = 4;
+pub const MAX_MEDIA_TRACKS: usize = 8;
+pub const MAX_MEDIA_DIMENSION: u32 = 8_192;
+pub const MAX_MEDIA_ENCODED_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_MEDIA_DECODED_FRAME_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_MEDIA_ENCODED_QUEUE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_MEDIA_DECODED_FRAMES: usize = 4;
+pub const MAX_MEDIA_DECODER_CANDIDATES: usize = 64;
+pub const MEDIA_PROCESS_MEMORY_LIMIT_BYTES: usize = 512 * 1024 * 1024;
+pub const MEDIA_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+pub const MEDIA_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+pub const MEDIA_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub const MAX_SCRIPT_NAVIGATIONS: usize = 5;
 
 pub fn bounded_utf8_prefix(input: &str, maximum: usize) -> (&str, bool) {

@@ -6,6 +6,12 @@ mod windows_app;
 #[cfg(target_os = "windows")]
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(result) = better_web_browser::media_process::run_child_from_args(&arguments) {
+        if result.is_err() {
+            std::process::exit(71);
+        }
+        return;
+    }
     if let Some(result) = better_web_browser::renderer_process::run_child_from_args(&arguments) {
         if result.is_err() {
             std::process::exit(70);

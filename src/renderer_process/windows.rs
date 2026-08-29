@@ -1,26 +1,23 @@
+mod app_container;
 mod metrics;
 
-pub(super) use metrics::{
+pub(crate) use app_container::AppContainerSid;
+pub(crate) use metrics::{
     ProcessSample, exit_code, process_exited, process_sample, terminate_job, terminate_job_checked,
     wait_for_process,
 };
 
-use crate::limits::RENDERER_MEMORY_LIMIT_BYTES;
+use crate::limits::{MEDIA_PROCESS_MEMORY_LIMIT_BYTES, RENDERER_MEMORY_LIMIT_BYTES};
 use crate::renderer_protocol::Nonce;
 use std::io;
 use std::mem::size_of;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr::{null, null_mut};
-use windows_sys::Win32::Foundation::{
-    HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
-};
+use windows_sys::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation};
 use windows_sys::Win32::Security::Cryptography::{
     BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
 };
-use windows_sys::Win32::Security::Isolation::{
-    CreateAppContainerProfile, DeleteAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
-};
-use windows_sys::Win32::Security::{FreeSid, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
+use windows_sys::Win32::Security::{SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
 use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
@@ -29,27 +26,18 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
-    CreateMutexW, DeleteProcThreadAttributeList, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-    ReleaseMutex, UpdateProcThreadAttribute, WaitForSingleObject,
+    DeleteProcThreadAttributeList, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, UpdateProcThreadAttribute,
 };
 use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_CHILD_PROCESS_RESTRICTED;
 
-const PROFILE_NAME: &str = "VictorZakharov.Breeze.Renderer";
-const PROFILE_DISPLAY_NAME: &str = "Breeze renderer";
-const PROFILE_DESCRIPTION: &str = "Capability-free renderer process for Breeze";
-const PROFILE_CREATION_MUTEX: &str = "Local\\VictorZakharov.Breeze.Renderer.ProfileCreation";
-const PROFILE_CREATION_TIMEOUT_MS: u32 = 10_000;
-const HRESULT_ALREADY_EXISTS: i32 = 0x8007_00B7_u32 as i32;
-const HRESULT_FILE_NOT_FOUND: i32 = 0x8007_0002_u32 as i32;
-
-pub(super) fn last_error(operation: &str) -> String {
+pub(crate) fn last_error(operation: &str) -> String {
     format!("{operation}: {}", io::Error::last_os_error())
 }
 
-pub(super) fn random_nonce() -> Result<Nonce, String> {
+pub(crate) fn random_nonce() -> Result<Nonce, String> {
     let mut bytes = [0_u8; 32];
     let status = unsafe {
         BCryptGenRandom(
@@ -66,116 +54,15 @@ pub(super) fn random_nonce() -> Result<Nonce, String> {
     }
 }
 
-pub(super) struct AppContainerSid(PSID);
-
-impl AppContainerSid {
-    pub(super) fn create_or_open() -> Result<Self, String> {
-        // Profile creation is per user, while several browser processes may start together. Keep
-        // stale-profile recovery from deleting a profile that another process is still creating.
-        let _profile_creation_lock = ProfileCreationLock::acquire()?;
-        let name = wide(PROFILE_NAME);
-        let display = wide(PROFILE_DISPLAY_NAME);
-        let description = wide(PROFILE_DESCRIPTION);
-        let mut sid = null_mut();
-        let create_result = unsafe {
-            CreateAppContainerProfile(
-                name.as_ptr(),
-                display.as_ptr(),
-                description.as_ptr(),
-                null(),
-                0,
-                &mut sid,
-            )
-        };
-        let result = if create_result == HRESULT_ALREADY_EXISTS {
-            let derived =
-                unsafe { DeriveAppContainerSidFromAppContainerName(name.as_ptr(), &mut sid) };
-            if derived == HRESULT_FILE_NOT_FOUND {
-                // A cancelled install can leave the per-user profile registration without its
-                // backing store. Only this product-owned profile is removed and recreated.
-                unsafe { DeleteAppContainerProfile(name.as_ptr()) };
-                unsafe {
-                    CreateAppContainerProfile(
-                        name.as_ptr(),
-                        display.as_ptr(),
-                        description.as_ptr(),
-                        null(),
-                        0,
-                        &mut sid,
-                    )
-                }
-            } else {
-                derived
-            }
-        } else {
-            create_result
-        };
-        if result < 0 || sid.is_null() {
-            Err(format!(
-                "create renderer AppContainer profile: create HRESULT {create_result:#x}, final HRESULT {result:#x}"
-            ))
-        } else {
-            Ok(Self(sid))
-        }
-    }
-
-    pub(super) fn security_capabilities(&self) -> SECURITY_CAPABILITIES {
-        SECURITY_CAPABILITIES {
-            AppContainerSid: self.0,
-            Capabilities: null_mut(),
-            CapabilityCount: 0,
-            Reserved: 0,
-        }
-    }
-}
-
-struct ProfileCreationLock {
-    handle: OwnedHandle,
-}
-
-impl ProfileCreationLock {
-    fn acquire() -> Result<Self, String> {
-        let name = wide(PROFILE_CREATION_MUTEX);
-        let handle = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
-        if handle.is_null() {
-            return Err(last_error("create renderer profile mutex"));
-        }
-        let handle = unsafe { owned(handle) };
-        match unsafe { WaitForSingleObject(raw(&handle), PROFILE_CREATION_TIMEOUT_MS) } {
-            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Self { handle }),
-            WAIT_TIMEOUT => Err("wait for renderer profile creation: timed out".into()),
-            _ => Err(last_error("wait for renderer profile creation")),
-        }
-    }
-}
-
-impl Drop for ProfileCreationLock {
-    fn drop(&mut self) {
-        unsafe {
-            ReleaseMutex(raw(&self.handle));
-        }
-    }
-}
-
-impl Drop for AppContainerSid {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe {
-                FreeSid(self.0);
-            }
-        }
-    }
-}
-
-pub(super) struct PipeSet {
-    pub(super) child_input: OwnedHandle,
-    pub(super) child_output: OwnedHandle,
-    pub(super) browser_input: OwnedHandle,
-    pub(super) browser_output: OwnedHandle,
+pub(crate) struct PipeSet {
+    pub(crate) child_input: OwnedHandle,
+    pub(crate) child_output: OwnedHandle,
+    pub(crate) browser_input: OwnedHandle,
+    pub(crate) browser_output: OwnedHandle,
 }
 
 impl PipeSet {
-    pub(super) fn create() -> Result<Self, String> {
+    pub(crate) fn create() -> Result<Self, String> {
         let (child_input, browser_output) = create_pipe("create browser-to-renderer pipe")?;
         let (browser_input, child_output) = create_pipe("create renderer-to-browser pipe")?;
         clear_inherit(&browser_output)?;
@@ -213,9 +100,17 @@ fn clear_inherit(handle: &OwnedHandle) -> Result<(), String> {
 }
 
 pub(super) fn create_renderer_job() -> Result<OwnedHandle, String> {
+    create_contained_job(RENDERER_MEMORY_LIMIT_BYTES, "renderer")
+}
+
+pub(crate) fn create_media_job() -> Result<OwnedHandle, String> {
+    create_contained_job(MEDIA_PROCESS_MEMORY_LIMIT_BYTES, "media worker")
+}
+
+fn create_contained_job(memory_limit: usize, role: &str) -> Result<OwnedHandle, String> {
     let handle = unsafe { CreateJobObjectW(null(), null()) };
     if handle.is_null() {
-        return Err(last_error("create renderer Job Object"));
+        return Err(last_error(&format!("create {role} Job Object")));
     }
     // SAFETY: CreateJobObjectW returned a new owned handle.
     let handle = unsafe { owned(handle) };
@@ -225,8 +120,8 @@ pub(super) fn create_renderer_job() -> Result<OwnedHandle, String> {
         | JOB_OBJECT_LIMIT_PROCESS_MEMORY
         | JOB_OBJECT_LIMIT_JOB_MEMORY;
     limits.BasicLimitInformation.ActiveProcessLimit = 1;
-    limits.ProcessMemoryLimit = RENDERER_MEMORY_LIMIT_BYTES;
-    limits.JobMemoryLimit = RENDERER_MEMORY_LIMIT_BYTES;
+    limits.ProcessMemoryLimit = memory_limit;
+    limits.JobMemoryLimit = memory_limit;
     let result = unsafe {
         SetInformationJobObject(
             raw(&handle),
@@ -236,13 +131,13 @@ pub(super) fn create_renderer_job() -> Result<OwnedHandle, String> {
         )
     };
     if result == 0 {
-        Err(last_error("apply renderer Job Object limits"))
+        Err(last_error(&format!("apply {role} Job Object limits")))
     } else {
         Ok(handle)
     }
 }
 
-pub(super) struct LaunchAttributes {
+pub(crate) struct LaunchAttributes {
     list: AttributeList,
     _handles: Box<[HANDLE; 2]>,
     _jobs: Box<[HANDLE; 1]>,
@@ -252,7 +147,7 @@ pub(super) struct LaunchAttributes {
 }
 
 impl LaunchAttributes {
-    pub(super) fn new(
+    pub(crate) fn new(
         child_input: &OwnedHandle,
         child_output: &OwnedHandle,
         job: &OwnedHandle,
@@ -299,7 +194,7 @@ impl LaunchAttributes {
         })
     }
 
-    pub(super) fn as_ptr(&self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+    pub(crate) fn as_ptr(&self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
         self.list.pointer
     }
 }
@@ -377,7 +272,7 @@ fn renderer_mitigations() -> u64 {
         | (0x1 << 56) // prohibit low-integrity image loads
 }
 
-pub(super) fn raw(handle: &OwnedHandle) -> HANDLE {
+pub(crate) fn raw(handle: &OwnedHandle) -> HANDLE {
     handle.as_raw_handle() as HANDLE
 }
 

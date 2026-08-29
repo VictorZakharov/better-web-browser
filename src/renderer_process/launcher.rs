@@ -86,12 +86,12 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
         .map_err(|error| format!("allocate renderer session: {error}"))?;
     let pipes = PipeSet::create()?;
     let job = create_renderer_job()?;
-    let sid = AppContainerSid::create_or_open()?;
+    let sid = AppContainerSid::create_renderer()?;
     let attributes = LaunchAttributes::new(&pipes.child_input, &pipes.child_output, &job, &sid)?;
 
     let application = wide_path(&options.executable);
     let mut command_line = wide(&command_line(options, nonce, session));
-    let environment = renderer_environment(&options.executable)?;
+    let environment = contained_environment(&options.executable)?;
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -202,7 +202,7 @@ fn wide_path(path: &Path) -> Vec<u16> {
     path.as_os_str().encode_wide().chain(Some(0)).collect()
 }
 
-fn renderer_environment(executable: &Path) -> Result<Vec<u16>, String> {
+pub(crate) fn contained_environment(executable: &Path) -> Result<Vec<u16>, String> {
     let mut entries = super::RENDERER_ENVIRONMENT_ALLOWLIST
         .iter()
         .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_string(), value)))
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn renderer_environment_is_allowlisted_and_double_terminated() {
         let executable = std::env::current_exe().unwrap();
-        let block = renderer_environment(&executable).unwrap();
+        let block = contained_environment(&executable).unwrap();
         assert!(block.ends_with(&[0, 0]));
         for entry in block[..block.len() - 1]
             .split(|unit| *unit == 0)
