@@ -144,6 +144,7 @@ pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25
 // slice may reduce these further after measuring real H.264/AAC queues; raising one requires a
 // hostile-media review and an update to ADR 0007.
 pub const MAX_MEDIA_CONTROL_PAYLOAD: usize = 4 * 1024;
+pub const MAX_MEDIA_DATA_CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_MEDIA_SESSIONS_PER_TAB: usize = 4;
 pub const MAX_MEDIA_TRACKS: usize = 8;
 pub const MAX_MEDIA_DIMENSION: u32 = 8_192;
@@ -151,6 +152,11 @@ pub const MAX_MEDIA_ENCODED_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_MEDIA_DECODED_FRAME_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_MEDIA_ENCODED_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_MEDIA_DECODED_FRAMES: usize = 4;
+/// Decoded samples are consumed immediately, but cumulative counters are still bounded so hostile
+/// inputs cannot keep a worker decoding an effectively infinite timeline.
+pub const MAX_MEDIA_DECODED_SAMPLES: usize = 16_384;
+pub const MAX_MEDIA_DECODED_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_MEDIA_DURATION_100NS: u64 = 60 * 60 * 10_000_000;
 pub const MAX_MEDIA_DECODER_CANDIDATES: usize = 64;
 pub const MEDIA_PROCESS_MEMORY_LIMIT_BYTES: usize = 512 * 1024 * 1024;
 pub const MEDIA_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);

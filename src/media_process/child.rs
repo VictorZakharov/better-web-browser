@@ -1,5 +1,6 @@
 use super::backend;
 use super::launcher::MediaStartupFault;
+use crate::media_data_protocol::{MediaDataReader, MediaSourceId};
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MEDIA_HEADER_LENGTH, MEDIA_MAGIC, MEDIA_PROTOCOL_MAJOR,
     MEDIA_PROTOCOL_MINOR, MediaFrameReader, MediaFrameWriter, MediaLimits, MediaRestrictionReport,
@@ -29,12 +30,22 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
         return Err("media IPC standard handles are invalid".into());
     }
+    let data_handle = options.data_handle as HANDLE;
+    if !valid_handle(data_handle) {
+        return Err("media data handle is invalid".into());
+    }
     let input = unsafe { File::from_raw_handle(input_handle as RawHandle) };
     let output = unsafe { File::from_raw_handle(output_handle as RawHandle) };
-    run_protocol(input, output, options)
+    let data_input = unsafe { File::from_raw_handle(data_handle as RawHandle) };
+    run_protocol(input, output, data_input, options)
 }
 
-fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), String> {
+fn run_protocol(
+    input: File,
+    output: File,
+    data_input: File,
+    options: ChildOptions,
+) -> Result<(), String> {
     if options.fault == Some(MediaStartupFault::Silent) {
         std::thread::sleep(Duration::from_secs(60));
         return Ok(());
@@ -96,15 +107,24 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
             containment: containment_report()?,
         })
         .map_err(|error| error.to_string())?;
-    command_loop(&mut reader, &mut writer, limits, options.test_mode)
+    let mut data_reader = MediaDataReader::new(data_input, options.session, options.nonce);
+    command_loop(
+        &mut reader,
+        &mut writer,
+        &mut data_reader,
+        limits,
+        options.test_mode,
+    )
 }
 
 fn command_loop(
     reader: &mut MediaFrameReader<File>,
     writer: &mut MediaFrameWriter<File>,
+    data_reader: &mut MediaDataReader<File>,
     limits: MediaLimits,
     test_mode: bool,
 ) -> Result<(), String> {
+    let mut last_source_id = 0_u64;
     loop {
         match reader
             .read_browser()
@@ -123,6 +143,34 @@ fn command_loop(
                 let report = backend::probe(limits);
                 writer
                     .send_worker(&WorkerMediaMessage::Capability { request_id, report })
+                    .map_err(|error| error.to_string())?;
+            }
+            BrowserMediaMessage::DecodeSource {
+                request_id,
+                source_id,
+                encoded_length,
+            } => {
+                let expected_source_id = last_source_id
+                    .checked_add(1)
+                    .ok_or_else(|| "media source generation exhausted".to_string())?;
+                if source_id != expected_source_id {
+                    return Err(format!(
+                        "stale media source generation {source_id}; expected {expected_source_id}"
+                    ));
+                }
+                last_source_id = source_id;
+                // This slice adapts a complete source to a seekable in-memory IMFByteStream. Keep
+                // admission within the resident encoded-queue budget until streaming arrives.
+                if encoded_length > limits.max_encoded_queue_bytes {
+                    return Err("declared media source exceeds resident worker limits".into());
+                }
+                let source = MediaSourceId::new(source_id).map_err(|error| error.to_string())?;
+                let bytes = data_reader
+                    .read_source(source, encoded_length)
+                    .map_err(|error| format!("read encoded media source: {error}"))?;
+                let report = backend::decode(&bytes, limits)?;
+                writer
+                    .send_worker(&WorkerMediaMessage::Decoded { request_id, report })
                     .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {
@@ -288,6 +336,7 @@ use std::mem::size_of;
 struct ChildOptions {
     nonce: Nonce,
     session: MediaSessionId,
+    data_handle: usize,
     test_mode: bool,
     fault: Option<MediaStartupFault>,
 }
@@ -307,6 +356,12 @@ impl ChildOptions {
             .parse::<u64>()
             .map_err(|_| "--media-session requires an integer".to_string())
             .and_then(|value| MediaSessionId::new(value).map_err(|error| error.to_string()))?;
+        let data_handle = value("--media-data-handle")?
+            .parse::<usize>()
+            .map_err(|_| "--media-data-handle requires an integer".to_string())?;
+        if data_handle == 0 {
+            return Err("--media-data-handle requires a nonzero handle".into());
+        }
         let fault = arguments
             .iter()
             .any(|argument| argument == "--media-startup-fault")
@@ -324,6 +379,7 @@ impl ChildOptions {
         Ok(Self {
             nonce,
             session,
+            data_handle,
             test_mode: arguments
                 .iter()
                 .any(|argument| argument == "--media-test-mode"),

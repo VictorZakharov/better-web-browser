@@ -19,6 +19,13 @@ fn browser_and_worker_messages_round_trip() {
     browser_writer
         .send_browser(&BrowserMediaMessage::Probe { request_id: 11 })
         .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::DecodeSource {
+            request_id: 12,
+            source_id: 4,
+            encoded_length: 13_932,
+        })
+        .unwrap();
     let mut browser_reader = MediaFrameReader::new(Cursor::new(browser_bytes), session(9));
     assert_eq!(
         browser_reader.read_browser().unwrap(),
@@ -30,6 +37,14 @@ fn browser_and_worker_messages_round_trip() {
     assert_eq!(
         browser_reader.read_browser().unwrap(),
         BrowserMediaMessage::Probe { request_id: 11 }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::DecodeSource {
+            request_id: 12,
+            source_id: 4,
+            encoded_length: 13_932,
+        }
     );
 
     let report = MediaCapabilityReport {
@@ -54,6 +69,45 @@ fn browser_and_worker_messages_round_trip() {
         WorkerMediaMessage::Capability {
             request_id: 11,
             report
+        }
+    );
+
+    let decoded = MediaDecodeReport {
+        encoded_bytes: 13_932,
+        video_codec: MediaCodecFamily::H264,
+        audio_codec: MediaCodecFamily::AacLc,
+        source_reader_hresult: 0,
+        video_decode_hresult: 0,
+        audio_decode_hresult: 0,
+        video_width: 320,
+        video_height: 240,
+        audio_sample_rate: 44_100,
+        audio_channels: 2,
+        video_samples: 31,
+        audio_samples: 44,
+        video_decoded_bytes: 3_571_200,
+        audio_decoded_bytes: 176_400,
+        video_first_timestamp_100ns: 0,
+        video_last_timestamp_100ns: 10_000_000,
+        audio_first_timestamp_100ns: 0,
+        audio_last_timestamp_100ns: 10_000_000,
+        duration_100ns: 10_292_000,
+        decode_micros: 2_500,
+    };
+    let mut worker_bytes = Vec::new();
+    MediaFrameWriter::new(&mut worker_bytes, session(9))
+        .send_worker(&WorkerMediaMessage::Decoded {
+            request_id: 12,
+            report: decoded,
+        })
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(worker_bytes), session(9))
+            .read_worker()
+            .unwrap(),
+        WorkerMediaMessage::Decoded {
+            request_id: 12,
+            report: decoded,
         }
     );
 }
@@ -108,6 +162,30 @@ fn media_limits_and_capabilities_fail_closed() {
         probe_micros: 1,
     };
     assert!(impossible_report.validate(MediaLimits::default()).is_err());
+
+    let impossible_decode = MediaDecodeReport {
+        encoded_bytes: 1,
+        video_codec: MediaCodecFamily::H264,
+        audio_codec: MediaCodecFamily::AacLc,
+        source_reader_hresult: 0,
+        video_decode_hresult: 0,
+        audio_decode_hresult: 0,
+        video_width: 0,
+        video_height: 240,
+        audio_sample_rate: 44_100,
+        audio_channels: 2,
+        video_samples: 1,
+        audio_samples: 1,
+        video_decoded_bytes: 1,
+        audio_decoded_bytes: 1,
+        video_first_timestamp_100ns: 0,
+        video_last_timestamp_100ns: 0,
+        audio_first_timestamp_100ns: 0,
+        audio_last_timestamp_100ns: 0,
+        duration_100ns: 1,
+        decode_micros: 1,
+    };
+    assert!(impossible_decode.validate(MediaLimits::default()).is_err());
 }
 
 #[test]

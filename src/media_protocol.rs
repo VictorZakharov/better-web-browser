@@ -9,8 +9,8 @@ mod types;
 
 pub use codec::{MediaFrameReader, MediaFrameWriter, MediaProtocolError};
 pub use types::{
-    BrowserMediaMessage, MediaCapabilityReport, MediaLimits, MediaRestrictionReport,
-    MediaSessionId, MediaTestCommand, WorkerMediaMessage,
+    BrowserMediaMessage, MediaCapabilityReport, MediaCodecFamily, MediaDecodeReport, MediaLimits,
+    MediaRestrictionReport, MediaSessionId, MediaTestCommand, WorkerMediaMessage,
 };
 
 pub use crate::renderer_protocol::{ContainmentReport, Nonce};

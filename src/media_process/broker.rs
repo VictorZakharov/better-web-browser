@@ -1,8 +1,9 @@
+mod testing;
+
 use super::launcher::{MediaLaunchOptions, launch};
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaFrameReader,
-    MediaFrameWriter, MediaLimits, MediaProtocolError, MediaRestrictionReport, MediaTestCommand,
-    WorkerMediaMessage,
+    MediaFrameWriter, MediaLimits, MediaProtocolError, WorkerMediaMessage,
 };
 use crate::renderer_process::windows::{
     exit_code, process_sample, terminate_job, wait_for_process,
@@ -49,12 +50,14 @@ type Incoming = Receiver<Result<WorkerMediaMessage, MediaProtocolError>>;
 /// must not enqueue an unbounded stream of media control work while a worker is unavailable.
 pub struct MediaSession {
     writer: MediaFrameWriter<File>,
+    data_output: File,
     incoming: Incoming,
     reader: Option<JoinHandle<()>>,
     process: OwnedHandle,
     job: OwnedHandle,
     process_id: u32,
     session_id: u64,
+    nonce: crate::media_protocol::Nonce,
     limits: MediaLimits,
     containment: ContainmentReport,
     command_timeout: Duration,
@@ -62,6 +65,7 @@ pub struct MediaSession {
     started: Instant,
     last_progress: Instant,
     next_request: u64,
+    next_source: u64,
     state: MediaWorkerState,
     capability: Option<MediaCapabilityReport>,
     exit_code: Option<u32>,
@@ -110,12 +114,14 @@ impl MediaSession {
         let now = Instant::now();
         Ok(Self {
             writer,
+            data_output: launched.browser_data_output,
             incoming,
             reader: Some(reader),
             process: launched.process,
             job: launched.job,
             process_id: launched.process_id,
             session_id: session.get(),
+            nonce,
             limits,
             containment,
             command_timeout: options.command_timeout,
@@ -123,6 +129,7 @@ impl MediaSession {
             started: now,
             last_progress: now,
             next_request: 1,
+            next_source: 1,
             state: MediaWorkerState::Running,
             capability: None,
             exit_code: None,
@@ -160,64 +167,6 @@ impl MediaSession {
         match self.receive("ping", self.command_timeout)? {
             WorkerMediaMessage::Pong(actual) if actual == token => Ok(()),
             _ => self.protocol_failure("media worker returned the wrong ping response"),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn probe_restrictions(
-        &mut self,
-        loopback_port: u16,
-    ) -> Result<MediaRestrictionReport, String> {
-        self.require_test_mode()?;
-        self.send(
-            BrowserMediaMessage::Test(MediaTestCommand::ProbeRestrictions { loopback_port }),
-            "restriction probe",
-        )?;
-        match self.receive("restriction probe", self.command_timeout)? {
-            WorkerMediaMessage::Restrictions(report) => Ok(report),
-            _ => self.protocol_failure("media worker returned the wrong restriction response"),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn inject_failure(&mut self, command: MediaTestCommand) -> Result<(), String> {
-        self.require_test_mode()?;
-        if matches!(command, MediaTestCommand::ProbeRestrictions { .. }) {
-            return Err("use probe_restrictions for restriction probes".into());
-        }
-        self.send(BrowserMediaMessage::Test(command), "failure injection")?;
-        match self.incoming.recv_timeout(self.command_timeout) {
-            Ok(Ok(message)) => self.protocol_failure(&format!(
-                "failure injection unexpectedly returned {message:?}"
-            )),
-            Ok(Err(error)) => {
-                self.mark_exited(
-                    format!("media IPC failed after injected fault: {error}"),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                self.mark_exited(
-                    "media worker exited after injected fault".into(),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) if command == MediaTestCommand::Hang => {
-                self.mark_exited(
-                    "media worker exceeded its command timeout".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                self.mark_exited(
-                    "media worker did not surface its injected failure".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Err(self.exit_reason.clone().unwrap_or_default())
-            }
         }
     }
 
@@ -276,6 +225,14 @@ impl MediaSession {
         Ok(())
     }
 
+    fn allocate_request(&mut self) -> Result<u64, String> {
+        let request_id = self.next_request;
+        self.next_request = request_id
+            .checked_add(1)
+            .ok_or_else(|| "media request identity exhausted".to_string())?;
+        Ok(request_id)
+    }
+
     fn receive(
         &mut self,
         operation: &str,
@@ -306,12 +263,6 @@ impl MediaSession {
     fn protocol_failure<T>(&mut self, reason: &str) -> Result<T, String> {
         self.mark_exited(reason.into(), MEDIA_EXIT_PROTOCOL);
         Err(reason.into())
-    }
-
-    fn require_test_mode(&self) -> Result<(), String> {
-        self.test_mode
-            .then_some(())
-            .ok_or_else(|| "media test command denied outside test mode".into())
     }
 
     fn mark_exited(&mut self, reason: String, code: u32) {

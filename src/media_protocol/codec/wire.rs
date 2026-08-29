@@ -100,6 +100,10 @@ impl<'a> Cursor<'a> {
         Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
 
+    pub(super) fn i64(&mut self) -> Result<i64, MediaProtocolError> {
+        Ok(i64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+
     pub(super) fn u64(&mut self) -> Result<u64, MediaProtocolError> {
         Ok(get_u64(self.take(8)?))
     }
@@ -138,6 +142,9 @@ pub(super) fn vec_u32(output: &mut Vec<u8>, value: u32) {
     output.extend_from_slice(&value.to_le_bytes());
 }
 pub(super) fn vec_i32(output: &mut Vec<u8>, value: i32) {
+    output.extend_from_slice(&value.to_le_bytes());
+}
+pub(super) fn vec_i64(output: &mut Vec<u8>, value: i64) {
     output.extend_from_slice(&value.to_le_bytes());
 }
 pub(super) fn vec_u64(output: &mut Vec<u8>, value: u64) {
