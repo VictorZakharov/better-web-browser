@@ -3,6 +3,7 @@ use crate::engine::script::host_state::HostState;
 use crate::engine::script::worker_host::WorkerHostState;
 use std::cell::RefCell;
 use std::rc::Weak;
+use std::time::Instant;
 
 pub(in crate::engine::script) enum HostBridge {
     Document(Weak<RefCell<HostState>>),
@@ -34,6 +35,28 @@ impl HostBridge {
                     &mut host.borrow_mut(),
                 )
             }
+        }
+    }
+
+    fn profile_start(&self) -> Option<Instant> {
+        match self {
+            Self::Document(host) => host
+                .upgrade()
+                .and_then(|host| host.borrow().host_call_profile.start()),
+            Self::Worker(_) => None,
+        }
+    }
+
+    fn profile_bridge(&self, operation: &str, started: Option<Instant>) {
+        let Some(started) = started else {
+            return;
+        };
+        if let Self::Document(host) = self
+            && let Some(host) = host.upgrade()
+        {
+            host.borrow_mut()
+                .host_call_profile
+                .record(&format!("bridge::{operation}"), Some(started));
         }
     }
 }
@@ -86,16 +109,6 @@ fn host_call_callback(
         return_value.set(v8::undefined(scope).into());
         return;
     }
-    let mut values = Vec::with_capacity(arguments.length() as usize);
-    for index in 0..arguments.length() {
-        match value_from_v8(scope, arguments.get(index)) {
-            Ok(value) => values.push(value),
-            Err(error) => {
-                throw_error(scope, error);
-                return;
-            }
-        }
-    }
     let Some(bridge) = scope.get_current_context().get_slot::<HostBridge>() else {
         throw_error(
             scope,
@@ -106,10 +119,22 @@ fn host_call_callback(
         );
         return;
     };
-    match bridge
+    let bridge_started = bridge.profile_start();
+    let mut values = Vec::with_capacity(arguments.length() as usize);
+    for index in 0..arguments.length() {
+        match value_from_v8(scope, arguments.get(index)) {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                throw_error(scope, error);
+                return;
+            }
+        }
+    }
+    let result = bridge
         .dispatch(&values)
-        .and_then(|value| value_to_v8(scope, &value))
-    {
+        .and_then(|value| value_to_v8(scope, &value));
+    bridge.profile_bridge(&operation, bridge_started);
+    match result {
         Ok(value) => return_value.set(value),
         Err(error) => throw_error(scope, error),
     }
@@ -196,6 +221,18 @@ pub(super) fn value_to_v8<'s>(
                 }
             }
             array.into()
+        }
+        JsValue::Object(entries) => {
+            let object = v8::Object::new(scope);
+            for (name, value) in entries {
+                let name = v8::String::new(scope, name)
+                    .ok_or_else(|| allocation_error("object property name"))?;
+                let value = value_to_v8(scope, value)?;
+                if !object.set(scope, name.into(), value).unwrap_or(false) {
+                    return Err(allocation_error("object property"));
+                }
+            }
+            object.into()
         }
     })
 }

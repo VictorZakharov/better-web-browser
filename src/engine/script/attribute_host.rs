@@ -41,7 +41,7 @@ pub(super) fn attribute_host_call(
                     .is_some_and(|node| node.attr_ns(optional(&namespace), &local_name).is_some()),
             )
         }
-        "attrRecords" => js_string(attribute_records(state, argument_id(args, 1))),
+        "attrRecords" => attribute_records(state, argument_id(args, 1)),
         _ => return Ok(None),
     };
     Ok(Some(value))
@@ -106,26 +106,49 @@ pub(super) fn remove_attribute_ns(args: &[JsValue], state: &mut HostState) -> Js
     Ok(JsValue::from(changed))
 }
 
-fn attribute_records(state: &HostState, id: u32) -> String {
-    let records = state
-        .node(id)
-        .map(|node| {
-            node.attributes()
-                .iter()
-                .map(|attribute| {
-                    let namespace = attribute.name.ns.as_ref();
-                    serde_json::json!({
-                        "namespace": (!namespace.is_empty()).then_some(namespace),
-                        "prefix": attribute.name.prefix.as_ref().map(ToString::to_string),
-                        "localName": attribute.name.local.as_ref(),
-                        "qualifiedName": attribute_qualified_name(attribute),
-                        "value": attribute.value.as_ref(),
+fn attribute_records(state: &HostState, id: u32) -> JsValue {
+    JsValue::Array(
+        state
+            .node(id)
+            .map(|node| {
+                node.attributes()
+                    .iter()
+                    .map(|attribute| {
+                        let namespace = attribute.name.ns.as_ref();
+                        JsValue::Object(vec![
+                            (
+                                "namespace".into(),
+                                if namespace.is_empty() {
+                                    JsValue::null()
+                                } else {
+                                    js_string(namespace.to_string())
+                                },
+                            ),
+                            (
+                                "prefix".into(),
+                                attribute
+                                    .name
+                                    .prefix
+                                    .as_ref()
+                                    .map_or_else(JsValue::null, |prefix| {
+                                        js_string(prefix.to_string())
+                                    }),
+                            ),
+                            (
+                                "localName".into(),
+                                js_string(attribute.name.local.to_string()),
+                            ),
+                            (
+                                "qualifiedName".into(),
+                                js_string(attribute_qualified_name(attribute)),
+                            ),
+                            ("value".into(), js_string(attribute.value.to_string())),
+                        ])
                     })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    serde_json::to_string(&records).unwrap_or_else(|_| "[]".to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+    )
 }
 
 fn attribute_qualified_name(attribute: &html5ever::Attribute) -> String {

@@ -19,13 +19,12 @@
                 for (const sheet of this.sheets) if (!next.has(sheet)) sheet.__adopters.delete(root);
                 for (const sheet of next) sheet.__adopters.add(root);
                 this.sheets = next;
-                host('adoptedStyleSheetsSet', root.__id, JSON.stringify(
-                    active.filter(sheet => !sheet.disabled).map(sheet => ({
-                        baseUrl: sheet.__baseUrl,
-                        media: sheet.media.mediaText,
-                        source: sheet.__serialize()
-                    }))
-                ));
+                host('adoptedStyleSheetsSet', root.__id,
+                    active.filter(sheet => !sheet.disabled).map(sheet => [
+                        sheet.__baseUrl,
+                        sheet.media.mediaText,
+                        sheet.__serialize()
+                    ]));
             }
         };
         const mutate = (name, argumentsList, validateFrom = 0) => {

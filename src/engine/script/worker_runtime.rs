@@ -126,8 +126,7 @@ impl WorkerRuntime {
                 })
             };
             let Some(timer_id) = timer_id else { break };
-            let invocation = format!("__runTimer({timer_id});");
-            if let Err(error) = self.context.eval(Source::from_bytes(&invocation)) {
+            if let Err(error) = self.context.call_global("__runTimer", &[timer_id.into()]) {
                 outcome
                     .errors
                     .push(format!("Worker timer {timer_id}: {error}"));

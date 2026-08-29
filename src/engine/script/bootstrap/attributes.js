@@ -47,7 +47,7 @@
         name = String(name);
         return usesHtmlAttributeNames(element) ? name.toLowerCase() : name;
     };
-    const attributeRecords = element => JSON.parse(host('attrRecords', element.__id));
+    const attributeRecords = element => host('attrRecords', element.__id);
     const cacheForAttributes = element => {
         let state = attributeCollections.get(element);
         if (!state) {
