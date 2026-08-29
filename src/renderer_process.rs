@@ -2,8 +2,8 @@
 
 mod broker;
 mod child;
-mod launcher;
-mod windows;
+pub(crate) mod launcher;
+pub(crate) mod windows;
 
 pub use broker::{
     FetchResponseSink, RendererCrashSurface, RendererEvent, RendererExit, RendererExitReason,
@@ -40,7 +40,7 @@ const RENDERER_ENVIRONMENT_ALLOWLIST: &[&str] = &[
     "WINDIR",
 ];
 
-fn renderer_environment_name_allowed(name: &str) -> bool {
+pub(crate) fn renderer_environment_name_allowed(name: &str) -> bool {
     RENDERER_ENVIRONMENT_ALLOWLIST
         .iter()
         .any(|allowed| name.eq_ignore_ascii_case(allowed))

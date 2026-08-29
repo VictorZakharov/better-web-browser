@@ -29,6 +29,10 @@ swash = { version = "0.2.10", default-features = false, features = ["std", "scal
 unicode-bidi = "0.3.18"
 unicode-script = "0.5.8"
 unicode-segmentation = "1.13.3"
+windows = { version = "0.62.2", features = [
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+] }
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

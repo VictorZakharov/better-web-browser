@@ -12,3 +12,4 @@ must distinguish the target invariant from the current migration state.
 | [0004](0004-browser-state-and-fetch-broker.md) | Accepted and implemented | Keep persistent state and the streaming Fetch authority in the browser process |
 | [0005](0005-boa-runtime-web-api-evaluation.md) | Superseded by 0006 | Keep Web API policy in Breeze; the evaluated `boa_runtime` dependency was not adopted |
 | [0006](0006-v8-engine-selection.md) | Accepted and implemented | Replace Boa with V8 while preserving Breeze-owned Web API policy and renderer containment |
+| [0007](0007-restricted-media-process.md) | Accepted; boundary and capability probe implemented | Keep hostile media parsing, decoding, timing, and audio outside browser and page-renderer processes |

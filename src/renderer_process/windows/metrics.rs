@@ -9,15 +9,15 @@ use windows_sys::Win32::System::Threading::{
 };
 
 #[derive(Clone, Copy, Debug, Default)]
-pub(in crate::renderer_process) struct ProcessSample {
-    pub(in crate::renderer_process) working_set: usize,
-    pub(in crate::renderer_process) private_memory: usize,
-    pub(in crate::renderer_process) peak_working_set: usize,
-    pub(in crate::renderer_process) cpu_ticks: u64,
-    pub(in crate::renderer_process) handle_count: u32,
+pub(crate) struct ProcessSample {
+    pub(crate) working_set: usize,
+    pub(crate) private_memory: usize,
+    pub(crate) peak_working_set: usize,
+    pub(crate) cpu_ticks: u64,
+    pub(crate) handle_count: u32,
 }
 
-pub(in crate::renderer_process) fn process_sample(process: &OwnedHandle) -> ProcessSample {
+pub(crate) fn process_sample(process: &OwnedHandle) -> ProcessSample {
     let mut memory = PROCESS_MEMORY_COUNTERS_EX {
         cb: size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
         ..Default::default()
@@ -61,33 +61,27 @@ pub(in crate::renderer_process) fn process_sample(process: &OwnedHandle) -> Proc
     }
 }
 
-pub(in crate::renderer_process) fn process_exited(process: &OwnedHandle) -> bool {
+pub(crate) fn process_exited(process: &OwnedHandle) -> bool {
     (unsafe { WaitForSingleObject(raw(process), 0) })
         == windows_sys::Win32::Foundation::WAIT_OBJECT_0
 }
 
-pub(in crate::renderer_process) fn wait_for_process(
-    process: &OwnedHandle,
-    timeout: std::time::Duration,
-) -> bool {
+pub(crate) fn wait_for_process(process: &OwnedHandle, timeout: std::time::Duration) -> bool {
     let millis = timeout.as_millis().min(u32::MAX as u128) as u32;
     (unsafe { WaitForSingleObject(raw(process), millis) })
         == windows_sys::Win32::Foundation::WAIT_OBJECT_0
 }
 
-pub(in crate::renderer_process) fn exit_code(process: &OwnedHandle) -> Option<u32> {
+pub(crate) fn exit_code(process: &OwnedHandle) -> Option<u32> {
     let mut code = 0_u32;
     (unsafe { GetExitCodeProcess(raw(process), &mut code) } != 0).then_some(code)
 }
 
-pub(in crate::renderer_process) fn terminate_job(job: &OwnedHandle, code: u32) {
+pub(crate) fn terminate_job(job: &OwnedHandle, code: u32) {
     let _ = terminate_job_checked(job, code);
 }
 
-pub(in crate::renderer_process) fn terminate_job_checked(
-    job: &OwnedHandle,
-    code: u32,
-) -> std::io::Result<()> {
+pub(crate) fn terminate_job_checked(job: &OwnedHandle, code: u32) -> std::io::Result<()> {
     let result =
         unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(raw(job), code) };
     if result == 0 {
