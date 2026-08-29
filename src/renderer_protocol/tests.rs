@@ -246,6 +246,11 @@ fn state_and_stream_messages_round_trip() {
                 },
             },
         }),
+        RendererMessage::StateSnapshotApplied(StateSnapshotApplied {
+            document,
+            kind: StateSnapshotKind::LocalStorage,
+            version: 8,
+        }),
     ];
     let mut bytes = Vec::new();
     let mut writer = FrameWriter::new(&mut bytes, session());

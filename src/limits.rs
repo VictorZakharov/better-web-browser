@@ -94,7 +94,11 @@ pub const MAX_PENDING_RENDERER_INPUTS: usize = MAX_QUEUED_BROWSER_COMMANDS;
 pub const MAX_QUEUED_RENDERER_IPC_MESSAGES: usize = 8;
 pub const MAX_QUEUED_RENDERER_EVENTS: usize = 256;
 pub const MAX_QUEUED_RENDERER_FETCH_BATCHES: usize = 1;
+/// Ordinary page commands retained while a synchronous renderer fetch waits for the browser.
 pub const MAX_DEFERRED_RENDERER_MESSAGES: usize = 64;
+/// Reserved atomic transfer capacity for the one browser-authoritative state snapshot allowed in
+/// flight. Its payload remains bounded independently by the per-origin entry and byte quotas.
+pub const MAX_DEFERRED_RENDERER_STATE_MESSAGES: usize = MAX_STORAGE_ENTRIES_PER_ORIGIN + 2;
 /// Maximum validated immutable presentation retained by the browser for one revision.
 pub const MAX_RENDERER_PRESENTATION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_RENDERER_DIAGNOSTIC_BYTES: usize = 16 * 1024;

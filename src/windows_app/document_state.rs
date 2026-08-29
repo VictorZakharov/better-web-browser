@@ -72,8 +72,16 @@ impl BrowserState {
                 self.session_storage.apply(&document_url, &request.mutation)
             }
         };
-        if let Err(error) = result {
-            self.status_text = format!("Web Storage update failed: {error}");
+        match result {
+            Ok(_) => {
+                // Both sides applied the same validated operation at the same version. Echoing a
+                // full origin snapshot here is redundant and can turn a mutation burst into
+                // megabytes of correction traffic. Only rejection requires authoritative repair.
+                return Ok(());
+            }
+            Err(error) => {
+                self.status_text = format!("Web Storage update failed: {error}");
+            }
         }
         let snapshot = match request.mutation.area {
             StorageAreaKind::Local => self.local_storage.snapshot(&document_url),

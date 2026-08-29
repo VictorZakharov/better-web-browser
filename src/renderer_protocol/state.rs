@@ -83,6 +83,31 @@ pub struct StorageSnapshotEnd {
     pub version: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateSnapshotKind {
+    Cookie,
+    LocalStorage,
+    SessionStorage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StateSnapshotApplied {
+    pub document: DocumentId,
+    pub kind: StateSnapshotKind,
+    pub version: u64,
+}
+
+impl StateSnapshotApplied {
+    pub fn validate(self) -> Result<(), ProtocolError> {
+        if self.version == 0 {
+            return Err(ProtocolError::InvalidPayload(
+                "state snapshot acknowledgement",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl StorageSnapshotEnd {
     pub fn validate(self) -> Result<(), ProtocolError> {
         if self.version == 0 {

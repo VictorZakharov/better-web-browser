@@ -4,7 +4,9 @@
 //! failure. Corrections therefore use three newest-wins slots instead of competing for the
 //! ordinary bounded input/viewport command channel.
 
-use crate::renderer_protocol::{CookieStateSnapshot, DocumentId};
+use crate::renderer_protocol::{
+    CookieStateSnapshot, DocumentId, StateSnapshotApplied, StateSnapshotKind,
+};
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -24,6 +26,28 @@ impl StateUpdate {
         match self {
             Self::Cookie(snapshot) => snapshot.document,
             Self::Storage { document, .. } => *document,
+        }
+    }
+
+    pub(super) fn acknowledgement(&self) -> StateSnapshotApplied {
+        match self {
+            Self::Cookie(snapshot) => StateSnapshotApplied {
+                document: snapshot.document,
+                kind: StateSnapshotKind::Cookie,
+                version: snapshot.version,
+            },
+            Self::Storage {
+                document,
+                area,
+                snapshot,
+            } => StateSnapshotApplied {
+                document: *document,
+                kind: match area {
+                    StorageAreaKind::Local => StateSnapshotKind::LocalStorage,
+                    StorageAreaKind::Session => StateSnapshotKind::SessionStorage,
+                },
+                version: snapshot.version,
+            },
         }
     }
 
@@ -251,6 +275,26 @@ mod tests {
         assert_eq!(receiver.take().unwrap().document(), current);
         receiver.complete();
         assert!(receiver.take().is_none());
+    }
+
+    #[test]
+    fn in_flight_snapshot_blocks_the_next_coalesced_update_until_completion() {
+        let (sender, receiver) = bounded();
+        let document = DocumentId::new(1).unwrap();
+        sender
+            .send_storage(document, StorageAreaKind::Local, snapshot(2, "first"))
+            .unwrap();
+        assert_eq!(receiver.take().unwrap().acknowledgement().version, 2);
+        sender
+            .send_storage(document, StorageAreaKind::Local, snapshot(3, "middle"))
+            .unwrap();
+        sender
+            .send_storage(document, StorageAreaKind::Local, snapshot(4, "latest"))
+            .unwrap();
+        assert!(receiver.take().is_none());
+        receiver.complete();
+        assert_eq!(receiver.take().unwrap().acknowledgement().version, 4);
+        receiver.complete();
     }
 
     fn snapshot(version: u64, value: &str) -> StorageAreaSnapshot {

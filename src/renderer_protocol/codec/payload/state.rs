@@ -5,8 +5,8 @@ use crate::limits::{
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{
     BrowserMessage, CookieMutation, CookieStateSnapshot, DocumentId, ProtocolError,
-    RendererMessage, StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry,
-    StorageSnapshotStart,
+    RendererMessage, StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest,
+    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::storage::{StorageAreaKind, StorageEntry, StorageMutation, StorageOperation};
 
@@ -132,6 +132,13 @@ pub(super) fn encode_renderer_state(
             }
             0x0134
         }
+        RendererMessage::StateSnapshotApplied(applied) => {
+            applied.validate()?;
+            writer.u64(applied.document.get());
+            writer.u8(snapshot_kind_tag(applied.kind));
+            writer.u64(applied.version);
+            0x0136
+        }
         _ => return Err(ProtocolError::InvalidPayload("renderer state message")),
     };
     Ok((kind, writer.finish()))
@@ -177,6 +184,15 @@ pub(super) fn decode_renderer_state(
             request.validate()?;
             RendererMessage::StorageMutation(request)
         }
+        0x0136 => {
+            let applied = StateSnapshotApplied {
+                document: DocumentId::new(reader.u64()?)?,
+                kind: decode_snapshot_kind(reader.u8()?)?,
+                version: nonzero(reader.u64()?, "state snapshot acknowledgement")?,
+            };
+            applied.validate()?;
+            RendererMessage::StateSnapshotApplied(applied)
+        }
         _ => return Err(ProtocolError::UnexpectedMessage(kind)),
     };
     reader.finish()?;
@@ -195,6 +211,23 @@ fn decode_area(tag: u8) -> Result<StorageAreaKind, ProtocolError> {
         1 => Ok(StorageAreaKind::Local),
         2 => Ok(StorageAreaKind::Session),
         _ => Err(ProtocolError::InvalidPayload("storage area")),
+    }
+}
+
+fn snapshot_kind_tag(kind: StateSnapshotKind) -> u8 {
+    match kind {
+        StateSnapshotKind::Cookie => 1,
+        StateSnapshotKind::LocalStorage => 2,
+        StateSnapshotKind::SessionStorage => 3,
+    }
+}
+
+fn decode_snapshot_kind(tag: u8) -> Result<StateSnapshotKind, ProtocolError> {
+    match tag {
+        1 => Ok(StateSnapshotKind::Cookie),
+        2 => Ok(StateSnapshotKind::LocalStorage),
+        3 => Ok(StateSnapshotKind::SessionStorage),
+        _ => Err(ProtocolError::InvalidPayload("state snapshot kind")),
     }
 }
 

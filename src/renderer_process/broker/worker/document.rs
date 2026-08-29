@@ -240,6 +240,28 @@ impl Broker {
                 request.validate()?;
                 self.emit_event(RendererEvent::StorageMutation(request))?;
             }
+            RendererMessage::StateSnapshotApplied(applied) => {
+                applied.validate()?;
+                let Some(outgoing) = self.outgoing_state_update.as_ref() else {
+                    // Cancellation can retire a document after the child has written its final
+                    // acknowledgement. With no browser transfer awaiting it, the stale receipt
+                    // grants no authority and can be discarded safely.
+                    return if self.active_document == Some(applied.document) {
+                        Err(ProtocolError::InvalidPayload(
+                            "unsolicited state snapshot acknowledgement",
+                        ))
+                    } else {
+                        Ok(())
+                    };
+                };
+                if !outgoing.messages.is_empty() || outgoing.acknowledgement != applied {
+                    return Err(ProtocolError::InvalidPayload(
+                        "state snapshot acknowledgement",
+                    ));
+                }
+                self.outgoing_state_update = None;
+                self.resources().state_updates.complete();
+            }
             _ => return Err(ProtocolError::InvalidPayload("renderer document message")),
         }
         Ok(())

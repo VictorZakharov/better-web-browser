@@ -43,14 +43,14 @@ pub use presentation::{
     ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
 };
 pub use state::{
-    CookieMutation, CookieStateSnapshot, DocumentState, StorageMutationRequest, StorageSnapshotEnd,
-    StorageSnapshotEntry, StorageSnapshotStart,
+    CookieMutation, CookieStateSnapshot, DocumentState, StateSnapshotApplied, StateSnapshotKind,
+    StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 4;
-pub const PROTOCOL_MINOR: u16 = 3;
+pub const PROTOCOL_MINOR: u16 = 4;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

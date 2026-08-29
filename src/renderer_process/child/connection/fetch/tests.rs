@@ -1,5 +1,9 @@
 use super::*;
-use crate::renderer_protocol::{DocumentId, ScrollInput};
+use crate::renderer_protocol::{
+    CookieStateSnapshot, DocumentId, ScrollInput, StorageSnapshotEnd, StorageSnapshotEntry,
+    StorageSnapshotStart,
+};
+use crate::storage::{StorageAreaKind, StorageEntry};
 
 #[test]
 fn consecutive_scroll_updates_coalesce_while_fetching() {
@@ -45,4 +49,93 @@ fn one_wire_batch_splits_into_independent_completion_sets() {
     let (first, deferred) = pending.split(HashSet::from([10, 12])).unwrap();
     assert_eq!(first.unwrap().expected, HashSet::from([10, 12]));
     assert_eq!(deferred.unwrap().expected, HashSet::from([11]));
+}
+
+#[test]
+fn authoritative_state_transfers_use_reserved_deferred_capacity() {
+    let document = DocumentId::new(1).unwrap();
+    let messages = [
+        BrowserMessage::CookieSnapshot(CookieStateSnapshot {
+            document,
+            version: 1,
+            header: String::new(),
+        }),
+        BrowserMessage::StorageSnapshotStart(StorageSnapshotStart {
+            document,
+            area: StorageAreaKind::Local,
+            version: 1,
+            entry_count: 1,
+        }),
+        BrowserMessage::StorageSnapshotEntry(StorageSnapshotEntry {
+            document,
+            area: StorageAreaKind::Local,
+            entry: StorageEntry {
+                key: "key".into(),
+                value: "value".into(),
+            },
+        }),
+        BrowserMessage::StorageSnapshotEnd(StorageSnapshotEnd {
+            document,
+            area: StorageAreaKind::Local,
+            version: 1,
+        }),
+    ];
+    assert!(messages.iter().all(is_state_transfer));
+}
+
+#[test]
+fn complete_maximum_storage_snapshot_survives_full_ordinary_mailbox() {
+    let document = DocumentId::new(1).unwrap();
+    let mut pending = VecDeque::new();
+    for sequence in 1..=MAX_DEFERRED_RENDERER_MESSAGES as u64 {
+        pending.push_back(BrowserMessage::Input(DocumentInput::Lifecycle(
+            crate::renderer_protocol::LifecycleInput {
+                document,
+                sequence,
+                state: crate::renderer_protocol::DocumentLifecycle::Hidden,
+            },
+        )));
+    }
+    let start = BrowserMessage::StorageSnapshotStart(StorageSnapshotStart {
+        document,
+        area: StorageAreaKind::Local,
+        version: 3,
+        entry_count: crate::limits::MAX_STORAGE_ENTRIES_PER_ORIGIN as u32,
+    });
+    assert!(has_deferred_capacity(&pending, &start));
+    pending.push_back(start);
+    for index in 0..crate::limits::MAX_STORAGE_ENTRIES_PER_ORIGIN {
+        let entry = BrowserMessage::StorageSnapshotEntry(StorageSnapshotEntry {
+            document,
+            area: StorageAreaKind::Local,
+            entry: StorageEntry {
+                key: index.to_string(),
+                value: String::new(),
+            },
+        });
+        assert!(has_deferred_capacity(&pending, &entry));
+        pending.push_back(entry);
+    }
+    let end = BrowserMessage::StorageSnapshotEnd(StorageSnapshotEnd {
+        document,
+        area: StorageAreaKind::Local,
+        version: 3,
+    });
+    assert!(has_deferred_capacity(&pending, &end));
+    pending.push_back(end);
+    assert_eq!(
+        pending
+            .iter()
+            .filter(|message| is_state_transfer(message))
+            .count(),
+        MAX_DEFERRED_RENDERER_STATE_MESSAGES
+    );
+    assert!(!has_deferred_capacity(
+        &pending,
+        &BrowserMessage::CookieSnapshot(CookieStateSnapshot {
+            document,
+            version: 4,
+            header: String::new(),
+        })
+    ));
 }

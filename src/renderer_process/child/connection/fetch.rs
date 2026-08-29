@@ -3,7 +3,10 @@
 pub(in crate::renderer_process::child) mod state;
 
 use super::*;
-use crate::limits::{MAX_DEFERRED_RENDERER_MESSAGES, MAX_RENDERER_FETCH_REQUESTS_PER_BATCH};
+use crate::limits::{
+    MAX_DEFERRED_RENDERER_MESSAGES, MAX_DEFERRED_RENDERER_STATE_MESSAGES,
+    MAX_RENDERER_FETCH_REQUESTS_PER_BATCH,
+};
 use crate::renderer_protocol::{
     BrowserFetchResponse, DocumentInput, FetchInitiator, RendererFetchRequest,
 };
@@ -215,12 +218,36 @@ impl ChildConnection {
             *self.pending.back_mut().expect("checked deferred message") = message;
             return Ok(());
         }
-        if self.pending.len() >= MAX_DEFERRED_RENDERER_MESSAGES {
+        if !has_deferred_capacity(&self.pending, &message) {
             return Err("renderer deferred-message queue exhausted".into());
         }
         self.pending.push_back(message);
         Ok(())
     }
+}
+
+fn has_deferred_capacity(pending: &VecDeque<BrowserMessage>, message: &BrowserMessage) -> bool {
+    let state_transfer = is_state_transfer(message);
+    let retained_in_class = pending
+        .iter()
+        .filter(|pending| is_state_transfer(pending) == state_transfer)
+        .count();
+    let limit = if state_transfer {
+        MAX_DEFERRED_RENDERER_STATE_MESSAGES
+    } else {
+        MAX_DEFERRED_RENDERER_MESSAGES
+    };
+    retained_in_class < limit
+}
+
+fn is_state_transfer(message: &BrowserMessage) -> bool {
+    matches!(
+        message,
+        BrowserMessage::CookieSnapshot(_)
+            | BrowserMessage::StorageSnapshotStart(_)
+            | BrowserMessage::StorageSnapshotEntry(_)
+            | BrowserMessage::StorageSnapshotEnd(_)
+    )
 }
 
 fn can_replace_deferred(pending: &BrowserMessage, next: &BrowserMessage) -> bool {

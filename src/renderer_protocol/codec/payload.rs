@@ -172,7 +172,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
-        RendererMessage::CookieMutation(_) | RendererMessage::StorageMutation(_) => {
+        RendererMessage::CookieMutation(_)
+        | RendererMessage::StorageMutation(_)
+        | RendererMessage::StateSnapshotApplied(_) => {
             return encode_renderer_state(message);
         }
         RendererMessage::Restrictions(report) => {
@@ -221,7 +223,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         }
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a
         | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
-        0x0132 | 0x0134 => decode_renderer_state(kind, payload),
+        0x0132 | 0x0134 | 0x0136 => decode_renderer_state(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;
             if payload[3] != 0 {

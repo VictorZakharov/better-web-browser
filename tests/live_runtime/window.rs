@@ -12,6 +12,22 @@ pub(super) fn reload_when_title_contains(
     assert_ne!(posted, 0, "post reload command to hidden browser");
 }
 
+pub(super) fn reload_repeatedly_when_title_contains(
+    child: &std::process::Child,
+    expected: &str,
+    count: usize,
+    interval: Duration,
+    timeout: Duration,
+) {
+    let window = wait_for_title(child.id(), expected, timeout);
+    for _ in 0..count {
+        let posted =
+            unsafe { PostMessageW(window as *mut c_void, WM_COMMAND, RELOAD_COMMAND_ID, 0) };
+        assert_ne!(posted, 0, "post repeated reload command to hidden browser");
+        thread::sleep(interval);
+    }
+}
+
 fn wait_for_title(process_id: u32, expected: &str, timeout: Duration) -> usize {
     let deadline = Instant::now() + timeout;
     loop {

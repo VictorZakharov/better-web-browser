@@ -17,7 +17,7 @@ use crate::renderer_process::windows::{
 use crate::renderer_protocol::{
     BrowserMessage, DocumentId, DocumentInput, DocumentStart, DocumentState, PresentedViewport,
     ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport,
-    TestCommand, TransferAssembler,
+    StateSnapshotApplied, TestCommand, TransferAssembler,
 };
 use std::collections::{HashMap, VecDeque};
 use std::os::windows::io::OwnedHandle;
@@ -233,7 +233,8 @@ impl Broker {
                     | RendererMessage::NavigationRequested { .. }
                     | RendererMessage::PointerCursor(_)
                     | RendererMessage::CookieMutation(_)
-                    | RendererMessage::StorageMutation(_)),
+                    | RendererMessage::StorageMutation(_)
+                    | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {
                         self.protocol_failure(error.to_string());
@@ -382,6 +383,7 @@ impl Broker {
 
 struct OutgoingStateUpdate {
     document: DocumentId,
+    acknowledgement: StateSnapshotApplied,
     messages: VecDeque<BrowserMessage>,
 }
 

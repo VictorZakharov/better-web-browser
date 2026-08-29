@@ -8,8 +8,8 @@ use super::input::{
     PresentationAcknowledgement,
 };
 use super::state::{
-    CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
-    StorageSnapshotEntry, StorageSnapshotStart,
+    CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
+    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;
@@ -226,6 +226,7 @@ pub enum RendererMessage {
     PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
+    StateSnapshotApplied(StateSnapshotApplied),
     Restrictions(RestrictionReport),
 }
 

@@ -3,7 +3,8 @@
 use crate::limits::MAX_STORAGE_BYTES_PER_ORIGIN;
 use crate::renderer_protocol::{
     CookieMutation, CookieStateSnapshot, DocumentId, DocumentState, RendererMessage,
-    StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
+    StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest, StorageSnapshotEnd,
+    StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 
@@ -67,7 +68,17 @@ impl IncomingStorage {
             || end.version != self.version
             || self.entries.len() != self.expected
         {
-            return Err("storage snapshot completion mismatch".into());
+            return Err(format!(
+                "storage snapshot completion mismatch: expected document {}, area {:?}, version {}, entries {}; received document {}, area {:?}, version {}, entries {}",
+                self.document.get(),
+                self.area,
+                self.version,
+                self.expected,
+                end.document.get(),
+                end.area,
+                end.version,
+                self.entries.len(),
+            ));
         }
         let snapshot = StorageAreaSnapshot {
             version: self.version,
@@ -190,8 +201,13 @@ impl super::ChildConnection {
             return incoming.state.cookie(snapshot);
         }
         snapshot.validate().map_err(|error| error.to_string())?;
+        let applied = StateSnapshotApplied {
+            document: snapshot.document,
+            kind: StateSnapshotKind::Cookie,
+            version: snapshot.version,
+        };
         if self.failed_document == Some(snapshot.document) {
-            return Ok(());
+            return self.send_state_snapshot_applied(applied);
         }
         let runtime = self
             .document
@@ -199,7 +215,7 @@ impl super::ChildConnection {
             .filter(|runtime| runtime.id() == snapshot.document)
             .ok_or_else(|| "unsolicited cookie snapshot".to_string())?;
         runtime.replace_cookie_snapshot(snapshot.version, &snapshot.header);
-        Ok(())
+        self.send_state_snapshot_applied(applied)
     }
 
     pub(in crate::renderer_process::child) fn document_state_start(
@@ -254,14 +270,30 @@ impl super::ChildConnection {
             .ok_or_else(|| "unsolicited storage snapshot completion".to_string())?;
         let document = update.document();
         let (area, snapshot) = update.finish(end)?;
+        let applied = StateSnapshotApplied {
+            document,
+            kind: match area {
+                StorageAreaKind::Local => StateSnapshotKind::LocalStorage,
+                StorageAreaKind::Session => StateSnapshotKind::SessionStorage,
+            },
+            version: snapshot.version,
+        };
         if self.failed_document == Some(document) {
-            return Ok(());
+            return self.send_state_snapshot_applied(applied);
         }
         self.document
             .as_mut()
             .filter(|runtime| runtime.id() == document)
             .ok_or_else(|| "storage snapshot document is no longer active".to_string())?
             .replace_storage_snapshot(area, snapshot)
+            .map_err(|error| error.to_string())?;
+        self.send_state_snapshot_applied(applied)
+    }
+
+    fn send_state_snapshot_applied(&mut self, applied: StateSnapshotApplied) -> Result<(), String> {
+        self.writer
+            .send_renderer(&RendererMessage::StateSnapshotApplied(applied))
+            .map_err(|error| error.to_string())
     }
 
     pub(in crate::renderer_process::child) fn send_state_mutations(
