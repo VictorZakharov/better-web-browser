@@ -3,7 +3,7 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `5d3e96e7343a64ddd58bcfb2e1bf7fba87b027f76f542ddda266d897ac4570b5`
+- Cargo.lock SHA-256: `793c691d61ac1a3c77d37a7f39d5b5e15ccfa1125c31848995fb4cac137865e0`
 - Third-party packages: 192
 
 | Package | Version | License expression | Source |
@@ -100,7 +100,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 | [upstream](https://github.com/Amanieu/parking_lot) |
 | `parlance` | 0.1.0 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
-| `paste` | 1.0.15 | MIT OR Apache-2.0 | [upstream](https://github.com/dtolnay/paste) |
+| `paste` | 1.0.15 | MIT OR Apache-2.0 | [upstream](https://github.com/esrauch/paste) |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url/) |
 | `phf` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |
 | `phf_codegen` | 0.13.1 | MIT | [upstream](https://github.com/rust-phf/rust-phf) |

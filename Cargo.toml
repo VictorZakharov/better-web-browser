@@ -44,6 +44,11 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_WindowsProgramming",
 ] }
 
+[patch.crates-io]
+# V8 152.2 still names the archived `paste` crate. This maintained,
+# version-compatible fork preserves the macro API without an advisory ignore.
+paste = { path = "vendor/paste-complete" }
+
 [lib]
 name = "better_web_browser"
 path = "src/lib.rs"
