@@ -1,13 +1,17 @@
 use super::backend;
 use super::launcher::MediaStartupFault;
 use crate::media_data_protocol::{MediaDataReader, MediaSourceId};
+use crate::media_frame_protocol::{
+    MediaFrameWriter as DecodedFrameWriter, MediaPixelFormat, MediaVideoFrameMetadata,
+};
 use crate::media_protocol::{
-    BrowserMediaMessage, ContainmentReport, MEDIA_HEADER_LENGTH, MEDIA_MAGIC, MEDIA_PROTOCOL_MAJOR,
-    MEDIA_PROTOCOL_MINOR, MediaFrameReader, MediaFrameWriter, MediaLimits, MediaRestrictionReport,
-    MediaSessionId, MediaTestCommand, Nonce, WorkerMediaMessage,
+    BrowserMediaMessage, ContainmentReport, MEDIA_HEADER_LENGTH, MEDIA_PROTOCOL_MAJOR,
+    MediaFrameReader, MediaFrameWriter, MediaLimits, MediaRestrictionReport, Nonce,
+    WorkerMediaMessage,
 };
 use std::fs::File;
 use std::io::Write;
+use std::mem::size_of;
 use std::net::{SocketAddr, TcpStream};
 use std::os::windows::io::{FromRawHandle, RawHandle};
 use std::os::windows::process::CommandExt;
@@ -23,6 +27,13 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, GetCurrentProcess, OpenProcessToken,
 };
 
+mod options;
+mod startup;
+mod testing;
+
+use options::ChildOptions;
+use startup::write_raw_header;
+
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     let options = ChildOptions::parse(arguments)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
@@ -31,19 +42,22 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
         return Err("media IPC standard handles are invalid".into());
     }
     let data_handle = options.data_handle as HANDLE;
-    if !valid_handle(data_handle) {
-        return Err("media data handle is invalid".into());
+    let frame_handle = options.frame_handle as HANDLE;
+    if !valid_handle(data_handle) || !valid_handle(frame_handle) {
+        return Err("media data or frame handle is invalid".into());
     }
     let input = unsafe { File::from_raw_handle(input_handle as RawHandle) };
     let output = unsafe { File::from_raw_handle(output_handle as RawHandle) };
     let data_input = unsafe { File::from_raw_handle(data_handle as RawHandle) };
-    run_protocol(input, output, data_input, options)
+    let frame_output = unsafe { File::from_raw_handle(frame_handle as RawHandle) };
+    run_protocol(input, output, data_input, frame_output, options)
 }
 
 fn run_protocol(
     input: File,
     output: File,
     data_input: File,
+    frame_output: File,
     options: ChildOptions,
 ) -> Result<(), String> {
     if options.fault == Some(MediaStartupFault::Silent) {
@@ -108,10 +122,12 @@ fn run_protocol(
         })
         .map_err(|error| error.to_string())?;
     let mut data_reader = MediaDataReader::new(data_input, options.session, options.nonce);
+    let mut frame_writer = DecodedFrameWriter::new(frame_output, options.session, options.nonce);
     command_loop(
         &mut reader,
         &mut writer,
         &mut data_reader,
+        &mut frame_writer,
         limits,
         options.test_mode,
     )
@@ -121,10 +137,13 @@ fn command_loop(
     reader: &mut MediaFrameReader<File>,
     writer: &mut MediaFrameWriter<File>,
     data_reader: &mut MediaDataReader<File>,
+    frame_writer: &mut DecodedFrameWriter<File>,
     limits: MediaLimits,
     test_mode: bool,
 ) -> Result<(), String> {
     let mut last_source_id = 0_u64;
+    let mut last_frame_id = 0_u64;
+    let mut pending_frame: Option<(MediaVideoFrameMetadata, Vec<u8>)> = None;
     loop {
         match reader
             .read_browser()
@@ -148,8 +167,14 @@ fn command_loop(
             BrowserMediaMessage::DecodeSource {
                 request_id,
                 source_id,
+                frame_id,
                 encoded_length,
             } => {
+                if pending_frame.is_some() {
+                    return Err(
+                        "media worker received a decode before acknowledging its frame".into(),
+                    );
+                }
                 let expected_source_id = last_source_id
                     .checked_add(1)
                     .ok_or_else(|| "media source generation exhausted".to_string())?;
@@ -159,6 +184,15 @@ fn command_loop(
                     ));
                 }
                 last_source_id = source_id;
+                let expected_frame_id = last_frame_id
+                    .checked_add(1)
+                    .ok_or_else(|| "media frame generation exhausted".to_string())?;
+                if frame_id != expected_frame_id {
+                    return Err(format!(
+                        "stale media frame generation {frame_id}; expected {expected_frame_id}"
+                    ));
+                }
+                last_frame_id = frame_id;
                 // This slice adapts a complete source to a seekable in-memory IMFByteStream. Keep
                 // admission within the resident encoded-queue budget until streaming arrives.
                 if encoded_length > limits.max_encoded_queue_bytes {
@@ -168,49 +202,65 @@ fn command_loop(
                 let bytes = data_reader
                     .read_source(source, encoded_length)
                     .map_err(|error| format!("read encoded media source: {error}"))?;
-                let report = backend::decode(&bytes, limits)?;
+                let decoded = backend::decode(&bytes, limits)?;
+                let frame = MediaVideoFrameMetadata {
+                    source_id,
+                    frame_id,
+                    timestamp_100ns: decoded.video.timestamp_100ns,
+                    duration_100ns: decoded.video.duration_100ns,
+                    width: decoded.report.video_width,
+                    height: decoded.report.video_height,
+                    stride: decoded.video.stride,
+                    format: MediaPixelFormat::Nv12,
+                    data_length: decoded.video.bytes.len() as u64,
+                };
+                frame
+                    .validate()
+                    .map_err(|error| format!("validate decoded video frame: {error}"))?;
+                frame_writer
+                    .send_frame(frame, &decoded.video.bytes)
+                    .map_err(|error| format!("write decoded video frame: {error}"))?;
+                pending_frame = Some((frame, decoded.video.bytes));
                 writer
-                    .send_worker(&WorkerMediaMessage::Decoded { request_id, report })
+                    .send_worker(&WorkerMediaMessage::Decoded {
+                        request_id,
+                        report: decoded.report,
+                        frame,
+                    })
+                    .map_err(|error| error.to_string())?;
+            }
+            BrowserMediaMessage::AcknowledgeFrame {
+                source_id,
+                frame_id,
+            } => {
+                let Some((frame, _bytes)) = pending_frame.as_ref() else {
+                    return Err(
+                        "media worker received a frame acknowledgement with no pending frame"
+                            .into(),
+                    );
+                };
+                if source_id != frame.source_id || frame_id != frame.frame_id {
+                    return Err(format!(
+                        "stale media frame acknowledgement {source_id}/{frame_id}; expected {}/{}",
+                        frame.source_id, frame.frame_id
+                    ));
+                }
+                pending_frame.take();
+                writer
+                    .send_worker(&WorkerMediaMessage::FrameAcknowledged {
+                        source_id,
+                        frame_id,
+                    })
                     .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {
-                handle_test(command, writer)?;
+                testing::handle(command, writer, frame_writer)?;
             }
             BrowserMediaMessage::Test(_) => return Err("media test command denied".into()),
             BrowserMediaMessage::Hello { .. } => {
                 return Err("media worker received a duplicate Hello".into());
             }
         }
-    }
-}
-
-fn handle_test(
-    command: MediaTestCommand,
-    writer: &mut MediaFrameWriter<File>,
-) -> Result<(), String> {
-    match command {
-        MediaTestCommand::Crash => std::process::abort(),
-        MediaTestCommand::Hang => loop {
-            std::thread::sleep(Duration::from_secs(60));
-        },
-        MediaTestCommand::DelayResponse { millis } => {
-            std::thread::sleep(Duration::from_millis(u64::from(millis)));
-            writer
-                .send_worker(&WorkerMediaMessage::Pong(0))
-                .map_err(|error| error.to_string())
-        }
-        MediaTestCommand::WriteMalformedFrame => {
-            writer
-                .inner_mut()
-                .write_all(&[0; MEDIA_HEADER_LENGTH])
-                .map_err(|error| format!("write malformed media frame: {error}"))?;
-            Err("injected malformed media frame".into())
-        }
-        MediaTestCommand::ProbeRestrictions { loopback_port } => writer
-            .send_worker(&WorkerMediaMessage::Restrictions(probe_restrictions(
-                loopback_port,
-            )))
-            .map_err(|error| error.to_string()),
     }
 }
 
@@ -308,82 +358,6 @@ fn is_access_denied(error: i32) -> bool {
     matches!(error, 5 | 10_013)
 }
 
-fn write_raw_header(
-    mut output: File,
-    session: MediaSessionId,
-    major: u16,
-    payload_length: u32,
-) -> Result<(), String> {
-    let mut header = [0_u8; MEDIA_HEADER_LENGTH];
-    header[..4].copy_from_slice(&MEDIA_MAGIC);
-    header[4..6].copy_from_slice(&major.to_le_bytes());
-    header[6..8].copy_from_slice(&MEDIA_PROTOCOL_MINOR.to_le_bytes());
-    header[8..10].copy_from_slice(&2_u16.to_le_bytes());
-    header[12..16].copy_from_slice(&payload_length.to_le_bytes());
-    header[16..24].copy_from_slice(&session.get().to_le_bytes());
-    header[24..32].copy_from_slice(&1_u64.to_le_bytes());
-    output
-        .write_all(&header)
-        .map_err(|error| format!("write raw media test frame: {error}"))
-}
-
 fn valid_handle(handle: HANDLE) -> bool {
     !handle.is_null() && handle != INVALID_HANDLE_VALUE
-}
-
-use std::mem::size_of;
-
-struct ChildOptions {
-    nonce: Nonce,
-    session: MediaSessionId,
-    data_handle: usize,
-    test_mode: bool,
-    fault: Option<MediaStartupFault>,
-}
-
-impl ChildOptions {
-    fn parse(arguments: &[String]) -> Result<Self, String> {
-        let value = |name: &str| {
-            arguments
-                .iter()
-                .position(|argument| argument == name)
-                .and_then(|index| arguments.get(index + 1))
-                .ok_or_else(|| format!("{name} requires a value"))
-        };
-        let nonce = Nonce::from_hex(value("--media-nonce")?)
-            .map_err(|error| format!("parse media nonce: {error}"))?;
-        let session = value("--media-session")?
-            .parse::<u64>()
-            .map_err(|_| "--media-session requires an integer".to_string())
-            .and_then(|value| MediaSessionId::new(value).map_err(|error| error.to_string()))?;
-        let data_handle = value("--media-data-handle")?
-            .parse::<usize>()
-            .map_err(|_| "--media-data-handle requires an integer".to_string())?;
-        if data_handle == 0 {
-            return Err("--media-data-handle requires a nonzero handle".into());
-        }
-        let fault = arguments
-            .iter()
-            .any(|argument| argument == "--media-startup-fault")
-            .then(|| value("--media-startup-fault"))
-            .transpose()?
-            .map(|fault| match fault.as_str() {
-                "silent" => Ok(MediaStartupFault::Silent),
-                "wrong-nonce" => Ok(MediaStartupFault::WrongNonce),
-                "malformed" => Ok(MediaStartupFault::MalformedFrame),
-                "oversized" => Ok(MediaStartupFault::OversizedFrame),
-                "incompatible" => Ok(MediaStartupFault::IncompatibleVersion),
-                _ => Err(format!("unknown media startup fault: {fault}")),
-            })
-            .transpose()?;
-        Ok(Self {
-            nonce,
-            session,
-            data_handle,
-            test_mode: arguments
-                .iter()
-                .any(|argument| argument == "--media-test-mode"),
-            fault,
-        })
-    }
 }

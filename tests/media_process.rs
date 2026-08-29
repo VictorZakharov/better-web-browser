@@ -3,15 +3,15 @@
 use better_web_browser::media_process::{
     MediaLaunchOptions, MediaSession, MediaStartupFault, MediaWorkerState,
 };
-use better_web_browser::media_protocol::{MediaCodecFamily, MediaTestCommand};
+use better_web_browser::media_protocol::{MediaCodecFamily, MediaPixelFormat, MediaTestCommand};
 use std::net::TcpListener;
-use std::ptr::{null, null_mut};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use windows_sys::Win32::Security::Cryptography::{
-    BCRYPT_ALG_HANDLE, BCRYPT_SHA256_ALGORITHM, BCryptCloseAlgorithmProvider, BCryptHash,
-    BCryptOpenAlgorithmProvider,
-};
+
+#[path = "media_process/support.rs"]
+mod support;
+
+use support::{capture_frame_if_requested, decode_base64, sha256};
 
 static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -82,9 +82,10 @@ fn contained_worker_decodes_owned_h264_aac_mp4_to_nv12_and_pcm() {
         "vendored WPT fixture does not match its pinned SHA-256"
     );
     let mut session = MediaSession::launch(options()).expect("launch contained media worker");
-    let report = session
-        .decode_owned_fixture(&fixture)
+    let decoded = session
+        .decode_owned_fixture_frame(&fixture)
         .expect("decode owned WPT MP4 fixture");
+    let report = decoded.report;
 
     assert_eq!(report.encoded_bytes, 13_932);
     assert_eq!(report.video_codec, MediaCodecFamily::H264);
@@ -111,7 +112,120 @@ fn contained_worker_decodes_owned_h264_aac_mp4_to_nv12_and_pcm() {
         (9_000_000..=12_000_000).contains(&report.duration_100ns),
         "unexpected fixture duration: {report:?}"
     );
+    assert_eq!(decoded.frame.metadata.source_id, 1);
+    assert_eq!(decoded.frame.metadata.frame_id, 1);
+    assert_eq!(decoded.frame.metadata.format, MediaPixelFormat::Nv12);
+    assert_eq!(
+        (decoded.frame.metadata.width, decoded.frame.metadata.height),
+        (320, 240)
+    );
+    assert_eq!(decoded.frame.metadata.stride, 320);
+    assert_eq!(decoded.frame.metadata.data_length, 115_200);
+    assert_eq!(
+        decoded.frame.metadata.timestamp_100ns,
+        report.video_first_timestamp_100ns
+    );
+    assert!(decoded.frame.metadata.duration_100ns > 0);
+    assert_eq!(decoded.frame.nv12.len(), 115_200);
+    assert_eq!(decoded.frame.bgra.len(), 320 * 240 * 4);
+    assert!(
+        decoded
+            .frame
+            .bgra
+            .chunks_exact(4)
+            .all(|pixel| pixel[3] == 255)
+    );
+    assert_eq!(
+        sha256(&decoded.frame.nv12),
+        [
+            0xa2, 0x99, 0xed, 0x56, 0x3a, 0x5a, 0xf9, 0x6a, 0x8a, 0xae, 0x56, 0xd4, 0xf7, 0xd1,
+            0xc5, 0xc9, 0x3d, 0x96, 0xd0, 0xc4, 0xde, 0x3a, 0x7e, 0x2c, 0xac, 0xbc, 0x82, 0x3d,
+            0x42, 0xdb, 0xdd, 0x66,
+        ],
+        "pin first NV12 frame"
+    );
+    assert_eq!(
+        sha256(&decoded.frame.bgra),
+        [
+            0x0b, 0x61, 0x93, 0x04, 0xb1, 0xfb, 0x98, 0x92, 0xb4, 0xd2, 0x8b, 0x69, 0x33, 0x77,
+            0x57, 0xdc, 0x17, 0x2c, 0xb6, 0xad, 0x26, 0xd0, 0xd1, 0x24, 0xc7, 0x26, 0x7f, 0x82,
+            0x42, 0x64, 0xbd, 0xa0,
+        ],
+        "pin converted BGRA frame"
+    );
+    capture_frame_if_requested(&decoded.frame);
+
+    let repeated = session
+        .decode_owned_fixture_frame(&fixture)
+        .expect("repeat decode and frame acknowledgement");
+    assert_eq!(repeated.frame.metadata.source_id, 2);
+    assert_eq!(repeated.frame.metadata.frame_id, 2);
+    assert_eq!(sha256(&repeated.frame.nv12), sha256(&decoded.frame.nv12));
+    assert_eq!(sha256(&repeated.frame.bgra), sha256(&decoded.frame.bgra));
     session.shutdown().expect("clean media-worker shutdown");
+}
+
+#[test]
+fn stale_and_duplicate_frame_acknowledgements_fail_without_harming_a_sibling() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixture = decode_base64(include_str!("fixtures/media/test-1s.mp4.base64"));
+    let mut sibling = MediaSession::launch(options()).expect("launch sibling media worker");
+
+    let mut stale = MediaSession::launch(options()).expect("launch stale acknowledgement victim");
+    stale
+        .inject_stale_frame_acknowledgement()
+        .expect("reject acknowledgement without a frame");
+    assert_eq!(stale.snapshot().state, MediaWorkerState::Exited);
+    sibling
+        .ping(31)
+        .expect("sibling survives stale acknowledgement");
+
+    let mut duplicate =
+        MediaSession::launch(options()).expect("launch duplicate acknowledgement victim");
+    duplicate
+        .decode_owned_fixture_frame(&fixture)
+        .expect("decode and acknowledge one frame");
+    duplicate
+        .inject_stale_frame_acknowledgement()
+        .expect("reject duplicate acknowledgement");
+    assert_eq!(duplicate.snapshot().state, MediaWorkerState::Exited);
+    sibling
+        .ping(32)
+        .expect("sibling survives duplicate acknowledgement");
+    sibling.shutdown().expect("shutdown sibling");
+}
+
+#[test]
+fn malformed_truncated_and_oversized_frame_output_fail_without_harming_a_sibling() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut sibling = MediaSession::launch(options()).expect("launch sibling media worker");
+    for (index, fault) in [
+        MediaTestCommand::WriteMalformedDecodedFrame,
+        MediaTestCommand::WriteTruncatedDecodedFrame,
+        MediaTestCommand::WriteOversizedDecodedFrame,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut victim = MediaSession::launch(options()).expect("launch frame output victim");
+        victim
+            .inject_frame_failure(fault)
+            .expect("contain invalid decoded frame output");
+        assert_eq!(victim.snapshot().state, MediaWorkerState::Exited);
+        sibling
+            .ping(40 + index as u64)
+            .expect("sibling survives invalid decoded frame output");
+    }
+    let mut replacement = MediaSession::launch(options()).expect("launch replacement media worker");
+    replacement
+        .ping(44)
+        .expect("replacement survives invalid decoded frame output");
+    replacement.shutdown().expect("shutdown replacement");
+    sibling.shutdown().expect("shutdown sibling");
 }
 
 #[test]
@@ -233,64 +347,4 @@ fn startup_faults_fail_closed_within_the_deadline() {
             "startup fault exceeded its deadline: {fault:?}"
         );
     }
-}
-
-fn decode_base64(input: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(input.len() / 4 * 3);
-    let mut quartet = [0_u8; 4];
-    let mut count = 0;
-    for byte in input.bytes().filter(|byte| !byte.is_ascii_whitespace()) {
-        quartet[count] = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            b'=' => 64,
-            _ => panic!("invalid base64 fixture byte"),
-        };
-        count += 1;
-        if count == 4 {
-            output.push((quartet[0] << 2) | (quartet[1] >> 4));
-            if quartet[2] != 64 {
-                output.push((quartet[1] << 4) | (quartet[2] >> 2));
-            }
-            if quartet[3] != 64 {
-                output.push((quartet[2] << 6) | quartet[3]);
-            }
-            count = 0;
-        }
-    }
-    assert_eq!(count, 0, "truncated base64 fixture");
-    output
-}
-
-fn sha256(input: &[u8]) -> [u8; 32] {
-    let mut algorithm: BCRYPT_ALG_HANDLE = null_mut();
-    let open_status =
-        unsafe { BCryptOpenAlgorithmProvider(&mut algorithm, BCRYPT_SHA256_ALGORITHM, null(), 0) };
-    assert!(
-        open_status >= 0,
-        "open SHA-256 provider: NTSTATUS {open_status:#x}"
-    );
-
-    let mut digest = [0_u8; 32];
-    let hash_status = unsafe {
-        BCryptHash(
-            algorithm,
-            null(),
-            0,
-            input.as_ptr(),
-            input.len() as u32,
-            digest.as_mut_ptr(),
-            digest.len() as u32,
-        )
-    };
-    let close_status = unsafe { BCryptCloseAlgorithmProvider(algorithm, 0) };
-    assert!(hash_status >= 0, "hash fixture: NTSTATUS {hash_status:#x}");
-    assert!(
-        close_status >= 0,
-        "close SHA-256 provider: NTSTATUS {close_status:#x}"
-    );
-    digest
 }

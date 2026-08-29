@@ -1,5 +1,7 @@
 use super::MediaProtocolError;
-use crate::media_protocol::{MediaLimits, MediaTestCommand};
+use crate::media_protocol::{
+    MediaLimits, MediaPixelFormat, MediaTestCommand, MediaVideoFrameMetadata,
+};
 
 pub(super) fn encode_limits(payload: &mut Vec<u8>, limits: MediaLimits) {
     vec_u32(payload, limits.max_control_payload);
@@ -27,6 +29,39 @@ pub(super) fn decode_limits(cursor: &mut Cursor<'_>) -> Result<MediaLimits, Medi
     })
 }
 
+pub(super) fn encode_frame_metadata(payload: &mut Vec<u8>, frame: MediaVideoFrameMetadata) {
+    vec_u64(payload, frame.source_id);
+    vec_u64(payload, frame.frame_id);
+    vec_i64(payload, frame.timestamp_100ns);
+    vec_u64(payload, frame.duration_100ns);
+    vec_u32(payload, frame.width);
+    vec_u32(payload, frame.height);
+    vec_u32(payload, frame.stride);
+    vec_u16(payload, frame.format.wire_code());
+    vec_u64(payload, frame.data_length);
+}
+
+pub(super) fn decode_frame_metadata(
+    cursor: &mut Cursor<'_>,
+) -> Result<MediaVideoFrameMetadata, MediaProtocolError> {
+    let frame = MediaVideoFrameMetadata {
+        source_id: cursor.nonzero_u64("frame source")?,
+        frame_id: cursor.nonzero_u64("frame generation")?,
+        timestamp_100ns: cursor.i64()?,
+        duration_100ns: cursor.u64()?,
+        width: cursor.u32()?,
+        height: cursor.u32()?,
+        stride: cursor.u32()?,
+        format: MediaPixelFormat::from_wire(cursor.u16()?)
+            .map_err(|_| MediaProtocolError::InvalidPayload("frame pixel format"))?,
+        data_length: cursor.u64()?,
+    };
+    frame
+        .validate()
+        .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+    Ok(frame)
+}
+
 pub(super) fn encode_test(payload: &mut Vec<u8>, command: MediaTestCommand) {
     match command {
         MediaTestCommand::Crash => payload.push(1),
@@ -40,6 +75,9 @@ pub(super) fn encode_test(payload: &mut Vec<u8>, command: MediaTestCommand) {
             payload.push(5);
             vec_u16(payload, loopback_port);
         }
+        MediaTestCommand::WriteMalformedDecodedFrame => payload.push(6),
+        MediaTestCommand::WriteTruncatedDecodedFrame => payload.push(7),
+        MediaTestCommand::WriteOversizedDecodedFrame => payload.push(8),
     }
 }
 
@@ -54,6 +92,9 @@ pub(super) fn decode_test(cursor: &mut Cursor<'_>) -> Result<MediaTestCommand, M
         5 => Ok(MediaTestCommand::ProbeRestrictions {
             loopback_port: cursor.u16()?,
         }),
+        6 => Ok(MediaTestCommand::WriteMalformedDecodedFrame),
+        7 => Ok(MediaTestCommand::WriteTruncatedDecodedFrame),
+        8 => Ok(MediaTestCommand::WriteOversizedDecodedFrame),
         _ => Err(MediaProtocolError::InvalidPayload("test command")),
     }
 }

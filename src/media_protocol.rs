@@ -7,6 +7,7 @@
 mod codec;
 mod types;
 
+pub use crate::media_frame_protocol::{MediaPixelFormat, MediaVideoFrameMetadata};
 pub use codec::{MediaFrameReader, MediaFrameWriter, MediaProtocolError};
 pub use types::{
     BrowserMediaMessage, MediaCapabilityReport, MediaCodecFamily, MediaDecodeReport, MediaLimits,
