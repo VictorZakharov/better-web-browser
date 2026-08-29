@@ -23,7 +23,14 @@ fn browser_and_worker_messages_round_trip() {
         .send_browser(&BrowserMediaMessage::DecodeSource {
             request_id: 12,
             source_id: 4,
+            frame_id: 6,
             encoded_length: 13_932,
+        })
+        .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::AcknowledgeFrame {
+            source_id: 4,
+            frame_id: 6,
         })
         .unwrap();
     let mut browser_reader = MediaFrameReader::new(Cursor::new(browser_bytes), session(9));
@@ -43,7 +50,15 @@ fn browser_and_worker_messages_round_trip() {
         BrowserMediaMessage::DecodeSource {
             request_id: 12,
             source_id: 4,
+            frame_id: 6,
             encoded_length: 13_932,
+        }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::AcknowledgeFrame {
+            source_id: 4,
+            frame_id: 6,
         }
     );
 
@@ -95,19 +110,47 @@ fn browser_and_worker_messages_round_trip() {
         decode_micros: 2_500,
     };
     let mut worker_bytes = Vec::new();
-    MediaFrameWriter::new(&mut worker_bytes, session(9))
-        .send_worker(&WorkerMediaMessage::Decoded {
-            request_id: 12,
-            report: decoded,
-        })
-        .unwrap();
+    let frame = MediaVideoFrameMetadata {
+        source_id: 4,
+        frame_id: 6,
+        timestamp_100ns: 0,
+        duration_100ns: 333_333,
+        width: 320,
+        height: 240,
+        stride: 320,
+        format: MediaPixelFormat::Nv12,
+        data_length: 115_200,
+    };
+    {
+        let mut worker_writer = MediaFrameWriter::new(&mut worker_bytes, session(9));
+        worker_writer
+            .send_worker(&WorkerMediaMessage::Decoded {
+                request_id: 12,
+                report: decoded,
+                frame,
+            })
+            .unwrap();
+        worker_writer
+            .send_worker(&WorkerMediaMessage::FrameAcknowledged {
+                source_id: 4,
+                frame_id: 6,
+            })
+            .unwrap();
+    }
+    let mut worker_reader = MediaFrameReader::new(Cursor::new(worker_bytes), session(9));
     assert_eq!(
-        MediaFrameReader::new(Cursor::new(worker_bytes), session(9))
-            .read_worker()
-            .unwrap(),
+        worker_reader.read_worker().unwrap(),
         WorkerMediaMessage::Decoded {
             request_id: 12,
             report: decoded,
+            frame,
+        }
+    );
+    assert_eq!(
+        worker_reader.read_worker().unwrap(),
+        WorkerMediaMessage::FrameAcknowledged {
+            source_id: 4,
+            frame_id: 6,
         }
     );
 }

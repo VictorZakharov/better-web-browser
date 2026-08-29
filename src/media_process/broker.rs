@@ -26,6 +26,19 @@ pub enum MediaWorkerState {
 }
 
 #[derive(Clone, Debug)]
+pub struct DecodedMediaFrame {
+    pub metadata: crate::media_protocol::MediaVideoFrameMetadata,
+    pub nv12: Vec<u8>,
+    pub bgra: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OwnedMediaDecode {
+    pub report: crate::media_protocol::MediaDecodeReport,
+    pub frame: DecodedMediaFrame,
+}
+
+#[derive(Clone, Debug)]
 pub struct MediaWorkerSnapshot {
     pub process_id: u32,
     pub session_id: u64,
@@ -51,6 +64,7 @@ type Incoming = Receiver<Result<WorkerMediaMessage, MediaProtocolError>>;
 pub struct MediaSession {
     writer: MediaFrameWriter<File>,
     data_output: File,
+    frame_input: File,
     incoming: Incoming,
     reader: Option<JoinHandle<()>>,
     process: OwnedHandle,
@@ -66,6 +80,7 @@ pub struct MediaSession {
     last_progress: Instant,
     next_request: u64,
     next_source: u64,
+    next_frame: u64,
     state: MediaWorkerState,
     capability: Option<MediaCapabilityReport>,
     exit_code: Option<u32>,
@@ -115,6 +130,7 @@ impl MediaSession {
         Ok(Self {
             writer,
             data_output: launched.browser_data_output,
+            frame_input: launched.browser_frame_input,
             incoming,
             reader: Some(reader),
             process: launched.process,
@@ -130,6 +146,7 @@ impl MediaSession {
             last_progress: now,
             next_request: 1,
             next_source: 1,
+            next_frame: 1,
             state: MediaWorkerState::Running,
             capability: None,
             exit_code: None,

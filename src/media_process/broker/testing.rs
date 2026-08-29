@@ -1,5 +1,8 @@
-use super::{MEDIA_EXIT_PROTOCOL, MEDIA_EXIT_TIMEOUT, MediaSession};
+use super::{
+    DecodedMediaFrame, MEDIA_EXIT_PROTOCOL, MEDIA_EXIT_TIMEOUT, MediaSession, OwnedMediaDecode,
+};
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
+use crate::media_frame_protocol::{MediaFrameReader as DecodedFrameReader, nv12_to_bgra};
 use crate::media_protocol::{
     BrowserMediaMessage, MediaDecodeReport, MediaRestrictionReport, MediaSessionId,
     MediaTestCommand, WorkerMediaMessage,
@@ -11,6 +14,13 @@ impl MediaSession {
     /// Remote loading remains closed until a contained network service can feed this pipe.
     #[doc(hidden)]
     pub fn decode_owned_fixture(&mut self, bytes: &[u8]) -> Result<MediaDecodeReport, String> {
+        self.decode_owned_fixture_frame(bytes)
+            .map(|decode| decode.report)
+    }
+
+    /// Exercises the complete encoded-input, decoded-frame, and acknowledgement path.
+    #[doc(hidden)]
+    pub fn decode_owned_fixture_frame(&mut self, bytes: &[u8]) -> Result<OwnedMediaDecode, String> {
         self.require_test_mode()?;
         if bytes.is_empty() || bytes.len() as u64 > self.limits.max_encoded_queue_bytes {
             return Err("owned media fixture exceeds worker limits".into());
@@ -21,10 +31,15 @@ impl MediaSession {
             .checked_add(1)
             .ok_or_else(|| "media source identity exhausted".to_string())?;
         let source = MediaSourceId::new(source_id).map_err(|error| error.to_string())?;
+        let frame_id = self.next_frame;
+        self.next_frame = frame_id
+            .checked_add(1)
+            .ok_or_else(|| "media frame identity exhausted".to_string())?;
         self.send(
             BrowserMediaMessage::DecodeSource {
                 request_id,
                 source_id,
+                frame_id,
                 encoded_length: bytes.len() as u64,
             },
             "request media decode",
@@ -34,17 +49,28 @@ impl MediaSession {
             .try_clone()
             .map_err(|error| format!("clone media data pipe: {error}"))?;
         let session = MediaSessionId::new(self.session_id).map_err(|error| error.to_string())?;
-        let (response, sent) = std::thread::scope(|scope| {
+        let frame_input = self
+            .frame_input
+            .try_clone()
+            .map_err(|error| format!("clone media frame pipe: {error}"))?;
+        let (response, sent, received_frame) = std::thread::scope(|scope| {
             let nonce = self.nonce;
             let sender = scope.spawn(move || {
                 MediaDataWriter::new(output, session, nonce).send_source(source, bytes)
+            });
+            let frame_receiver = scope.spawn(move || {
+                DecodedFrameReader::new(frame_input, session, nonce).read_frame(source_id, frame_id)
             });
             let response = self.receive("decode", self.command_timeout);
             let sent = sender
                 .join()
                 .map_err(|_| "media data writer panicked".to_string())
                 .and_then(|result| result.map_err(|error| error.to_string()));
-            (response, sent)
+            let received_frame = frame_receiver
+                .join()
+                .map_err(|_| "media frame reader panicked".to_string())
+                .and_then(|result| result.map_err(|error| error.to_string()));
+            (response, sent, received_frame)
         });
         if let Err(error) = sent {
             self.mark_exited(
@@ -53,18 +79,63 @@ impl MediaSession {
             );
             return Err(self.exit_reason.clone().unwrap_or_default());
         }
-        match response? {
+        let packet = match received_frame {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.mark_exited(
+                    format!("could not receive decoded media frame: {error}"),
+                    MEDIA_EXIT_PROTOCOL,
+                );
+                return Err(self.exit_reason.clone().unwrap_or_default());
+            }
+        };
+        let (report, metadata) = match response? {
             WorkerMediaMessage::Decoded {
                 request_id: actual,
                 report,
+                frame,
             } if actual == request_id => {
                 if let Err(error) = report.validate(self.limits) {
                     return self.protocol_failure(&format!("invalid media decode report: {error}"));
                 }
-                Ok(report)
+                (report, frame)
             }
-            _ => self.protocol_failure("media worker returned the wrong decode response"),
+            _ => return self.protocol_failure("media worker returned the wrong decode response"),
+        };
+        if packet.metadata != metadata {
+            return self.protocol_failure("media frame metadata disagreed with control response");
         }
+        let converted = match nv12_to_bgra(metadata, &packet.nv12) {
+            Ok(converted) => converted,
+            Err(error) => {
+                return self.protocol_failure(&format!("convert decoded NV12 frame: {error}"));
+            }
+        };
+        self.send(
+            BrowserMediaMessage::AcknowledgeFrame {
+                source_id,
+                frame_id,
+            },
+            "acknowledge decoded media frame",
+        )?;
+        match self.receive("frame acknowledgement", self.command_timeout)? {
+            WorkerMediaMessage::FrameAcknowledged {
+                source_id: actual_source,
+                frame_id: actual_frame,
+            } if actual_source == source_id && actual_frame == frame_id => {}
+            _ => {
+                return self
+                    .protocol_failure("media worker returned a stale frame acknowledgement");
+            }
+        }
+        Ok(OwnedMediaDecode {
+            report,
+            frame: DecodedMediaFrame {
+                metadata,
+                nv12: packet.nv12,
+                bgra: converted.bgra,
+            },
+        })
     }
 
     /// Sends a deliberately oversized data frame after a valid bounded control declaration.
@@ -77,10 +148,15 @@ impl MediaSession {
             .checked_add(1)
             .ok_or_else(|| "media source identity exhausted".to_string())?;
         let source = MediaSourceId::new(source_id).map_err(|error| error.to_string())?;
+        let frame_id = self.next_frame;
+        self.next_frame = frame_id
+            .checked_add(1)
+            .ok_or_else(|| "media frame identity exhausted".to_string())?;
         self.send(
             BrowserMediaMessage::DecodeSource {
                 request_id,
                 source_id,
+                frame_id,
                 encoded_length: 1,
             },
             "request oversized media test",
@@ -96,6 +172,72 @@ impl MediaSession {
         if let Ok(message) = self.receive("oversized data test", self.command_timeout) {
             return self.protocol_failure(&format!(
                 "oversized media data unexpectedly returned {message:?}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Proves that an acknowledgement without a pending frame terminates only this worker.
+    #[doc(hidden)]
+    pub fn inject_stale_frame_acknowledgement(&mut self) -> Result<(), String> {
+        self.require_test_mode()?;
+        self.send(
+            BrowserMediaMessage::AcknowledgeFrame {
+                source_id: 1,
+                frame_id: 1,
+            },
+            "inject stale media frame acknowledgement",
+        )?;
+        if let Ok(message) = self.receive("stale frame acknowledgement", self.command_timeout) {
+            return self.protocol_failure(&format!(
+                "stale media frame acknowledgement unexpectedly returned {message:?}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Exercises decoded-frame pipe rejection while also observing the worker's control exit.
+    #[doc(hidden)]
+    pub fn inject_frame_failure(&mut self, command: MediaTestCommand) -> Result<(), String> {
+        self.require_test_mode()?;
+        if !matches!(
+            command,
+            MediaTestCommand::WriteMalformedDecodedFrame
+                | MediaTestCommand::WriteTruncatedDecodedFrame
+                | MediaTestCommand::WriteOversizedDecodedFrame
+        ) {
+            return Err("use inject_frame_failure only for decoded-frame faults".into());
+        }
+        let frame_input = self
+            .frame_input
+            .try_clone()
+            .map_err(|error| format!("clone media frame pipe: {error}"))?;
+        let session = MediaSessionId::new(self.session_id).map_err(|error| error.to_string())?;
+        self.send(
+            BrowserMediaMessage::Test(command),
+            "frame failure injection",
+        )?;
+        let (response, frame) = std::thread::scope(|scope| {
+            let nonce = self.nonce;
+            let receiver = scope.spawn(move || {
+                DecodedFrameReader::new(frame_input, session, nonce).read_frame(1, 1)
+            });
+            let response = self.receive("frame failure injection", self.command_timeout);
+            let frame = receiver
+                .join()
+                .map_err(|_| "media frame reader panicked".to_string())
+                .and_then(|result| result.map_err(|error| error.to_string()));
+            (response, frame)
+        });
+        if let Ok(message) = response {
+            return self.protocol_failure(&format!(
+                "frame failure injection unexpectedly returned {message:?}"
+            ));
+        }
+        if let Ok(frame) = frame {
+            return self.protocol_failure(&format!(
+                "invalid decoded frame was unexpectedly accepted: {:?}",
+                frame.metadata
             ));
         }
         Ok(())
@@ -120,8 +262,14 @@ impl MediaSession {
     #[doc(hidden)]
     pub fn inject_failure(&mut self, command: MediaTestCommand) -> Result<(), String> {
         self.require_test_mode()?;
-        if matches!(command, MediaTestCommand::ProbeRestrictions { .. }) {
-            return Err("use probe_restrictions for restriction probes".into());
+        if matches!(
+            command,
+            MediaTestCommand::ProbeRestrictions { .. }
+                | MediaTestCommand::WriteMalformedDecodedFrame
+                | MediaTestCommand::WriteTruncatedDecodedFrame
+                | MediaTestCommand::WriteOversizedDecodedFrame
+        ) {
+            return Err("use the specialized media test method for this command".into());
         }
         self.send(BrowserMediaMessage::Test(command), "failure injection")?;
         match self.incoming.recv_timeout(self.command_timeout) {

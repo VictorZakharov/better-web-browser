@@ -66,6 +66,22 @@ pub(crate) struct InheritedInputPipe {
     pub(crate) browser_output: OwnedHandle,
 }
 
+pub(crate) struct InheritedOutputPipe {
+    pub(crate) child_output: OwnedHandle,
+    pub(crate) browser_input: OwnedHandle,
+}
+
+impl InheritedOutputPipe {
+    pub(crate) fn create(role: &str) -> Result<Self, String> {
+        let (browser_input, child_output) = create_pipe(&format!("create {role} pipe"))?;
+        clear_inherit(&browser_input)?;
+        Ok(Self {
+            child_output,
+            browser_input,
+        })
+    }
+}
+
 impl InheritedInputPipe {
     pub(crate) fn create(role: &str) -> Result<Self, String> {
         let (child_input, browser_output) = create_pipe(&format!("create {role} pipe"))?;

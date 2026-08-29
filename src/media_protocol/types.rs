@@ -285,6 +285,9 @@ pub enum MediaTestCommand {
     Hang,
     DelayResponse { millis: u16 },
     WriteMalformedFrame,
+    WriteMalformedDecodedFrame,
+    WriteTruncatedDecodedFrame,
+    WriteOversizedDecodedFrame,
     ProbeRestrictions { loopback_port: u16 },
 }
 
@@ -302,7 +305,12 @@ pub enum BrowserMediaMessage {
     DecodeSource {
         request_id: u64,
         source_id: u64,
+        frame_id: u64,
         encoded_length: u64,
+    },
+    AcknowledgeFrame {
+        source_id: u64,
+        frame_id: u64,
     },
     Test(MediaTestCommand),
 }
@@ -322,6 +330,11 @@ pub enum WorkerMediaMessage {
     Decoded {
         request_id: u64,
         report: MediaDecodeReport,
+        frame: crate::media_frame_protocol::MediaVideoFrameMetadata,
+    },
+    FrameAcknowledged {
+        source_id: u64,
+        frame_id: u64,
     },
     Restrictions(MediaRestrictionReport),
 }

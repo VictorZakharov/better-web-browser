@@ -2,8 +2,8 @@ use crate::limits::{MEDIA_COMMAND_TIMEOUT, MEDIA_SHUTDOWN_TIMEOUT, MEDIA_STARTUP
 use crate::media_protocol::{MediaSessionId, Nonce};
 use crate::renderer_process::launcher::contained_environment;
 use crate::renderer_process::windows::{
-    AppContainerSid, InheritedInputPipe, LaunchAttributes, PipeSet, create_media_job, last_error,
-    random_nonce, raw,
+    AppContainerSid, InheritedInputPipe, InheritedOutputPipe, LaunchAttributes, PipeSet,
+    create_media_job, last_error, random_nonce, raw,
 };
 use std::fs::{self, File};
 use std::mem::size_of;
@@ -65,6 +65,7 @@ pub(super) struct LaunchedMediaWorker {
     pub(super) browser_input: File,
     pub(super) browser_output: File,
     pub(super) browser_data_output: File,
+    pub(super) browser_frame_input: File,
     pub(super) process_id: u32,
     pub(super) session: MediaSessionId,
     pub(super) nonce: Nonce,
@@ -78,12 +79,13 @@ pub(super) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker
         .map_err(|error| format!("allocate media session: {error}"))?;
     let pipes = PipeSet::create()?;
     let data_pipe = InheritedInputPipe::create("browser-to-media data")?;
+    let frame_pipe = InheritedOutputPipe::create("media-to-browser frame")?;
     let job = create_media_job()?;
     let sid = AppContainerSid::create_media()?;
     let attributes = LaunchAttributes::with_inherited(
         &pipes.child_input,
         &pipes.child_output,
-        &[&data_pipe.child_input],
+        &[&data_pipe.child_input, &frame_pipe.child_output],
         &job,
         &sid,
     )?;
@@ -94,6 +96,7 @@ pub(super) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker
         nonce,
         session,
         raw(&data_pipe.child_input) as usize,
+        raw(&frame_pipe.child_output) as usize,
     ));
     let environment = contained_environment(&options.executable)?;
     let mut startup = STARTUPINFOEXW::default();
@@ -130,12 +133,14 @@ pub(super) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker
     drop(pipes.child_input);
     drop(pipes.child_output);
     drop(data_pipe.child_input);
+    drop(frame_pipe.child_output);
     Ok(LaunchedMediaWorker {
         process: process_handle,
         job,
         browser_input: File::from(pipes.browser_input),
         browser_output: File::from(pipes.browser_output),
         browser_data_output: File::from(data_pipe.browser_output),
+        browser_frame_input: File::from(frame_pipe.browser_input),
         process_id: process.dwProcessId,
         session,
         nonce,
@@ -170,13 +175,15 @@ fn command_line(
     nonce: Nonce,
     session: MediaSessionId,
     data_handle: usize,
+    frame_handle: usize,
 ) -> String {
     let mut command = format!(
-        "\"{}\" --media-process --media-nonce {} --media-session {} --media-data-handle {}",
+        "\"{}\" --media-process --media-nonce {} --media-session {} --media-data-handle {} --media-frame-handle {}",
         options.executable.display(),
         nonce.to_hex(),
         session.get(),
         data_handle,
+        frame_handle,
     );
     if options.test_mode {
         command.push_str(" --media-test-mode");
@@ -210,11 +217,12 @@ mod tests {
     fn command_line_is_hidden_role_bound_and_nonce_bound() {
         let options = MediaLaunchOptions::new(PathBuf::from("C:\\Breeze\\browser.exe"));
         let nonce = Nonce::new([3; 32]);
-        let line = command_line(&options, nonce, MediaSessionId::new(7).unwrap(), 42);
+        let line = command_line(&options, nonce, MediaSessionId::new(7).unwrap(), 42, 43);
         assert!(line.contains("--media-process"));
         assert!(line.contains("--media-nonce"));
         assert!(line.contains("--media-session 7"));
         assert!(line.contains("--media-data-handle 42"));
+        assert!(line.contains("--media-frame-handle 43"));
         assert!(!line.contains("--benchmark"));
     }
 }

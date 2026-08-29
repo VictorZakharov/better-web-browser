@@ -9,10 +9,10 @@ use windows::Win32::Media::MediaFoundation::{
     MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
     MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_VERSION, MFAudioFormat_AAC, MFAudioFormat_PCM,
     MFCreateMFByteStreamOnStream, MFCreateMediaType, MFCreateSourceReaderFromByteStream,
-    MFMediaType_Audio, MFMediaType_Video, MFSTARTUP_FULL, MFShutdown, MFStartup,
-    MFT_CATEGORY_AUDIO_DECODER, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_ALL,
-    MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY, MFT_REGISTER_TYPE_INFO, MFTEnumEx, MFVideoFormat_H264,
-    MFVideoFormat_NV12,
+    MFGetStrideForBitmapInfoHeader, MFMediaType_Audio, MFMediaType_Video, MFSTARTUP_FULL,
+    MFShutdown, MFStartup, MFT_CATEGORY_AUDIO_DECODER, MFT_CATEGORY_VIDEO_DECODER,
+    MFT_ENUM_FLAG_ALL, MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY, MFT_REGISTER_TYPE_INFO, MFTEnumEx,
+    MFVideoFormat_H264, MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
 use windows::Win32::System::Com::{
@@ -23,6 +23,18 @@ use windows::core::GUID;
 mod stream;
 
 use stream::read_stream;
+
+pub(super) struct DecodedMedia {
+    pub(super) report: MediaDecodeReport,
+    pub(super) video: DecodedVideoSample,
+}
+
+pub(super) struct DecodedVideoSample {
+    pub(super) bytes: Vec<u8>,
+    pub(super) stride: u32,
+    pub(super) timestamp_100ns: i64,
+    pub(super) duration_100ns: u64,
+}
 
 pub(super) fn probe(limits: MediaLimits) -> MediaCapabilityReport {
     let started = Instant::now();
@@ -56,7 +68,7 @@ pub(super) fn probe(limits: MediaLimits) -> MediaCapabilityReport {
     }
 }
 
-pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<MediaDecodeReport, String> {
+pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
     let started = Instant::now();
     if bytes.is_empty() || bytes.len() as u64 > limits.max_encoded_bytes {
         return Err("encoded media length exceeds worker limits".into());
@@ -98,11 +110,17 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<MediaDecodeRep
     };
     let video_width = (frame_size >> 32) as u32;
     let video_height = frame_size as u32;
+    let video_stride =
+        unsafe { MFGetStrideForBitmapInfoHeader(MFVideoFormat_NV12.data1, video_width) }
+            .map_err(|error| format!("read decoded NV12 stride: {error}"))?;
+    let video_stride =
+        u32::try_from(video_stride).map_err(|_| "decoded NV12 stride is negative".to_string())?;
     let video = read_stream(
         &video_reader,
         MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
         "video",
         limits.max_decoded_frame_bytes,
+        true,
     )?;
 
     let audio_reader = source_reader(bytes)?;
@@ -143,6 +161,7 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<MediaDecodeRep
         MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
         "audio",
         limits.max_decoded_frame_bytes,
+        false,
     )?;
 
     let report = MediaDecodeReport {
@@ -171,7 +190,18 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<MediaDecodeRep
     report
         .validate(limits)
         .map_err(|error| format!("validate decoded media: {error}"))?;
-    Ok(report)
+    let sample = video
+        .first_sample
+        .ok_or_else(|| "decoded video stream did not produce a frame".to_string())?;
+    Ok(DecodedMedia {
+        report,
+        video: DecodedVideoSample {
+            bytes: sample.bytes,
+            stride: video_stride,
+            timestamp_100ns: sample.timestamp_100ns,
+            duration_100ns: sample.duration_100ns,
+        },
+    })
 }
 
 fn source_reader(bytes: &[u8]) -> Result<IMFSourceReader, String> {

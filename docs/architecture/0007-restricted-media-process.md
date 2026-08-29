@@ -1,9 +1,10 @@
 # ADR 0007: Isolate media decoding and playback in a dedicated process
 
-- Status: Accepted; boundary, capability probe, bounded byte pipe, and owned-fixture decode implemented
+- Status: Accepted; boundary, capability probe, bounded input/frame pipes, and owned-fixture decode implemented
 - Date: 2026-08-29
 - Issue: [#125](https://github.com/VictorZakharov/better-web-browser/issues/125)
 - Decode data plane: [#127](https://github.com/VictorZakharov/better-web-browser/issues/127)
+- Decoded-frame bridge: [#129](https://github.com/VictorZakharov/better-web-browser/issues/129)
 - Parent epic: [#121](https://github.com/VictorZakharov/better-web-browser/issues/121)
 
 ## Context
@@ -27,6 +28,8 @@ Primary sources:
 - [Media Foundation Source Reader](https://learn.microsoft.com/windows/win32/medfound/source-reader)
 - [Media Foundation platform APIs](https://learn.microsoft.com/windows/win32/medfound/media-foundation-platform-apis)
 - [Media Foundation transform enumeration](https://learn.microsoft.com/windows/win32/api/mfapi/nf-mfapi-mftenumex)
+- [Media Foundation buffer locking](https://learn.microsoft.com/windows/win32/api/mfobjects/nf-mfobjects-imfmediabuffer-lock)
+- [NV12 format](https://learn.microsoft.com/windows/win32/medfound/recommended-8-bit-yuv-formats-for-video-rendering#nv12)
 
 ## Decision
 
@@ -50,17 +53,32 @@ and the mapping from an active document to its media sessions. It will not parse
 payloads.
 
 The target byte path is a separately contained network service streaming policy-authorized bytes
-directly to a media worker. Until that service exists, this first slice carries no URLs, cookies,
-headers, encoded bytes, or decoded frames. Reusing the current browser-owned Fetch response body for
-media would violate the target invariant and is not an allowed temporary shortcut.
+directly to a media worker. Until that service exists, the production path carries no URLs,
+cookies, headers, encoded bytes, or decoded frames. Reusing the current browser-owned Fetch response
+body for media would violate the target invariant and is not an allowed temporary shortcut.
 
 An intermediate, test-only data plane proves the decoder boundary without relaxing that invariant.
 It is a dedicated one-way pipe with independent `BRD1` framing, protocol version, bootstrap nonce,
-worker-session and source identities, contiguous offsets, chunk bounds, and an explicit end marker. The `BRM1` control
-plane declares a source identity and total encoded length before allocation. Only the hidden test
-API can write owned fixture bytes; production page and network paths have no admission method.
-Because this slice creates a seekable in-memory byte stream, a source must also fit the smaller
-resident encoded-queue budget; future incremental input must retain that resident-memory bound.
+worker-session and source identities, contiguous offsets, chunk bounds, and an explicit end marker.
+The `BRM1` control plane declares a source identity and total encoded length before allocation. Only
+the hidden test API can write owned fixture bytes; production page and network paths have no
+admission method. Because this slice creates a seekable in-memory byte stream, a source must also
+fit the smaller resident encoded-queue budget; future incremental input must retain that
+resident-memory bound.
+
+A second test-only one-way pipe proves decoded video can leave the worker without sharing decoder
+pointers or handles. Its independent `BRV1` framing repeats the bootstrap nonce, worker session,
+source generation, frame generation, timing, dimensions, stride, NV12 format, total length, and
+contiguous offset on every bounded chunk. The receiver validates all metadata before reserving the
+frame and requires an explicit end marker. The worker permits one outstanding frame, retains its
+owned copy after transmission, and releases it only after an exact source/frame acknowledgement on
+the `BRM1` control plane. Missing, stale, or duplicate acknowledgements fail that worker closed.
+
+Media Foundation buffers are locked only inside the worker, copied while locked, and always
+unlocked before their COM ownership can end. The hidden browser test receiver converts the copied
+stride-aware NV12 frame to opaque premultiplied BGRA and pins deterministic source/output hashes.
+This is compositor-suitable proof, not page-visible playback: production frame admission and media
+capability advertising remain closed until the renderer bridge is implemented.
 
 The initial Windows backend is the OS-provided Media Foundation stack. Capability probing occurs
 inside the media worker and asks for web-filtered H.264 video and AAC audio decoder transforms.
