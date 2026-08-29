@@ -110,7 +110,11 @@
                     windowObject.innerWidth = Number(input.width) || 1;
                     windowObject.innerHeight = Number(input.height) || 1;
                     windowObject.devicePixelRatio = Number(input.scale) || 1;
-                    return windowObject.dispatchEvent(markTrusted(new UIEvent('resize')));
+                    const mediaChanges = prepareMediaQueryChanges();
+                    const resizeAllowed =
+                        windowObject.dispatchEvent(markTrusted(new UIEvent('resize')));
+                    dispatchMediaQueryChanges(mediaChanges);
+                    return resizeAllowed;
                 case 'lifecycle': {
                     const next = input.state === 'active' ? 'visible' : 'hidden';
                     if (next !== nativeVisibilityState) {

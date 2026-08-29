@@ -141,6 +141,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
             height: 600.0,
             style_width: 800.0,
             dpi: 96,
+            prefers_dark_color_scheme: true,
         },
         prefers_dark_color_scheme: true,
     };

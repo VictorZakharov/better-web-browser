@@ -30,7 +30,12 @@ impl DocumentRuntime {
         let reader = crate::document::parse_html(&decoded.text, &start.url);
         let mut page = Page::parse_scripted(&decoded.text, &start.url);
         page.character_set = decoded.encoding.to_string();
-        page.set_media_environment(start.viewport.style_width, start.prefers_dark_color_scheme);
+        page.set_media_environment(MediaEnvironment::new(
+            start.viewport.style_width,
+            start.viewport.height,
+            start.viewport.dpi as f32 / 96.0,
+            start.prefers_dark_color_scheme,
+        ));
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
             if let Some(pending) = pending_first_paint {

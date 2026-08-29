@@ -23,6 +23,7 @@ mod execution;
 mod host_call;
 mod host_profiling;
 mod host_state;
+mod media_environment;
 mod module_evaluation;
 mod module_lifecycle;
 mod module_loader;

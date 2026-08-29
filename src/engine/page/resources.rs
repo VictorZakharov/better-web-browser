@@ -1,5 +1,6 @@
 use super::{MAX_IMAGES, PageResource, PageScript};
-use crate::engine::css::{media_matches, parse_length};
+use crate::engine::css::media::{MediaEnvironment, media_matches_for_environment};
+use crate::engine::css::parse_length;
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
 use crate::limits::{MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS};
@@ -16,7 +17,7 @@ pub(super) fn document_base_url(dom: &Dom, source_url: &str) -> String {
 pub(super) fn discover_resources(
     dom: &Dom,
     base_url: &str,
-    viewport_width: f32,
+    environment: MediaEnvironment,
 ) -> (Vec<PageResource>, Vec<PageScript>) {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
@@ -50,7 +51,7 @@ pub(super) fn discover_resources(
         if seen_images.len() >= MAX_IMAGES {
             break;
         }
-        if let Some(url) = resolve_image_url(&node, base_url, viewport_width)
+        if let Some(url) = resolve_image_url(&node, base_url, environment)
             && seen_images.insert(url.clone())
         {
             resources.push(PageResource::Image { url });
@@ -124,7 +125,7 @@ pub(super) fn discover_resources(
 pub(super) fn resolve_image_url(
     node: &NodeRef,
     base_url: &str,
-    viewport_width: f32,
+    environment: MediaEnvironment,
 ) -> Option<String> {
     let source = node
         .attr("data-src")
@@ -133,14 +134,14 @@ pub(super) fn resolve_image_url(
             node.attr("data-lazy-src")
                 .filter(|source| !source.trim().is_empty())
         })
-        .or_else(|| picture_source(node, viewport_width))
-        .or_else(|| responsive_source(node, viewport_width))
+        .or_else(|| picture_source(node, environment))
+        .or_else(|| responsive_source(node, environment))
         .or_else(|| node.attr("src"))
         .or_else(|| node.attr("href"))?;
     resolve_resource_url(base_url, source.trim())
 }
 
-fn picture_source(node: &NodeRef, viewport_width: f32) -> Option<String> {
+fn picture_source(node: &NodeRef, environment: MediaEnvironment) -> Option<String> {
     if node.tag_name() != Some("img") {
         return None;
     }
@@ -154,25 +155,25 @@ fn picture_source(node: &NodeRef, viewport_width: f32) -> Option<String> {
         if source.tag_name() != Some("source")
             || source
                 .attr("media")
-                .is_some_and(|media| !media_matches(&media, viewport_width))
+                .is_some_and(|media| !media_matches_for_environment(&media, environment))
             || source
                 .attr("type")
                 .is_some_and(|kind| !supported_image_type(&kind))
         {
             continue;
         }
-        if let Some(candidate) = responsive_source(source, viewport_width) {
+        if let Some(candidate) = responsive_source(source, environment) {
             return Some(candidate);
         }
     }
     None
 }
 
-fn responsive_source(node: &NodeRef, viewport_width: f32) -> Option<String> {
+fn responsive_source(node: &NodeRef, environment: MediaEnvironment) -> Option<String> {
     let srcset = node.attr("srcset")?;
     let slot_width = source_size(
         node.attr("sizes").as_deref().unwrap_or("100vw"),
-        viewport_width,
+        environment,
     );
     preferred_srcset_candidate(&srcset, slot_width, 2.0)
 }
@@ -218,7 +219,7 @@ fn preferred_srcset_candidate(
         .map(|candidate| candidate.url.to_string())
 }
 
-fn source_size(sizes: &str, viewport_width: f32) -> f32 {
+fn source_size(sizes: &str, environment: MediaEnvironment) -> f32 {
     for entry in sizes
         .split(',')
         .map(str::trim)
@@ -232,17 +233,18 @@ fn source_size(sizes: &str, viewport_width: f32) -> f32 {
         } else {
             (None, entry)
         };
-        if condition.is_some_and(|condition| !media_matches(condition, viewport_width)) {
+        if condition.is_some_and(|condition| !media_matches_for_environment(condition, environment))
+        {
             continue;
         }
         if let Some(size) = parse_length(length)
-            .and_then(|length| length.resolve(viewport_width, 16.0))
+            .and_then(|length| length.resolve(environment.viewport_width, 16.0))
             .filter(|size| *size >= 0.0)
         {
             return size;
         }
     }
-    viewport_width
+    environment.viewport_width
 }
 
 fn supported_image_type(kind: &str) -> bool {

@@ -11,13 +11,12 @@ impl Page {
     }
 
     pub fn style_for_viewport(&self, viewport_width: f32, viewport_height: f32) -> StyleSet {
-        StyleSet::from_sources_for_viewport_with_color_scheme(
+        StyleSet::from_sources_for_media_environment(
             &self.dom,
             &self.base_url,
             &self.stylesheet_sources,
-            viewport_width,
-            viewport_height,
-            self.prefers_dark_color_scheme,
+            self.media_environment
+                .with_viewport(viewport_width, viewport_height),
         )
     }
 
@@ -90,9 +89,10 @@ impl Page {
         invalidation: &RenderInvalidation,
     ) -> StyleRefreshStats {
         self.base_url = document_base_url(&self.dom, &self.source_url);
-        self.responsive_viewport_width = viewport_width.max(1.0);
-        let (resources, _) =
-            discover_resources(&self.dom, &self.base_url, self.responsive_viewport_width);
+        self.media_environment = self
+            .media_environment
+            .with_viewport(viewport_width, viewport_height);
+        let (resources, _) = discover_resources(&self.dom, &self.base_url, self.media_environment);
         for resource in resources {
             if !matches!(resource, PageResource::Script { .. })
                 && !self.resources.contains(&resource)
@@ -142,13 +142,12 @@ impl Page {
                 (styles, stats)
             }
             _ => {
-                let styles = StyleSet::from_sources_for_viewport_with_color_scheme(
+                let styles = StyleSet::from_sources_for_media_environment(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,
-                    viewport_width,
-                    viewport_height,
-                    self.prefers_dark_color_scheme,
+                    self.media_environment
+                        .with_viewport(viewport_width, viewport_height),
                 );
                 let count = styles.styles.len();
                 (

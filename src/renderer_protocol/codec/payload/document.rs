@@ -343,6 +343,7 @@ fn encode_viewport(writer: &mut WireWriter, viewport: PresentedViewport) {
     writer.f32(viewport.height);
     writer.f32(viewport.style_width);
     writer.u32(viewport.dpi);
+    writer.bool(viewport.prefers_dark_color_scheme);
 }
 
 fn decode_viewport(reader: &mut WireReader<'_>) -> Result<PresentedViewport, ProtocolError> {
@@ -351,6 +352,7 @@ fn decode_viewport(reader: &mut WireReader<'_>) -> Result<PresentedViewport, Pro
         height: reader.f32()?,
         style_width: reader.f32()?,
         dpi: reader.u32()?,
+        prefers_dark_color_scheme: reader.bool()?,
     }
     .validate()
 }

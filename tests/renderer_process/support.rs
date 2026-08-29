@@ -79,6 +79,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
             height: 600.0,
             style_width: 800.0,
             dpi: 96,
+            prefers_dark_color_scheme: false,
         },
         prefers_dark_color_scheme: false,
     }

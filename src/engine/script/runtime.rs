@@ -186,17 +186,6 @@ impl ScriptRuntime {
         self.host.borrow_mut().stylesheet_sources = stylesheets.iter().cloned().collect();
     }
 
-    pub(crate) fn set_media_environment(
-        &mut self,
-        viewport_width: f32,
-        prefers_dark_color_scheme: bool,
-    ) {
-        let mut host = self.host.borrow_mut();
-        host.media_viewport_width = viewport_width.max(1.0);
-        host.prefers_dark_color_scheme = prefers_dark_color_scheme;
-        host.computed_styles = None;
-    }
-
     pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {
         self.host
             .borrow_mut()

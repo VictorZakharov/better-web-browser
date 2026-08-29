@@ -1,13 +1,13 @@
 //! Cascade integration for constructed sheets adopted by a document or shadow root.
 
 use super::*;
+use crate::engine::css::media::MediaEnvironment;
 
 pub(super) fn collect(
     document: &NodeRef,
     document_base_url: &str,
     external_stylesheets: &[(String, String)],
-    viewport_width: f32,
-    prefers_dark_color_scheme: bool,
+    environment: MediaEnvironment,
 ) -> Vec<Rule> {
     let mut rules = Vec::new();
     let mut next_order = 0_u32;
@@ -16,8 +16,7 @@ pub(super) fn collect(
         parse_stylesheet(
             &style_element.text_content(),
             document_base_url,
-            viewport_width,
-            prefers_dark_color_scheme,
+            environment,
             &mut next_order,
             &mut rules,
             RuleScope::Document,
@@ -27,8 +26,7 @@ pub(super) fn collect(
         parse_stylesheet(
             stylesheet,
             source_url,
-            viewport_width,
-            prefers_dark_color_scheme,
+            environment,
             &mut next_order,
             &mut rules,
             RuleScope::Document,
@@ -36,8 +34,7 @@ pub(super) fn collect(
     }
     append_adopted(
         document,
-        viewport_width,
-        prefers_dark_color_scheme,
+        environment,
         &mut next_order,
         &mut rules,
         RuleScope::Document,
@@ -51,8 +48,7 @@ pub(super) fn collect(
             parse_stylesheet(
                 &style_element.text_content(),
                 document_base_url,
-                viewport_width,
-                prefers_dark_color_scheme,
+                environment,
                 &mut next_order,
                 &mut rules,
                 RuleScope::Shadow(shadow.id()),
@@ -60,8 +56,7 @@ pub(super) fn collect(
         }
         append_adopted(
             &shadow,
-            viewport_width,
-            prefers_dark_color_scheme,
+            environment,
             &mut next_order,
             &mut rules,
             RuleScope::Shadow(shadow.id()),
@@ -72,27 +67,21 @@ pub(super) fn collect(
 
 fn append_adopted(
     root: &NodeRef,
-    viewport_width: f32,
-    prefers_dark_color_scheme: bool,
+    environment: MediaEnvironment,
     next_order: &mut u32,
     rules: &mut Vec<Rule>,
     scope: RuleScope,
 ) {
     for stylesheet in root.adopted_stylesheets() {
         if !stylesheet.media.trim().is_empty()
-            && !media::media_matches_with_color_scheme(
-                &stylesheet.media,
-                viewport_width,
-                prefers_dark_color_scheme,
-            )
+            && !media::media_matches_for_environment(&stylesheet.media, environment)
         {
             continue;
         }
         parse_stylesheet(
             &stylesheet.source,
             &stylesheet.base_url,
-            viewport_width,
-            prefers_dark_color_scheme,
+            environment,
             next_order,
             rules,
             scope,

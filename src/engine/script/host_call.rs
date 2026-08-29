@@ -148,13 +148,15 @@ pub(super) fn dispatch_host_call(
         "mediaMatches" => {
             let query = argument_string(args, 1)?;
             Ok(JsValue::from(
-                crate::engine::css::media_query_matches_with_color_scheme(
+                crate::engine::css::media::media_matches_for_environment(
                     &query,
-                    state.media_viewport_width,
-                    state.prefers_dark_color_scheme,
+                    state.media_environment,
                 ),
             ))
         }
+        "mediaSerialize" => Ok(js_string(
+            crate::engine::css::media::serialize_media_query_list(&argument_string(args, 1)?),
+        )),
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
             state.set_cookie(argument_string(args, 1)?);

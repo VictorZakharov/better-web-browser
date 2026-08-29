@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::MediaEnvironment;
 use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
 
 mod idle;
@@ -25,7 +26,7 @@ fn match_media_uses_the_document_color_scheme_environment() {
         finish_lifecycle: true,
     };
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-    runtime.set_media_environment(800.0, true);
+    runtime.set_media_environment(MediaEnvironment::new(800.0, 600.0, 1.0, true));
     let outcome = runtime.execute_initial(&[input]);
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);

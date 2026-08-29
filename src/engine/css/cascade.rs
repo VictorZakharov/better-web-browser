@@ -5,6 +5,7 @@ mod sheets;
 #[cfg(test)]
 mod tests;
 
+use super::media::MediaEnvironment;
 use super::rule_index::RuleIndex;
 use super::*;
 use presentational::apply_presentational_hints;
@@ -47,31 +48,25 @@ impl StyleSet {
         viewport_width: f32,
         viewport_height: f32,
     ) -> Self {
-        Self::from_sources_for_viewport_with_color_scheme(
+        Self::from_sources_for_media_environment(
             dom,
             document_base_url,
             external_stylesheets,
-            viewport_width,
-            viewport_height,
-            false,
+            MediaEnvironment::new(viewport_width, viewport_height, 1.0, false),
         )
     }
 
-    pub(crate) fn from_sources_for_viewport_with_color_scheme(
+    pub(crate) fn from_sources_for_media_environment(
         dom: &Dom,
         document_base_url: &str,
         external_stylesheets: &[(String, String)],
-        viewport_width: f32,
-        viewport_height: f32,
-        prefers_dark_color_scheme: bool,
+        environment: MediaEnvironment,
     ) -> Self {
-        Self::from_document_for_viewport(
+        Self::from_document_for_media_environment(
             &dom.document,
             document_base_url,
             external_stylesheets,
-            viewport_width,
-            viewport_height,
-            prefers_dark_color_scheme,
+            environment,
         )
     }
 
@@ -99,34 +94,46 @@ impl StyleSet {
         viewport_height: f32,
         prefers_dark_color_scheme: bool,
     ) -> Self {
-        let mut set = Self::for_computed_style_for_viewport(
+        Self::from_document_for_media_environment(
             document,
             document_base_url,
             external_stylesheets,
-            viewport_width,
-            viewport_height,
-            prefers_dark_color_scheme,
+            MediaEnvironment::new(
+                viewport_width,
+                viewport_height,
+                1.0,
+                prefers_dark_color_scheme,
+            ),
+        )
+    }
+
+    fn from_document_for_media_environment(
+        document: &NodeRef,
+        document_base_url: &str,
+        external_stylesheets: &[(String, String)],
+        environment: MediaEnvironment,
+    ) -> Self {
+        let mut set = Self::for_computed_style_for_media_environment(
+            document,
+            document_base_url,
+            external_stylesheets,
+            environment,
         );
         set.compute_subtree(document, None);
         set
     }
 
-    pub(crate) fn for_computed_style_for_viewport(
+    pub(crate) fn for_computed_style_for_media_environment(
         document: &NodeRef,
         document_base_url: &str,
         external_stylesheets: &[(String, String)],
-        viewport_width: f32,
-        viewport_height: f32,
-        prefers_dark_color_scheme: bool,
+        environment: MediaEnvironment,
     ) -> Self {
-        let viewport_width = viewport_width.max(1.0);
-        let viewport_height = viewport_height.max(1.0);
         let rules = sheets::collect(
             document,
             document_base_url,
             external_stylesheets,
-            viewport_width,
-            prefers_dark_color_scheme,
+            environment,
         );
         let rule_index = RuleIndex::new(&rules);
         Self {
@@ -134,8 +141,8 @@ impl StyleSet {
             rules,
             rule_index,
             document_base_url: document_base_url.to_string(),
-            viewport_width,
-            viewport_height,
+            viewport_width: environment.viewport_width,
+            viewport_height: environment.viewport_height,
         }
     }
 
