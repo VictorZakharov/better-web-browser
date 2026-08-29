@@ -1,34 +1,28 @@
+use super::layout::{clamp_scroll_row, panel_layout};
 use super::*;
 use crate::windows_app::paint_primitives::{
     draw_text_in_rect, fill_color_rect, paint_rounded_panel,
 };
 
-const PANEL_WIDTH_DIP: i32 = 480;
-const PANEL_HEIGHT_DIP: i32 = 430;
+const SUMMARY_LINE_COUNT: usize = 5;
+const MAX_PANEL_INCIDENTS: usize = 64;
 
-pub(super) fn panel_size(state: &BrowserState) -> Size {
-    Size {
-        cx: state.scale(PANEL_WIDTH_DIP),
-        cy: state.scale(PANEL_HEIGHT_DIP),
-    }
+pub(super) fn detail_line_count(state: &BrowserState) -> usize {
+    SUMMARY_LINE_COUNT
+        + state
+            .tabs
+            .active()
+            .incidents
+            .record_count()
+            .min(MAX_PANEL_INCIDENTS)
 }
 
 pub(super) fn copy_button_rect(state: &BrowserState, client: &Rect) -> Rect {
-    Rect {
-        left: state.scale(16),
-        top: client.bottom - state.scale(42),
-        right: client.right - state.scale(94),
-        bottom: client.bottom - state.scale(10),
-    }
+    panel_layout(state, client).copy_button
 }
 
 pub(super) fn close_button_rect(state: &BrowserState, client: &Rect) -> Rect {
-    Rect {
-        left: client.right - state.scale(86),
-        top: client.bottom - state.scale(42),
-        right: client.right - state.scale(16),
-        bottom: client.bottom - state.scale(10),
-    }
+    panel_layout(state, client).close_button
 }
 
 impl BrowserState {
@@ -119,15 +113,11 @@ impl BrowserState {
             .as_ref()
             .map(|session| session.snapshot())
             .or_else(|| tab.last_renderer_snapshot.clone());
+        let layout = panel_layout(self, client);
         SelectObject(dc, fonts.ui_semibold);
         SetTextColor(dc, CHROME_THEME.text);
         SetBkMode(dc, TRANSPARENT);
-        let mut heading = Rect {
-            left: self.scale(16),
-            top: self.scale(8),
-            right: client.right - self.scale(16),
-            bottom: self.scale(38),
-        };
+        let mut heading = layout.heading;
         draw_text_in_rect(
             dc,
             "Breeze diagnostics \u{00b7} F12",
@@ -153,24 +143,15 @@ impl BrowserState {
             ("Layout", format_ms(snapshot.layout_time)),
             ("Resources", format_ms(snapshot.resource_time)),
         ];
-        let graph = Rect {
-            left: self.scale(16),
-            top: (client.bottom - self.scale(84)).max(self.scale(96)),
-            right: client.right - self.scale(16),
-            bottom: client.bottom - self.scale(52),
-        };
         SelectObject(dc, fonts.ui_small);
-        for (index, (label, value)) in rows.iter().enumerate() {
-            let top = self.scale(40 + index as i32 * 18);
-            if top + self.scale(18) > graph.top - self.scale(4) {
-                break;
-            }
+        for (index, (label, value)) in rows.iter().take(layout.visible_metric_rows).enumerate() {
+            let top = layout.metrics.top + index as i32 * layout.row_height;
             SetTextColor(dc, CHROME_THEME.muted_text);
             let mut label_bounds = Rect {
-                left: self.scale(16),
+                left: layout.metrics.left,
                 top,
                 right: client.right / 2,
-                bottom: top + self.scale(18),
+                bottom: top + layout.row_height,
             };
             draw_text_in_rect(
                 dc,
@@ -182,8 +163,8 @@ impl BrowserState {
             let mut value_bounds = Rect {
                 left: client.right / 2,
                 top,
-                right: client.right - self.scale(16),
-                bottom: top + self.scale(18),
+                right: layout.metrics.right,
+                bottom: top + layout.row_height,
             };
             draw_text_in_rect(
                 dc,
@@ -249,27 +230,57 @@ impl BrowserState {
             tab.incidents.runtime_updates,
             tab.incidents.fetch_batches
         );
+        let mut detail_lines = vec![
+            (renderer_line, true),
+            (task_line, true),
+            (queue_line, true),
+            (state_line, true),
+            (activity_line, true),
+        ];
+        detail_lines.extend(
+            tab.incidents
+                .recent_labels(MAX_PANEL_INCIDENTS)
+                .into_iter()
+                .map(|line| (line, false)),
+        );
+        let visible_rows = layout.visible_detail_rows();
+        let scroll_row = clamp_scroll_row(
+            self.performance_detail_scroll,
+            detail_lines.len(),
+            visible_rows,
+        );
+        let scrollable = detail_lines.len() > visible_rows;
+        let text_bounds = layout.detail_text_bounds(scrollable, self.dpi);
+        let saved_dc = SaveDC(dc);
+        if saved_dc != 0 {
+            IntersectClipRect(
+                dc,
+                layout.details.left,
+                layout.details.top,
+                layout.details.right,
+                layout.details.bottom,
+            );
+        }
         SelectObject(dc, fonts.ui_small);
-        SetTextColor(dc, CHROME_THEME.text);
-        for (index, line) in [
-            renderer_line,
-            task_line,
-            queue_line,
-            state_line,
-            activity_line,
-        ]
-        .iter()
-        .enumerate()
+        for (index, (line, summary)) in detail_lines
+            .iter()
+            .skip(scroll_row)
+            .take(visible_rows)
+            .enumerate()
         {
-            let top = self.scale(208 + index as i32 * 18);
-            if top + self.scale(18) >= graph.top {
-                break;
-            }
+            SetTextColor(
+                dc,
+                if *summary {
+                    CHROME_THEME.text
+                } else {
+                    CHROME_THEME.muted_text
+                },
+            );
+            let top = layout.details.top + index as i32 * layout.row_height;
             let mut bounds = Rect {
-                left: self.scale(16),
                 top,
-                right: client.right - self.scale(16),
-                bottom: top + self.scale(18),
+                bottom: top + layout.row_height,
+                ..text_bounds
             };
             draw_text_in_rect(
                 dc,
@@ -278,54 +289,46 @@ impl BrowserState {
                 DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
             );
         }
-        SetTextColor(dc, CHROME_THEME.muted_text);
-        for (index, line) in tab.incidents.recent_labels(3).iter().enumerate() {
-            let top = self.scale(268 + index as i32 * 18);
-            if top + self.scale(18) >= graph.top {
-                break;
+        if saved_dc != 0 {
+            RestoreDC(dc, saved_dc);
+        }
+        if scrollable {
+            fill_color_rect(dc, &layout.scrollbar, CHROME_THEME.border);
+            if let Some(thumb) = layout.scrollbar_thumb(detail_lines.len(), scroll_row) {
+                fill_color_rect(dc, &thumb, CHROME_THEME.muted_text);
             }
-            let mut bounds = Rect {
-                left: self.scale(16),
-                top,
-                right: client.right - self.scale(16),
-                bottom: top + self.scale(18),
-            };
-            draw_text_in_rect(
-                dc,
-                line,
-                &mut bounds,
-                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-            );
         }
 
-        fill_color_rect(dc, &graph, CHROME_THEME.hover);
-        let count = snapshot.frame_history.len().max(1) as i32;
-        let bar_width = (graph.width() / count).max(1);
-        for (index, duration) in snapshot.frame_history.iter().enumerate() {
-            let ratio = (duration.as_secs_f64() / (1.0 / 30.0)).clamp(0.04, 1.0);
-            let bar_height = ((graph.height() as f64 * ratio).round() as i32).max(1);
-            let left = graph.left + index as i32 * bar_width;
-            fill_color_rect(
-                dc,
-                &Rect {
-                    left,
-                    top: graph.bottom - bar_height,
-                    right: (left + bar_width).min(graph.right),
-                    bottom: graph.bottom,
-                },
-                if *duration > Duration::from_micros(33_333) {
-                    rgb(190, 50, 50)
-                } else {
-                    CHROME_THEME.accent
-                },
-            );
+        if let Some(graph) = layout.graph {
+            fill_color_rect(dc, &graph, CHROME_THEME.hover);
+            let count = snapshot.frame_history.len().max(1) as i32;
+            let bar_width = (graph.width() / count).max(1);
+            for (index, duration) in snapshot.frame_history.iter().enumerate() {
+                let ratio = (duration.as_secs_f64() / (1.0 / 30.0)).clamp(0.04, 1.0);
+                let bar_height = ((graph.height() as f64 * ratio).round() as i32).max(1);
+                let left = graph.left + index as i32 * bar_width;
+                fill_color_rect(
+                    dc,
+                    &Rect {
+                        left,
+                        top: graph.bottom - bar_height,
+                        right: (left + bar_width).min(graph.right),
+                        bottom: graph.bottom,
+                    },
+                    if *duration > Duration::from_micros(33_333) {
+                        rgb(190, 50, 50)
+                    } else {
+                        CHROME_THEME.accent
+                    },
+                );
+            }
         }
 
         SelectObject(dc, fonts.ui_small);
         SetTextColor(dc, CHROME_THEME.text);
         for (bounds, label) in [
-            (copy_button_rect(self, client), "Copy diagnostics"),
-            (close_button_rect(self, client), "Close"),
+            (layout.copy_button, "Copy diagnostics"),
+            (layout.close_button, "Close"),
         ] {
             paint_rounded_panel(
                 dc,

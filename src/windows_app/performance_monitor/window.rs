@@ -1,6 +1,7 @@
 //! Native child surface and clipboard export for the performance monitor.
 
-use super::paint::{close_button_rect, copy_button_rect, format_ms, panel_size};
+use super::layout::{panel_layout, panel_size, scroll_detail_rows};
+use super::paint::{close_button_rect, copy_button_rect, detail_line_count, format_ms};
 use super::*;
 use std::fmt::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -60,7 +61,7 @@ impl BrowserState {
         let size = panel_size(self);
         let margin = self.scale(12);
         let top = self.toolbar_height() + margin;
-        let available_height = (self.chrome.status.top - top - margin).max(self.scale(180));
+        let available_height = (self.chrome.status.top - top - margin).max(1);
         let height = size.cy.min(available_height);
         SetWindowPos(
             self.performance_window,
@@ -229,6 +230,20 @@ pub(in crate::windows_app) unsafe extern "system" fn window_proc(
             0
         }
         WM_ERASEBKGND => 1,
+        WM_MOUSEWHEEL => {
+            let mut client: Rect = std::mem::zeroed();
+            GetClientRect(window, &mut client);
+            let layout = panel_layout(state, &client);
+            let delta = ((wparam >> 16) as u16) as i16 as i32;
+            state.performance_detail_scroll = scroll_detail_rows(
+                state.performance_detail_scroll,
+                delta,
+                detail_line_count(state),
+                layout.visible_detail_rows(),
+            );
+            InvalidateRect(window, null(), 0);
+            0
+        }
         WM_LBUTTONDOWN => 0,
         WM_LBUTTONUP => {
             let point = Point {

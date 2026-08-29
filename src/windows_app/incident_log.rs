@@ -41,6 +41,10 @@ impl Default for IncidentLog {
 }
 
 impl IncidentLog {
+    pub(super) fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
     pub(super) fn record_pointer(
         &mut self,
         accepted: bool,
@@ -79,11 +83,16 @@ impl IncidentLog {
             .take(maximum)
             .rev()
             .map(|record| {
+                let detail = record
+                    .detail
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 format!(
                     "{:>8.1} ms  {:<10} {}",
                     record.elapsed.as_secs_f64() * 1_000.0,
                     record.category,
-                    record.detail
+                    detail
                 )
             })
             .collect()
@@ -141,5 +150,14 @@ mod tests {
             log.records.front().unwrap().detail.chars().count(),
             MAX_INCIDENT_DETAIL_CHARS
         );
+    }
+
+    #[test]
+    fn panel_labels_are_single_line_without_losing_report_detail() {
+        let mut log = IncidentLog::default();
+        log.record("console", "first line\r\nsecond   line");
+
+        assert!(log.recent_labels(1)[0].ends_with("first line second line"));
+        assert!(log.report().contains("first line\r\nsecond   line"));
     }
 }
