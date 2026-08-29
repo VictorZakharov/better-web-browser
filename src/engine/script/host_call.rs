@@ -2,63 +2,57 @@
 
 use super::binding_helpers::*;
 use super::*;
-use boa_engine::object::builtins::JsArrayBuffer;
 
-pub(super) fn host_call(
-    _this: &JsValue,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
-    let operation = argument_string(args, 0, context)?;
-    let host = context
-        .get_data::<HostStateLink>()
-        .and_then(|link| link.0.upgrade())
-        .ok_or_else(|| JsNativeError::typ().with_message("browser host is not active"))?;
-    let mut host = host.borrow_mut();
-    let state = &mut *host;
-
-    let started = state.host_call_profile.start();
-    let result = dispatch_host_call(&operation, args, context, state);
-    state.host_call_profile.record(&operation, started);
-    result
-}
-
-fn dispatch_host_call(
+pub(super) fn dispatch_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<JsValue> {
-    if let Some(value) = super::network::network_host_call(operation, args, context, state)? {
+    if operation == "documentModuleComplete" {
+        let id = argument_id(args, 1);
+        let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
+        let reason = argument_string(args, 3)?;
+        if let Some(pending) = state.pending_module_evaluations.remove(&id) {
+            let result = if succeeded {
+                Ok(())
+            } else {
+                Err(if reason.is_empty() {
+                    "module evaluation rejected".into()
+                } else {
+                    reason
+                })
+            };
+            state
+                .completed_module_evaluations
+                .push(host_state::CompletedModuleEvaluation { pending, result });
+        }
+        return Ok(JsValue::undefined());
+    }
+    if let Some(value) = super::network::network_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::workers::worker_host_call(operation, args, context, state)? {
+    if let Some(value) = super::workers::worker_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) =
-        super::attribute_host::attribute_host_call(operation, args, context, state)?
-    {
+    if let Some(value) = super::attribute_host::attribute_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::dom_host::dom_host_call(operation, args, context, state)? {
+    if let Some(value) = super::dom_host::dom_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::shadow_host::shadow_host_call(operation, args, context, state)? {
+    if let Some(value) = super::shadow_host::shadow_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::cssom_host::cssom_host_call(operation, args, context, state)? {
+    if let Some(value) = super::cssom_host::cssom_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::style_host::style_host_call(operation, args, context, state)? {
+    if let Some(value) = super::style_host::style_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::mutation_host::mutation_host_call(operation, args, context, state)?
-    {
+    if let Some(value) = super::mutation_host::mutation_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) =
-        super::text_encoding_host::text_encoding_host_call(operation, args, context)?
-    {
+    if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
         return Ok(value);
     }
 
@@ -118,7 +112,7 @@ fn dispatch_host_call(
             Ok(js_string(value))
         }
         "query" => {
-            let selector = argument_string(args, 2, context)?;
+            let selector = argument_string(args, 2)?;
             let node = state
                 .node(argument_id(args, 1))
                 .and_then(|root| query_selector(&root, &selector));
@@ -127,7 +121,7 @@ fn dispatch_host_call(
             ))
         }
         "queryAll" => {
-            let selector = argument_string(args, 2, context)?;
+            let selector = argument_string(args, 2)?;
             let nodes = state
                 .node(argument_id(args, 1))
                 .map(|root| query_selector_all(&root, &selector))
@@ -135,14 +129,14 @@ fn dispatch_host_call(
             Ok(js_string(join_node_ids(state, &nodes, false)))
         }
         "matches" => {
-            let selector = argument_string(args, 2, context)?;
+            let selector = argument_string(args, 2)?;
             let matches = state
                 .node(argument_id(args, 1))
                 .is_some_and(|node| matches_selector_list(&node, &selector));
             Ok(JsValue::from(matches))
         }
         "closest" => {
-            let selector = argument_string(args, 2, context)?;
+            let selector = argument_string(args, 2)?;
             let closest = state
                 .node(argument_id(args, 1))
                 .and_then(|node| closest_matching_element(&node, &selector));
@@ -152,7 +146,7 @@ fn dispatch_host_call(
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
         "mediaMatches" => {
-            let query = argument_string(args, 1, context)?;
+            let query = argument_string(args, 1)?;
             Ok(JsValue::from(
                 crate::engine::css::media_query_matches_with_color_scheme(
                     &query,
@@ -163,61 +157,54 @@ fn dispatch_host_call(
         }
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
-            state.set_cookie(argument_string(args, 1, context)?);
+            state.set_cookie(argument_string(args, 1)?);
             Ok(JsValue::undefined())
         }
         "storageLength" => {
-            let area = storage_area(args, 1, context)?;
+            let area = storage_area(args, 1)?;
             Ok(JsValue::from(state.storage_len(area) as u32))
         }
         "storageKey" => {
-            let area = storage_area(args, 1, context)?;
+            let area = storage_area(args, 1)?;
             let index = argument_id(args, 2) as usize;
             Ok(state
                 .storage_key(area, index)
                 .map_or_else(JsValue::null, |value| js_string(value.to_string())))
         }
         "storageGet" => {
-            let area = storage_area(args, 1, context)?;
-            let key = argument_string(args, 2, context)?;
+            let area = storage_area(args, 1)?;
+            let key = argument_string(args, 2)?;
             Ok(state
                 .storage_get(area, &key)
                 .map_or_else(JsValue::null, |value| js_string(value.to_string())))
         }
         "storageSet" => {
-            let area = storage_area(args, 1, context)?;
-            let key = argument_string(args, 2, context)?;
-            let value = argument_string(args, 3, context)?;
+            let area = storage_area(args, 1)?;
+            let key = argument_string(args, 2)?;
+            let value = argument_string(args, 3)?;
             state.storage_set(area, key, value).map_err(storage_error)?;
             Ok(JsValue::undefined())
         }
         "storageRemove" => {
-            let area = storage_area(args, 1, context)?;
-            let key = argument_string(args, 2, context)?;
+            let area = storage_area(args, 1)?;
+            let key = argument_string(args, 2)?;
             state.storage_remove(area, key).map_err(storage_error)?;
             Ok(JsValue::undefined())
         }
         "storageClear" => {
-            let area = storage_area(args, 1, context)?;
+            let area = storage_area(args, 1)?;
             state.storage_clear(area).map_err(storage_error)?;
-            Ok(JsValue::undefined())
-        }
-        "arrayBufferDetach" => {
-            let object = args.get(1).and_then(JsValue::as_object).ok_or_else(|| {
-                JsNativeError::typ().with_message("transfer value is not an ArrayBuffer")
-            })?;
-            JsArrayBuffer::from_object(object)?.detach(&JsValue::undefined())?;
             Ok(JsValue::undefined())
         }
         "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
         "resolveUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             Ok(js_string(state.resolved_url(&value)))
         }
         "strictResolveUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             let base = if args.len() > 2 {
-                argument_string(args, 2, context)?
+                argument_string(args, 2)?
             } else {
                 state.document_url.clone()
             };
@@ -227,7 +214,7 @@ fn dispatch_host_call(
             Ok(js_string(resolved))
         }
         "parseWebUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
                 JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
             })?;
@@ -236,9 +223,9 @@ fn dispatch_host_call(
             ))
         }
         "setWebUrlComponent" => {
-            let value = argument_string(args, 1, context)?;
-            let component = argument_string(args, 2, context)?;
-            let input = argument_string(args, 3, context)?;
+            let value = argument_string(args, 1)?;
+            let component = argument_string(args, 2)?;
+            let input = argument_string(args, 3)?;
             let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
                 .ok_or_else(|| {
                     JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
@@ -246,7 +233,7 @@ fn dispatch_host_call(
             Ok(js_string(resolved))
         }
         "navigate" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             let resolved = state.resolved_url(&value);
             state.navigation_url = Some(resolved.clone());
             Ok(js_string(resolved))
@@ -278,8 +265,8 @@ fn dispatch_host_call(
             Ok(JsValue::from(cancelled))
         }
         "console" => {
-            let level = argument_string(args, 1, context)?;
-            let message = argument_string(args, 2, context)?;
+            let level = argument_string(args, 1)?;
+            let message = argument_string(args, 2)?;
             state.console.push(format!("{level}: {message}"));
             Ok(JsValue::undefined())
         }
@@ -289,12 +276,8 @@ fn dispatch_host_call(
     }
 }
 
-fn storage_area(
-    args: &[JsValue],
-    index: usize,
-    context: &mut Context,
-) -> JsResult<crate::storage::StorageAreaKind> {
-    match argument_string(args, index, context)?.as_str() {
+fn storage_area(args: &[JsValue], index: usize) -> JsResult<crate::storage::StorageAreaKind> {
+    match argument_string(args, index)?.as_str() {
         "local" => Ok(crate::storage::StorageAreaKind::Local),
         "session" => Ok(crate::storage::StorageAreaKind::Session),
         _ => Err(JsNativeError::typ()
@@ -303,7 +286,7 @@ fn storage_area(
     }
 }
 
-fn storage_error(error: crate::storage::StorageError) -> boa_engine::JsError {
+fn storage_error(error: crate::storage::StorageError) -> engine::JsError {
     JsNativeError::error()
         .with_message(error.to_string())
         .into()

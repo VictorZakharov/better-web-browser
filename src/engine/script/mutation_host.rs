@@ -8,7 +8,6 @@ use std::path::Path;
 pub(super) fn mutation_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     if state.task_mutation_count >= MAX_DOM_MUTATIONS_PER_TASK {
@@ -22,15 +21,15 @@ pub(super) fn mutation_host_call(
         "removeChild" => remove_child(args, state),
         "remove" => remove(args, state),
         "adoptNode" => adopt_node(args, state),
-        "textSet" => set_text(args, context, state)?,
-        "attrSet" => super::attribute_host::set_attribute(args, context, state)?,
-        "attrSetNs" => super::attribute_host::set_attribute_ns(args, context, state, false)?,
-        "attrReplaceNs" => super::attribute_host::set_attribute_ns(args, context, state, true)?,
-        "attrRemove" => super::attribute_host::remove_attribute(args, context, state)?,
-        "attrRemoveNs" => super::attribute_host::remove_attribute_ns(args, context, state)?,
-        "innerHtmlSet" => set_inner_html(args, context, state)?,
-        "innerHtmlAppend" => append_inner_html(args, context, state)?,
-        "documentWrite" => queue_document_write(args, context, state)?,
+        "textSet" => set_text(args, state)?,
+        "attrSet" => super::attribute_host::set_attribute(args, state)?,
+        "attrSetNs" => super::attribute_host::set_attribute_ns(args, state, false)?,
+        "attrReplaceNs" => super::attribute_host::set_attribute_ns(args, state, true)?,
+        "attrRemove" => super::attribute_host::remove_attribute(args, state)?,
+        "attrRemoveNs" => super::attribute_host::remove_attribute_ns(args, state)?,
+        "innerHtmlSet" => set_inner_html(args, state)?,
+        "innerHtmlAppend" => append_inner_html(args, state)?,
+        "documentWrite" => queue_document_write(args, state)?,
         _ => return Ok(None),
     };
     Ok(Some(value))
@@ -81,12 +80,8 @@ pub(super) fn eval_with_writes(
     result
 }
 
-fn queue_document_write(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    let html = argument_string(args, 1, context)?;
+fn queue_document_write(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let html = argument_string(args, 1)?;
     if state.pending_document_write.len() > MAX_DOCUMENT_WRITE_BYTES.saturating_sub(html.len()) {
         return Err(JsNativeError::range()
             .with_message("document.write output exceeds the page limit")
@@ -262,8 +257,8 @@ fn adopt_node(args: &[JsValue], state: &mut HostState) -> JsValue {
     JsValue::from(state.id_for(&node))
 }
 
-fn set_text(args: &[JsValue], context: &mut Context, state: &mut HostState) -> JsResult<JsValue> {
-    let contents = argument_string(args, 2, context)?;
+fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let contents = argument_string(args, 2)?;
     let node = state.node(argument_id(args, 1));
     let mut kind = node.as_ref().map_or(MutationKind::CharacterData, |node| {
         if matches!(&node.data, NodeData::Text(_) | NodeData::Comment(_)) {
@@ -306,29 +301,16 @@ fn set_text(args: &[JsValue], context: &mut Context, state: &mut HostState) -> J
     Ok(JsValue::from(changed))
 }
 
-fn set_inner_html(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    mutate_inner_html(args, context, state, false)
+fn set_inner_html(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    mutate_inner_html(args, state, false)
 }
 
-fn append_inner_html(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-) -> JsResult<JsValue> {
-    mutate_inner_html(args, context, state, true)
+fn append_inner_html(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    mutate_inner_html(args, state, true)
 }
 
-fn mutate_inner_html(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut HostState,
-    append: bool,
-) -> JsResult<JsValue> {
-    let html = argument_string(args, 2, context)?;
+fn mutate_inner_html(args: &[JsValue], state: &mut HostState, append: bool) -> JsResult<JsValue> {
+    let html = argument_string(args, 2)?;
     state.ensure_node_capacity(estimated_markup_nodes(&html))?;
     let node = state.node(argument_id(args, 1));
     let removed = node

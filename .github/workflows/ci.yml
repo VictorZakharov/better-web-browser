@@ -94,6 +94,9 @@ jobs:
           restore-keys: |
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
+      - name: Prepare V8 build path
+        shell: pwsh
+        run: ./scripts/prepare-v8.ps1 -Profile debug
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
@@ -130,6 +133,9 @@ jobs:
           restore-keys: |
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
+      - name: Prepare V8 build path
+        shell: pwsh
+        run: ./scripts/prepare-v8.ps1 -Profile debug
       - name: Test
         run: cargo test ${{ matrix.arguments }}
 
@@ -155,6 +161,9 @@ jobs:
           restore-keys: |
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
+      - name: Prepare V8 build path
+        shell: pwsh
+        run: ./scripts/prepare-v8.ps1 -Profile debug
       - name: Restore pinned WPT fixtures
         id: wpt-cache
         uses: actions/cache@v6
@@ -216,6 +225,9 @@ jobs:
           restore-keys: |
             windows-cargo-registry-v3-
             windows-cargo-registry-v2-
+      - name: Prepare V8 build path
+        shell: pwsh
+        run: ./scripts/prepare-v8.ps1 -Profile debug
       - name: Build alpha browser
         run: cargo build --locked --bin better-web-browser
       - name: Test bounded hidden-benchmark timeout diagnostics

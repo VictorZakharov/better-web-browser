@@ -87,6 +87,7 @@ impl BenchmarkRun {
             finish_scheduled: false,
             renderer_wait_deadline: None,
             screenshot,
+            filmstrip: None,
             scroll_samples,
             early_scroll: early_scroll.then(EarlyScrollTrace::six_seconds),
             scroll_surface: None,

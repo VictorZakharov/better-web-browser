@@ -26,6 +26,7 @@ if ([string]::IsNullOrWhiteSpace($Manifest)) {
 Push-Location $repoRoot
 try {
     if (-not $SkipBuild) {
+        & (Join-Path $PSScriptRoot 'prepare-v8.ps1') -Profile $BuildProfile | Out-Null
         [string[]] $profileArguments = if ($BuildProfile -eq 'release') {
             @('--release')
         } else {

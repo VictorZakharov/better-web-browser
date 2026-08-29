@@ -1,0 +1,4 @@
+[env]
+# Hash of rusty_v8_release_x86_64-pc-windows-msvc.lib.gz for pinned v8 152.2.0.
+# The crate verifies this before decompression even when prepare-v8.ps1 is not used.
+RUSTY_V8_ARCHIVE_SHA256 = "0b17ca072bae37dd4ff00e6014d2b413becb031c9342ee11cb8226a5881f62b2"

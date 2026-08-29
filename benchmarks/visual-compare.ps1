@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)] [string] $ChromiumScreenshot,
     [Parameter(Mandatory)] [string] $BreezeReport,
     [ValidateRange(0, 1)] [double] $MaximumDifference = 0.48,
-    [ValidateRange(0, 1)] [double] $MinimumLuminanceDeviation = 0.025
+    [ValidateRange(0, 1)] [double] $MinimumLuminanceDeviation = 0.025,
+    [switch] $DiagnosticOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,7 +98,7 @@ try {
             $breezeDeviation -ge $MinimumLuminanceDeviation -and
             $chromiumDeviation -ge $MinimumLuminanceDeviation
     }
-    if (-not $result.passed) {
+    if (-not $result.passed -and -not $DiagnosticOnly) {
         throw "Visual gate failed: difference $($result.perceptual_difference) / $MaximumDifference; luminance deviations $($result.breeze_luminance_deviation), $($result.chromium_luminance_deviation)."
     }
     return $result

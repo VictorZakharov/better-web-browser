@@ -246,6 +246,11 @@ fn state_and_stream_messages_round_trip() {
                 },
             },
         }),
+        RendererMessage::StateSnapshotApplied(StateSnapshotApplied {
+            document,
+            kind: StateSnapshotKind::LocalStorage,
+            version: 8,
+        }),
     ];
     let mut bytes = Vec::new();
     let mut writer = FrameWriter::new(&mut bytes, session());
@@ -445,23 +450,4 @@ fn rejects_limits_above_the_protocol_contract() {
         FrameReader::new(Cursor::new(bytes), session()).read_browser(),
         Err(ProtocolError::InvalidPayload("renderer limits"))
     ));
-}
-
-#[cfg(feature = "v8-engine-spike")]
-#[test]
-fn javascript_engine_probe_commands_round_trip() {
-    for engine in [
-        JavaScriptEngineProbe::Boa,
-        JavaScriptEngineProbe::V8Jitless,
-        JavaScriptEngineProbe::V8Jit,
-    ] {
-        let message = BrowserMessage::Test(TestCommand::ProbeJavaScriptEngine { engine });
-        let bytes = encoded_browser(&message);
-        assert_eq!(
-            FrameReader::new(Cursor::new(bytes), session())
-                .read_browser()
-                .unwrap(),
-            message
-        );
-    }
 }

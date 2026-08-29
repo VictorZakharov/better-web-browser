@@ -130,21 +130,13 @@ impl Broker {
                 .as_mut()
                 .and_then(|outgoing| outgoing.messages.pop_front())
             else {
-                self.outgoing_state_update = None;
-                self.resources().state_updates.complete();
+                // The transfer remains in flight until the renderer confirms that the complete
+                // snapshot was validated and applied. Pending corrections continue to coalesce
+                // instead of filling the command pipe with redundant full snapshots.
                 break;
             };
-            let completed = self
-                .outgoing_state_update
-                .as_ref()
-                .is_some_and(|outgoing| outgoing.messages.is_empty());
             if let Err(error) = self.writer().send_browser(&message) {
                 self.protocol_failure(error);
-                break;
-            }
-            if completed {
-                self.outgoing_state_update = None;
-                self.resources().state_updates.complete();
                 break;
             }
         }
@@ -233,6 +225,7 @@ impl OutgoingStateUpdate {
         };
 
         let document = update.document();
+        let acknowledgement = update.acknowledgement();
         let messages = match update {
             StateUpdate::Cookie(snapshot) => {
                 VecDeque::from([BrowserMessage::CookieSnapshot(snapshot)])
@@ -267,6 +260,10 @@ impl OutgoingStateUpdate {
                 messages
             }
         };
-        Self { document, messages }
+        Self {
+            document,
+            acknowledgement,
+            messages,
+        }
     }
 }

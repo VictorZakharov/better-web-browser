@@ -8,7 +8,6 @@ const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 pub(super) fn dom_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
@@ -76,7 +75,7 @@ pub(super) fn dom_host_call(
         }
         "createElement" => {
             let owner = state.node(argument_id(args, 1));
-            let tag_name = argument_string(args, 2, context)?;
+            let tag_name = argument_string(args, 2)?;
             state
                 .ensure_node_capacity(1 + usize::from(tag_name.eq_ignore_ascii_case("template")))?;
             JsValue::from(
@@ -88,8 +87,8 @@ pub(super) fn dom_host_call(
         }
         "createElementNS" => {
             let owner = state.node(argument_id(args, 1));
-            let namespace = argument_string(args, 2, context)?;
-            let qualified_name = argument_string(args, 3, context)?;
+            let namespace = argument_string(args, 2)?;
+            let qualified_name = argument_string(args, 3)?;
             state.ensure_node_capacity(
                 1 + usize::from(qualified_name.eq_ignore_ascii_case("template")),
             )?;
@@ -102,7 +101,7 @@ pub(super) fn dom_host_call(
         }
         "createText" | "createComment" => {
             let owner = state.node(argument_id(args, 1));
-            let contents = argument_string(args, 2, context)?;
+            let contents = argument_string(args, 2)?;
             state.ensure_node_capacity(1)?;
             JsValue::from(
                 owner
@@ -175,12 +174,12 @@ pub(super) fn dom_host_call(
             JsValue::from(clone.map(|node| state.id_for(&node)).unwrap_or_default())
         }
         "createDocument" => {
-            let namespace = argument_string(args, 1, context)?;
-            let qualified_name = argument_string(args, 2, context)?;
+            let namespace = argument_string(args, 1)?;
+            let qualified_name = argument_string(args, 2)?;
             JsValue::from(create_document(state, &namespace, &qualified_name)?)
         }
         "createHtmlDocument" => {
-            let title = argument_string(args, 1, context)?;
+            let title = argument_string(args, 1)?;
             JsValue::from(create_html_document(state, &title)?)
         }
         "isPrimaryDocument" => {
@@ -212,7 +211,7 @@ pub(super) fn dom_host_call(
         }
         "byId" => {
             let root = state.node(argument_id(args, 1));
-            let wanted = argument_string(args, 2, context)?;
+            let wanted = argument_string(args, 2)?;
             let node = (!wanted.is_empty())
                 .then_some(root)
                 .flatten()
@@ -227,7 +226,7 @@ pub(super) fn dom_host_call(
             js_string(named_property_candidates(state, argument_id(args, 1)))
         }
         "namedProperty" => {
-            let wanted = argument_string(args, 1, context)?;
+            let wanted = argument_string(args, 1)?;
             let nodes = named_property_nodes(state, &wanted);
             js_string(join_node_ids(state, &nodes, false))
         }

@@ -30,6 +30,9 @@ internal sealed class Options
     public required string Output { get; init; }
     public required string ChromePath { get; init; }
     public string? Screenshot { get; init; }
+    public string? FilmstripDirectory { get; init; }
+    public int FilmstripIntervalMs { get; init; } = 500;
+    public int FilmstripDurationMs { get; init; } = 10_000;
     public int ViewportWidth { get; init; } = 1088;
     public int ViewportHeight { get; init; } = 607;
     public double DeviceScaleFactor { get; init; } = 1;
@@ -77,12 +80,29 @@ internal sealed class Options
             throw new FileNotFoundException("Chromium executable was not found.", chrome);
         }
 
+        var filmstripDirectory = values.GetValueOrDefault("--filmstrip-directory");
+        var filmstripIntervalMs = Integer("--filmstrip-interval-ms", 500, 100, 10_000);
+        var filmstripDurationMs = Integer("--filmstrip-duration-ms", 10_000, 100, 60_000);
+        if (filmstripDirectory is null &&
+            (values.ContainsKey("--filmstrip-interval-ms") || values.ContainsKey("--filmstrip-duration-ms")))
+        {
+            throw new ArgumentException("Filmstrip timing requires --filmstrip-directory.");
+        }
+        if (filmstripDirectory is not null &&
+            (filmstripDurationMs % filmstripIntervalMs != 0 || filmstripDurationMs / filmstripIntervalMs > 120))
+        {
+            throw new ArgumentException("Filmstrip duration must be a multiple of its interval and contain at most 120 frames.");
+        }
+
         return new Options
         {
             Url = url,
             Output = Required("--output"),
             ChromePath = Path.GetFullPath(chrome),
             Screenshot = values.GetValueOrDefault("--screenshot"),
+            FilmstripDirectory = filmstripDirectory is null ? null : Path.GetFullPath(filmstripDirectory),
+            FilmstripIntervalMs = filmstripIntervalMs,
+            FilmstripDurationMs = filmstripDurationMs,
             ViewportWidth = Integer("--viewport-width", 1088, 320, 7680),
             ViewportHeight = Integer("--viewport-height", 607, 240, 4320),
             DeviceScaleFactor = values.TryGetValue("--device-scale-factor", out var scale)

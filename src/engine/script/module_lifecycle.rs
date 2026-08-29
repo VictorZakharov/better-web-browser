@@ -1,10 +1,9 @@
 //! Pending module evaluation, script events, and document lifecycle gating.
 
 use super::*;
-use boa_engine::object::builtins::JsPromise;
 
 pub(super) fn track_pending(
-    promise: &JsPromise,
+    promise: u64,
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
     script: &ScriptInput,
@@ -28,24 +27,9 @@ pub(super) fn track_pending(
         );
         id
     };
-    let fulfilled = NativeFunction::from_copy_closure_with_captures(
-        |_, _, id, context| complete(context, *id, Ok(())),
-        id,
-    )
-    .to_js_function(context.realm());
-    let rejected = NativeFunction::from_copy_closure_with_captures(
-        |_, args, id, context| {
-            let reason = args
-                .first()
-                .map(|value| value.display().to_string())
-                .unwrap_or_else(|| "module evaluation rejected".to_string());
-            complete(context, *id, Err(reason))
-        },
-        id,
-    )
-    .to_js_function(context.realm());
-    let _ = promise.then(Some(fulfilled), Some(rejected), context);
-    Ok(())
+    context
+        .track_module_promise(promise, "documentModuleComplete", id)
+        .map_err(|error| error.to_string())
 }
 
 pub(super) fn request_document_lifecycle(host: &Rc<RefCell<HostState>>) {
@@ -124,19 +108,4 @@ pub(super) fn drain(
                 .push(format!("finish lifecycle promise jobs: {error}"));
         }
     }
-}
-
-fn complete(context: &mut Context, id: u32, result: Result<(), String>) -> JsResult<JsValue> {
-    if let Some(host) = context
-        .get_data::<HostStateLink>()
-        .and_then(|link| link.0.upgrade())
-    {
-        let mut state = host.borrow_mut();
-        if let Some(pending) = state.pending_module_evaluations.remove(&id) {
-            state
-                .completed_module_evaluations
-                .push(host_state::CompletedModuleEvaluation { pending, result });
-        }
-    }
-    Ok(JsValue::undefined())
 }

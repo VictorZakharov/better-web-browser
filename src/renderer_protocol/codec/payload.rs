@@ -82,12 +82,6 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
                     payload.extend_from_slice(&bytes.to_le_bytes());
                     payload.resize(3 + usize::from(*bytes), 0);
                 }
-                #[cfg(feature = "v8-engine-spike")]
-                TestCommand::ProbeJavaScriptEngine { engine } => payload.push(match engine {
-                    crate::renderer_protocol::JavaScriptEngineProbe::Boa => 12,
-                    crate::renderer_protocol::JavaScriptEngineProbe::V8Jitless => 13,
-                    crate::renderer_protocol::JavaScriptEngineProbe::V8Jit => 14,
-                }),
             }
             0x8001
         }
@@ -178,7 +172,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
-        RendererMessage::CookieMutation(_) | RendererMessage::StorageMutation(_) => {
+        RendererMessage::CookieMutation(_)
+        | RendererMessage::StorageMutation(_)
+        | RendererMessage::StateSnapshotApplied(_) => {
             return encode_renderer_state(message);
         }
         RendererMessage::Restrictions(report) => {
@@ -227,7 +223,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         }
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a
         | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
-        0x0132 | 0x0134 => decode_renderer_state(kind, payload),
+        0x0132 | 0x0134 | 0x0136 => decode_renderer_state(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;
             if payload[3] != 0 {
@@ -250,18 +246,6 @@ fn decode_test_command(payload: &[u8]) -> Result<TestCommand, ProtocolError> {
     match payload {
         [10] => Ok(TestCommand::InternalError),
         [11] => Ok(TestCommand::DocumentError),
-        #[cfg(feature = "v8-engine-spike")]
-        [12] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::Boa,
-        }),
-        #[cfg(feature = "v8-engine-spike")]
-        [13] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::V8Jitless,
-        }),
-        #[cfg(feature = "v8-engine-spike")]
-        [14] => Ok(TestCommand::ProbeJavaScriptEngine {
-            engine: crate::renderer_protocol::JavaScriptEngineProbe::V8Jit,
-        }),
         [1] => Ok(TestCommand::Crash),
         [2] => Ok(TestCommand::Hang),
         [3] => Ok(TestCommand::WriteMalformedFrame),

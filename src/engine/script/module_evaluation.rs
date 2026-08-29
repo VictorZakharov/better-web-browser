@@ -1,8 +1,6 @@
 //! Standards-oriented ECMAScript module graph loading and evaluation.
 
-use super::module_loader::parse_module;
 use super::*;
-use boa_engine::builtins::promise::PromiseState;
 
 pub(super) fn evaluate_module(
     context: &mut Context,
@@ -25,31 +23,27 @@ pub(super) fn evaluate_module(
     let mut result = Err("module graph could not be loaded".to_string());
     let mut pending_promise = None;
     for _ in 0..MAX_DYNAMIC_SCRIPTS {
-        let root = match parse_module(&script.code, &script.source_url, context) {
-            Ok(module) => module,
-            Err(error) => {
-                result = Err(error.to_string());
-                break;
-            }
-        };
-        loader.begin_attempt(&script.source_url, root.clone());
-        let promise = root.load_link_evaluate(context);
-        if let Err(error) = context.run_jobs() {
-            result = Err(format!("module promise job: {error}"));
-            break;
-        }
-        let missing = loader.take_missing();
-        if missing.is_empty() {
-            result = match promise.state() {
-                PromiseState::Rejected(reason) => Err(reason.display().to_string()),
-                PromiseState::Pending => {
-                    pending_promise = Some(promise);
-                    Ok(())
+        let missing =
+            match context.evaluate_module(&script.source_url, &script.code, &loader.sources()) {
+                Ok(ModuleEvaluation::Missing(missing)) => missing,
+                Ok(ModuleEvaluation::Fulfilled) => {
+                    result = Ok(());
+                    break;
                 }
-                PromiseState::Fulfilled(_) => Ok(()),
+                Ok(ModuleEvaluation::Rejected(reason)) => {
+                    result = Err(reason);
+                    break;
+                }
+                Ok(ModuleEvaluation::Pending(promise)) => {
+                    pending_promise = Some(promise);
+                    result = Ok(());
+                    break;
+                }
+                Err(error) => {
+                    result = Err(error.to_string());
+                    break;
+                }
             };
-            break;
-        }
         let Some(load) = source_loader.as_mut() else {
             result = Err(format!("module dependency is unavailable: {}", missing[0]));
             break;
@@ -85,7 +79,7 @@ pub(super) fn evaluate_module(
     let pending = if error.is_none() {
         pending_promise.is_some_and(|promise| {
             if let Err(track_error) = super::module_lifecycle::track_pending(
-                &promise,
+                promise,
                 context,
                 host,
                 script,

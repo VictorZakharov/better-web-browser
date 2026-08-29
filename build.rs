@@ -1,7 +1,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Boa and the layout engine both execute standards-defined nested algorithms. Windows' default
+    // V8 and the layout engine both execute standards-defined nested algorithms. Windows' default
     // one-megabyte executable stack is too small for otherwise bounded real-world pages (the
     // Google Search challenge document is one example). Reserve the same eight-megabyte UI stack
     // already used by the hidden WPT path; `/STACK` reserves address space and commits pages only

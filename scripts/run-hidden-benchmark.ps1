@@ -6,6 +6,11 @@ param(
     [string] $Output,
     [string] $Browser,
     [string] $Screenshot,
+    [string] $FilmstripDirectory,
+    [ValidateRange(100, 10000)]
+    [int] $FilmstripIntervalMs = 500,
+    [ValidateRange(100, 60000)]
+    [int] $FilmstripDurationMs = 10000,
     [ValidateRange(100, 60000)]
     [int] $SettleMs = 2000,
     [ValidateRange(5, 600)]
@@ -117,6 +122,15 @@ if ($EarlyScrollTrace) {
 if (-not [string]::IsNullOrWhiteSpace($Screenshot)) {
     $arguments.Add('--screenshot')
     $arguments.Add($screenshotPath)
+}
+if (-not [string]::IsNullOrWhiteSpace($FilmstripDirectory)) {
+    $filmstripPath = [System.IO.Path]::GetFullPath($FilmstripDirectory)
+    $arguments.Add('--filmstrip-directory')
+    $arguments.Add($filmstripPath)
+    $arguments.Add('--filmstrip-interval-ms')
+    $arguments.Add($FilmstripIntervalMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
+    $arguments.Add('--filmstrip-duration-ms')
+    $arguments.Add($FilmstripDurationMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 }
 foreach ($selector in $DiagnosticSelector) {
     $arguments.Add('--diagnostic-selector')

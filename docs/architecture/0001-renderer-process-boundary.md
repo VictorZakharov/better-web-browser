@@ -414,9 +414,12 @@ Before processing remote content, a renderer launch must apply all required cont
 - Build an explicit, case-insensitively sorted environment block from the audited Windows bootstrap
   allowlist plus drive-current-directory entries; reject every non-allowlisted child variable.
 - Apply compatible creation-time mitigations for DEP, ASLR, strict handle checks, extension-point
-  disabling, CFG, image loading, and dynamic code. Each policy needs a launch test on supported
-  Windows versions; unsupported optional hardening is reported, while failure of AppContainer, Job,
-  child-process, or handle-isolation setup is fatal.
+  disabling, CFG, and image loading. ADR 0006 intentionally omits dynamic-code prohibition from
+  the capability-free renderer because the production V8 engine requires JIT code generation; the
+  containment suite must prove that this exception does not add child-process, loopback, or direct
+  Internet authority. Each retained policy needs a launch test on supported Windows versions;
+  unsupported optional hardening is reported, while failure of AppContainer, Job, child-process,
+  or handle-isolation setup is fatal.
 - The renderer's GDI/font text dependency has been removed. Keep the Win32k system-call ban
   disabled until remaining renderer platform calls have an explicit compatibility launch test; do
   not silently advertise that mitigation before its test passes.
@@ -492,13 +495,13 @@ full decision and remaining boundaries are recorded in
 
 ### Stage 4: Move the document engine and decoders
 
-- Move HTML/CSS parsing, DOM, Boa, scheduler, style/layout, Reader extraction, and remote decoders to
+- Move HTML/CSS parsing, DOM, the JavaScript engine, scheduler, style/layout, Reader extraction, and remote decoders to
   the renderer endpoint.
 - Replace the temporary GDI text-measurement bridge and keep webfont bytes out of the browser.
 - Serialize display-list and semantic-control updates; validate them before browser presentation.
 - Preserve the full rebuild fallback while incremental invalidation from issue #8 is adopted.
 
-Remote-document decoding, HTML/CSS parsing, DOM, Boa, scheduler, style/layout, Reader extraction,
+Remote-document decoding, HTML/CSS parsing, DOM, V8, scheduler, style/layout, Reader extraction,
 image/SVG/webfont decoding, dedicated Workers, text shaping/rasterization, and immutable
 presentation construction now run in the renderer. The privileged in-process page-engine fallback
 and temporary GDI text-measurement bridge have been removed. The browser only validates and

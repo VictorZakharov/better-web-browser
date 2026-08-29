@@ -6,8 +6,6 @@ description = "A performance-first browser engine MVP"
 license = "MIT"
 
 [dependencies]
-boa_engine = { version = "0.21.1", default-features = false, features = ["annex-b"] }
-boa_gc = "0.21.1"
 cssparser = "0.37.0"
 data-url = "0.3.2"
 encoding_rs = "0.8.35"
@@ -20,7 +18,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 time = { version = "0.3.55", default-features = false, features = ["std"] }
 url = "2.5.8"
-v8 = { version = "=152.2.0", default-features = false, optional = true }
+v8 = { version = "=152.2.0", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 accesskit = "0.24.1"
@@ -47,10 +45,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [patch.crates-io]
-boa_ast = { path = "vendor/boa_ast" }
-boa_engine = { path = "vendor/boa_engine" }
-boa_parser = { path = "vendor/boa_parser" }
-# Boa 0.21 still names the archived `paste` crate. This maintained,
+# V8 152.2 still names the archived `paste` crate. This maintained,
 # version-compatible fork preserves the macro API without an advisory ignore.
 paste = { path = "vendor/paste-complete" }
 
@@ -80,9 +75,3 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
-
-[features]
-default = []
-# Temporary, non-shipping feasibility path for issue #113. Production remains on Boa only while
-# the V8 Web bindings are ported; completing the migration removes Boa and this spike feature.
-v8-engine-spike = ["dep:v8"]

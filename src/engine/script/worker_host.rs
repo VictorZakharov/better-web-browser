@@ -2,7 +2,6 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
-use boa_engine::object::builtins::JsArrayBuffer;
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -25,10 +24,6 @@ pub(super) struct WorkerHostState {
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) imported_script_bytes: usize,
 }
-
-#[derive(Clone, Finalize, JsData, Trace)]
-#[boa_gc(unsafe_empty_trace)]
-pub(super) struct WorkerHostLink(pub(super) Weak<RefCell<WorkerHostState>>);
 
 #[derive(Serialize)]
 struct ImportedScript {
@@ -93,28 +88,36 @@ impl WorkerHostState {
     }
 }
 
-pub(super) fn worker_runtime_host_call(
-    _this: &JsValue,
+pub(super) fn dispatch_worker_host_call(
+    operation: &str,
     args: &[JsValue],
-    context: &mut Context,
+    state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
-    let operation = argument_string(args, 0, context)?;
-    let host = context
-        .get_data::<WorkerHostLink>()
-        .and_then(|link| link.0.upgrade())
-        .ok_or_else(|| JsNativeError::typ().with_message("Worker host is not active"))?;
-    let mut state = host.borrow_mut();
-    match operation.as_str() {
+    match operation {
+        "workerModuleComplete" => {
+            let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
+            let reason = argument_string(args, 3)?;
+            state.module_evaluation_completion = Some(if succeeded {
+                Ok(())
+            } else {
+                Err(if reason.is_empty() {
+                    "Worker module evaluation rejected".into()
+                } else {
+                    reason
+                })
+            });
+            Ok(JsValue::undefined())
+        }
         "resolveUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             Ok(js_string(
                 resolve_url(&state.source_url, &value).unwrap_or(value),
             ))
         }
         "strictResolveUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             let base = if args.len() > 2 {
-                argument_string(args, 2, context)?
+                argument_string(args, 2)?
             } else {
                 state.source_url.clone()
             };
@@ -124,7 +127,7 @@ pub(super) fn worker_runtime_host_call(
             Ok(js_string(resolved))
         }
         "parseWebUrl" => {
-            let value = argument_string(args, 1, context)?;
+            let value = argument_string(args, 1)?;
             let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
                 JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
             })?;
@@ -133,9 +136,9 @@ pub(super) fn worker_runtime_host_call(
             ))
         }
         "setWebUrlComponent" => {
-            let value = argument_string(args, 1, context)?;
-            let component = argument_string(args, 2, context)?;
-            let input = argument_string(args, 3, context)?;
+            let value = argument_string(args, 1)?;
+            let component = argument_string(args, 2)?;
+            let input = argument_string(args, 3)?;
             let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
                 .ok_or_else(|| {
                     JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
@@ -146,13 +149,13 @@ pub(super) fn worker_runtime_host_call(
         "workerName" => Ok(js_string(state.name.clone())),
         "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
         "console" => {
-            let level = argument_string(args, 1, context)?;
-            let message = argument_string(args, 2, context)?;
+            let level = argument_string(args, 1)?;
+            let message = argument_string(args, 2)?;
             state.console.push(format!("{level}: {message}"));
             Ok(JsValue::undefined())
         }
         "fetchStart" => {
-            let serialized = argument_string(args, 1, context)?;
+            let serialized = argument_string(args, 1)?;
             let request = super::network::request_from_serialized(&state.source_url, &serialized)?;
             let id = state.next_fetch_id;
             state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {
@@ -171,18 +174,11 @@ pub(super) fn worker_runtime_host_call(
             Ok(JsValue::undefined())
         }
         "workerPost" => {
-            state.messages.push(argument_string(args, 1, context)?);
+            state.messages.push(argument_string(args, 1)?);
             Ok(JsValue::undefined())
         }
         "workerClose" => {
             state.closed = true;
-            Ok(JsValue::undefined())
-        }
-        "arrayBufferDetach" => {
-            let object = args.get(1).and_then(JsValue::as_object).ok_or_else(|| {
-                JsNativeError::typ().with_message("transfer value is not an ArrayBuffer")
-            })?;
-            JsArrayBuffer::from_object(object)?.detach(&JsValue::undefined())?;
             Ok(JsValue::undefined())
         }
         "timerSchedule" => {
@@ -199,24 +195,20 @@ pub(super) fn worker_runtime_host_call(
                 .is_some_and(|handle| state.timers.cancel(handle));
             Ok(JsValue::from(cancelled))
         }
-        "workerImportScripts" => import_scripts(args, context, &mut state),
+        "workerImportScripts" => import_scripts(args, state),
         _ => Err(JsNativeError::typ()
             .with_message(format!("unsupported Worker host operation: {operation}"))
             .into()),
     }
 }
 
-fn import_scripts(
-    args: &[JsValue],
-    context: &mut Context,
-    state: &mut WorkerHostState,
-) -> JsResult<JsValue> {
+fn import_scripts(args: &[JsValue], state: &mut WorkerHostState) -> JsResult<JsValue> {
     if state.kind == ScriptKind::Module {
         return Err(JsNativeError::typ()
             .with_message("importScripts is unavailable in module workers")
             .into());
     }
-    let urls: Vec<String> = serde_json::from_str(&argument_string(args, 1, context)?)
+    let urls: Vec<String> = serde_json::from_str(&argument_string(args, 1)?)
         .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
     let mut scripts = Vec::new();
     for value in urls {

@@ -5,16 +5,11 @@ use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource
 use crate::limits::{
     MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
-    MAX_SCRIPT_LOOP_ITERATIONS as MAX_LOOP_ITERATIONS,
 };
 use crate::navigation::resolve_url;
-use boa_engine::{
-    Context, Finalize, JsData, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source,
-    Trace, property::Attribute,
-};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 mod attribute_host;
@@ -23,8 +18,7 @@ mod bootstrap;
 mod cssom_host;
 mod dom_host;
 mod dynamic_scripts;
-#[cfg(feature = "v8-engine-spike")]
-mod engine_probe;
+mod engine;
 mod execution;
 mod host_call;
 mod host_profiling;
@@ -50,11 +44,12 @@ mod worker_module;
 mod worker_runtime;
 mod workers;
 
-#[cfg(feature = "v8-engine-spike")]
-pub(crate) use engine_probe::run_engine_probe;
+use engine::{
+    Context, HostBridge, JsError, JsNativeError, JsResult, JsString, JsValue, ModuleEvaluation,
+    Source,
+};
 pub use execution::{execute, execute_with_loader};
-use host_call::host_call;
-use host_state::{HostState, HostStateLink};
+use host_state::HostState;
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
 pub use runtime::ScriptRuntime;
 pub(crate) use runtime_guard::install_runtime_panic_hook;

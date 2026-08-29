@@ -42,49 +42,10 @@ pub(super) fn execute_inner(
     defer_dynamic_scripts: bool,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
-    context
-        .runtime_limits_mut()
-        .set_loop_iteration_limit(MAX_LOOP_ITERATIONS);
-    context.runtime_limits_mut().set_recursion_limit(128);
-
-    if let Err(error) = context.register_global_builtin_callable(
-        boa_engine::js_string!("__hostCall"),
-        1,
-        NativeFunction::from_fn_ptr(host_call),
-    ) {
-        outcome
-            .errors
-            .push(format!("initialize JavaScript host bridge: {error}"));
-        return outcome;
-    }
-
-    let iframe_realm = match context.create_realm() {
-        Ok(realm) => realm,
-        Err(error) => {
-            outcome
-                .errors
-                .push(format!("initialize iframe JavaScript realm: {error}"));
-            return outcome;
-        }
-    };
-    let parent_realm = context.enter_realm(iframe_realm);
-    let iframe_bootstrap = context.eval(Source::from_bytes(IFRAME_REALM_BOOTSTRAP));
-    let iframe_window = context.global_object();
-    context.enter_realm(parent_realm);
-    if let Err(error) = iframe_bootstrap {
+    if let Err(error) = context.initialize_iframe_realm(IFRAME_REALM_BOOTSTRAP) {
         outcome
             .errors
             .push(format!("initialize iframe browser bindings: {error}"));
-        return outcome;
-    }
-    if let Err(error) = context.register_global_property(
-        boa_engine::js_string!("__iframeWindow"),
-        iframe_window,
-        Attribute::all(),
-    ) {
-        outcome
-            .errors
-            .push(format!("expose iframe JavaScript realm: {error}"));
         return outcome;
     }
 

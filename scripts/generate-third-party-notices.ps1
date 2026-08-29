@@ -73,8 +73,6 @@ foreach ($package in $packages) {
 [void] $markdown.AppendLine()
 [void] $markdown.AppendLine('## Bundled sources and data')
 [void] $markdown.AppendLine()
-[void] $markdown.AppendLine('- `boa_ast`, `boa_engine`, and `boa_parser` are locally modified path dependencies from Boa revision `bc36c3fac0969ea21ea0570b62e7846f97389b73`, offered under Unlicense OR MIT. Changes are recorded in each crate''s `LOCAL_CHANGES.md`; both upstream license texts are preserved beside the sources and copied into release archives.')
-[void] $markdown.AppendLine('- Boa 0.21 dependencies named `paste` resolve to the locally packaged, source-unchanged `paste-complete` 1.0.15 fork from <https://github.com/esrauch/paste> (MIT OR Apache-2.0). This removes archived upstream `paste` without ignoring `RUSTSEC-2024-0436`; provenance is recorded in `vendor/paste-complete/LOCAL_CHANGES.md`.')
 [void] $markdown.AppendLine('- `psl2` embeds a compact Mozilla Public Suffix List snapshot. The crate is MIT OR Apache-2.0; the list data is MPL-2.0. The crate and list versions are pinned by `Cargo.lock` and `psl2::psl_version()`.')
 [void] $markdown.AppendLine('- The AccessKit crates are MIT OR Apache-2.0 and contain portions derived from Chromium under a BSD license. The required upstream notice is preserved at `third_party/accesskit/LICENSE.chromium` and copied beside every AccessKit package notice in release archives.')
 [void] $markdown.AppendLine()

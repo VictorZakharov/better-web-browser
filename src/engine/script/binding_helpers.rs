@@ -2,13 +2,9 @@
 
 use super::*;
 
-pub(super) fn argument_string(
-    arguments: &[JsValue],
-    index: usize,
-    context: &mut Context,
-) -> JsResult<String> {
+pub(super) fn argument_string(arguments: &[JsValue], index: usize) -> JsResult<String> {
     match arguments.get(index) {
-        Some(value) => Ok(value.to_string(context)?.to_std_string_escaped()),
+        Some(value) => Ok(value.string_value()),
         None => Ok(String::new()),
     }
 }
@@ -32,7 +28,7 @@ pub(super) fn argument_duration(arguments: &[JsValue], index: usize) -> Duration
 }
 
 pub(super) fn js_string(value: String) -> JsValue {
-    JsValue::from(JsString::from(value))
+    JsValue::from(value)
 }
 
 pub(super) fn node_label(node: &NodeRef) -> String {

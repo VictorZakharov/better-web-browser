@@ -273,6 +273,10 @@ unsafe fn dispatch_window_message(
             state.run_benchmark_navigation();
             0
         }
+        WM_APP_BENCHMARK_FILMSTRIP => {
+            state.capture_benchmark_filmstrip_frame(wparam);
+            0
+        }
         WM_APP_EARLY_SCROLL_TICK => {
             state.handle_early_scroll_tick(wparam);
             0

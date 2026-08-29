@@ -32,7 +32,7 @@ Current page support includes:
 - HTML5 tree construction with an engine-owned DOM
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - External stylesheets, CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
-- A bounded Boa JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
+- A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
@@ -207,7 +207,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Host platforms | The native shell runs on Windows; macOS and Linux shells are not implemented. |
 | ◩ | HTML and DOM | The engine owns its DOM and implements substantial HTML5 tree construction, mutation, and event propagation behavior. Web-platform conformance is still incomplete. |
 | ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
-| ◩ | JavaScript and browser APIs | A bounded retained Boa realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
+| ◩ | JavaScript and browser APIs | A bounded retained V8 realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists and tab-scoped `sessionStorage` does not. Cross-document `storage` events, storage property-name traps, partitioned state, and user-facing data controls remain incomplete. |
 | ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Network responses now stream incrementally and with backpressure from WinHTTP across renderer IPC, but the JavaScript realm still receives each completed body rather than a progressively delivered network stream. |
@@ -237,5 +237,5 @@ As of 2026-08-13, the hidden release build completes HTML5test and renders a sco
 
 ## License
 
-Breeze is available under the MIT License. The modified vendored Boa crates and
-their local patch inventories are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Breeze is available under the MIT License. Locked third-party dependencies and their license
+provenance are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

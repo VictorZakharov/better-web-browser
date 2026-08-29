@@ -17,7 +17,7 @@ review can audit the complete policy without hunting through parsers and platfor
 | URLs | 16 KiB | Reject navigation addresses and URL resolution before parsing; embedded image data URLs have a separate 8 MiB boundary. |
 | Fetch | 16 MiB/response; 64 KiB/preflight; 20 redirects | Abort streaming transport reads and reject excessive redirects. |
 | Page resources | 32 MiB aggregate | Stop admitting additional fetched resource bodies for the document. |
-| JavaScript | 8 MiB per source; 16 MiB per page realm; 32 dynamic scripts; 5,000,000 loop iterations | Reject excess code, stop dynamic-script admission, and terminate runaway Boa execution. Tests use a lower loop budget for fast regressions. |
+| JavaScript | 8 MiB per source; 16 MiB per page realm; 32 dynamic scripts; 2 s per V8 entry | Reject excess code, stop dynamic-script admission, and terminate runaway V8 execution. Unit tests use a 100 ms execution deadline for fast regressions. |
 | Script tasks | 10,000 DOM mutations; 128 timer callbacks/slice | Reject further host calls or yield the timer slice so one task cannot grow without bound. Unit tests use a lower mutation threshold for fast boundary regressions. |
 | Raster images | 16 MiB encoded; 32,768 px/axis; 32 Mi pixels; 128 MiB decoded | Configure the `image` decoder's pre-allocation limits, then verify the exact pixel product before copying pixels. |
 | SVG | 4 MiB source; 32 Mi pixels | Reject source before the third-party parser and reject dimensions before allocating the render pixmap. |

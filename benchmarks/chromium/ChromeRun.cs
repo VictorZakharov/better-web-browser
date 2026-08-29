@@ -23,6 +23,12 @@ internal static class ChromeRun
             var pageSocket = await FindPageSocketAsync(port, timeout);
             using var cdp = new CdpConnection();
             await cdp.ConnectAsync(pageSocket, timeout);
+            using var filmstripCdp = options.FilmstripDirectory is null ? null : new CdpConnection();
+            if (filmstripCdp is not null)
+            {
+                await filmstripCdp.ConnectAsync(pageSocket, timeout);
+                await filmstripCdp.CallAsync(50_000, "Page.enable", null, timeout);
+            }
             var nextId = 1;
             await cdp.CallAsync(nextId++, "Page.enable", null, timeout);
             await cdp.CallAsync(nextId++, "Runtime.enable", null, timeout);
@@ -51,6 +57,14 @@ internal static class ChromeRun
                 method = "Page.navigate",
                 @params = new { url = options.Url }
             });
+            var filmstripTask = filmstripCdp is null
+                ? Task.CompletedTask
+                : FilmstripCapture.RunAsync(
+                    filmstripCdp,
+                    options,
+                    stopwatch,
+                    navigationStarted,
+                    timeout);
             string? navigationError = null;
             await cdp.ReadUntilAsync(root =>
             {
@@ -80,6 +94,7 @@ internal static class ChromeRun
                 : result.NavigationMs;
             var beforeSettle = ProcessTree.Sample(chrome.Id);
             await Task.Delay(options.SettleMs);
+            await filmstripTask;
             var afterSettle = ProcessTree.Sample(chrome.Id);
             result.AverageCpuPercent = CpuPercent(beforeSettle, afterSettle, options.SettleMs);
 

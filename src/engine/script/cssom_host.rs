@@ -19,12 +19,11 @@ struct AdoptedSheetPayload {
 pub(super) fn cssom_host_call(
     operation: &str,
     args: &[JsValue],
-    context: &mut Context,
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "stylesheetSource" => {
-            let url = argument_string(args, 1, context)?;
+            let url = argument_string(args, 1)?;
             return Ok(Some(
                 state
                     .stylesheet_sources
@@ -33,7 +32,7 @@ pub(super) fn cssom_host_call(
             ));
         }
         "stylesheetSameOrigin" => {
-            let url = argument_string(args, 1, context)?;
+            let url = argument_string(args, 1)?;
             let same_origin = crate::fetch::Origin::parse(&url)
                 .and_then(|origin| {
                     crate::fetch::Origin::parse(&state.document_url)
@@ -59,7 +58,7 @@ pub(super) fn cssom_host_call(
             .with_message("adoptedStyleSheets requires a document or shadow root")
             .into());
     }
-    let payload = argument_string(args, 2, context)?;
+    let payload = argument_string(args, 2)?;
     if payload.len() > MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES {
         return Err(JsNativeError::range()
             .with_message("adopted stylesheet payload exceeds the document limit")
@@ -111,7 +110,6 @@ mod tests {
             Rc::new(module_loader::WebModuleLoader::new()),
         );
         let document = state.id_for(&dom.document);
-        let mut context = Context::default();
         let args = [
             js_string("adoptedStyleSheetsSet".to_string()),
             JsValue::from(document),
@@ -120,7 +118,7 @@ mod tests {
                     .to_string(),
             ),
         ];
-        let value = cssom_host_call("adoptedStyleSheetsSet", &args, &mut context, &mut state)
+        let value = cssom_host_call("adoptedStyleSheetsSet", &args, &mut state)
             .expect("valid stylesheet payload");
 
         assert!(value.is_some());

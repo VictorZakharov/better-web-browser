@@ -8,8 +8,8 @@ use super::input::{
     PresentationAcknowledgement,
 };
 use super::state::{
-    CookieMutation, CookieStateSnapshot, StorageMutationRequest, StorageSnapshotEnd,
-    StorageSnapshotEntry, StorageSnapshotStart,
+    CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
+    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;
@@ -20,8 +20,6 @@ pub const RENDERER_DIAGNOSTIC_INTERNAL_ERROR: u16 = 70;
 pub const RENDERER_DIAGNOSTIC_PROTOCOL_ERROR: u16 = 71;
 pub const RENDERER_DIAGNOSTIC_TASK_STARTED: u16 = 72;
 pub const RENDERER_DIAGNOSTIC_TASK_STAGE: u16 = 73;
-#[cfg(feature = "v8-engine-spike")]
-pub const RENDERER_DIAGNOSTIC_ENGINE_PROBE: u16 = 74;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Nonce([u8; NONCE_LENGTH]);
@@ -162,14 +160,6 @@ pub enum BrowserMessage {
     Test(TestCommand),
 }
 
-#[cfg(feature = "v8-engine-spike")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum JavaScriptEngineProbe {
-    Boa,
-    V8Jitless,
-    V8Jit,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TestCommand {
     InternalError,
@@ -179,20 +169,10 @@ pub enum TestCommand {
     OutOfMemory,
     StackOverflow,
     Hang,
-    DelayCommandRead {
-        millis: u16,
-    },
-    Padding {
-        bytes: u16,
-    },
+    DelayCommandRead { millis: u16 },
+    Padding { bytes: u16 },
     WriteMalformedFrame,
-    ProbeRestrictions {
-        loopback_port: u16,
-    },
-    #[cfg(feature = "v8-engine-spike")]
-    ProbeJavaScriptEngine {
-        engine: JavaScriptEngineProbe,
-    },
+    ProbeRestrictions { loopback_port: u16 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -246,6 +226,7 @@ pub enum RendererMessage {
     PointerCursor(PointerCursorResult),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
+    StateSnapshotApplied(StateSnapshotApplied),
     Restrictions(RestrictionReport),
 }
 
