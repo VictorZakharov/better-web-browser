@@ -263,6 +263,7 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
         outcome: &mut ScriptOutcome,
+        script_fetch_time: &mut std::time::Duration,
     ) -> Result<(), String> {
         let pending = self
             .page
@@ -299,7 +300,10 @@ impl DocumentRuntime {
             let result = if self.loaded_resources.contains(&resource) {
                 Err("script could not be loaded".to_string())
             } else {
-                fetch_script_source(connection, self.id, &url, kind, fetch_options)
+                let started = std::time::Instant::now();
+                let result = fetch_script_source(connection, self.id, &url, kind, fetch_options);
+                *script_fetch_time += started.elapsed();
+                result
             };
             match result {
                 Ok(code) => {
@@ -336,7 +340,10 @@ impl DocumentRuntime {
             let result = if inputs.iter().any(|input| input.kind == ScriptKind::Module) {
                 let document = self.id;
                 let mut loader = |url: &str, kind, options| {
-                    fetch_script_source(connection, document, url, kind, options)
+                    let started = std::time::Instant::now();
+                    let result = fetch_script_source(connection, document, url, kind, options);
+                    *script_fetch_time += started.elapsed();
+                    result
                 };
                 runtime.execute_additional_with_loader(&inputs, Some(&mut loader))
             } else {
@@ -404,6 +411,13 @@ pub(super) fn fetch_script_source(
         .fetch_batch(document, vec![request])?
         .pop()
         .ok_or_else(|| "browser omitted a script response".to_string())?;
+    decode_script_response(response, kind)
+}
+
+pub(super) fn decode_script_response(
+    response: BrowserFetchResponse,
+    kind: ScriptKind,
+) -> Result<String, String> {
     let response = into_fetch_result(response).map_err(|error| error.to_string())?;
     if !response.is_success() {
         return Err(format!("server returned HTTP {}", response.status));

@@ -152,6 +152,19 @@ impl ScriptRuntime {
         !self.host.borrow().pending_dynamic_scripts.is_empty()
     }
 
+    pub fn pending_dynamic_script_requests(&self) -> Vec<DynamicScriptRequest> {
+        self.host
+            .borrow()
+            .pending_dynamic_scripts
+            .iter()
+            .map(|script| DynamicScriptRequest {
+                source_url: script.source_url.clone(),
+                kind: ScriptKind::Classic,
+                fetch_options: script.fetch_options,
+            })
+            .collect()
+    }
+
     /// Advances the realm clock without selecting a timer task for execution.
     pub fn elapse_time(&mut self, advance: Duration) {
         let mut host = self.host.borrow_mut();
@@ -348,12 +361,14 @@ impl ScriptRuntime {
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut outcome = ScriptOutcome::default();
+            let callback_started = Instant::now();
             if let Err(error) = super::network::deliver_completion(context, id, result) {
                 outcome
                     .errors
                     .push(format!("Fetch completion callback: {error}"));
             }
             super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript Fetch completion", callback_started.elapsed());
             drain_one_dynamic_script(
                 context,
                 &host,
@@ -383,12 +398,14 @@ impl ScriptRuntime {
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut outcome = ScriptOutcome::default();
+            let callback_started = Instant::now();
             if let Err(error) = super::network::deliver_event(context, id, event) {
                 outcome
                     .errors
                     .push(format!("Fetch stream callback: {error}"));
             }
             super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript Fetch event", callback_started.elapsed());
             drain_one_dynamic_script(
                 context,
                 &host,
@@ -418,12 +435,14 @@ impl ScriptRuntime {
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
             let mut outcome = ScriptOutcome::default();
+            let callback_started = Instant::now();
             if let Err(error) = super::workers::deliver_worker_event(context, id, event) {
                 outcome
                     .errors
                     .push(format!("Worker event callback: {error}"));
             }
             super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript Worker event", callback_started.elapsed());
             drain_one_dynamic_script(
                 context,
                 &host,

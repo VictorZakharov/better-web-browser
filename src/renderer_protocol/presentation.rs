@@ -58,6 +58,7 @@ pub struct PageLoadReport {
     pub html_parse_micros: u64,
     pub resource_processing_micros: u64,
     pub script_micros: u64,
+    pub script_fetch_micros: u64,
     pub style_micros: u64,
     pub layout_micros: u64,
     pub text_measure_count: u64,

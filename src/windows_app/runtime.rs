@@ -2,9 +2,14 @@
 
 use super::*;
 
-// Each callback is a distinct HTML event-loop task. Returning to the renderer command loop after
-// one task lets already-queued user input run before another due callback.
-pub(super) const TIMER_CALLBACKS_PER_WAKEUP: u32 = 1;
+// Each callback remains a distinct HTML event-loop task with its own microtask checkpoint. Let the
+// renderer execute a small bounded slice per IPC wakeup; its 25 ms wall limit yields back to input
+// without paying one browser/renderer round trip for every tiny async script.
+pub(super) const RUNTIME_TASKS_PER_WAKEUP: u32 = 8;
+const _: () = assert!(RUNTIME_TASKS_PER_WAKEUP > 1);
+const _: () = assert!(
+    RUNTIME_TASKS_PER_WAKEUP < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
+);
 
 impl BrowserState {
     pub(super) unsafe fn complete_renderer_runtime_update(
@@ -111,9 +116,7 @@ impl BrowserState {
             .renderer_session
             .as_ref()
             .ok_or_else(|| "renderer session is unavailable".to_string())
-            .and_then(|session| {
-                session.advance_time(document, elapsed, TIMER_CALLBACKS_PER_WAKEUP)
-            });
+            .and_then(|session| session.advance_time(document, elapsed, RUNTIME_TASKS_PER_WAKEUP));
         if let Err(error) = result {
             self.contain_page_engine_failure(
                 self.id,
@@ -148,15 +151,6 @@ mod tests {
         assert_eq!(win32_timer_delay_ms(Duration::ZERO), 10);
         assert_eq!(win32_timer_delay_ms(Duration::from_millis(25)), 25);
         assert_eq!(win32_timer_delay_ms(Duration::MAX), u32::MAX);
-    }
-
-    #[test]
-    fn timer_wakeups_yield_between_event_loop_tasks() {
-        assert_eq!(TIMER_CALLBACKS_PER_WAKEUP, 1);
-        assert!(
-            TIMER_CALLBACKS_PER_WAKEUP
-                < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
-        );
     }
 
     #[test]

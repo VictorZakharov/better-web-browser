@@ -7,7 +7,7 @@ use self::network::{
     start_ready_network_batch, worker_source_request,
 };
 use super::fetch::validate_script_response;
-use super::{fetch_script_source, merge_outcome};
+use super::merge_outcome;
 use crate::engine::{
     ScriptKind, ScriptOutcome, ScriptRuntime, ScriptWorkerAction, WorkerRuntime,
     WorkerRuntimeOutcome, WorkerSourceLoader,
@@ -89,12 +89,8 @@ impl RendererWorkers {
             let Some(runtime) = runtime.as_mut() else {
                 continue;
             };
-            let mut loader = |url: &str, kind, options| {
-                fetch_script_source(connection, document, url, kind, options)
-            };
             for message in event.messages {
-                let worker =
-                    runtime.complete_worker_event_with_loader(event.id, message, Some(&mut loader));
+                let worker = runtime.complete_worker_event_with_loader(event.id, message, None);
                 merge_outcome(outcome, worker, document_root);
             }
             outcome.console.extend(

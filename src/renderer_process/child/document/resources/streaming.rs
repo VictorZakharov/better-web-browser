@@ -3,7 +3,6 @@
 use super::super::fetch::{into_fetch_error, into_fetch_head_result, script_api_request};
 use super::super::reporting::{micros, runtime_report};
 use super::super::{AdvanceResult, DocumentRuntime};
-use super::fetch_script_source;
 use crate::engine::{ScriptFetchAction, ScriptFetchEvent, ScriptOutcome, StyleRefreshStats};
 use crate::renderer_process::child::connection::{ChildConnection, ScriptFetchDelivery};
 use crate::renderer_protocol::{PageLoadReport, RendererRuntimeUpdate};
@@ -113,11 +112,10 @@ impl DocumentRuntime {
 
         let started = Instant::now();
         let mut outcome = if let Some(runtime) = self.script_runtime.as_mut() {
-            let document = self.id;
-            let mut loader = |url: &str, kind, options| {
-                fetch_script_source(connection, document, url, kind, options)
-            };
-            runtime.deliver_fetch_event_with_loader(script_id, event, Some(&mut loader))
+            // Fetch promise callbacks may insert several force-async scripts. Leave those queued
+            // until the callback task returns so the document clock path can start one bounded
+            // concurrent batch instead of blocking this browser-network delivery on each URL.
+            runtime.deliver_fetch_event_with_loader(script_id, event, None)
         } else {
             ScriptOutcome::default()
         };

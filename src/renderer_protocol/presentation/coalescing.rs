@@ -87,6 +87,9 @@ impl PageLoadReport {
                 .resource_processing_micros
                 .saturating_add(next.resource_processing_micros),
             script_micros: self.script_micros.saturating_add(next.script_micros),
+            script_fetch_micros: self
+                .script_fetch_micros
+                .saturating_add(next.script_fetch_micros),
             style_micros: self.style_micros.saturating_add(next.style_micros),
             layout_micros: self.layout_micros.saturating_add(next.layout_micros),
             text_measure_count: self

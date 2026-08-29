@@ -60,6 +60,7 @@ impl DocumentRuntime {
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
             executed_async_scripts: HashSet::new(),
+            pending_dynamic_script_fetch: None,
             pending_resource_preloads: pending_deferred,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
             accessibility: RendererAccessibility::default(),
@@ -85,9 +86,13 @@ impl DocumentRuntime {
         let resource_processing_time = resource_started.elapsed();
 
         let script_started = Instant::now();
+        let mut script_fetch_time = Duration::ZERO;
         let document = runtime.id;
         let mut loader = |url: &str, kind: ScriptKind, options| {
-            fetch_script_source(connection, document, url, kind, options)
+            let started = Instant::now();
+            let result = fetch_script_source(connection, document, url, kind, options);
+            script_fetch_time += started.elapsed();
+            result
         };
         let (mut script_runtime, mut outcome) = runtime
             .page
@@ -123,6 +128,7 @@ impl DocumentRuntime {
             html_parse_micros: micros(html_parse_time),
             resource_processing_micros: micros(resource_processing_time),
             script_micros: micros(script_time),
+            script_fetch_micros: micros(script_fetch_time),
             style_micros: micros(style_time),
             layout_micros: micros(layout_time),
             ..PageLoadReport::default()
