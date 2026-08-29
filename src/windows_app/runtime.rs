@@ -6,6 +6,10 @@ use super::*;
 // renderer execute a small bounded slice per IPC wakeup; its 25 ms wall limit yields back to input
 // without paying one browser/renderer round trip for every tiny async script.
 pub(super) const RUNTIME_TASKS_PER_WAKEUP: u32 = 8;
+const _: () = assert!(RUNTIME_TASKS_PER_WAKEUP > 1);
+const _: () = assert!(
+    RUNTIME_TASKS_PER_WAKEUP < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
+);
 
 impl BrowserState {
     pub(super) unsafe fn complete_renderer_runtime_update(
@@ -147,15 +151,6 @@ mod tests {
         assert_eq!(win32_timer_delay_ms(Duration::ZERO), 10);
         assert_eq!(win32_timer_delay_ms(Duration::from_millis(25)), 25);
         assert_eq!(win32_timer_delay_ms(Duration::MAX), u32::MAX);
-    }
-
-    #[test]
-    fn timer_wakeups_are_bounded_below_the_engine_limit() {
-        assert!(RUNTIME_TASKS_PER_WAKEUP > 1);
-        assert!(
-            RUNTIME_TASKS_PER_WAKEUP
-                < better_web_browser::limits::MAX_POST_LOAD_TIMER_CALLBACKS as u32
-        );
     }
 
     #[test]
