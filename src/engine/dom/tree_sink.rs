@@ -61,6 +61,7 @@ impl TreeSink for Dom {
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: flags
                     .mathml_annotation_xml_integration_point,
+                fullscreen: std::cell::Cell::new(false),
             }),
         )
     }

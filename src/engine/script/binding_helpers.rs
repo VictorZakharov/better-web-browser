@@ -248,6 +248,8 @@ fn matches_compound_selector(node: &NodeRef, selector: &str) -> bool {
                             return false;
                         }
                     }
+                    "fullscreen" if !node.is_fullscreen() => return false,
+                    "fullscreen" => {}
                     _ => return false,
                 }
                 index = selector.len();

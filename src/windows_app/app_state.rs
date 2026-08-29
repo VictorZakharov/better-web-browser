@@ -2,6 +2,7 @@
 
 use super::browser_app::BrowserApplication;
 use super::browser_navigation::HistoryMode;
+use super::fullscreen::FullscreenState;
 use super::renderer_lifecycle::SharedRendererRegistry;
 use super::tab_drag::TabDragGesture;
 use super::tab_state::BrowserTab;
@@ -43,6 +44,7 @@ pub(super) struct BrowserState {
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
+    pub(super) fullscreen: FullscreenState,
 }
 
 impl BrowserState {
@@ -101,6 +103,7 @@ impl BrowserState {
             renderer_registry: Arc::clone(&app.renderer_registry),
             media_viewport_width: 0.0,
             outer_window_width: 0,
+            fullscreen: FullscreenState::default(),
             app,
         }
     }
@@ -174,11 +177,19 @@ impl BrowserState {
     }
 
     pub(super) fn toolbar_height(&self) -> i32 {
-        self.scale(TOOLBAR_HEIGHT_DIP)
+        if self.fullscreen.is_active() {
+            0
+        } else {
+            self.scale(TOOLBAR_HEIGHT_DIP)
+        }
     }
 
     pub(super) fn status_height(&self) -> i32 {
-        self.scale(STATUS_HEIGHT_DIP)
+        if self.fullscreen.is_active() {
+            0
+        } else {
+            self.scale(STATUS_HEIGHT_DIP)
+        }
     }
 
     pub(super) unsafe fn set_status(&mut self, status: &str) {

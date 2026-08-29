@@ -86,6 +86,10 @@ impl BrowserState {
             })) {
                 return Err("benchmark link activation was rejected by the renderer".into());
             }
+            if phase == PointerPhase::Up {
+                // Hidden activation models the same trusted gesture and document ownership as UI.
+                self.transient_activation = Some((document, Instant::now()));
+            }
         }
         Ok(())
     }

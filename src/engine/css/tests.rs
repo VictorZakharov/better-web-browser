@@ -1,6 +1,7 @@
 use super::*;
 
 mod flex_flow;
+mod fullscreen;
 mod queries;
 mod shadow;
 use crate::engine::dom;

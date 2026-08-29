@@ -191,6 +191,7 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "root" => compound.requires_root = true,
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
+                        "fullscreen" => compound.requires_fullscreen = true,
                         "hover" | "active" | "focus" | "visited" | "focus-visible" => {
                             compound.never_matches = true
                         }

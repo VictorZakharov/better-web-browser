@@ -37,6 +37,7 @@ pub(super) enum BrokerCommand {
         viewport: PresentedViewport,
     },
     Input(DocumentInput),
+    FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),
@@ -232,6 +233,7 @@ impl Broker {
                     | RendererMessage::DocumentFailed { .. }
                     | RendererMessage::NavigationRequested { .. }
                     | RendererMessage::PointerCursor(_)
+                    | RendererMessage::FullscreenRequest(_)
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::StorageMutation(_)
                     | RendererMessage::StateSnapshotApplied(_)),

@@ -125,6 +125,7 @@
                     else if (input.previous === 'frozen') document.dispatchEvent(markTrusted(new Event('resume')));
                     return true;
                 }
+                case 'fullscreen': return applyFullscreenResponse(input);
                 default: return false;
             }
         }

@@ -108,6 +108,12 @@ impl BrowserState {
             modifiers: pointer_modifiers(wparam),
             target: None,
         }));
+        if accepted
+            && matches!(phase, PointerPhase::Up | PointerPhase::Activate)
+            && button == PointerButton::Primary
+        {
+            self.transient_activation = Some((document, Instant::now()));
+        }
         self.incidents
             .record_pointer(accepted, phase, button, sequence);
         if accepted && phase == PointerPhase::Move {
@@ -130,7 +136,7 @@ impl BrowserState {
         let Some((document, sequence)) = self.next_renderer_input() else {
             return;
         };
-        let _ = self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+        let accepted = self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
             document,
             sequence,
             phase: PointerPhase::Activate,
@@ -140,6 +146,9 @@ impl BrowserState {
             modifiers: current_modifiers(),
             target: Some(target),
         }));
+        if accepted {
+            self.transient_activation = Some((document, Instant::now()));
+        }
     }
 
     pub(super) unsafe fn route_page_control_text(&mut self, index: usize) {
@@ -230,7 +239,8 @@ impl BrowserState {
             return;
         };
         let (key, code) = key_and_code(virtual_key, current_modifiers().shift);
-        let _ = self.submit_renderer_input(DocumentInput::Keyboard(KeyboardInput {
+        let activates = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) && virtual_key != VK_ESCAPE;
+        let accepted = self.submit_renderer_input(DocumentInput::Keyboard(KeyboardInput {
             document,
             sequence,
             phase: if matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN) {
@@ -244,6 +254,9 @@ impl BrowserState {
             modifiers: current_modifiers(),
             target,
         }));
+        if accepted && activates {
+            self.transient_activation = Some((document, Instant::now()));
+        }
     }
 
     pub(super) fn route_renderer_scroll(&mut self) {

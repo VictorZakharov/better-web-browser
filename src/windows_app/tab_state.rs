@@ -13,7 +13,7 @@ use better_web_browser::engine::dom::NodeId;
 use better_web_browser::fetch::FetchController;
 use better_web_browser::renderer_process::RendererSession;
 use better_web_browser::renderer_process::RendererSnapshot;
-use better_web_browser::renderer_protocol::{PointerCursor, PresentedGlyphRaster};
+use better_web_browser::renderer_protocol::{DocumentId, PointerCursor, PresentedGlyphRaster};
 use better_web_browser::storage::SessionStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -72,6 +72,7 @@ pub(super) struct BrowserTab {
     pub(super) renderer_work_pending: bool,
     pub(super) layout_dirty: bool,
     pub(super) render_dpi: u32,
+    pub(super) transient_activation: Option<(DocumentId, Instant)>,
 }
 
 impl BrowserTab {
@@ -128,6 +129,7 @@ impl BrowserTab {
             renderer_work_pending: false,
             layout_dirty: true,
             render_dpi: DEFAULT_DPI,
+            transient_activation: None,
         }
     }
 

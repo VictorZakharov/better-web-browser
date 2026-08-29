@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::renderer_protocol::{
-    CookieStateSnapshot, DocumentInput, DocumentStart, DocumentState, PresentationAcknowledgement,
-    PresentedViewport,
+    CookieStateSnapshot, DocumentInput, DocumentStart, DocumentState, FullscreenResponse,
+    PresentationAcknowledgement, PresentedViewport,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
@@ -114,6 +114,11 @@ impl RendererSession {
             false if coalescible => Ok(()),
             false => Err("renderer command queue is full".into()),
         }
+    }
+
+    pub fn respond_fullscreen(&self, response: FullscreenResponse) -> Result<(), String> {
+        response.validate().map_err(|error| error.to_string())?;
+        self.send_command(worker::BrokerCommand::FullscreenResponse(response))
     }
 
     /// Attempts one validated input enqueue without treating backpressure as a renderer failure.

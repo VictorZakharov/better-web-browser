@@ -110,9 +110,16 @@ pub struct ScriptOutcome {
     pub storage_updates: Vec<StorageMutation>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
+    pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptFullscreenAction {
+    pub request_id: u64,
+    pub enter: bool,
 }
 
 impl ScriptOutcome {
@@ -181,6 +188,10 @@ pub enum UserInputEvent {
     Lifecycle {
         state: &'static str,
         previous: &'static str,
+    },
+    Fullscreen {
+        request_id: u64,
+        disposition: &'static str,
     },
 }
 

@@ -22,6 +22,11 @@ pub(super) fn dispatch(
             false
         }
     };
+    if let Err(error) = context.run_jobs() {
+        outcome
+            .errors
+            .push(format!("dispatch trusted user input promise jobs: {error}"));
+    }
     super::module_lifecycle::drain(context, host, &mut outcome);
     UserInputResult {
         outcome,
@@ -100,6 +105,12 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
         }),
         UserInputEvent::Lifecycle { state, previous } => serde_json::json!({
             "kind": "lifecycle", "state": state, "previous": previous
+        }),
+        UserInputEvent::Fullscreen {
+            request_id,
+            disposition,
+        } => serde_json::json!({
+            "kind": "fullscreen", "requestId": request_id, "disposition": disposition
         }),
     }
 }

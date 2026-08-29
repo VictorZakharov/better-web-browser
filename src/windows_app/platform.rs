@@ -14,6 +14,7 @@ pub(super) type Hgdiobj = Handle;
 pub(super) type Hfont = Handle;
 pub(super) type Hrgn = Handle;
 pub(super) type Hbitmap = Handle;
+pub(super) type Hmonitor = Handle;
 pub(super) type Lresult = isize;
 pub(super) type Wparam = usize;
 pub(super) type Lparam = isize;
@@ -99,6 +100,9 @@ pub(super) const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
 pub(super) const SW_SHOW: i32 = 5;
 pub(super) const CW_USEDEFAULT: i32 = i32::MIN;
 pub(super) const GWLP_USERDATA: i32 = -21;
+pub(super) const GWL_STYLE: i32 = -16;
+pub(super) const GWL_EXSTYLE: i32 = -20;
+pub(super) const MONITOR_DEFAULTTONEAREST: u32 = 2;
 pub(super) const COLOR_WINDOW: usize = 5;
 pub(super) const IDC_ARROW: u16 = 32512;
 pub(super) const IDC_HAND: u16 = 32649;
@@ -115,6 +119,7 @@ pub(super) const VK_RIGHT: usize = 0x27;
 pub(super) const VK_DOWN: usize = 0x28;
 pub(super) const VK_DELETE: usize = 0x2E;
 pub(super) const VK_F12: usize = 0x7B;
+pub(super) const VK_F11: usize = 0x7A;
 pub(super) const VK_SHIFT: i32 = 0x10;
 pub(super) const VK_CONTROL: i32 = 0x11;
 pub(super) const VK_MENU: i32 = 0x12;
@@ -139,6 +144,7 @@ pub(super) const DT_NOPREFIX: u32 = 0x0000_0800;
 pub(super) const SRCCOPY: u32 = 0x00CC_0020;
 pub(super) const SWP_NOZORDER: u32 = 0x0004;
 pub(super) const SWP_NOACTIVATE: u32 = 0x0010;
+pub(super) const SWP_FRAMECHANGED: u32 = 0x0020;
 
 pub(super) const SIF_RANGE: u32 = 0x0001;
 pub(super) const SIF_PAGE: u32 = 0x0002;
@@ -241,6 +247,26 @@ pub(super) struct Rect {
     pub(super) top: i32,
     pub(super) right: i32,
     pub(super) bottom: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(super) struct WindowPlacement {
+    pub(super) length: u32,
+    pub(super) flags: u32,
+    pub(super) show_command: u32,
+    pub(super) minimum_position: Point,
+    pub(super) maximum_position: Point,
+    pub(super) normal_position: Rect,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(super) struct MonitorInfo {
+    pub(super) size: u32,
+    pub(super) monitor: Rect,
+    pub(super) work: Rect,
+    pub(super) flags: u32,
 }
 
 impl Rect {

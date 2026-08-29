@@ -117,6 +117,7 @@ impl BrowserState {
                         .get_mut(id)
                         .is_some_and(|tab| tab.navigation.owns_document(document));
                     if current {
+                        self.abandon_page_fullscreen_owned_by(id);
                         self.contain_page_engine_failure(id, detail);
                     }
                 }
@@ -158,6 +159,9 @@ impl BrowserState {
                 RendererEvent::PointerCursor(result) => {
                     self.process_for_tab(id, |state| state.apply_renderer_pointer_cursor(result));
                 }
+                RendererEvent::FullscreenRequested(request) => {
+                    self.handle_fullscreen_request(id, request);
+                }
                 RendererEvent::CookieMutation(mutation) => {
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
@@ -177,6 +181,7 @@ impl BrowserState {
                     }
                 }
                 RendererEvent::Exited(renderer_exit) => {
+                    self.abandon_page_fullscreen_owned_by(id);
                     if let Some(tab) = self.tabs.get_mut(id) {
                         tab.incidents.record(
                             "renderer",

@@ -10,6 +10,8 @@ mod support;
 use support::*;
 #[path = "live_runtime/dynamic_scripts.rs"]
 mod dynamic_scripts;
+#[path = "live_runtime/fullscreen.rs"]
+mod fullscreen;
 #[path = "live_runtime/navigation.rs"]
 mod navigation;
 #[path = "live_runtime/network.rs"]

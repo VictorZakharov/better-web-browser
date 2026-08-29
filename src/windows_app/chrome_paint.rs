@@ -7,6 +7,9 @@ use super::{BrowserState, Surface};
 
 impl BrowserState {
     pub(super) unsafe fn paint_chrome(&self, dc: Hdc, client: &Rect) {
+        if self.fullscreen.is_active() {
+            return;
+        }
         let toolbar = Rect {
             left: 0,
             top: 0,

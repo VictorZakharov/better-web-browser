@@ -22,6 +22,7 @@ pub(super) struct CompoundSelector {
     pub(super) requires_root: bool,
     pub(super) requires_enabled: bool,
     pub(super) requires_disabled: bool,
+    pub(super) requires_fullscreen: bool,
     pub(super) never_matches: bool,
 }
 

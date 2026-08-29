@@ -239,6 +239,58 @@ pub struct PresentationAcknowledgement {
     pub controls_applied: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FullscreenAction {
+    Enter,
+    Exit,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullscreenRequest {
+    pub document: DocumentId,
+    pub request_id: u64,
+    pub action: FullscreenAction,
+}
+
+impl FullscreenRequest {
+    pub fn validate(self) -> Result<Self, ProtocolError> {
+        if self.request_id == 0 {
+            Err(ProtocolError::InvalidPayload(
+                "fullscreen request identifier",
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FullscreenDisposition {
+    Entered,
+    Exited,
+    Denied,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FullscreenResponse {
+    pub document: DocumentId,
+    /// Zero identifies a browser-initiated exit, such as Escape or a tab lifecycle transition.
+    pub request_id: u64,
+    pub disposition: FullscreenDisposition,
+}
+
+impl FullscreenResponse {
+    pub fn validate(self) -> Result<Self, ProtocolError> {
+        if self.request_id == 0 && self.disposition != FullscreenDisposition::Exited {
+            Err(ProtocolError::InvalidPayload(
+                "fullscreen response identifier",
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
 impl PresentationAcknowledgement {
     pub fn validate(self) -> Result<Self, ProtocolError> {
         if self.revision == 0 || (self.controls_applied && !self.presented) {

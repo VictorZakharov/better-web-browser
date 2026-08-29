@@ -36,6 +36,9 @@ impl BrowserState {
         history_mode: HistoryMode,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
+        if is_active {
+            self.exit_page_fullscreen();
+        }
         let mut schedule_filmstrip = false;
         if is_active {
             self.cancel_scroll_animation();

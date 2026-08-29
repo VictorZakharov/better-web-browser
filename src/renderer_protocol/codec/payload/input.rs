@@ -1,7 +1,7 @@
 use crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES;
 use crate::renderer_protocol::input::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
-use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError};
+use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError, RendererMessage};
 
 pub(super) fn encode_browser_input(
     message: &BrowserMessage,
@@ -62,6 +62,13 @@ pub(super) fn encode_browser_input(
             writer.bool(acknowledgement.controls_applied);
             0x014d
         }
+        BrowserMessage::FullscreenResponse(response) => {
+            let response = response.validate()?;
+            writer.u64(response.document.get());
+            writer.u64(response.request_id);
+            writer.u8(fullscreen_disposition_tag(response.disposition));
+            0x014f
+        }
         _ => return Err(ProtocolError::InvalidPayload("browser input message")),
     };
     Ok((kind, writer.finish()))
@@ -80,6 +87,15 @@ pub(super) fn decode_browser_input(
                 revision: reader.u64()?,
                 presented: reader.bool()?,
                 controls_applied: reader.bool()?,
+            }
+            .validate()?,
+        )
+    } else if kind == 0x014f {
+        BrowserMessage::FullscreenResponse(
+            FullscreenResponse {
+                document,
+                request_id: reader.u64()?,
+                disposition: decode_fullscreen_disposition(reader.u8()?)?,
             }
             .validate()?,
         )
@@ -138,6 +154,62 @@ pub(super) fn decode_browser_input(
     };
     reader.finish()?;
     Ok(message)
+}
+
+pub(super) fn encode_renderer_input(
+    message: &RendererMessage,
+) -> Result<(u16, Vec<u8>), ProtocolError> {
+    let RendererMessage::FullscreenRequest(request) = message else {
+        return Err(ProtocolError::InvalidPayload("renderer input message"));
+    };
+    let request = request.validate()?;
+    let mut writer = WireWriter::new();
+    writer.u64(request.document.get());
+    writer.u64(request.request_id);
+    writer.u8(match request.action {
+        FullscreenAction::Enter => 1,
+        FullscreenAction::Exit => 2,
+    });
+    Ok((0x0150, writer.finish()))
+}
+
+pub(super) fn decode_renderer_input(
+    kind: u16,
+    payload: &[u8],
+) -> Result<RendererMessage, ProtocolError> {
+    if kind != 0x0150 {
+        return Err(ProtocolError::UnexpectedMessage(kind));
+    }
+    let mut reader = WireReader::new(payload);
+    let request = FullscreenRequest {
+        document: DocumentId::new(reader.u64()?)?,
+        request_id: reader.u64()?,
+        action: match reader.u8()? {
+            1 => FullscreenAction::Enter,
+            2 => FullscreenAction::Exit,
+            _ => return Err(ProtocolError::InvalidPayload("fullscreen action")),
+        },
+    }
+    .validate()?;
+    reader.finish()?;
+    Ok(RendererMessage::FullscreenRequest(request))
+}
+
+fn fullscreen_disposition_tag(disposition: FullscreenDisposition) -> u8 {
+    match disposition {
+        FullscreenDisposition::Entered => 1,
+        FullscreenDisposition::Exited => 2,
+        FullscreenDisposition::Denied => 3,
+    }
+}
+
+fn decode_fullscreen_disposition(tag: u8) -> Result<FullscreenDisposition, ProtocolError> {
+    match tag {
+        1 => Ok(FullscreenDisposition::Entered),
+        2 => Ok(FullscreenDisposition::Exited),
+        3 => Ok(FullscreenDisposition::Denied),
+        _ => Err(ProtocolError::InvalidPayload("fullscreen disposition")),
+    }
 }
 
 fn encode_modifiers(writer: &mut WireWriter, modifiers: InputModifiers) {

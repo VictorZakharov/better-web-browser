@@ -26,6 +26,9 @@ pub(super) fn merge_outcome(
     target.storage_updates.append(&mut source.storage_updates);
     target.fetch_actions.append(&mut source.fetch_actions);
     target.worker_actions.append(&mut source.worker_actions);
+    target
+        .fullscreen_actions
+        .append(&mut source.fullscreen_actions);
     target.runtime_stopped |= source.runtime_stopped;
     target.render_requested |= source.render_requested;
 }

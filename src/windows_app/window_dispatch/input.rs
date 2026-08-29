@@ -36,6 +36,13 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
         return false;
     }
     if matches!(message.message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+        if message.wparam == VK_F11 {
+            state.toggle_browser_fullscreen();
+            return true;
+        }
+        if message.wparam == VK_ESCAPE && state.exit_page_fullscreen() {
+            return true;
+        }
         if is_diagnostics_shortcut(message.message, message.wparam) {
             state.toggle_performance_panel();
             return true;
@@ -183,5 +190,12 @@ mod tests {
         assert!(is_diagnostics_shortcut(WM_KEYDOWN, VK_F12));
         assert!(!is_diagnostics_shortcut(WM_KEYUP, VK_F12));
         assert!(!is_diagnostics_shortcut(WM_KEYDOWN, VK_RETURN));
+    }
+
+    #[test]
+    fn fullscreen_keys_are_distinct_from_diagnostics() {
+        assert_ne!(VK_F11, VK_F12);
+        assert!(!is_diagnostics_shortcut(WM_KEYDOWN, VK_F11));
+        assert!(!is_diagnostics_shortcut(WM_KEYDOWN, VK_ESCAPE));
     }
 }

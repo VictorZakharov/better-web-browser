@@ -7,7 +7,9 @@ use self::document::{
     decode_browser_document, decode_renderer_document, encode_browser_document,
     encode_renderer_document,
 };
-use self::input::{decode_browser_input, encode_browser_input};
+use self::input::{
+    decode_browser_input, decode_renderer_input, encode_browser_input, encode_renderer_input,
+};
 use self::state::{
     decode_browser_state, decode_renderer_state, encode_browser_state, encode_renderer_state,
 };
@@ -52,7 +54,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         | BrowserMessage::AdvanceTime { .. }
         | BrowserMessage::ViewportChanged { .. }
         | BrowserMessage::CancelDocument(_) => return encode_browser_document(message),
-        BrowserMessage::Input(_) | BrowserMessage::PresentationAcknowledged(_) => {
+        BrowserMessage::Input(_)
+        | BrowserMessage::PresentationAcknowledged(_)
+        | BrowserMessage::FullscreenResponse(_) => {
             return encode_browser_input(message);
         }
         BrowserMessage::CookieSnapshot(_)
@@ -127,7 +131,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             decode_browser_document(kind, payload)
         }
         0x0131 | 0x0133 | 0x0135 | 0x0137 => decode_browser_state(kind, payload),
-        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d => {
+        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f => {
             decode_browser_input(kind, payload)
         }
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
@@ -172,6 +176,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         | RendererMessage::DocumentFailed { .. }
         | RendererMessage::NavigationRequested { .. }
         | RendererMessage::PointerCursor(_) => return encode_renderer_document(message),
+        RendererMessage::FullscreenRequest(_) => return encode_renderer_input(message),
         RendererMessage::CookieMutation(_)
         | RendererMessage::StorageMutation(_)
         | RendererMessage::StateSnapshotApplied(_) => {
@@ -224,6 +229,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x0112 | 0x0114 | 0x0116 | 0x0118 | 0x011a
         | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
         0x0132 | 0x0134 | 0x0136 => decode_renderer_state(kind, payload),
+        0x0150 => decode_renderer_input(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;
             if payload[3] != 0 {

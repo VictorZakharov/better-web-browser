@@ -97,6 +97,9 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     if selector.requires_disabled && (!is_disableable(node) || !is_disabled(node)) {
         return false;
     }
+    if selector.requires_fullscreen && !node.is_fullscreen() {
+        return false;
+    }
     if selector.requires_first_child {
         let Some(parent) = node.parent() else {
             return false;

@@ -101,6 +101,15 @@ impl Broker {
                         self.protocol_failure(error.to_string());
                     }
                 }
+                BrokerCommand::FullscreenResponse(response) => {
+                    if self.active_document == Some(response.document)
+                        && let Err(error) = self
+                            .writer()
+                            .send_browser(&BrowserMessage::FullscreenResponse(response))
+                    {
+                        self.protocol_failure(error.to_string());
+                    }
+                }
                 BrokerCommand::Shutdown(reply) => self.begin_shutdown(Some(reply)),
                 BrokerCommand::Terminate => {
                     self.exit_reason = Some(RendererExitReason::Terminated);
