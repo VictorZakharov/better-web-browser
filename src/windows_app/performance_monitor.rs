@@ -1,5 +1,6 @@
 //! Per-tab, rolling UI responsiveness metrics and their lightweight in-browser monitor.
 
+mod layout;
 mod paint;
 mod window;
 
@@ -247,6 +248,9 @@ impl BrowserState {
 
     pub(super) unsafe fn toggle_performance_panel(&mut self) {
         self.performance_panel_visible = !self.performance_panel_visible;
+        if self.performance_panel_visible {
+            self.performance_detail_scroll = 0;
+        }
         self.position_performance_window();
         if !self.performance_window.is_null() {
             ShowWindow(
