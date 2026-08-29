@@ -117,6 +117,9 @@ unsafe fn dispatch_window_message(
             InvalidateRect(window, null(), 0);
             0
         }
+        color_scheme::WM_SETTINGCHANGE | color_scheme::WM_THEMECHANGED => {
+            color_scheme::handle_change(state, window)
+        }
         WM_COMMAND => {
             let id = wparam & 0xffff;
             let notification = (wparam >> 16) & 0xffff;

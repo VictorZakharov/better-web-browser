@@ -8,6 +8,7 @@ pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
+use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, NodeRef};
 use super::font::{WebFont, WebFontFace, decode_web_font};
@@ -80,8 +81,7 @@ pub struct Page {
     pub images: HashMap<String, DecodedImage>,
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
-    responsive_viewport_width: f32,
-    prefers_dark_color_scheme: bool,
+    media_environment: MediaEnvironment,
 }
 
 impl Page {
@@ -109,8 +109,8 @@ impl Page {
             .cloned()
             .collect();
         let base_url = document_base_url(&dom, source_url);
-        let responsive_viewport_width = 1280.0;
-        let (resources, scripts) = discover_resources(&dom, &base_url, responsive_viewport_width);
+        let media_environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
+        let (resources, scripts) = discover_resources(&dom, &base_url, media_environment);
 
         let mut images = HashMap::new();
         for svg in dom.elements_named("svg").take(MAX_INLINE_SVGS) {
@@ -133,19 +133,20 @@ impl Page {
             images,
             fonts: Vec::new(),
             diagnostics,
-            responsive_viewport_width,
-            prefers_dark_color_scheme: false,
+            media_environment,
         };
         page.install_embedded_images();
         page
     }
 
-    pub fn set_media_environment(&mut self, viewport_width: f32, prefers_dark_color_scheme: bool) {
-        self.responsive_viewport_width = viewport_width.max(1.0);
-        if self.prefers_dark_color_scheme != prefers_dark_color_scheme {
-            self.prefers_dark_color_scheme = prefers_dark_color_scheme;
+    pub(crate) fn set_media_environment(&mut self, environment: MediaEnvironment) {
+        if (self.media_environment.resolution_dppx - environment.resolution_dppx).abs() >= 0.01
+            || self.media_environment.prefers_dark_color_scheme
+                != environment.prefers_dark_color_scheme
+        {
             self.cached_styles = None;
         }
+        self.media_environment = environment;
     }
 
     pub fn add_stylesheet(&mut self, css: String) -> bool {
@@ -304,7 +305,7 @@ impl Page {
     }
 
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {
-        resolve_image_url(node, &self.base_url, self.responsive_viewport_width)
+        resolve_image_url(node, &self.base_url, self.media_environment)
     }
 }
 

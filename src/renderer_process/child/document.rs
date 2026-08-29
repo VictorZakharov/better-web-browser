@@ -6,6 +6,7 @@ mod dynamic_scripts;
 mod fetch;
 mod interaction;
 mod load;
+mod media_environment;
 mod reporting;
 mod resources;
 mod text;
@@ -23,8 +24,8 @@ pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
 use super::connection::ChildConnection;
 use crate::engine::{
-    Page, PageResource, ScriptFetchAction, ScriptKind, ScriptOutcome, ScriptRuntime,
-    ScriptWorkerAction, StyleRefreshStats, layout_page_with_style_viewport,
+    MediaEnvironment, Page, PageResource, ScriptFetchAction, ScriptKind, ScriptOutcome,
+    ScriptRuntime, ScriptWorkerAction, StyleRefreshStats, layout_page_with_style_viewport,
 };
 use crate::limits::{
     MAX_POST_LOAD_TIMER_CALLBACKS, MAX_RUNTIME_REPORT_ENTRIES, PAGE_RESOURCE_BUDGET,
@@ -324,11 +325,7 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
     ) -> Result<RendererPresentation, String> {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
-        self.page
-            .set_media_environment(viewport.style_width, self.prefers_dark_color_scheme);
-        if let Some(runtime) = self.script_runtime.as_mut() {
-            runtime.set_media_environment(viewport.style_width, self.prefers_dark_color_scheme);
-        }
+        self.apply_media_environment(viewport);
         self.text.set_dpi(viewport.dpi);
         let mut outcome = self
             .dispatch_user_input(crate::engine::UserInputEvent::Viewport {

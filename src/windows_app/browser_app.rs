@@ -4,7 +4,7 @@ use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
 use super::tab_state::ClosedTab;
 use super::tabs::{RecentlyClosedTabs, TabId};
 use super::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -46,7 +46,7 @@ pub(super) struct BrowserApplication {
     pub(super) local_storage: Arc<better_web_browser::storage::LocalStorage>,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
-    pub(super) prefers_dark_color_scheme: bool,
+    pub(super) prefers_dark_color_scheme: Cell<bool>,
     windows: RefCell<Vec<Hwnd>>,
     recently_closed_tabs: RefCell<RecentlyClosedTabs<ClosedTab>>,
 }
@@ -67,7 +67,7 @@ impl BrowserApplication {
             ),
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),
-            prefers_dark_color_scheme: super::color_scheme::prefers_dark_color_scheme(),
+            prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),
             windows: RefCell::new(Vec::new()),
             recently_closed_tabs: RefCell::new(RecentlyClosedTabs::new()),
         }))

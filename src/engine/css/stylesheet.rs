@@ -1,5 +1,6 @@
 //! Stylesheet rule and declaration parsing.
 
+use super::media::MediaEnvironment;
 use super::*;
 use crate::limits::{
     MAX_CSS_DECLARATIONS_PER_RULE, MAX_CSS_NESTING_DEPTH, MAX_CSS_RULES, MAX_CSS_SOURCE_BYTES,
@@ -24,12 +25,6 @@ pub(super) enum RuleScope {
     Slotted(NodeId),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct MediaEnvironment {
-    viewport_width: f32,
-    prefers_dark_color_scheme: bool,
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct Declaration {
     pub(super) name: String,
@@ -40,18 +35,13 @@ pub(super) struct Declaration {
 pub(super) fn parse_stylesheet(
     css: &str,
     base_url: &str,
-    viewport_width: f32,
-    prefers_dark_color_scheme: bool,
+    media_environment: MediaEnvironment,
     next_order: &mut u32,
     output: &mut Vec<Rule>,
     scope: RuleScope,
 ) {
     let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
     let css = strip_comments(css);
-    let media_environment = MediaEnvironment {
-        viewport_width,
-        prefers_dark_color_scheme,
-    };
     parse_rule_list(
         &css,
         base_url,
@@ -90,11 +80,7 @@ fn parse_rule_list(
         };
         let body = &css[open + 1..close];
         if prelude.starts_with("@media") {
-            if media::media_matches_with_color_scheme(
-                prelude,
-                media_environment.viewport_width,
-                media_environment.prefers_dark_color_scheme,
-            ) {
+            if media::media_matches_for_environment(prelude, media_environment) {
                 parse_rule_list(
                     body,
                     base_url,

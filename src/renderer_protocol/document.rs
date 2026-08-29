@@ -28,6 +28,7 @@ pub struct PresentedViewport {
     pub height: f32,
     pub style_width: f32,
     pub dpi: u32,
+    pub prefers_dark_color_scheme: bool,
 }
 
 impl PresentedViewport {

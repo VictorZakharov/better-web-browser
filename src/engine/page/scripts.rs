@@ -107,10 +107,7 @@ impl Page {
                 &self.source_url,
                 &self.character_set,
             );
-            runtime.set_media_environment(
-                self.responsive_viewport_width,
-                self.prefers_dark_color_scheme,
-            );
+            runtime.set_media_environment(self.media_environment);
             runtime.set_document_stylesheets(&self.stylesheet_sources);
             if let Some((cookie_version, local, session)) = document_state {
                 runtime.set_document_state(cookie_version, cookie_header, local, session)?;

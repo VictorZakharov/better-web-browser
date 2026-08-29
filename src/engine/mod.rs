@@ -10,6 +10,7 @@ pub mod script;
 mod stylesheet;
 
 pub use css::StyleRefreshStats;
+pub(crate) use css::media::MediaEnvironment;
 pub use display_list::DisplayListDamage;
 pub use font::WebFont;
 pub use layout::{

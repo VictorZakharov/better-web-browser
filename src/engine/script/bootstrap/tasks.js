@@ -96,10 +96,6 @@
         }
     });
     windowObject.getComputedStyle = element => computedStyleProxy(element);
-    windowObject.matchMedia = query => {
-        query = String(query);
-        return { media: query, matches: host('mediaMatches', query), onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } };
-    };
     windowObject.CSS = { supports() { return false; }, escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); } };
     windowObject.Image = class Image extends HTMLImageElement {
         constructor() {

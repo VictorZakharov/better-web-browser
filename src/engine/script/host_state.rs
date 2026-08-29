@@ -1,6 +1,7 @@
 //! Per-document native state shared with the V8 realm.
 
 use super::*;
+use crate::engine::MediaEnvironment;
 
 mod cookies;
 mod storage;
@@ -68,8 +69,7 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
-    pub(super) media_viewport_width: f32,
-    pub(super) prefers_dark_color_scheme: bool,
+    pub(super) media_environment: MediaEnvironment,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
 
@@ -121,8 +121,7 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
-            media_viewport_width: 1280.0,
-            prefers_dark_color_scheme: false,
+            media_environment: MediaEnvironment::new(1280.0, 720.0, 1.0, false),
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
