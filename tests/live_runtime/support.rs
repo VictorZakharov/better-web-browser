@@ -191,7 +191,10 @@ pub(super) fn serve_parallel_fixtures(
         .set_nonblocking(true)
         .map_err(|error| format!("set fixture nonblocking: {error}"))?;
     let response_for = std::sync::Arc::new(response_for);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // The integration suite intentionally runs several hidden browsers in parallel. Keep the
+    // fixture accept horizon aligned with their outer wait so a healthy but CPU-starved navigation
+    // is not misreported as WSAEWOULDBLOCK after the shorter single-request timeout.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut workers = Vec::new();
     for _ in 0..request_count {
         let (stream, _) = accept_until(&listener, deadline)?;
