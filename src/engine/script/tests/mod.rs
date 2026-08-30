@@ -20,6 +20,7 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
 
 mod attributes;
 mod bindings;
+mod canvas;
 mod compatibility;
 mod cssom;
 mod custom_elements;
