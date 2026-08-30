@@ -232,6 +232,7 @@ impl RendererSession {
                 worker::run(worker::BrokerResources {
                     process: launched.process,
                     job: Some(launched.job),
+                    media: launched.media,
                     writer: outbound,
                     writer_thread,
                     incoming,

@@ -124,8 +124,13 @@ fn create_pipe(operation: &str) -> Result<(OwnedHandle, OwnedHandle), String> {
 }
 
 fn clear_inherit(handle: &OwnedHandle) -> Result<(), String> {
-    if unsafe { SetHandleInformation(raw(handle), HANDLE_FLAG_INHERIT, 0) } == 0 {
-        Err(last_error("clear parent pipe inheritance"))
+    set_handle_inheritance(raw(handle), false)
+}
+
+pub(crate) fn set_handle_inheritance(handle: HANDLE, inheritable: bool) -> Result<(), String> {
+    let flags = if inheritable { HANDLE_FLAG_INHERIT } else { 0 };
+    if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, flags) } == 0 {
+        Err(last_error("update pipe handle inheritance"))
     } else {
         Ok(())
     }
@@ -179,26 +184,17 @@ pub(crate) struct LaunchAttributes {
 }
 
 impl LaunchAttributes {
-    pub(crate) fn new(
-        child_input: &OwnedHandle,
-        child_output: &OwnedHandle,
-        job: &OwnedHandle,
-        sid: &AppContainerSid,
-    ) -> Result<Self, String> {
-        Self::with_inherited(child_input, child_output, &[], job, sid)
-    }
-
     pub(crate) fn with_inherited(
         child_input: &OwnedHandle,
         child_output: &OwnedHandle,
-        additional: &[&OwnedHandle],
+        additional: &[HANDLE],
         job: &OwnedHandle,
         sid: &AppContainerSid,
     ) -> Result<Self, String> {
         let mut handles = Vec::with_capacity(2 + additional.len());
         handles.push(raw(child_input));
         handles.push(raw(child_output));
-        handles.extend(additional.iter().map(|handle| raw(handle)));
+        handles.extend_from_slice(additional);
         let handles = handles.into_boxed_slice();
         let jobs = Box::new([raw(job)]);
         let child_policy = Box::new(PROCESS_CREATION_CHILD_PROCESS_RESTRICTED);

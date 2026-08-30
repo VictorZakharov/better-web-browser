@@ -146,6 +146,9 @@ pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25
 pub const MAX_MEDIA_CONTROL_PAYLOAD: usize = 4 * 1024;
 pub const MAX_MEDIA_DATA_CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_MEDIA_SESSIONS_PER_TAB: usize = 4;
+/// The first playback slice owns one decoder and one document clock. Raise this only when the
+/// renderer and worker both retain independent state for every admitted media element.
+pub const MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT: usize = 1;
 pub const MAX_MEDIA_TRACKS: usize = 8;
 pub const MAX_MEDIA_DIMENSION: u32 = 8_192;
 pub const MAX_MEDIA_ENCODED_BYTES: usize = 64 * 1024 * 1024;

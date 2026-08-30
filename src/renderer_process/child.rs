@@ -22,7 +22,7 @@ use windows_sys::Win32::System::Threading::{
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     crate::engine::script::install_runtime_panic_hook();
-    let options = ChildOptions::parse(arguments)?;
+    let mut options = ChildOptions::parse(arguments)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
@@ -31,10 +31,20 @@ pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     // SAFETY: renderer mode owns the two allowlisted inherited standard handles until exit.
     let input = unsafe { File::from_raw_handle(input_handle as RawHandle) };
     let output = unsafe { File::from_raw_handle(output_handle as RawHandle) };
-    run_protocol(input, output, options)
+    let media = options
+        .media
+        .take()
+        .map(|options| options.connect())
+        .transpose()?;
+    run_protocol(input, output, options, media)
 }
 
-fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), String> {
+fn run_protocol(
+    input: File,
+    output: File,
+    options: ChildOptions,
+    media: Option<crate::media_process::MediaClient>,
+) -> Result<(), String> {
     if options.fault == Some(StartupFault::Silent) {
         std::thread::sleep(Duration::from_secs(60));
         return Ok(());
@@ -101,7 +111,7 @@ fn run_protocol(input: File, output: File, options: ChildOptions) -> Result<(), 
             containment: containment_report()?,
         })
         .map_err(|error| error.to_string())?;
-    connection::ChildConnection::new(reader, writer, options.test_mode, text).run()
+    connection::ChildConnection::new(reader, writer, options.test_mode, text, media).run()
 }
 
 pub(super) fn handle_test(
@@ -324,6 +334,7 @@ struct ChildOptions {
     session: RendererSessionId,
     test_mode: bool,
     fault: Option<StartupFault>,
+    media: Option<media::ChildMediaOptions>,
 }
 
 impl ChildOptions {
@@ -362,8 +373,10 @@ impl ChildOptions {
                 .iter()
                 .any(|argument| argument == "--renderer-test-mode"),
             fault,
+            media: media::ChildMediaOptions::parse(arguments)?,
         })
     }
 }
 mod connection;
 mod document;
+mod media;

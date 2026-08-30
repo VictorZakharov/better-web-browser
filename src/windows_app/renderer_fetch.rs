@@ -320,6 +320,7 @@ fn destination(value: ResourceDestination) -> RequestDestination {
         ResourceDestination::Script => RequestDestination::Script,
         ResourceDestination::Font => RequestDestination::Font,
         ResourceDestination::Fetch => RequestDestination::Fetch,
+        ResourceDestination::Video => RequestDestination::Video,
     }
 }
 

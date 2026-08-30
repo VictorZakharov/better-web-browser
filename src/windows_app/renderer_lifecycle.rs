@@ -146,6 +146,7 @@ impl BrowserState {
             .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result = RendererLaunchOptions::current_executable().and_then(|mut options| {
+                    options.enable_media = true;
                     options.browsing_context = BrowsingContextId::new(id.get())
                         .map_err(|error| format!("allocate browsing context: {error}"))?;
                     RendererSession::launch(options)

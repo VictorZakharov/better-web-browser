@@ -1,6 +1,4 @@
-    // HTML media state starts closed: capability APIs must not advertise a format until the
-    // complete decode, presentation, and audio path is connected. These bindings establish the
-    // standards-facing object model without inventing successful playback.
+    // Media state changes only after the renderer acknowledges work by the contained media worker.
     const timeRangesConstructionToken = {};
     class TimeRanges {
         constructor(token, ranges = []) {
@@ -36,6 +34,8 @@
     }
 
     const mediaStates = new WeakMap();
+    let nextMediaRequest = 1;
+    const pendingMediaRequests = new Map();
     const mediaStateFor = element => {
         let state = mediaStates.get(element);
         if (!state) {
@@ -160,14 +160,14 @@
             if (hadResource) this.dispatchEvent(new Event('emptied'));
         }
         play() {
-            return Promise.reject(new DOMException(
-                'No media format has a complete playback path', 'NotSupportedError'));
+            const requestId = nextMediaRequest++;
+            return new Promise((resolve, reject) => {
+                pendingMediaRequests.set(requestId, { element: this, resolve, reject });
+                host('mediaRequest', this.__id, requestId, true);
+            });
         }
         pause() {
-            const state = mediaStateFor(this);
-            if (state.paused) return;
-            state.paused = true;
-            this.dispatchEvent(new Event('pause'));
+            host('mediaRequest', this.__id, 0, false);
         }
         fastSeek(time) { this.currentTime = time; }
         canPlayType(_type) { return ''; }
@@ -213,3 +213,55 @@
     class HTMLAudioElement extends HTMLMediaElement {}
 
     reflectString(HTMLSourceElement.prototype, 'type');
+
+    const applyMediaResponse = input => {
+        const element = wrap(Number(input.target) || 0);
+        if (!(element instanceof HTMLMediaElement)) return false;
+        const state = mediaStateFor(element);
+        const requestId = Number(input.requestId) || 0;
+        const pending = requestId ? pendingMediaRequests.get(requestId) : null;
+        if (requestId) pendingMediaRequests.delete(requestId);
+        switch (input.disposition) {
+            case 'loaded':
+                state.networkState = HTMLMediaElement.NETWORK_IDLE;
+                state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+                state.currentSrc = element.src;
+                state.duration = Number(input.duration);
+                state.videoWidth = Number(input.width) || 0;
+                state.videoHeight = Number(input.height) || 0;
+                state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                element.dispatchEvent(markTrusted(new Event('durationchange')));
+                element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
+                element.dispatchEvent(markTrusted(new Event('loadeddata')));
+                element.dispatchEvent(markTrusted(new Event('canplay')));
+                return true;
+            case 'playing':
+                state.paused = false;
+                state.ended = false;
+                pending?.resolve();
+                element.dispatchEvent(markTrusted(new Event('play')));
+                element.dispatchEvent(markTrusted(new Event('playing')));
+                return true;
+            case 'paused':
+                if (!state.paused) {
+                    state.paused = true;
+                    element.dispatchEvent(markTrusted(new Event('pause')));
+                }
+                return true;
+            case 'time':
+                state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                element.dispatchEvent(markTrusted(new Event('timeupdate')));
+                return true;
+            case 'ended':
+                state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;
+                state.paused = true;
+                state.ended = true;
+                element.dispatchEvent(markTrusted(new Event('timeupdate')));
+                element.dispatchEvent(markTrusted(new Event('ended')));
+                return true;
+            default:
+                pending?.reject(new DOMException('Media playback is unavailable', 'NotSupportedError'));
+                return false;
+        }
+    };

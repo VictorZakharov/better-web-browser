@@ -8,7 +8,7 @@ use crate::renderer_process::windows::{
 use std::fs::{self, File};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::OwnedHandle;
+use std::os::windows::io::{AsRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::null;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -59,19 +59,49 @@ impl MediaLaunchOptions {
     }
 }
 
-pub(super) struct LaunchedMediaWorker {
-    pub(super) process: OwnedHandle,
-    pub(super) job: OwnedHandle,
-    pub(super) browser_input: File,
-    pub(super) browser_output: File,
-    pub(super) browser_data_output: File,
-    pub(super) browser_frame_input: File,
-    pub(super) process_id: u32,
-    pub(super) session: MediaSessionId,
-    pub(super) nonce: Nonce,
+pub(crate) struct LaunchedMediaWorker {
+    pub(crate) process: OwnedHandle,
+    pub(crate) job: OwnedHandle,
+    pub(crate) browser_input: File,
+    pub(crate) browser_output: File,
+    pub(crate) browser_data_output: File,
+    pub(crate) browser_frame_input: File,
+    pub(crate) process_id: u32,
+    pub(crate) session: MediaSessionId,
+    pub(crate) nonce: Nonce,
 }
 
-pub(super) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker, String> {
+pub(crate) struct MediaWorkerOwner {
+    pub(crate) process: OwnedHandle,
+    pub(crate) job: OwnedHandle,
+}
+
+impl Drop for MediaWorkerOwner {
+    fn drop(&mut self) {
+        crate::renderer_process::windows::terminate_job(&self.job, 0x4d05);
+        crate::renderer_process::windows::wait_for_process(&self.process, Duration::from_secs(2));
+    }
+}
+
+impl LaunchedMediaWorker {
+    pub(crate) fn renderer_handles(&self) -> [windows_sys::Win32::Foundation::HANDLE; 4] {
+        [
+            self.browser_input.as_raw_handle() as _,
+            self.browser_output.as_raw_handle() as _,
+            self.browser_data_output.as_raw_handle() as _,
+            self.browser_frame_input.as_raw_handle() as _,
+        ]
+    }
+
+    pub(crate) fn into_owner(self) -> MediaWorkerOwner {
+        MediaWorkerOwner {
+            process: self.process,
+            job: self.job,
+        }
+    }
+}
+
+pub(crate) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker, String> {
     validate_executable(&options.executable)?;
     let nonce = random_nonce()?;
     let session_value = NEXT_MEDIA_SESSION.fetch_add(1, Ordering::Relaxed);
@@ -85,7 +115,7 @@ pub(super) fn launch(options: &MediaLaunchOptions) -> Result<LaunchedMediaWorker
     let attributes = LaunchAttributes::with_inherited(
         &pipes.child_input,
         &pipes.child_output,
-        &[&data_pipe.child_input, &frame_pipe.child_output],
+        &[raw(&data_pipe.child_input), raw(&frame_pipe.child_output)],
         &job,
         &sid,
     )?;

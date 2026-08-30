@@ -126,6 +126,7 @@
                     return true;
                 }
                 case 'fullscreen': return applyFullscreenResponse(input);
+                case 'media': return applyMediaResponse(input);
                 default: return false;
             }
         }

@@ -7,6 +7,7 @@ mod fetch;
 mod fullscreen;
 mod interaction;
 mod load;
+mod media;
 mod media_environment;
 mod reporting;
 mod resources;
@@ -82,6 +83,8 @@ pub(super) struct DocumentRuntime {
     sent_images: HashSet<String>,
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
+    media: Option<media::MediaPlayback>,
+    pending_media_outcome: ScriptOutcome,
 }
 
 impl DocumentRuntime {
@@ -126,10 +129,14 @@ impl DocumentRuntime {
             .as_mut()
             .and_then(ScriptRuntime::next_timer_delay)
             .map(|delay| delay.as_micros().min(u64::MAX as u128) as u64);
-        if self.has_post_load_work() {
+        let runtime_timer = if self.has_post_load_work() {
             Some(runtime_timer.unwrap_or(0).min(10_000))
         } else {
             runtime_timer
+        };
+        match (runtime_timer, self.media_timer_micros()) {
+            (Some(runtime), Some(media)) => Some(runtime.min(media)),
+            (runtime, media) => runtime.or(media),
         }
     }
 
@@ -162,7 +169,7 @@ impl DocumentRuntime {
                 next_timer_micros: None,
             })));
         }
-        let mut outcome = ScriptOutcome::default();
+        let mut outcome = std::mem::take(&mut self.pending_media_outcome);
         let mut script_fetch_time = Duration::ZERO;
         let resources_changed = self
             .finish_ready_resource_preloads(connection)?
@@ -262,12 +269,14 @@ impl DocumentRuntime {
             },
         )?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
+        self.apply_media_actions(&mut outcome)?;
         connection.send_state_mutations(self.id, &mut outcome)?;
+        let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
 
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
-        let needs_present = resources_changed || outcome.render_requested;
+        let needs_present = resources_changed || media_changed || outcome.render_requested;
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
                 "refreshing styles for {}",

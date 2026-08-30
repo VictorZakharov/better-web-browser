@@ -38,6 +38,7 @@ pub(super) struct ChildConnection {
     // the runtime. Keep its identity long enough to validate and drain those transfers.
     failed_document: Option<DocumentId>,
     prepared_text: Option<RendererTextSystem>,
+    media: Option<crate::media_process::MediaClient>,
     next_request_id: u64,
     next_batch_id: u64,
     last_processed_work_ack: Instant,
@@ -49,6 +50,7 @@ impl ChildConnection {
         writer: FrameWriter<File>,
         test_mode: bool,
         text: RendererTextSystem,
+        media: Option<crate::media_process::MediaClient>,
     ) -> Self {
         Self {
             reader,
@@ -65,10 +67,15 @@ impl ChildConnection {
             // Ready is sent only after this renderer-owned dependency is initialized. Otherwise
             // the browser can submit a document to a process that is not actually command-ready.
             prepared_text: Some(text),
+            media,
             next_request_id: 1,
             next_batch_id: 1,
             last_processed_work_ack: Instant::now(),
         }
+    }
+
+    pub(super) fn media(&mut self) -> Option<&mut crate::media_process::MediaClient> {
+        self.media.as_mut()
     }
 
     pub(super) fn run(mut self) -> Result<(), String> {

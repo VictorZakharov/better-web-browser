@@ -457,6 +457,7 @@ impl ScriptRuntime {
         host.pending_fetch_actions.clear();
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
+        host.pending_media_actions.clear();
         host.module_loader.clear();
     }
 

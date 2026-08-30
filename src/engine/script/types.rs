@@ -111,6 +111,7 @@ pub struct ScriptOutcome {
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
+    pub media_actions: Vec<ScriptMediaAction>,
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
@@ -120,6 +121,13 @@ pub struct ScriptOutcome {
 pub struct ScriptFullscreenAction {
     pub request_id: u64,
     pub enter: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptMediaAction {
+    pub request_id: u64,
+    pub node: crate::engine::dom::NodeId,
+    pub play: bool,
 }
 
 impl ScriptOutcome {
@@ -192,6 +200,15 @@ pub enum UserInputEvent {
     Fullscreen {
         request_id: u64,
         disposition: &'static str,
+    },
+    Media {
+        target: NodeRef,
+        request_id: u64,
+        disposition: &'static str,
+        current_time: f64,
+        duration: f64,
+        width: u32,
+        height: u32,
     },
 }
 
