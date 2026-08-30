@@ -260,6 +260,45 @@ fn contained_renderer_decodes_media_source_object_url_video() {
         .expect("shutdown contained MSE playback pair");
 }
 
+#[test]
+fn initial_script_media_action_for_removed_element_is_cancelled() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut launch = options();
+    launch.enable_media = true;
+    let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
+    let document = better_web_browser::renderer_protocol::DocumentId::new(192).unwrap();
+    let html = br#"<!doctype html><title>retired video</title><output id="state">waiting</output>
+        <script>
+            const video = document.createElement('video');
+            document.body.append(video);
+            video.play();
+            video.remove();
+            state.textContent = 'survived';
+        </script>"#;
+    session
+        .load_document(
+            document_start(document, html.len()),
+            empty_document_state(),
+            html.to_vec(),
+        )
+        .unwrap();
+    let presentation = loop {
+        match session.wait_for_event(Duration::from_secs(5)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                break presentation;
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            event => panic!("unexpected retired-media event: {event:?}"),
+        }
+    };
+    assert!(presentation.layout.items.iter().any(|item| {
+        matches!(item, DisplayItem::Text { text, .. } if text.contains("survived"))
+    }));
+    session.shutdown().expect("shutdown renderer");
+}
+
 fn decode_base64(input: &str) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len() / 4 * 3);
     let mut quartet = [0_u8; 4];

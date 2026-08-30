@@ -9,6 +9,7 @@ use better_web_browser::renderer_protocol::{
 pub(in crate::windows_app) enum BenchmarkNavigation {
     Address(String),
     ActivateLink(String),
+    ClickPoint { x: i32, y: i32 },
 }
 
 impl BrowserState {
@@ -38,6 +39,18 @@ impl BrowserState {
                     Ok(())
                 }
                 BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
+                BenchmarkNavigation::ClickPoint { x, y } => {
+                    let result = self.click_benchmark_point(x as f32, y as f32);
+                    if result.is_ok()
+                        && self
+                            .benchmark
+                            .as_ref()
+                            .is_some_and(|benchmark| benchmark.navigation_targets.is_empty())
+                    {
+                        self.schedule_benchmark_finish();
+                    }
+                    result
+                }
             };
             if let Err(error) = result {
                 if let Some(benchmark) = self.benchmark.as_mut() {
@@ -88,6 +101,31 @@ impl BrowserState {
             }
             if phase == PointerPhase::Up {
                 // Hidden activation models the same trusted gesture and document ownership as UI.
+                self.transient_activation = Some((document, Instant::now()));
+            }
+        }
+        Ok(())
+    }
+
+    fn click_benchmark_point(&mut self, x: f32, y: f32) -> Result<(), String> {
+        for phase in [PointerPhase::Down, PointerPhase::Up] {
+            let (document, sequence) = self
+                .next_renderer_input()
+                .ok_or_else(|| "benchmark click has no active renderer document".to_string())?;
+            if !self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+                document,
+                sequence,
+                phase,
+                button: PointerButton::Primary,
+                x,
+                y,
+                modifiers: InputModifiers::default(),
+                // Let the renderer resolve the topmost target from its authoritative layout.
+                target: None,
+            })) {
+                return Err("benchmark click was rejected by the renderer".into());
+            }
+            if phase == PointerPhase::Up {
                 self.transient_activation = Some((document, Instant::now()));
             }
         }

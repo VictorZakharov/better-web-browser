@@ -300,28 +300,57 @@ impl DocumentRuntime {
     }
 
     fn hit_target(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout.items.iter().rev().find_map(|item| match item {
-            DisplayItem::Text {
-                rect,
-                link: Some(link),
-                node_id: Some(node_id),
-                ..
-            } if contains(*rect, x, y) => self.page.dom.find_node(*node_id).map(|node| HitTarget {
+        self.layout
+            .items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                DisplayItem::Text {
+                    rect,
+                    link: Some(link),
+                    node_id: Some(node_id),
+                    ..
+                } if contains(*rect, x, y) => {
+                    self.page.dom.find_node(*node_id).map(|node| HitTarget {
+                        node,
+                        link: Some(link.clone()),
+                        control: None,
+                    })
+                }
+                DisplayItem::Control(control) if contains(control.rect, x, y) => self
+                    .page
+                    .dom
+                    .find_node(control.node_id)
+                    .map(|node| HitTarget {
+                        node,
+                        link: None,
+                        control: Some((**control).clone()),
+                    }),
+                _ => None,
+            })
+            .or_else(|| self.hit_element_bounds(x, y))
+    }
+
+    fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
+        self.layout
+            .node_bounds
+            .iter()
+            .filter(|(_, rect)| rect.width > 0.0 && rect.height > 0.0 && contains(**rect, x, y))
+            .filter_map(|(id, rect)| {
+                let node = self.page.dom.find_node(*id)?;
+                let depth = std::iter::successors(node.parent(), |parent| parent.parent()).count();
+                Some((node, depth, rect.width * rect.height))
+            })
+            .max_by(|(_, left_depth, left_area), (_, right_depth, right_area)| {
+                left_depth
+                    .cmp(right_depth)
+                    .then_with(|| right_area.total_cmp(left_area))
+            })
+            .map(|(node, _, _)| HitTarget {
                 node,
-                link: Some(link.clone()),
+                link: None,
                 control: None,
-            }),
-            DisplayItem::Control(control) if contains(control.rect, x, y) => self
-                .page
-                .dom
-                .find_node(control.node_id)
-                .map(|node| HitTarget {
-                    node,
-                    link: None,
-                    control: Some((**control).clone()),
-                }),
-            _ => None,
-        })
+            })
     }
 }
 

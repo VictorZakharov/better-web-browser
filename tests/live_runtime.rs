@@ -22,6 +22,8 @@ mod reload;
 mod streaming_network;
 #[path = "live_runtime/window.rs"]
 mod window;
+#[path = "live_runtime/youtube.rs"]
+mod youtube;
 const FIXTURE_HTML: &str = r#"<!doctype html>
 <title>runtime pending</title>
 <style>

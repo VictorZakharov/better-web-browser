@@ -141,12 +141,16 @@ impl DocumentRuntime {
                 return Err("document exceeded the bounded media action budget".into());
             }
             for action in actions {
+                if self.page.dom.find_node(action.node).is_none() {
+                    self.stop_retired_media(action.node, connection)?;
+                    continue;
+                }
                 let disposition = self.apply_media_action(&action, connection)?;
                 let target = self
                     .page
                     .dom
                     .find_node(action.node)
-                    .ok_or_else(|| "media action targeted a retired node".to_string())?;
+                    .ok_or_else(|| "media action target retired during dispatch".to_string())?;
                 let (current_time, duration, width, height) = self.media_values(action.node);
                 let response = self.dispatch_user_input(crate::engine::UserInputEvent::Media {
                     target,
@@ -160,6 +164,22 @@ impl DocumentRuntime {
                 super::merge_outcome(outcome, response.outcome, self.page.dom.document.id());
             }
         }
+        Ok(())
+    }
+
+    fn stop_retired_media(
+        &mut self,
+        node: NodeId,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        let Some(playback) = self.media.as_ref().filter(|media| media.node == node) else {
+            return Ok(());
+        };
+        let source_id = playback.source_id;
+        if let Some(worker) = connection.media() {
+            worker.set_playback(source_id, false, 0)?;
+        }
+        self.media.take();
         Ok(())
     }
 

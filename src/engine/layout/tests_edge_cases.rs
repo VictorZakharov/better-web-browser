@@ -59,6 +59,39 @@ fn paints_css_masks_with_the_elements_background_color() {
 }
 
 #[test]
+fn blockifies_an_absolutely_positioned_inline_button() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            button { display: inline-block; position: absolute; left: 50%; top: 50%;
+                     width: 72px; height: 72px; border: 0; padding: 0 }
+        </style><button id="play">Play</button>"#,
+        "https://example.com/",
+    );
+    let play = page
+        .dom
+        .elements_named("button")
+        .find(|node| node.attr("id").as_deref() == Some("play"))
+        .unwrap();
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+
+    assert_eq!(
+        output.node_bounds.get(&play.id()),
+        Some(&RectF {
+            x: 400.0,
+            y: 300.0,
+            width: 72.0,
+            height: 72.0,
+        })
+    );
+    assert!(output.items.iter().any(|item| matches!(
+        item,
+        DisplayItem::Control(control) if control.node_id == play.id()
+    )));
+}
+
+#[test]
 fn resolves_percentage_radius_against_the_finished_box() {
     let page = Page::parse(
         r#"<style>body{margin:0}.pill{width:100px;height:40px;background:red;border-radius:50%}</style>
