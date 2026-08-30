@@ -1,9 +1,9 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
     BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
-    WORKER_FRAME_ACKNOWLEDGED, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
-    WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_REQUEST_FRAME, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
+    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaCodecFamily,
@@ -41,6 +41,10 @@ pub(super) fn browser(
             }
         }
         BROWSER_ACKNOWLEDGE_FRAME => BrowserMediaMessage::AcknowledgeFrame {
+            source_id: cursor.nonzero_u64("frame source")?,
+            frame_id: cursor.nonzero_u64("frame generation")?,
+        },
+        BROWSER_REQUEST_FRAME => BrowserMediaMessage::RequestFrame {
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,
         },
@@ -113,6 +117,12 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,
         },
+        WORKER_FRAME_READY => WorkerMediaMessage::FrameReady {
+            frame: decode_frame_metadata(&mut cursor)?,
+        },
+        WORKER_END_OF_STREAM => WorkerMediaMessage::EndOfStream {
+            source_id: cursor.nonzero_u64("frame source")?,
+        },
         WORKER_RESTRICTIONS => WorkerMediaMessage::Restrictions(MediaRestrictionReport {
             child_launch_denied: cursor.boolean()?,
             loopback_denied: cursor.boolean()?,
@@ -129,6 +139,11 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
     }
     if let WorkerMediaMessage::Decoded { report, frame, .. } = message {
         report.validate(MediaLimits::default())?;
+        frame
+            .validate()
+            .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+    }
+    if let WorkerMediaMessage::FrameReady { frame } = message {
         frame
             .validate()
             .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;

@@ -39,6 +39,12 @@ pub struct OwnedMediaDecode {
 }
 
 #[derive(Clone, Debug)]
+pub struct OwnedMediaPlayback {
+    pub report: crate::media_protocol::MediaDecodeReport,
+    pub frames: Vec<DecodedMediaFrame>,
+}
+
+#[derive(Clone, Debug)]
 pub struct MediaWorkerSnapshot {
     pub process_id: u32,
     pub session_id: u64,

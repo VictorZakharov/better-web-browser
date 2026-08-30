@@ -23,6 +23,8 @@
         if (localName === 'img') return HTMLImageElement;
         if (localName === 'picture') return HTMLPictureElement;
         if (localName === 'source') return HTMLSourceElement;
+        if (localName === 'video') return HTMLVideoElement;
+        if (localName === 'audio') return HTMLAudioElement;
         if (localName === 'input') return HTMLInputElement;
         if (localName === 'textarea') return HTMLTextAreaElement;
         if (localName === 'ol') return HTMLOrderedListElement;
@@ -222,6 +224,11 @@
     windowObject.HTMLImageElement = HTMLImageElement;
     windowObject.HTMLPictureElement = HTMLPictureElement;
     windowObject.HTMLSourceElement = HTMLSourceElement;
+    windowObject.HTMLMediaElement = HTMLMediaElement;
+    windowObject.HTMLVideoElement = HTMLVideoElement;
+    windowObject.HTMLAudioElement = HTMLAudioElement;
+    windowObject.TimeRanges = TimeRanges;
+    windowObject.MediaError = MediaError;
     windowObject.HTMLInputElement = HTMLInputElement;
     windowObject.HTMLTextAreaElement = HTMLTextAreaElement;
     windowObject.HTMLOrderedListElement = HTMLOrderedListElement;
@@ -257,6 +264,11 @@
     windowObject.InputEvent = InputEvent;
     windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
+    windowObject.Audio = function Audio(src = '') {
+        const audio = document.createElement('audio');
+        if (src !== '') audio.src = String(src);
+        return audio;
+    };
     windowObject.DOMTokenList = DOMTokenList;
     windowObject.DOMStringMap = DOMStringMap;
     windowObject.CSSStyleDeclaration = CSSStyleDeclaration;

@@ -5,19 +5,12 @@ use windows::Win32::Media::MediaFoundation::{
     IMFSample, IMFSourceReader, MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR,
 };
 
-pub(super) struct DecodedSample {
-    pub(super) bytes: Vec<u8>,
-    pub(super) timestamp_100ns: i64,
-    pub(super) duration_100ns: u64,
-}
-
 pub(super) struct StreamSummary {
     pub(super) samples: u32,
     pub(super) bytes: u64,
     pub(super) end_100ns: u64,
     pub(super) first_timestamp: Option<i64>,
     pub(super) last_timestamp: Option<i64>,
-    pub(super) first_sample: Option<DecodedSample>,
 }
 
 pub(super) fn read_stream(
@@ -25,7 +18,6 @@ pub(super) fn read_stream(
     stream: u32,
     name: &str,
     max_sample_bytes: u64,
-    retain_first_sample: bool,
 ) -> Result<StreamSummary, String> {
     let mut summary = StreamSummary {
         samples: 0,
@@ -33,7 +25,6 @@ pub(super) fn read_stream(
         end_100ns: 0,
         first_timestamp: None,
         last_timestamp: None,
-        first_sample: None,
     };
     loop {
         let mut flags = 0_u32;
@@ -83,13 +74,6 @@ pub(super) fn read_stream(
                 return Err(format!("decoded {name} bytes exceed worker limit"));
             }
             let duration = unsafe { sample.GetSampleDuration() }.unwrap_or(0).max(0) as u64;
-            if retain_first_sample && summary.first_sample.is_none() {
-                summary.first_sample = Some(DecodedSample {
-                    bytes: copy_sample(&sample, name, max_sample_bytes)?,
-                    timestamp_100ns: timestamp,
-                    duration_100ns: duration,
-                });
-            }
             let end = timestamp.saturating_add(duration as i64).max(0) as u64;
             summary.end_100ns = summary.end_100ns.max(end);
             if summary.end_100ns > MAX_MEDIA_DURATION_100NS {
@@ -103,7 +87,7 @@ pub(super) fn read_stream(
     Ok(summary)
 }
 
-fn copy_sample(sample: &IMFSample, name: &str, maximum: u64) -> Result<Vec<u8>, String> {
+pub(super) fn copy_sample(sample: &IMFSample, name: &str, maximum: u64) -> Result<Vec<u8>, String> {
     let buffer = unsafe { sample.ConvertToContiguousBuffer() }
         .map_err(|error| format!("coalesce decoded {name} sample: {error}"))?;
     let mut pointer = std::ptr::null_mut();

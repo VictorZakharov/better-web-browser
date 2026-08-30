@@ -16,7 +16,9 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
         // HTML defines slot as a box-tree-transparent insertion point. Its assigned nodes retain
         // their own outer display and participate directly in the host's formatting context.
         "slot" => Display::Contents,
-        "img" | "input" | "button" | "select" | "textarea" | "svg" => Display::InlineBlock,
+        "img" | "video" | "audio" | "input" | "button" | "select" | "textarea" | "svg" => {
+            Display::InlineBlock
+        }
         "head" | "base" | "datalist" | "link" | "meta" | "title" | "style" | "script"
         | "template" | "rp" => Display::None,
         _ => Display::Inline,

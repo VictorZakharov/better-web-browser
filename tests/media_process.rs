@@ -166,6 +166,50 @@ fn contained_worker_decodes_owned_h264_aac_mp4_to_nv12_and_pcm() {
 }
 
 #[test]
+fn contained_worker_advances_an_acknowledged_video_frame_sequence() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixture = decode_base64(include_str!("fixtures/media/test-1s.mp4.base64"));
+    let mut session = MediaSession::launch(options()).expect("launch contained media worker");
+    let playback = session
+        .decode_owned_fixture_frames(&fixture, 6)
+        .expect("decode advancing video frame sequence");
+
+    assert_eq!(playback.frames.len(), 6);
+    assert!(
+        playback
+            .frames
+            .windows(2)
+            .all(|frames| frames[0].metadata.timestamp_100ns < frames[1].metadata.timestamp_100ns),
+        "video presentation timestamps must strictly advance"
+    );
+    assert!(
+        playback
+            .frames
+            .windows(2)
+            .any(|frames| sha256(&frames[0].nv12) != sha256(&frames[1].nv12)),
+        "playback returned only a repeated poster frame"
+    );
+    assert!(
+        playback
+            .frames
+            .iter()
+            .all(|frame| frame.metadata.source_id == 1),
+        "all frames must belong to one media source"
+    );
+    assert_eq!(
+        playback
+            .frames
+            .iter()
+            .map(|frame| frame.metadata.frame_id)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5, 6]
+    );
+    session.shutdown().expect("clean media-worker shutdown");
+}
+
+#[test]
 fn stale_and_duplicate_frame_acknowledgements_fail_without_harming_a_sibling() {
     let _serial = SERIAL
         .lock()
