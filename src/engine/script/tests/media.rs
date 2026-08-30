@@ -72,7 +72,7 @@ fn media_methods_fail_closed_and_validate_ranges() {
     let outcome = runtime.execute_initial(&[input]);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.media_actions.len(), 1);
-    let action = outcome.media_actions[0];
+    let action = &outcome.media_actions[0];
     assert!(matches!(
         action.command,
         ScriptMediaCommand::SetPlayback { playing: true, .. }
@@ -96,4 +96,61 @@ fn media_methods_fail_closed_and_validate_ranges() {
         dom.elements_named("div").next().unwrap().text_content(),
         "NotSupportedError,IndexSizeError,IndexSizeError,true"
     );
+}
+
+#[test]
+fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><output id="status">waiting</output><video id="movie"></video><script>
+            const mediaSource = new MediaSource();
+            const objectUrl = URL.createObjectURL(mediaSource);
+            mediaSource.addEventListener('sourceopen', () => {
+                const type = 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"';
+                const sourceBuffer = mediaSource.addSourceBuffer(type);
+                sourceBuffer.addEventListener('updateend', () => {
+                    mediaSource.endOfStream();
+                    document.getElementById('status').textContent = [
+                        MediaSource.isTypeSupported(type),
+                        !MediaSource.isTypeSupported('video/mp4; codecs="vp09.00.10.08"'),
+                        mediaSource.readyState,
+                        mediaSource.sourceBuffers[0] === sourceBuffer,
+                        movie.src === objectUrl
+                    ].join(':');
+                    URL.revokeObjectURL(objectUrl);
+                });
+                sourceBuffer.appendBuffer(new Uint8Array([0, 1, 2, 3]));
+            });
+            movie.src = objectUrl;
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/#media-source".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let outcome = runtime.execute_initial(&[input]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:true:ended:true:true",
+        "console: {:?}; diagnostics: {:?}",
+        outcome.console,
+        outcome.diagnostics
+    );
+    let commit = outcome
+        .media_actions
+        .iter()
+        .find_map(|action| match &action.command {
+            ScriptMediaCommand::Commit { mime_type, bytes } => Some((mime_type, bytes)),
+            _ => None,
+        })
+        .expect("MediaSource endOfStream did not commit its admitted bytes");
+    assert!(commit.0.starts_with("video/mp4"));
+    assert_eq!(commit.1, &[0, 1, 2, 3]);
 }

@@ -229,6 +229,9 @@
     windowObject.HTMLAudioElement = HTMLAudioElement;
     windowObject.TimeRanges = TimeRanges;
     windowObject.MediaError = MediaError;
+    windowObject.MediaSource = MediaSource;
+    windowObject.SourceBuffer = SourceBuffer;
+    windowObject.SourceBufferList = SourceBufferList;
     windowObject.HTMLInputElement = HTMLInputElement;
     windowObject.HTMLTextAreaElement = HTMLTextAreaElement;
     windowObject.HTMLOrderedListElement = HTMLOrderedListElement;

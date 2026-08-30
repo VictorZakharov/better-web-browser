@@ -141,7 +141,7 @@ impl DocumentRuntime {
                 return Err("document exceeded the bounded media action budget".into());
             }
             for action in actions {
-                let disposition = self.apply_media_action(action, connection)?;
+                let disposition = self.apply_media_action(&action, connection)?;
                 let target = self
                     .page
                     .dom
@@ -165,10 +165,10 @@ impl DocumentRuntime {
 
     fn apply_media_action(
         &mut self,
-        action: ScriptMediaAction,
+        action: &ScriptMediaAction,
         connection: &mut ChildConnection,
     ) -> Result<&'static str, String> {
-        if matches!(action.command, ScriptMediaCommand::Reset) {
+        if matches!(&action.command, ScriptMediaCommand::Reset) {
             if self
                 .media
                 .as_ref()
@@ -177,6 +177,27 @@ impl DocumentRuntime {
                 self.media.take();
             }
             return Ok("reset");
+        }
+        if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
+            if !mime_type
+                .split(';')
+                .next()
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("video/mp4"))
+            {
+                return Ok("media-error");
+            }
+            return match connection
+                .decode_media(bytes)
+                .and_then(|decode| self.install_media_decode(action.node, decode))
+            {
+                Ok(()) => Ok("committed"),
+                Err(error) => {
+                    self.pending_media_outcome
+                        .diagnostics
+                        .push(format!("MediaSource decode rejected: {error}"));
+                    Ok("media-error")
+                }
+            };
         }
         let Some(playback) = self
             .media
@@ -189,28 +210,28 @@ impl DocumentRuntime {
         let worker = connection
             .media()
             .ok_or_else(|| "contained media worker is unavailable".to_string())?;
-        match action.command {
+        match &action.command {
             ScriptMediaCommand::SetPlayback {
                 playing,
                 volume_millis,
             } => {
-                let state = worker.set_playback(source_id, playing, volume_millis)?;
+                let state = worker.set_playback(source_id, *playing, *volume_millis)?;
                 self.apply_playback_state(state);
-                Ok(if playing && state.playing {
+                Ok(if *playing && state.playing {
                     "playing"
-                } else if !playing {
+                } else if !*playing {
                     "paused"
                 } else {
                     "denied"
                 })
             }
             ScriptMediaCommand::Configure { volume_millis } => {
-                let state = worker.set_playback(source_id, playback.playing, volume_millis)?;
+                let state = worker.set_playback(source_id, playback.playing, *volume_millis)?;
                 self.apply_playback_state(state);
                 Ok("configured")
             }
             ScriptMediaCommand::Seek { position_100ns } => {
-                let state = worker.seek_playback(source_id, position_100ns)?;
+                let state = worker.seek_playback(source_id, *position_100ns)?;
                 let frame = worker.next_frame(source_id)?;
                 self.apply_playback_state(state);
                 if let Some(frame) = frame {
@@ -236,6 +257,7 @@ impl DocumentRuntime {
                 Ok("seeked")
             }
             ScriptMediaCommand::Reset => unreachable!(),
+            ScriptMediaCommand::Commit { .. } => unreachable!(),
         }
     }
 

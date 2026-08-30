@@ -261,6 +261,7 @@
                 state.videoHeight = Number(input.height) || 0;
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                notifyMediaSourceLoaded(element, state.duration);
                 element.dispatchEvent(markTrusted(new Event('durationchange')));
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
@@ -293,7 +294,11 @@
                 return true;
             case 'configured':
             case 'reset':
+            case 'committed':
                 return true;
+            case 'media-error':
+                notifyMediaSourceError(element);
+                return false;
             case 'ended':
                 state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;
                 state.paused = true;

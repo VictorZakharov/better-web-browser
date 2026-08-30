@@ -176,6 +176,90 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
         .expect("shutdown contained playback pair");
 }
 
+#[test]
+fn contained_renderer_decodes_media_source_object_url_video() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut launch = options();
+    launch.enable_media = true;
+    launch.unresponsive_timeout = Duration::from_millis(500);
+    let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
+    let document = better_web_browser::renderer_protocol::DocumentId::new(191).unwrap();
+    let media_base64 = include_str!("../fixtures/media/test-1s.mp4.base64")
+        .chars()
+        .filter(|character| !character.is_ascii_whitespace())
+        .collect::<String>();
+    let html = format!(
+        r#"<!doctype html><title>mse video</title>
+        <video id="movie" width="320" height="180" muted></video>
+        <output id="state">waiting</output><script>
+            const source = new MediaSource();
+            source.addEventListener('sourceopen', () => {{
+                const buffer = source.addSourceBuffer(
+                    'video/mp4; codecs="avc1.42E01E,mp4a.40.2"'
+                );
+                buffer.addEventListener('updateend', () => source.endOfStream(), {{ once: true }});
+                const binary = atob('{media_base64}');
+                const bytes = Uint8Array.from(binary, value => value.charCodeAt(0));
+                buffer.appendBuffer(bytes);
+            }});
+            source.addEventListener('sourceended', () => {{
+                movie.play().then(() => state.textContent = 'playing');
+            }});
+            movie.src = URL.createObjectURL(source);
+        </script>"#
+    );
+    let body = html.into_bytes();
+    session
+        .load_document(
+            document_start(document, body.len()),
+            empty_document_state(),
+            body,
+        )
+        .unwrap();
+
+    let rendered = loop {
+        match session.wait_for_event(Duration::from_secs(10)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                if presentation
+                    .images
+                    .iter()
+                    .any(|image| image.url.starts_with("breeze-internal:media-frame:"))
+                {
+                    break presentation;
+                }
+                session
+                    .acknowledge_presentation(PresentationAcknowledgement {
+                        document,
+                        revision: presentation.revision,
+                        presented: true,
+                        controls_applied: true,
+                    })
+                    .unwrap();
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            event => panic!("unexpected renderer event while decoding MSE video: {event:?}"),
+        }
+    };
+    assert!(rendered.layout.items.iter().any(|item| {
+        matches!(
+            item,
+            DisplayItem::Image { url, .. }
+                if url.starts_with("breeze-internal:media-frame:")
+        )
+    }));
+    assert!(
+        rendered.layout.items.iter().any(|item| {
+            matches!(item, DisplayItem::Text { text, .. } if text.contains("playing"))
+        }),
+        "MediaSource playback Promise did not settle"
+    );
+    session
+        .shutdown()
+        .expect("shutdown contained MSE playback pair");
+}
+
 fn decode_base64(input: &str) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len() / 4 * 3);
     let mut quartet = [0_u8; 4];
