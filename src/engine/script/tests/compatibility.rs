@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn global_object_exposes_the_window_interface_prototype_chain() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output>no</output><script>
+            let illegalConstructor = false;
+            try { new Window(); } catch (error) { illegalConstructor = error instanceof TypeError; }
+            if (window === self && window === globalThis && window instanceof Window &&
+                Window.prototype instanceof EventTarget && window.constructor === Window &&
+                document.defaultView === window && illegalConstructor)
+                document.querySelector('output').textContent = 'yes';
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn window_named_properties_track_scoped_tree_and_attribute_mutations() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="initial"></div><output id="status">no</output><script>

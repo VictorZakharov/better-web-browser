@@ -1,4 +1,5 @@
     const htmlNamespace = 'http://www.w3.org/1999/xhtml';
+    const svgNamespace = 'http://www.w3.org/2000/svg';
     const knownHtmlElements = new Set((
         'html head title base link meta style body article section nav aside h1 h2 h3 h4 h5 h6 ' +
         'hgroup header footer address p hr pre blockquote ol ul menu li dl dt dd figure figcaption ' +
@@ -85,6 +86,10 @@
         createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
         createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
         createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
+        createTreeWalker(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+            if (!(root instanceof Node)) throw new TypeError('createTreeWalker requires a Node root');
+            return new TreeWalker(treeWalkerToken, root, whatToShow, filter);
+        }
         createAttribute(localName) { return createAttributeFor(this, localName); }
         createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
         importNode(node, deep = false) {
@@ -185,16 +190,19 @@
             const namespace = metadata[3] || null;
             const Constructor = namespace === htmlNamespace
                 ? htmlElementConstructor(metadata[2].toLowerCase())
-                : Element;
+                : namespace === svgNamespace
+                    ? metadata[2] === 'svg' ? SVGSVGElement : SVGElement
+                    : Element;
             node = new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
         }
         else if (type === 10) node = new DocumentType(id, type, metadata[1], null, null);
         else if (type === 11) node = metadata[4] === 'shadow'
             ? new ShadowRoot(id, type, metadata[1], null, null, shadowRootConstructionToken)
             : new DocumentFragment(id, type, metadata[1], null, null);
-        else node = type === 8
-            ? new Comment(id, type, metadata[1], null, null)
-            : new Text(id, type, metadata[1], null, null);
+        else if (type === 4) node = new CDATASection(id, type, metadata[1], null, null);
+        else if (type === 7) node = new ProcessingInstruction(id, type, metadata[1], null, null);
+        else if (type === 8) node = new Comment(id, type, metadata[1], null, null);
+        else node = new Text(id, type, metadata[1], null, null);
         cache.set(id, node);
         return node;
     }
@@ -202,6 +210,14 @@
     const document = wrap(host('document'));
     const windowEvents = new EventTarget();
     const windowObject = globalThis;
+    const windowConstructionToken = {};
+    class Window extends EventTarget {
+        constructor(token) {
+            if (token !== windowConstructionToken) throw new TypeError('Illegal constructor');
+            super();
+        }
+    }
+    Object.setPrototypeOf(windowObject, Window.prototype);
     windowObject.window = windowObject;
     windowObject.self = windowObject;
     windowObject.top = windowObject;
@@ -209,8 +225,13 @@
     windowObject.document = document;
     windowObject.Node = Node;
     windowObject.Element = Element;
+    windowObject.SVGAnimatedString = SVGAnimatedString;
+    windowObject.SVGElement = SVGElement;
+    windowObject.SVGSVGElement = SVGSVGElement;
     windowObject.Attr = Attr;
     windowObject.NamedNodeMap = NamedNodeMap;
+    windowObject.NodeFilter = NodeFilter;
+    windowObject.TreeWalker = TreeWalker;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
     windowObject.HTMLStyleElement = HTMLStyleElement;
@@ -252,7 +273,9 @@
     windowObject.Document = Document;
     windowObject.CharacterData = CharacterData;
     windowObject.Text = Text;
+    windowObject.CDATASection = CDATASection;
     windowObject.Comment = Comment;
+    windowObject.ProcessingInstruction = ProcessingInstruction;
     windowObject.DocumentType = DocumentType;
     windowObject.DocumentFragment = DocumentFragment;
     windowObject.ShadowRoot = ShadowRoot;
@@ -272,6 +295,7 @@
     windowObject.InputEvent = InputEvent;
     windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
+    windowObject.Window = Window;
     windowObject.Audio = function Audio(src = '') {
         const audio = document.createElement('audio');
         if (src !== '') audio.src = String(src);

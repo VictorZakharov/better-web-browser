@@ -35,5 +35,7 @@ mod network;
 mod network_body;
 mod selectors;
 mod shadow_dom;
+mod svg;
 mod tasks;
+mod traversal;
 mod workers;
