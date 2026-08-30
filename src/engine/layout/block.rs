@@ -310,10 +310,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 float_bottom = y;
             }
             let child_style = self.styles.get(child);
-            if is_block_level(child_style.display)
-                && child_style.float != Float::None
-                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
-            {
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                // CSS Display blockifies out-of-flow positioned boxes. In particular, an
+                // absolutely positioned inline-block button must form an independent box
+                // instead of becoming an inline atom in its containing flow.
+                self.layout_block(child, x, positioning_y, width);
+            } else if is_block_level(child_style.display) && child_style.float != Float::None {
                 let remaining_width = (width - left_float_width - right_float_width).max(0.0);
                 let float_width = self
                     .flex_item_basis(child, child_style, remaining_width)
@@ -330,9 +332,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 } else {
                     left_float_width += float_width;
                 }
-            } else if is_block_level(child_style.display)
-                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
-            {
+            } else if is_block_level(child_style.display) {
                 if !atoms.is_empty() {
                     y = self.layout_inline_atoms(
                         &atoms,
@@ -353,8 +353,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 y = self
                     .layout_block(child, x + left_float_width, y, child_width)
                     .bottom;
-            } else if is_block_level(child_style.display) {
-                self.layout_block(child, x, positioning_y, width);
             } else {
                 self.collect_inline(child, None, &mut atoms, &mut pending_space, true);
             }

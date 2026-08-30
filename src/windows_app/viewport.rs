@@ -255,7 +255,7 @@ impl BrowserState {
             if background_tab {
                 self.open_url_in_new_tab(url, false);
             } else {
-                self.begin_navigation(url, HistoryMode::Push);
+                self.begin_document_navigation(url, HistoryMode::Push);
             }
         }
     }

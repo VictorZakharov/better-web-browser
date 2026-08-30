@@ -5,6 +5,14 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     if tag == "textarea" {
         return Some((ControlKind::TextArea, node.text_content()));
     }
+    if tag == "button" {
+        let kind = match node.attr("type").as_deref() {
+            Some(value) if value.eq_ignore_ascii_case("button") => ControlKind::Button,
+            Some(value) if value.eq_ignore_ascii_case("reset") => ControlKind::Reset,
+            _ => ControlKind::Submit,
+        };
+        return Some((kind, node.text_content().trim().to_string()));
+    }
     if tag != "input" {
         return None;
     }

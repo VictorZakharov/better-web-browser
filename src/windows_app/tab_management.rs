@@ -44,7 +44,7 @@ impl BrowserState {
             SetFocus(self.controls.address);
         }
         if let Some(url) = url {
-            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Push);
+            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Push, None);
         }
         InvalidateRect(self.window, null(), 0);
     }
@@ -148,7 +148,7 @@ impl BrowserState {
         self.start_renderer_for(id);
         self.restore_active_tab_ui();
         if let Some(url) = url {
-            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Existing);
+            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Existing, None);
         }
     }
 

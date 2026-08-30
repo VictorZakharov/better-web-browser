@@ -9,6 +9,66 @@ use better_web_browser::renderer_protocol::{
 use std::time::Duration;
 
 #[test]
+fn pointer_hit_testing_targets_an_ordinary_element_border_box() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("launch renderer");
+    let initial = load_html_document(
+        &session,
+        100,
+        r#"<!doctype html><style>
+            html, body { margin: 0; }
+            #target { width: 200px; height: 100px; background: red; }
+        </style><div id="target">ready</div><p id="status">waiting</p><script>
+            document.addEventListener('click', event => {
+                document.querySelector('#status').textContent = 'clicked:' + event.target.id;
+            });
+        </script>"#,
+    );
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: initial.document,
+            revision: initial.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+    let target_rect = initial
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, .. }
+                if rect.width >= 190.0 && rect.width <= 210.0 && rect.height >= 90.0 =>
+            {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .expect("ordinary element background geometry");
+
+    for (sequence, phase) in [(1, PointerPhase::Down), (2, PointerPhase::Up)] {
+        session
+            .send_input(DocumentInput::Pointer(PointerInput {
+                document: initial.document,
+                sequence,
+                phase,
+                button: PointerButton::Primary,
+                x: target_rect.x + target_rect.width - 5.0,
+                y: target_rect.y + target_rect.height - 5.0,
+                modifiers: InputModifiers::default(),
+                target: None,
+            }))
+            .unwrap();
+    }
+
+    let clicked = wait_for_text(&session, initial.document, "clicked:");
+    let clicked_text = presentation_text(&clicked);
+    assert!(clicked_text.contains("clicked:target"), "{clicked_text}");
+}
+
+#[test]
 fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     let _serial = SERIAL
         .lock()

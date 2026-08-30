@@ -221,7 +221,7 @@ impl BrowserState {
                 false,
                 false,
             );
-            self.begin_navigation(url.to_string(), HistoryMode::Script);
+            self.begin_document_navigation(url.to_string(), HistoryMode::Script);
             return;
         }
 

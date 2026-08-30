@@ -2,7 +2,7 @@
 
 use super::tabs::TabId;
 use super::*;
-use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
+use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal, FetchUrl, Referrer};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
@@ -26,7 +26,22 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
-        self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode);
+        self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode, None);
+    }
+
+    pub(super) unsafe fn begin_document_navigation(
+        &mut self,
+        url: String,
+        history_mode: HistoryMode,
+    ) {
+        let id = self.tabs.active_id();
+        let tab = self.tabs.active();
+        let referrer = tab
+            .history
+            .get(tab.history_index)
+            .filter(|value| !value.is_empty())
+            .cloned();
+        self.begin_navigation_for_tab(id, url, history_mode, referrer);
     }
 
     pub(super) unsafe fn begin_navigation_for_tab(
@@ -34,6 +49,7 @@ impl BrowserState {
         id: TabId,
         url: String,
         history_mode: HistoryMode,
+        referrer: Option<String>,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
@@ -135,7 +151,8 @@ impl BrowserState {
                 let started = Instant::now();
                 let result = (|| -> Result<LoadedPage, String> {
                     let client = http_client;
-                    let response = fetch_navigation(&client, &url, &fetch_signal)?;
+                    let response =
+                        fetch_navigation(&client, &url, &fetch_signal, referrer.as_deref())?;
                     let network_time = started.elapsed();
                     let bytes = response.body.len() as u64;
                     let final_url = response.final_url().as_str().to_string();
@@ -220,9 +237,13 @@ fn fetch_navigation(
     client: &winhttp::HttpClient,
     url: &str,
     signal: &FetchSignal,
+    referrer: Option<&str>,
 ) -> Result<winhttp::HttpResponse, String> {
-    let request = FetchRequest::navigation(url)
-        .map_err(|error| error.to_string())?
-        .with_signal(signal.clone());
+    let mut request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
+    if let Some(referrer) = referrer {
+        request.referrer =
+            Referrer::Url(FetchUrl::parse(referrer).map_err(|error| error.to_string())?);
+    }
+    let request = request.with_signal(signal.clone());
     client.fetch(request).map_err(|error| error.to_string())
 }

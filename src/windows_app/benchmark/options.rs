@@ -104,6 +104,9 @@ impl LaunchOptions {
                         &argument,
                     )?));
                 }
+                "--click-after-ready" => {
+                    navigation_targets.push(click_point(&required(&mut arguments, &argument)?)?);
+                }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
                         number::<u64>(&mut arguments, &argument)?.clamp(0, 60_000);
@@ -204,6 +207,24 @@ where
         .map_err(|_| format!("{option} requires a number"))
 }
 
+fn click_point(value: &str) -> Result<BenchmarkNavigation, String> {
+    let Some((x, y)) = value.split_once(',') else {
+        return Err("--click-after-ready requires x,y".into());
+    };
+    let x = x
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "--click-after-ready requires integer x,y".to_string())?;
+    let y = y
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "--click-after-ready requires integer x,y".to_string())?;
+    if x < 0 || y < 0 {
+        return Err("--click-after-ready coordinates cannot be negative".into());
+    }
+    Ok(BenchmarkNavigation::ClickPoint { x, y })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +303,8 @@ mod tests {
                 "https://example.test/final",
                 "--activate-link-after-ready",
                 "https://example.test/clicked",
+                "--click-after-ready",
+                "320,180",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -296,6 +319,7 @@ mod tests {
                 BenchmarkNavigation::Address("https://example.test/second".to_string()),
                 BenchmarkNavigation::Address("https://example.test/final".to_string()),
                 BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
+                BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
             ]
         );
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));

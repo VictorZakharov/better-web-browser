@@ -29,6 +29,7 @@ param(
     [string[]] $DiagnosticSelector = @(),
     [string[]] $NavigationTarget = @(),
     [string[]] $LinkActivationTarget = @(),
+    [string[]] $ClickTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -150,11 +151,18 @@ foreach ($target in $LinkActivationTarget) {
     $arguments.Add('--activate-link-after-ready')
     $arguments.Add($target)
 }
-if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0) {
+foreach ($target in $ClickTarget) {
+    if ($target -notmatch '^\d+\s*,\s*\d+$') {
+        throw '-ClickTarget values must use non-negative x,y coordinates.'
+    }
+    $arguments.Add('--click-after-ready')
+    $arguments.Add($target)
+}
+if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one navigation or link-activation target.'
+    throw '-NavigationDelayMs requires at least one navigation, link-activation, or click target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
