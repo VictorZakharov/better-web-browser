@@ -41,7 +41,9 @@ fn repeated_navigation_keeps_keyboard_mse_controls_and_fullscreen_healthy() {
         </script>"#
     );
     let server = thread::spawn(move || {
-        serve_parallel_fixtures(listener, 4, move |_| FixtureResponse::html(fixture.clone()))
+        serve_parallel_fixtures(listener, 4, move |_| {
+            FixtureResponse::html(fixture.clone()).header("Cache-Control", "no-store")
+        })
     });
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/media-controls");
