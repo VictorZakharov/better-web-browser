@@ -36,6 +36,22 @@
     const mediaStates = new WeakMap();
     let nextMediaRequest = 1;
     const pendingMediaRequests = new Map();
+    const effectiveVolumeMillis = state => state.muted ? 0 : Math.round(state.volume * 1000);
+    const mediaCommand = (element, requestId, command, ...args) =>
+        host('mediaRequest', element.__id, requestId, command, ...args);
+    const supportedMediaType = type => {
+        const source = String(type).trim().toLowerCase();
+        if (!source) return '';
+        const [essence, ...parameters] = source.split(';').map(part => part.trim());
+        if (essence !== 'video/mp4' && essence !== 'audio/mp4' && essence !== 'application/mp4')
+            return '';
+        const codecsParameter = parameters.find(parameter => parameter.startsWith('codecs='));
+        if (!codecsParameter) return 'maybe';
+        const codecs = codecsParameter.slice(codecsParameter.indexOf('=') + 1)
+            .replace(/^['\"]|['\"]$/g, '').split(',').map(codec => codec.trim());
+        if (!codecs.length || codecs.some(codec => !/^(avc1\.|mp4a\.40\.2$)/.test(codec))) return '';
+        return 'probably';
+    };
     const mediaStateFor = element => {
         let state = mediaStates.get(element);
         if (!state) {
@@ -99,7 +115,16 @@
         set currentTime(value) {
             value = Number(value);
             if (!Number.isFinite(value)) throw new TypeError('currentTime must be finite');
-            mediaStateFor(this).currentTime = Math.max(0, value);
+            const state = mediaStateFor(this);
+            value = Math.max(0, Number.isFinite(state.duration) ? Math.min(value, state.duration) : value);
+            if (state.readyState === HTMLMediaElement.HAVE_NOTHING) {
+                state.currentTime = value;
+                return;
+            }
+            state.seeking = true;
+            state.currentTime = value;
+            this.dispatchEvent(new Event('seeking'));
+            mediaCommand(this, 0, 'seek', value);
         }
         get defaultPlaybackRate() { return mediaStateFor(this).defaultPlaybackRate; }
         set defaultPlaybackRate(value) {
@@ -126,6 +151,7 @@
             if (state.volume === value) return;
             state.volume = value;
             this.dispatchEvent(new Event('volumechange'));
+            mediaCommand(this, 0, 'configure', effectiveVolumeMillis(state));
         }
         get muted() { return mediaStateFor(this).muted; }
         set muted(value) {
@@ -134,6 +160,7 @@
             if (state.muted === value) return;
             state.muted = value;
             this.dispatchEvent(new Event('volumechange'));
+            mediaCommand(this, 0, 'configure', effectiveVolumeMillis(state));
         }
         get preservesPitch() { return mediaStateFor(this).preservesPitch; }
         set preservesPitch(value) { mediaStateFor(this).preservesPitch = !!value; }
@@ -157,6 +184,7 @@
             state.buffered = emptyTimeRanges();
             state.seekable = emptyTimeRanges();
             state.played = emptyTimeRanges();
+            mediaCommand(this, 0, 'reset');
             if (hadResource) this.dispatchEvent(new Event('emptied'));
         }
         play() {
@@ -164,17 +192,15 @@
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {
                 pendingMediaRequests.set(requestId, { element: this, resolve, reject });
-                host('mediaRequest', this.__id, requestId, true,
-                    Math.round(state.volume * 1000), state.muted);
+                mediaCommand(this, requestId, 'playback', true, effectiveVolumeMillis(state));
             });
         }
         pause() {
             const state = mediaStateFor(this);
-            host('mediaRequest', this.__id, 0, false,
-                Math.round(state.volume * 1000), state.muted);
+            mediaCommand(this, 0, 'playback', false, effectiveVolumeMillis(state));
         }
         fastSeek(time) { this.currentTime = time; }
-        canPlayType(_type) { return ''; }
+        canPlayType(type) { return supportedMediaType(type); }
         getStartDate() { return new Date(NaN); }
     }
     installEventHandlerAttributes(HTMLMediaElement.prototype);
@@ -256,7 +282,17 @@
                 return true;
             case 'time':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                state.played = new TimeRanges(timeRangesConstructionToken, [[0, state.currentTime]]);
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));
+                return true;
+            case 'seeked':
+                state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                state.seeking = false;
+                element.dispatchEvent(markTrusted(new Event('timeupdate')));
+                element.dispatchEvent(markTrusted(new Event('seeked')));
+                return true;
+            case 'configured':
+            case 'reset':
                 return true;
             case 'ended':
                 state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;

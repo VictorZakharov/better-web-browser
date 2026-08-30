@@ -59,8 +59,8 @@ pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
     DynamicScriptLoader, DynamicScriptRequest, ScriptFetchOptions, ScriptFullscreenAction,
-    ScriptInput, ScriptKind, ScriptMediaAction, ScriptOutcome, UserInputEvent, UserInputModifiers,
-    UserInputResult,
+    ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand, ScriptOutcome, UserInputEvent,
+    UserInputModifiers, UserInputResult,
 };
 use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;

@@ -20,7 +20,7 @@ pub use crate::renderer_protocol::{ContainmentReport, Nonce};
 pub const MEDIA_MAGIC: [u8; 4] = *b"BRM1";
 pub const MEDIA_HEADER_LENGTH: usize = 32;
 pub const MEDIA_PROTOCOL_MAJOR: u16 = 1;
-pub const MEDIA_PROTOCOL_MINOR: u16 = 2;
+pub const MEDIA_PROTOCOL_MINOR: u16 = 3;
 
 #[cfg(test)]
 mod tests;

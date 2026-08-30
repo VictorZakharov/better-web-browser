@@ -3,9 +3,11 @@
 use super::DocumentRuntime;
 use crate::engine::DecodedImage;
 use crate::engine::dom::NodeId;
+use crate::engine::script::{ScriptMediaAction, ScriptMediaCommand};
 use crate::media_process::RendererMediaDecode;
 use crate::renderer_process::child::connection::ChildConnection;
 const MAX_FRAMES_PER_TICK: usize = 4;
+const MAX_MEDIA_ACTIONS_PER_TICK: usize = 32;
 const CLOCK_POLL_MICROS: u64 = 20_000;
 
 pub(super) struct MediaPlayback {
@@ -129,51 +131,121 @@ impl DocumentRuntime {
         outcome: &mut crate::engine::ScriptOutcome,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
-        let actions = std::mem::take(&mut outcome.media_actions);
-        for action in actions {
-            let disposition = match self.media.as_mut() {
-                Some(playback) if playback.node == action.node && !playback.ended => {
-                    let volume = if action.muted {
-                        0
-                    } else {
-                        action.volume_millis
-                    };
-                    let state = connection
-                        .media()
-                        .ok_or_else(|| "contained media worker is unavailable".to_string())?
-                        .set_playback(playback.source_id, action.play, volume)?;
-                    playback.clock_100ns = state.position_100ns;
-                    playback.duration_100ns = state.duration_100ns;
-                    playback.playing = state.playing;
-                    playback.ended = state.ended;
-                    if action.play && state.playing {
-                        "playing"
-                    } else if !action.play {
-                        "paused"
-                    } else {
-                        "denied"
-                    }
-                }
-                _ => "denied",
-            };
-            let target = self
-                .page
-                .dom
-                .find_node(action.node)
-                .ok_or_else(|| "media action targeted a retired node".to_string())?;
-            let (current_time, duration, width, height) = self.media_values(action.node);
-            let response = self.dispatch_user_input(crate::engine::UserInputEvent::Media {
-                target,
-                request_id: action.request_id,
-                disposition,
-                current_time,
-                duration,
-                width,
-                height,
-            })?;
-            super::merge_outcome(outcome, response.outcome, self.page.dom.document.id());
+        let mut processed = 0_usize;
+        while !outcome.media_actions.is_empty() {
+            let actions = std::mem::take(&mut outcome.media_actions);
+            processed = processed
+                .checked_add(actions.len())
+                .ok_or_else(|| "media action count overflow".to_string())?;
+            if processed > MAX_MEDIA_ACTIONS_PER_TICK {
+                return Err("document exceeded the bounded media action budget".into());
+            }
+            for action in actions {
+                let disposition = self.apply_media_action(action, connection)?;
+                let target = self
+                    .page
+                    .dom
+                    .find_node(action.node)
+                    .ok_or_else(|| "media action targeted a retired node".to_string())?;
+                let (current_time, duration, width, height) = self.media_values(action.node);
+                let response = self.dispatch_user_input(crate::engine::UserInputEvent::Media {
+                    target,
+                    request_id: action.request_id,
+                    disposition,
+                    current_time,
+                    duration,
+                    width,
+                    height,
+                })?;
+                super::merge_outcome(outcome, response.outcome, self.page.dom.document.id());
+            }
         }
         Ok(())
+    }
+
+    fn apply_media_action(
+        &mut self,
+        action: ScriptMediaAction,
+        connection: &mut ChildConnection,
+    ) -> Result<&'static str, String> {
+        if matches!(action.command, ScriptMediaCommand::Reset) {
+            if self
+                .media
+                .as_ref()
+                .is_some_and(|media| media.node == action.node)
+            {
+                self.media.take();
+            }
+            return Ok("reset");
+        }
+        let Some(playback) = self
+            .media
+            .as_ref()
+            .filter(|playback| playback.node == action.node)
+        else {
+            return Ok("denied");
+        };
+        let source_id = playback.source_id;
+        let worker = connection
+            .media()
+            .ok_or_else(|| "contained media worker is unavailable".to_string())?;
+        match action.command {
+            ScriptMediaCommand::SetPlayback {
+                playing,
+                volume_millis,
+            } => {
+                let state = worker.set_playback(source_id, playing, volume_millis)?;
+                self.apply_playback_state(state);
+                Ok(if playing && state.playing {
+                    "playing"
+                } else if !playing {
+                    "paused"
+                } else {
+                    "denied"
+                })
+            }
+            ScriptMediaCommand::Configure { volume_millis } => {
+                let state = worker.set_playback(source_id, playback.playing, volume_millis)?;
+                self.apply_playback_state(state);
+                Ok("configured")
+            }
+            ScriptMediaCommand::Seek { position_100ns } => {
+                let state = worker.seek_playback(source_id, position_100ns)?;
+                let frame = worker.next_frame(source_id)?;
+                self.apply_playback_state(state);
+                if let Some(frame) = frame {
+                    let metadata = frame.metadata;
+                    let key = self.page.install_media_frame(
+                        action.node,
+                        DecodedImage {
+                            width: metadata.width,
+                            height: metadata.height,
+                            bgra: frame.bgra,
+                        },
+                    )?;
+                    self.sent_images.remove(&key);
+                    if let Some(playback) = self.media.as_mut() {
+                        playback.frame_end_100ns = frame_end(metadata);
+                        playback.video_ended = false;
+                        playback.width = metadata.width;
+                        playback.height = metadata.height;
+                    }
+                } else if let Some(playback) = self.media.as_mut() {
+                    playback.video_ended = true;
+                }
+                Ok("seeked")
+            }
+            ScriptMediaCommand::Reset => unreachable!(),
+        }
+    }
+
+    fn apply_playback_state(&mut self, state: crate::media_protocol::MediaPlaybackState) {
+        if let Some(playback) = self.media.as_mut() {
+            playback.clock_100ns = state.position_100ns;
+            playback.duration_100ns = state.duration_100ns;
+            playback.playing = state.playing;
+            playback.ended = state.ended;
+        }
     }
 
     pub(super) fn media_timer_micros(&self) -> Option<u64> {

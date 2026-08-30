@@ -63,6 +63,20 @@ impl AudioOutput {
             Self::Device(output) => output.state(decoder),
         }
     }
+
+    pub(super) fn seek(
+        &mut self,
+        position_100ns: u64,
+        decoder: &mut AudioDecoder,
+    ) -> Result<(), String> {
+        match self {
+            Self::Silent(output) => {
+                output.seek(position_100ns);
+                Ok(())
+            }
+            Self::Device(output) => output.seek(position_100ns, decoder),
+        }
+    }
 }
 
 pub(super) struct SilentClock {
@@ -105,6 +119,11 @@ impl SilentClock {
             ended: false,
         }
     }
+
+    fn seek(&mut self, position_100ns: u64) {
+        self.elapsed = Duration::from_nanos(position_100ns.saturating_mul(100));
+        self.started = self.playing.then(Instant::now);
+    }
 }
 
 pub(super) struct XAudioOutput {
@@ -116,6 +135,8 @@ pub(super) struct XAudioOutput {
     queued_bytes: usize,
     input_ended: bool,
     playing: bool,
+    position_base_100ns: u64,
+    sample_origin: u64,
 }
 
 impl XAudioOutput {
@@ -176,6 +197,8 @@ impl XAudioOutput {
             queued_bytes: 0,
             input_ended: false,
             playing: false,
+            position_base_100ns: 0,
+            sample_origin: 0,
         })
     }
 
@@ -213,14 +236,38 @@ impl XAudioOutput {
             self.playing = false;
         }
         Ok(OutputState {
-            position_100ns: state
-                .SamplesPlayed
-                .saturating_mul(10_000_000)
-                .checked_div(u64::from(self.sample_rate))
-                .unwrap_or_default(),
+            position_100ns: self.position_base_100ns.saturating_add(
+                state
+                    .SamplesPlayed
+                    .saturating_sub(self.sample_origin)
+                    .saturating_mul(10_000_000)
+                    .checked_div(u64::from(self.sample_rate))
+                    .unwrap_or_default(),
+            ),
             playing: self.playing,
             ended,
         })
+    }
+
+    fn seek(&mut self, position_100ns: u64, decoder: &mut AudioDecoder) -> Result<(), String> {
+        let resume = self.playing;
+        if resume {
+            unsafe { self.source.Stop(0, XAUDIO2_COMMIT_NOW) }
+                .map_err(|error| format!("stop XAudio2 for seek: {error}"))?;
+        }
+        unsafe { self.source.FlushSourceBuffers() }
+            .map_err(|error| format!("flush XAudio2 for seek: {error}"))?;
+        self.queued.clear();
+        self.queued_bytes = 0;
+        self.input_ended = false;
+        self.position_base_100ns = position_100ns;
+        self.sample_origin = self.voice_state().SamplesPlayed;
+        if resume {
+            self.pump(decoder)?;
+            unsafe { self.source.Start(0, XAUDIO2_COMMIT_NOW) }
+                .map_err(|error| format!("resume XAudio2 after seek: {error}"))?;
+        }
+        Ok(())
     }
 
     fn pump(&mut self, decoder: &mut AudioDecoder) -> Result<(), String> {

@@ -49,6 +49,12 @@ fn browser_and_worker_messages_round_trip() {
     browser_writer
         .send_browser(&BrowserMediaMessage::PlaybackState { source_id: 4 })
         .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::SeekPlayback {
+            source_id: 4,
+            position_100ns: 5_000_000,
+        })
+        .unwrap();
     let mut browser_reader = MediaFrameReader::new(Cursor::new(browser_bytes), session(9));
     assert_eq!(
         browser_reader.read_browser().unwrap(),
@@ -95,6 +101,13 @@ fn browser_and_worker_messages_round_trip() {
     assert_eq!(
         browser_reader.read_browser().unwrap(),
         BrowserMediaMessage::PlaybackState { source_id: 4 }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::SeekPlayback {
+            source_id: 4,
+            position_100ns: 5_000_000,
+        }
     );
 
     let report = MediaCapabilityReport {

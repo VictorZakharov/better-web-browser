@@ -194,6 +194,18 @@ impl MediaClient {
         self.receive_playback_state(source_id, "query playback")
     }
 
+    pub(crate) fn seek_playback(
+        &mut self,
+        source_id: u64,
+        position_100ns: u64,
+    ) -> Result<MediaPlaybackState, String> {
+        self.send(BrowserMediaMessage::SeekPlayback {
+            source_id,
+            position_100ns,
+        })?;
+        self.receive_playback_state(source_id, "seek playback")
+    }
+
     fn acknowledge(&mut self, source_id: u64, frame_id: u64) -> Result<(), String> {
         self.send(BrowserMediaMessage::AcknowledgeFrame {
             source_id,

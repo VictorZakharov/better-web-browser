@@ -21,7 +21,14 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
         <video id="movie" src="/test.mp4" width="320" height="180" muted></video>
         <output id="state">waiting</output><script>
             movie.addEventListener('loadeddata', () => {
-                movie.play().then(() => state.textContent = 'playing');
+                movie.play().then(() => {
+                    movie.volume = 0.25;
+                    movie.muted = true;
+                    movie.currentTime = 0.5;
+                });
+            });
+            movie.addEventListener('seeked', () => {
+                state.textContent = 'seeked:' + movie.currentTime.toFixed(1);
             });
         </script>"#;
     let body = html.as_bytes().to_vec();
@@ -160,9 +167,9 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
     );
     assert!(
         advanced.layout.items.iter().any(|item| {
-            matches!(item, DisplayItem::Text { text, .. } if text.contains("playing"))
+            matches!(item, DisplayItem::Text { text, .. } if text.contains("seeked:0.5"))
         }),
-        "the acknowledged play() promise did not settle"
+        "the acknowledged play(), live volume, and seek lifecycle did not settle"
     );
     session
         .shutdown()
