@@ -15,6 +15,7 @@ param(
     [int] $WindowHeight = 720,
     [ValidatePattern('^\d+\s*,\s*\d+$')]
     [string] $ClickPoint = '657,325',
+    [string] $BreezePlaySelector = '.ytmCuedOverlayPlayButton',
     [string] $TargetUrl = 'https://www.youtube-nocookie.com/embed/jNQXAC9IVRw?autoplay=1&mute=1'
 )
 
@@ -42,6 +43,9 @@ $ChromiumHarness = (Resolve-Path $ChromiumHarness).Path
 if ($DurationMs % $IntervalMs -ne 0) {
     throw '-DurationMs must be a multiple of -IntervalMs.'
 }
+if ([string]::IsNullOrWhiteSpace($BreezePlaySelector)) {
+    throw '-BreezePlaySelector cannot be empty.'
+}
 
 if (-not ('Breeze.YouTubeEvidenceServer' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -53,28 +57,32 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+#pragma warning disable 4014
 namespace Breeze {
     public sealed class YouTubeEvidenceServer : IDisposable {
         private readonly TcpListener listener;
         private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
         private readonly byte[] body;
-        public int Port { get; }
+        public int Port { get; private set; }
 
         public YouTubeEvidenceServer(string html) {
             body = new UTF8Encoding(false).GetBytes(html);
             listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            _ = ServeAsync();
+            ServeAsync();
         }
 
         private async Task ServeAsync() {
             while (!cancellation.IsCancellationRequested) {
                 TcpClient client;
-                try { client = await listener.AcceptTcpClientAsync(cancellation.Token); }
-                catch (OperationCanceledException) { return; }
+                try { client = await listener.AcceptTcpClientAsync(); }
                 catch (ObjectDisposedException) { return; }
-                _ = RespondAsync(client);
+                catch (SocketException) {
+                    if (cancellation.IsCancellationRequested) return;
+                    throw;
+                }
+                RespondAsync(client);
             }
         }
 
@@ -159,9 +167,9 @@ try {
         -WindowWidth $WindowWidth `
         -WindowHeight $WindowHeight `
         -FreshProfile `
-        -DiagnosticSelector @('video', '#movie_player', 'button') `
+        -DiagnosticSelector @('video', '#movie_player', 'button', $BreezePlaySelector) `
         -LinkActivationTarget $target `
-        -ClickTarget $ClickPoint `
+        -SelectorActivationTarget $BreezePlaySelector `
         -NavigationDelayMs $NavigationDelayMs
 
     $breeze = Get-Content -LiteralPath (Join-Path $breezeDirectory 'report.json') -Raw |
@@ -207,6 +215,7 @@ try {
         interval_ms = $IntervalMs
         duration_ms = $DurationMs
         click_point = $ClickPoint
+        breeze_play_selector = $BreezePlaySelector
         navigation_delay_ms = $NavigationDelayMs
         breeze = [ordered]@{
             report = 'breeze/report.json'
