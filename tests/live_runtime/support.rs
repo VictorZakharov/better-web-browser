@@ -215,12 +215,18 @@ fn accept_until(
     loop {
         match listener.accept() {
             Ok(connection) => return Ok(connection),
-            Err(error) if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
+            Err(error) if is_would_block(&error) && Instant::now() < deadline => {
                 thread::sleep(Duration::from_millis(10));
             }
             Err(error) => return Err(format!("accept fixture request: {error}")),
         }
     }
+}
+
+fn is_would_block(error: &std::io::Error) -> bool {
+    // Windows can preserve WSAEWOULDBLOCK as an uncategorized OS error instead of mapping it to
+    // ErrorKind::WouldBlock. Both representations describe the same transient accept condition.
+    error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(10035)
 }
 
 fn serve_fixture_connection(
