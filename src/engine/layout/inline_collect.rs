@@ -42,7 +42,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         output.push(InlineAtom::Break);
                         *pending_space = false;
                     }
-                    "img" | "image" => self.collect_image(node, style, link, output),
+                    "img" | "image" | "video" => self.collect_image(node, style, link, output),
                     "input" | "textarea" => self.collect_input(node, style, output),
                     "select" => self.collect_select(node, style, output),
                     "button" => self.collect_button(node, style, output),
@@ -125,8 +125,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return;
         };
         let intrinsic = self.page.images.get(&url);
-        let intrinsic_width = intrinsic.map(|image| image.width as f32).unwrap_or(16.0);
-        let intrinsic_height = intrinsic.map(|image| image.height as f32).unwrap_or(16.0);
+        let is_video = node.tag_name() == Some("video");
+        let placeholder = is_video && url == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER;
+        let intrinsic_width = if placeholder {
+            300.0
+        } else {
+            intrinsic.map(|image| image.width as f32).unwrap_or(16.0)
+        };
+        let intrinsic_height = if placeholder {
+            150.0
+        } else {
+            intrinsic.map(|image| image.height as f32).unwrap_or(16.0)
+        };
         let mut width =
             element_length(node, "width", style.width, intrinsic_width, style.font_size);
         let mut height = element_length(

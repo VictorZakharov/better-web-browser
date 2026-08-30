@@ -9,6 +9,8 @@ use crate::media_protocol::{
 };
 use std::sync::mpsc;
 
+mod playback;
+
 impl MediaSession {
     /// Exercises production media data framing and decode with browser-owned test bytes.
     /// Remote loading remains closed until a contained network service can feed this pipe.

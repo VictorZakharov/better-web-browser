@@ -26,6 +26,7 @@ mod custom_elements;
 mod events;
 mod fullscreen;
 mod intersection_observer;
+mod media;
 mod media_queries;
 mod modules;
 mod mutations;

@@ -1,6 +1,9 @@
 use super::test_support::{CountingMeasurer, FixedMeasurer};
 use super::*;
 
+#[path = "tests_media.rs"]
+mod media;
+
 #[test]
 fn lays_out_centered_image_form_and_links() {
     let mut page = Page::parse(

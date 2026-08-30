@@ -7,6 +7,7 @@ mod launcher;
 
 pub use broker::{
     DecodedMediaFrame, MediaSession, MediaWorkerSnapshot, MediaWorkerState, OwnedMediaDecode,
+    OwnedMediaPlayback,
 };
 pub use launcher::{MediaLaunchOptions, MediaStartupFault};
 

@@ -10,16 +10,25 @@ pub(super) struct BlockImage {
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_image(&self, node: &NodeRef) -> Option<BlockImage> {
-        if !matches!(node.tag_name(), Some("img" | "image")) {
+        if !matches!(node.tag_name(), Some("img" | "image" | "video")) {
             return None;
         }
         let url = self.page.image_url(node)?;
-        let (intrinsic_width, intrinsic_height) = self
-            .page
-            .images
-            .get(&url)
-            .map(|image| (image.width as f32, image.height as f32))
-            .unwrap_or((16.0, 16.0));
+        let default_size = if node.tag_name() == Some("video") {
+            (300.0, 150.0)
+        } else {
+            (16.0, 16.0)
+        };
+        let (intrinsic_width, intrinsic_height) =
+            if url == crate::engine::page::MEDIA_VIDEO_PLACEHOLDER {
+                default_size
+            } else {
+                self.page
+                    .images
+                    .get(&url)
+                    .map(|image| (image.width as f32, image.height as f32))
+                    .unwrap_or(default_size)
+            };
         Some(BlockImage {
             url,
             intrinsic_width,

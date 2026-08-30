@@ -22,6 +22,9 @@ pub(super) const BROWSER_DECODE_SOURCE: u16 = 9;
 pub(super) const WORKER_DECODED: u16 = 10;
 pub(super) const BROWSER_ACKNOWLEDGE_FRAME: u16 = 11;
 pub(super) const WORKER_FRAME_ACKNOWLEDGED: u16 = 12;
+pub(super) const BROWSER_REQUEST_FRAME: u16 = 13;
+pub(super) const WORKER_FRAME_READY: u16 = 14;
+pub(super) const WORKER_END_OF_STREAM: u16 = 15;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -233,6 +236,7 @@ impl Direction {
                     | BROWSER_PROBE
                     | BROWSER_DECODE_SOURCE
                     | BROWSER_ACKNOWLEDGE_FRAME
+                    | BROWSER_REQUEST_FRAME
                     | BROWSER_TEST
             ),
             Self::Worker => matches!(
@@ -243,6 +247,8 @@ impl Direction {
                     | WORKER_CAPABILITY
                     | WORKER_DECODED
                     | WORKER_FRAME_ACKNOWLEDGED
+                    | WORKER_FRAME_READY
+                    | WORKER_END_OF_STREAM
                     | WORKER_RESTRICTIONS
             ),
         }

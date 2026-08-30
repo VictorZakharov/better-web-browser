@@ -33,6 +33,12 @@ fn browser_and_worker_messages_round_trip() {
             frame_id: 6,
         })
         .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::RequestFrame {
+            source_id: 4,
+            frame_id: 7,
+        })
+        .unwrap();
     let mut browser_reader = MediaFrameReader::new(Cursor::new(browser_bytes), session(9));
     assert_eq!(
         browser_reader.read_browser().unwrap(),
@@ -59,6 +65,13 @@ fn browser_and_worker_messages_round_trip() {
         BrowserMediaMessage::AcknowledgeFrame {
             source_id: 4,
             frame_id: 6,
+        }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::RequestFrame {
+            source_id: 4,
+            frame_id: 7,
         }
     );
 
@@ -136,6 +149,18 @@ fn browser_and_worker_messages_round_trip() {
                 frame_id: 6,
             })
             .unwrap();
+        worker_writer
+            .send_worker(&WorkerMediaMessage::FrameReady {
+                frame: MediaVideoFrameMetadata {
+                    frame_id: 7,
+                    timestamp_100ns: 333_333,
+                    ..frame
+                },
+            })
+            .unwrap();
+        worker_writer
+            .send_worker(&WorkerMediaMessage::EndOfStream { source_id: 4 })
+            .unwrap();
     }
     let mut worker_reader = MediaFrameReader::new(Cursor::new(worker_bytes), session(9));
     assert_eq!(
@@ -152,6 +177,20 @@ fn browser_and_worker_messages_round_trip() {
             source_id: 4,
             frame_id: 6,
         }
+    );
+    assert_eq!(
+        worker_reader.read_worker().unwrap(),
+        WorkerMediaMessage::FrameReady {
+            frame: MediaVideoFrameMetadata {
+                frame_id: 7,
+                timestamp_100ns: 333_333,
+                ..frame
+            },
+        }
+    );
+    assert_eq!(
+        worker_reader.read_worker().unwrap(),
+        WorkerMediaMessage::EndOfStream { source_id: 4 }
     );
 }
 

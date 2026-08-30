@@ -1,9 +1,7 @@
 use super::backend;
 use super::launcher::MediaStartupFault;
-use crate::media_data_protocol::{MediaDataReader, MediaSourceId};
-use crate::media_frame_protocol::{
-    MediaFrameWriter as DecodedFrameWriter, MediaPixelFormat, MediaVideoFrameMetadata,
-};
+use crate::media_data_protocol::MediaDataReader;
+use crate::media_frame_protocol::MediaFrameWriter as DecodedFrameWriter;
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MEDIA_HEADER_LENGTH, MEDIA_PROTOCOL_MAJOR,
     MediaFrameReader, MediaFrameWriter, MediaLimits, MediaRestrictionReport, Nonce,
@@ -28,10 +26,12 @@ use windows_sys::Win32::System::Threading::{
 };
 
 mod options;
+mod playback;
 mod startup;
 mod testing;
 
 use options::ChildOptions;
+use playback::Playback;
 use startup::write_raw_header;
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
@@ -141,9 +141,7 @@ fn command_loop(
     limits: MediaLimits,
     test_mode: bool,
 ) -> Result<(), String> {
-    let mut last_source_id = 0_u64;
-    let mut last_frame_id = 0_u64;
-    let mut pending_frame: Option<(MediaVideoFrameMetadata, Vec<u8>)> = None;
+    let mut playback = Playback::new();
     loop {
         match reader
             .read_browser()
@@ -170,88 +168,28 @@ fn command_loop(
                 frame_id,
                 encoded_length,
             } => {
-                if pending_frame.is_some() {
-                    return Err(
-                        "media worker received a decode before acknowledging its frame".into(),
-                    );
-                }
-                let expected_source_id = last_source_id
-                    .checked_add(1)
-                    .ok_or_else(|| "media source generation exhausted".to_string())?;
-                if source_id != expected_source_id {
-                    return Err(format!(
-                        "stale media source generation {source_id}; expected {expected_source_id}"
-                    ));
-                }
-                last_source_id = source_id;
-                let expected_frame_id = last_frame_id
-                    .checked_add(1)
-                    .ok_or_else(|| "media frame generation exhausted".to_string())?;
-                if frame_id != expected_frame_id {
-                    return Err(format!(
-                        "stale media frame generation {frame_id}; expected {expected_frame_id}"
-                    ));
-                }
-                last_frame_id = frame_id;
-                // This slice adapts a complete source to a seekable in-memory IMFByteStream. Keep
-                // admission within the resident encoded-queue budget until streaming arrives.
-                if encoded_length > limits.max_encoded_queue_bytes {
-                    return Err("declared media source exceeds resident worker limits".into());
-                }
-                let source = MediaSourceId::new(source_id).map_err(|error| error.to_string())?;
-                let bytes = data_reader
-                    .read_source(source, encoded_length)
-                    .map_err(|error| format!("read encoded media source: {error}"))?;
-                let decoded = backend::decode(&bytes, limits)?;
-                let frame = MediaVideoFrameMetadata {
+                playback.decode_source(
+                    request_id,
                     source_id,
                     frame_id,
-                    timestamp_100ns: decoded.video.timestamp_100ns,
-                    duration_100ns: decoded.video.duration_100ns,
-                    width: decoded.report.video_width,
-                    height: decoded.report.video_height,
-                    stride: decoded.video.stride,
-                    format: MediaPixelFormat::Nv12,
-                    data_length: decoded.video.bytes.len() as u64,
-                };
-                frame
-                    .validate()
-                    .map_err(|error| format!("validate decoded video frame: {error}"))?;
-                frame_writer
-                    .send_frame(frame, &decoded.video.bytes)
-                    .map_err(|error| format!("write decoded video frame: {error}"))?;
-                pending_frame = Some((frame, decoded.video.bytes));
-                writer
-                    .send_worker(&WorkerMediaMessage::Decoded {
-                        request_id,
-                        report: decoded.report,
-                        frame,
-                    })
-                    .map_err(|error| error.to_string())?;
+                    encoded_length,
+                    data_reader,
+                    frame_writer,
+                    writer,
+                    limits,
+                )?;
             }
             BrowserMediaMessage::AcknowledgeFrame {
                 source_id,
                 frame_id,
             } => {
-                let Some((frame, _bytes)) = pending_frame.as_ref() else {
-                    return Err(
-                        "media worker received a frame acknowledgement with no pending frame"
-                            .into(),
-                    );
-                };
-                if source_id != frame.source_id || frame_id != frame.frame_id {
-                    return Err(format!(
-                        "stale media frame acknowledgement {source_id}/{frame_id}; expected {}/{}",
-                        frame.source_id, frame.frame_id
-                    ));
-                }
-                pending_frame.take();
-                writer
-                    .send_worker(&WorkerMediaMessage::FrameAcknowledged {
-                        source_id,
-                        frame_id,
-                    })
-                    .map_err(|error| error.to_string())?;
+                playback.acknowledge(source_id, frame_id, writer)?;
+            }
+            BrowserMediaMessage::RequestFrame {
+                source_id,
+                frame_id,
+            } => {
+                playback.request_frame(source_id, frame_id, frame_writer, writer)?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {
                 testing::handle(command, writer, frame_writer)?;

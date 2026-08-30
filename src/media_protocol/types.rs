@@ -312,6 +312,10 @@ pub enum BrowserMediaMessage {
         source_id: u64,
         frame_id: u64,
     },
+    RequestFrame {
+        source_id: u64,
+        frame_id: u64,
+    },
     Test(MediaTestCommand),
 }
 
@@ -335,6 +339,12 @@ pub enum WorkerMediaMessage {
     FrameAcknowledged {
         source_id: u64,
         frame_id: u64,
+    },
+    FrameReady {
+        frame: crate::media_frame_protocol::MediaVideoFrameMetadata,
+    },
+    EndOfStream {
+        source_id: u64,
     },
     Restrictions(MediaRestrictionReport),
 }

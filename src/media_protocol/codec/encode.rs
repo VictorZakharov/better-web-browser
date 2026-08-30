@@ -4,9 +4,9 @@ use super::wire::{
 };
 use super::{
     BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
-    WORKER_FRAME_ACKNOWLEDGED, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
-    WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_REQUEST_FRAME, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
+    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{BrowserMediaMessage, MediaLimits, WorkerMediaMessage};
 
@@ -57,6 +57,16 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             vec_u64(&mut payload, source_id);
             vec_u64(&mut payload, frame_id);
             BROWSER_ACKNOWLEDGE_FRAME
+        }
+        BrowserMediaMessage::RequestFrame {
+            source_id,
+            frame_id,
+        } => {
+            require_nonzero(source_id, "frame source")?;
+            require_nonzero(frame_id, "frame generation")?;
+            vec_u64(&mut payload, source_id);
+            vec_u64(&mut payload, frame_id);
+            BROWSER_REQUEST_FRAME
         }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);
@@ -136,6 +146,18 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_u64(&mut payload, source_id);
             vec_u64(&mut payload, frame_id);
             WORKER_FRAME_ACKNOWLEDGED
+        }
+        WorkerMediaMessage::FrameReady { frame } => {
+            frame
+                .validate()
+                .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+            encode_frame_metadata(&mut payload, frame);
+            WORKER_FRAME_READY
+        }
+        WorkerMediaMessage::EndOfStream { source_id } => {
+            require_nonzero(source_id, "frame source")?;
+            vec_u64(&mut payload, source_id);
+            WORKER_END_OF_STREAM
         }
         WorkerMediaMessage::Restrictions(report) => {
             boolean(&mut payload, report.child_launch_denied);

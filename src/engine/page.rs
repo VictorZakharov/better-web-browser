@@ -1,9 +1,11 @@
+mod media;
 mod preload;
 mod refresh;
 mod resources;
 mod scripts;
 mod svg;
 
+pub(crate) use self::media::MEDIA_VIDEO_PLACEHOLDER;
 pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
@@ -118,6 +120,7 @@ impl Page {
                 images.insert(inline_svg_key(&svg), image);
             }
         }
+        media::install_placeholder(&dom, &mut images);
 
         let mut page = Self {
             dom,
@@ -305,6 +308,9 @@ impl Page {
     }
 
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {
+        if let Some(url) = media::image_url(self, node) {
+            return Some(url);
+        }
         resolve_image_url(node, &self.base_url, self.media_environment)
     }
 }
