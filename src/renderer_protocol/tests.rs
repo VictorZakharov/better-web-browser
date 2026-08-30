@@ -303,7 +303,7 @@ fn document_clock_messages_round_trip() {
     assert_eq!(reader.read_browser().unwrap(), browser);
 
     for expected in [
-        RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
+        RendererMessage::RuntimeUpdate(Box::new(RendererRuntimeUpdate {
             document,
             clock_advanced: true,
             runtime: RuntimeReport {
@@ -317,14 +317,14 @@ fn document_clock_messages_round_trip() {
                 ..PageLoadReport::default()
             },
             next_timer_micros: Some(7_500),
-        }),
-        RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
+        })),
+        RendererMessage::RuntimeUpdate(Box::new(RendererRuntimeUpdate {
             document,
             clock_advanced: false,
             runtime: RuntimeReport::default(),
             load: PageLoadReport::default(),
             next_timer_micros: None,
-        }),
+        })),
     ] {
         let mut reader = FrameReader::new(Cursor::new(encoded_renderer(&expected)), session());
         assert_eq!(reader.read_renderer().unwrap(), expected);
@@ -415,13 +415,15 @@ fn rejects_invalid_boolean_and_utf8_payloads() {
         Err(ProtocolError::InvalidPayload("boolean"))
     ));
 
-    let mut advanced = encoded_renderer(&RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
-        document: DocumentId::new(1).unwrap(),
-        clock_advanced: false,
-        runtime: RuntimeReport::default(),
-        load: PageLoadReport::default(),
-        next_timer_micros: Some(10),
-    }));
+    let mut advanced = encoded_renderer(&RendererMessage::RuntimeUpdate(Box::new(
+        RendererRuntimeUpdate {
+            document: DocumentId::new(1).unwrap(),
+            clock_advanced: false,
+            runtime: RuntimeReport::default(),
+            load: PageLoadReport::default(),
+            next_timer_micros: Some(10),
+        },
+    )));
     let timer_presence = advanced.len() - 9;
     advanced[timer_presence] = 2;
     assert!(matches!(

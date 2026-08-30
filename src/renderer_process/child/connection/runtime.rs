@@ -61,7 +61,7 @@ impl ChildConnection {
             }
             Ok(Ok(Some(AdvanceResult::Runtime(update)))) => self
                 .writer
-                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
+                .send_renderer(&RendererMessage::RuntimeUpdate(update))
                 .map_err(|error| error.to_string())?,
             Ok(Ok(None)) => {}
             Ok(Err(error)) => {
@@ -174,7 +174,7 @@ impl ChildConnection {
             }
             Ok(Ok(AdvanceResult::Runtime(update))) => self
                 .writer
-                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
+                .send_renderer(&RendererMessage::RuntimeUpdate(update))
                 .map_err(|error| error.to_string())?,
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;

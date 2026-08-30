@@ -178,7 +178,7 @@ impl Broker {
             }
             RendererMessage::RuntimeUpdate(update) => {
                 if self.active_document == Some(update.document) {
-                    self.emit_event(RendererEvent::RuntimeUpdate(Box::new(update)))?;
+                    self.emit_event(RendererEvent::RuntimeUpdate(update))?;
                 }
             }
             RendererMessage::DocumentFailed { document, detail } => {
