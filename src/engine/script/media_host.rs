@@ -45,6 +45,24 @@ pub(super) fn media_host_call(
                 position_100ns: (seconds * 10_000_000.0).min(u64::MAX as f64) as u64,
             }
         }
+        "commit" => {
+            let Some(JsValue::String(mime_type)) = args.get(4) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            let Some(bytes) = args.get(5).and_then(JsValue::as_bytes) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            if mime_type.len() > 256
+                || bytes.is_empty()
+                || bytes.len() > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES
+            {
+                return Ok(Some(JsValue::undefined()));
+            }
+            ScriptMediaCommand::Commit {
+                mime_type: mime_type.clone(),
+                bytes: bytes.to_vec(),
+            }
+        }
         "reset" => ScriptMediaCommand::Reset,
         _ => return Ok(Some(JsValue::undefined())),
     };

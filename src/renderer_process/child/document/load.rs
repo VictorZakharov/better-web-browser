@@ -114,10 +114,11 @@ impl DocumentRuntime {
         if let Some(script_runtime) = script_runtime.as_mut() {
             script_runtime.set_host_call_profiling(!runtime.diagnostic_selectors.is_empty());
         }
-        connection.send_state_mutations(document, &mut outcome)?;
         runtime.script_runtime = script_runtime;
+        runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
+        connection.send_state_mutations(document, &mut outcome)?;
         let script_time = script_started.elapsed();
 
         let style_started = Instant::now();
