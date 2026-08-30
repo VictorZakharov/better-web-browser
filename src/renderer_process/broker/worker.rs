@@ -370,6 +370,14 @@ impl Broker {
         if let Some(error) = self.writer().take_failure()
             && self.exit_reason.is_none()
         {
+            // A renderer crash closes both IPC directions. The writer can observe the broken
+            // pipe a few milliseconds before Windows signals the process handle, so give the
+            // authoritative process-exit observation the same bounded grace period as the
+            // reader path above. Otherwise an ordinary renderer crash is nondeterministically
+            // mislabeled as a browser-detected IPC protocol violation.
+            if wait_for_process(&self.resources().process, Duration::from_millis(100)) {
+                return;
+            }
             self.protocol_failure(format!("renderer IPC writer stopped: {error}"));
         }
     }
