@@ -59,7 +59,8 @@
         get childElementCount() { return this.children.length; }
         get textContent() { return host('textGet', this.__id); }
         set textContent(value) {
-            const characterData = this.nodeType === 3;
+            const characterData = this.nodeType === 3 || this.nodeType === 4 ||
+                this.nodeType === 7 || this.nodeType === 8;
             const oldValue = characterData ? this.textContent : null;
             const namedAccessChanged = this.isConnected && this.firstElementChild !== null;
             const removedChildren = !characterData && this.isConnected ? [...this.childNodes] : [];
@@ -197,7 +198,11 @@
     }
 
     class Text extends CharacterData {}
+    class CDATASection extends Text {}
     class Comment extends CharacterData {}
+    class ProcessingInstruction extends CharacterData {
+        get target() { return this.nodeName; }
+    }
     class DocumentType extends Node {}
     class DocumentFragment extends Node {}
 

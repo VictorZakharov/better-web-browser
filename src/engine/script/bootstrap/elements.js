@@ -203,6 +203,32 @@
     }
     installEventHandlerAttributes(Element.prototype);
 
+    class SVGAnimatedString {
+        constructor(element, attribute) {
+            this.__element = element;
+            this.__attribute = attribute;
+        }
+        get baseVal() { return this.__element.getAttribute(this.__attribute) || ''; }
+        set baseVal(value) { this.__element.setAttribute(this.__attribute, String(value)); }
+        get animVal() { return this.baseVal; }
+    }
+    class SVGElement extends Element {
+        get className() {
+            return this.__className ||= new SVGAnimatedString(this, 'class');
+        }
+        set className(value) { this.__classNameValue.baseVal = value; }
+        get __classNameValue() {
+            return this.__className ||= new SVGAnimatedString(this, 'class');
+        }
+        get ownerSVGElement() {
+            let ancestor = this.parentElement;
+            while (ancestor && !(ancestor instanceof SVGSVGElement)) ancestor = ancestor.parentElement;
+            return ancestor;
+        }
+        get viewportElement() { return this.ownerSVGElement; }
+    }
+    class SVGSVGElement extends SVGElement {}
+
     const dataPropertyName = attribute => attribute.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
     const dataAttributeName = property => {
         property = String(property);
