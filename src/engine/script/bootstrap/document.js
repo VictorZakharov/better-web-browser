@@ -25,6 +25,7 @@
         if (localName === 'source') return HTMLSourceElement;
         if (localName === 'video') return HTMLVideoElement;
         if (localName === 'audio') return HTMLAudioElement;
+        if (localName === 'canvas') return HTMLCanvasElement;
         if (localName === 'input') return HTMLInputElement;
         if (localName === 'textarea') return HTMLTextAreaElement;
         if (localName === 'ol') return HTMLOrderedListElement;
@@ -227,6 +228,9 @@
     windowObject.HTMLMediaElement = HTMLMediaElement;
     windowObject.HTMLVideoElement = HTMLVideoElement;
     windowObject.HTMLAudioElement = HTMLAudioElement;
+    windowObject.HTMLCanvasElement = HTMLCanvasElement;
+    windowObject.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    windowObject.ImageData = ImageData;
     windowObject.TimeRanges = TimeRanges;
     windowObject.MediaError = MediaError;
     windowObject.MediaSource = MediaSource;

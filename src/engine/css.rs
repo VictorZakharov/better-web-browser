@@ -40,8 +40,8 @@ use stylesheet::{Declaration, Rule, RuleScope, parse_declarations, parse_stylesh
 use syntax::*;
 use user_agent::apply_user_agent_defaults;
 pub(crate) use user_agent::is_hidden_by_html_rendering;
-pub(crate) use value_parser::parse_length;
-use value_parser::{consume_identifier, parse_color};
+use value_parser::consume_identifier;
+pub(crate) use value_parser::{parse_color, parse_length};
 use variables::{apply_custom_properties, apply_resolved_declaration};
 
 #[cfg(test)]

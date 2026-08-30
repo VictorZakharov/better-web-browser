@@ -246,7 +246,7 @@ pub(super) fn parse_calc_value<'i, 't>(
     }
 }
 
-pub(super) fn parse_color(value: &str) -> Option<Color> {
+pub(crate) fn parse_color(value: &str) -> Option<Color> {
     let value = value.trim().trim_end_matches("!important").trim();
     if value.eq_ignore_ascii_case("transparent") {
         return Some(Color::TRANSPARENT);
