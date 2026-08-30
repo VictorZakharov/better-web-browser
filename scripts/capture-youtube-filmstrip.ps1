@@ -14,7 +14,8 @@ param(
     [ValidateRange(240, 4320)]
     [int] $WindowHeight = 720,
     [ValidatePattern('^\d+\s*,\s*\d+$')]
-    [string] $ClickPoint = '657,325'
+    [string] $ClickPoint = '657,325',
+    [string] $TargetUrl = 'https://www.youtube-nocookie.com/embed/jNQXAC9IVRw?autoplay=1&mute=1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -124,10 +125,18 @@ function Assert-Filmstrip {
     $manifest
 }
 
-$target = 'https://www.youtube-nocookie.com/embed/jNQXAC9IVRw?autoplay=1&mute=1'
+$target = $null
+try { $target = [Uri] $TargetUrl }
+catch { throw "Invalid YouTube target URL: $TargetUrl" }
+$allowedTargetHosts = @('youtube.com', 'www.youtube.com', 'm.youtube.com', 'www.youtube-nocookie.com')
+if (-not $target.IsAbsoluteUri -or $target.Scheme -ne 'https' -or
+    $allowedTargetHosts -notcontains $target.DnsSafeHost.ToLowerInvariant()) {
+    throw "YouTube target must use HTTPS on an approved YouTube host: $TargetUrl"
+}
+$targetHref = [Net.WebUtility]::HtmlEncode($target.AbsoluteUri)
 $launcher = @"
 <!doctype html><title>YouTube evidence launcher</title>
-<a href="$target">Open the public non-DRM YouTube reference video</a>
+<a href="$targetHref">Open the public non-DRM YouTube reference video</a>
 "@
 $server = [Breeze.YouTubeEvidenceServer]::new($launcher)
 try {
@@ -194,7 +203,7 @@ try {
     [ordered]@{
         captured_at_utc = [DateTime]::UtcNow.ToString('O')
         launcher_url = $url
-        target_url = $target
+        target_url = $target.AbsoluteUri
         interval_ms = $IntervalMs
         duration_ms = $DurationMs
         click_point = $ClickPoint

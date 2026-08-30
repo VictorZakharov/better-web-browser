@@ -47,4 +47,4 @@ The Wikipedia timeouts are failures, not accepted error surfaces or performance 
 
 ## Claim boundary
 
-The results establish an explicit gate for the owned feature-equivalent paths. They do not establish whole-web compatibility or a universal performance advantage. Chromium implements a much larger platform; Breeze still lacks or only partially implements canvas, media playback, accessibility, cross-site isolation, and broad standards coverage. The separate curated WPT gate and discovery sample quantify standards support without conflating a passing selection with global conformance.
+The results establish an explicit gate for the owned feature-equivalent paths. They do not establish whole-web compatibility or a universal performance advantage. Chromium implements a much larger platform; Breeze has one end-to-end non-DRM H.264/AAC media path but still lacks or only partially implements canvas, broader media formats and DRM, accessibility, cross-site isolation, and broad standards coverage. The separate curated WPT gate and discovery sample quantify standards support without conflating a passing selection with global conformance.
