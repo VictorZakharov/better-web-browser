@@ -29,6 +29,7 @@ param(
     [string[]] $DiagnosticSelector = @(),
     [string[]] $NavigationTarget = @(),
     [string[]] $LinkActivationTarget = @(),
+    [string[]] $SelectorActivationTarget = @(),
     [string[]] $ClickTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
@@ -151,6 +152,13 @@ foreach ($target in $LinkActivationTarget) {
     $arguments.Add('--activate-link-after-ready')
     $arguments.Add($target)
 }
+foreach ($target in $SelectorActivationTarget) {
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        throw '-SelectorActivationTarget values cannot be empty.'
+    }
+    $arguments.Add('--activate-selector-after-ready')
+    $arguments.Add($target)
+}
 foreach ($target in $ClickTarget) {
     if ($target -notmatch '^\d+\s*,\s*\d+$') {
         throw '-ClickTarget values must use non-negative x,y coordinates.'
@@ -158,11 +166,12 @@ foreach ($target in $ClickTarget) {
     $arguments.Add('--click-after-ready')
     $arguments.Add($target)
 }
-if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0) {
+if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
+    $SelectorActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one navigation, link-activation, or click target.'
+    throw '-NavigationDelayMs requires at least one navigation, link, selector, or click target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

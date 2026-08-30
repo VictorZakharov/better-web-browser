@@ -144,3 +144,51 @@ fn replace_with_accepts_nodes_and_strings_and_preserves_argument_order() {
         ["before", "replacement", "after"]
     );
 }
+
+#[test]
+fn replace_child_preserves_order_identity_and_fragment_semantics() {
+    let (dom, outcome) = execute_html(
+        r#"<body><main id="parent"><i id="before"></i><b id="old"></b><i id="after"></i></main>
+        <aside id="foreign"><em id="moved"></em></aside><script>
+            const parent = document.getElementById('parent');
+            const old = document.getElementById('old');
+            const moved = document.getElementById('moved');
+            const returned = parent.replaceChild(moved, old);
+            const sameNodeIsNoop = parent.replaceChild(moved, moved) === moved;
+            const fragment = document.createDocumentFragment();
+            const first = document.createElement('u'); first.id = 'first';
+            const second = document.createElement('u'); second.id = 'second';
+            fragment.append(first, second);
+            const removed = parent.replaceChild(fragment, moved);
+            let errorName = '';
+            try { parent.replaceChild(document.createElement('q'), old); }
+            catch (error) { errorName = error.name; }
+            document.body.setAttribute('data-result', [
+                returned === old, sameNodeIsNoop, removed === moved,
+                fragment.childNodes.length, errorName
+            ].join(':'));
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .and_then(|body| body.attr("data-result"))
+            .as_deref(),
+        Some("true:true:true:0:NotFoundError")
+    );
+    let parent = dom
+        .elements_named("main")
+        .find(|node| node.attr("id").as_deref() == Some("parent"))
+        .unwrap();
+    assert_eq!(
+        parent
+            .children
+            .borrow()
+            .iter()
+            .filter_map(|node| node.attr("id"))
+            .collect::<Vec<_>>(),
+        ["before", "first", "second", "after"]
+    );
+}
