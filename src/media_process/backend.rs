@@ -15,9 +15,13 @@ use windows::Win32::Media::MediaFoundation::{
     MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+use windows::Win32::System::Com::StructuredStorage::{
+    PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+};
 use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize, STREAM_SEEK_SET,
 };
+use windows::Win32::System::Variant::VT_I8;
 use windows::core::GUID;
 
 mod audio;
@@ -210,6 +214,25 @@ fn source_reader(bytes: &[u8]) -> Result<IMFSourceReader, String> {
         .map_err(|error| format!("adapt memory stream for Media Foundation: {error}"))?;
     unsafe { MFCreateSourceReaderFromByteStream(&byte_stream, None) }
         .map_err(|error| format!("create Media Foundation Source Reader: {error}"))
+}
+
+fn seek_source_reader(reader: &IMFSourceReader, position_100ns: u64) -> Result<(), String> {
+    let position = PROPVARIANT {
+        Anonymous: PROPVARIANT_0 {
+            Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
+                vt: VT_I8,
+                Anonymous: PROPVARIANT_0_0_0 {
+                    hVal: position_100ns as i64,
+                },
+                ..Default::default()
+            }),
+        },
+    };
+    unsafe {
+        reader
+            .SetCurrentPosition(&GUID::zeroed(), &position)
+            .map_err(|error| format!("seek Media Foundation Source Reader: {error}"))
+    }
 }
 
 fn verify_native_type(

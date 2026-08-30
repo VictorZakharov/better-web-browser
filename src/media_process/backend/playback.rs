@@ -1,6 +1,6 @@
 use super::{
-    ComApartment, MediaFoundation, output_type, source_reader, stream::copy_sample,
-    verify_native_type,
+    ComApartment, MediaFoundation, output_type, seek_source_reader, source_reader,
+    stream::copy_sample, verify_native_type,
 };
 use crate::limits::{MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS};
 use crate::media_protocol::MediaLimits;
@@ -26,6 +26,7 @@ pub(in crate::media_process) struct VideoDecoder {
     stride: u32,
     maximum_frame_bytes: u64,
     remaining_samples: u32,
+    total_samples: u32,
     last_timestamp: Option<i64>,
     _foundation: MediaFoundation,
     _apartment: ComApartment,
@@ -92,6 +93,7 @@ impl VideoDecoder {
             stride,
             maximum_frame_bytes: limits.max_decoded_frame_bytes,
             remaining_samples: expected_samples,
+            total_samples: expected_samples,
             last_timestamp: None,
             _foundation: foundation,
             _apartment: apartment,
@@ -100,6 +102,13 @@ impl VideoDecoder {
 
     pub(in crate::media_process) fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        seek_source_reader(&self.reader, position_100ns)?;
+        self.remaining_samples = self.total_samples;
+        self.last_timestamp = None;
+        Ok(())
     }
 
     pub(in crate::media_process) fn next_frame(

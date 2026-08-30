@@ -124,12 +124,18 @@ pub struct ScriptFullscreenAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptMediaCommand {
+    SetPlayback { playing: bool, volume_millis: u16 },
+    Configure { volume_millis: u16 },
+    Seek { position_100ns: u64 },
+    Reset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScriptMediaAction {
     pub request_id: u64,
     pub node: crate::engine::dom::NodeId,
-    pub play: bool,
-    pub volume_millis: u16,
-    pub muted: bool,
+    pub command: ScriptMediaCommand,
 }
 
 impl ScriptOutcome {

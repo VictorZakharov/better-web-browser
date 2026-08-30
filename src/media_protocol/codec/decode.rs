@@ -1,10 +1,11 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
     BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
-    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
-    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
-    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SEEK_PLAYBACK,
+    BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
+    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    WORKER_PLAYBACK_STATE, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
+    WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaCodecFamily,
@@ -66,6 +67,17 @@ pub(super) fn browser(
         BROWSER_PLAYBACK_STATE => BrowserMediaMessage::PlaybackState {
             source_id: cursor.nonzero_u64("playback source")?,
         },
+        BROWSER_SEEK_PLAYBACK => {
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let position_100ns = cursor.u64()?;
+            if position_100ns > crate::limits::MAX_MEDIA_DURATION_100NS {
+                return Err(MediaProtocolError::InvalidPayload("playback seek position"));
+            }
+            BrowserMediaMessage::SeekPlayback {
+                source_id,
+                position_100ns,
+            }
+        }
         BROWSER_TEST => BrowserMediaMessage::Test(decode_test(&mut cursor)?),
         _ => return Err(MediaProtocolError::UnexpectedMessage(kind)),
     };

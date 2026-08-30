@@ -208,6 +208,15 @@ fn command_loop(
                     .send_worker(&WorkerMediaMessage::PlaybackState(state))
                     .map_err(|error| error.to_string())?;
             }
+            BrowserMediaMessage::SeekPlayback {
+                source_id,
+                position_100ns,
+            } => {
+                let state = playback.seek(source_id, position_100ns)?;
+                writer
+                    .send_worker(&WorkerMediaMessage::PlaybackState(state))
+                    .map_err(|error| error.to_string())?;
+            }
             BrowserMediaMessage::Test(command) if test_mode => {
                 testing::handle(command, writer, frame_writer)?;
             }

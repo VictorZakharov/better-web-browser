@@ -28,6 +28,7 @@ pub(super) const WORKER_END_OF_STREAM: u16 = 15;
 pub(super) const BROWSER_SET_PLAYBACK: u16 = 16;
 pub(super) const BROWSER_PLAYBACK_STATE: u16 = 17;
 pub(super) const WORKER_PLAYBACK_STATE: u16 = 18;
+pub(super) const BROWSER_SEEK_PLAYBACK: u16 = 19;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -242,6 +243,7 @@ impl Direction {
                     | BROWSER_REQUEST_FRAME
                     | BROWSER_SET_PLAYBACK
                     | BROWSER_PLAYBACK_STATE
+                    | BROWSER_SEEK_PLAYBACK
                     | BROWSER_TEST
             ),
             Self::Worker => matches!(

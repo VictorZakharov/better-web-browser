@@ -4,10 +4,11 @@ use super::wire::{
 };
 use super::{
     BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
-    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
-    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
-    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SEEK_PLAYBACK,
+    BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
+    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    WORKER_PLAYBACK_STATE, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
+    WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{BrowserMediaMessage, MediaLimits, WorkerMediaMessage};
 
@@ -87,6 +88,18 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             require_nonzero(source_id, "playback source")?;
             vec_u64(&mut payload, source_id);
             BROWSER_PLAYBACK_STATE
+        }
+        BrowserMediaMessage::SeekPlayback {
+            source_id,
+            position_100ns,
+        } => {
+            require_nonzero(source_id, "playback source")?;
+            if position_100ns > crate::limits::MAX_MEDIA_DURATION_100NS {
+                return Err(MediaProtocolError::InvalidPayload("playback seek position"));
+            }
+            vec_u64(&mut payload, source_id);
+            vec_u64(&mut payload, position_100ns);
+            BROWSER_SEEK_PLAYBACK
         }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);

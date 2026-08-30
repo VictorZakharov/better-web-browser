@@ -23,7 +23,8 @@ fn exposes_closed_truthful_html_media_bindings() {
                 Number.isNaN(video.duration),
                 video.currentSrc === '',
                 video.buffered instanceof TimeRanges && video.buffered.length === 0,
-                video.canPlayType(source.type) === '',
+                video.canPlayType(source.type) === 'probably',
+                video.canPlayType('video/webm; codecs="vp9"') === '',
                 MediaError.MEDIA_ERR_DECODE === 3,
                 'onloadedmetadata' in video && 'ontimeupdate' in video
             ];
@@ -72,7 +73,10 @@ fn media_methods_fail_closed_and_validate_ranges() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.media_actions.len(), 1);
     let action = outcome.media_actions[0];
-    assert!(action.play);
+    assert!(matches!(
+        action.command,
+        ScriptMediaCommand::SetPlayback { playing: true, .. }
+    ));
     let video = dom.elements_named("video").next().unwrap();
     let response = runtime.dispatch_user_input(UserInputEvent::Media {
         target: video,

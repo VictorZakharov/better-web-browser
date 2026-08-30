@@ -324,6 +324,10 @@ pub enum BrowserMediaMessage {
     PlaybackState {
         source_id: u64,
     },
+    SeekPlayback {
+        source_id: u64,
+        position_100ns: u64,
+    },
     Test(MediaTestCommand),
 }
 

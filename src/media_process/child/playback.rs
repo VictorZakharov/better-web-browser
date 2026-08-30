@@ -160,7 +160,6 @@ impl Playback {
             ));
         }
         let Some(video) = playback.next_frame()? else {
-            self.active.take();
             return writer
                 .send_worker(&WorkerMediaMessage::EndOfStream { source_id })
                 .map_err(|error| error.to_string());
@@ -215,6 +214,32 @@ impl Playback {
             ));
         }
         audio.state()
+    }
+
+    pub(super) fn seek(
+        &mut self,
+        source_id: u64,
+        position_100ns: u64,
+    ) -> Result<crate::media_protocol::MediaPlaybackState, String> {
+        if self.pending.is_some() {
+            return Err("media worker received a seek before acknowledging its frame".into());
+        }
+        let Some((active_source_id, video)) = self.active.as_mut() else {
+            return Err("media worker received a seek with no active source".into());
+        };
+        if source_id != *active_source_id {
+            return Err(format!(
+                "stale playback seek for source {source_id}; expected {active_source_id}"
+            ));
+        }
+        video.seek(position_100ns)?;
+        let Some((audio_source_id, audio)) = self.audio.as_ref() else {
+            return Err("media worker received a seek with no audio clock".into());
+        };
+        if source_id != *audio_source_id {
+            return Err("media worker audio/video source identity disagreed".into());
+        }
+        audio.seek(position_100ns)
     }
 }
 
