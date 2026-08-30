@@ -27,6 +27,13 @@ pub(super) fn media_host_call(
         request_id,
         node: node.id(),
         play: args.get(3).and_then(JsValue::as_boolean).unwrap_or(false),
+        volume_millis: args
+            .get(4)
+            .and_then(JsValue::as_number)
+            .filter(|value| value.is_finite() && *value >= 0.0 && *value <= 1_000.0)
+            .map(|value| value.round() as u16)
+            .unwrap_or(1_000),
+        muted: args.get(5).and_then(JsValue::as_boolean).unwrap_or(false),
     });
     Ok(Some(JsValue::undefined()))
 }

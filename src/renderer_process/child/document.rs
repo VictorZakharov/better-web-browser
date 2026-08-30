@@ -269,7 +269,7 @@ impl DocumentRuntime {
             },
         )?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
-        self.apply_media_actions(&mut outcome)?;
+        self.apply_media_actions(&mut outcome, connection)?;
         connection.send_state_mutations(self.id, &mut outcome)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
 

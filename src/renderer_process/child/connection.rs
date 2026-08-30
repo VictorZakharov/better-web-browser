@@ -1,6 +1,7 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
 mod fetch;
+mod media;
 mod runtime;
 mod state;
 
@@ -74,10 +75,6 @@ impl ChildConnection {
         }
     }
 
-    pub(super) fn media(&mut self) -> Option<&mut crate::media_process::MediaClient> {
-        self.media.as_mut()
-    }
-
     pub(super) fn run(mut self) -> Result<(), String> {
         while !self.stopping {
             if let Some(delivery) = self.pending_fetch_deliveries.pop_front() {
@@ -121,17 +118,7 @@ impl ChildConnection {
     }
 
     fn acknowledge_processed_work(&mut self) -> Result<(), String> {
-        if self.last_processed_work_ack.elapsed() < PROCESSED_WORK_ACK_INTERVAL {
-            return Ok(());
-        }
-        // A completed-work acknowledgement cannot mask one long-running task because it is sent
-        // only after control returns here. It does keep queued finite tasks from starving a Ping
-        // behind streamed Fetch commands already accepted by the pipe.
-        self.writer
-            .send_renderer(&RendererMessage::Pong(0))
-            .map_err(|error| error.to_string())?;
-        self.last_processed_work_ack = Instant::now();
-        Ok(())
+        media::acknowledge_renderer_progress(&mut self.writer, &mut self.last_processed_work_ack)
     }
 
     pub(super) fn report_renderer_task_stage(

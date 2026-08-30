@@ -128,6 +128,8 @@ pub struct ScriptMediaAction {
     pub request_id: u64,
     pub node: crate::engine::dom::NodeId,
     pub play: bool,
+    pub volume_millis: u16,
+    pub muted: bool,
 }
 
 impl ScriptOutcome {

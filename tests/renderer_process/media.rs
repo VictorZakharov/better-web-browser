@@ -14,6 +14,7 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut launch = options();
     launch.enable_media = true;
+    launch.unresponsive_timeout = Duration::from_millis(500);
     let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
     let document = better_web_browser::renderer_protocol::DocumentId::new(190).unwrap();
     let html = r#"<!doctype html><title>video</title>
@@ -126,9 +127,10 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
             controls_applied: true,
         })
         .unwrap();
+    std::thread::sleep(Duration::from_millis(250));
     session
-        .advance_time(document, Duration::from_millis(250), 2)
-        .expect("start playback and advance video presentation clock");
+        .advance_time(document, Duration::ZERO, 2)
+        .expect("poll the worker-owned audio clock and advance video presentation");
     let advanced = loop {
         match session.wait_for_event(Duration::from_secs(5)).unwrap() {
             RendererEvent::Presentation(presentation) if presentation.document == document => {

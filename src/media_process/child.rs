@@ -25,6 +25,7 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, GetCurrentProcess, OpenProcessToken,
 };
 
+mod audio;
 mod options;
 mod playback;
 mod startup;
@@ -141,7 +142,7 @@ fn command_loop(
     limits: MediaLimits,
     test_mode: bool,
 ) -> Result<(), String> {
-    let mut playback = Playback::new();
+    let mut playback = Playback::new(test_mode);
     loop {
         match reader
             .read_browser()
@@ -190,6 +191,22 @@ fn command_loop(
                 frame_id,
             } => {
                 playback.request_frame(source_id, frame_id, frame_writer, writer)?;
+            }
+            BrowserMediaMessage::SetPlayback {
+                source_id,
+                playing,
+                volume_millis,
+            } => {
+                let state = playback.set_playback(source_id, playing, volume_millis)?;
+                writer
+                    .send_worker(&WorkerMediaMessage::PlaybackState(state))
+                    .map_err(|error| error.to_string())?;
+            }
+            BrowserMediaMessage::PlaybackState { source_id } => {
+                let state = playback.playback_state(source_id)?;
+                writer
+                    .send_worker(&WorkerMediaMessage::PlaybackState(state))
+                    .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {
                 testing::handle(command, writer, frame_writer)?;

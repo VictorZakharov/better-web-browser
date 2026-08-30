@@ -94,7 +94,11 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     let pipes = PipeSet::create()?;
     let media = options
         .enable_media
-        .then(|| launch_media(&MediaLaunchOptions::new(options.executable.clone())))
+        .then(|| {
+            let mut media_options = MediaLaunchOptions::new(options.executable.clone());
+            media_options.test_mode = options.test_mode;
+            launch_media(&media_options)
+        })
         .transpose()?;
     let media_handles = media
         .as_ref()

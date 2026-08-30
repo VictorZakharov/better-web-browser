@@ -1,4 +1,5 @@
 use super::super::backend;
+use super::audio::AudioPlayback;
 use crate::media_data_protocol::{MediaDataReader, MediaSourceId};
 use crate::media_frame_protocol::{
     MediaFrameWriter as DecodedFrameWriter, MediaPixelFormat, MediaVideoFrameMetadata,
@@ -11,15 +12,19 @@ pub(super) struct Playback {
     last_frame_id: u64,
     pending: Option<(MediaVideoFrameMetadata, Vec<u8>)>,
     active: Option<(u64, backend::VideoDecoder)>,
+    audio: Option<(u64, AudioPlayback)>,
+    test_mode: bool,
 }
 
 impl Playback {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(test_mode: bool) -> Self {
         Self {
             last_source_id: 0,
             last_frame_id: 0,
             pending: None,
             active: None,
+            audio: None,
+            test_mode,
         }
     }
 
@@ -69,6 +74,7 @@ impl Playback {
             report,
             mut playback,
         } = backend::decode(&bytes, limits)?;
+        let audio = AudioPlayback::spawn(source_id, bytes, report, self.test_mode)?;
         let video = playback
             .next_frame()?
             .ok_or_else(|| "decoded video stream did not produce a frame".to_string())?;
@@ -88,6 +94,7 @@ impl Playback {
         self.last_frame_id = frame_id;
         self.pending = Some((frame, video.bytes));
         self.active = Some((source_id, playback));
+        self.audio = Some((source_id, audio));
         writer
             .send_worker(&WorkerMediaMessage::Decoded {
                 request_id,
@@ -176,6 +183,38 @@ impl Playback {
         writer
             .send_worker(&WorkerMediaMessage::FrameReady { frame })
             .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn set_playback(
+        &self,
+        source_id: u64,
+        playing: bool,
+        volume_millis: u16,
+    ) -> Result<crate::media_protocol::MediaPlaybackState, String> {
+        let Some((active_source_id, audio)) = self.audio.as_ref() else {
+            return Err("media worker received playback control with no active source".into());
+        };
+        if source_id != *active_source_id {
+            return Err(format!(
+                "stale playback control for source {source_id}; expected {active_source_id}"
+            ));
+        }
+        audio.set_playback(playing, volume_millis)
+    }
+
+    pub(super) fn playback_state(
+        &self,
+        source_id: u64,
+    ) -> Result<crate::media_protocol::MediaPlaybackState, String> {
+        let Some((active_source_id, audio)) = self.audio.as_ref() else {
+            return Err("media worker received playback query with no active source".into());
+        };
+        if source_id != *active_source_id {
+            return Err(format!(
+                "stale playback query for source {source_id}; expected {active_source_id}"
+            ));
+        }
+        audio.state()
     }
 }
 
