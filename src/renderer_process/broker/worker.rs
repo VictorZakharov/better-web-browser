@@ -159,8 +159,8 @@ impl Broker {
             };
             match message {
                 Ok(RendererMessage::Pong(token)) => {
-                    // Token zero is a rate-limited acknowledgement emitted only after the child
-                    // completes a command. Real Ping tokens start at one and retain reply routing.
+                    // Token zero acknowledges completed work or independently bounded progress.
+                    // Real Ping tokens start at one and retain reply routing.
                     {
                         let mut shared = self.shared();
                         shared.last_pong = Instant::now();

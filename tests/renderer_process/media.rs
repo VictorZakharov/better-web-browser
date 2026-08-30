@@ -14,6 +14,7 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut launch = options();
     launch.enable_media = true;
+    launch.unresponsive_timeout = Duration::from_millis(500);
     let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
     let document = better_web_browser::renderer_protocol::DocumentId::new(190).unwrap();
     let html = r#"<!doctype html><title>video</title>

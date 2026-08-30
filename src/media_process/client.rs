@@ -12,7 +12,12 @@ use crate::media_protocol::{
 use std::fs::File;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const MEDIA_PROGRESS_POLL: Duration = Duration::from_millis(100);
+
+#[cfg(test)]
+mod tests;
 
 type ControlIncoming = Receiver<Result<WorkerMediaMessage, MediaProtocolError>>;
 type FrameIncoming = Receiver<Result<MediaFramePacket, String>>;
@@ -92,7 +97,11 @@ impl MediaClient {
         })
     }
 
-    pub(crate) fn decode(&mut self, bytes: &[u8]) -> Result<RendererMediaDecode, String> {
+    pub(crate) fn decode(
+        &mut self,
+        bytes: &[u8],
+        mut progress: impl FnMut() -> Result<(), String>,
+    ) -> Result<RendererMediaDecode, String> {
         if bytes.is_empty() || bytes.len() as u64 > self.limits.max_encoded_queue_bytes {
             return Err("media source exceeds the contained worker queue limit".into());
         }
@@ -117,7 +126,7 @@ impl MediaClient {
             let sender = scope.spawn(move || {
                 MediaDataWriter::new(output, session, nonce).send_source(source, bytes)
             });
-            let response = self.receive("decode")?;
+            let response = self.receive_with_progress("decode", &mut progress)?;
             let sent = sender
                 .join()
                 .map_err(|_| "media data writer panicked".to_string())?
@@ -246,6 +255,14 @@ impl MediaClient {
         receive_from(&self.control_incoming, operation, self.timeout)
     }
 
+    fn receive_with_progress(
+        &self,
+        operation: &str,
+        progress: &mut impl FnMut() -> Result<(), String>,
+    ) -> Result<WorkerMediaMessage, String> {
+        receive_from_with_progress(&self.control_incoming, operation, self.timeout, progress)
+    }
+
     fn allocate_request(&mut self) -> Result<u64, String> {
         let current = self.next_request;
         self.next_request = checked_next(current, "media request identity")?;
@@ -274,6 +291,30 @@ fn receive_from(
         .recv_timeout(timeout)
         .map_err(|error| format!("media {operation} timed out or disconnected: {error}"))?
         .map_err(|error| format!("media {operation} protocol failed: {error}"))
+}
+
+fn receive_from_with_progress(
+    incoming: &ControlIncoming,
+    operation: &str,
+    timeout: Duration,
+    mut progress: impl FnMut() -> Result<(), String>,
+) -> Result<WorkerMediaMessage, String> {
+    let started = Instant::now();
+    loop {
+        let remaining = timeout.saturating_sub(started.elapsed());
+        match incoming.recv_timeout(remaining.min(MEDIA_PROGRESS_POLL)) {
+            Ok(message) => {
+                return message
+                    .map_err(|error| format!("media {operation} protocol failed: {error}"));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() < timeout => progress()?,
+            Err(error) => {
+                return Err(format!(
+                    "media {operation} timed out or disconnected: {error}"
+                ));
+            }
+        }
+    }
 }
 
 fn spawn_control_reader(

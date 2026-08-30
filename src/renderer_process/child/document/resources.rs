@@ -221,9 +221,7 @@ impl DocumentRuntime {
                     .ok_or_else(|| "stylesheet was not installed".to_string()),
                 PageResource::Image { url } => self.page.add_image(url, &bytes),
                 PageResource::Media { node, .. } => connection
-                    .media()
-                    .ok_or_else(|| "contained media worker is unavailable".to_string())?
-                    .decode(&bytes)
+                    .decode_media(&bytes)
                     .and_then(|decode| self.install_media_decode(node, decode)),
                 PageResource::Script {
                     url,
