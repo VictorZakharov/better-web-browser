@@ -20,9 +20,11 @@ use windows::Win32::System::Com::{
 };
 use windows::core::GUID;
 
+mod audio;
 mod playback;
 mod stream;
 
+pub(in crate::media_process) use audio::AudioDecoder;
 pub(in crate::media_process) use playback::VideoDecoder;
 use stream::read_stream;
 

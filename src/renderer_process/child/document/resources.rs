@@ -115,7 +115,7 @@ impl DocumentRuntime {
             return Ok(None);
         }
         let mut outcome = std::mem::take(&mut self.pending_media_outcome);
-        self.apply_media_actions(&mut outcome)?;
+        self.apply_media_actions(&mut outcome, connection)?;
         connection.send_state_mutations(self.id, &mut outcome)?;
         self.text.register_web_fonts(&self.page.fonts);
         let style = self

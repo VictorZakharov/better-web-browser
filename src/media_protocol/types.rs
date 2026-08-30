@@ -316,7 +316,38 @@ pub enum BrowserMediaMessage {
         source_id: u64,
         frame_id: u64,
     },
+    SetPlayback {
+        source_id: u64,
+        playing: bool,
+        volume_millis: u16,
+    },
+    PlaybackState {
+        source_id: u64,
+    },
     Test(MediaTestCommand),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MediaPlaybackState {
+    pub source_id: u64,
+    pub position_100ns: u64,
+    pub duration_100ns: u64,
+    pub playing: bool,
+    pub ended: bool,
+}
+
+impl MediaPlaybackState {
+    pub fn validate(self) -> Result<(), MediaProtocolError> {
+        if self.source_id == 0
+            || self.duration_100ns == 0
+            || self.duration_100ns > MAX_MEDIA_DURATION_100NS
+            || self.position_100ns > self.duration_100ns
+            || (self.ended && self.playing)
+        {
+            return Err(MediaProtocolError::InvalidPayload("playback state"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -346,5 +377,6 @@ pub enum WorkerMediaMessage {
     EndOfStream {
         source_id: u64,
     },
+    PlaybackState(MediaPlaybackState),
     Restrictions(MediaRestrictionReport),
 }

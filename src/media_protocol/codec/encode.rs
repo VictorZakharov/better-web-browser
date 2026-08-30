@@ -3,9 +3,10 @@ use super::wire::{
     vec_u16, vec_u64,
 };
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE,
-    BROWSER_REQUEST_FRAME, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
-    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
+    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
+    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{BrowserMediaMessage, MediaLimits, WorkerMediaMessage};
@@ -67,6 +68,25 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             vec_u64(&mut payload, source_id);
             vec_u64(&mut payload, frame_id);
             BROWSER_REQUEST_FRAME
+        }
+        BrowserMediaMessage::SetPlayback {
+            source_id,
+            playing,
+            volume_millis,
+        } => {
+            require_nonzero(source_id, "playback source")?;
+            if volume_millis > 1_000 {
+                return Err(MediaProtocolError::InvalidPayload("playback volume"));
+            }
+            vec_u64(&mut payload, source_id);
+            boolean(&mut payload, playing);
+            vec_u16(&mut payload, volume_millis);
+            BROWSER_SET_PLAYBACK
+        }
+        BrowserMediaMessage::PlaybackState { source_id } => {
+            require_nonzero(source_id, "playback source")?;
+            vec_u64(&mut payload, source_id);
+            BROWSER_PLAYBACK_STATE
         }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);
@@ -158,6 +178,15 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             require_nonzero(source_id, "frame source")?;
             vec_u64(&mut payload, source_id);
             WORKER_END_OF_STREAM
+        }
+        WorkerMediaMessage::PlaybackState(state) => {
+            state.validate()?;
+            vec_u64(&mut payload, state.source_id);
+            vec_u64(&mut payload, state.position_100ns);
+            vec_u64(&mut payload, state.duration_100ns);
+            boolean(&mut payload, state.playing);
+            boolean(&mut payload, state.ended);
+            WORKER_PLAYBACK_STATE
         }
         WorkerMediaMessage::Restrictions(report) => {
             boolean(&mut payload, report.child_launch_denied);

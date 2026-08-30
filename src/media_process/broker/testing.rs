@@ -4,14 +4,62 @@ use super::{
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
 use crate::media_frame_protocol::{MediaFrameReader as DecodedFrameReader, nv12_to_bgra};
 use crate::media_protocol::{
-    BrowserMediaMessage, MediaDecodeReport, MediaRestrictionReport, MediaSessionId,
-    MediaTestCommand, WorkerMediaMessage,
+    BrowserMediaMessage, MediaDecodeReport, MediaPlaybackState, MediaRestrictionReport,
+    MediaSessionId, MediaTestCommand, WorkerMediaMessage,
 };
 use std::sync::mpsc;
 
 mod playback;
 
 impl MediaSession {
+    #[doc(hidden)]
+    pub fn set_owned_fixture_playback(
+        &mut self,
+        source_id: u64,
+        playing: bool,
+        volume_millis: u16,
+    ) -> Result<MediaPlaybackState, String> {
+        self.require_test_mode()?;
+        self.send(
+            BrowserMediaMessage::SetPlayback {
+                source_id,
+                playing,
+                volume_millis,
+            },
+            "set owned fixture playback",
+        )?;
+        self.receive_owned_fixture_state(source_id, "set owned fixture playback")
+    }
+
+    #[doc(hidden)]
+    pub fn owned_fixture_playback_state(
+        &mut self,
+        source_id: u64,
+    ) -> Result<MediaPlaybackState, String> {
+        self.require_test_mode()?;
+        self.send(
+            BrowserMediaMessage::PlaybackState { source_id },
+            "query owned fixture playback",
+        )?;
+        self.receive_owned_fixture_state(source_id, "query owned fixture playback")
+    }
+
+    fn receive_owned_fixture_state(
+        &mut self,
+        source_id: u64,
+        operation: &str,
+    ) -> Result<MediaPlaybackState, String> {
+        match self.receive(operation, self.command_timeout)? {
+            WorkerMediaMessage::PlaybackState(state) if state.source_id == source_id => {
+                state
+                    .validate()
+                    .map_err(|error| format!("invalid owned fixture playback state: {error}"))?;
+                Ok(state)
+            }
+            _ => self.protocol_failure("media worker returned stale playback state"),
+        }
+    }
+
     /// Exercises production media data framing and decode with browser-owned test bytes.
     /// Remote loading remains closed until a contained network service can feed this pipe.
     #[doc(hidden)]

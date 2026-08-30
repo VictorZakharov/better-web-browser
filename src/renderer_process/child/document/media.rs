@@ -1,13 +1,12 @@
-//! Document-owned video presentation clock and decoded-frame state.
+//! Worker-clocked video presentation and decoded-frame state.
 
 use super::DocumentRuntime;
 use crate::engine::DecodedImage;
 use crate::engine::dom::NodeId;
 use crate::media_process::RendererMediaDecode;
 use crate::renderer_process::child::connection::ChildConnection;
-use std::time::Duration;
-
 const MAX_FRAMES_PER_TICK: usize = 4;
+const CLOCK_POLL_MICROS: u64 = 20_000;
 
 pub(super) struct MediaPlayback {
     node: NodeId,
@@ -17,6 +16,7 @@ pub(super) struct MediaPlayback {
     duration_100ns: u64,
     playing: bool,
     ended: bool,
+    video_ended: bool,
     width: u32,
     height: u32,
 }
@@ -37,32 +37,25 @@ impl DocumentRuntime {
             },
         )?;
         self.sent_images.remove(&key);
-        let autoplay = self
-            .page
-            .dom
-            .find_node(node)
-            .is_some_and(|node| node.attr("autoplay").is_some());
         self.media = Some(MediaPlayback {
             node,
             source_id: metadata.source_id,
             clock_100ns: metadata.timestamp_100ns.max(0) as u64,
             frame_end_100ns: frame_end(metadata),
             duration_100ns: decode.report.duration_100ns,
-            playing: autoplay,
+            playing: false,
             ended: false,
+            video_ended: false,
             width: metadata.width,
             height: metadata.height,
         });
         self.dispatch_media_state(0, "loaded")?;
-        if autoplay {
-            self.dispatch_media_state(0, "playing")?;
-        }
         Ok(())
     }
 
     pub(super) fn advance_media(
         &mut self,
-        elapsed: Duration,
+        _elapsed: std::time::Duration,
         connection: &mut ChildConnection,
         outcome: &mut crate::engine::ScriptOutcome,
     ) -> Result<bool, String> {
@@ -72,17 +65,29 @@ impl DocumentRuntime {
         if !playback.playing || playback.ended {
             return Ok(false);
         }
-        let elapsed_100ns = elapsed.as_nanos().saturating_div(100).min(u64::MAX as u128) as u64;
-        playback.clock_100ns = playback
-            .clock_100ns
-            .saturating_add(elapsed_100ns)
-            .min(playback.duration_100ns);
+        let source_id = playback.source_id;
+        let state = connection
+            .media()
+            .ok_or_else(|| "contained media worker is unavailable".to_string())?
+            .playback_state(source_id)?;
+        playback.clock_100ns = state.position_100ns;
+        playback.duration_100ns = state.duration_100ns;
+        playback.playing = state.playing;
+        playback.ended = state.ended;
+        if state.ended {
+            let event = self.media_state_outcome(0, "ended")?;
+            super::merge_outcome(outcome, event, self.page.dom.document.id());
+            return Ok(true);
+        }
         let mut changed = false;
         for _ in 0..MAX_FRAMES_PER_TICK {
             let Some(playback) = self.media.as_ref() else {
                 break;
             };
-            if playback.clock_100ns < playback.frame_end_100ns || playback.ended {
+            if playback.clock_100ns < playback.frame_end_100ns
+                || playback.ended
+                || playback.video_ended
+            {
                 break;
             }
             let source_id = playback.source_id;
@@ -92,11 +97,8 @@ impl DocumentRuntime {
                 .next_frame(source_id)?;
             let Some(frame) = frame else {
                 if let Some(playback) = self.media.as_mut() {
-                    playback.ended = true;
-                    playback.playing = false;
+                    playback.video_ended = true;
                 }
-                let event = self.media_state_outcome(0, "ended")?;
-                super::merge_outcome(outcome, event, self.page.dom.document.id());
                 break;
             };
             let metadata = frame.metadata;
@@ -125,13 +127,32 @@ impl DocumentRuntime {
     pub(super) fn apply_media_actions(
         &mut self,
         outcome: &mut crate::engine::ScriptOutcome,
+        connection: &mut ChildConnection,
     ) -> Result<(), String> {
         let actions = std::mem::take(&mut outcome.media_actions);
         for action in actions {
             let disposition = match self.media.as_mut() {
                 Some(playback) if playback.node == action.node && !playback.ended => {
-                    playback.playing = action.play;
-                    if action.play { "playing" } else { "paused" }
+                    let volume = if action.muted {
+                        0
+                    } else {
+                        action.volume_millis
+                    };
+                    let state = connection
+                        .media()
+                        .ok_or_else(|| "contained media worker is unavailable".to_string())?
+                        .set_playback(playback.source_id, action.play, volume)?;
+                    playback.clock_100ns = state.position_100ns;
+                    playback.duration_100ns = state.duration_100ns;
+                    playback.playing = state.playing;
+                    playback.ended = state.ended;
+                    if action.play && state.playing {
+                        "playing"
+                    } else if !action.play {
+                        "paused"
+                    } else {
+                        "denied"
+                    }
                 }
                 _ => "denied",
             };
@@ -163,7 +184,7 @@ impl DocumentRuntime {
         let remaining = playback
             .frame_end_100ns
             .saturating_sub(playback.clock_100ns);
-        Some(remaining.saturating_div(10).max(1))
+        Some(remaining.saturating_div(10).clamp(1, CLOCK_POLL_MICROS))
     }
 
     fn dispatch_media_state(

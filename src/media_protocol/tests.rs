@@ -39,6 +39,16 @@ fn browser_and_worker_messages_round_trip() {
             frame_id: 7,
         })
         .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::SetPlayback {
+            source_id: 4,
+            playing: true,
+            volume_millis: 625,
+        })
+        .unwrap();
+    browser_writer
+        .send_browser(&BrowserMediaMessage::PlaybackState { source_id: 4 })
+        .unwrap();
     let mut browser_reader = MediaFrameReader::new(Cursor::new(browser_bytes), session(9));
     assert_eq!(
         browser_reader.read_browser().unwrap(),
@@ -74,6 +84,18 @@ fn browser_and_worker_messages_round_trip() {
             frame_id: 7,
         }
     );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::SetPlayback {
+            source_id: 4,
+            playing: true,
+            volume_millis: 625,
+        }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::PlaybackState { source_id: 4 }
+    );
 
     let report = MediaCapabilityReport {
         startup_hresult: 0,
@@ -98,6 +120,24 @@ fn browser_and_worker_messages_round_trip() {
             request_id: 11,
             report
         }
+    );
+
+    let state = MediaPlaybackState {
+        source_id: 4,
+        position_100ns: 2_500_000,
+        duration_100ns: 10_000_000,
+        playing: true,
+        ended: false,
+    };
+    let mut worker_bytes = Vec::new();
+    MediaFrameWriter::new(&mut worker_bytes, session(9))
+        .send_worker(&WorkerMediaMessage::PlaybackState(state))
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(worker_bytes), session(9))
+            .read_worker()
+            .unwrap(),
+        WorkerMediaMessage::PlaybackState(state)
     );
 
     let decoded = MediaDecodeReport {

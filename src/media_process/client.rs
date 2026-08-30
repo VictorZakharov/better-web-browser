@@ -7,7 +7,7 @@ use crate::media_frame_protocol::{
 };
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaDecodeReport, MediaFrameReader, MediaFrameWriter,
-    MediaLimits, MediaProtocolError, MediaSessionId, Nonce, WorkerMediaMessage,
+    MediaLimits, MediaPlaybackState, MediaProtocolError, MediaSessionId, Nonce, WorkerMediaMessage,
 };
 use std::fs::File;
 use std::sync::mpsc::{self, Receiver};
@@ -166,6 +166,25 @@ impl MediaClient {
         Ok(Some(frame))
     }
 
+    pub(crate) fn set_playback(
+        &mut self,
+        source_id: u64,
+        playing: bool,
+        volume_millis: u16,
+    ) -> Result<MediaPlaybackState, String> {
+        self.send(BrowserMediaMessage::SetPlayback {
+            source_id,
+            playing,
+            volume_millis,
+        })?;
+        self.receive_playback_state(source_id, "set playback")
+    }
+
+    pub(crate) fn playback_state(&mut self, source_id: u64) -> Result<MediaPlaybackState, String> {
+        self.send(BrowserMediaMessage::PlaybackState { source_id })?;
+        self.receive_playback_state(source_id, "query playback")
+    }
+
     fn acknowledge(&mut self, source_id: u64, frame_id: u64) -> Result<(), String> {
         self.send(BrowserMediaMessage::AcknowledgeFrame {
             source_id,
@@ -177,6 +196,22 @@ impl MediaClient {
                 frame_id: actual_frame,
             } if actual_source == source_id && actual_frame == frame_id => Ok(()),
             _ => Err("media worker returned a stale frame acknowledgement".into()),
+        }
+    }
+
+    fn receive_playback_state(
+        &self,
+        source_id: u64,
+        operation: &str,
+    ) -> Result<MediaPlaybackState, String> {
+        match self.receive(operation)? {
+            WorkerMediaMessage::PlaybackState(state) if state.source_id == source_id => {
+                state
+                    .validate()
+                    .map_err(|error| format!("invalid media playback state: {error}"))?;
+                Ok(state)
+            }
+            _ => Err("media worker returned stale playback state".into()),
         }
     }
 

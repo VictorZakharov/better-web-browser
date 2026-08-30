@@ -1,13 +1,15 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING, BROWSER_PROBE,
-    BROWSER_REQUEST_FRAME, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
-    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
+    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
+    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaCodecFamily,
-    MediaDecodeReport, MediaLimits, MediaRestrictionReport, Nonce, WorkerMediaMessage,
+    MediaDecodeReport, MediaLimits, MediaPlaybackState, MediaRestrictionReport, Nonce,
+    WorkerMediaMessage,
 };
 
 pub(super) fn browser(
@@ -47,6 +49,22 @@ pub(super) fn browser(
         BROWSER_REQUEST_FRAME => BrowserMediaMessage::RequestFrame {
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,
+        },
+        BROWSER_SET_PLAYBACK => {
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let playing = cursor.boolean()?;
+            let volume_millis = cursor.u16()?;
+            if volume_millis > 1_000 {
+                return Err(MediaProtocolError::InvalidPayload("playback volume"));
+            }
+            BrowserMediaMessage::SetPlayback {
+                source_id,
+                playing,
+                volume_millis,
+            }
+        }
+        BROWSER_PLAYBACK_STATE => BrowserMediaMessage::PlaybackState {
+            source_id: cursor.nonzero_u64("playback source")?,
         },
         BROWSER_TEST => BrowserMediaMessage::Test(decode_test(&mut cursor)?),
         _ => return Err(MediaProtocolError::UnexpectedMessage(kind)),
@@ -123,6 +141,13 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
         WORKER_END_OF_STREAM => WorkerMediaMessage::EndOfStream {
             source_id: cursor.nonzero_u64("frame source")?,
         },
+        WORKER_PLAYBACK_STATE => WorkerMediaMessage::PlaybackState(MediaPlaybackState {
+            source_id: cursor.nonzero_u64("playback source")?,
+            position_100ns: cursor.u64()?,
+            duration_100ns: cursor.u64()?,
+            playing: cursor.boolean()?,
+            ended: cursor.boolean()?,
+        }),
         WORKER_RESTRICTIONS => WorkerMediaMessage::Restrictions(MediaRestrictionReport {
             child_launch_denied: cursor.boolean()?,
             loopback_denied: cursor.boolean()?,
@@ -147,6 +172,9 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
         frame
             .validate()
             .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+    }
+    if let WorkerMediaMessage::PlaybackState(state) = message {
+        state.validate()?;
     }
     Ok(message)
 }

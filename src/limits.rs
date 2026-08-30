@@ -153,6 +153,8 @@ pub const MAX_MEDIA_TRACKS: usize = 8;
 pub const MAX_MEDIA_DIMENSION: u32 = 8_192;
 pub const MAX_MEDIA_ENCODED_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_MEDIA_DECODED_FRAME_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES: usize = 1024 * 1024;
+pub const MAX_MEDIA_DECODED_AUDIO_QUEUE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MEDIA_ENCODED_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_MEDIA_DECODED_FRAMES: usize = 4;
 /// Decoded samples are consumed immediately, but cumulative counters are still bounded so hostile

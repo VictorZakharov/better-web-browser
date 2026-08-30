@@ -49,7 +49,7 @@
                 defaultPlaybackRate: 1,
                 playbackRate: 1,
                 volume: 1,
-                muted: false,
+                muted: element.hasAttribute('muted'),
                 paused: true,
                 ended: false,
                 seeking: false,
@@ -160,14 +160,18 @@
             if (hadResource) this.dispatchEvent(new Event('emptied'));
         }
         play() {
+            const state = mediaStateFor(this);
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {
                 pendingMediaRequests.set(requestId, { element: this, resolve, reject });
-                host('mediaRequest', this.__id, requestId, true);
+                host('mediaRequest', this.__id, requestId, true,
+                    Math.round(state.volume * 1000), state.muted);
             });
         }
         pause() {
-            host('mediaRequest', this.__id, 0, false);
+            const state = mediaStateFor(this);
+            host('mediaRequest', this.__id, 0, false,
+                Math.round(state.volume * 1000), state.muted);
         }
         fastSeek(time) { this.currentTime = time; }
         canPlayType(_type) { return ''; }
@@ -235,6 +239,7 @@
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
                 element.dispatchEvent(markTrusted(new Event('canplay')));
+                if (element.autoplay) element.play().catch(() => {});
                 return true;
             case 'playing':
                 state.paused = false;

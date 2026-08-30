@@ -8,6 +8,8 @@ use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[path = "media_process/playback.rs"]
+mod playback;
 #[path = "media_process/support.rs"]
 mod support;
 
