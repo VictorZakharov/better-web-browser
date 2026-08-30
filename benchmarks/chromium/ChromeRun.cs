@@ -88,6 +88,8 @@ internal static class ChromeRun
             result.NavigationMs = (stopwatch.Elapsed - navigationStarted).TotalMilliseconds;
             result.Error = navigationError;
 
+            nextId = await BrowserActions.RunAsync(cdp, options, timeout, nextId);
+
             var firstPaint = await EvaluateAsync(cdp, nextId++, BrowserScripts.FirstPaint, timeout);
             result.FirstUsablePaintMs = firstPaint.ValueKind == JsonValueKind.Number
                 ? firstPaint.GetDouble()
@@ -105,6 +107,19 @@ internal static class ChromeRun
             result.BrowserErrorSurface = probe.GetProperty("browserErrorSurface").GetBoolean();
             result.DocumentHeightCssPx = probe.GetProperty("documentHeight").GetInt32();
             result.FixtureReady = probe.GetProperty("fixtureReady").GetBoolean();
+            if (probe.GetProperty("media") is { ValueKind: JsonValueKind.Object } media)
+            {
+                result.Media = new MediaProbe
+                {
+                    CurrentTimeSeconds = media.GetProperty("currentTime").GetDouble(),
+                    DurationSeconds = media.GetProperty("duration").GetDouble(),
+                    Paused = media.GetProperty("paused").GetBoolean(),
+                    Ended = media.GetProperty("ended").GetBoolean(),
+                    ReadyState = media.GetProperty("readyState").GetInt32(),
+                    VideoWidth = media.GetProperty("videoWidth").GetInt32(),
+                    VideoHeight = media.GetProperty("videoHeight").GetInt32()
+                };
+            }
             var innerWidth = probe.GetProperty("innerWidth").GetInt32();
             var innerHeight = probe.GetProperty("innerHeight").GetInt32();
             result.ViewportWidthCssPx = innerWidth;

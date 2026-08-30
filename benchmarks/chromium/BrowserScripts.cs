@@ -3,7 +3,9 @@ namespace ChromiumBaseline;
 internal static class BrowserScripts
 {
     public const string DocumentProbe = """
-        (() => ({
+        (() => {
+          const media = document.querySelector('video, audio');
+          return ({
           url: location.href,
           bodyTextLength: (document.body?.innerText || '').trim().length,
           elementCount: document.querySelectorAll('*').length,
@@ -12,8 +14,18 @@ internal static class BrowserScripts
           documentHeight: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0),
           fixtureReady: document.documentElement.dataset.fixtureReady === 'true',
           innerWidth: window.innerWidth,
-          innerHeight: window.innerHeight
-        }))()
+          innerHeight: window.innerHeight,
+          media: media ? {
+            currentTime: Number(media.currentTime) || 0,
+            duration: Number(media.duration) || 0,
+            paused: media.paused,
+            ended: media.ended,
+            readyState: media.readyState,
+            videoWidth: Number(media.videoWidth) || 0,
+            videoHeight: Number(media.videoHeight) || 0
+          } : null
+          });
+        })()
         """;
 
     public const string FirstPaint = """

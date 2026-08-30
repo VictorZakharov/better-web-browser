@@ -76,4 +76,29 @@ fn anonymous_youtube_embed_reached_from_a_trusted_link_creates_a_player() {
         report.contains("playing-mode") && report.contains("\"decoded\":true"),
         "YouTube did not enter decoded video playback after the trusted click:\n{report}"
     );
+    let json: serde_json::Value = serde_json::from_str(&report).expect("parse benchmark report");
+    let media = &json["media"];
+    assert_eq!(media["active"], true, "missing active media diagnostics");
+    assert_eq!(media["playing"], true, "media clock was not playing");
+    assert!(
+        media["current_time_seconds"].as_f64().unwrap_or_default() > 0.0,
+        "media time did not progress: {media}"
+    );
+    assert_eq!(media["backend"], "Windows Media Foundation / XAudio2");
+    assert_eq!(media["mime_type"], "video/mp4");
+    assert_eq!(media["video_codec"], "H.264");
+    assert_eq!(media["audio_codec"], "AAC-LC");
+    assert!(
+        media["encoded_queue_bytes"].as_u64().unwrap_or(u64::MAX)
+            <= media["encoded_queue_limit_bytes"].as_u64().unwrap_or(0),
+        "encoded media queue exceeded its reported bound: {media}"
+    );
+    assert_eq!(media["decoded_frame_queue_depth"], 0);
+    assert_eq!(media["decoded_frame_queue_limit"], 1);
+    assert!(media["frames_presented"].as_u64().unwrap_or_default() > 1);
+    assert_eq!(media["dropped_frames"], 0);
+    assert!(
+        media["failure"].is_null(),
+        "media reported failure: {media}"
+    );
 }

@@ -220,9 +220,16 @@ impl DocumentRuntime {
                     .then_some(())
                     .ok_or_else(|| "stylesheet was not installed".to_string()),
                 PageResource::Image { url } => self.page.add_image(url, &bytes),
-                PageResource::Media { node, .. } => connection
-                    .decode_media(&bytes)
-                    .and_then(|decode| self.install_media_decode(node, decode)),
+                PageResource::Media { node, .. } => {
+                    let mime_type = content_type.unwrap_or_else(|| "video/mp4".into());
+                    let result = connection
+                        .decode_media(&bytes)
+                        .and_then(|decode| self.install_media_decode(node, decode, mime_type));
+                    if let Err(error) = &result {
+                        self.record_media_failure(error.clone());
+                    }
+                    result
+                }
                 PageResource::Script {
                     url,
                     kind,

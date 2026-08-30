@@ -164,6 +164,13 @@
         }
         get preservesPitch() { return mediaStateFor(this).preservesPitch; }
         set preservesPitch(value) { mediaStateFor(this).preservesPitch = !!value; }
+        get mediaKeys() { return null; }
+        setMediaKeys() {
+            return Promise.reject(new DOMException(
+                'Encrypted media playback is not supported',
+                'NotSupportedError'
+            ));
+        }
         get srcObject() { return mediaStateFor(this).srcObject; }
         set srcObject(value) {
             if (value !== null) throw new TypeError('MediaStream playback is not supported');

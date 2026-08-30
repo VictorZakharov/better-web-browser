@@ -80,6 +80,7 @@ impl DocumentRuntime {
             diagnostic_selectors: start.diagnostic_selectors,
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
             media: None,
+            media_failure: None,
             pending_media_outcome: ScriptOutcome::default(),
         };
 
