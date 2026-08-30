@@ -48,6 +48,34 @@ fn child_collections_keep_identity_and_refresh_after_tree_mutations() {
 }
 
 #[test]
+fn character_data_exposes_the_dom_mutation_contract() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output id="state"></output><script>
+            const text = document.createTextNode('alpha');
+            const comment = document.createComment('note');
+            const inherited = text instanceof CharacterData && comment instanceof CharacterData &&
+                text instanceof Text && !(comment instanceof Text);
+            text.appendData('-omega');
+            const middle = text.substringData(6, 5);
+            text.replaceData(0, 5, 'start');
+            text.insertData(5, ':');
+            text.deleteData(6, 6);
+            let errorName = '';
+            try { text.substringData(99, 1); } catch (error) { errorName = error.name; }
+            document.getElementById('state').textContent = [
+                inherited, middle, text.data, text.length, errorName
+            ].join(':');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:omega:start::6:IndexSizeError"
+    );
+}
+
+#[test]
 fn executes_classic_scripts_with_html_like_comments() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">waiting</div><script>
