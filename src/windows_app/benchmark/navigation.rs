@@ -2,14 +2,15 @@
 
 use super::super::*;
 use better_web_browser::renderer_protocol::{
-    DocumentInput, InputModifiers, KeyPhase, KeyboardInput, PointerButton, PointerInput,
-    PointerPhase,
+    DocumentInput, DocumentNodeId, InputModifiers, KeyPhase, KeyboardInput, PointerButton,
+    PointerInput, PointerPhase,
 };
 
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::windows_app) enum BenchmarkNavigation {
     Address(String),
     ActivateLink(String),
+    ActivateSelector(String),
     ClickPoint { x: i32, y: i32 },
     Key { key: String, code: String },
 }
@@ -41,6 +42,13 @@ impl BrowserState {
                     Ok(())
                 }
                 BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
+                BenchmarkNavigation::ActivateSelector(selector) => {
+                    let result = self.activate_benchmark_selector(&selector);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
                 BenchmarkNavigation::ClickPoint { x, y } => {
                     let result = self.click_benchmark_point(x as f32, y as f32);
                     if result.is_ok() {
@@ -93,6 +101,34 @@ impl BrowserState {
                 _ => None,
             })
             .ok_or_else(|| format!("benchmark link was not presented: {expected_url}"))?;
+        self.activate_benchmark_target(target, x, y)
+    }
+
+    fn activate_benchmark_selector(&mut self, selector: &str) -> Result<(), String> {
+        let (target, x, y) = self
+            .page_diagnostics
+            .selectors
+            .iter()
+            .find(|diagnostics| diagnostics.selector == selector)
+            .and_then(|diagnostics| diagnostics.matches.first())
+            .and_then(|node| {
+                let target = DocumentNodeId::new(node.node_id).ok()?;
+                let rect = node.control_rect.or(node.layout_rect);
+                let (x, y) = rect.map_or((0.0, 0.0), |rect| {
+                    (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+                });
+                Some((target, x, y))
+            })
+            .ok_or_else(|| format!("benchmark selector did not match a node: {selector}"))?;
+        self.activate_benchmark_target(target, x, y)
+    }
+
+    fn activate_benchmark_target(
+        &mut self,
+        target: DocumentNodeId,
+        x: f32,
+        y: f32,
+    ) -> Result<(), String> {
         for phase in [PointerPhase::Down, PointerPhase::Up] {
             let (document, sequence) = self
                 .next_renderer_input()

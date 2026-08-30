@@ -110,6 +110,17 @@
             if (inserted) scheduleSlotChangeCheck();
             return inserted ? child : null;
         }
+        replaceChild(child, replaced) {
+            if (!(child instanceof Node)) throw new TypeError('replaceChild requires a Node');
+            if (!(replaced instanceof Node)) throw new TypeError('replaced child must be a Node');
+            if (replaced.parentNode !== this)
+                throw new DOMException('The node to replace is not a child', 'NotFoundError');
+            if (child === replaced) return replaced;
+            if (this.insertBefore(child, replaced) === null)
+                throw new DOMException('The replacement cannot be inserted here', 'HierarchyRequestError');
+            this.removeChild(replaced);
+            return replaced;
+        }
         removeChild(child) {
             const namedAccessChanged = this.isConnected;
             const wasConnected = child instanceof Node && child.isConnected;

@@ -104,6 +104,17 @@ impl LaunchOptions {
                         &argument,
                     )?));
                 }
+                "--activate-selector-after-ready" => {
+                    let selector = required(&mut arguments, &argument)?;
+                    if selector.trim().is_empty() {
+                        return Err("--activate-selector-after-ready cannot be empty".to_string());
+                    }
+                    if !diagnostic_selectors.contains(&selector) {
+                        diagnostic_selectors.push(selector.clone());
+                        diagnostics::validate_selector_count(&diagnostic_selectors)?;
+                    }
+                    navigation_targets.push(BenchmarkNavigation::ActivateSelector(selector));
+                }
                 "--click-after-ready" => {
                     navigation_targets.push(click_point(&required(&mut arguments, &argument)?)?);
                 }
@@ -321,6 +332,8 @@ mod tests {
                 "https://example.test/final",
                 "--activate-link-after-ready",
                 "https://example.test/clicked",
+                "--activate-selector-after-ready",
+                "button.play",
                 "--click-after-ready",
                 "320,180",
                 "--key-after-ready",
@@ -339,6 +352,7 @@ mod tests {
                 BenchmarkNavigation::Address("https://example.test/second".to_string()),
                 BenchmarkNavigation::Address("https://example.test/final".to_string()),
                 BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
+                BenchmarkNavigation::ActivateSelector("button.play".to_string()),
                 BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
                 BenchmarkNavigation::Key {
                     key: "k".to_string(),
@@ -346,6 +360,7 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(benchmark.diagnostic_selectors, ["button.play"]);
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));
     }
 

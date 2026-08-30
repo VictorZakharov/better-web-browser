@@ -176,7 +176,11 @@ fn clear_interval_stops_a_rescheduled_repeating_task() {
 fn a_throwing_timer_does_not_prevent_the_next_task() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">waiting</div><script>
-            setTimeout(() => { throw new Error('expected timer failure'); }, 0);
+            setTimeout(() => {
+                const error = new Error('expected timer failure');
+                error.args = [{ error: 'nested platform failure', event: 'onStateChange' }];
+                throw error;
+            }, 0);
             setTimeout(() => {
                 document.getElementById('status').textContent = 'ready';
             }, 0);
@@ -199,6 +203,14 @@ fn a_throwing_timer_does_not_prevent_the_next_task() {
             .errors
             .iter()
             .any(|error| error.contains("https://example.com/#inline")),
+        "{:?}",
+        outcome.errors
+    );
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.contains("error=nested platform failure; event=onStateChange")),
         "{:?}",
         outcome.errors
     );
