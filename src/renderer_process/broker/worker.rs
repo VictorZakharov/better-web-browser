@@ -55,6 +55,7 @@ pub(super) enum LifecycleCommand {
 pub(super) struct BrokerResources {
     pub(super) process: OwnedHandle,
     pub(super) job: Option<OwnedHandle>,
+    pub(super) media: Option<crate::media_process::launcher::MediaWorkerOwner>,
     pub(super) writer: super::outbound::Sender,
     pub(super) writer_thread: JoinHandle<()>,
     pub(super) incoming: mpsc::Receiver<Result<RendererMessage, ProtocolError>>,
@@ -337,6 +338,7 @@ impl Broker {
         }
         let _ = resources.events.try_send(RendererEvent::Exited(exit));
         drop(resources.writer);
+        drop(resources.media);
         drop(resources.job);
         drop(resources.process);
         let _ = resources.writer_thread.join();

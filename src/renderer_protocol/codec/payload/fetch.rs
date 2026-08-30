@@ -202,7 +202,7 @@ macro_rules! tagged_enum {
 }
 
 tagged_enum!(initiator_tag, decode_initiator, FetchInitiator, "Fetch initiator", { FetchInitiator::Subresource => 1, FetchInitiator::ClassicScript => 2, FetchInitiator::ModuleScript => 3, FetchInitiator::ScriptApi => 4, FetchInitiator::ClassicWorker => 5, FetchInitiator::ModuleWorker => 6 });
-tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5 });
+tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5, ResourceDestination::Video => 6 });
 tagged_enum!(mode_tag, decode_mode, FetchMode, "Fetch mode", { FetchMode::SameOrigin => 1, FetchMode::NoCors => 2, FetchMode::Cors => 3 });
 tagged_enum!(credentials_tag, decode_credentials, FetchCredentials, "Fetch credentials", { FetchCredentials::Omit => 1, FetchCredentials::SameOrigin => 2, FetchCredentials::Include => 3 });
 tagged_enum!(cache_tag, decode_cache, FetchCache, "Fetch cache", { FetchCache::Default => 1, FetchCache::NoStore => 2, FetchCache::Reload => 3, FetchCache::NoCache => 4, FetchCache::ForceCache => 5, FetchCache::OnlyIfCached => 6 });

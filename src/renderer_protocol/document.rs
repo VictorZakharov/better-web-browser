@@ -185,6 +185,7 @@ pub enum ResourceDestination {
     Script,
     Font,
     Fetch,
+    Video,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

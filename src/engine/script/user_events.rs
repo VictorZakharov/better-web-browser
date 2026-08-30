@@ -112,5 +112,18 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
         } => serde_json::json!({
             "kind": "fullscreen", "requestId": request_id, "disposition": disposition
         }),
+        UserInputEvent::Media {
+            target: node,
+            request_id,
+            disposition,
+            current_time,
+            duration,
+            width,
+            height,
+        } => serde_json::json!({
+            "kind": "media", "target": target(Some(node)), "requestId": request_id,
+            "disposition": disposition, "currentTime": current_time, "duration": duration,
+            "width": width, "height": height
+        }),
     }
 }

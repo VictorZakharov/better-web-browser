@@ -10,6 +10,8 @@ mod clock_backpressure;
 mod fullscreen;
 #[path = "renderer_process/input.rs"]
 mod input;
+#[path = "renderer_process/media.rs"]
+mod media;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
 #[path = "renderer_process/state.rs"]

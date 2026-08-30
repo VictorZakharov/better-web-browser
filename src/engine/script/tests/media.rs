@@ -42,7 +42,7 @@ fn exposes_closed_truthful_html_media_bindings() {
 
 #[test]
 fn media_methods_fail_closed_and_validate_ranges() {
-    let (dom, outcome) = execute_html(
+    let dom = dom::parse_with_scripting(
         r#"<body><div id="status">waiting</div><video id="movie"></video><script>
             const video = document.getElementById('movie');
             let volumeError = '';
@@ -56,8 +56,38 @@ fn media_methods_fail_closed_and_validate_ranges() {
                 ].join(',')
             );
         </script></body>"#,
+        true,
     );
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/#media".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let outcome = runtime.execute_initial(&[input]);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.media_actions.len(), 1);
+    let action = outcome.media_actions[0];
+    assert!(action.play);
+    let video = dom.elements_named("video").next().unwrap();
+    let response = runtime.dispatch_user_input(UserInputEvent::Media {
+        target: video,
+        request_id: action.request_id,
+        disposition: "denied",
+        current_time: 0.0,
+        duration: f64::NAN,
+        width: 0,
+        height: 0,
+    });
+    assert!(
+        response.outcome.errors.is_empty(),
+        "{:?}",
+        response.outcome.errors
+    );
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "NotSupportedError,IndexSizeError,IndexSizeError,true"

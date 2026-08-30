@@ -31,6 +31,12 @@ pub(super) fn page_resource_request(
             ResourceDestination::Image,
             FetchMode::NoCors,
         ),
+        PageResource::Media { url, .. } => (
+            url,
+            FetchInitiator::Subresource,
+            ResourceDestination::Video,
+            FetchMode::NoCors,
+        ),
         PageResource::Script {
             url,
             kind,
@@ -215,6 +221,7 @@ fn destination(value: RequestDestination) -> ResourceDestination {
         RequestDestination::Script => ResourceDestination::Script,
         RequestDestination::Font => ResourceDestination::Font,
         RequestDestination::Document | RequestDestination::Fetch => ResourceDestination::Fetch,
+        RequestDestination::Video => ResourceDestination::Video,
     }
 }
 

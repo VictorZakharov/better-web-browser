@@ -50,7 +50,9 @@ impl Page {
                     && script.blocks_first_paint
             }),
             PageResource::Stylesheet { .. } => true,
-            PageResource::Image { .. } | PageResource::Font { .. } => false,
+            PageResource::Image { .. } | PageResource::Media { .. } | PageResource::Font { .. } => {
+                false
+            }
         }
     }
 

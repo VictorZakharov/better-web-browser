@@ -37,6 +37,10 @@ pub enum PageResource {
     Image {
         url: String,
     },
+    Media {
+        url: String,
+        node: dom::NodeId,
+    },
     Script {
         url: String,
         kind: ScriptKind,

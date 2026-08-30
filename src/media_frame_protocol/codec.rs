@@ -107,18 +107,39 @@ impl<R: Read> MediaFrameReader<R> {
         expected_source: u64,
         expected_frame: u64,
     ) -> Result<MediaFramePacket, MediaFrameError> {
+        self.read_frame_inner(Some((expected_source, expected_frame)))
+    }
+
+    pub(crate) fn read_next_frame(&mut self) -> Result<MediaFramePacket, MediaFrameError> {
+        self.read_frame_inner(None)
+    }
+
+    fn read_frame_inner(
+        &mut self,
+        expected_identity: Option<(u64, u64)>,
+    ) -> Result<MediaFramePacket, MediaFrameError> {
         let mut result = Vec::new();
         let mut expected_metadata = None;
         loop {
             let mut header = [0_u8; HEADER_LENGTH];
             self.inner.read_exact(&mut header)?;
-            let (metadata, offset, flags, chunk_length) = self.decode_header(
-                &header,
-                expected_source,
-                expected_frame,
-                result.len() as u64,
-            )?;
+            let (metadata, offset, flags, chunk_length) =
+                self.decode_header(&header, result.len() as u64)?;
             metadata.validate()?;
+            if let Some((expected_source, expected_frame)) = expected_identity {
+                if metadata.source_id != expected_source {
+                    return Err(MediaFrameError::WrongSource {
+                        expected: expected_source,
+                        actual: metadata.source_id,
+                    });
+                }
+                if metadata.frame_id != expected_frame {
+                    return Err(MediaFrameError::WrongFrame {
+                        expected: expected_frame,
+                        actual: metadata.frame_id,
+                    });
+                }
+            }
             if let Some(expected) = expected_metadata {
                 if metadata != expected {
                     return Err(MediaFrameError::MetadataChanged);
@@ -158,8 +179,6 @@ impl<R: Read> MediaFrameReader<R> {
     fn decode_header(
         &self,
         header: &[u8; HEADER_LENGTH],
-        expected_source: u64,
-        expected_frame: u64,
         expected_offset: u64,
     ) -> Result<(MediaVideoFrameMetadata, u64, u16, u32), MediaFrameError> {
         if header[..4] != MAGIC {
@@ -185,19 +204,7 @@ impl<R: Read> MediaFrameReader<R> {
             return Err(MediaFrameError::WrongNonce);
         }
         let source = get_u64(&header[24..32]);
-        if source != expected_source {
-            return Err(MediaFrameError::WrongSource {
-                expected: expected_source,
-                actual: source,
-            });
-        }
         let frame = get_u64(&header[32..40]);
-        if frame != expected_frame {
-            return Err(MediaFrameError::WrongFrame {
-                expected: expected_frame,
-                actual: frame,
-            });
-        }
         let offset = get_u64(&header[40..48]);
         if offset != expected_offset {
             return Err(MediaFrameError::WrongOffset {

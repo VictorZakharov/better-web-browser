@@ -3,7 +3,9 @@ use crate::engine::css::media::{MediaEnvironment, media_matches_for_environment}
 use crate::engine::css::parse_length;
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
-use crate::limits::{MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS};
+use crate::limits::{
+    MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT, MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS,
+};
 use crate::navigation::{resolve_resource_url, resolve_url};
 use std::collections::HashSet;
 
@@ -55,6 +57,36 @@ pub(super) fn discover_resources(
             && seen_images.insert(url.clone())
         {
             resources.push(PageResource::Image { url });
+        }
+    }
+
+    let mut discovered_media = 0;
+    for node in Node::shadow_including_descendants(&dom.document) {
+        if node.tag_name() != Some("video")
+            || discovered_media >= MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT
+        {
+            continue;
+        }
+        let source = node
+            .attr("src")
+            .filter(|source| !source.trim().is_empty())
+            .or_else(|| {
+                node.children.borrow().iter().find_map(|child| {
+                    (child.tag_name() == Some("source")
+                        && child
+                            .attr("type")
+                            .is_none_or(|kind| supported_media_type(&kind)))
+                    .then(|| child.attr("src"))
+                    .flatten()
+                    .filter(|source| !source.trim().is_empty())
+                })
+            });
+        if let Some(url) = source.and_then(|source| resolve_resource_url(base_url, source.trim())) {
+            resources.push(PageResource::Media {
+                url,
+                node: node.id(),
+            });
+            discovered_media += 1;
         }
     }
 
@@ -263,5 +295,17 @@ fn supported_image_type(kind: &str) -> bool {
             | "image/vnd.microsoft.icon"
             | "image/webp"
             | "image/x-icon"
+    )
+}
+
+fn supported_media_type(kind: &str) -> bool {
+    matches!(
+        kind.split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "video/mp4" | "application/mp4"
     )
 }

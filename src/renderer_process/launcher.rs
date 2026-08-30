@@ -1,9 +1,13 @@
 use super::windows::{
     AppContainerSid, LaunchAttributes, PipeSet, create_renderer_job, last_error, random_nonce, raw,
+    set_handle_inheritance,
 };
 use crate::limits::{
     RENDERER_FIRST_PRESENTATION_TIMEOUT, RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT,
     RENDERER_STARTUP_TIMEOUT, RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
+};
+use crate::media_process::launcher::{
+    LaunchedMediaWorker, MediaLaunchOptions, MediaWorkerOwner, launch as launch_media,
 };
 use crate::renderer_protocol::{BrowsingContextId, Nonce, RendererSessionId};
 use std::fs::{self, File};
@@ -42,6 +46,7 @@ pub struct RendererLaunchOptions {
     pub unresponsive_kill_timeout: Duration,
     pub first_presentation_timeout: Duration,
     pub test_mode: bool,
+    pub enable_media: bool,
     pub startup_fault: Option<StartupFault>,
 }
 
@@ -57,6 +62,7 @@ impl RendererLaunchOptions {
             unresponsive_kill_timeout: RENDERER_UNRESPONSIVE_KILL_TIMEOUT,
             first_presentation_timeout: RENDERER_FIRST_PRESENTATION_TIMEOUT,
             test_mode: false,
+            enable_media: false,
             startup_fault: None,
         }
     }
@@ -76,6 +82,7 @@ pub(super) struct LaunchedRenderer {
     pub(super) process_id: u32,
     pub(super) session: RendererSessionId,
     pub(super) nonce: Nonce,
+    pub(super) media: Option<MediaWorkerOwner>,
 }
 
 pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer, String> {
@@ -85,12 +92,29 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
     let session = RendererSessionId::new(session_value)
         .map_err(|error| format!("allocate renderer session: {error}"))?;
     let pipes = PipeSet::create()?;
+    let media = options
+        .enable_media
+        .then(|| launch_media(&MediaLaunchOptions::new(options.executable.clone())))
+        .transpose()?;
+    let media_handles = media
+        .as_ref()
+        .map(|worker| worker.renderer_handles().to_vec())
+        .unwrap_or_default();
+    for handle in &media_handles {
+        set_handle_inheritance(*handle, true)?;
+    }
     let job = create_renderer_job()?;
     let sid = AppContainerSid::create_renderer()?;
-    let attributes = LaunchAttributes::new(&pipes.child_input, &pipes.child_output, &job, &sid)?;
+    let attributes = LaunchAttributes::with_inherited(
+        &pipes.child_input,
+        &pipes.child_output,
+        &media_handles,
+        &job,
+        &sid,
+    )?;
 
     let application = wide_path(&options.executable);
-    let mut command_line = wide(&command_line(options, nonce, session));
+    let mut command_line = wide(&command_line(options, nonce, session, media.as_ref()));
     let environment = contained_environment(&options.executable)?;
     let mut startup = STARTUPINFOEXW::default();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
@@ -141,6 +165,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
         process_id: process.dwProcessId,
         session,
         nonce,
+        media: media.map(LaunchedMediaWorker::into_owner),
     })
 }
 
@@ -171,6 +196,7 @@ fn command_line(
     options: &RendererLaunchOptions,
     nonce: Nonce,
     session: RendererSessionId,
+    media: Option<&LaunchedMediaWorker>,
 ) -> String {
     let mut command = format!(
         "\"{}\" --renderer-process --renderer-nonce {} --renderer-session {}",
@@ -180,6 +206,18 @@ fn command_line(
     );
     if options.test_mode {
         command.push_str(" --renderer-test-mode");
+    }
+    if let Some(media) = media {
+        let handles = media.renderer_handles();
+        command.push_str(&format!(
+            " --renderer-media-nonce {} --renderer-media-session {} --renderer-media-control-input {} --renderer-media-control-output {} --renderer-media-data-output {} --renderer-media-frame-input {}",
+            media.nonce.to_hex(),
+            media.session.get(),
+            handles[0] as usize,
+            handles[1] as usize,
+            handles[2] as usize,
+            handles[3] as usize,
+        ));
     }
     if let Some(fault) = options.startup_fault {
         command.push_str(" --renderer-startup-fault ");

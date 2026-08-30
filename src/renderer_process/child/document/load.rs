@@ -79,6 +79,8 @@ impl DocumentRuntime {
             sent_images: HashSet::new(),
             diagnostic_selectors: start.diagnostic_selectors,
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
+            media: None,
+            pending_media_outcome: ScriptOutcome::default(),
         };
 
         let resource_started = Instant::now();

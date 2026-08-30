@@ -28,6 +28,25 @@ fn discovers_and_resolves_page_resources() {
 }
 
 #[test]
+fn admits_one_supported_video_source_for_the_document_playback_clock() {
+    let page = Page::parse(
+        r#"<video><source src="movie.webm" type="video/webm"><source src="movie.mp4" type="video/mp4"></video>
+            <video src="replacement.mp4"></video>"#,
+        "https://example.com/watch/",
+    );
+    let media = page
+        .resources
+        .iter()
+        .filter(|resource| matches!(resource, PageResource::Media { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(media.len(), 1);
+    assert!(matches!(
+        media[0],
+        PageResource::Media { url, .. } if url == "https://example.com/watch/movie.mp4"
+    ));
+}
+
+#[test]
 fn discovers_stylesheets_and_images_inside_shadow_trees() {
     let mut page = Page::parse("<x-card></x-card>", "https://example.com/app/");
     let host = page.dom.elements_named("x-card").next().unwrap();

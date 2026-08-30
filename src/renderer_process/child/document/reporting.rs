@@ -29,6 +29,7 @@ pub(super) fn merge_outcome(
     target
         .fullscreen_actions
         .append(&mut source.fullscreen_actions);
+    target.media_actions.append(&mut source.media_actions);
     target.runtime_stopped |= source.runtime_stopped;
     target.render_requested |= source.render_requested;
 }

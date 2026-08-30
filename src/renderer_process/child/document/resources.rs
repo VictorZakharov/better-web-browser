@@ -78,7 +78,7 @@ impl DocumentRuntime {
         }
         let (requests, mut by_request) = resource_requests(connection, self.id, resources);
         let responses = connection.fetch_batch(self.id, requests)?;
-        self.install_resource_responses(responses, &mut by_request, false)
+        self.install_resource_responses(connection, responses, &mut by_request, false)
     }
 
     pub(super) fn start_presentational_preloads(
@@ -114,6 +114,9 @@ impl DocumentRuntime {
         if !changed {
             return Ok(None);
         }
+        let mut outcome = std::mem::take(&mut self.pending_media_outcome);
+        self.apply_media_actions(&mut outcome)?;
+        connection.send_state_mutations(self.id, &mut outcome)?;
         self.text.register_web_fonts(&self.page.fonts);
         let style = self
             .page
@@ -127,8 +130,7 @@ impl DocumentRuntime {
                 layout_micros: super::micros(layout_started.elapsed()),
                 ..crate::renderer_protocol::PageLoadReport::default()
             });
-        self.presentation(crate::engine::ScriptOutcome::default(), style, load)
-            .map(Some)
+        self.presentation(outcome, style, load).map(Some)
     }
 
     pub(super) fn finish_ready_resource_preloads(
@@ -143,7 +145,8 @@ impl DocumentRuntime {
             self.pending_resource_preloads = Some(pending);
             return Ok(None);
         }
-        let changed = self.install_resource_responses(responses, &mut pending.by_request, true)?;
+        let changed =
+            self.install_resource_responses(connection, responses, &mut pending.by_request, true)?;
         if !pending.batch.is_empty() {
             self.pending_resource_preloads = Some(pending);
         }
@@ -157,11 +160,12 @@ impl DocumentRuntime {
     ) -> Result<bool, String> {
         let responses = connection.finish_fetch_batch(pending.batch)?;
         let mut by_request = pending.by_request;
-        self.install_resource_responses(responses, &mut by_request, true)
+        self.install_resource_responses(connection, responses, &mut by_request, true)
     }
 
     fn install_resource_responses(
         &mut self,
+        connection: &mut ChildConnection,
         responses: Vec<BrowserFetchResponse>,
         by_request: &mut HashMap<u64, PageResource>,
         require_authoritative_match: bool,
@@ -216,6 +220,11 @@ impl DocumentRuntime {
                     .then_some(())
                     .ok_or_else(|| "stylesheet was not installed".to_string()),
                 PageResource::Image { url } => self.page.add_image(url, &bytes),
+                PageResource::Media { node, .. } => connection
+                    .media()
+                    .ok_or_else(|| "contained media worker is unavailable".to_string())?
+                    .decode(&bytes)
+                    .and_then(|decode| self.install_media_decode(node, decode)),
                 PageResource::Script {
                     url,
                     kind,
@@ -358,7 +367,10 @@ impl DocumentRuntime {
 fn is_presentational_resource(resource: &PageResource) -> bool {
     matches!(
         resource,
-        PageResource::Stylesheet { .. } | PageResource::Image { .. } | PageResource::Font { .. }
+        PageResource::Stylesheet { .. }
+            | PageResource::Image { .. }
+            | PageResource::Media { .. }
+            | PageResource::Font { .. }
     )
 }
 
@@ -366,6 +378,7 @@ fn resource_label(resource: &PageResource) -> String {
     let (kind, url) = match resource {
         PageResource::Stylesheet { url } => ("stylesheet", url),
         PageResource::Image { url } => ("image", url),
+        PageResource::Media { url, .. } => ("media", url),
         PageResource::Script { url, .. } => ("script", url),
         PageResource::Font { url, .. } => ("font", url),
     };

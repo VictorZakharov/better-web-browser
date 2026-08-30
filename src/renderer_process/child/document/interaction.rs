@@ -232,6 +232,7 @@ impl DocumentRuntime {
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
+        self.apply_media_actions(outcome)?;
         connection.send_state_mutations(self.id, outcome)
     }
 
