@@ -107,6 +107,9 @@ impl LaunchOptions {
                 "--click-after-ready" => {
                     navigation_targets.push(click_point(&required(&mut arguments, &argument)?)?);
                 }
+                "--key-after-ready" => {
+                    navigation_targets.push(key_input(&required(&mut arguments, &argument)?)?);
+                }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
                         number::<u64>(&mut arguments, &argument)?.clamp(0, 60_000);
@@ -225,6 +228,21 @@ fn click_point(value: &str) -> Result<BenchmarkNavigation, String> {
     Ok(BenchmarkNavigation::ClickPoint { x, y })
 }
 
+fn key_input(value: &str) -> Result<BenchmarkNavigation, String> {
+    let Some((key, code)) = value.split_once(',') else {
+        return Err("--key-after-ready requires key,code".into());
+    };
+    let key = key.trim();
+    let code = code.trim();
+    if key.is_empty() || code.is_empty() || key.len() > 64 || code.len() > 64 {
+        return Err("--key-after-ready requires non-empty key,code values up to 64 bytes".into());
+    }
+    Ok(BenchmarkNavigation::Key {
+        key: key.to_string(),
+        code: code.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +323,8 @@ mod tests {
                 "https://example.test/clicked",
                 "--click-after-ready",
                 "320,180",
+                "--key-after-ready",
+                "k,KeyK",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -320,6 +340,10 @@ mod tests {
                 BenchmarkNavigation::Address("https://example.test/final".to_string()),
                 BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
                 BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
+                BenchmarkNavigation::Key {
+                    key: "k".to_string(),
+                    code: "KeyK".to_string(),
+                },
             ]
         );
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));

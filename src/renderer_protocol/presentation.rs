@@ -29,6 +29,29 @@ pub struct RuntimeReport {
     pub runtime_active: bool,
     pub runtime_stopped: bool,
     pub render_requested: bool,
+    pub media: Option<MediaRuntimeReport>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MediaRuntimeReport {
+    pub active: bool,
+    pub playing: bool,
+    pub ended: bool,
+    pub current_time_100ns: u64,
+    pub duration_100ns: u64,
+    pub backend: String,
+    pub mime_type: String,
+    pub video_codec: String,
+    pub audio_codec: String,
+    pub encoded_queue_bytes: u64,
+    pub encoded_queue_limit_bytes: u64,
+    pub decoded_frame_queue_depth: u16,
+    pub decoded_frame_queue_limit: u16,
+    pub frames_presented: u64,
+    pub dropped_frames: u64,
+    pub width: u32,
+    pub height: u32,
+    pub failure: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,7 +243,26 @@ mod tests {
                 },
                 color: false,
             }],
-            runtime: RuntimeReport::default(),
+            runtime: RuntimeReport {
+                media: Some(MediaRuntimeReport {
+                    active: true,
+                    playing: true,
+                    current_time_100ns: 12_000_000,
+                    duration_100ns: 30_000_000,
+                    backend: "test backend".into(),
+                    mime_type: "video/mp4".into(),
+                    video_codec: "H.264".into(),
+                    audio_codec: "AAC-LC".into(),
+                    encoded_queue_bytes: 1024,
+                    encoded_queue_limit_bytes: 2048,
+                    decoded_frame_queue_limit: 1,
+                    frames_presented: 2,
+                    width: 320,
+                    height: 240,
+                    ..MediaRuntimeReport::default()
+                }),
+                ..RuntimeReport::default()
+            },
             style: StyleReport::default(),
             load: PageLoadReport {
                 font_catalog_micros: 11,
@@ -301,6 +343,7 @@ mod tests {
         assert_eq!(decoded.load.glyph_raster_micros, 14);
         assert_eq!(decoded.load.presentation_encode_micros, 15);
         assert_eq!(decoded.load.presentation_decode_micros, 16);
+        assert_eq!(decoded.runtime.media, sample().runtime.media);
         assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
         assert_eq!(decoded.accessibility, sample().accessibility);
     }

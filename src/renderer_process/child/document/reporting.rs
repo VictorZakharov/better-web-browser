@@ -1,6 +1,6 @@
 use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{ScriptOutcome, StyleRefreshStats};
-use crate::renderer_protocol::{RuntimeReport, StyleReport};
+use crate::renderer_protocol::{MediaRuntimeReport, RuntimeReport, StyleReport};
 use std::time::Duration;
 
 pub(super) fn merge_outcome(
@@ -34,7 +34,11 @@ pub(super) fn merge_outcome(
     target.render_requested |= source.render_requested;
 }
 
-pub(super) fn runtime_report(mut outcome: ScriptOutcome, runtime_active: bool) -> RuntimeReport {
+pub(super) fn runtime_report(
+    mut outcome: ScriptOutcome,
+    runtime_active: bool,
+    media: Option<MediaRuntimeReport>,
+) -> RuntimeReport {
     RuntimeReport {
         scripts_executed: outcome.executed as u64,
         dom_mutations: outcome.mutation_count as u64,
@@ -46,6 +50,7 @@ pub(super) fn runtime_report(mut outcome: ScriptOutcome, runtime_active: bool) -
         runtime_active,
         runtime_stopped: outcome.runtime_stopped,
         render_requested: outcome.render_requested,
+        media,
     }
 }
 

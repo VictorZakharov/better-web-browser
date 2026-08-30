@@ -6,6 +6,7 @@ use crate::engine::dom::NodeId;
 use crate::engine::script::{ScriptMediaAction, ScriptMediaCommand};
 use crate::media_process::RendererMediaDecode;
 use crate::renderer_process::child::connection::ChildConnection;
+use crate::renderer_protocol::MediaRuntimeReport;
 const MAX_FRAMES_PER_TICK: usize = 4;
 const MAX_MEDIA_ACTIONS_PER_TICK: usize = 32;
 const CLOCK_POLL_MICROS: u64 = 20_000;
@@ -21,6 +22,10 @@ pub(super) struct MediaPlayback {
     video_ended: bool,
     width: u32,
     height: u32,
+    mime_type: String,
+    encoded_bytes: u64,
+    frames_presented: u64,
+    dropped_frames: u64,
 }
 
 impl DocumentRuntime {
@@ -28,8 +33,10 @@ impl DocumentRuntime {
         &mut self,
         node: NodeId,
         decode: RendererMediaDecode,
+        mime_type: String,
     ) -> Result<(), String> {
         let metadata = decode.frame.metadata;
+        let report = decode.report;
         let key = self.page.install_media_frame(
             node,
             DecodedImage {
@@ -50,7 +57,12 @@ impl DocumentRuntime {
             video_ended: false,
             width: metadata.width,
             height: metadata.height,
+            mime_type,
+            encoded_bytes: report.encoded_bytes,
+            frames_presented: 1,
+            dropped_frames: 0,
         });
+        self.media_failure = None;
         self.dispatch_media_state(0, "loaded")?;
         Ok(())
     }
@@ -118,6 +130,7 @@ impl DocumentRuntime {
                 playback.frame_end_100ns = frame_end(metadata);
                 playback.width = metadata.width;
                 playback.height = metadata.height;
+                playback.frames_presented = playback.frames_presented.saturating_add(1);
             }
             let event = self.media_state_outcome(0, "time")?;
             super::merge_outcome(outcome, event, self.page.dom.document.id());
@@ -196,6 +209,7 @@ impl DocumentRuntime {
             {
                 self.media.take();
             }
+            self.media_failure = None;
             return Ok("reset");
         }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
@@ -204,14 +218,17 @@ impl DocumentRuntime {
                 .next()
                 .is_some_and(|value| value.trim().eq_ignore_ascii_case("video/mp4"))
             {
+                let failure = format!("unsupported MediaSource type: {mime_type}");
+                self.record_media_failure(failure.clone());
+                self.pending_media_outcome.diagnostics.push(failure);
                 return Ok("media-error");
             }
-            return match connection
-                .decode_media(bytes)
-                .and_then(|decode| self.install_media_decode(action.node, decode))
-            {
+            return match connection.decode_media(bytes).and_then(|decode| {
+                self.install_media_decode(action.node, decode, mime_type.clone())
+            }) {
                 Ok(()) => Ok("committed"),
                 Err(error) => {
+                    self.record_media_failure(error.clone());
                     self.pending_media_outcome
                         .diagnostics
                         .push(format!("MediaSource decode rejected: {error}"));
@@ -270,6 +287,7 @@ impl DocumentRuntime {
                         playback.video_ended = false;
                         playback.width = metadata.width;
                         playback.height = metadata.height;
+                        playback.frames_presented = playback.frames_presented.saturating_add(1);
                     }
                 } else if let Some(playback) = self.media.as_mut() {
                     playback.video_ended = true;
@@ -352,6 +370,46 @@ impl DocumentRuntime {
                 )
             })
             .unwrap_or((0.0, f64::NAN, 0, 0))
+    }
+
+    pub(super) fn record_media_failure(&mut self, detail: String) {
+        self.media_failure = Some(detail);
+    }
+
+    pub(super) fn media_runtime_report(&self) -> Option<MediaRuntimeReport> {
+        self.media
+            .as_ref()
+            .map(|playback| MediaRuntimeReport {
+                active: true,
+                playing: playback.playing,
+                ended: playback.ended,
+                current_time_100ns: playback.clock_100ns,
+                duration_100ns: playback.duration_100ns,
+                backend: "Windows Media Foundation / XAudio2".into(),
+                mime_type: playback.mime_type.clone(),
+                video_codec: "H.264".into(),
+                audio_codec: "AAC-LC".into(),
+                encoded_queue_bytes: playback.encoded_bytes,
+                encoded_queue_limit_bytes: crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES as u64,
+                // Frames cross the contained boundary one at a time and are acknowledged before
+                // the renderer accepts another, so a completed runtime snapshot has no outstanding
+                // decoded-frame queue even while one presented image is retained for compositing.
+                decoded_frame_queue_depth: 0,
+                decoded_frame_queue_limit: 1,
+                frames_presented: playback.frames_presented,
+                dropped_frames: playback.dropped_frames,
+                width: playback.width,
+                height: playback.height,
+                failure: self.media_failure.clone(),
+            })
+            .or_else(|| {
+                self.media_failure
+                    .as_ref()
+                    .map(|failure| MediaRuntimeReport {
+                        failure: Some(failure.clone()),
+                        ..MediaRuntimeReport::default()
+                    })
+            })
     }
 }
 

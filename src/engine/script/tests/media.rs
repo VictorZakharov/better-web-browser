@@ -99,26 +99,95 @@ fn media_methods_fail_closed_and_validate_ranges() {
 }
 
 #[test]
+fn unsupported_codecs_and_encrypted_media_fail_closed() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output id="status">waiting</output><video id="movie"></video><script>
+            const movie = document.getElementById('movie');
+            const results = [];
+            const source = new MediaSource();
+            const objectUrl = URL.createObjectURL(source);
+            const unsupportedCodec = new Promise(resolve => {
+                source.addEventListener('sourceopen', () => {
+                    try {
+                        source.addSourceBuffer('video/webm; codecs="vp09.00.10.08"');
+                    } catch (error) {
+                        results.push('codec:' + error.name);
+                    }
+                    URL.revokeObjectURL(objectUrl);
+                    resolve();
+                }, { once: true });
+            });
+            movie.src = objectUrl;
+            Promise.all([
+                unsupportedCodec,
+                navigator.requestMediaKeySystemAccess('com.widevine.alpha', []).then(
+                    () => results.push('navigator:accepted'),
+                    error => results.push('navigator:' + error.name)
+                ),
+                movie.setMediaKeys(null).then(
+                    () => results.push('element:accepted'),
+                    error => results.push('element:' + error.name)
+                )
+            ]).then(() => {
+                results.push('mediaKeys:' + (movie.mediaKeys === null));
+                results.push('handler:' + ('onencrypted' in movie));
+                document.getElementById('status').textContent = results.join(',');
+            });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        concat!(
+            "codec:NotSupportedError,navigator:NotSupportedError,",
+            "element:NotSupportedError,mediaKeys:true,handler:true"
+        )
+    );
+}
+
+#[test]
 fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
     let dom = dom::parse_with_scripting(
         r#"<body><output id="status">waiting</output><video id="movie"></video><script>
             const mediaSource = new MediaSource();
             const objectUrl = URL.createObjectURL(mediaSource);
+            const events = [];
+            let sourceBuffer;
+            let appendWasAsync = false;
+            let removalWasAsync = false;
+            let phase = 'append';
+            mediaSource.addEventListener('sourceopen', () => events.push('sourceopen'));
+            mediaSource.addEventListener('sourceended', () => events.push('sourceended'));
             mediaSource.addEventListener('sourceopen', () => {
                 const type = 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"';
-                const sourceBuffer = mediaSource.addSourceBuffer(type);
+                sourceBuffer = mediaSource.addSourceBuffer(type);
+                for (const eventName of ['updatestart', 'update', 'updateend']) {
+                    sourceBuffer.addEventListener(eventName, () => events.push(eventName));
+                }
                 sourceBuffer.addEventListener('updateend', () => {
-                    mediaSource.endOfStream();
-                    document.getElementById('status').textContent = [
-                        MediaSource.isTypeSupported(type),
-                        !MediaSource.isTypeSupported('video/mp4; codecs="vp09.00.10.08"'),
-                        mediaSource.readyState,
-                        mediaSource.sourceBuffers[0] === sourceBuffer,
-                        movie.src === objectUrl
-                    ].join(':');
-                    URL.revokeObjectURL(objectUrl);
+                    if (phase === 'append') {
+                        phase = 'remove';
+                        mediaSource.endOfStream();
+                    } else {
+                        document.getElementById('status').textContent = [
+                            appendWasAsync,
+                            removalWasAsync,
+                            mediaSource.readyState,
+                            sourceBuffer.buffered.start(0),
+                            sourceBuffer.buffered.end(0),
+                            movie.buffered.start(0),
+                            movie.buffered.end(0),
+                            events.join(',')
+                        ].join(':');
+                        URL.revokeObjectURL(objectUrl);
+                    }
                 });
                 sourceBuffer.appendBuffer(new Uint8Array([0, 1, 2, 3]));
+                appendWasAsync = sourceBuffer.updating && !events.includes('updatestart');
+            }, { once: true });
+            movie.addEventListener('loadedmetadata', () => {
+                sourceBuffer.remove(0, 0.25);
+                removalWasAsync = sourceBuffer.updating;
             });
             movie.src = objectUrl;
         </script></body>"#,
@@ -138,10 +207,7 @@ fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true:true:ended:true:true",
-        "console: {:?}; diagnostics: {:?}",
-        outcome.console,
-        outcome.diagnostics
+        "waiting"
     );
     let commit = outcome
         .media_actions
@@ -153,4 +219,27 @@ fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
         .expect("MediaSource endOfStream did not commit its admitted bytes");
     assert!(commit.0.starts_with("video/mp4"));
     assert_eq!(commit.1, &[0, 1, 2, 3]);
+    let video = dom.elements_named("video").next().unwrap();
+    let loaded = runtime.dispatch_user_input(UserInputEvent::Media {
+        target: video,
+        request_id: 0,
+        disposition: "loaded",
+        current_time: 0.0,
+        duration: 1.0,
+        width: 320,
+        height: 180,
+    });
+    assert!(
+        loaded.outcome.errors.is_empty(),
+        "{:?}",
+        loaded.outcome.errors
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        concat!(
+            "true:true:open:0.25:1:0.25:1:",
+            "sourceopen,updatestart,update,updateend,sourceended,",
+            "sourceopen,updatestart,update,updateend"
+        )
+    );
 }

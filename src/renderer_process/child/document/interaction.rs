@@ -419,11 +419,15 @@ fn key_code(key: &str) -> u32 {
         "Enter" => 13,
         "Escape" => 27,
         " " => 32,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
         _ => key
             .chars()
             .next()
             .filter(|_| key.chars().count() == 1)
-            .map_or(0, |c| c as u32),
+            .map_or(0, |c| c.to_ascii_uppercase() as u32),
     }
 }
 
@@ -435,5 +439,12 @@ mod tests {
     fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
         assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
         assert_eq!(cursor_for_link(false), PointerCursor::Default);
+    }
+
+    #[test]
+    fn keyboard_compatibility_codes_match_native_windows_input() {
+        assert_eq!(key_code("k"), 75);
+        assert_eq!(key_code("ArrowRight"), 39);
+        assert_eq!(key_code("Escape"), 27);
     }
 }

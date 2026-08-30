@@ -45,6 +45,17 @@ internal static class Program
                 "browser-error control did not exercise the painted-error rejection path");
             Assert(PageClassification.Classify(browserError) == PageClassification.BrowserError,
                 "painted browser error surface was accepted by the page classifier");
+            var click = ClickPoint.Parse("320, 180");
+            Assert(click == new ClickPoint(320, 180), "trusted click point did not parse");
+            try
+            {
+                ClickPoint.Parse("-1, 2");
+                throw new InvalidOperationException("negative trusted click point was accepted");
+            }
+            catch (ArgumentException)
+            {
+                // Expected fail-closed parser behavior.
+            }
             Console.WriteLine("Chromium compatibility capture self-tests passed.");
             return 0;
         }

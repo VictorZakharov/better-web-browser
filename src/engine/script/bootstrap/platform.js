@@ -29,6 +29,12 @@
         cookieEnabled: true,
         hardwareConcurrency: 1,
         maxTouchPoints: 0,
+        requestMediaKeySystemAccess() {
+            return Promise.reject(new DOMException(
+                'Encrypted media playback is not supported',
+                'NotSupportedError'
+            ));
+        },
         sendBeacon(url) { host('console', 'beacon', String(url)); return false; },
         javaEnabled() { return false; }
     };

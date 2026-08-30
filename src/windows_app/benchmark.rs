@@ -71,6 +71,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_errors: Vec<String>,
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
+    pub(super) media: Option<better_web_browser::renderer_protocol::MediaRuntimeReport>,
     pub(super) script_runtime_stopped: bool,
     pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
     pub(super) completion_marker: Option<String>,
@@ -131,11 +132,7 @@ impl BrowserState {
             let delay = benchmark
                 .filmstrip
                 .as_ref()
-                .and_then(|filmstrip| {
-                    benchmark
-                        .navigation_started
-                        .map(|started| filmstrip.remaining(started))
-                })
+                .and_then(|filmstrip| filmstrip.remaining())
                 .map(|remaining| remaining.max(benchmark.settle))
                 .unwrap_or(benchmark.settle);
             initialization::post_benchmark_finish(self.window, delay);
@@ -160,6 +157,8 @@ impl BrowserState {
                 return;
             }
         }
+
+        self.flush_benchmark_filmstrip();
 
         let initial_scroll_y = self
             .benchmark
@@ -304,6 +303,7 @@ impl BrowserState {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let media = diagnostics::media_runtime_json(benchmark.media.as_ref());
         let early_scroll = benchmark
             .early_scroll
             .as_ref()
@@ -383,6 +383,7 @@ impl BrowserState {
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
+                "  \"media\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
                 "  \"renderer_runtime_timeline\": {},\n",
                 "  \"diagnostics\": {},\n",
@@ -464,6 +465,7 @@ impl BrowserState {
             script_errors,
             script_console,
             script_diagnostics,
+            media,
             benchmark.script_runtime_stopped,
             benchmark.runtime_timeline.to_json(),
             diagnostics,

@@ -95,6 +95,10 @@ impl BrowserState {
         &mut self,
         path: &std::path::Path,
     ) -> Result<(), String> {
+        self.capture_screenshot_pixels()?.save(path)
+    }
+
+    pub(super) unsafe fn capture_screenshot_pixels(&mut self) -> Result<ScreenshotPixels, String> {
         let surface = OffscreenSurface::new(self)?;
         self.paint_surface(surface.dc, &surface.client, &surface.client);
         if let Some(fonts) = self.fonts.as_ref() {
@@ -121,7 +125,22 @@ impl BrowserState {
         let width = surface.client.right.max(1) as u32;
         let height = surface.client.bottom.max(1) as u32;
         drop(surface);
+        Ok(ScreenshotPixels {
+            rgba,
+            width,
+            height,
+        })
+    }
+}
 
+pub(super) struct ScreenshotPixels {
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+impl ScreenshotPixels {
+    pub(super) fn save(self, path: &std::path::Path) -> Result<(), String> {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -129,8 +148,14 @@ impl BrowserState {
             std::fs::create_dir_all(parent)
                 .map_err(|error| format!("create screenshot directory: {error}"))?;
         }
-        image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8)
-            .map_err(|error| format!("write screenshot: {error}"))
+        image::save_buffer(
+            path,
+            &self.rgba,
+            self.width,
+            self.height,
+            image::ColorType::Rgba8,
+        )
+        .map_err(|error| format!("write screenshot: {error}"))
     }
 }
 

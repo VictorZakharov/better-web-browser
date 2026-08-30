@@ -84,6 +84,7 @@ pub(super) struct DocumentRuntime {
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
+    media_failure: Option<String>,
     pending_media_outcome: ScriptOutcome,
 }
 
@@ -164,7 +165,11 @@ impl DocumentRuntime {
             return Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
                 clock_advanced: true,
-                runtime: runtime_report(ScriptOutcome::default(), self.script_runtime.is_some()),
+                runtime: runtime_report(
+                    ScriptOutcome::default(),
+                    self.script_runtime.is_some(),
+                    self.media_runtime_report(),
+                ),
                 load: PageLoadReport::default(),
                 next_timer_micros: None,
             })));
@@ -322,7 +327,11 @@ impl DocumentRuntime {
             Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
                 clock_advanced: true,
-                runtime: runtime_report(outcome, self.script_runtime.is_some()),
+                runtime: runtime_report(
+                    outcome,
+                    self.script_runtime.is_some(),
+                    self.media_runtime_report(),
+                ),
                 load,
                 next_timer_micros,
             })))
@@ -436,7 +445,11 @@ impl DocumentRuntime {
             images,
             glyph_epoch,
             glyphs,
-            runtime: runtime_report(outcome, self.script_runtime.is_some()),
+            runtime: runtime_report(
+                outcome,
+                self.script_runtime.is_some(),
+                self.media_runtime_report(),
+            ),
             style: style_report(style),
             load,
             page_diagnostics,

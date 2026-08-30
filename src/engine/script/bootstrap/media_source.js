@@ -37,6 +37,8 @@
         return url;
     };
     const revokeObjectUrl = url => { objectUrlEntries.delete(String(url)); };
+    const queueMediaEvent = (target, name) => queueMicrotask(() =>
+        target.dispatchEvent(markTrusted(new Event(name))));
 
     class SourceBufferList extends EventTarget {
         constructor() {
@@ -71,7 +73,7 @@
         }
         get buffered() { return new TimeRanges(timeRangesConstructionToken, this.__ranges); }
         appendBuffer(value) {
-            this.__requireOpen();
+            this.__prepareUpdate();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
             const bytes = copyMediaBytes(value);
             if (!bytes) throw new TypeError('appendBuffer requires an ArrayBuffer or view');
@@ -88,16 +90,18 @@
             if (!this.updating) return;
             this.__operation++;
             this.updating = false;
-            this.dispatchEvent(new Event('abort'));
-            this.dispatchEvent(new Event('updateend'));
+            queueMediaEvent(this, 'abort');
+            queueMediaEvent(this, 'updateend');
         }
         remove(start, end) {
-            this.__requireOpen();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
             start = Number(start);
             end = Number(end);
-            if (!Number.isFinite(start) || start < 0 || !Number.isFinite(end) || end <= start)
+            const duration = Number(this.__parent.duration);
+            if (!Number.isFinite(duration) || !Number.isFinite(start) || start < 0
+                || start > duration || Number.isNaN(end) || end <= start)
                 throw new TypeError('remove requires an increasing finite time range');
+            this.__prepareUpdate();
             this.__beginUpdate(() => {
                 this.__ranges = this.__ranges.flatMap(([rangeStart, rangeEnd]) => {
                     if (end <= rangeStart || start >= rangeEnd) return [[rangeStart, rangeEnd]];
@@ -110,6 +114,7 @@
                     this.__chunks = [];
                     this.__bytes = 0;
                 }
+                this.__parent.__bufferedChanged();
             });
         }
         changeType(type) {
@@ -121,25 +126,36 @@
         }
         __beginUpdate(apply) {
             this.updating = true;
-            ++this.__operation;
-            this.dispatchEvent(new Event('updatestart'));
-            try {
-                apply();
-                this.dispatchEvent(new Event('update'));
-            } finally {
-                this.updating = false;
-                this.dispatchEvent(new Event('updateend'));
-            }
+            const operation = ++this.__operation;
+            queueMicrotask(() => {
+                if (operation !== this.__operation || !this.updating) return;
+                this.dispatchEvent(markTrusted(new Event('updatestart')));
+                try {
+                    apply();
+                    this.updating = false;
+                    this.dispatchEvent(markTrusted(new Event('update')));
+                } catch (_error) {
+                    this.updating = false;
+                    this.dispatchEvent(markTrusted(new Event('error')));
+                }
+                this.dispatchEvent(markTrusted(new Event('updateend')));
+            });
         }
         __requireOpen() {
             if (this.__parent.readyState !== 'open')
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
+        }
+        __prepareUpdate() {
+            if (this.__parent.readyState === 'closed')
+                throw new DOMException('The MediaSource is closed', 'InvalidStateError');
+            if (this.__parent.readyState === 'ended') this.__parent.__reopen();
         }
         __materialize() { return concatMediaBytes(this.__chunks); }
         __setBuffered(duration) {
             const start = Math.max(0, this.appendWindowStart);
             const end = Math.min(Number(duration) || 0, this.appendWindowEnd);
             this.__ranges = end > start ? [[start, end]] : [];
+            this.__parent.__bufferedChanged();
         }
     }
     installEventHandlerAttributes(SourceBuffer.prototype);
@@ -163,7 +179,7 @@
             const items = [...this.sourceBuffers, buffer];
             this.sourceBuffers.__replace(items);
             this.activeSourceBuffers.__replace(items);
-            this.sourceBuffers.dispatchEvent(new Event('addsourcebuffer'));
+            queueMediaEvent(this.sourceBuffers, 'addsourcebuffer');
             return buffer;
         }
         removeSourceBuffer(buffer) {
@@ -175,7 +191,7 @@
             items.splice(index, 1);
             this.sourceBuffers.__replace(items);
             this.activeSourceBuffers.__replace(items);
-            this.sourceBuffers.dispatchEvent(new Event('removesourcebuffer'));
+            queueMediaEvent(this.sourceBuffers, 'removesourcebuffer');
         }
         endOfStream(error = undefined) {
             if (this.readyState !== 'open' || [...this.sourceBuffers].some(buffer => buffer.updating))
@@ -192,7 +208,7 @@
             const buffer = populated[0];
             mediaCommand(this.__element, 0, 'commit', buffer.__type, buffer.__materialize());
             this.readyState = 'ended';
-            this.dispatchEvent(new Event('sourceended'));
+            queueMediaEvent(this, 'sourceended');
         }
         setLiveSeekableRange() {
             throw new DOMException('Live MediaSource ranges are not supported', 'NotSupportedError');
@@ -204,11 +220,23 @@
             this.__element = element;
             mediaSourceForElement.set(element, this);
             this.readyState = 'open';
-            this.dispatchEvent(new Event('sourceopen'));
+            queueMediaEvent(this, 'sourceopen');
+        }
+        __reopen() {
+            if (this.readyState !== 'ended') return;
+            this.readyState = 'open';
+            queueMediaEvent(this, 'sourceopen');
         }
         __loaded(duration) {
             this.duration = Number(duration);
             for (const buffer of this.sourceBuffers) buffer.__setBuffered(this.duration);
+        }
+        __bufferedChanged() {
+            if (!this.__element) return;
+            const buffer = this.sourceBuffers.item(0);
+            const ranges = buffer ? buffer.__ranges.map(range => [...range]) : [];
+            mediaStateFor(this.__element).buffered =
+                new TimeRanges(timeRangesConstructionToken, ranges);
         }
         __fail(kind) {
             this.readyState = 'ended';
@@ -221,7 +249,7 @@
                 );
                 element.dispatchEvent(new Event('error'));
             }
-            this.dispatchEvent(new Event('sourceended'));
+            queueMediaEvent(this, 'sourceended');
         }
     }
     installEventHandlerAttributes(MediaSource.prototype);

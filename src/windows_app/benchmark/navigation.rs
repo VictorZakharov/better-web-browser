@@ -2,7 +2,8 @@
 
 use super::super::*;
 use better_web_browser::renderer_protocol::{
-    DocumentInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
+    DocumentInput, InputModifiers, KeyPhase, KeyboardInput, PointerButton, PointerInput,
+    PointerPhase,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -10,6 +11,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     Address(String),
     ActivateLink(String),
     ClickPoint { x: i32, y: i32 },
+    Key { key: String, code: String },
 }
 
 impl BrowserState {
@@ -41,13 +43,15 @@ impl BrowserState {
                 BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
                 BenchmarkNavigation::ClickPoint { x, y } => {
                     let result = self.click_benchmark_point(x as f32, y as f32);
-                    if result.is_ok()
-                        && self
-                            .benchmark
-                            .as_ref()
-                            .is_some_and(|benchmark| benchmark.navigation_targets.is_empty())
-                    {
-                        self.schedule_benchmark_finish();
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::Key { key, code } => {
+                    let result = self.press_benchmark_key(key, code);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
                     }
                     result
                 }
@@ -59,6 +63,12 @@ impl BrowserState {
                 }
                 self.schedule_benchmark_finish();
             }
+        }
+    }
+
+    unsafe fn continue_or_finish_benchmark_actions(&mut self) {
+        if !self.schedule_benchmark_navigation() {
+            self.schedule_benchmark_finish();
         }
     }
 
@@ -126,6 +136,30 @@ impl BrowserState {
                 return Err("benchmark click was rejected by the renderer".into());
             }
             if phase == PointerPhase::Up {
+                self.transient_activation = Some((document, Instant::now()));
+            }
+        }
+        Ok(())
+    }
+
+    fn press_benchmark_key(&mut self, key: String, code: String) -> Result<(), String> {
+        for phase in [KeyPhase::Down, KeyPhase::Up] {
+            let (document, sequence) = self
+                .next_renderer_input()
+                .ok_or_else(|| "benchmark key has no active renderer document".to_string())?;
+            if !self.submit_renderer_input(DocumentInput::Keyboard(KeyboardInput {
+                document,
+                sequence,
+                phase,
+                key: key.clone(),
+                code: code.clone(),
+                repeat: false,
+                modifiers: InputModifiers::default(),
+                target: None,
+            })) {
+                return Err("benchmark key was rejected by the renderer".into());
+            }
+            if phase == KeyPhase::Down {
                 self.transient_activation = Some((document, Instant::now()));
             }
         }

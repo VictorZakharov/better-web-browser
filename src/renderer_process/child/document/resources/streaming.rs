@@ -179,7 +179,11 @@ impl DocumentRuntime {
                 RendererRuntimeUpdate {
                     document: self.id,
                     clock_advanced: false,
-                    runtime: runtime_report(outcome, self.script_runtime.is_some()),
+                    runtime: runtime_report(
+                        outcome,
+                        self.script_runtime.is_some(),
+                        self.media_runtime_report(),
+                    ),
                     load,
                     next_timer_micros,
                 },

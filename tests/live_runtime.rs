@@ -12,6 +12,8 @@ use support::*;
 mod dynamic_scripts;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/media_controls.rs"]
+mod media_controls;
 #[path = "live_runtime/navigation.rs"]
 mod navigation;
 #[path = "live_runtime/network.rs"]

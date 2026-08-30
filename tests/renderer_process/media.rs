@@ -195,17 +195,34 @@ fn contained_renderer_decodes_media_source_object_url_video() {
         <video id="movie" width="320" height="180" muted></video>
         <output id="state">waiting</output><script>
             const source = new MediaSource();
+            let buffer;
+            let sourceOpenCount = 0;
+            source.addEventListener('sourceopen', () => sourceOpenCount++);
             source.addEventListener('sourceopen', () => {{
-                const buffer = source.addSourceBuffer(
+                buffer = source.addSourceBuffer(
                     'video/mp4; codecs="avc1.42E01E,mp4a.40.2"'
                 );
                 buffer.addEventListener('updateend', () => source.endOfStream(), {{ once: true }});
                 const binary = atob('{media_base64}');
                 const bytes = Uint8Array.from(binary, value => value.charCodeAt(0));
                 buffer.appendBuffer(bytes);
-            }});
+            }}, {{ once: true }});
             source.addEventListener('sourceended', () => {{
-                movie.play().then(() => state.textContent = 'playing');
+                movie.play().then(() => {{
+                    const beforeEnd = buffer.buffered.end(0);
+                    movie.currentTime = 0.5;
+                    buffer.addEventListener('updateend', () => {{
+                        state.textContent = [
+                            'mse-ready', buffer.buffered.start(0).toFixed(2),
+                            buffer.buffered.end(0).toFixed(2),
+                            movie.buffered.start(0).toFixed(2),
+                            movie.buffered.end(0).toFixed(2),
+                            beforeEnd.toFixed(2), source.readyState,
+                            sourceOpenCount, movie.currentTime.toFixed(1)
+                        ].join(':');
+                    }}, {{ once: true }});
+                    buffer.remove(0, 0.25);
+                }});
             }});
             movie.src = URL.createObjectURL(source);
         </script>"#
@@ -251,10 +268,26 @@ fn contained_renderer_decodes_media_source_object_url_video() {
     }));
     assert!(
         rendered.layout.items.iter().any(|item| {
-            matches!(item, DisplayItem::Text { text, .. } if text.contains("playing"))
+            matches!(item, DisplayItem::Text { text, .. }
+                if text.contains("mse-ready:0.25:") && text.contains(":open:2:0.5"))
         }),
-        "MediaSource playback Promise did not settle"
+        "MediaSource play/seek/range-eviction lifecycle did not settle"
     );
+    let media = rendered
+        .runtime
+        .media
+        .as_ref()
+        .expect("media runtime report");
+    assert!(media.active && media.playing);
+    assert!(media.current_time_100ns >= 5_000_000);
+    assert_eq!(
+        media.mime_type,
+        "video/mp4; codecs=\"avc1.42E01E,mp4a.40.2\""
+    );
+    assert!(media.encoded_queue_bytes <= media.encoded_queue_limit_bytes);
+    assert_eq!(media.decoded_frame_queue_depth, 0);
+    assert_eq!(media.decoded_frame_queue_limit, 1);
+    assert_eq!(media.failure, None);
     session
         .shutdown()
         .expect("shutdown contained MSE playback pair");

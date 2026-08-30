@@ -42,6 +42,9 @@ internal sealed class Options
     public int ScrollSamples { get; init; }
     public bool EarlyScroll { get; init; }
     public bool RequireFixtureReady { get; init; }
+    public ClickPoint? ClickAfterReady { get; init; }
+    public string? ActivateLinkAfterReady { get; init; }
+    public int NavigationDelayMs { get; init; }
 
     public static Options Parse(string[] arguments)
     {
@@ -93,6 +96,9 @@ internal sealed class Options
         {
             throw new ArgumentException("Filmstrip duration must be a multiple of its interval and contain at most 120 frames.");
         }
+        var clickAfterReady = values.TryGetValue("--click-after-ready", out var clickValue)
+            ? ClickPoint.Parse(clickValue)
+            : null;
 
         return new Options
         {
@@ -113,7 +119,10 @@ internal sealed class Options
             TimeoutMs = Integer("--timeout-ms", 30_000, 1_000, 120_000),
             ScrollSamples = Integer("--scroll-samples", 0, 0, 120),
             EarlyScroll = switches.Contains("--early-scroll"),
-            RequireFixtureReady = switches.Contains("--require-fixture-ready")
+            RequireFixtureReady = switches.Contains("--require-fixture-ready"),
+            ClickAfterReady = clickAfterReady,
+            ActivateLinkAfterReady = values.GetValueOrDefault("--activate-link-after-ready"),
+            NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000)
         };
     }
 
@@ -131,5 +140,19 @@ internal sealed class Options
         });
         return candidates.FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("Install Chrome/Edge or pass --chrome.");
+    }
+}
+
+internal sealed record ClickPoint(int X, int Y)
+{
+    public static ClickPoint Parse(string value)
+    {
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var x) ||
+            !int.TryParse(parts[1], out var y) || x < 0 || y < 0)
+        {
+            throw new ArgumentException("--click-after-ready requires non-negative integer x,y coordinates.");
+        }
+        return new ClickPoint(x, y);
     }
 }

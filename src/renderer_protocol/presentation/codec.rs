@@ -250,6 +250,10 @@ pub(in crate::renderer_protocol) fn encode_runtime(
     writer.bool(report.runtime_active);
     writer.bool(report.runtime_stopped);
     writer.bool(report.render_requested);
+    writer.bool(report.media.is_some());
+    if let Some(media) = &report.media {
+        encode_media_runtime(writer, media)?;
+    }
     Ok(())
 }
 
@@ -266,6 +270,13 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         .then(|| reader.string(MAX_URL_BYTES))
         .transpose()?;
     let cookie_updates = decode_strings(reader)?;
+    let runtime_active = reader.bool()?;
+    let runtime_stopped = reader.bool()?;
+    let render_requested = reader.bool()?;
+    let media = reader
+        .bool()?
+        .then(|| decode_media_runtime(reader))
+        .transpose()?;
     Ok(RuntimeReport {
         scripts_executed,
         dom_mutations,
@@ -274,9 +285,74 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         diagnostics,
         navigation_url,
         cookie_updates,
-        runtime_active: reader.bool()?,
-        runtime_stopped: reader.bool()?,
-        render_requested: reader.bool()?,
+        runtime_active,
+        runtime_stopped,
+        render_requested,
+        media,
+    })
+}
+
+fn encode_media_runtime(
+    writer: &mut WireWriter,
+    report: &MediaRuntimeReport,
+) -> Result<(), ProtocolError> {
+    writer.bool(report.active);
+    writer.bool(report.playing);
+    writer.bool(report.ended);
+    writer.u64(report.current_time_100ns);
+    writer.u64(report.duration_100ns);
+    for value in [
+        &report.backend,
+        &report.mime_type,
+        &report.video_codec,
+        &report.audio_codec,
+    ] {
+        if value.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
+            return Err(ProtocolError::InvalidPayload("media runtime text"));
+        }
+        writer.string(value)?;
+    }
+    writer.u64(report.encoded_queue_bytes);
+    writer.u64(report.encoded_queue_limit_bytes);
+    writer.u16(report.decoded_frame_queue_depth);
+    writer.u16(report.decoded_frame_queue_limit);
+    writer.u64(report.frames_presented);
+    writer.u64(report.dropped_frames);
+    writer.u32(report.width);
+    writer.u32(report.height);
+    writer.bool(report.failure.is_some());
+    if let Some(failure) = &report.failure {
+        if failure.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
+            return Err(ProtocolError::InvalidPayload("media runtime failure"));
+        }
+        writer.string(failure)?;
+    }
+    Ok(())
+}
+
+fn decode_media_runtime(reader: &mut WireReader<'_>) -> Result<MediaRuntimeReport, ProtocolError> {
+    Ok(MediaRuntimeReport {
+        active: reader.bool()?,
+        playing: reader.bool()?,
+        ended: reader.bool()?,
+        current_time_100ns: reader.u64()?,
+        duration_100ns: reader.u64()?,
+        backend: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        mime_type: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        video_codec: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        audio_codec: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        encoded_queue_bytes: reader.u64()?,
+        encoded_queue_limit_bytes: reader.u64()?,
+        decoded_frame_queue_depth: reader.u16()?,
+        decoded_frame_queue_limit: reader.u16()?,
+        frames_presented: reader.u64()?,
+        dropped_frames: reader.u64()?,
+        width: reader.u32()?,
+        height: reader.u32()?,
+        failure: reader
+            .bool()?
+            .then(|| reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES))
+            .transpose()?,
     })
 }
 
