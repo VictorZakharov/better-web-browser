@@ -38,6 +38,61 @@
         sendBeacon(url) { host('console', 'beacon', String(url)); return false; },
         javaEnabled() { return false; }
     };
+    const validPositiveMediaNumber = value => Number.isFinite(Number(value)) && Number(value) > 0;
+    const mediaConfigurationSnapshot = configuration => {
+        if (configuration == null || typeof configuration !== 'object' ||
+            !['file', 'media-source', 'webrtc'].includes(configuration.type) ||
+            (!configuration.audio && !configuration.video)) {
+            throw new TypeError('Invalid media decoding configuration');
+        }
+        const snapshot = { type: configuration.type };
+        if (configuration.video) {
+            const video = configuration.video;
+            if (typeof video.contentType !== 'string' ||
+                !validPositiveMediaNumber(video.width) ||
+                !validPositiveMediaNumber(video.height) ||
+                !validPositiveMediaNumber(video.bitrate) ||
+                !validPositiveMediaNumber(video.framerate)) {
+                throw new TypeError('Invalid video decoding configuration');
+            }
+            snapshot.video = { ...video };
+        }
+        if (configuration.audio) {
+            const audio = configuration.audio;
+            if (typeof audio.contentType !== 'string' || typeof audio.channels !== 'string' ||
+                !audio.channels || !validPositiveMediaNumber(audio.bitrate) ||
+                !validPositiveMediaNumber(audio.samplerate)) {
+                throw new TypeError('Invalid audio decoding configuration');
+            }
+            snapshot.audio = { ...audio };
+        }
+        if (configuration.keySystemConfiguration)
+            snapshot.keySystemConfiguration = { ...configuration.keySystemConfiguration };
+        return snapshot;
+    };
+    windowObject.navigator.mediaCapabilities = {
+        decodingInfo(configuration) {
+            let snapshot;
+            try { snapshot = mediaConfigurationSnapshot(configuration); }
+            catch (error) { return Promise.reject(error); }
+            const contentSupported = source => !source || supportedMediaType(source.contentType) !== '';
+            const supported = snapshot.type !== 'webrtc' &&
+                !snapshot.keySystemConfiguration &&
+                contentSupported(snapshot.video) && contentSupported(snapshot.audio);
+            const smooth = supported && (!snapshot.video || (
+                Number(snapshot.video.width) <= 1920 && Number(snapshot.video.height) <= 1080 &&
+                Number(snapshot.video.framerate) <= 60
+            ));
+            return Promise.resolve({
+                supported,
+                smooth,
+                // The current backend does not prove a hardware or otherwise power-optimal path.
+                powerEfficient: false,
+                keySystemAccess: null,
+                configuration: snapshot
+            });
+        }
+    };
     iframeWindow.navigator = windowObject.navigator;
     windowObject.screen = { width: 1280, height: 720, availWidth: 1280, availHeight: 680, colorDepth: 24, pixelDepth: 24 };
     windowObject.innerWidth = 1280;

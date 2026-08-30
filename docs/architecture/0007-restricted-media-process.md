@@ -1,6 +1,6 @@
 # ADR 0007: Isolate media decoding and playback in a dedicated process
 
-- Status: Accepted; boundary, capability probe, bounded input/frame pipes, and owned-fixture decode implemented
+- Status: Accepted and implemented for the tested non-DRM H.264/AAC MP4 path
 - Date: 2026-08-29
 - Issue: [#125](https://github.com/VictorZakharov/better-web-browser/issues/125)
 - Decode data plane: [#127](https://github.com/VictorZakharov/better-web-browser/issues/127)
@@ -9,10 +9,11 @@
 
 ## Context
 
-Breeze parses `video`, `audio`, and `source` as ordinary HTML elements but has no media lifecycle,
-demuxer, decoder, audio sink, presentation clock, frame compositor, object URLs, or Media Source
-Extensions. Adding those pieces to either the privileged browser process or the page renderer would
-make an expensive boundary permanent before hostile-media ownership is explicit.
+At the start of this decision Breeze parsed `video`, `audio`, and `source` as ordinary HTML elements
+but had no media lifecycle, demuxer, decoder, audio sink, presentation clock, frame compositor,
+object URLs, or Media Source Extensions. Those capabilities now exist for the tested non-DRM
+H.264/AAC MP4 path behind the boundary defined here. Keeping this history explains why the worker,
+protocol limits, and fail-closed capability policy exist.
 
 The HTML Standard requires potentially-playing media to advance against a media timeline and keep
 audio synchronized with the current playback position. Media Source Extensions adds mutable,
@@ -52,10 +53,10 @@ browser will own user activation, autoplay policy, origin/cookie/referrer policy
 and the mapping from an active document to its media sessions. It will not parse or retain media
 payloads.
 
-The target byte path is a separately contained network service streaming policy-authorized bytes
-directly to a media worker. Until that service exists, the production path carries no URLs,
-cookies, headers, encoded bytes, or decoded frames. Reusing the current browser-owned Fetch response
-body for media would violate the target invariant and is not an allowed temporary shortcut.
+The production byte path streams policy-authorized fetch batches through the capability-free page
+renderer to the contained media worker. The privileged browser reconstructs network requests and
+retains origin, cookie, referrer, and redirect policy; it does not parse media containers or decode
+frames. Encoded queues and every cross-process message remain bounded and document/session scoped.
 
 An intermediate, test-only data plane proves the decoder boundary without relaxing that invariant.
 It is a dedicated one-way pipe with independent `BRD1` framing, protocol version, bootstrap nonce,
@@ -75,16 +76,17 @@ owned copy after transmission, and releases it only after an exact source/frame 
 the `BRM1` control plane. Missing, stale, or duplicate acknowledgements fail that worker closed.
 
 Media Foundation buffers are locked only inside the worker, copied while locked, and always
-unlocked before their COM ownership can end. The hidden browser test receiver converts the copied
-stride-aware NV12 frame to opaque premultiplied BGRA and pins deterministic source/output hashes.
-This is compositor-suitable proof, not page-visible playback: production frame admission and media
-capability advertising remain closed until the renderer bridge is implemented.
+unlocked before their COM ownership can end. The renderer converts acknowledged stride-aware NV12
+frames to opaque premultiplied BGRA for page compositing; XAudio2 presents synchronized PCM audio.
+The same bounded transport is covered by deterministic fixtures and hidden page-visible playback.
 
-The initial Windows backend is the OS-provided Media Foundation stack. Capability probing occurs
-inside the media worker and asks for web-filtered H.264 video and AAC audio decoder transforms.
-Probe results remain internal diagnostics. `canPlayType()`, `MediaSource.isTypeSupported()`, and
-MediaCapabilities must continue to report no support until the complete demux/decode/present/audio
-path for that exact type is tested end to end.
+The Windows backend is the OS-provided Media Foundation stack. Capability probing occurs inside the
+media worker and asks for web-filtered H.264 video and AAC audio decoder transforms. The complete
+MP4 demux/decode/present/audio path is tested end to end, so `canPlayType()`,
+`MediaSource.isTypeSupported()`, and `MediaCapabilities.decodingInfo()` advertise that exact path.
+Unknown codecs, unsupported containers, WebRTC configurations, and encrypted-media configurations
+continue to fail closed. `powerEfficient` remains false because the backend does not prove a
+hardware or otherwise power-optimal decode path.
 
 ## Resource and failure contract
 
@@ -104,7 +106,7 @@ bytes, URLs, credentials, cookies, request headers, or decoder-owned pointers.
 
 ## Consequences
 
-- Progressive playback requires a contained network-byte path before remote media is admitted.
+- Remote progressive and bounded MSE playback use the contained, document-scoped byte path.
 - The renderer/media boundary needs bounded frame transport and acknowledgement rather than a
   native child HWND, so video participates in clipping, scrolling, fullscreen, and repaint.
 - Audio synchronization and timing are explicit media-worker responsibilities; Source Reader alone
