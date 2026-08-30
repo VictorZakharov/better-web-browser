@@ -246,6 +246,7 @@
     windowObject.HTMLTemplateElement = HTMLTemplateElement;
     windowObject.HTMLFormElement = HTMLFormElement;
     windowObject.Document = Document;
+    windowObject.CharacterData = CharacterData;
     windowObject.Text = Text;
     windowObject.Comment = Comment;
     windowObject.DocumentType = DocumentType;
@@ -279,7 +280,6 @@
     windowObject.addEventListener = windowEvents.addEventListener.bind(windowEvents);
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
-
     const installedWindowNames = new Map();
     const synchronizeWindowName = name => {
         name = String(name || '');

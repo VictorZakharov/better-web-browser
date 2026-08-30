@@ -162,15 +162,31 @@
         }
     }
 
-    class Text extends Node {
+    class CharacterData extends Node {
         get data() { return this.textContent; }
         set data(value) { this.textContent = value; }
         get nodeValue() { return this.data; }
         set nodeValue(value) { this.data = value == null ? '' : String(value); }
         get length() { return this.data.length; }
+        substringData(offset, count) {
+            offset = Number(offset) >>> 0;
+            count = Number(count) >>> 0;
+            if (offset > this.length) throw new DOMException('Offset exceeds data length', 'IndexSizeError');
+            return this.data.slice(offset, offset + count);
+        }
+        appendData(data) { this.data += String(data); }
+        insertData(offset, data) { this.replaceData(offset, 0, data); }
+        deleteData(offset, count) { this.replaceData(offset, count, ''); }
+        replaceData(offset, count, data) {
+            offset = Number(offset) >>> 0;
+            count = Number(count) >>> 0;
+            if (offset > this.length) throw new DOMException('Offset exceeds data length', 'IndexSizeError');
+            this.data = this.data.slice(0, offset) + String(data) + this.data.slice(offset + count);
+        }
     }
 
-    class Comment extends Text {}
+    class Text extends CharacterData {}
+    class Comment extends CharacterData {}
     class DocumentType extends Node {}
     class DocumentFragment extends Node {}
 
