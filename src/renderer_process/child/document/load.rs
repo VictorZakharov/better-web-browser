@@ -102,7 +102,7 @@ impl DocumentRuntime {
             script_fetch_time += started.elapsed();
             result
         };
-        let (mut script_runtime, mut outcome) = runtime
+        let (script_runtime, mut outcome) = runtime
             .page
             .start_first_paint_script_runtime_with_document_state(
                 &mut loader,
@@ -110,11 +110,9 @@ impl DocumentRuntime {
                 &state.cookie_header,
                 state.local_storage,
                 state.session_storage,
+                !runtime.diagnostic_selectors.is_empty(),
             )
             .map_err(|error| error.to_string())?;
-        if let Some(script_runtime) = script_runtime.as_mut() {
-            script_runtime.set_host_call_profiling(!runtime.diagnostic_selectors.is_empty());
-        }
         runtime.script_runtime = script_runtime;
         runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
+use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 
 #[test]
 fn timer_budget_errors_identify_the_callback() {
@@ -7,22 +7,17 @@ fn timer_budget_errors_identify_the_callback() {
         r#"<body><script>
             setTimeout(function youtubeBatch() {{
                 for (let i = 0; i < {}; i++)
-                    document.body.setAttribute('data-i', String(i));
+                    document.body.appendChild(document.createElement('i'));
             }}, 0);
         </script></body>"#,
-        MAX_DOM_MUTATIONS_PER_TASK + 1
+        MAX_DOM_TREE_MUTATIONS_PER_TASK + 1
     ));
 
     assert!(
         outcome.errors.iter().any(|error| {
             error.contains("youtubeBatch")
-                && error.contains("DOM mutation task budget exceeded")
-                && error.contains(&format!("attributes={MAX_DOM_MUTATIONS_PER_TASK}"))
-                && error.contains("unchanged_attributes=0")
-                && error.contains(&format!(
-                    "top_attributes=[data-i:{MAX_DOM_MUTATIONS_PER_TASK}]"
-                ))
-                && error.contains("child_list=0")
+                && error.contains("DOM tree mutation task budget exceeded")
+                && error.contains(&format!("child_list={MAX_DOM_TREE_MUTATIONS_PER_TASK}"))
         }),
         "{:?}",
         outcome.errors

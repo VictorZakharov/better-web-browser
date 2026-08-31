@@ -1,6 +1,6 @@
 use super::*;
 use crate::engine::MediaEnvironment;
-use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
+use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 
 mod idle;
 
@@ -245,30 +245,30 @@ fn dom_mutations_request_one_render_checkpoint() {
 fn dom_mutation_budget_is_enforced_per_event_loop_task() {
     let (_, runaway) = execute_html(&format!(
         r#"<body><script>
-            for (let i = 0; i < {}; i++) document.body.setAttribute('data-i', String(i));
+            for (let i = 0; i < {}; i++) document.body.appendChild(document.createElement('i'));
         </script></body>"#,
-        MAX_DOM_MUTATIONS_PER_TASK + 1
+        MAX_DOM_TREE_MUTATIONS_PER_TASK + 1
     ));
     assert!(
         runaway
             .errors
             .iter()
-            .any(|error| error.contains("DOM mutation task budget exceeded")),
+            .any(|error| error.contains("DOM tree mutation task budget exceeded")),
         "{:?}",
         runaway.errors
     );
-    assert_eq!(runaway.mutation_count, MAX_DOM_MUTATIONS_PER_TASK);
+    assert_eq!(runaway.mutation_count, MAX_DOM_TREE_MUTATIONS_PER_TASK);
 
-    let per_timer = MAX_DOM_MUTATIONS_PER_TASK * 3 / 5;
+    let per_timer = MAX_DOM_TREE_MUTATIONS_PER_TASK * 3 / 5;
     let (dom, bounded) = execute_html(&format!(
         r#"<body><script>
             setTimeout(() => {{
                 for (let i = 0; i < {per_timer}; i++)
-                    document.body.setAttribute('data-first', String(i));
+                    document.body.appendChild(document.createElement('i'));
             }}, 0);
             setTimeout(() => {{
                 for (let i = 0; i < {per_timer}; i++)
-                    document.body.setAttribute('data-second', String(i));
+                    document.body.appendChild(document.createElement('b'));
                 document.body.setAttribute('data-complete', 'yes');
             }}, 0);
         </script></body>"#
@@ -282,7 +282,29 @@ fn dom_mutation_budget_is_enforced_per_event_loop_task() {
             .as_deref(),
         Some("yes")
     );
-    assert!(bounded.mutation_count > MAX_DOM_MUTATIONS_PER_TASK);
+    assert!(bounded.mutation_count > MAX_DOM_TREE_MUTATIONS_PER_TASK);
+}
+
+#[test]
+fn tree_mutation_budget_does_not_block_attribute_or_text_node_updates() {
+    let (dom, outcome) = execute_html(&format!(
+        r#"<body><div id="target">before</div><script>
+            for (let i = 0; i < {}; i++)
+                document.body.appendChild(document.createElement('i'));
+            const target = document.getElementById('target');
+            target.setAttribute('data-state', 'ready');
+            target.firstChild.textContent = 'after';
+        </script></body>"#,
+        MAX_DOM_TREE_MUTATIONS_PER_TASK
+    ));
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let target = dom
+        .elements_named("div")
+        .find(|node| node.attr("id").as_deref() == Some("target"))
+        .expect("target element");
+    assert_eq!(target.attr("data-state").as_deref(), Some("ready"));
+    assert_eq!(target.text_content(), "after");
 }
 
 #[test]

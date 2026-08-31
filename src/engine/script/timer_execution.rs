@@ -78,8 +78,14 @@ pub(super) fn settle_timer_slice(
         if let Some(reporter) = stage_reporter.as_deref_mut() {
             reporter(&format!("executing JavaScript timer {timer_id}: {label}"));
         }
+        // Keep profiling from earlier script work separate from this callback. Diagnostic
+        // selectors opt into host timing; ordinary browsing leaves the profile disabled.
+        host.borrow_mut()
+            .append_host_call_diagnostics(&mut outcome.diagnostics);
         let callback_started = Instant::now();
-        if let Err(error) = context.call_global("__runTimer", &[timer_id.into()]) {
+        let callback_result = context.call_global("__runTimer", &[timer_id.into()]);
+        let callback_elapsed = callback_started.elapsed();
+        if let Err(error) = &callback_result {
             let callback = (!label.is_empty())
                 .then(|| format!(" ({label})"))
                 .unwrap_or_default();
@@ -87,7 +93,17 @@ pub(super) fn settle_timer_slice(
                 .errors
                 .push(format!("JavaScript timer {timer_id}{callback}: {error}"));
         }
-        outcome.record_timing("JavaScript timer callback", callback_started.elapsed());
+        let mut callback_diagnostics = Vec::new();
+        host.borrow_mut()
+            .append_host_call_diagnostics(&mut callback_diagnostics);
+        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(100) {
+            outcome.diagnostics.extend(
+                callback_diagnostics.into_iter().map(|diagnostic| {
+                    format!("JavaScript timer {timer_id} ({label}): {diagnostic}")
+                }),
+            );
+        }
+        outcome.record_timing("JavaScript timer callback", callback_elapsed);
         // HTML performs a microtask checkpoint after every task. V8 owns the Promise job queue,
         // so drain it here rather than once after a whole batch of timer callbacks.
         if let Some(reporter) = stage_reporter.as_deref_mut() {

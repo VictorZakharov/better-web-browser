@@ -44,7 +44,7 @@ pub const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PAGE_SCRIPT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_DOCUMENT_WRITE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DYNAMIC_SCRIPTS: usize = 32;
-pub const MAX_DOM_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
+pub const MAX_DOM_TREE_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
 pub const MAX_POST_LOAD_TIMER_CALLBACKS: usize = 128;
 pub const MAX_SCRIPT_LOOP_ITERATIONS: u64 = if cfg!(test) { 25_000 } else { 5_000_000 };
 
