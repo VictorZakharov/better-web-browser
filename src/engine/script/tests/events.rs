@@ -231,3 +231,21 @@ fn idl_handlers_use_the_same_dispatcher_on_non_node_targets() {
     );
     assert_eq!(status, "1:true");
 }
+
+#[test]
+fn wheel_events_expose_mouse_state_deltas_and_unit_constants() {
+    let status = status_after_script(
+        r#"<script>
+            const event = new WheelEvent('wheel', {
+                clientX: 4, clientY: 5, deltaX: 1.5, deltaY: -2, deltaZ: 3,
+                deltaMode: WheelEvent.DOM_DELTA_LINE
+            });
+            document.getElementById('status').textContent = [
+                event instanceof MouseEvent, event.clientX, event.clientY,
+                event.deltaX, event.deltaY, event.deltaZ, event.deltaMode,
+                WheelEvent.prototype.DOM_DELTA_PAGE
+            ].join(':');
+        </script>"#,
+    );
+    assert_eq!(status, "true:4:5:1.5:-2:3:1:2");
+}

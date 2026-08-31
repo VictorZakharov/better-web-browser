@@ -1,0 +1,18 @@
+    class HTMLIFrameElement extends HTMLElement {
+        get srcdoc() { return this.getAttribute('srcdoc') || ''; }
+        set srcdoc(value) { this.setAttribute('srcdoc', String(value)); }
+        get sandbox() { return this.__sandbox ||= new DOMTokenList(this, 'sandbox'); }
+        get allow() { return this.getAttribute('allow') || ''; }
+        set allow(value) { this.setAttribute('allow', value); }
+        get allowFullscreen() { return this.hasAttribute('allowfullscreen'); }
+        set allowFullscreen(value) { this.toggleAttribute('allowfullscreen', !!value); }
+        get width() { return this.getAttribute('width') || ''; }
+        set width(value) { this.setAttribute('width', value); }
+        get height() { return this.getAttribute('height') || ''; }
+        set height(value) { this.setAttribute('height', value); }
+        get referrerPolicy() { return this.getAttribute('referrerpolicy') || ''; }
+        set referrerPolicy(value) { this.setAttribute('referrerpolicy', value); }
+        get loading() { return this.getAttribute('loading') || ''; }
+        set loading(value) { this.setAttribute('loading', value); }
+        getSVGDocument() { return null; }
+    }

@@ -8,6 +8,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/nodes.js"),
     include_str!("bootstrap/attributes.js"),
     include_str!("bootstrap/elements.js"),
+    include_str!("bootstrap/hyperlinks.js"),
+    include_str!("bootstrap/embedded_elements.js"),
     include_str!("bootstrap/shadow_dom.js"),
     include_str!("bootstrap/forms.js"),
     include_str!("bootstrap/media.js"),
@@ -15,6 +17,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/canvas.js"),
     include_str!("bootstrap/traversal.js"),
     include_str!("bootstrap/document.js"),
+    include_str!("bootstrap/ranges.js"),
     include_str!("bootstrap/fullscreen.js"),
     include_str!("bootstrap/cssom.js"),
     include_str!("bootstrap/cssom_document.js"),
@@ -34,5 +37,6 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/network_fetch.js"),
     include_str!("bootstrap/network_xhr.js"),
     include_str!("bootstrap/structured_clone.js"),
+    include_str!("bootstrap/channel_messaging.js"),
     include_str!("bootstrap/workers.js"),
 );

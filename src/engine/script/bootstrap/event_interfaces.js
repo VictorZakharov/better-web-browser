@@ -40,6 +40,22 @@
             this.isPrimary = init?.isPrimary === undefined ? false : !!init.isPrimary;
         }
     }
+    class WheelEvent extends MouseEvent {
+        constructor(type, init = {}) {
+            super(type, init);
+            init = init == null ? {} : Object(init);
+            this.deltaX = Number(init.deltaX) || 0;
+            this.deltaY = Number(init.deltaY) || 0;
+            this.deltaZ = Number(init.deltaZ) || 0;
+            this.deltaMode = Number(init.deltaMode) >>> 0;
+        }
+    }
+    for (const [name, value] of Object.entries({
+        DOM_DELTA_PIXEL: 0, DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2
+    })) {
+        Object.defineProperty(WheelEvent, name, { value, enumerable: true });
+        Object.defineProperty(WheelEvent.prototype, name, { value, enumerable: true });
+    }
     class KeyboardEvent extends UIEvent {
         constructor(type, init = {}) {
             super(type, init);

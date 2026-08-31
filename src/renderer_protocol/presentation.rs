@@ -3,6 +3,8 @@
 mod coalescing;
 pub(super) mod codec;
 mod diagnostics;
+#[cfg(test)]
+mod image_tests;
 mod layout;
 mod layout_sanitize;
 mod reader;

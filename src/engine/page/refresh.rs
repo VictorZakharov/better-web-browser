@@ -262,13 +262,19 @@ impl Page {
     }
 
     fn refresh_inline_svgs(&mut self) {
-        for svg in self.dom.elements_named("svg").take(MAX_INLINE_SVGS) {
-            let key = inline_svg_key(&svg);
-            if !self.images.contains_key(&key)
-                && let Ok(image) = decode_inline_svg(&svg)
-            {
-                self.images.insert(key, image);
-            }
+        let decoded = self
+            .dom
+            .elements_named("svg")
+            .take(MAX_INLINE_SVGS)
+            .filter_map(|svg| {
+                let key = inline_svg_key(&svg);
+                (!self.images.contains_key(&key))
+                    .then(|| decode_inline_svg(&svg).ok().map(|image| (key, image)))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        for (key, image) in decoded {
+            let _ = self.install_decoded_image(key, image);
         }
     }
 }
