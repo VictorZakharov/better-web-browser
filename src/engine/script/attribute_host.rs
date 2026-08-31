@@ -51,19 +51,16 @@ pub(super) fn set_attribute(args: &[JsValue], state: &mut HostState) -> JsResult
     let name = argument_string(args, 2)?;
     let value = argument_string(args, 3)?;
     let node = state.node(argument_id(args, 1));
-    let unchanged = node
+    let previous = node
         .as_ref()
-        .and_then(|node| node.attr_qualified(&name))
-        .as_deref()
-        == Some(value.as_str());
+        .and_then(|node| node.attribute_qualified(&name));
     let changed = node
         .as_ref()
         .is_some_and(|node| node.set_attr_qualified(&name, &value));
     record_attribute_mutation(state, node.as_ref(), &name, changed, true);
-    if changed && unchanged {
-        state.task_mutations.record_unchanged_attribute();
-    }
-    Ok(JsValue::from(changed))
+    Ok(previous
+        .as_ref()
+        .map_or_else(JsValue::null, attribute_record))
 }
 
 pub(super) fn set_attribute_ns(
@@ -76,11 +73,9 @@ pub(super) fn set_attribute_ns(
     let local_name = argument_string(args, 4)?;
     let value = argument_string(args, 5)?;
     let node = state.node(argument_id(args, 1));
-    let unchanged = node
+    let previous = node
         .as_ref()
-        .and_then(|node| node.attr_ns(optional(&namespace), &local_name))
-        .as_deref()
-        == Some(value.as_str());
+        .and_then(|node| node.attribute_ns(optional(&namespace), &local_name));
     let changed = node.as_ref().is_some_and(|node| {
         if replace {
             node.replace_attr_ns(optional(&namespace), optional(&prefix), &local_name, &value)
@@ -95,31 +90,40 @@ pub(super) fn set_attribute_ns(
         changed,
         namespace.is_empty(),
     );
-    if changed && unchanged {
-        state.task_mutations.record_unchanged_attribute();
-    }
-    Ok(JsValue::from(changed))
+    Ok(previous
+        .as_ref()
+        .map_or_else(JsValue::null, attribute_record))
 }
 
 pub(super) fn remove_attribute(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let name = argument_string(args, 2)?;
     let node = state.node(argument_id(args, 1));
+    let previous = node
+        .as_ref()
+        .and_then(|node| node.attribute_qualified(&name));
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_qualified(&name));
     record_attribute_mutation(state, node.as_ref(), &name, changed, false);
-    Ok(JsValue::from(changed))
+    Ok(previous
+        .as_ref()
+        .map_or_else(JsValue::null, attribute_record))
 }
 
 pub(super) fn remove_attribute_ns(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let namespace = argument_string(args, 2)?;
     let local_name = argument_string(args, 3)?;
     let node = state.node(argument_id(args, 1));
+    let previous = node
+        .as_ref()
+        .and_then(|node| node.attribute_ns(optional(&namespace), &local_name));
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_ns(optional(&namespace), &local_name));
     record_attribute_mutation(state, node.as_ref(), &local_name, changed, false);
-    Ok(JsValue::from(changed))
+    Ok(previous
+        .as_ref()
+        .map_or_else(JsValue::null, attribute_record))
 }
 
 fn attribute_records(state: &HostState, id: u32) -> JsValue {
@@ -129,42 +133,42 @@ fn attribute_records(state: &HostState, id: u32) -> JsValue {
             .map(|node| {
                 node.attributes()
                     .iter()
-                    .map(|attribute| {
-                        let namespace = attribute.name.ns.as_ref();
-                        JsValue::Object(vec![
-                            (
-                                "namespace".into(),
-                                if namespace.is_empty() {
-                                    JsValue::null()
-                                } else {
-                                    js_string(namespace.to_string())
-                                },
-                            ),
-                            (
-                                "prefix".into(),
-                                attribute
-                                    .name
-                                    .prefix
-                                    .as_ref()
-                                    .map_or_else(JsValue::null, |prefix| {
-                                        js_string(prefix.to_string())
-                                    }),
-                            ),
-                            (
-                                "localName".into(),
-                                js_string(attribute.name.local.to_string()),
-                            ),
-                            (
-                                "qualifiedName".into(),
-                                js_string(attribute_qualified_name(attribute)),
-                            ),
-                            ("value".into(), js_string(attribute.value.to_string())),
-                        ])
-                    })
+                    .map(attribute_record)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default(),
     )
+}
+
+fn attribute_record(attribute: &html5ever::Attribute) -> JsValue {
+    let namespace = attribute.name.ns.as_ref();
+    JsValue::Object(vec![
+        (
+            "namespace".into(),
+            if namespace.is_empty() {
+                JsValue::null()
+            } else {
+                js_string(namespace.to_string())
+            },
+        ),
+        (
+            "prefix".into(),
+            attribute
+                .name
+                .prefix
+                .as_ref()
+                .map_or_else(JsValue::null, |prefix| js_string(prefix.to_string())),
+        ),
+        (
+            "localName".into(),
+            js_string(attribute.name.local.to_string()),
+        ),
+        (
+            "qualifiedName".into(),
+            js_string(attribute_qualified_name(attribute)),
+        ),
+        ("value".into(), js_string(attribute.value.to_string())),
+    ])
 }
 
 fn attribute_qualified_name(attribute: &html5ever::Attribute) -> String {
@@ -188,6 +192,7 @@ fn record_attribute_mutation(
     if !changed {
         return;
     }
+    state.host_call_profile.record_attribute_write(name);
     state.record_mutation(node, MutationKind::Attribute(name));
     if let Some(node) = node {
         state.diagnose(format!("mutate {name} on {}", node_label(node)));

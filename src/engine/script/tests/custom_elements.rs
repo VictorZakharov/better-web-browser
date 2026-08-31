@@ -105,6 +105,32 @@ fn lifecycle_and_nested_attribute_reactions_run_in_mutation_order() {
 }
 
 #[test]
+fn nested_attribute_reactions_run_before_the_reflecting_setter_returns() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+            let observedDuringReflection = false;
+            class ReflectingElement extends HTMLElement {
+                static get observedAttributes() { return ['active']; }
+                connectedCallback() {
+                    this.reflecting = true;
+                    this.setAttribute('active', '');
+                    this.reflecting = false;
+                }
+                attributeChangedCallback() {
+                    observedDuringReflection = this.reflecting;
+                }
+            }
+            customElements.define('reflecting-element', ReflectingElement);
+            document.body.appendChild(document.createElement('reflecting-element'));
+            document.body.setAttribute('data-result', observedDuringReflection ? 'pass' : 'fail');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
 fn registry_validation_and_explicit_fragment_upgrade_are_bounded() {
     let (dom, outcome) = execute_html(
         r#"<body><script>

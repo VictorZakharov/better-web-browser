@@ -31,8 +31,15 @@ impl Page {
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
         cookie_header: &str,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
-        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header, None, true)
-            .expect("empty Web Storage state is valid")
+        self.start_script_phase(
+            true,
+            Some(dynamic_script_loader),
+            cookie_header,
+            None,
+            true,
+            false,
+        )
+        .expect("empty Web Storage state is valid")
     }
 
     pub fn start_first_paint_script_runtime_with_document_state(
@@ -42,6 +49,7 @@ impl Page {
         cookie_header: &str,
         local_storage: crate::storage::StorageAreaSnapshot,
         session_storage: crate::storage::StorageAreaSnapshot,
+        host_call_profiling: bool,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.start_script_phase(
             true,
@@ -49,6 +57,7 @@ impl Page {
             cookie_header,
             Some((cookie_version, local_storage, session_storage)),
             true,
+            host_call_profiling,
         )
     }
 
@@ -57,9 +66,16 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        self.start_script_phase(first_paint_only, dynamic_script_loader, "", None, false)
-            .expect("empty Web Storage state is valid")
-            .1
+        self.start_script_phase(
+            first_paint_only,
+            dynamic_script_loader,
+            "",
+            None,
+            false,
+            false,
+        )
+        .expect("empty Web Storage state is valid")
+        .1
     }
 
     fn start_script_phase(
@@ -73,6 +89,7 @@ impl Page {
             crate::storage::StorageAreaSnapshot,
         )>,
         defer_dynamic_scripts: bool,
+        host_call_profiling: bool,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
@@ -109,6 +126,7 @@ impl Page {
             );
             runtime.set_media_environment(self.media_environment);
             runtime.set_document_stylesheets(&self.stylesheet_sources);
+            runtime.set_host_call_profiling(host_call_profiling);
             if let Some((cookie_version, local, session)) = document_state {
                 runtime.set_document_state(cookie_version, cookie_header, local, session)?;
             } else {

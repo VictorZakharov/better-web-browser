@@ -12,24 +12,34 @@ impl Node {
     }
 
     pub fn attr_qualified(&self, qualified_name: &str) -> Option<String> {
+        self.attribute_qualified(qualified_name)
+            .map(|attribute| attribute.value.to_string())
+    }
+
+    pub fn attr_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<String> {
+        self.attribute_ns(namespace, local_name)
+            .map(|attribute| attribute.value.to_string())
+    }
+
+    pub fn attribute_qualified(&self, qualified_name: &str) -> Option<Attribute> {
         self.element().and_then(|element| {
             element
                 .attrs
                 .borrow()
                 .iter()
                 .find(|attribute| attribute_qualified_name(attribute) == qualified_name)
-                .map(|attribute| attribute.value.to_string())
+                .cloned()
         })
     }
 
-    pub fn attr_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<String> {
+    pub fn attribute_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<Attribute> {
         self.element().and_then(|element| {
             element
                 .attrs
                 .borrow()
                 .iter()
                 .find(|attribute| attribute_matches(attribute, namespace, local_name))
-                .map(|attribute| attribute.value.to_string())
+                .cloned()
         })
     }
 

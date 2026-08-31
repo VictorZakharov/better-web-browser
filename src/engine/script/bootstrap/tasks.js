@@ -113,6 +113,26 @@
     };
     const mutationRegistrations = new WeakMap();
     const pendingMutationObservers = new Set();
+    const mutationAncestorCache = new WeakMap();
+    let mutationRegistrationCount = 0;
+    invalidateMutationAncestors = root => {
+        const pending = [root];
+        while (pending.length) {
+            const node = pending.pop();
+            mutationAncestorCache.delete(node);
+            pending.push(...node.childNodes);
+            const shadowRoot = shadowRootForTraversal(node);
+            if (shadowRoot) pending.push(shadowRoot);
+        }
+    };
+    const mutationAncestors = target => {
+        let ancestors = mutationAncestorCache.get(target);
+        if (!ancestors) {
+            ancestors = list(host('inclusiveAncestors', target.__id));
+            mutationAncestorCache.set(target, ancestors);
+        }
+        return ancestors;
+    };
     let mutationObserverMicrotaskQueued = false;
     const queueMutationObserverMicrotask = () => {
         if (mutationObserverMicrotaskQueued) return;
@@ -130,7 +150,8 @@
         });
     };
     const queueMutationRecord = (target, type, details = {}) => {
-        for (let node = target; node; node = node.parentNode) {
+        if (!mutationRegistrationCount) return;
+        for (const node of mutationAncestors(target)) {
             const registrations = mutationRegistrations.get(node);
             if (!registrations) continue;
             for (const [observer, options] of registrations) {
@@ -185,11 +206,14 @@
                 throw new TypeError('MutationObserver options must select at least one mutation type');
             let registrations = mutationRegistrations.get(target);
             if (!registrations) mutationRegistrations.set(target, registrations = new Map());
+            if (!registrations.has(this)) mutationRegistrationCount++;
             registrations.set(this, normalized);
             this.targets.add(target);
         }
         disconnect() {
-            for (const target of this.targets) mutationRegistrations.get(target)?.delete(this);
+            for (const target of this.targets) {
+                if (mutationRegistrations.get(target)?.delete(this)) mutationRegistrationCount--;
+            }
             this.targets.clear();
             this.records.length = 0;
             pendingMutationObservers.delete(this);

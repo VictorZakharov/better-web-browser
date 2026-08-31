@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn repeated_attribute_mutations_do_not_serialize_attribute_collections() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        r#"<body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            for (let i = 0; i < 256; i++) {
+                target.setAttribute('data-state', String(i));
+                target.removeAttribute('data-state');
+            }
+        </script></body>"#,
+        true,
+    );
+    let scripts = dom
+        .elements_named("script")
+        .map(|node| ScriptInput {
+            source_url: "https://example.com/#inline".into(),
+            code: node.text_content(),
+            node,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        })
+        .collect::<Vec<_>>();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_host_call_profiling(true);
+
+    let outcome = runtime.execute_initial(&scripts);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(
+        outcome
+            .diagnostics
+            .iter()
+            .all(|line| !line.starts_with("host call attrRecords:")),
+        "setAttribute serialized the attribute collection: {:?}",
+        outcome.diagnostics
+    );
+}
+
+#[test]
 fn named_node_map_is_live_and_preserves_attribute_identity() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="target" data-state="one"></div><script>

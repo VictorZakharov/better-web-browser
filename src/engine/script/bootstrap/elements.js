@@ -68,43 +68,43 @@
         }
         setAttribute(name, value) {
             name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
-            const record = recordByQualifiedName(this, name);
+            value = String(value);
+            const record = host('attrSet', this.__id, name, value);
             const oldValue = record?.value ?? null;
-            host('attrSet', this.__id, name, String(value));
-            const current = recordByQualifiedName(this, name);
-            queueAttributeMutation(this, current, oldValue);
-            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, current.value);
+            const current = record ? { ...record, value } : {
+                namespace: null, prefix: null, localName: name, qualifiedName: name, value
+            };
+            queueAttributeMutation(this, current, oldValue, value);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
             scheduleSlotChangeCheck();
         }
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
-            const record = recordByNamespace(this, extracted.namespace, extracted.localName);
+            value = String(value);
+            const record = host('attrSetNs', this.__id, extracted.namespace || '',
+                extracted.prefix || '', extracted.localName, value);
             const oldValue = record?.value ?? null;
-            host('attrSetNs', this.__id, extracted.namespace || '', extracted.prefix || '',
-                extracted.localName, String(value));
-            const current = recordByNamespace(this, extracted.namespace, extracted.localName);
-            queueAttributeMutation(this, current, oldValue);
-            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, current.value);
+            const current = record ? { ...record, value } : { ...extracted, value };
+            queueAttributeMutation(this, current, oldValue, value);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
             scheduleSlotChangeCheck();
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
-            const record = recordByQualifiedName(this, name);
+            const record = host('attrRemove', this.__id, name);
             if (!record) return;
-            const attribute = attrForRecord(this, record);
-            host('attrRemove', this.__id, name);
-            detachAttribute(this, record, attribute);
-            queueAttributeMutation(this, record, record.value);
+            detachCachedAttribute(this, record);
+            queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             scheduleSlotChangeCheck();
         }
         removeAttributeNS(namespace, localName) {
-            const record = recordByNamespace(this, namespace, localName);
+            namespace = normalizedNamespace(namespace);
+            localName = String(localName);
+            const record = host('attrRemoveNs', this.__id, namespace || '', localName);
             if (!record) return;
-            const attribute = attrForRecord(this, record);
-            host('attrRemoveNs', this.__id, record.namespace || '', record.localName);
-            detachAttribute(this, record, attribute);
-            queueAttributeMutation(this, record, record.value);
+            detachCachedAttribute(this, record);
+            queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             scheduleSlotChangeCheck();
         }

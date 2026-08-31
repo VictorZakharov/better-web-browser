@@ -31,6 +31,8 @@
     let customElementAttributeChanged = () => {};
     let scheduleSlotChangeCheck = () => {};
     let shadowRootForTraversal = () => null;
+    let resetAttributeNameMode = () => {};
+    let invalidateMutationAncestors = () => {};
     let constructCustomElement = () => { throw new TypeError('Illegal constructor'); };
     const list = value => {
         if (!value) return [];
@@ -44,6 +46,7 @@
         for (const node of nodes.flat()) {
             if (!node || (typeof node !== 'object' && typeof node !== 'function')) continue;
             childCollectionVersions.set(node, (childCollectionVersions.get(node) || 0) + 1);
+            invalidateMutationAncestors(node);
         }
     };
     const childCollection = (node, elements) => {

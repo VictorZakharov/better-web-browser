@@ -8,6 +8,7 @@ pub(super) fn dispatch_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;
     if operation == "documentModuleComplete" {
         let id = argument_id(args, 1);
         let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
@@ -95,6 +96,15 @@ pub(super) fn dispatch_host_call(
                 .map(|node| node.children.borrow().clone())
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &children, false)))
+        }
+        "inclusiveAncestors" => {
+            let mut nodes = Vec::new();
+            let mut current = state.node(argument_id(args, 1));
+            while let Some(node) = current {
+                current = node.parent();
+                nodes.push(node);
+            }
+            Ok(js_string(join_node_ids(state, &nodes, false)))
         }
         "elementChildren" => {
             let children = state
