@@ -248,8 +248,7 @@ impl Page {
         }
         if looks_like_svg(bytes) {
             let image = decode_svg(bytes, "external SVG")?;
-            self.images.insert(url, image);
-            return Ok(());
+            return self.install_decoded_image(url, image);
         }
         let mut reader = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
@@ -279,15 +278,14 @@ impl Page {
             pixel[2] = ((u16::from(pixel[2]) * alpha + 127) / 255) as u8;
             pixel.swap(0, 2);
         }
-        self.images.insert(
+        self.install_decoded_image(
             url,
             DecodedImage {
                 width,
                 height,
                 bgra,
             },
-        );
-        Ok(())
+        )
     }
 
     pub(super) fn install_embedded_images(&mut self) {

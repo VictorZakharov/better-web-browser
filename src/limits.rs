@@ -12,7 +12,7 @@ pub const MAX_DOM_DEPTH: usize = 512;
 pub const MAX_HTML_PARSE_ERRORS: usize = 256;
 pub const MAX_RENDERED_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
-pub const MAX_CSS_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_CSS_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_CSS_RULES: usize = 20_000;
 pub const MAX_CSS_NESTING_DEPTH: usize = 64;
 pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 256;
@@ -38,10 +38,10 @@ pub const MAX_STORAGE_VALUE_BYTES: usize = 192 * 1024;
 pub const MAX_STORAGE_BYTES_PER_ORIGIN: usize = 5 * 1024 * 1024;
 pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
 
-pub const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 /// Aggregate source admitted by one window realm. Individual scripts retain the smaller boundary
 /// above while component-heavy applications can load multiple independently bounded bundles.
-pub const MAX_PAGE_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PAGE_SCRIPT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_DOCUMENT_WRITE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DYNAMIC_SCRIPTS: usize = 32;
 pub const MAX_DOM_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
@@ -57,6 +57,11 @@ pub const MAX_EMBEDDED_IMAGE_URL_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PAGE_IMAGES: usize = 64;
 pub const MAX_STYLE_IMAGES: usize = 64;
 pub const MAX_INLINE_SVGS: usize = 64;
+/// Aggregate decoded image identities retained by a document and accepted in one presentation.
+/// HTML images, CSS images, inline SVGs, the video placeholder, and bounded media sessions are
+/// admitted independently, so the presentation protocol must cover their combined maximum.
+pub const MAX_PRESENTED_IMAGES: usize =
+    MAX_PAGE_IMAGES + MAX_STYLE_IMAGES + MAX_INLINE_SVGS + MAX_MEDIA_SESSIONS_PER_TAB + 1;
 pub const MAX_WEB_FONTS: usize = 16;
 pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_FONT_TABLES: usize = 256;
@@ -197,6 +202,16 @@ mod tests {
         const {
             assert!(MAX_SCRIPT_BYTES < MAX_PAGE_SCRIPT_BYTES);
             assert!(MAX_PAGE_SCRIPT_BYTES <= PAGE_RESOURCE_BUDGET as usize);
+            assert!(MAX_CSS_SOURCE_BYTES <= PAGE_RESOURCE_BUDGET as usize);
+            assert!(MAX_SCRIPT_BYTES <= MAX_RESPONSE_BODY_BYTES);
+        }
+    }
+
+    #[test]
+    fn presented_image_limit_covers_every_decoded_image_category() {
+        const {
+            assert!(MAX_PRESENTED_IMAGES > MAX_PAGE_IMAGES);
+            assert!(MAX_PRESENTED_IMAGES <= u32::MAX as usize);
         }
     }
 }

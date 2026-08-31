@@ -31,6 +31,23 @@ pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
 }
 
 impl Page {
+    pub(super) fn install_decoded_image(
+        &mut self,
+        url: String,
+        image: DecodedImage,
+    ) -> Result<(), String> {
+        if !self.images.contains_key(&url)
+            && self.images.len() >= crate::limits::MAX_PRESENTED_IMAGES
+        {
+            return Err(format!(
+                "decoded image count exceeds the {}-image document limit",
+                crate::limits::MAX_PRESENTED_IMAGES
+            ));
+        }
+        self.images.insert(url, image);
+        Ok(())
+    }
+
     /// Replaces the current decoded frame for one video element after validating engine limits.
     pub fn install_media_frame(
         &mut self,
@@ -62,7 +79,7 @@ impl Page {
         {
             return Err("media frame session budget exhausted".into());
         }
-        self.images.insert(key.clone(), image);
+        self.install_decoded_image(key.clone(), image)?;
         Ok(key)
     }
 }

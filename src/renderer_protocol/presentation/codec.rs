@@ -6,14 +6,17 @@ use super::*;
 use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
-    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
-    MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
-    MAX_URL_BYTES,
+    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PRESENTED_GLYPH_BYTES, MAX_PRESENTED_IMAGES,
+    MAX_RENDERED_TEXT_BYTES, MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES,
+    MAX_RUNTIME_REPORT_TEXT_BYTES, MAX_URL_BYTES,
 };
 use std::collections::HashSet;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
+    if value.images.len() > MAX_PRESENTED_IMAGES {
+        return Err(ProtocolError::InvalidPayload("presented image count"));
+    }
     let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
@@ -121,7 +124,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
     let layout = decode_layout(&mut reader)?;
     let image_count = reader.u32()? as usize;
-    if image_count > MAX_PAGE_IMAGES {
+    if image_count > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));
     }
     let mut images = Vec::with_capacity(image_count);

@@ -24,6 +24,7 @@
         if (localName === 'img') return HTMLImageElement;
         if (localName === 'picture') return HTMLPictureElement;
         if (localName === 'source') return HTMLSourceElement;
+        if (localName === 'iframe') return HTMLIFrameElement;
         if (localName === 'video') return HTMLVideoElement;
         if (localName === 'audio') return HTMLAudioElement;
         if (localName === 'canvas') return HTMLCanvasElement;
@@ -45,7 +46,6 @@
             ? HTMLElement
             : HTMLUnknownElement;
     };
-
     class DOMImplementation {
         createDocument(namespace, qualifiedName, doctype = null) {
             if (doctype !== null) throw new DOMException('DocumentType insertion is not implemented', 'NotSupportedError');
@@ -56,7 +56,6 @@
 
     let documentWriteRefreshQueued = false;
     const documentCollections = new WeakMap();
-
     const documentCollection = (document, name, selector) => {
         let collections = documentCollections.get(document);
         if (!collections) {
@@ -66,7 +65,6 @@
         if (!collections.has(name)) collections.set(name, selectorCollection(document, selector));
         return collections.get(name);
     };
-
     class Document extends Node {
         constructor(id = 0, ...metadata) {
             super(Number(id) || host('createDocument', '', ''), ...metadata);
@@ -246,6 +244,7 @@
     windowObject.HTMLImageElement = HTMLImageElement;
     windowObject.HTMLPictureElement = HTMLPictureElement;
     windowObject.HTMLSourceElement = HTMLSourceElement;
+    windowObject.HTMLIFrameElement = HTMLIFrameElement;
     windowObject.HTMLMediaElement = HTMLMediaElement;
     windowObject.HTMLVideoElement = HTMLVideoElement;
     windowObject.HTMLAudioElement = HTMLAudioElement;
@@ -291,6 +290,7 @@
     windowObject.FocusEvent = FocusEvent;
     windowObject.MouseEvent = MouseEvent;
     windowObject.PointerEvent = PointerEvent;
+    windowObject.WheelEvent = WheelEvent;
     windowObject.KeyboardEvent = KeyboardEvent;
     windowObject.InputEvent = InputEvent;
     windowObject.DOMException = DOMException;
