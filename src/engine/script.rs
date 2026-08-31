@@ -37,6 +37,7 @@ mod runtime_guard;
 mod shadow_host;
 mod style_cache;
 mod style_host;
+mod task_mutation_profile;
 mod text_encoding_host;
 mod timer_execution;
 mod types;

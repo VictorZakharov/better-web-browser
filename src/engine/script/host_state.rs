@@ -42,7 +42,7 @@ pub(super) struct HostState {
     pub(super) html_documents: HashSet<u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
-    pub(super) task_mutation_count: usize,
+    pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
     pub(super) cookie_header: String,
@@ -96,7 +96,7 @@ impl HostState {
             html_documents: HashSet::new(),
             next_node_id: 1,
             mutation_count: 0,
-            task_mutation_count: 0,
+            task_mutations: task_mutation_profile::TaskMutationProfile::default(),
             console: Vec::new(),
             navigation_url: None,
             cookie_header: String::new(),
@@ -261,7 +261,7 @@ impl HostState {
         requires_render: bool,
     ) {
         self.mutation_count += 1;
-        self.task_mutation_count += 1;
+        self.task_mutations.record(kind);
         if requires_render {
             self.pending_invalidation
                 .record(&self.document, target, kind);
@@ -270,7 +270,7 @@ impl HostState {
     }
 
     pub(super) fn begin_task(&mut self) {
-        self.task_mutation_count = 0;
+        self.task_mutations.reset();
     }
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
