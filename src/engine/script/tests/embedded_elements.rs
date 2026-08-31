@@ -7,10 +7,13 @@ fn iframe_elements_use_the_standard_interface_and_reflect_attributes() {
             const frame = document.querySelector('iframe');
             frame.srcdoc = '<p>inside</p>';
             frame.sandbox.add('allow-scripts');
+            const sandbox = frame.sandbox;
+            frame.sandbox = 'allow-same-origin allow-presentation';
             frame.allowFullscreen = true;
             frame.referrerPolicy = 'no-referrer';
             const accepted = frame instanceof HTMLIFrameElement && frame instanceof HTMLElement &&
-                frame.srcdoc === '<p>inside</p>' && frame.sandbox.contains('allow-scripts') &&
+                frame.srcdoc === '<p>inside</p>' && frame.sandbox === sandbox &&
+                frame.sandbox.value === 'allow-same-origin allow-presentation' &&
                 frame.allowFullscreen && frame.referrerPolicy === 'no-referrer' &&
                 frame.contentWindow === frame.contentDocument.defaultView &&
                 frame.getSVGDocument() === null;
