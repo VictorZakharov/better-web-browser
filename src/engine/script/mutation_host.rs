@@ -10,9 +10,12 @@ pub(super) fn mutation_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
-    if state.task_mutation_count >= MAX_DOM_MUTATIONS_PER_TASK {
+    if state.task_mutations.total() >= MAX_DOM_MUTATIONS_PER_TASK {
         return Err(JsNativeError::range()
-            .with_message("DOM mutation task budget exceeded")
+            .with_message(format!(
+                "DOM mutation task budget exceeded ({})",
+                state.task_mutations.summary()
+            ))
             .into());
     }
     let value = match operation {

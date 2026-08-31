@@ -42,5 +42,6 @@ mod selectors;
 mod shadow_dom;
 mod svg;
 mod tasks;
+mod timer_diagnostics;
 mod traversal;
 mod workers;

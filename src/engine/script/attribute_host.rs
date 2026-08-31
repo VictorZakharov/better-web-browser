@@ -51,10 +51,18 @@ pub(super) fn set_attribute(args: &[JsValue], state: &mut HostState) -> JsResult
     let name = argument_string(args, 2)?;
     let value = argument_string(args, 3)?;
     let node = state.node(argument_id(args, 1));
+    let unchanged = node
+        .as_ref()
+        .and_then(|node| node.attr_qualified(&name))
+        .as_deref()
+        == Some(value.as_str());
     let changed = node
         .as_ref()
         .is_some_and(|node| node.set_attr_qualified(&name, &value));
     record_attribute_mutation(state, node.as_ref(), &name, changed, true);
+    if changed && unchanged {
+        state.task_mutations.record_unchanged_attribute();
+    }
     Ok(JsValue::from(changed))
 }
 
@@ -68,6 +76,11 @@ pub(super) fn set_attribute_ns(
     let local_name = argument_string(args, 4)?;
     let value = argument_string(args, 5)?;
     let node = state.node(argument_id(args, 1));
+    let unchanged = node
+        .as_ref()
+        .and_then(|node| node.attr_ns(optional(&namespace), &local_name))
+        .as_deref()
+        == Some(value.as_str());
     let changed = node.as_ref().is_some_and(|node| {
         if replace {
             node.replace_attr_ns(optional(&namespace), optional(&prefix), &local_name, &value)
@@ -82,6 +95,9 @@ pub(super) fn set_attribute_ns(
         changed,
         namespace.is_empty(),
     );
+    if changed && unchanged {
+        state.task_mutations.record_unchanged_attribute();
+    }
     Ok(JsValue::from(changed))
 }
 
