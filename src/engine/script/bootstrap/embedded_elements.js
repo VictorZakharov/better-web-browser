@@ -2,6 +2,10 @@
         get srcdoc() { return this.getAttribute('srcdoc') || ''; }
         set srcdoc(value) { this.setAttribute('srcdoc', String(value)); }
         get sandbox() { return this.__sandbox ||= new DOMTokenList(this, 'sandbox'); }
+        // sandbox is readonly in Web IDL, but [PutForwards=value] makes assignment update the
+        // same reflected token list instead of replacing it.
+        // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#dom-iframe-sandbox
+        set sandbox(value) { this.sandbox.value = String(value); }
         get allow() { return this.getAttribute('allow') || ''; }
         set allow(value) { this.setAttribute('allow', value); }
         get allowFullscreen() { return this.hasAttribute('allowfullscreen'); }
