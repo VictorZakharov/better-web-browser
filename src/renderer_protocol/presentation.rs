@@ -3,13 +3,16 @@
 mod coalescing;
 pub(super) mod codec;
 mod diagnostics;
+#[cfg(test)]
+mod image_tests;
 mod layout;
 mod layout_sanitize;
 mod reader;
 
 pub use diagnostics::{
-    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, ResourceDiagnostics,
-    SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics,
+    AttributeDiagnostics, CustomPropertyDiagnostics, NodeDiagnostics, NodeIdentityDiagnostics,
+    PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, ShadowRootDiagnostics,
+    StyleDiagnostics,
 };
 
 use super::{AccessibilityUpdate, DocumentId, ProtocolError};
@@ -25,10 +28,40 @@ pub struct RuntimeReport {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub history_updates: Vec<HistoryUpdate>,
     pub cookie_updates: Vec<String>,
     pub runtime_active: bool,
     pub runtime_stopped: bool,
     pub render_requested: bool,
+    pub media: Option<MediaRuntimeReport>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryUpdate {
+    pub url: String,
+    pub replace: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MediaRuntimeReport {
+    pub active: bool,
+    pub playing: bool,
+    pub ended: bool,
+    pub current_time_100ns: u64,
+    pub duration_100ns: u64,
+    pub backend: String,
+    pub mime_type: String,
+    pub video_codec: String,
+    pub audio_codec: String,
+    pub encoded_queue_bytes: u64,
+    pub encoded_queue_limit_bytes: u64,
+    pub decoded_frame_queue_depth: u16,
+    pub decoded_frame_queue_limit: u16,
+    pub frames_presented: u64,
+    pub dropped_frames: u64,
+    pub width: u32,
+    pub height: u32,
+    pub failure: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +131,7 @@ impl PresentedLayout {
                 .map(|form| (form.node_id, form))
                 .collect(),
             node_bounds: Default::default(),
+            node_paint_order: Default::default(),
         }
     }
 }
@@ -116,7 +150,6 @@ pub struct PresentedGlyphRaster {
     pub image: DecodedImage,
     pub color: bool,
 }
-
 #[derive(Clone, Debug)]
 pub struct RendererPresentation {
     pub document: DocumentId,
@@ -220,7 +253,26 @@ mod tests {
                 },
                 color: false,
             }],
-            runtime: RuntimeReport::default(),
+            runtime: RuntimeReport {
+                media: Some(MediaRuntimeReport {
+                    active: true,
+                    playing: true,
+                    current_time_100ns: 12_000_000,
+                    duration_100ns: 30_000_000,
+                    backend: "test backend".into(),
+                    mime_type: "video/mp4".into(),
+                    video_codec: "H.264".into(),
+                    audio_codec: "AAC-LC".into(),
+                    encoded_queue_bytes: 1024,
+                    encoded_queue_limit_bytes: 2048,
+                    decoded_frame_queue_limit: 1,
+                    frames_presented: 2,
+                    width: 320,
+                    height: 240,
+                    ..MediaRuntimeReport::default()
+                }),
+                ..RuntimeReport::default()
+            },
             style: StyleReport::default(),
             load: PageLoadReport {
                 font_catalog_micros: 11,
@@ -237,6 +289,17 @@ mod tests {
                     selector: "#main".into(),
                     total_matches: 1,
                     matches: vec![NodeDiagnostics {
+                        attribute_count: 2,
+                        attributes: vec![
+                            AttributeDiagnostics {
+                                name: "id".into(),
+                                value: "main".into(),
+                            },
+                            AttributeDiagnostics {
+                                name: "hidden".into(),
+                                value: String::new(),
+                            },
+                        ],
                         shadow_root: Some(ShadowRootDiagnostics {
                             child_count: 1,
                             descendant_count: 3,
@@ -301,8 +364,41 @@ mod tests {
         assert_eq!(decoded.load.glyph_raster_micros, 14);
         assert_eq!(decoded.load.presentation_encode_micros, 15);
         assert_eq!(decoded.load.presentation_decode_micros, 16);
+        assert_eq!(decoded.runtime.media, sample().runtime.media);
         assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
         assert_eq!(decoded.accessibility, sample().accessibility);
+    }
+
+    #[test]
+    fn balanced_opacity_groups_round_trip_through_the_checked_codec() {
+        let mut presentation = sample();
+        let bounds = RectF {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+        };
+        presentation.layout.items.insert(
+            0,
+            DisplayItem::BeginOpacity {
+                bounds,
+                opacity: 0.5,
+            },
+        );
+        presentation
+            .layout
+            .items
+            .push(DisplayItem::EndOpacity { bounds });
+
+        let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+        assert!(matches!(
+            decoded.layout.items.as_slice(),
+            [
+                DisplayItem::BeginOpacity { opacity, .. },
+                DisplayItem::Text { .. },
+                DisplayItem::EndOpacity { .. }
+            ] if (*opacity - 0.5).abs() < f32::EPSILON
+        ));
     }
 
     #[test]
@@ -384,6 +480,18 @@ mod tests {
         presentation.page_diagnostics.selectors.clear();
         presentation.page_diagnostics.error =
             Some("x".repeat(crate::limits::MAX_PAGE_DIAGNOSTIC_BYTES));
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("page diagnostics"))
+        ));
+    }
+
+    #[test]
+    fn inconsistent_diagnostic_attribute_counts_fail_closed() {
+        let mut presentation = sample();
+        let node = &mut presentation.page_diagnostics.selectors[0].matches[0];
+        node.attributes_truncated = true;
+
         assert!(matches!(
             presentation.encode(),
             Err(ProtocolError::InvalidPayload("page diagnostics"))

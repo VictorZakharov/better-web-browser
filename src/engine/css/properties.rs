@@ -6,6 +6,7 @@ pub(super) fn apply_declaration(
     style: &mut ComputedStyle,
     declaration: &Declaration,
     parent: Option<&ComputedStyle>,
+    lower_origin: &ComputedStyle,
     base_url: &str,
     viewport_width: f32,
     viewport_height: f32,
@@ -14,51 +15,22 @@ pub(super) fn apply_declaration(
     let inherited_font_size = parent
         .map(|style| style.font_size)
         .unwrap_or_else(|| ComputedStyle::initial().font_size);
-    if value.eq_ignore_ascii_case("inherit") {
-        let initial = ComputedStyle::initial();
-        let inherited = parent.unwrap_or(&initial);
-        match declaration.name.as_str() {
-            "background" => {
-                style.background_color = inherited.background_color;
-                style
-                    .background_image
-                    .clone_from(&inherited.background_image);
-                style.background_repeat_x = inherited.background_repeat_x;
-                style.background_repeat_y = inherited.background_repeat_y;
-                style.background_position_x = inherited.background_position_x;
-                style.background_position_y = inherited.background_position_y;
-                style.background_size = inherited.background_size;
-            }
-            "background-color" => style.background_color = inherited.background_color,
-            "background-image" => style
-                .background_image
-                .clone_from(&inherited.background_image),
-            "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
-                style.mask_image.clone_from(&inherited.mask_image)
-            }
-            "background-repeat" => {
-                style.background_repeat_x = inherited.background_repeat_x;
-                style.background_repeat_y = inherited.background_repeat_y;
-            }
-            "background-position" => {
-                style.background_position_x = inherited.background_position_x;
-                style.background_position_y = inherited.background_position_y;
-            }
-            "background-size" => style.background_size = inherited.background_size,
-            "box-sizing" => style.box_sizing = inherited.box_sizing,
-            "color" => style.color = inherited.color,
-            "font-family" => style.font_family.clone_from(&inherited.font_family),
-            "font-size" => style.font_size = inherited.font_size,
-            "letter-spacing" => style.letter_spacing = inherited.letter_spacing,
-            "word-spacing" => style.word_spacing = inherited.word_spacing,
-            "line-height" => style.line_height = inherited.line_height,
-            "max-width" => style.max_width = inherited.max_width,
-            "width" => style.width = inherited.width,
-            _ => {}
-        }
+    let root_font_size = style.root_font_size;
+    if super::css_wide::apply_css_wide_keyword(
+        style,
+        &declaration.name,
+        value,
+        parent,
+        lower_origin,
+    ) {
         return;
     }
     match declaration.name.as_str() {
+        "content" => {
+            if let Some(content) = GeneratedContent::parse(value) {
+                style.generated_content = content;
+            }
+        }
         "display" => {
             style.display = match value.split_ascii_whitespace().next().unwrap_or("") {
                 "none" => Display::None,
@@ -67,7 +39,13 @@ pub(super) fn apply_declaration(
                 "inline" => Display::Inline,
                 "inline-block" | "inline-box" => Display::InlineBlock,
                 "inline-flex" | "-webkit-inline-flex" => Display::InlineFlex,
-                "flex" | "-webkit-flex" | "-webkit-box" => Display::Flex,
+                "flex" | "-webkit-flex" => Display::Flex,
+                // The legacy WebKit box model is not the modern flexbox model. Treating it as
+                // modern flex drops anonymous text children in our flex layout (notably
+                // YouTube's watch title). Block flow is the safer compatibility fallback until
+                // the legacy algorithm is implemented; sites that provide a later `flex` value
+                // still select the modern flex layout through the normal cascade.
+                "-webkit-box" => Display::Block,
                 "grid" | "-ms-grid" => Display::Grid,
                 "table" => Display::Table,
                 "table-row" => Display::TableRow,
@@ -82,6 +60,13 @@ pub(super) fn apply_declaration(
                 "fixed" => Position::Fixed,
                 _ => Position::Static,
             };
+        }
+        "z-index" => {
+            if value.eq_ignore_ascii_case("auto") {
+                style.z_index = None;
+            } else if let Ok(level) = value.parse::<i32>() {
+                style.z_index = Some(level);
+            }
         }
         "float" => {
             style.float = match value {
@@ -133,6 +118,7 @@ pub(super) fn apply_declaration(
                 inherited_font_size,
                 viewport_width,
                 viewport_height,
+                root_font_size,
             ) {
                 style.font_size = size;
                 style.line_height = size * 1.2;
@@ -161,6 +147,7 @@ pub(super) fn apply_declaration(
                 style.font_size,
                 viewport_width,
                 viewport_height,
+                root_font_size,
             ) {
                 style.letter_spacing = spacing;
             }
@@ -171,6 +158,7 @@ pub(super) fn apply_declaration(
                 style.font_size,
                 viewport_width,
                 viewport_height,
+                root_font_size,
             ) {
                 style.word_spacing = spacing;
             }
@@ -181,6 +169,7 @@ pub(super) fn apply_declaration(
                 style.font_size,
                 viewport_width,
                 viewport_height,
+                root_font_size,
             ) {
                 style.line_height = line_height;
             }
@@ -212,6 +201,19 @@ pub(super) fn apply_declaration(
         "right" => assign_length(&mut style.right, value),
         "bottom" => assign_length(&mut style.bottom, value),
         "left" => assign_length(&mut style.left, value),
+        "inset" => {
+            let mut inset = Edges {
+                top: style.top,
+                right: style.right,
+                bottom: style.bottom,
+                left: style.left,
+            };
+            assign_edges(&mut inset, value);
+            style.top = inset.top;
+            style.right = inset.right;
+            style.bottom = inset.bottom;
+            style.left = inset.left;
+        }
         "margin" => assign_edges(&mut style.margin, value),
         "margin-top" => assign_length(&mut style.margin.top, value),
         "margin-right" => assign_length(&mut style.margin.right, value),
@@ -263,11 +265,30 @@ pub(super) fn apply_declaration(
             }
         }
         "visibility" => style.visibility = value != "hidden" && value != "collapse",
-        "opacity" => {
-            style.opacity = value
-                .parse::<f32>()
-                .unwrap_or(style.opacity)
-                .clamp(0.0, 1.0)
+        "opacity" => style.opacity = parse_opacity(value).unwrap_or(style.opacity),
+        "transform" => {
+            if let Some(transform) = super::transform::parse_transform(value) {
+                style.transform = transform;
+            }
+        }
+        "perspective" => {
+            style.perspective_non_none = value != "none" && parse_length(value).is_some();
+        }
+        "filter" => {
+            style.filter_non_none = value != "none" && value.contains('(') && value.ends_with(')');
+        }
+        "transform-style" => style.transform_style_preserve_3d = value == "preserve-3d",
+        "contain" => {
+            style.contain_layout_or_paint = matches!(value, "content" | "strict")
+                || value
+                    .split_ascii_whitespace()
+                    .any(|token| matches!(token, "layout" | "paint"));
+        }
+        "will-change" => {
+            style.will_change_containing_block = value
+                .split(',')
+                .map(str::trim)
+                .any(|token| matches!(token, "transform" | "perspective" | "filter"));
         }
         "overflow" | "overflow-x" | "overflow-y" => {
             style.overflow_hidden = matches!(value, "hidden" | "clip")
@@ -301,10 +322,8 @@ pub(super) fn apply_declaration(
             };
         }
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
-            style.flex_direction = if value.starts_with("column") {
-                FlexDirection::Column
-            } else {
-                FlexDirection::Row
+            if let Some(direction) = parse_flex_direction(value) {
+                style.flex_direction = direction;
             }
         }
         "flex-wrap" | "-webkit-flex-wrap" | "-moz-flex-wrap" => style.flex_wrap = value != "nowrap",
@@ -326,6 +345,8 @@ pub(super) fn apply_declaration(
                 BoxSizing::ContentBox
             }
         }
+        "border-collapse" => style.border_collapse = value == "collapse",
+        "caption-side" => style.caption_side_bottom = value == "bottom",
         "list-style" | "list-style-type" => {
             style.list_style_type = if value
                 .split_ascii_whitespace()
@@ -365,9 +386,8 @@ fn assign_flex_flow(style: &mut ComputedStyle, value: &str) {
     let mut wrap = None;
     for token in value.split_ascii_whitespace() {
         match token {
-            "row" | "row-reverse" if direction.is_none() => direction = Some(FlexDirection::Row),
-            "column" | "column-reverse" if direction.is_none() => {
-                direction = Some(FlexDirection::Column)
+            token if direction.is_none() && parse_flex_direction(token).is_some() => {
+                direction = parse_flex_direction(token)
             }
             "nowrap" if wrap.is_none() => wrap = Some(false),
             "wrap" | "wrap-reverse" if wrap.is_none() => wrap = Some(true),
@@ -385,8 +405,18 @@ fn assign_flex_flow(style: &mut ComputedStyle, value: &str) {
     }
 }
 
+fn parse_flex_direction(value: &str) -> Option<FlexDirection> {
+    match value {
+        "row" => Some(FlexDirection::Row),
+        "row-reverse" => Some(FlexDirection::RowReverse),
+        "column" => Some(FlexDirection::Column),
+        "column-reverse" => Some(FlexDirection::ColumnReverse),
+        _ => None,
+    }
+}
+
 pub(super) fn parse_text_spacing(value: &str, font_size: f32) -> Option<f32> {
-    parse_text_spacing_for_viewport(value, font_size, font_size, font_size)
+    parse_text_spacing_for_viewport(value, font_size, font_size, font_size, font_size)
 }
 
 pub(super) fn parse_text_spacing_for_viewport(
@@ -394,12 +424,14 @@ pub(super) fn parse_text_spacing_for_viewport(
     font_size: f32,
     viewport_width: f32,
     viewport_height: f32,
+    root_font_size: f32,
 ) -> Option<f32> {
     if value.eq_ignore_ascii_case("normal") {
         return Some(0.0);
     }
     parse_length(value).and_then(|length| {
         length
+            .resolve_root_font_units(root_font_size)
             .resolve_viewport_units(viewport_width, viewport_height)
             .resolve(font_size, font_size)
     })

@@ -93,15 +93,27 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             "kind": "simple", "target": target(Some(node)), "type": event_type,
             "bubbles": bubbles, "cancelable": cancelable
         }),
+        UserInputEvent::ImageResource {
+            target: node,
+            event_type,
+            natural_width,
+            natural_height,
+        } => serde_json::json!({
+            "kind": "imageResource", "target": target(Some(node)), "type": event_type,
+            "naturalWidth": natural_width, "naturalHeight": natural_height
+        }),
         UserInputEvent::Scroll { x, y } => {
             serde_json::json!({ "kind": "scroll", "x": x, "y": y })
         }
         UserInputEvent::Viewport {
             width,
             height,
+            layout_width,
+            layout_height,
             scale,
         } => serde_json::json!({
-            "kind": "viewport", "width": width, "height": height, "scale": scale
+            "kind": "viewport", "width": width, "height": height,
+            "layoutWidth": layout_width, "layoutHeight": layout_height, "scale": scale
         }),
         UserInputEvent::Lifecycle { state, previous } => serde_json::json!({
             "kind": "lifecycle", "state": state, "previous": previous

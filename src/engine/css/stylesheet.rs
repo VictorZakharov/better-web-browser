@@ -3,13 +3,14 @@
 use super::media::MediaEnvironment;
 use super::*;
 use crate::limits::{
-    MAX_CSS_DECLARATIONS_PER_RULE, MAX_CSS_NESTING_DEPTH, MAX_CSS_RULES, MAX_CSS_SOURCE_BYTES,
-    bounded_utf8_prefix,
+    MAX_CSS_DECLARATIONS_PER_RULE, MAX_CSS_NESTING_DEPTH, MAX_CSS_RULES_PER_STYLESHEET,
+    MAX_CSS_SOURCE_BYTES, MAX_PAGE_CSS_RULES, bounded_utf8_prefix,
 };
 
 #[derive(Debug)]
 pub(super) struct Rule {
     pub(super) selector: Selector,
+    pub(super) pseudo: Option<PseudoElement>,
     pub(super) host_condition: Option<Selector>,
     pub(super) declarations: Vec<Declaration>,
     pub(super) order: u32,
@@ -40,8 +41,15 @@ pub(super) fn parse_stylesheet(
     output: &mut Vec<Rule>,
     scope: RuleScope,
 ) {
+    if output.len() >= MAX_PAGE_CSS_RULES {
+        return;
+    }
     let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
     let css = strip_comments(css);
+    let rule_limit = output
+        .len()
+        .saturating_add(MAX_CSS_RULES_PER_STYLESHEET)
+        .min(MAX_PAGE_CSS_RULES);
     parse_rule_list(
         &css,
         base_url,
@@ -50,9 +58,11 @@ pub(super) fn parse_stylesheet(
         output,
         scope,
         0,
+        rule_limit,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_rule_list(
     css: &str,
     base_url: &str,
@@ -61,15 +71,26 @@ fn parse_rule_list(
     output: &mut Vec<Rule>,
     scope: RuleScope,
     nesting_depth: usize,
+    rule_limit: usize,
 ) {
-    if nesting_depth >= MAX_CSS_NESTING_DEPTH || output.len() >= MAX_CSS_RULES {
+    if nesting_depth >= MAX_CSS_NESTING_DEPTH || output.len() >= rule_limit {
         return;
     }
     let mut cursor = 0;
-    while cursor < css.len() && output.len() < MAX_CSS_RULES {
+    while cursor < css.len() && output.len() < rule_limit {
         cursor = skip_css_whitespace(css, cursor);
         if cursor >= css.len() {
             break;
+        }
+        if css.as_bytes()[cursor] == b'@'
+            && let Some(semicolon) = find_css_delimiter(css, cursor, ';')
+            && find_css_delimiter(css, cursor, '{').is_none_or(|open| semicolon < open)
+        {
+            // CSS Syntax allows statement at-rules such as @charset and @import to end with a
+            // semicolon. They do not own the next qualified-rule block. Unknown statements are
+            // ignored here; resource loading handles imports separately.
+            cursor = semicolon + 1;
+            continue;
         }
         let Some(open) = find_css_delimiter(css, cursor, '{') else {
             break;
@@ -89,6 +110,7 @@ fn parse_rule_list(
                     output,
                     scope,
                     nesting_depth + 1,
+                    rule_limit,
                 );
             }
         } else if prelude.starts_with("@supports") {
@@ -101,12 +123,13 @@ fn parse_rule_list(
                     output,
                     scope,
                     nesting_depth + 1,
+                    rule_limit,
                 );
             }
         } else if !prelude.starts_with('@') {
             let declarations = parse_declarations(body);
             for selector_text in split_css_top_level(prelude, ',') {
-                if output.len() >= MAX_CSS_RULES {
+                if output.len() >= rule_limit {
                     break;
                 }
                 let Some((selector_text, rule_scope, host_condition_text)) =
@@ -123,7 +146,7 @@ fn parse_rule_list(
                     }
                     None => None,
                 };
-                if let Some(mut selector) = parse_selector(selector_text) {
+                if let Some((mut selector, pseudo)) = parse_style_rule_selector(selector_text) {
                     if let Some(condition) = host_condition.as_ref() {
                         selector.specificity.ids = selector
                             .specificity
@@ -140,6 +163,7 @@ fn parse_rule_list(
                     }
                     output.push(Rule {
                         selector,
+                        pseudo,
                         host_condition,
                         declarations: declarations.clone(),
                         order: *next_order,
@@ -245,5 +269,70 @@ fn split_important_annotation(value: &str) -> (&str, bool) {
         (value[..bang].trim_end(), true)
     } else {
         (value, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_large_earlier_stylesheet_does_not_starve_later_cascade_rules() {
+        let first = ".early{color:red}".repeat(20_000);
+        let mut rules = Vec::new();
+        let mut order = 0;
+        let environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
+
+        parse_stylesheet(
+            &first,
+            "https://example.test/early.css",
+            environment,
+            &mut order,
+            &mut rules,
+            RuleScope::Document,
+        );
+        parse_stylesheet(
+            ".late{display:block}",
+            "https://example.test/late.css",
+            environment,
+            &mut order,
+            &mut rules,
+            RuleScope::Document,
+        );
+
+        assert_eq!(rules.len(), 20_001);
+        assert_eq!(rules.last().unwrap().order, 20_000);
+    }
+
+    #[test]
+    fn semicolon_at_rules_do_not_consume_the_following_qualified_rule() {
+        let mut rules = Vec::new();
+        let mut order = 0;
+        let environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
+
+        parse_stylesheet(
+            r#"@charset "UTF-8";@import url("theme.css");
+               .player{position:relative;width:100%;height:100%}"#,
+            "https://example.test/player.css",
+            environment,
+            &mut order,
+            &mut rules,
+            RuleScope::Document,
+        );
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].selector.compounds[0].classes, ["player"]);
+        assert_eq!(
+            rules[0]
+                .declarations
+                .iter()
+                .map(|declaration| (declaration.name.as_str(), declaration.value.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("position", "relative"),
+                ("width", "100%"),
+                ("height", "100%")
+            ]
+        );
     }
 }

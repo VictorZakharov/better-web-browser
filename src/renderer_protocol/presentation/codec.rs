@@ -6,14 +6,17 @@ use super::*;
 use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
-    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
-    MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
-    MAX_URL_BYTES,
+    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PRESENTED_GLYPH_BYTES, MAX_PRESENTED_IMAGES,
+    MAX_RENDERED_TEXT_BYTES, MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES,
+    MAX_RUNTIME_REPORT_TEXT_BYTES, MAX_URL_BYTES,
 };
 use std::collections::HashSet;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
+    if value.images.len() > MAX_PRESENTED_IMAGES {
+        return Err(ProtocolError::InvalidPayload("presented image count"));
+    }
     let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
@@ -121,7 +124,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
     let layout = decode_layout(&mut reader)?;
     let image_count = reader.u32()? as usize;
-    if image_count > MAX_PAGE_IMAGES {
+    if image_count > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));
     }
     let mut images = Vec::with_capacity(image_count);
@@ -246,10 +249,22 @@ pub(in crate::renderer_protocol) fn encode_runtime(
     if let Some(url) = &report.navigation_url {
         writer.string(url)?;
     }
+    if report.history_updates.len() > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history update count"));
+    }
+    writer.u32(report.history_updates.len() as u32);
+    for update in &report.history_updates {
+        writer.string(&update.url)?;
+        writer.bool(update.replace);
+    }
     encode_strings(writer, &report.cookie_updates)?;
     writer.bool(report.runtime_active);
     writer.bool(report.runtime_stopped);
     writer.bool(report.render_requested);
+    writer.bool(report.media.is_some());
+    if let Some(media) = &report.media {
+        encode_media_runtime(writer, media)?;
+    }
     Ok(())
 }
 
@@ -265,7 +280,25 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         .bool()?
         .then(|| reader.string(MAX_URL_BYTES))
         .transpose()?;
+    let history_update_count = reader.u32()? as usize;
+    if history_update_count > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history update count"));
+    }
+    let mut history_updates = Vec::with_capacity(history_update_count);
+    for _ in 0..history_update_count {
+        history_updates.push(HistoryUpdate {
+            url: reader.string(MAX_URL_BYTES)?,
+            replace: reader.bool()?,
+        });
+    }
     let cookie_updates = decode_strings(reader)?;
+    let runtime_active = reader.bool()?;
+    let runtime_stopped = reader.bool()?;
+    let render_requested = reader.bool()?;
+    let media = reader
+        .bool()?
+        .then(|| decode_media_runtime(reader))
+        .transpose()?;
     Ok(RuntimeReport {
         scripts_executed,
         dom_mutations,
@@ -273,10 +306,76 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         console,
         diagnostics,
         navigation_url,
+        history_updates,
         cookie_updates,
-        runtime_active: reader.bool()?,
-        runtime_stopped: reader.bool()?,
-        render_requested: reader.bool()?,
+        runtime_active,
+        runtime_stopped,
+        render_requested,
+        media,
+    })
+}
+
+fn encode_media_runtime(
+    writer: &mut WireWriter,
+    report: &MediaRuntimeReport,
+) -> Result<(), ProtocolError> {
+    writer.bool(report.active);
+    writer.bool(report.playing);
+    writer.bool(report.ended);
+    writer.u64(report.current_time_100ns);
+    writer.u64(report.duration_100ns);
+    for value in [
+        &report.backend,
+        &report.mime_type,
+        &report.video_codec,
+        &report.audio_codec,
+    ] {
+        if value.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
+            return Err(ProtocolError::InvalidPayload("media runtime text"));
+        }
+        writer.string(value)?;
+    }
+    writer.u64(report.encoded_queue_bytes);
+    writer.u64(report.encoded_queue_limit_bytes);
+    writer.u16(report.decoded_frame_queue_depth);
+    writer.u16(report.decoded_frame_queue_limit);
+    writer.u64(report.frames_presented);
+    writer.u64(report.dropped_frames);
+    writer.u32(report.width);
+    writer.u32(report.height);
+    writer.bool(report.failure.is_some());
+    if let Some(failure) = &report.failure {
+        if failure.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
+            return Err(ProtocolError::InvalidPayload("media runtime failure"));
+        }
+        writer.string(failure)?;
+    }
+    Ok(())
+}
+
+fn decode_media_runtime(reader: &mut WireReader<'_>) -> Result<MediaRuntimeReport, ProtocolError> {
+    Ok(MediaRuntimeReport {
+        active: reader.bool()?,
+        playing: reader.bool()?,
+        ended: reader.bool()?,
+        current_time_100ns: reader.u64()?,
+        duration_100ns: reader.u64()?,
+        backend: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        mime_type: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        video_codec: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        audio_codec: reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES)?,
+        encoded_queue_bytes: reader.u64()?,
+        encoded_queue_limit_bytes: reader.u64()?,
+        decoded_frame_queue_depth: reader.u16()?,
+        decoded_frame_queue_limit: reader.u16()?,
+        frames_presented: reader.u64()?,
+        dropped_frames: reader.u64()?,
+        width: reader.u32()?,
+        height: reader.u32()?,
+        failure: reader
+            .bool()?
+            .then(|| reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES))
+            .transpose()?,
     })
 }
 

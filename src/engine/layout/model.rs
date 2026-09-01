@@ -127,6 +127,19 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    BeginClip {
+        bounds: RectF,
+    },
+    EndClip {
+        bounds: RectF,
+    },
+    BeginOpacity {
+        bounds: RectF,
+        opacity: f32,
+    },
+    EndOpacity {
+        bounds: RectF,
+    },
     SolidRect {
         rect: RectF,
         color: Color,
@@ -173,6 +186,9 @@ pub struct LayoutOutput {
     pub forms: HashMap<NodeId, FormSpec>,
     /// Renderer-local element border boxes used only by opt-in page diagnostics.
     pub node_bounds: HashMap<NodeId, RectF>,
+    /// Renderer-local back-to-front element order used by fallback hit testing. This stays next
+    /// to layout rather than the wire presentation so input and paint use one stacking result.
+    pub node_paint_order: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,12 +206,17 @@ pub(super) enum InlineAtom {
         url: String,
         alt: String,
         tint: Option<Color>,
+        node_id: NodeId,
+        visible: bool,
         width: f32,
         height: f32,
         inset_x: f32,
         inset_y: f32,
         image_width: f32,
         image_height: f32,
+        transform: crate::engine::css::transform::TransformList,
+        transform_font_size: f32,
+        opacity: f32,
     },
     Control {
         spec: Box<ControlSpec>,
@@ -205,16 +226,25 @@ pub(super) enum InlineAtom {
         inset_y: f32,
         control_width: f32,
         control_height: f32,
+        opacity: f32,
     },
     InlineBox {
         children: Vec<InlineAtom>,
         style: Box<ComputedStyle>,
+        node_id: Option<NodeId>,
     },
     Placeholder {
         width: f32,
         height: f32,
+        node_id: Option<NodeId>,
     },
     Break,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct InlineContainingBlock {
+    pub(super) width: f32,
+    pub(super) height: Option<f32>,
 }
 
 pub(super) struct MeasuredAtom<'a> {

@@ -37,22 +37,37 @@ internal sealed class Options
     public int ViewportHeight { get; init; } = 607;
     public double DeviceScaleFactor { get; init; } = 1;
     public string Locale { get; init; } = "en-US";
+    public string? UserAgent { get; init; }
     public int SettleMs { get; init; } = 2_000;
     public int TimeoutMs { get; init; } = 30_000;
     public int ScrollSamples { get; init; }
     public bool EarlyScroll { get; init; }
     public bool RequireFixtureReady { get; init; }
+    public ClickPoint? ClickAfterReady { get; init; }
+    public string? ActivateLinkAfterReady { get; init; }
+    public int NavigationDelayMs { get; init; }
+    public IReadOnlyList<string> DiagnosticSelectors { get; init; } = Array.Empty<string>();
 
     public static Options Parse(string[] arguments)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var switches = new HashSet<string>(StringComparer.Ordinal);
+        var diagnosticSelectors = new List<string>();
         for (var index = 0; index < arguments.Length; index++)
         {
             var argument = arguments[index];
             if (argument is "--early-scroll" or "--require-fixture-ready")
             {
                 switches.Add(argument);
+                continue;
+            }
+            if (argument == "--diagnostic-selector")
+            {
+                if (++index >= arguments.Length || string.IsNullOrWhiteSpace(arguments[index]))
+                {
+                    throw new ArgumentException("--diagnostic-selector requires a non-empty selector.");
+                }
+                diagnosticSelectors.Add(arguments[index]);
                 continue;
             }
             if (!argument.StartsWith("--", StringComparison.Ordinal) || ++index >= arguments.Length)
@@ -93,6 +108,9 @@ internal sealed class Options
         {
             throw new ArgumentException("Filmstrip duration must be a multiple of its interval and contain at most 120 frames.");
         }
+        var clickAfterReady = values.TryGetValue("--click-after-ready", out var clickValue)
+            ? ClickPoint.Parse(clickValue)
+            : null;
 
         return new Options
         {
@@ -109,11 +127,17 @@ internal sealed class Options
                 ? Math.Clamp(double.Parse(scale, System.Globalization.CultureInfo.InvariantCulture), 0.5, 4)
                 : 1,
             Locale = values.GetValueOrDefault("--locale") ?? "en-US",
+            UserAgent = values.GetValueOrDefault("--user-agent"),
             SettleMs = Integer("--settle-ms", 2_000, 100, 60_000),
             TimeoutMs = Integer("--timeout-ms", 30_000, 1_000, 120_000),
             ScrollSamples = Integer("--scroll-samples", 0, 0, 120),
             EarlyScroll = switches.Contains("--early-scroll"),
-            RequireFixtureReady = switches.Contains("--require-fixture-ready")
+            RequireFixtureReady = switches.Contains("--require-fixture-ready"),
+            ClickAfterReady = clickAfterReady,
+            ActivateLinkAfterReady = values.GetValueOrDefault("--activate-link-after-ready"),
+            NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000)
+            ,
+            DiagnosticSelectors = diagnosticSelectors
         };
     }
 
@@ -131,5 +155,19 @@ internal sealed class Options
         });
         return candidates.FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("Install Chrome/Edge or pass --chrome.");
+    }
+}
+
+internal sealed record ClickPoint(int X, int Y)
+{
+    public static ClickPoint Parse(string value)
+    {
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var x) ||
+            !int.TryParse(parts[1], out var y) || x < 0 || y < 0)
+        {
+            throw new ArgumentException("--click-after-ready requires non-negative integer x,y coordinates.");
+        }
+        return new ClickPoint(x, y);
     }
 }

@@ -221,7 +221,7 @@ impl BrowserState {
                 false,
                 false,
             );
-            self.begin_navigation(url.to_string(), HistoryMode::Script);
+            self.begin_document_navigation(url.to_string(), HistoryMode::Script);
             return;
         }
 
@@ -320,6 +320,7 @@ impl BrowserState {
                 set_window_text(self.controls.reader, "Reader");
             }
         }
+        self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
         if layout_changed {
             self.update_scrollbar();

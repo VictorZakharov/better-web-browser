@@ -5,7 +5,10 @@ use std::thread;
 use std::time::Duration;
 
 const EXECUTION_TIMEOUT: Duration = if cfg!(test) {
-    Duration::from_millis(100)
+    // Keep runaway-script tests fast without making ordinary bounded V8 work fail when the
+    // complete test suite saturates the hosted runner. Production retains the stricter runtime
+    // policy below; this branch only controls the test binary.
+    Duration::from_millis(500)
 } else {
     Duration::from_secs(2)
 };

@@ -2,7 +2,9 @@
 
 use super::tabs::TabId;
 use super::*;
-use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal};
+use better_web_browser::fetch::{
+    FetchController, FetchRequest, FetchSignal, FetchUrl, Origin, Referrer,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
@@ -13,6 +15,60 @@ pub(super) enum HistoryMode {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn apply_same_document_history_updates(
+        &mut self,
+        updates: &[better_web_browser::renderer_protocol::HistoryUpdate],
+    ) {
+        for update in updates {
+            let Some(current) = self.current_url().map(str::to_owned) else {
+                continue;
+            };
+            let same_origin = matches!(
+                (Origin::parse(&current), Origin::parse(&update.url)),
+                (Ok(current), Ok(target)) if current.is_same_origin(&target)
+            );
+            if !same_origin {
+                self.incidents.record(
+                    "history",
+                    format!("rejected cross-origin same-document URL: {}", update.url),
+                );
+                continue;
+            }
+            if update.replace {
+                let index = self.history_index;
+                if let Some(entry) = self.history.get_mut(index) {
+                    entry.clone_from(&update.url);
+                } else {
+                    self.history.push(update.url.clone());
+                    self.history_index = self.history.len() - 1;
+                }
+            } else {
+                let next_index = self.history_index.saturating_add(1);
+                self.history.truncate(next_index);
+                self.history.push(update.url.clone());
+                self.history_index = self.history.len() - 1;
+            }
+            self.reader_url.clone_from(&update.url);
+            self.omnibox_text.clone_from(&update.url);
+            self.incidents.record(
+                "history",
+                format!(
+                    "{} same-document URL: {}",
+                    if update.replace { "replace" } else { "push" },
+                    update.url
+                ),
+            );
+            if let Some(benchmark) = self.benchmark.as_mut() {
+                benchmark.final_url.clone_from(&update.url);
+            }
+        }
+        if updates.is_empty() || self.processing_background_tab {
+            return;
+        }
+        set_window_text(self.controls.address, &self.omnibox_text);
+        self.update_history_buttons();
+    }
+
     pub(super) unsafe fn navigate_from_address(&mut self) {
         let input = window_text(self.controls.address);
         self.navigate_from_input(&input, HistoryMode::Push);
@@ -26,7 +82,22 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
-        self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode);
+        self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode, None);
+    }
+
+    pub(super) unsafe fn begin_document_navigation(
+        &mut self,
+        url: String,
+        history_mode: HistoryMode,
+    ) {
+        let id = self.tabs.active_id();
+        let tab = self.tabs.active();
+        let referrer = tab
+            .history
+            .get(tab.history_index)
+            .filter(|value| !value.is_empty())
+            .cloned();
+        self.begin_navigation_for_tab(id, url, history_mode, referrer);
     }
 
     pub(super) unsafe fn begin_navigation_for_tab(
@@ -34,6 +105,7 @@ impl BrowserState {
         id: TabId,
         url: String,
         history_mode: HistoryMode,
+        referrer: Option<String>,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
@@ -135,7 +207,8 @@ impl BrowserState {
                 let started = Instant::now();
                 let result = (|| -> Result<LoadedPage, String> {
                     let client = http_client;
-                    let response = fetch_navigation(&client, &url, &fetch_signal)?;
+                    let response =
+                        fetch_navigation(&client, &url, &fetch_signal, referrer.as_deref())?;
                     let network_time = started.elapsed();
                     let bytes = response.body.len() as u64;
                     let final_url = response.final_url().as_str().to_string();
@@ -220,9 +293,13 @@ fn fetch_navigation(
     client: &winhttp::HttpClient,
     url: &str,
     signal: &FetchSignal,
+    referrer: Option<&str>,
 ) -> Result<winhttp::HttpResponse, String> {
-    let request = FetchRequest::navigation(url)
-        .map_err(|error| error.to_string())?
-        .with_signal(signal.clone());
+    let mut request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
+    if let Some(referrer) = referrer {
+        request.referrer =
+            Referrer::Url(FetchUrl::parse(referrer).map_err(|error| error.to_string())?);
+    }
+    let request = request.with_signal(signal.clone());
     client.fetch(request).map_err(|error| error.to_string())
 }

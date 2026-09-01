@@ -21,28 +21,32 @@
         catch (_) { return false; }
     };
 
-    const reactions = [];
-    let reactionDepth = 0;
-    let invokingReactions = false;
-    const invokeCustomElementReactions = () => {
-        if (reactionDepth || invokingReactions) return;
-        invokingReactions = true;
-        try {
-            while (reactions.length) {
-                const reaction = reactions.shift();
-                try { reaction.callback.apply(reaction.element, reaction.args); }
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#custom-element-reactions-stack
+    // Every [CEReactions] operation gets its own element queue. In particular, an attribute
+    // mutation made by a lifecycle callback must drain its nested queue before returning to that
+    // callback; flattening all reactions into one queue breaks reflection guards used by Polymer.
+    const elementReactionQueues = new WeakMap();
+    const reactionStack = [];
+    const invokeCustomElementReactions = elementQueue => {
+        for (let elementIndex = 0; elementIndex < elementQueue.length; elementIndex++) {
+            const element = elementQueue[elementIndex];
+            const reactions = elementReactionQueues.get(element);
+            if (!reactions?.length) continue;
+            elementReactionQueues.set(element, []);
+            for (let reactionIndex = 0; reactionIndex < reactions.length; reactionIndex++) {
+                const reaction = reactions[reactionIndex];
+                try { reaction.callback.apply(element, reaction.args); }
                 catch (error) { reportGlobalException(error); }
             }
-        } finally {
-            invokingReactions = false;
         }
     };
     const withCustomElementReactions = callback => {
-        reactionDepth++;
+        const elementQueue = [];
+        reactionStack.push(elementQueue);
         try { return callback(); }
         finally {
-            reactionDepth--;
-            invokeCustomElementReactions();
+            reactionStack.pop();
+            invokeCustomElementReactions(elementQueue);
         }
     };
     const enqueueCustomElementCallback = (element, callbackName, args = []) => {
@@ -51,8 +55,12 @@
         const callback = definition?.callbacks[callbackName];
         if (!callback) return;
         if (callbackName === 'attributeChangedCallback' && !definition.observedAttributes.includes(args[0])) return;
-        reactions.push({ element, callback, args });
-        invokeCustomElementReactions();
+        let reactions = elementReactionQueues.get(element);
+        if (!reactions) elementReactionQueues.set(element, reactions = []);
+        reactions.push({ callback, args });
+        const elementQueue = reactionStack[reactionStack.length - 1];
+        if (elementQueue) elementQueue.push(element);
+        else invokeCustomElementReactions([element]);
     };
     const inclusiveElementDescendants = root => {
         if (!(root instanceof Node)) return [];
@@ -127,6 +135,7 @@
             enqueueCustomElementCallback(element, 'disconnectedCallback');
     });
     adoptCustomElementTree = (root, oldDocument, newDocument) => withCustomElementReactions(() => {
+        resetAttributeNameMode(root);
         for (const element of inclusiveElementDescendants(root))
             enqueueCustomElementCallback(element, 'adoptedCallback', [oldDocument, newDocument]);
     });

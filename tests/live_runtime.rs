@@ -12,6 +12,8 @@ use support::*;
 mod dynamic_scripts;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/media_controls.rs"]
+mod media_controls;
 #[path = "live_runtime/navigation.rs"]
 mod navigation;
 #[path = "live_runtime/network.rs"]
@@ -22,6 +24,8 @@ mod reload;
 mod streaming_network;
 #[path = "live_runtime/window.rs"]
 mod window;
+#[path = "live_runtime/youtube.rs"]
+mod youtube;
 const FIXTURE_HTML: &str = r#"<!doctype html>
 <title>runtime pending</title>
 <style>

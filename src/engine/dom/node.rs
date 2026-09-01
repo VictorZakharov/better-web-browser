@@ -273,6 +273,21 @@ impl Node {
         self.element().map(|element| element.name.local.as_ref())
     }
 
+    /// Generated pseudo-elements belong to the CSS box tree, not the document tree. Internal
+    /// nodes let the existing formatting algorithms share one box implementation while callers
+    /// can reliably exclude them from DOM hit testing and script-visible traversal.
+    pub(crate) fn is_generated_pseudo(&self) -> bool {
+        matches!(
+            self.tag_name(),
+            Some("breeze-pseudo-before" | "breeze-pseudo-after")
+        )
+    }
+
+    pub(crate) fn is_generated_pseudo_content(&self) -> bool {
+        self.parent()
+            .is_some_and(|parent| parent.is_generated_pseudo())
+    }
+
     pub fn qualified_name(&self) -> Option<String> {
         self.element().map(|element| {
             element.name.prefix.as_ref().map_or_else(

@@ -15,12 +15,19 @@ use windows::Win32::Media::MediaFoundation::{
     MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+use windows::Win32::System::Com::StructuredStorage::{
+    PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+};
 use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize, STREAM_SEEK_SET,
 };
+use windows::Win32::System::Variant::VT_I8;
 use windows::core::GUID;
 
+mod adaptive;
 mod audio;
+mod fragmented_mp4;
+mod h264;
 mod playback;
 mod stream;
 
@@ -66,8 +73,34 @@ pub(super) fn probe(limits: MediaLimits) -> MediaCapabilityReport {
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
+    decode_sources(bytes, bytes, bytes.len() as u64, limits)
+}
+
+pub(super) fn decode_tracks(
+    video_bytes: &[u8],
+    audio_bytes: &[u8],
+    limits: MediaLimits,
+) -> Result<DecodedMedia, String> {
+    let encoded_bytes = video_bytes
+        .len()
+        .checked_add(audio_bytes.len())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| "adaptive media length overflowed".to_string())?;
+    adaptive::decode(video_bytes, audio_bytes, encoded_bytes, limits)
+}
+
+fn decode_sources(
+    video_bytes: &[u8],
+    audio_bytes: &[u8],
+    encoded_bytes: u64,
+    limits: MediaLimits,
+) -> Result<DecodedMedia, String> {
     let started = Instant::now();
-    if bytes.is_empty() || bytes.len() as u64 > limits.max_encoded_bytes {
+    if video_bytes.is_empty()
+        || audio_bytes.is_empty()
+        || encoded_bytes == 0
+        || encoded_bytes > limits.max_encoded_bytes
+    {
         return Err("encoded media length exceeds worker limits".into());
     }
     let _apartment = ComApartment::initialize()
@@ -75,7 +108,12 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     let _foundation = MediaFoundation::start()
         .map_err(|status| format!("start Media Foundation: HRESULT {status:#x}"))?;
 
-    let video_reader = source_reader(bytes)?;
+    let video_reader = source_reader(video_bytes)?;
+    select_stream(
+        &video_reader,
+        MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+        "video",
+    )?;
     verify_native_type(
         &video_reader,
         MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
@@ -114,7 +152,12 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
         limits.max_decoded_frame_bytes,
     )?;
 
-    let audio_reader = source_reader(bytes)?;
+    let audio_reader = source_reader(audio_bytes)?;
+    select_stream(
+        &audio_reader,
+        MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+        "audio",
+    )?;
     verify_native_type(
         &audio_reader,
         MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
@@ -153,9 +196,32 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
         "audio",
         limits.max_decoded_frame_bytes,
     )?;
+    if video.samples == 0
+        || audio.samples == 0
+        || video.samples as usize > crate::limits::MAX_MEDIA_DECODED_SAMPLES
+        || audio.samples as usize > crate::limits::MAX_MEDIA_DECODED_SAMPLES
+    {
+        let native_video_samples = native_stream_summary(
+            video_bytes,
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+            "native video",
+            limits,
+        )
+        .map(|summary| summary.samples.to_string())
+        .unwrap_or_else(|error| format!("error:{error}"));
+        return Err(format!(
+            "decoded adaptive sample counts are invalid: video={} (native={native_video_samples}) from {} bytes [{}], audio={} from {} bytes [{}]",
+            video.samples,
+            video_bytes.len(),
+            fragmented_mp4::summary(video_bytes),
+            audio.samples,
+            audio_bytes.len(),
+            fragmented_mp4::summary(audio_bytes),
+        ));
+    }
 
     let report = MediaDecodeReport {
-        encoded_bytes: bytes.len() as u64,
+        encoded_bytes,
         video_codec: MediaCodecFamily::H264,
         audio_codec: MediaCodecFamily::AacLc,
         source_reader_hresult: 0,
@@ -180,8 +246,19 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     report
         .validate(limits)
         .map_err(|error| format!("validate decoded media: {error}"))?;
-    let playback = VideoDecoder::open(bytes, limits, report.video_samples)?;
+    let playback = VideoDecoder::open(video_bytes, limits, report.video_samples)?;
     Ok(DecodedMedia { report, playback })
+}
+
+fn native_stream_summary(
+    bytes: &[u8],
+    stream: u32,
+    name: &str,
+    limits: MediaLimits,
+) -> Result<stream::StreamSummary, String> {
+    let reader = source_reader(bytes)?;
+    select_stream(&reader, stream, name)?;
+    read_stream(&reader, stream, name, limits.max_decoded_frame_bytes)
 }
 
 fn source_reader(bytes: &[u8]) -> Result<IMFSourceReader, String> {
@@ -210,6 +287,30 @@ fn source_reader(bytes: &[u8]) -> Result<IMFSourceReader, String> {
         .map_err(|error| format!("adapt memory stream for Media Foundation: {error}"))?;
     unsafe { MFCreateSourceReaderFromByteStream(&byte_stream, None) }
         .map_err(|error| format!("create Media Foundation Source Reader: {error}"))
+}
+
+fn select_stream(reader: &IMFSourceReader, stream: u32, name: &str) -> Result<(), String> {
+    unsafe { reader.SetStreamSelection(stream, true) }
+        .map_err(|error| format!("select Media Foundation {name} stream: {error}"))
+}
+
+fn seek_source_reader(reader: &IMFSourceReader, position_100ns: u64) -> Result<(), String> {
+    let position = PROPVARIANT {
+        Anonymous: PROPVARIANT_0 {
+            Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
+                vt: VT_I8,
+                Anonymous: PROPVARIANT_0_0_0 {
+                    hVal: position_100ns as i64,
+                },
+                ..Default::default()
+            }),
+        },
+    };
+    unsafe {
+        reader
+            .SetCurrentPosition(&GUID::zeroed(), &position)
+            .map_err(|error| format!("seek Media Foundation Source Reader: {error}"))
+    }
 }
 
 fn verify_native_type(

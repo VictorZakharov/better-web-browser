@@ -51,6 +51,7 @@ impl BrowserState {
             );
             return;
         }
+        self.apply_same_document_history_updates(&update.runtime.history_updates);
         self.schedule_script_runtime_wakeup();
         if benchmark_completed {
             self.finish_benchmark_after_completion();

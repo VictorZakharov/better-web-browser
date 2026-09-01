@@ -1,4 +1,5 @@
     const htmlNamespace = 'http://www.w3.org/1999/xhtml';
+    const svgNamespace = 'http://www.w3.org/2000/svg';
     const knownHtmlElements = new Set((
         'html head title base link meta style body article section nav aside h1 h2 h3 h4 h5 h6 ' +
         'hgroup header footer address p hr pre blockquote ol ul menu li dl dt dd figure figcaption ' +
@@ -23,12 +24,15 @@
         if (localName === 'img') return HTMLImageElement;
         if (localName === 'picture') return HTMLPictureElement;
         if (localName === 'source') return HTMLSourceElement;
+        if (localName === 'iframe') return HTMLIFrameElement;
         if (localName === 'video') return HTMLVideoElement;
         if (localName === 'audio') return HTMLAudioElement;
+        if (localName === 'canvas') return HTMLCanvasElement;
         if (localName === 'input') return HTMLInputElement;
         if (localName === 'textarea') return HTMLTextAreaElement;
         if (localName === 'ol') return HTMLOrderedListElement;
         if (localName === 'select') return HTMLSelectElement;
+        if (localName === 'option') return HTMLOptionElement;
         if (localName === 'button') return HTMLButtonElement;
         if (localName === 'label') return HTMLLabelElement;
         if (localName === 'fieldset') return HTMLFieldSetElement;
@@ -43,7 +47,6 @@
             ? HTMLElement
             : HTMLUnknownElement;
     };
-
     class DOMImplementation {
         createDocument(namespace, qualifiedName, doctype = null) {
             if (doctype !== null) throw new DOMException('DocumentType insertion is not implemented', 'NotSupportedError');
@@ -53,8 +56,8 @@
     }
 
     let documentWriteRefreshQueued = false;
+    const documentDefaultViews = new WeakMap();
     const documentCollections = new WeakMap();
-
     const documentCollection = (document, name, selector) => {
         let collections = documentCollections.get(document);
         if (!collections) {
@@ -64,7 +67,6 @@
         if (!collections.has(name)) collections.set(name, selectorCollection(document, selector));
         return collections.get(name);
     };
-
     class Document extends Node {
         constructor(id = 0, ...metadata) {
             super(Number(id) || host('createDocument', '', ''), ...metadata);
@@ -84,12 +86,17 @@
         createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
         createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
         createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
+        createTreeWalker(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+            if (!(root instanceof Node)) throw new TypeError('createTreeWalker requires a Node root');
+            return new TreeWalker(treeWalkerToken, root, whatToShow, filter);
+        }
         createAttribute(localName) { return createAttributeFor(this, localName); }
         createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
         importNode(node, deep = false) {
             if (!(node instanceof Node)) throw new TypeError('importNode requires a Node');
             const imported = wrap(host('importNode', this.__id, node.__id, !!deep));
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
+            upgradeCustomElementTree(imported);
             return imported;
         }
         adoptNode(node) {
@@ -141,7 +148,10 @@
         get documentURI() { return this.URL; }
         get baseURI() { return this.querySelector('base')?.href || this.URL; }
         get currentScript() { return this._currentScript; }
-        get defaultView() { return host('isPrimaryDocument', this.__id) ? windowObject : null; }
+        get defaultView() {
+            return documentDefaultViews.get(this) ||
+                (host('isPrimaryDocument', this.__id) ? windowObject : null);
+        }
         get implementation() { return this.__implementation ||= new DOMImplementation(); }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
         __dispatchNodeEvent(id, type) {
@@ -164,12 +174,13 @@
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }
-        get compatMode() { return 'CSS1Compat'; }
+        get compatMode() { return host('documentCompatMode', this.__id); }
         get characterSet() { return host('documentCharacterSet', this.__id); }
         get contentType() { return 'text/html'; }
         get cookie() { return host('cookieGet'); }
         set cookie(value) { host('cookieSet', String(value)); }
     }
+    installParentNodeMembers(Document.prototype);
     installEventHandlerAttributes(Document.prototype);
 
     function wrap(id) {
@@ -184,16 +195,19 @@
             const namespace = metadata[3] || null;
             const Constructor = namespace === htmlNamespace
                 ? htmlElementConstructor(metadata[2].toLowerCase())
-                : Element;
+                : namespace === svgNamespace
+                    ? metadata[2] === 'svg' ? SVGSVGElement : SVGElement
+                    : Element;
             node = new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
         }
         else if (type === 10) node = new DocumentType(id, type, metadata[1], null, null);
         else if (type === 11) node = metadata[4] === 'shadow'
             ? new ShadowRoot(id, type, metadata[1], null, null, shadowRootConstructionToken)
             : new DocumentFragment(id, type, metadata[1], null, null);
-        else node = type === 8
-            ? new Comment(id, type, metadata[1], null, null)
-            : new Text(id, type, metadata[1], null, null);
+        else if (type === 4) node = new CDATASection(id, type, metadata[1], null, null);
+        else if (type === 7) node = new ProcessingInstruction(id, type, metadata[1], null, null);
+        else if (type === 8) node = new Comment(id, type, metadata[1], null, null);
+        else node = new Text(id, type, metadata[1], null, null);
         cache.set(id, node);
         return node;
     }
@@ -201,6 +215,14 @@
     const document = wrap(host('document'));
     const windowEvents = new EventTarget();
     const windowObject = globalThis;
+    const windowConstructionToken = {};
+    class Window extends EventTarget {
+        constructor(token) {
+            if (token !== windowConstructionToken) throw new TypeError('Illegal constructor');
+            super();
+        }
+    }
+    Object.setPrototypeOf(windowObject, Window.prototype);
     windowObject.window = windowObject;
     windowObject.self = windowObject;
     windowObject.top = windowObject;
@@ -208,8 +230,13 @@
     windowObject.document = document;
     windowObject.Node = Node;
     windowObject.Element = Element;
+    windowObject.SVGAnimatedString = SVGAnimatedString;
+    windowObject.SVGElement = SVGElement;
+    windowObject.SVGSVGElement = SVGSVGElement;
     windowObject.Attr = Attr;
     windowObject.NamedNodeMap = NamedNodeMap;
+    windowObject.NodeFilter = NodeFilter;
+    windowObject.TreeWalker = TreeWalker;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
     windowObject.HTMLStyleElement = HTMLStyleElement;
@@ -224,15 +251,23 @@
     windowObject.HTMLImageElement = HTMLImageElement;
     windowObject.HTMLPictureElement = HTMLPictureElement;
     windowObject.HTMLSourceElement = HTMLSourceElement;
+    windowObject.HTMLIFrameElement = HTMLIFrameElement;
     windowObject.HTMLMediaElement = HTMLMediaElement;
     windowObject.HTMLVideoElement = HTMLVideoElement;
     windowObject.HTMLAudioElement = HTMLAudioElement;
+    windowObject.HTMLCanvasElement = HTMLCanvasElement;
+    windowObject.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    windowObject.ImageData = ImageData;
     windowObject.TimeRanges = TimeRanges;
     windowObject.MediaError = MediaError;
+    windowObject.MediaSource = MediaSource;
+    windowObject.SourceBuffer = SourceBuffer;
+    windowObject.SourceBufferList = SourceBufferList;
     windowObject.HTMLInputElement = HTMLInputElement;
     windowObject.HTMLTextAreaElement = HTMLTextAreaElement;
     windowObject.HTMLOrderedListElement = HTMLOrderedListElement;
     windowObject.HTMLSelectElement = HTMLSelectElement;
+    windowObject.HTMLOptionElement = HTMLOptionElement;
     windowObject.HTMLButtonElement = HTMLButtonElement;
     windowObject.HTMLLabelElement = HTMLLabelElement;
     windowObject.HTMLFieldSetElement = HTMLFieldSetElement;
@@ -243,8 +278,11 @@
     windowObject.HTMLTemplateElement = HTMLTemplateElement;
     windowObject.HTMLFormElement = HTMLFormElement;
     windowObject.Document = Document;
+    windowObject.CharacterData = CharacterData;
     windowObject.Text = Text;
+    windowObject.CDATASection = CDATASection;
     windowObject.Comment = Comment;
+    windowObject.ProcessingInstruction = ProcessingInstruction;
     windowObject.DocumentType = DocumentType;
     windowObject.DocumentFragment = DocumentFragment;
     windowObject.ShadowRoot = ShadowRoot;
@@ -260,10 +298,12 @@
     windowObject.FocusEvent = FocusEvent;
     windowObject.MouseEvent = MouseEvent;
     windowObject.PointerEvent = PointerEvent;
+    windowObject.WheelEvent = WheelEvent;
     windowObject.KeyboardEvent = KeyboardEvent;
     windowObject.InputEvent = InputEvent;
     windowObject.DOMException = DOMException;
     windowObject.EventTarget = EventTarget;
+    windowObject.Window = Window;
     windowObject.Audio = function Audio(src = '') {
         const audio = document.createElement('audio');
         if (src !== '') audio.src = String(src);
@@ -276,7 +316,6 @@
     windowObject.addEventListener = windowEvents.addEventListener.bind(windowEvents);
     windowObject.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
     windowObject.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
-
     const installedWindowNames = new Map();
     const synchronizeWindowName = name => {
         name = String(name || '');
@@ -332,23 +371,24 @@
     iframeWindow.addEventListener = iframeEvents.addEventListener.bind(iframeEvents);
     iframeWindow.removeEventListener = iframeEvents.removeEventListener.bind(iframeEvents);
     iframeWindow.dispatchEvent = iframeEvents.dispatchEvent.bind(iframeEvents);
-    const iframeDocument = {
-        defaultView: iframeWindow,
-        readyState: 'complete',
-        URL: 'about:blank',
-        documentURI: 'about:blank',
-        baseURI: 'about:blank',
-        createElement: name => document.createElement(name),
-        createElementNS: (_namespace, name) => document.createElement(name),
-        createAttribute: name => document.createAttribute(name),
-        createAttributeNS: (namespace, name) => document.createAttributeNS(namespace, name),
-        createTextNode: text => document.createTextNode(text),
-        querySelector: selector => document.querySelector(selector),
-        querySelectorAll: selector => document.querySelectorAll(selector)
+    const iframeDocuments = new WeakMap();
+    const iframeDocumentFor = frame => {
+        let iframeDocument = iframeDocuments.get(frame);
+        if (!iframeDocument && frame.isConnected) {
+            // A same-origin about:blank iframe owns a real HTML document. Its descendants keep
+            // that document as their root even if the embedding element is later disconnected.
+            // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+            iframeDocument = wrap(host('createHtmlDocument', ''));
+            iframeDocument.readyState = 'complete';
+            documentDefaultViews.set(iframeDocument, iframeWindow);
+            iframeDocuments.set(frame, iframeDocument);
+        }
+        if (iframeDocument) iframeWindow.document = iframeDocument;
+        return iframeDocument || null;
     };
     iframeWindow.parent = windowObject;
     iframeWindow.top = windowObject;
-    iframeWindow.document = iframeDocument;
+    iframeWindow.document = null;
 
     let currentUrl = host('documentUrl');
     const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));

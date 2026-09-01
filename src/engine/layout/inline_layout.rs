@@ -130,7 +130,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             InlineAtom::Image { width, height, .. }
             | InlineAtom::Control { width, height, .. }
-            | InlineAtom::Placeholder { width, height } => MeasuredAtom {
+            | InlineAtom::Placeholder { width, height, .. } => MeasuredAtom {
                 atom,
                 text: None,
                 width: *width,
@@ -140,7 +140,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 raster_run_id: 0,
                 glyphs: Vec::new(),
             },
-            InlineAtom::InlineBox { children, style } => {
+            InlineAtom::InlineBox {
+                children, style, ..
+            } => {
                 let metrics = self.measure_inline_box(atom, children, style, containing_width);
                 MeasuredAtom {
                     atom,
@@ -226,6 +228,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let mut border_box_height = resolve_content_height(
             style.height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,
@@ -235,6 +238,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         .unwrap_or(children_height + vertical_insets);
         if let Some(minimum) = resolve_content_height(
             style.min_height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,
@@ -244,6 +248,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if let Some(maximum) = resolve_content_height(
             style.max_height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,

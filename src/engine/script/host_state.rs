@@ -42,9 +42,10 @@ pub(super) struct HostState {
     pub(super) html_documents: HashSet<u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
-    pub(super) task_mutation_count: usize,
+    pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
+    pub(super) history_actions: Vec<ScriptHistoryAction>,
     pub(super) cookie_header: String,
     pub(super) cookie_version: u64,
     pub(super) cookie_updates: Vec<String>,
@@ -71,8 +72,18 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
+    /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
+    pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) layout_geometry_version: u64,
+    pub(super) layout_geometry_initialized: bool,
+    pub(super) layout_flush: Option<LayoutFlushCallback>,
     pub(super) media_environment: MediaEnvironment,
+    pub(super) layout_viewport_width: f32,
+    pub(super) layout_viewport_height: f32,
+    pub(super) quirks_mode: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
+    pub(super) pending_layout_invalidation: render_invalidation::PendingInvalidation,
 }
 
 impl HostState {
@@ -96,9 +107,10 @@ impl HostState {
             html_documents: HashSet::new(),
             next_node_id: 1,
             mutation_count: 0,
-            task_mutation_count: 0,
+            task_mutations: task_mutation_profile::TaskMutationProfile::default(),
             console: Vec::new(),
             navigation_url: None,
+            history_actions: Vec::new(),
             cookie_header: String::new(),
             cookie_version: 1,
             cookie_updates: Vec::new(),
@@ -125,8 +137,17 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            offset_parent_styles: None,
+            layout_geometry: HashMap::new(),
+            layout_geometry_version: 0,
+            layout_geometry_initialized: false,
+            layout_flush: None,
             media_environment: MediaEnvironment::new(1280.0, 720.0, 1.0, false),
+            layout_viewport_width: 1280.0,
+            layout_viewport_height: 720.0,
+            quirks_mode: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
+            pending_layout_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
         state
@@ -169,6 +190,20 @@ impl HostState {
                 ))
                 .into())
         }
+    }
+
+    pub(super) fn flush_layout_if_needed(&mut self) {
+        let version = self.document.subtree_mutation_version();
+        if self.layout_geometry_initialized && self.layout_geometry_version == version {
+            return;
+        }
+        let Some(flush) = self.layout_flush.as_mut() else {
+            return;
+        };
+        let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
+        self.layout_geometry = flush(&invalidation);
+        self.layout_geometry_version = version;
+        self.layout_geometry_initialized = true;
     }
 
     pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
@@ -261,24 +296,30 @@ impl HostState {
         requires_render: bool,
     ) {
         self.mutation_count += 1;
-        self.task_mutation_count += 1;
+        self.task_mutations.record(kind);
         if requires_render {
             self.pending_invalidation
+                .record(&self.document, target, kind);
+            self.pending_layout_invalidation
                 .record(&self.document, target, kind);
             self.timers.request_render();
         }
     }
 
     pub(super) fn begin_task(&mut self) {
-        self.task_mutation_count = 0;
+        self.task_mutations.reset();
     }
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
-        self.pending_invalidation.extend(target);
+        self.pending_invalidation.extend(&self.document, target);
+        self.pending_layout_invalidation
+            .extend(&self.document, target);
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
         self.pending_invalidation.record_removed_subtree(root);
+        self.pending_layout_invalidation
+            .record_removed_subtree(root);
     }
 
     pub(super) fn mutation_requires_render(&self, target: &NodeRef) -> bool {

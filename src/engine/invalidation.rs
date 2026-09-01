@@ -2,6 +2,8 @@
 
 use super::dom::NodeId;
 
+pub(crate) const MAX_INVALIDATION_ROOTS: usize = 256;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InvalidationImpact(u8);
 
@@ -86,7 +88,7 @@ impl MutationKind<'_> {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RenderInvalidation {
-    pub root: Option<NodeId>,
+    pub roots: Vec<NodeId>,
     pub impact: InvalidationImpact,
     pub mutation_count: usize,
     pub rebuild_style_rules: bool,
@@ -96,7 +98,7 @@ pub struct RenderInvalidation {
 impl RenderInvalidation {
     pub fn viewport(root: NodeId) -> Self {
         Self {
-            root: Some(root),
+            roots: vec![root],
             impact: MutationKind::Viewport.impact(),
             mutation_count: 1,
             rebuild_style_rules: true,
@@ -106,7 +108,7 @@ impl RenderInvalidation {
 
     pub fn full(root: NodeId) -> Self {
         Self {
-            root: Some(root),
+            roots: vec![root],
             impact: MutationKind::Stylesheet.impact(),
             mutation_count: 1,
             rebuild_style_rules: true,
@@ -115,12 +117,12 @@ impl RenderInvalidation {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.root.is_none()
+        self.roots.is_empty()
     }
 
     /// Combines rendering work produced by sequential callbacks before an embedder checkpoint.
-    /// Node identities alone cannot recover ancestry, so distinct roots conservatively widen to
-    /// the document. The normal single-root path remains incremental.
+    /// Ancestry is normalized against the live DOM at refresh time. Keep a bounded set here so
+    /// independent component updates do not become a document-wide style pass.
     pub fn merge_conservatively(&mut self, mut other: Self, document_root: NodeId) {
         if other.is_empty() {
             return;
@@ -129,8 +131,12 @@ impl RenderInvalidation {
             *self = other;
             return;
         }
-        if self.root != other.root {
-            self.root = Some(document_root);
+        self.roots.append(&mut other.roots);
+        self.roots.sort_unstable();
+        self.roots.dedup();
+        if self.roots.contains(&document_root) || self.roots.len() > MAX_INVALIDATION_ROOTS {
+            self.roots.clear();
+            self.roots.push(document_root);
         }
         self.impact = self.impact.union(other.impact);
         self.mutation_count = self.mutation_count.saturating_add(other.mutation_count);
@@ -155,12 +161,12 @@ mod tests {
     }
 
     #[test]
-    fn merging_distinct_roots_widens_to_the_document() {
+    fn merging_distinct_roots_preserves_bounded_independent_work() {
         let document = NodeId::from_wire((1_u128 << 64) | 1).unwrap();
         let left = NodeId::from_wire((1_u128 << 64) | 2).unwrap();
         let right = NodeId::from_wire((1_u128 << 64) | 3).unwrap();
         let mut invalidation = RenderInvalidation {
-            root: Some(left),
+            roots: vec![left],
             impact: InvalidationImpact::STYLE,
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -168,7 +174,7 @@ mod tests {
         };
         invalidation.merge_conservatively(
             RenderInvalidation {
-                root: Some(right),
+                roots: vec![right],
                 impact: InvalidationImpact::PAINT,
                 mutation_count: 2,
                 rebuild_style_rules: false,
@@ -177,7 +183,7 @@ mod tests {
             document,
         );
 
-        assert_eq!(invalidation.root, Some(document));
+        assert_eq!(invalidation.roots, vec![left, right]);
         assert!(invalidation.impact.affects_style());
         assert!(invalidation.impact.affects_paint());
         assert_eq!(invalidation.mutation_count, 3);

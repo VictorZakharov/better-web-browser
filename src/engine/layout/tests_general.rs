@@ -1,14 +1,23 @@
 use super::test_support::{CountingMeasurer, FixedMeasurer};
 use super::*;
 
+#[path = "tests_grid.rs"]
+mod grid;
 #[path = "tests_media.rs"]
 mod media;
+#[path = "tests_opacity.rs"]
+mod opacity;
+#[path = "tests_positioned.rs"]
+mod positioned;
+#[path = "tests_svg.rs"]
+mod svg;
+#[path = "tests_table.rs"]
+mod table;
 
 #[test]
 fn lays_out_centered_image_form_and_links() {
     let mut page = Page::parse(
-        r#"
-            <style>body{margin:0} center{text-align:center}.logo{padding:20px 0}
+        r#"<style>body{margin:0} center{text-align:center}.logo{padding:20px 0}
             .search{width:300px;height:24px} a{color:#123456}</style>
             <center><img class="logo" src="/logo.png" width="100" height="40"><br>
             <form action="/search"><input class="search" name="q"><br>
@@ -42,6 +51,30 @@ fn lays_out_centered_image_form_and_links() {
         .count();
     assert_eq!(controls, 2);
     assert!(output.items.iter().any(|item| matches!(item, DisplayItem::Text { link: Some(link), .. } if link == "https://example.com/about")));
+}
+
+#[test]
+fn unsourced_hidden_images_keep_geometry_without_painting() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            img { display: inline-block; visibility: hidden; width: 160px; height: 90px }
+        </style><img id="lazy" alt="lazy">"#,
+        "https://example.com/",
+    );
+    let image = page.dom.elements_named("img").next().unwrap();
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+
+    let bounds = output.node_bounds.get(&node_id(&image)).copied().unwrap();
+    assert_eq!(bounds.width, 160.0);
+    assert_eq!(bounds.height, 90.0);
+    assert!(
+        !output
+            .items
+            .iter()
+            .any(|item| matches!(item, DisplayItem::Image { .. }))
+    );
 }
 
 #[test]
@@ -116,6 +149,105 @@ fn resolves_viewport_units_against_the_correct_viewport_axis() {
     assert!((box_rect.width - 100.0).abs() < 0.1);
     assert!((box_rect.height - 40.0).abs() < 0.1);
     assert!((label_size - 40.0).abs() < 0.1);
+}
+
+#[test]
+fn resolves_absolute_percentage_min_height_against_the_initial_containing_block() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .app {
+                position: absolute;
+                inset: 0;
+                min-height: 100%;
+                background: #c00;
+            }
+        </style>
+        <div class="app"></div>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 1000.0, 600.0, &mut measurer);
+    let app = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(204, 0, 0) => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    assert!((app.height - 600.0).abs() < 0.01, "{app:?}");
+}
+
+#[test]
+fn resolves_percentage_height_against_a_definite_parent_height() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .parent { height: 400px }
+            .child { height: 50%; background: #00c }
+        </style>
+        <div class="parent"><div class="child"></div></div>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 1000.0, 600.0, &mut measurer);
+    let child = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 0, 204) => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    assert!((child.height - 200.0).abs() < 0.01, "{child:?}");
+}
+
+#[test]
+fn positions_absolute_children_against_the_completed_padding_box() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .frame {
+                position: relative;
+                width: 800px;
+                padding-top: 50%;
+            }
+            .container {
+                position: absolute;
+                inset: 0;
+            }
+            .player {
+                width: 100%;
+                height: 100%;
+                background: #000;
+            }
+        </style>
+        <div class="frame"><div class="container"><div class="player"></div></div></div>"#,
+        "https://example.com/",
+    );
+    let mut measurer = FixedMeasurer;
+    let output = layout_page(&page, 1000.0, 600.0, &mut measurer);
+    let player = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, color, .. } if *color == Color::BLACK => Some(*rect),
+            _ => None,
+        })
+        .unwrap();
+
+    assert!((player.x - 0.0).abs() < 0.01, "{player:?}");
+    assert!((player.y - 0.0).abs() < 0.01, "{player:?}");
+    assert!((player.width - 800.0).abs() < 0.01, "{player:?}");
+    // Percentage padding resolves against the containing block's 1000px inline size.
+    assert!((player.height - 500.0).abs() < 0.01, "{player:?}");
 }
 
 #[test]
@@ -365,113 +497,4 @@ fn does_not_break_before_punctuation_at_inline_boundaries() {
         .unwrap();
     assert_eq!(punctuation_y, beta_y);
     assert!(gamma_y > punctuation_y);
-}
-
-#[test]
-fn places_explicit_grid_items_across_fractional_and_fixed_tracks() {
-    let page = Page::parse(
-        r#"
-            <style>
-                body { margin: 0 }
-                #container { display: flex }
-                .grid { display: grid; width: 900px;
-                        grid-template-columns: 1fr 1fr 300px }
-                .main { grid-area: 1 / 1 / 2 / 3; height: 40px; background: #ff0000 }
-                .side { grid-area: 1 / 3 / 2 / 4; height: 60px; background: #0000ff }
-            </style>
-            <div id="container"><div class="grid">
-                <main class="main"></main><aside class="side"></aside>
-            </div></div>
-        "#,
-        "https://example.com/",
-    );
-    let mut measurer = FixedMeasurer;
-    let output = layout_page(&page, 900.0, 600.0, &mut measurer);
-    let main = output
-        .items
-        .iter()
-        .find_map(|item| match item {
-            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(255, 0, 0) => {
-                Some(*rect)
-            }
-            _ => None,
-        })
-        .unwrap();
-    let side = output
-        .items
-        .iter()
-        .find_map(|item| match item {
-            DisplayItem::SolidRect { rect, color, .. } if *color == Color::rgb(0, 0, 255) => {
-                Some(*rect)
-            }
-            _ => None,
-        })
-        .unwrap();
-    assert_eq!(
-        main,
-        RectF {
-            x: 0.0,
-            y: 0.0,
-            width: 600.0,
-            height: 40.0
-        }
-    );
-    assert_eq!(
-        side,
-        RectF {
-            x: 600.0,
-            y: 0.0,
-            width: 300.0,
-            height: 60.0
-        }
-    );
-}
-
-#[test]
-fn places_named_areas_from_grid_template_shorthand() {
-    let page = Page::parse(
-        r#"
-            <style>
-                body { margin: 0 }
-                .grid { display: grid; width: 900px;
-                        grid-template: min-content 1fr / 200px minmax(0, 1fr);
-                        grid-template-areas: 'notice notice' 'sidebar content';
-                        column-gap: 20px; row-gap: 5px }
-                .notice { grid-area: notice; height: 10px; background: #ff0000 }
-                .sidebar { grid-area: sidebar; height: 40px; background: #0000ff }
-                .content { grid-area: content; height: 60px; background: #00ff00 }
-            </style>
-            <div class="grid"><header class="notice"></header>
-                <aside class="sidebar"></aside><main class="content"></main></div>
-        "#,
-        "https://example.com/",
-    );
-    let mut measurer = FixedMeasurer;
-    let output = layout_page(&page, 900.0, 600.0, &mut measurer);
-    let rect_for = |wanted| {
-        output.items.iter().find_map(|item| match item {
-            DisplayItem::SolidRect { rect, color, .. } if *color == wanted => Some(*rect),
-            _ => None,
-        })
-    };
-
-    assert_eq!(rect_for(Color::rgb(255, 0, 0)).unwrap().width, 900.0);
-    assert_eq!(
-        rect_for(Color::rgb(0, 0, 255)).unwrap(),
-        RectF {
-            x: 0.0,
-            y: 15.0,
-            width: 200.0,
-            height: 40.0
-        }
-    );
-    assert_eq!(
-        rect_for(Color::rgb(0, 255, 0)).unwrap(),
-        RectF {
-            x: 220.0,
-            y: 15.0,
-            width: 680.0,
-            height: 60.0
-        }
-    );
 }

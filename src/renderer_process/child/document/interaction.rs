@@ -249,6 +249,7 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            || !outcome.history_actions.is_empty()
             || !outcome.cookie_updates.is_empty();
         if !needs_present {
             return Ok(None);
@@ -267,7 +268,7 @@ impl DocumentRuntime {
         if outcome.render_requested {
             self.rebuild_layout();
         }
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
@@ -300,28 +301,53 @@ impl DocumentRuntime {
     }
 
     fn hit_target(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout.items.iter().rev().find_map(|item| match item {
-            DisplayItem::Text {
-                rect,
-                link: Some(link),
-                node_id: Some(node_id),
-                ..
-            } if contains(*rect, x, y) => self.page.dom.find_node(*node_id).map(|node| HitTarget {
+        self.layout
+            .items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                DisplayItem::Text {
+                    rect,
+                    link: Some(link),
+                    node_id: Some(node_id),
+                    ..
+                } if contains(*rect, x, y) => {
+                    self.page.dom.find_node(*node_id).map(|node| HitTarget {
+                        node,
+                        link: Some(link.clone()),
+                        control: None,
+                    })
+                }
+                DisplayItem::Control(control) if contains(control.rect, x, y) => self
+                    .page
+                    .dom
+                    .find_node(control.node_id)
+                    .map(|node| HitTarget {
+                        node,
+                        link: None,
+                        control: Some((**control).clone()),
+                    }),
+                _ => None,
+            })
+            .or_else(|| self.hit_element_bounds(x, y))
+    }
+
+    fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
+        self.layout
+            .node_paint_order
+            .iter()
+            .rev()
+            .find_map(|id| {
+                let rect = self.layout.node_bounds.get(id)?;
+                (rect.width > 0.0 && rect.height > 0.0 && contains(*rect, x, y))
+                    .then(|| self.page.dom.find_node(*id))
+                    .flatten()
+            })
+            .map(|node| HitTarget {
                 node,
-                link: Some(link.clone()),
+                link: None,
                 control: None,
-            }),
-            DisplayItem::Control(control) if contains(control.rect, x, y) => self
-                .page
-                .dom
-                .find_node(control.node_id)
-                .map(|node| HitTarget {
-                    node,
-                    link: None,
-                    control: Some((**control).clone()),
-                }),
-            _ => None,
-        })
+            })
     }
 }
 
@@ -390,11 +416,15 @@ fn key_code(key: &str) -> u32 {
         "Enter" => 13,
         "Escape" => 27,
         " " => 32,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
         _ => key
             .chars()
             .next()
             .filter(|_| key.chars().count() == 1)
-            .map_or(0, |c| c as u32),
+            .map_or(0, |c| c.to_ascii_uppercase() as u32),
     }
 }
 
@@ -406,5 +436,12 @@ mod tests {
     fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
         assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
         assert_eq!(cursor_for_link(false), PointerCursor::Default);
+    }
+
+    #[test]
+    fn keyboard_compatibility_codes_match_native_windows_input() {
+        assert_eq!(key_code("k"), 75);
+        assert_eq!(key_code("ArrowRight"), 39);
+        assert_eq!(key_code("Escape"), 27);
     }
 }

@@ -9,6 +9,9 @@ use super::timer_execution::{TimerSlice, settle_timer_slice};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+mod document_lifecycle;
+mod geometry;
+
 /// Owns one document's JavaScript realm and all native state that must remain on the realm's
 /// creating thread. Embedders must keep this runtime and its document together on that owner
 /// thread for the complete document lifetime.
@@ -59,6 +62,16 @@ impl ScriptRuntime {
         scripts: &[ScriptInput],
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        self.execute_initial_impl(scripts, dynamic_script_loader, false, true)
+    }
+
+    fn execute_initial_impl(
+        &mut self,
+        scripts: &[ScriptInput],
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+        defer_dynamic_scripts: bool,
+        request_document_lifecycle: bool,
+    ) -> ScriptOutcome {
         if self.initialized {
             return lifecycle_error("the document's initial scripts have already executed");
         }
@@ -75,7 +88,8 @@ impl ScriptRuntime {
                 &host,
                 &mut self.total_script_bytes,
                 &mut dynamic_script_loader,
-                false,
+                defer_dynamic_scripts,
+                request_document_lifecycle,
             )
         }));
         self.finish_guarded_run(result)
@@ -86,26 +100,7 @@ impl ScriptRuntime {
         scripts: &[ScriptInput],
         module_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        if self.initialized {
-            return lifecycle_error("the document's initial scripts have already executed");
-        }
-        self.initialized = true;
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut module_loader = module_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            execute_inner(
-                scripts,
-                context,
-                &host,
-                &mut self.total_script_bytes,
-                &mut module_loader,
-                true,
-            )
-        }));
-        self.finish_guarded_run(result)
+        self.execute_initial_impl(scripts, module_loader, true, true)
     }
 
     /// Executes newly available classic scripts as one event-loop task in this document's realm.
@@ -183,7 +178,9 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn set_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
-        self.host.borrow_mut().stylesheet_sources = stylesheets.iter().cloned().collect();
+        let mut host = self.host.borrow_mut();
+        host.stylesheet_sources = stylesheets.iter().cloned().collect();
+        host.offset_parent_styles = None;
     }
 
     pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {

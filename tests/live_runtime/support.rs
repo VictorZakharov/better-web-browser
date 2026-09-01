@@ -191,7 +191,10 @@ pub(super) fn serve_parallel_fixtures(
         .set_nonblocking(true)
         .map_err(|error| format!("set fixture nonblocking: {error}"))?;
     let response_for = std::sync::Arc::new(response_for);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // The integration suite intentionally runs several hidden browsers in parallel. Keep the
+    // fixture accept horizon aligned with their outer wait so a healthy but CPU-starved navigation
+    // is not misreported as WSAEWOULDBLOCK after the shorter single-request timeout.
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut workers = Vec::new();
     for _ in 0..request_count {
         let (stream, _) = accept_until(&listener, deadline)?;
@@ -215,12 +218,18 @@ fn accept_until(
     loop {
         match listener.accept() {
             Ok(connection) => return Ok(connection),
-            Err(error) if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
+            Err(error) if is_would_block(&error) && Instant::now() < deadline => {
                 thread::sleep(Duration::from_millis(10));
             }
             Err(error) => return Err(format!("accept fixture request: {error}")),
         }
     }
+}
+
+fn is_would_block(error: &std::io::Error) -> bool {
+    // Windows can preserve WSAEWOULDBLOCK as an uncategorized OS error instead of mapping it to
+    // ErrorKind::WouldBlock. Both representations describe the same transient accept condition.
+    error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(10035)
 }
 
 fn serve_fixture_connection(

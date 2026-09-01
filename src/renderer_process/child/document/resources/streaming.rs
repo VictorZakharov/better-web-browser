@@ -136,6 +136,7 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            || !outcome.history_actions.is_empty()
             || outcome.runtime_stopped
             || !outcome.invalidation.is_empty();
         let style = if needs_present {
@@ -152,7 +153,7 @@ impl DocumentRuntime {
         if needs_present {
             self.rebuild_layout();
         }
-        let current_load = self.text.finish_load_report(PageLoadReport {
+        let current_load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(started.elapsed()),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
@@ -179,7 +180,11 @@ impl DocumentRuntime {
                 RendererRuntimeUpdate {
                     document: self.id,
                     clock_advanced: false,
-                    runtime: runtime_report(outcome, self.script_runtime.is_some()),
+                    runtime: runtime_report(
+                        outcome,
+                        self.script_runtime.is_some(),
+                        self.media_runtime_report(),
+                    ),
                     load,
                     next_timer_micros,
                 },

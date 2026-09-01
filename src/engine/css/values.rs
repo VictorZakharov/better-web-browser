@@ -1,5 +1,9 @@
 //! Computed CSS value types and inherited/initial style state.
 
+mod edges;
+mod length;
+mod viewport;
+
 use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Color {
@@ -67,6 +71,7 @@ pub enum Length {
     Px(f32),
     Percent(f32),
     Em(f32),
+    Rem(f32),
     Vw(f32),
     Vh(f32),
     Vmin(f32),
@@ -75,76 +80,12 @@ pub enum Length {
         px: f32,
         percent: f32,
         em: f32,
+        rem: f32,
         vw: f32,
         vh: f32,
         vmin: f32,
         vmax: f32,
     },
-}
-
-impl Length {
-    pub fn resolve(self, basis: f32, font_size: f32) -> Option<f32> {
-        match self {
-            Self::Auto => None,
-            Self::Px(value) => Some(value),
-            Self::Percent(value) => Some(basis * value / 100.0),
-            Self::Em(value) => Some(font_size * value),
-            Self::Vw(value) | Self::Vh(value) | Self::Vmin(value) | Self::Vmax(value) => {
-                Some(basis * value / 100.0)
-            }
-            Self::Calc {
-                px,
-                percent,
-                em,
-                vw,
-                vh,
-                vmin,
-                vmax,
-            } => Some(
-                px + basis * percent / 100.0
-                    + font_size * em
-                    + basis * vw / 100.0
-                    + basis * vh / 100.0
-                    + basis * vmin / 100.0
-                    + basis * vmax / 100.0,
-            ),
-        }
-    }
-
-    pub(super) fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
-        let width = width.max(1.0);
-        let height = height.max(1.0);
-        let minimum = width.min(height);
-        let maximum = width.max(height);
-        match self {
-            Self::Vw(value) => Self::Px(width * value / 100.0),
-            Self::Vh(value) => Self::Px(height * value / 100.0),
-            Self::Vmin(value) => Self::Px(minimum * value / 100.0),
-            Self::Vmax(value) => Self::Px(maximum * value / 100.0),
-            Self::Calc {
-                px,
-                percent,
-                em,
-                vw,
-                vh,
-                vmin,
-                vmax,
-            } => Self::Calc {
-                px: px
-                    + width * vw / 100.0
-                    + height * vh / 100.0
-                    + minimum * vmin / 100.0
-                    + maximum * vmax / 100.0,
-                percent,
-                em,
-                vw: 0.0,
-                vh: 0.0,
-                vmin: 0.0,
-                vmax: 0.0,
-            },
-            value => value,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,33 +94,6 @@ pub struct Edges {
     pub right: Length,
     pub bottom: Length,
     pub left: Length,
-}
-
-impl Edges {
-    pub const ZERO: Self = Self {
-        top: Length::Px(0.0),
-        right: Length::Px(0.0),
-        bottom: Length::Px(0.0),
-        left: Length::Px(0.0),
-    };
-
-    pub fn resolve(self, width: f32, font_size: f32) -> ResolvedEdges {
-        ResolvedEdges {
-            top: self.top.resolve(width, font_size).unwrap_or(0.0),
-            right: self.right.resolve(width, font_size).unwrap_or(0.0),
-            bottom: self.bottom.resolve(width, font_size).unwrap_or(0.0),
-            left: self.left.resolve(width, font_size).unwrap_or(0.0),
-        }
-    }
-
-    fn resolve_viewport_units(self, width: f32, height: f32) -> Self {
-        Self {
-            top: self.top.resolve_viewport_units(width, height),
-            right: self.right.resolve_viewport_units(width, height),
-            bottom: self.bottom.resolve_viewport_units(width, height),
-            left: self.left.resolve_viewport_units(width, height),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -244,7 +158,19 @@ pub enum Position {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlexDirection {
     Row,
+    RowReverse,
     Column,
+    ColumnReverse,
+}
+
+impl FlexDirection {
+    pub(crate) fn is_row(self) -> bool {
+        matches!(self, Self::Row | Self::RowReverse)
+    }
+
+    pub(crate) fn is_reverse(self) -> bool {
+        matches!(self, Self::RowReverse | Self::ColumnReverse)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,8 +234,10 @@ pub enum BackgroundSize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
+    pub generated_content: GeneratedContent,
     pub display: Display,
     pub position: Position,
+    pub z_index: Option<i32>,
     pub float: Float,
     pub color: Color,
     pub background_color: Color,
@@ -321,6 +249,7 @@ pub struct ComputedStyle {
     pub background_position_y: Length,
     pub background_size: BackgroundSize,
     pub font_size: f32,
+    pub(crate) root_font_size: f32,
     pub font_weight: u16,
     pub italic: bool,
     pub font_family: String,
@@ -347,6 +276,12 @@ pub struct ComputedStyle {
     pub left: Length,
     pub visibility: bool,
     pub opacity: f32,
+    pub(crate) transform: transform::TransformList,
+    pub(crate) perspective_non_none: bool,
+    pub(crate) filter_non_none: bool,
+    pub(crate) transform_style_preserve_3d: bool,
+    pub(crate) contain_layout_or_paint: bool,
+    pub(crate) will_change_containing_block: bool,
     pub overflow_hidden: bool,
     pub justify_content_end: bool,
     pub align_items_center: bool,
@@ -359,6 +294,8 @@ pub struct ComputedStyle {
     pub flex_shrink: f32,
     pub flex_basis: Length,
     pub box_sizing: BoxSizing,
+    pub border_collapse: bool,
+    pub caption_side_bottom: bool,
     pub list_style_type: ListStyleType,
     pub grid_template_columns: String,
     pub grid_template_rows: String,
@@ -376,8 +313,10 @@ pub struct ComputedStyle {
 impl ComputedStyle {
     pub(super) fn initial() -> Self {
         Self {
+            generated_content: GeneratedContent::Normal,
             display: Display::Inline,
             position: Position::Static,
+            z_index: None,
             float: Float::None,
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
@@ -389,6 +328,7 @@ impl ComputedStyle {
             background_position_y: Length::Percent(0.0),
             background_size: BackgroundSize::Auto,
             font_size: 16.0,
+            root_font_size: 16.0,
             font_weight: 400,
             italic: false,
             font_family: "Arial".to_string(),
@@ -415,6 +355,12 @@ impl ComputedStyle {
             left: Length::Auto,
             visibility: true,
             opacity: 1.0,
+            transform: transform::TransformList::default(),
+            perspective_non_none: false,
+            filter_non_none: false,
+            transform_style_preserve_3d: false,
+            contain_layout_or_paint: false,
+            will_change_containing_block: false,
             overflow_hidden: false,
             justify_content_end: false,
             align_items_center: false,
@@ -427,6 +373,8 @@ impl ComputedStyle {
             flex_shrink: 1.0,
             flex_basis: Length::Auto,
             box_sizing: BoxSizing::ContentBox,
+            border_collapse: false,
+            caption_side_bottom: false,
             list_style_type: ListStyleType::Disc,
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),
@@ -447,6 +395,7 @@ impl ComputedStyle {
         if let Some(parent) = parent {
             style.color = parent.color;
             style.font_size = parent.font_size;
+            style.root_font_size = parent.root_font_size;
             style.font_weight = parent.font_weight;
             style.italic = parent.italic;
             style.font_family.clone_from(&parent.font_family);
@@ -455,6 +404,8 @@ impl ComputedStyle {
             style.line_height = parent.line_height;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
+            style.border_collapse = parent.border_collapse;
+            style.caption_side_bottom = parent.caption_side_bottom;
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
             style.custom_properties = Arc::clone(&parent.custom_properties);
@@ -462,39 +413,12 @@ impl ComputedStyle {
         style
     }
 
-    pub(super) fn resolve_viewport_units(&mut self, width: f32, height: f32) {
-        self.background_position_x = self
-            .background_position_x
-            .resolve_viewport_units(width, height);
-        self.background_position_y = self
-            .background_position_y
-            .resolve_viewport_units(width, height);
-        if let BackgroundSize::Explicit {
-            width: background_width,
-            height: background_height,
-        } = self.background_size
-        {
-            self.background_size = BackgroundSize::Explicit {
-                width: background_width.resolve_viewport_units(width, height),
-                height: background_height.resolve_viewport_units(width, height),
-            };
-        }
-        self.width = self.width.resolve_viewport_units(width, height);
-        self.height = self.height.resolve_viewport_units(width, height);
-        self.min_width = self.min_width.resolve_viewport_units(width, height);
-        self.min_height = self.min_height.resolve_viewport_units(width, height);
-        self.max_width = self.max_width.resolve_viewport_units(width, height);
-        self.max_height = self.max_height.resolve_viewport_units(width, height);
-        self.margin = self.margin.resolve_viewport_units(width, height);
-        self.padding = self.padding.resolve_viewport_units(width, height);
-        self.border_width = self.border_width.resolve_viewport_units(width, height);
-        self.border_radius = self.border_radius.resolve_viewport_units(width, height);
-        self.top = self.top.resolve_viewport_units(width, height);
-        self.right = self.right.resolve_viewport_units(width, height);
-        self.bottom = self.bottom.resolve_viewport_units(width, height);
-        self.left = self.left.resolve_viewport_units(width, height);
-        self.flex_basis = self.flex_basis.resolve_viewport_units(width, height);
-        self.grid_column_gap = self.grid_column_gap.resolve_viewport_units(width, height);
-        self.grid_row_gap = self.grid_row_gap.resolve_viewport_units(width, height);
+    pub(crate) fn establishes_fixed_position_containing_block(&self) -> bool {
+        !self.transform.is_none()
+            || self.perspective_non_none
+            || self.filter_non_none
+            || self.transform_style_preserve_3d
+            || self.contain_layout_or_paint
+            || self.will_change_containing_block
     }
 }

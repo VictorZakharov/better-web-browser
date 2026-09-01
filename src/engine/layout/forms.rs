@@ -5,6 +5,14 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     if tag == "textarea" {
         return Some((ControlKind::TextArea, node.text_content()));
     }
+    if tag == "button" {
+        let kind = match node.attr("type").as_deref() {
+            Some(value) if value.eq_ignore_ascii_case("button") => ControlKind::Button,
+            Some(value) if value.eq_ignore_ascii_case("reset") => ControlKind::Reset,
+            _ => ControlKind::Submit,
+        };
+        return Some((kind, node.text_content().trim().to_string()));
+    }
     if tag != "input" {
         return None;
     }
@@ -63,7 +71,9 @@ pub(super) fn default_control_content_height(
                 * style.line_height
                 + 10.0
         }
-        _ => style.line_height + 10.0,
+        // Text controls derive their auto content box from the line box. CSS padding and borders
+        // are added exactly once by normal replaced-element sizing.
+        _ => style.line_height,
     }
 }
 

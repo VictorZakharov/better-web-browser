@@ -36,6 +36,7 @@ impl DocumentRuntime {
             start.viewport.dpi as f32 / 96.0,
             start.prefers_dark_color_scheme,
         ));
+        page.set_layout_viewport(start.viewport.width, start.viewport.height);
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
             if let Some(pending) = pending_first_paint {
@@ -48,6 +49,9 @@ impl DocumentRuntime {
         }
 
         text.set_dpi(start.viewport.dpi);
+        let text = Rc::new(RefCell::new(text));
+        let script_layout_page = Rc::new(RefCell::new(page.layout_snapshot()));
+        let script_layout_viewport = Rc::new(Cell::new(start.viewport));
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -56,6 +60,8 @@ impl DocumentRuntime {
             script_runtime: None,
             viewport: start.viewport,
             text,
+            script_layout_page,
+            script_layout_viewport,
             layout: Default::default(),
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
@@ -67,6 +73,8 @@ impl DocumentRuntime {
             executed_async_scripts: HashSet::new(),
             pending_dynamic_script_fetch: None,
             pending_resource_preloads: pending_deferred,
+            resource_render_pending: false,
+            resource_style_refresh_pending: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
             accessibility: RendererAccessibility::default(),
             accessibility_selection: None,
@@ -80,7 +88,10 @@ impl DocumentRuntime {
             diagnostic_selectors: start.diagnostic_selectors,
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
             media: None,
-            pending_media_outcome: ScriptOutcome::default(),
+            media_failure: None,
+            pending_async_outcome: ScriptOutcome::default(),
+            pending_resource_events: Vec::new(),
+            geometry_observers_pending: false,
         };
 
         let resource_started = Instant::now();
@@ -90,6 +101,7 @@ impl DocumentRuntime {
         runtime.fetch_resources(connection, |page, resource| {
             page.resource_blocks_first_paint(resource)
         })?;
+        runtime.sync_script_layout_page();
         let resource_processing_time = resource_started.elapsed();
 
         let script_started = Instant::now();
@@ -101,7 +113,8 @@ impl DocumentRuntime {
             script_fetch_time += started.elapsed();
             result
         };
-        let (mut script_runtime, mut outcome) = runtime
+        let layout_flush = runtime.script_layout_flush_callback();
+        let (script_runtime, mut outcome) = runtime
             .page
             .start_first_paint_script_runtime_with_document_state(
                 &mut loader,
@@ -109,37 +122,85 @@ impl DocumentRuntime {
                 &state.cookie_header,
                 state.local_storage,
                 state.session_storage,
+                !runtime.diagnostic_selectors.is_empty(),
+                Some(layout_flush),
             )
             .map_err(|error| error.to_string())?;
-        if let Some(script_runtime) = script_runtime.as_mut() {
-            script_runtime.set_host_call_profiling(!runtime.diagnostic_selectors.is_empty());
-        }
-        connection.send_state_mutations(document, &mut outcome)?;
         runtime.script_runtime = script_runtime;
+        runtime.flush_pending_resource_events()?;
+        merge_outcome(
+            &mut outcome,
+            std::mem::take(&mut runtime.pending_async_outcome),
+            runtime.page.dom.document.id(),
+        );
+        if let Some(script_runtime) = runtime.script_runtime.as_mut() {
+            merge_outcome(
+                &mut outcome,
+                script_runtime.finish_document_lifecycle(),
+                runtime.page.dom.document.id(),
+            );
+        }
+        runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
+        connection.send_state_mutations(document, &mut outcome)?;
         let script_time = script_started.elapsed();
 
         let style_started = Instant::now();
-        let style = runtime
+        let mut style = runtime
             .page
             .refresh_resources_for_viewport(runtime.viewport.style_width, runtime.viewport.height);
         runtime.start_presentational_preloads(connection)?;
         let style_time = style_started.elapsed();
-        runtime.text.register_web_fonts(&runtime.page.fonts);
+        runtime
+            .text
+            .borrow_mut()
+            .register_web_fonts(&runtime.page.fonts);
         let layout_started = Instant::now();
         runtime.rebuild_layout();
+        // The initial realm is created before the first layout checkpoint. Publish the actual
+        // viewport after that checkpoint just as the resize path does, so scripts that installed
+        // responsive layout handlers during startup can replace provisional zero-size geometry.
+        let mut viewport_outcome = runtime
+            .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
+                width: runtime.viewport.style_width,
+                height: runtime.viewport.height,
+                layout_width: runtime.viewport.width,
+                layout_height: runtime.viewport.height,
+                scale: runtime.viewport.dpi as f32 / 96.0,
+            })?
+            .outcome;
+        let viewport_render_requested = viewport_outcome.render_requested;
+        runtime.admit_user_input_outcome(&mut viewport_outcome, connection)?;
+        if viewport_render_requested {
+            style = runtime
+                .page
+                .refresh_resources_after_invalidation_for_viewport(
+                    runtime.viewport.style_width,
+                    runtime.viewport.height,
+                    &viewport_outcome.invalidation,
+                );
+            runtime.rebuild_layout();
+        }
+        merge_outcome(
+            &mut outcome,
+            viewport_outcome,
+            runtime.page.dom.document.id(),
+        );
         let layout_time = layout_started.elapsed();
-        let report = runtime.text.finish_load_report(PageLoadReport {
-            parse_micros: micros(parse_started.elapsed()),
-            html_parse_micros: micros(html_parse_time),
-            resource_processing_micros: micros(resource_processing_time),
-            script_micros: micros(script_time),
-            script_fetch_micros: micros(script_fetch_time),
-            style_micros: micros(style_time),
-            layout_micros: micros(layout_time),
-            ..PageLoadReport::default()
-        });
+        let report = runtime
+            .text
+            .borrow_mut()
+            .finish_load_report(PageLoadReport {
+                parse_micros: micros(parse_started.elapsed()),
+                html_parse_micros: micros(html_parse_time),
+                resource_processing_micros: micros(resource_processing_time),
+                script_micros: micros(script_time),
+                script_fetch_micros: micros(script_fetch_time),
+                style_micros: micros(style_time),
+                layout_micros: micros(layout_time),
+                ..PageLoadReport::default()
+            });
         let presentation = runtime.presentation(outcome, style, report)?;
         Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
     }

@@ -184,24 +184,58 @@ pub(super) fn assign_grid_gap(style: &mut ComputedStyle, value: &str) {
 }
 
 pub(super) fn assign_flex(style: &mut ComputedStyle, value: &str) {
-    if value == "none" {
-        style.flex_grow = 0.0;
-        style.flex_shrink = 0.0;
-        style.flex_basis = Length::Auto;
+    match value {
+        "none" => {
+            style.flex_grow = 0.0;
+            style.flex_shrink = 0.0;
+            style.flex_basis = Length::Auto;
+            return;
+        }
+        "auto" => {
+            style.flex_grow = 1.0;
+            style.flex_shrink = 1.0;
+            style.flex_basis = Length::Auto;
+            return;
+        }
+        "initial" => {
+            style.flex_grow = 0.0;
+            style.flex_shrink = 1.0;
+            style.flex_basis = Length::Auto;
+            return;
+        }
+        _ => {}
+    }
+    let mut grow = None;
+    let mut shrink = None;
+    let mut basis = None;
+    for token in value.split_ascii_whitespace() {
+        if let Ok(number) = token.parse::<f32>() {
+            if !number.is_finite() || number < 0.0 {
+                return;
+            }
+            if grow.is_none() {
+                grow = Some(number);
+                continue;
+            }
+            if shrink.is_none() {
+                shrink = Some(number);
+                continue;
+            }
+            return;
+        }
+        let Some(length) = parse_length(token) else {
+            return;
+        };
+        if basis.replace(length).is_some() {
+            return;
+        }
+    }
+    if grow.is_none() && basis.is_none() {
         return;
     }
-    let mut numbers = value
-        .split_ascii_whitespace()
-        .filter_map(|part| part.parse::<f32>().ok());
-    if let Some(grow) = numbers.next() {
-        style.flex_grow = grow.max(0.0);
-    }
-    if let Some(shrink) = numbers.next() {
-        style.flex_shrink = shrink.max(0.0);
-    }
-    if let Some(basis) = value.split_ascii_whitespace().find_map(parse_length) {
-        style.flex_basis = basis;
-    }
+    style.flex_grow = grow.unwrap_or(1.0);
+    style.flex_shrink = shrink.unwrap_or(1.0);
+    style.flex_basis = basis.unwrap_or(Length::Px(0.0));
 }
 
 pub(super) fn assign_grid_axis(start: &mut Option<usize>, end: &mut Option<usize>, value: &str) {
@@ -290,13 +324,23 @@ pub(super) fn apply_font_shorthand(
         .split_once('/')
         .map(|(size, line)| (size, Some(line)))
         .unwrap_or((size_and_line, None));
-    if let Some(size) =
-        parse_font_size_for_viewport(size, inherited_font_size, viewport_width, viewport_height)
-    {
+    if let Some(size) = parse_font_size_for_viewport(
+        size,
+        inherited_font_size,
+        viewport_width,
+        viewport_height,
+        style.root_font_size,
+    ) {
         style.font_size = size;
         style.line_height = line_height
             .and_then(|line| {
-                parse_line_height_for_viewport(line, size, viewport_width, viewport_height)
+                parse_line_height_for_viewport(
+                    line,
+                    size,
+                    viewport_width,
+                    viewport_height,
+                    style.root_font_size,
+                )
             })
             .unwrap_or(size * 1.2);
     }
@@ -306,7 +350,13 @@ pub(super) fn apply_font_shorthand(
 }
 
 pub(super) fn parse_font_size(value: &str, inherited_size: f32) -> Option<f32> {
-    parse_font_size_for_viewport(value, inherited_size, inherited_size, inherited_size)
+    parse_font_size_for_viewport(
+        value,
+        inherited_size,
+        inherited_size,
+        inherited_size,
+        inherited_size,
+    )
 }
 
 pub(super) fn parse_font_size_for_viewport(
@@ -314,6 +364,7 @@ pub(super) fn parse_font_size_for_viewport(
     inherited_size: f32,
     viewport_width: f32,
     viewport_height: f32,
+    root_font_size: f32,
 ) -> Option<f32> {
     match value.trim() {
         "xx-small" => Some(9.0),
@@ -327,6 +378,7 @@ pub(super) fn parse_font_size_for_viewport(
         "larger" => Some(inherited_size * 1.2),
         value => parse_length(value).and_then(|length| {
             length
+                .resolve_root_font_units(root_font_size)
                 .resolve_viewport_units(viewport_width, viewport_height)
                 .resolve(inherited_size, inherited_size)
         }),
@@ -334,7 +386,7 @@ pub(super) fn parse_font_size_for_viewport(
 }
 
 pub(super) fn parse_line_height(value: &str, font_size: f32) -> Option<f32> {
-    parse_line_height_for_viewport(value, font_size, font_size, font_size)
+    parse_line_height_for_viewport(value, font_size, font_size, font_size, font_size)
 }
 
 pub(super) fn parse_line_height_for_viewport(
@@ -342,6 +394,7 @@ pub(super) fn parse_line_height_for_viewport(
     font_size: f32,
     viewport_width: f32,
     viewport_height: f32,
+    root_font_size: f32,
 ) -> Option<f32> {
     if value == "normal" {
         return Some(font_size * 1.2);
@@ -351,6 +404,7 @@ pub(super) fn parse_line_height_for_viewport(
     }
     parse_length(value).and_then(|length| {
         length
+            .resolve_root_font_units(root_font_size)
             .resolve_viewport_units(viewport_width, viewport_height)
             .resolve(font_size, font_size)
     })

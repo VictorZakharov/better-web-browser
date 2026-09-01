@@ -31,10 +31,20 @@ impl Page {
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
         cookie_header: &str,
     ) -> (Option<ScriptRuntime>, ScriptOutcome) {
-        self.start_script_phase(true, Some(dynamic_script_loader), cookie_header, None, true)
-            .expect("empty Web Storage state is valid")
+        self.start_script_phase(
+            true,
+            Some(dynamic_script_loader),
+            cookie_header,
+            None,
+            true,
+            false,
+            false,
+            None,
+        )
+        .expect("empty Web Storage state is valid")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_first_paint_script_runtime_with_document_state(
         &mut self,
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
@@ -42,6 +52,8 @@ impl Page {
         cookie_header: &str,
         local_storage: crate::storage::StorageAreaSnapshot,
         session_storage: crate::storage::StorageAreaSnapshot,
+        host_call_profiling: bool,
+        layout_flush: Option<script::LayoutFlushCallback>,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.start_script_phase(
             true,
@@ -49,6 +61,9 @@ impl Page {
             cookie_header,
             Some((cookie_version, local_storage, session_storage)),
             true,
+            host_call_profiling,
+            true,
+            layout_flush,
         )
     }
 
@@ -57,11 +72,21 @@ impl Page {
         first_paint_only: bool,
         dynamic_script_loader: Option<&mut script::DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
-        self.start_script_phase(first_paint_only, dynamic_script_loader, "", None, false)
-            .expect("empty Web Storage state is valid")
-            .1
+        self.start_script_phase(
+            first_paint_only,
+            dynamic_script_loader,
+            "",
+            None,
+            false,
+            false,
+            false,
+            None,
+        )
+        .expect("empty Web Storage state is valid")
+        .1
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_script_phase(
         &mut self,
         first_paint_only: bool,
@@ -73,6 +98,9 @@ impl Page {
             crate::storage::StorageAreaSnapshot,
         )>,
         defer_dynamic_scripts: bool,
+        host_call_profiling: bool,
+        defer_document_completion: bool,
+        layout_flush: Option<script::LayoutFlushCallback>,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
@@ -108,13 +136,23 @@ impl Page {
                 &self.character_set,
             );
             runtime.set_media_environment(self.media_environment);
+            runtime.set_layout_viewport(self.layout_viewport.0, self.layout_viewport.1);
+            runtime.set_quirks_mode(
+                self.dom.quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
+            );
             runtime.set_document_stylesheets(&self.stylesheet_sources);
+            runtime.set_host_call_profiling(host_call_profiling);
+            if let Some(layout_flush) = layout_flush {
+                runtime.set_layout_flush_callback(layout_flush);
+            }
             if let Some((cookie_version, local, session)) = document_state {
                 runtime.set_document_state(cookie_version, cookie_header, local, session)?;
             } else {
                 runtime.set_document_cookie_header(cookie_header);
             }
-            let outcome = if defer_dynamic_scripts {
+            let outcome = if defer_document_completion {
+                runtime.execute_initial_before_document_completion(&inputs, dynamic_script_loader)
+            } else if defer_dynamic_scripts {
                 runtime.execute_initial_deferred(&inputs, dynamic_script_loader)
             } else {
                 runtime.execute_initial_with_loader(&inputs, dynamic_script_loader)

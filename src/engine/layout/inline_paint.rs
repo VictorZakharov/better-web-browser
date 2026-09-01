@@ -76,31 +76,50 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             InlineAtom::Image {
                 url,
                 alt,
+                node_id,
+                visible,
                 inset_x,
                 inset_y,
                 image_width,
                 image_height,
+                transform,
+                transform_font_size,
+                opacity,
                 tint,
                 ..
-            } => self.output.items.push(DisplayItem::Image {
-                rect: RectF {
+            } => {
+                let item_start = self.output.items.len();
+                let mut rect = RectF {
                     x: x + inset_x,
                     y: atom_y + inset_y,
                     width: *image_width,
                     height: *image_height,
-                },
-                url: url.clone(),
-                alt: alt.clone(),
-                tint: *tint,
-            }),
+                };
+                let (offset_x, offset_y) =
+                    transform.resolve(rect.width, rect.height, *transform_font_size);
+                rect.x += offset_x;
+                rect.y += offset_y;
+                self.output.node_bounds.insert(*node_id, rect);
+                if *visible {
+                    self.output.items.push(DisplayItem::Image {
+                        rect,
+                        url: url.clone(),
+                        alt: alt.clone(),
+                        tint: *tint,
+                    });
+                }
+                self.wrap_opacity(item_start, *opacity);
+            }
             InlineAtom::Control {
                 spec,
                 inset_x,
                 inset_y,
                 control_width,
                 control_height,
+                opacity,
                 ..
             } => {
+                let item_start = self.output.items.len();
                 let mut spec = spec.as_ref().clone();
                 spec.rect = RectF {
                     x: x + inset_x,
@@ -108,6 +127,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: *control_width,
                     height: *control_height,
                 };
+                self.output.node_bounds.insert(spec.node_id, spec.rect);
                 if spec.background_color.alpha > 0 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: spec.rect,
@@ -138,18 +158,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 self.output.items.push(DisplayItem::Control(Box::new(spec)));
+                self.wrap_opacity(item_start, *opacity);
             }
-            InlineAtom::InlineBox { children, style } => {
+            InlineAtom::InlineBox {
+                children,
+                style,
+                node_id,
+            } => {
+                let item_start = self.output.items.len();
                 let metrics =
                     self.measure_inline_box(measured.atom, children, style, containing_width);
                 let border_x = x + metrics.margin.left;
-                let border_y = atom_y + metrics.margin.top;
+                let border_y = if metrics.border_box_height == 0.0 && children.is_empty() {
+                    y + metrics.margin.top
+                } else {
+                    atom_y + metrics.margin.top
+                };
                 let border_rect = RectF {
                     x: border_x,
                     y: border_y,
                     width: metrics.border_box_width,
                     height: metrics.border_box_height,
                 };
+                if let Some(node_id) = node_id {
+                    self.output.node_bounds.insert(*node_id, border_rect);
+                }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
                 if style.background_color.alpha > 0 && style.mask_image.is_none() {
@@ -230,8 +263,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     );
                     child_x += child.width;
                 }
+                if let Some(node_id) = node_id {
+                    self.apply_transform(*node_id, style, border_rect, item_start);
+                } else {
+                    self.apply_generated_transform(style, border_rect, item_start);
+                }
+                self.wrap_opacity(item_start, style.opacity);
             }
-            InlineAtom::Placeholder { .. } | InlineAtom::Break => {}
+            InlineAtom::Placeholder { node_id, .. } => {
+                if let Some(node_id) = node_id {
+                    self.output.node_bounds.insert(
+                        *node_id,
+                        RectF {
+                            x,
+                            y: atom_y,
+                            width: measured.width,
+                            height: measured.height,
+                        },
+                    );
+                }
+            }
+            InlineAtom::Break => {}
         }
     }
 }

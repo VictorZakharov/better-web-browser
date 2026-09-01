@@ -54,6 +54,28 @@ impl Broker {
         }
     }
 
+    pub(super) fn process_viewport_update(&mut self) {
+        if self.resources().state_updates.has_pending() {
+            return;
+        }
+        if !self.writer().has_page_command_capacity() {
+            return;
+        }
+        let Some(update) = self.resources().viewport.take() else {
+            return;
+        };
+        if self.active_document == Some(update.document)
+            && let Err(error) = self
+                .writer()
+                .send_browser(&BrowserMessage::ViewportChanged {
+                    document: update.document,
+                    viewport: update.viewport,
+                })
+        {
+            self.protocol_failure(error.to_string());
+        }
+    }
+
     pub(super) fn process_commands(&mut self) {
         if self.resources().state_updates.has_pending() {
             return;
@@ -81,15 +103,6 @@ impl Broker {
                 } => self.probe_restrictions(loopback_port, reply),
                 BrokerCommand::Test(command) => {
                     if let Err(error) = self.writer().send_browser(&BrowserMessage::Test(command)) {
-                        self.protocol_failure(error.to_string());
-                    }
-                }
-                BrokerCommand::ViewportChanged { document, viewport } => {
-                    if self.active_document == Some(document)
-                        && let Err(error) = self
-                            .writer()
-                            .send_browser(&BrowserMessage::ViewportChanged { document, viewport })
-                    {
                         self.protocol_failure(error.to_string());
                     }
                 }

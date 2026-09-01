@@ -104,7 +104,12 @@ impl RendererSession {
         document: DocumentId,
         viewport: PresentedViewport,
     ) -> Result<(), String> {
-        self.send_command(worker::BrokerCommand::ViewportChanged { document, viewport })
+        let viewport = viewport.validate().map_err(|error| error.to_string())?;
+        let result = self
+            .viewport
+            .send(super::viewport::Update { document, viewport });
+        self.wake.notify();
+        result
     }
 
     pub fn send_input(&self, input: DocumentInput) -> Result<(), String> {

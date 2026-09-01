@@ -12,52 +12,10 @@
   },
   "tests": [
     {
-      "path": "dom/nodes/Node-isConnected.html",
-      "area": "DOM mutation",
-      "expected": "fail",
-      "reason": "Nested browsing-context connectivity is not implemented yet."
-    },
-    {
-      "path": "html/semantics/forms/the-button-element/button-type.html",
-      "area": "Forms",
-      "expected": "fail",
-      "reason": "HTMLButtonElement.type enumerated-value normalization is not implemented yet."
-    },
-    {
-      "path": "html/semantics/forms/the-datalist-element/datalistoptions.html",
-      "area": "Forms",
-      "expected": "fail",
-      "reason": "Datalist-ancestor constraint-validation behavior is not implemented yet."
-    },
-    {
-      "path": "css/selectors/first-of-type.html",
-      "area": "CSS selectors",
-      "expected": "fail",
-      "reason": "The :first-of-type selector is not implemented yet."
-    },
-    {
-      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-direction-row-reverse.html",
+      "path": "css/cssom-view/table-scroll-props.html",
       "area": "CSS layout",
       "expected": "fail",
-      "reason": "Reverse flex directions are not implemented yet."
-    },
-    {
-      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-wrap-wrap.html",
-      "area": "CSS layout",
-      "expected": "fail",
-      "reason": "CSSOM serialization for flex-wrap is not implemented yet."
-    },
-    {
-      "path": "css/cssom-view/GetBoundingRect.html",
-      "area": "CSS layout",
-      "expected": "fail",
-      "reason": "CSSOM View geometry is not connected to the layout tree yet."
-    },
-    {
-      "path": "css/CSS2/floats/computed-float-position-absolute.html",
-      "area": "CSS layout",
-      "expected": "fail",
-      "reason": "CSSOM serialization for float is not implemented yet."
+      "reason": "CSSOM scrolling geometry and mutable scroll positions are not complete for table wrappers and captions."
     }
   ]
 }

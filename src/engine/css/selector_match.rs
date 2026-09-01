@@ -2,6 +2,26 @@
 
 use super::*;
 
+pub(crate) struct CompiledSelectorList {
+    selectors: Vec<Selector>,
+}
+
+impl CompiledSelectorList {
+    pub(crate) fn matches(&self, node: &NodeRef) -> bool {
+        self.selectors
+            .iter()
+            .any(|selector| selector_matches(selector, node))
+    }
+}
+
+pub(crate) fn compile_selector_list(input: &str) -> Option<CompiledSelectorList> {
+    let selectors = split_css_top_level(input, ',')
+        .map(str::trim)
+        .map(parse_selector)
+        .collect::<Option<Vec<_>>>()?;
+    (!selectors.is_empty()).then_some(CompiledSelectorList { selectors })
+}
+
 pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
     fn matches_at(selector: &Selector, index: usize, node: &NodeRef) -> bool {
         if !compound_matches(&selector.compounds[index], node) {
@@ -114,6 +134,38 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
             return false;
         }
     }
+    if selector.requires_first_of_type {
+        let Some(parent) = node.parent() else {
+            return false;
+        };
+        let tag_name = node.tag_name();
+        let namespace = node.namespace_uri();
+        let is_first_of_type = parent
+            .children
+            .borrow()
+            .iter()
+            .filter(|child| child.element().is_some())
+            .find(|child| child.tag_name() == tag_name && child.namespace_uri() == namespace)
+            .is_some_and(|child| child.id() == node.id());
+        if !is_first_of_type {
+            return false;
+        }
+    }
+    if selector.requires_last_child {
+        let Some(parent) = node.parent() else {
+            return false;
+        };
+        let is_last = parent
+            .children
+            .borrow()
+            .iter()
+            .rev()
+            .find(|child| child.element().is_some())
+            .is_some_and(|child| child.id() == node.id());
+        if !is_last {
+            return false;
+        }
+    }
     if selector.any_of.iter().any(|choices| {
         !choices
             .iter()
@@ -154,6 +206,7 @@ pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -
         SimpleSelector::Tag(tag) => node.tag_name() == Some(tag),
         SimpleSelector::Id(id) => node.attr("id").as_deref() == Some(id),
         SimpleSelector::Class(class) => node.has_class(class),
+        SimpleSelector::Attribute(attribute) => attribute_matches(attribute, node),
     }
 }
 
@@ -227,6 +280,37 @@ mod tests {
         assert!(selector_matches(
             &parse_selector("button:disabled").unwrap(),
             &buttons[1]
+        ));
+    }
+
+    #[test]
+    fn matches_first_element_of_the_same_expanded_type() {
+        let dom = dom::parse("<i></i>text<b id='first'></b><em></em><b id='second'></b>");
+        let nodes = dom.elements_named("b").collect::<Vec<_>>();
+        let selector = parse_selector("b:first-of-type").unwrap();
+
+        assert!(selector_matches(&selector, &nodes[0]));
+        assert!(!selector_matches(&selector, &nodes[1]));
+    }
+
+    #[test]
+    fn functional_pseudo_classes_match_attribute_selectors() {
+        let dom = dom::parse(
+            "<main is-two-columns_ force-default-style></main><main id='single'></main>",
+        );
+        let nodes = dom.elements_named("main").collect::<Vec<_>>();
+
+        assert!(!selector_matches(
+            &parse_selector("main:not([is-two-columns_])").unwrap(),
+            &nodes[0]
+        ));
+        assert!(selector_matches(
+            &parse_selector("main:not([is-two-columns_])").unwrap(),
+            &nodes[1]
+        ));
+        assert!(selector_matches(
+            &parse_selector("main:is([force-default-style], .fallback)").unwrap(),
+            &nodes[0]
         ));
     }
 }

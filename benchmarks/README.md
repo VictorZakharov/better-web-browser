@@ -55,6 +55,16 @@ The matrix also names representative public URLs for Wikipedia, a responsive blo
 
 Live content, server behavior, anti-automation responses, fonts, and networks change independently of this repository. Live runs therefore retain captures and measurements for manual review but do not apply local visual or performance thresholds.
 
+## YouTube media filmstrip
+
+The media acceptance runner compares Breeze and Chromium under the same fresh-profile, hidden, viewport, navigation, trusted-input, and capture conditions. It records a PNG every 500 ms for 15 seconds, requires every frame to decode, and fails unless both browsers report advancing media:
+
+```powershell
+.\scripts\capture-youtube-filmstrip.ps1
+```
+
+Breeze is launched only through `scripts/run-hidden-benchmark.ps1`. Chromium uses the repository CDP harness with unified `--headless` mode and `CreateNoWindow`. The default target is the privacy-enhanced YouTube embed because anonymous normal watch requests can be rate-limited independently of browser behavior; pass `-TargetUrl <https-url>` when validating another reachable YouTube surface. The runner accepts only HTTPS URLs on the checked-in YouTube host allowlist. Captures are retained under the selected ignored output directory and are never committed.
+
 ## Interpretation
 
-Breeze owns HTML, CSS, layout, images/SVG/fonts, forms, a subset JavaScript runtime, and painting, but Chromium implements substantially more of the web platform. Canvas, media playback, accessibility, cross-site isolation, and broad standards coverage remain incomplete. Results are development evidence for the controlled paths above, not a universal claim that Breeze is faster than or compatible with Chromium.
+Breeze owns HTML, CSS, layout, images/SVG/fonts, forms, a subset JavaScript runtime, painting, and a contained non-DRM H.264/AAC playback path, but Chromium implements substantially more of the web platform. Canvas, broader media formats and DRM, accessibility, cross-site isolation, and broad standards coverage remain incomplete. Results are development evidence for the controlled paths above, not a universal claim that Breeze is faster than or compatible with Chromium.

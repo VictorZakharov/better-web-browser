@@ -5,6 +5,25 @@ use crate::engine::font::discover_font_faces;
 use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
+const MAX_INLINE_SVG_DIAGNOSTICS: usize = 8;
+const MAX_INLINE_SVG_DIAGNOSTIC_BYTES: usize = 512;
+
+pub(super) fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
+    let (delay, directive) = content.split_once(';')?;
+    if delay.trim().parse::<f64>().ok()? > 0.0 {
+        return None;
+    }
+    let (name, target) = directive.trim().split_once('=')?;
+    if !name.trim().eq_ignore_ascii_case("url") {
+        return None;
+    }
+    let target = target
+        .trim()
+        .trim_matches(|character| matches!(character, '\'' | '"'))
+        .trim();
+    (!target.is_empty()).then_some(target)
+}
+
 impl Page {
     pub fn style(&self, viewport_width: f32) -> StyleSet {
         self.style_for_viewport(viewport_width, viewport_width)
@@ -114,58 +133,10 @@ impl Page {
                 ));
             }
         }
+        let (mut styles, style_stats) =
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
-        let invalidated_nodes = invalidation
-            .root
-            .and_then(|root| self.dom.find_node(root))
-            .map(|root| Node::shadow_including_descendants(&root).count())
-            .unwrap_or_else(|| Node::shadow_including_descendants(&self.dom.document).count());
-        let cached = self.cached_styles.take();
-        let (mut styles, style_stats) = match cached {
-            Some((cached_width, cached_height, mut styles))
-                if !invalidation.rebuild_style_rules
-                    && (cached_width - viewport_width).abs() < 0.5
-                    && (cached_height - viewport_height).abs() < 0.5 =>
-            {
-                let stats = if invalidation.impact.affects_style() {
-                    let root = invalidation
-                        .root
-                        .and_then(|root| self.dom.find_node(root))
-                        .unwrap_or_else(|| self.dom.document.clone());
-                    styles.refresh_subtree(&self.dom.document, &root, &invalidation.removed_nodes)
-                } else {
-                    StyleRefreshStats {
-                        invalidated_nodes,
-                        total_styles: styles.styles.len(),
-                        ..StyleRefreshStats::default()
-                    }
-                };
-                (styles, stats)
-            }
-            _ => {
-                let styles = StyleSet::from_sources_for_media_environment(
-                    &self.dom,
-                    &self.base_url,
-                    &self.stylesheet_sources,
-                    self.media_environment
-                        .with_viewport(viewport_width, viewport_height),
-                );
-                let count = styles.styles.len();
-                (
-                    styles,
-                    StyleRefreshStats {
-                        invalidated_nodes,
-                        total_styles: count,
-                        recomputed_styles: count,
-                        changed_styles: count,
-                        layout_changed: true,
-                        full_rebuild: true,
-                        ..StyleRefreshStats::default()
-                    },
-                )
-            }
-        };
         let mut known_images = self
             .resources
             .iter()
@@ -225,6 +196,94 @@ impl Page {
         style_stats
     }
 
+    /// Refreshes only the style cache needed by a synchronous CSSOM View layout flush.
+    pub(crate) fn refresh_layout_styles_after_invalidation_for_viewport(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) -> StyleRefreshStats {
+        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.media_environment = self
+            .media_environment
+            .with_viewport(viewport_width, viewport_height);
+        let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
+        let (styles, stats) =
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
+        self.cached_styles = Some((viewport_width, viewport_height, styles));
+        stats
+    }
+
+    fn refresh_style_cache(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) -> (StyleSet, StyleRefreshStats) {
+        let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
+        let mut invalidation_roots = invalidation
+            .roots
+            .iter()
+            .filter_map(|root| self.dom.find_node(*root))
+            .collect::<Vec<_>>();
+        if invalidation_roots.is_empty() {
+            invalidation_roots.push(self.dom.document.clone());
+        }
+        let invalidated_nodes = invalidation_roots
+            .iter()
+            .flat_map(Node::shadow_including_descendants)
+            .map(|node| node.id())
+            .collect::<HashSet<_>>()
+            .len();
+        let cached = self.cached_styles.take();
+        match cached {
+            Some((cached_width, cached_height, mut styles))
+                if !invalidation.rebuild_style_rules
+                    && (cached_width - viewport_width).abs() < 0.5
+                    && (cached_height - viewport_height).abs() < 0.5 =>
+            {
+                let stats = if invalidation.impact.affects_style() {
+                    styles.refresh_subtrees(
+                        &self.dom.document,
+                        &invalidation_roots,
+                        &invalidation.removed_nodes,
+                    )
+                } else {
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: styles.styles.len(),
+                        ..StyleRefreshStats::default()
+                    }
+                };
+                (styles, stats)
+            }
+            _ => {
+                let styles = StyleSet::from_sources_for_media_environment(
+                    &self.dom,
+                    &self.base_url,
+                    &self.stylesheet_sources,
+                    self.media_environment
+                        .with_viewport(viewport_width, viewport_height),
+                );
+                let count = styles.styles.len();
+                (
+                    styles,
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: count,
+                        recomputed_styles: count,
+                        changed_styles: count,
+                        layout_changed: true,
+                        full_rebuild: true,
+                        ..StyleRefreshStats::default()
+                    },
+                )
+            }
+        }
+    }
+
     fn add_requested_fonts(
         &mut self,
         available_faces: Vec<WebFontFace>,
@@ -262,12 +321,46 @@ impl Page {
     }
 
     fn refresh_inline_svgs(&mut self) {
-        for svg in self.dom.elements_named("svg").take(MAX_INLINE_SVGS) {
+        let svgs = Node::shadow_including_descendants(&self.dom.document)
+            .filter(|node| node.tag_name() == Some("svg"))
+            .take(MAX_INLINE_SVGS)
+            .collect::<Vec<_>>();
+        let active_ids = svgs.iter().map(|svg| svg.id()).collect::<HashSet<_>>();
+        let active_keys = svgs.iter().map(inline_svg_key).collect::<HashSet<_>>();
+        self.inline_svg_versions
+            .retain(|node, _| active_ids.contains(node));
+        self.images
+            .retain(|key, _| !key.starts_with("inline-svg:") || active_keys.contains(key));
+
+        for svg in svgs {
             let key = inline_svg_key(&svg);
-            if !self.images.contains_key(&key)
-                && let Ok(image) = decode_inline_svg(&svg)
-            {
-                self.images.insert(key, image);
+            let version = svg.subtree_mutation_version();
+            let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
+            if !changed {
+                continue;
+            }
+            self.inline_svg_versions.insert(svg.id(), version);
+            match decode_inline_svg(&svg) {
+                Ok(image) => {
+                    let _ = self.install_decoded_image(key, image);
+                }
+                Err(error) => {
+                    self.images.remove(&key);
+                    if self
+                        .diagnostics
+                        .iter()
+                        .filter(|message| message.starts_with("inline SVG "))
+                        .count()
+                        < MAX_INLINE_SVG_DIAGNOSTICS
+                    {
+                        let message = format!("inline SVG {:032x}: {error}", svg.id().to_wire());
+                        self.diagnostics.push(
+                            bounded_utf8_prefix(&message, MAX_INLINE_SVG_DIAGNOSTIC_BYTES)
+                                .0
+                                .to_string(),
+                        );
+                    }
+                }
             }
         }
     }

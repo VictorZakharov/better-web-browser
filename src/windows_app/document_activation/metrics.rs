@@ -132,6 +132,7 @@ impl BrowserState {
         benchmark
             .script_diagnostics
             .extend(runtime.diagnostics.iter().cloned());
+        benchmark.media = runtime.media.clone();
         benchmark.script_runtime_stopped |= runtime.runtime_stopped;
         benchmark_completed
     }

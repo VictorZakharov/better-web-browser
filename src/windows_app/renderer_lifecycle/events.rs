@@ -139,12 +139,18 @@ impl BrowserState {
                             NavigationDisposition::CurrentTab
                                 if cause == NavigationCause::UserActivation =>
                             {
-                                state.begin_navigation(url, browser_navigation::HistoryMode::Push)
+                                state.begin_document_navigation(
+                                    url,
+                                    browser_navigation::HistoryMode::Push,
+                                )
                             }
                             NavigationDisposition::CurrentTab
                                 if state.allow_script_navigation(&url) =>
                             {
-                                state.begin_navigation(url, browser_navigation::HistoryMode::Script)
+                                state.begin_document_navigation(
+                                    url,
+                                    browser_navigation::HistoryMode::Script,
+                                )
                             }
                             NavigationDisposition::NewForegroundTab => {
                                 state.open_url_in_new_tab(url, true)
@@ -222,6 +228,7 @@ impl BrowserState {
                         id,
                         url,
                         browser_navigation::HistoryMode::Recovery,
+                        None,
                     );
                     if self
                         .tabs

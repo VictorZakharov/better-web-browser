@@ -250,6 +250,77 @@ fn rasterizes_inline_svg_without_a_browser_runtime() {
 }
 
 #[test]
+fn hydrates_shadow_tree_svgs_and_refreshes_changed_geometry() {
+    let mut page = Page::parse("<x-icon></x-icon>", "https://example.com/");
+    let host = page.dom.elements_named("x-icon").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    let svg = Node::create_element_for(&root, "svg");
+    svg.set_attr("width", "20");
+    svg.set_attr("height", "10");
+    svg.set_attr("viewBox", "0 0 20 10");
+    let rect = Node::create_element_for(&svg, "rect");
+    rect.set_attr("width", "5");
+    rect.set_attr("height", "10");
+    Node::append_child(&svg, rect.clone());
+    Node::append_child(&root, svg.clone());
+
+    page.refresh_resources(800.0);
+
+    let key = inline_svg_key(&svg);
+    let before = page.images[&key].bgra.clone();
+    assert_eq!(
+        (page.images[&key].width, page.images[&key].height),
+        (20, 10)
+    );
+
+    rect.set_attr("width", "20");
+    page.refresh_resources(800.0);
+
+    let after = &page.images[&key].bgra;
+    assert_ne!(&before, after);
+    assert!(
+        after.chunks_exact(4).filter(|pixel| pixel[3] != 0).count()
+            > before.chunks_exact(4).filter(|pixel| pixel[3] != 0).count()
+    );
+}
+
+#[test]
+fn unchanged_invalid_shadow_svg_reports_once_instead_of_retrying_each_refresh() {
+    let mut page = Page::parse("<x-icon></x-icon>", "https://example.com/");
+    let host = page.dom.elements_named("x-icon").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    let svg = Node::create_element_for(&root, "svg");
+    svg.set_attr("width", "0");
+    svg.set_attr("height", "0");
+    Node::append_child(&root, svg);
+
+    page.refresh_resources(800.0);
+    page.refresh_resources(800.0);
+
+    assert_eq!(
+        page.diagnostics
+            .iter()
+            .filter(|message| message.starts_with("inline SVG "))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn resolves_immediate_meta_refresh_against_the_document_base() {
     let page = Page::parse(
         r#"

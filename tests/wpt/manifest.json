@@ -10,6 +10,9 @@
     "minimum_subtests": 200,
     "expectations": "forbidden"
   },
+  "support": [
+    "dom/nodes/pre-insertion-validation-hierarchy.js"
+  ],
   "tests": [
     {
       "path": "html/syntax/parsing/empty-doctype-ids.html",
@@ -54,6 +57,11 @@
     {
       "path": "dom/nodes/Document-getElementById.html",
       "area": "DOM",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/nodes/ParentNode-replaceChildren.html",
+      "area": "DOM mutation",
       "expected": "pass"
     },
     {
@@ -134,6 +142,41 @@
     {
       "path": "html/webappapis/microtask-queuing/queue-microtask-exceptions.any.js",
       "area": "Event loop",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/callback-invoked.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/callback-multicalls.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/callback-timestamp.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/cancel-invoked.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/cancel-pending.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/same-dispatch-time.html",
+      "area": "Animation frames",
+      "expected": "pass"
+    },
+    {
+      "path": "html/webappapis/animation-frames/callback-exception.html",
+      "area": "Animation frames",
       "expected": "pass"
     },
     {
@@ -377,7 +420,22 @@
       "expected": "pass"
     },
     {
+      "path": "dom/nodes/Node-isConnected.html",
+      "area": "DOM mutation",
+      "expected": "pass"
+    },
+    {
       "path": "html/semantics/forms/the-form-element/form-length.html",
+      "area": "Forms",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/forms/the-button-element/button-type.html",
+      "area": "Forms",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/forms/the-datalist-element/datalistoptions.html",
       "area": "Forms",
       "expected": "pass"
     },
@@ -397,6 +455,16 @@
       "expected": "pass"
     },
     {
+      "path": "css/selectors/first-of-type.html",
+      "area": "CSS selectors",
+      "expected": "pass"
+    },
+    {
+      "path": "css/css-pseudo/before-in-display-none-thcrash.html",
+      "area": "CSS pseudo-elements",
+      "expected": "pass"
+    },
+    {
       "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_display.html",
       "area": "CSS layout",
       "expected": "pass"
@@ -407,7 +475,22 @@
       "expected": "pass"
     },
     {
+      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-direction-row-reverse.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
       "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-grow-number.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-wrap-wrap.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/CSS2/floats/computed-float-position-absolute.html",
       "area": "CSS layout",
       "expected": "pass"
     },
@@ -418,6 +501,71 @@
     },
     {
       "path": "css/cssom-view/cssom-getBoundingClientRect-002.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/GetBoundingRect.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-fixed.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-body-and-html.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetTop-offsetLeft-nested-offsetParents.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent_element_test.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-block-in-inline.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-root.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-input.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/htmlelement-offset-width-001.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-inline-list-item.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-with-border-client-width-height.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-client-props.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-offset-props.html",
       "area": "CSS layout",
       "expected": "pass"
     },

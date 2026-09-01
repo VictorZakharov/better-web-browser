@@ -209,6 +209,19 @@ pub(super) fn dom_host_call(
             });
             JsValue::from(doctype.map(|node| state.id_for(&node)).unwrap_or_default())
         }
+        "documentTypeMetadata" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .and_then(|node| match &node.data {
+                    NodeData::Doctype {
+                        public_id,
+                        system_id,
+                        ..
+                    } => Some(format!("{public_id}\u{1f}{system_id}")),
+                    _ => None,
+                })
+                .unwrap_or_default(),
+        ),
         "byId" => {
             let root = state.node(argument_id(args, 1));
             let wanted = argument_string(args, 2)?;
@@ -246,8 +259,9 @@ fn create_document(state: &mut HostState, namespace: &str, qualified_name: &str)
 }
 
 fn create_html_document(state: &mut HostState, title: &str) -> JsResult<u32> {
-    state.ensure_node_capacity(if title.is_empty() { 4 } else { 6 })?;
+    state.ensure_node_capacity(if title.is_empty() { 5 } else { 7 })?;
     let document = Node::create_document();
+    let doctype = Node::create_doctype_for(&document, "html", "", "");
     let html = Node::create_element_ns_for(&document, HTML_NAMESPACE, "html");
     let head = Node::create_element_ns_for(&document, HTML_NAMESPACE, "head");
     if !title.is_empty() {
@@ -258,6 +272,7 @@ fn create_html_document(state: &mut HostState, title: &str) -> JsResult<u32> {
     let body = Node::create_element_ns_for(&document, HTML_NAMESPACE, "body");
     Node::append_child(&html, head);
     Node::append_child(&html, body);
+    Node::append_child(&document, doctype);
     Node::append_child(&document, html);
     Ok(state.register_document(document, true))
 }

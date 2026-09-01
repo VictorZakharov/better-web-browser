@@ -10,7 +10,9 @@ use crate::limits::{
 };
 
 mod controls;
+mod groups;
 use controls::{decode_control, decode_form, encode_control, encode_form};
+use groups::validate_display_groups;
 
 const MAX_CONTROL_OPTIONS: usize = 10_000;
 const MAX_FORM_FIELDS: usize = 10_000;
@@ -22,6 +24,7 @@ pub(super) fn encode_layout(
     writer: &mut WireWriter,
     layout: &PresentedLayout,
 ) -> Result<(), ProtocolError> {
+    validate_display_groups(&layout.items)?;
     writer.f32(layout.content_height);
     encode_color(writer, layout.background);
     writer.u32(layout.items.len() as u32);
@@ -48,6 +51,7 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
     for _ in 0..item_count {
         items.push(decode_item(reader)?);
     }
+    validate_display_groups(&items)?;
     let form_count = bounded_count(reader.u32()?, MAX_DOM_NODES, "forms")?;
     let mut forms = Vec::with_capacity(form_count);
     for _ in 0..form_count {
@@ -63,6 +67,23 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
 
 fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), ProtocolError> {
     match item {
+        DisplayItem::BeginClip { bounds } => {
+            writer.u8(9);
+            encode_rect(writer, *bounds);
+        }
+        DisplayItem::EndClip { bounds } => {
+            writer.u8(10);
+            encode_rect(writer, *bounds);
+        }
+        DisplayItem::BeginOpacity { bounds, opacity } => {
+            writer.u8(7);
+            encode_rect(writer, *bounds);
+            writer.f32(*opacity);
+        }
+        DisplayItem::EndOpacity { bounds } => {
+            writer.u8(8);
+            encode_rect(writer, *bounds);
+        }
         DisplayItem::SolidRect {
             rect,
             color,
@@ -155,6 +176,19 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
 
 fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError> {
     match reader.u8()? {
+        9 => Ok(DisplayItem::BeginClip {
+            bounds: decode_rect(reader)?,
+        }),
+        10 => Ok(DisplayItem::EndClip {
+            bounds: decode_rect(reader)?,
+        }),
+        7 => Ok(DisplayItem::BeginOpacity {
+            bounds: decode_rect(reader)?,
+            opacity: finite(reader.f32()?, 0.0, 1.0, "opacity")?,
+        }),
+        8 => Ok(DisplayItem::EndOpacity {
+            bounds: decode_rect(reader)?,
+        }),
         1 => Ok(DisplayItem::SolidRect {
             rect: decode_rect(reader)?,
             color: decode_color(reader)?,

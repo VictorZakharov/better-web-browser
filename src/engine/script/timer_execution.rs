@@ -69,26 +69,44 @@ pub(super) fn settle_timer_slice(
             break;
         };
 
+        let render_pending_before = host.borrow().timers.render_requested();
         host.borrow_mut().begin_task();
-        let label = if stage_reporter.is_some() {
-            context
-                .call_global("__timerLabel", &[timer_id.into()])
-                .and_then(|value| value.to_string(context))
-                .map(|value| value.to_std_string_escaped())
-                .unwrap_or_else(|_| "unknown callback".to_string())
-        } else {
-            String::new()
-        };
+        let label = context
+            .call_global("__timerLabel", &[timer_id.into()])
+            .and_then(|value| value.to_string(context))
+            .map(|value| value.to_std_string_escaped())
+            .unwrap_or_else(|_| "unknown callback".to_string());
         if let Some(reporter) = stage_reporter.as_deref_mut() {
             reporter(&format!("executing JavaScript timer {timer_id}: {label}"));
         }
+        // Keep profiling from earlier script work separate from this callback. Diagnostic
+        // selectors opt into host timing; ordinary browsing leaves the profile disabled.
+        host.borrow_mut()
+            .append_host_call_diagnostics(&mut outcome.diagnostics);
         let callback_started = Instant::now();
-        if let Err(error) = context.call_global("__runTimer", &[timer_id.into()]) {
+        let callback_result = context.call_global("__runTimer", &[timer_id.into()]);
+        let callback_elapsed = callback_started.elapsed();
+        if let Err(error) = &callback_result {
+            let callback = if label.is_empty() {
+                String::new()
+            } else {
+                format!(" ({label})")
+            };
             outcome
                 .errors
-                .push(format!("JavaScript timer {timer_id}: {error}"));
+                .push(format!("JavaScript timer {timer_id}{callback}: {error}"));
         }
-        outcome.record_timing("JavaScript timer callback", callback_started.elapsed());
+        let mut callback_diagnostics = Vec::new();
+        host.borrow_mut()
+            .append_host_call_diagnostics(&mut callback_diagnostics);
+        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(100) {
+            outcome.diagnostics.extend(
+                callback_diagnostics.into_iter().map(|diagnostic| {
+                    format!("JavaScript timer {timer_id} ({label}): {diagnostic}")
+                }),
+            );
+        }
+        outcome.record_timing("JavaScript timer callback", callback_elapsed);
         // HTML performs a microtask checkpoint after every task. V8 owns the Promise job queue,
         // so drain it here rather than once after a whole batch of timer callbacks.
         if let Some(reporter) = stage_reporter.as_deref_mut() {
@@ -105,6 +123,13 @@ pub(super) fn settle_timer_slice(
         outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+        // HTML exposes a rendering opportunity between tasks. Once one callback changes the
+        // connected document, return to the renderer so it can refresh style/layout before a
+        // later timer observes CSSOM View geometry. Continuing the batch here made those later
+        // tasks read boxes from the previous presentation.
+        if !render_pending_before && host.borrow().timers.render_requested() {
+            break;
+        }
         if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
             break;
         }

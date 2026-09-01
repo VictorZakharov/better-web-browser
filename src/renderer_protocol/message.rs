@@ -213,7 +213,7 @@ pub enum RendererMessage {
         document: DocumentId,
         revision: u64,
     },
-    RuntimeUpdate(RendererRuntimeUpdate),
+    RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {
         document: DocumentId,
         detail: String,

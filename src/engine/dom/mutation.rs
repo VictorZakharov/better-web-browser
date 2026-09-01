@@ -77,6 +77,33 @@ impl Node {
         )
     }
 
+    pub(crate) fn create_generated_pseudo_for(
+        origin: &NodeRef,
+        tag_name: &str,
+        contents: &str,
+    ) -> NodeRef {
+        debug_assert!(matches!(
+            tag_name,
+            "breeze-pseudo-before" | "breeze-pseudo-after"
+        ));
+        let pseudo = Self::create_element_for(origin, tag_name);
+        let text = Self::create_text_for(origin, contents);
+        pseudo.parent.set(Some(Rc::downgrade(origin)));
+        text.parent.set(Some(Rc::downgrade(&pseudo)));
+        pseudo.children.borrow_mut().push(text);
+        pseudo
+    }
+
+    pub(crate) fn replace_generated_pseudo_text(pseudo: &NodeRef, contents: &str) {
+        debug_assert!(pseudo.is_generated_pseudo());
+        let text = pseudo.children.borrow().first().cloned();
+        if let Some(text) = text
+            && let NodeData::Text(value) = &text.data
+        {
+            *value.borrow_mut() = contents.to_string();
+        }
+    }
+
     pub fn create_comment(contents: &str) -> NodeRef {
         Node::new(NodeData::Comment(contents.to_string()))
     }
@@ -85,6 +112,22 @@ impl Node {
         Node::new_in(
             Rc::clone(&owner.identity),
             NodeData::Comment(contents.to_string()),
+        )
+    }
+
+    pub fn create_doctype_for(
+        owner: &NodeRef,
+        name: &str,
+        public_id: &str,
+        system_id: &str,
+    ) -> NodeRef {
+        Node::new_in(
+            Rc::clone(&owner.identity),
+            NodeData::Doctype {
+                name: name.to_string(),
+                public_id: public_id.to_string(),
+                system_id: system_id.to_string(),
+            },
         )
     }
 

@@ -15,8 +15,8 @@ use crate::renderer_process::windows::{
     exit_code, process_exited, process_sample, terminate_job, wait_for_process,
 };
 use crate::renderer_protocol::{
-    BrowserMessage, DocumentId, DocumentInput, DocumentStart, DocumentState, PresentedViewport,
-    ProtocolError, RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport,
+    BrowserMessage, DocumentId, DocumentInput, DocumentStart, DocumentState, ProtocolError,
+    RendererFetchRequest, RendererMessage, RendererPresentation, RestrictionReport,
     StateSnapshotApplied, TestCommand, TransferAssembler,
 };
 use std::collections::{HashMap, VecDeque};
@@ -32,10 +32,6 @@ pub(super) enum BrokerCommand {
         reply: mpsc::Sender<Result<RestrictionReport, String>>,
     },
     Test(TestCommand),
-    ViewportChanged {
-        document: DocumentId,
-        viewport: PresentedViewport,
-    },
     Input(DocumentInput),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
@@ -65,6 +61,7 @@ pub(super) struct BrokerResources {
     pub(super) command_depth: QueueDepth,
     pub(super) acknowledgements: super::acknowledgements::Receiver,
     pub(super) clock: super::clock::Receiver,
+    pub(super) viewport: super::viewport::Receiver,
     pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
@@ -132,6 +129,7 @@ impl Broker {
             self.process_lifecycle_commands();
             self.process_state_updates();
             self.process_presentation_acknowledgement();
+            self.process_viewport_update();
             self.process_commands();
             self.process_document_clock();
             self.process_messages();
@@ -370,6 +368,14 @@ impl Broker {
         if let Some(error) = self.writer().take_failure()
             && self.exit_reason.is_none()
         {
+            // A renderer crash closes both IPC directions. The writer can observe the broken
+            // pipe a few milliseconds before Windows signals the process handle, so give the
+            // authoritative process-exit observation the same bounded grace period as the
+            // reader path above. Otherwise an ordinary renderer crash is nondeterministically
+            // mislabeled as a browser-detected IPC protocol violation.
+            if wait_for_process(&self.resources().process, Duration::from_millis(100)) {
+                return;
+            }
             self.protocol_failure(format!("renderer IPC writer stopped: {error}"));
         }
     }

@@ -3,9 +3,10 @@ use super::wire::{
     vec_u16, vec_u64,
 };
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
-    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS, BROWSER_HELLO,
+    BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
+    MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
     WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
@@ -49,6 +50,36 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             vec_u64(&mut payload, encoded_length);
             BROWSER_DECODE_SOURCE
         }
+        BrowserMediaMessage::DecodeTracks {
+            request_id,
+            video_source_id,
+            audio_source_id,
+            frame_id,
+            video_length,
+            audio_length,
+        } => {
+            require_nonzero(request_id, "decode request")?;
+            require_nonzero(video_source_id, "video source")?;
+            require_nonzero(audio_source_id, "audio source")?;
+            require_nonzero(frame_id, "frame generation")?;
+            require_nonzero(video_length, "video length")?;
+            require_nonzero(audio_length, "audio length")?;
+            let encoded_length = video_length
+                .checked_add(audio_length)
+                .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
+            if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length > MediaLimits::default().max_encoded_queue_bytes
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive source"));
+            }
+            vec_u64(&mut payload, request_id);
+            vec_u64(&mut payload, video_source_id);
+            vec_u64(&mut payload, audio_source_id);
+            vec_u64(&mut payload, frame_id);
+            vec_u64(&mut payload, video_length);
+            vec_u64(&mut payload, audio_length);
+            BROWSER_DECODE_TRACKS
+        }
         BrowserMediaMessage::AcknowledgeFrame {
             source_id,
             frame_id,
@@ -87,6 +118,18 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             require_nonzero(source_id, "playback source")?;
             vec_u64(&mut payload, source_id);
             BROWSER_PLAYBACK_STATE
+        }
+        BrowserMediaMessage::SeekPlayback {
+            source_id,
+            position_100ns,
+        } => {
+            require_nonzero(source_id, "playback source")?;
+            if position_100ns > crate::limits::MAX_MEDIA_DURATION_100NS {
+                return Err(MediaProtocolError::InvalidPayload("playback seek position"));
+            }
+            vec_u64(&mut payload, source_id);
+            vec_u64(&mut payload, position_100ns);
+            BROWSER_SEEK_PLAYBACK
         }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);
@@ -156,6 +199,16 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_u64(&mut payload, report.decode_micros);
             encode_frame_metadata(&mut payload, frame);
             WORKER_DECODED
+        }
+        WorkerMediaMessage::DecodeFailed { request_id, error } => {
+            require_nonzero(request_id, "decode request")?;
+            if error.is_empty() || error.len() > crate::limits::MAX_MEDIA_FAILURE_BYTES {
+                return Err(MediaProtocolError::InvalidPayload("media failure text"));
+            }
+            vec_u64(&mut payload, request_id);
+            vec_u16(&mut payload, error.len() as u16);
+            payload.extend_from_slice(error.as_bytes());
+            WORKER_DECODE_FAILED
         }
         WorkerMediaMessage::FrameAcknowledged {
             source_id,

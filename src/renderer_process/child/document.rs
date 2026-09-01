@@ -5,6 +5,7 @@ mod diagnostics;
 mod dynamic_scripts;
 mod fetch;
 mod fullscreen;
+mod geometry;
 mod interaction;
 mod load;
 mod media;
@@ -36,7 +37,9 @@ use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
     RendererPresentation, RendererRuntimeUpdate,
 };
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub(super) enum LoadResult {
@@ -56,7 +59,9 @@ pub(super) struct DocumentRuntime {
     reader: crate::document::Document,
     script_runtime: Option<ScriptRuntime>,
     viewport: crate::renderer_protocol::PresentedViewport,
-    text: RendererTextSystem,
+    text: Rc<RefCell<RendererTextSystem>>,
+    script_layout_page: Rc<RefCell<Page>>,
+    script_layout_viewport: Rc<Cell<crate::renderer_protocol::PresentedViewport>>,
     layout: crate::engine::LayoutOutput,
     loaded_resources: HashSet<PageResource>,
     resource_budget: u64,
@@ -68,6 +73,8 @@ pub(super) struct DocumentRuntime {
     executed_async_scripts: HashSet<String>,
     pending_dynamic_script_fetch: Option<PendingDynamicScriptFetch>,
     pending_resource_preloads: Option<PendingResourceFetch>,
+    resource_render_pending: bool,
+    resource_style_refresh_pending: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
     accessibility: RendererAccessibility,
     accessibility_selection: Option<(crate::engine::dom::NodeId, u32, u32)>,
@@ -84,7 +91,10 @@ pub(super) struct DocumentRuntime {
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
-    pending_media_outcome: ScriptOutcome,
+    media_failure: Option<String>,
+    pending_async_outcome: ScriptOutcome,
+    pending_resource_events: Vec<(PageResource, &'static str)>,
+    geometry_observers_pending: bool,
 }
 
 impl DocumentRuntime {
@@ -116,13 +126,21 @@ impl DocumentRuntime {
     }
 
     pub(super) fn into_text(mut self) -> RendererTextSystem {
-        self.text.reset_for_navigation();
-        self.text
+        self.script_runtime.take();
+        let mut text = match Rc::try_unwrap(self.text) {
+            Ok(text) => text.into_inner(),
+            Err(_) => unreachable!("script layout callback outlived its runtime"),
+        };
+        text.reset_for_navigation();
+        text
     }
 
     pub(super) fn next_timer_micros(&mut self) -> Option<u64> {
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
             return None;
+        }
+        if self.geometry_observers_pending || self.resource_render_pending {
+            return Some(0);
         }
         let runtime_timer = self
             .script_runtime
@@ -164,18 +182,40 @@ impl DocumentRuntime {
             return Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
                 clock_advanced: true,
-                runtime: runtime_report(ScriptOutcome::default(), self.script_runtime.is_some()),
+                runtime: runtime_report(
+                    ScriptOutcome::default(),
+                    self.script_runtime.is_some(),
+                    self.media_runtime_report(),
+                ),
                 load: PageLoadReport::default(),
                 next_timer_micros: None,
             })));
         }
-        let mut outcome = std::mem::take(&mut self.pending_media_outcome);
+        let mut outcome = std::mem::take(&mut self.pending_async_outcome);
+        if std::mem::take(&mut self.geometry_observers_pending)
+            && let Some(runtime) = self.script_runtime.as_mut()
+        {
+            merge_outcome(
+                &mut outcome,
+                runtime.notify_layout_changed(),
+                self.page.dom.document.id(),
+            );
+        }
         let mut script_fetch_time = Duration::ZERO;
-        let resources_changed = self
-            .finish_ready_resource_preloads(connection)?
-            .unwrap_or(false);
+        let mut resources_changed = std::mem::take(&mut self.resource_render_pending);
+        let mut resource_style_changed = std::mem::take(&mut self.resource_style_refresh_pending);
+        if let Some(changes) = self.finish_ready_resource_preloads(connection)? {
+            resources_changed |= changes.render;
+            resource_style_changed |= changes.style;
+        }
+        merge_outcome(
+            &mut outcome,
+            std::mem::take(&mut self.pending_async_outcome),
+            self.page.dom.document.id(),
+        );
         if resources_changed {
-            self.text.register_web_fonts(&self.page.fonts);
+            self.text.borrow_mut().register_web_fonts(&self.page.fonts);
+            self.sync_script_layout_page();
         }
         let mut script_time = Duration::ZERO;
         let async_script_started = Instant::now();
@@ -287,7 +327,7 @@ impl DocumentRuntime {
                 self.viewport.height,
                 &outcome.invalidation,
             )
-        } else if resources_changed {
+        } else if resource_style_changed {
             self.page
                 .refresh_resources_for_viewport(self.viewport.style_width, self.viewport.height)
         } else {
@@ -305,7 +345,7 @@ impl DocumentRuntime {
             ))?;
             self.rebuild_layout();
         }
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
             script_fetch_micros: micros(script_fetch_time),
             layout_micros: micros(layout_started.elapsed()),
@@ -322,7 +362,11 @@ impl DocumentRuntime {
             Ok(AdvanceResult::Runtime(Box::new(RendererRuntimeUpdate {
                 document: self.id,
                 clock_advanced: true,
-                runtime: runtime_report(outcome, self.script_runtime.is_some()),
+                runtime: runtime_report(
+                    outcome,
+                    self.script_runtime.is_some(),
+                    self.media_runtime_report(),
+                ),
                 load,
                 next_timer_micros,
             })))
@@ -336,11 +380,14 @@ impl DocumentRuntime {
     ) -> Result<RendererPresentation, String> {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
         self.apply_media_environment(viewport);
-        self.text.set_dpi(viewport.dpi);
+        self.text.borrow_mut().set_dpi(viewport.dpi);
+        self.sync_script_layout_page();
         let mut outcome = self
             .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
-                width: viewport.width,
+                width: viewport.style_width,
                 height: viewport.height,
+                layout_width: viewport.width,
+                layout_height: viewport.height,
                 scale: viewport.dpi as f32 / 96.0,
             })?
             .outcome;
@@ -351,22 +398,11 @@ impl DocumentRuntime {
         self.start_presentational_preloads(connection)?;
         let started = Instant::now();
         self.rebuild_layout();
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
         self.presentation(outcome, style, load)
-    }
-
-    fn rebuild_layout(&mut self) {
-        self.text.reset_layout_metrics();
-        self.layout = layout_page_with_style_viewport(
-            &self.page,
-            self.viewport.width,
-            self.viewport.height,
-            self.viewport.style_width,
-            &mut self.text,
-        );
     }
 
     fn presentation(
@@ -406,8 +442,8 @@ impl DocumentRuntime {
             }
         }
         let next_timer_micros = self.next_timer_micros();
-        let glyph_epoch = self.text.glyph_epoch();
-        let glyphs = self.text.take_pending_glyphs();
+        let glyph_epoch = self.text.borrow().glyph_epoch();
+        let glyphs = self.text.borrow_mut().take_pending_glyphs();
         let page_diagnostics = diagnostics::collect(
             &self.page,
             &self.layout,
@@ -436,7 +472,11 @@ impl DocumentRuntime {
             images,
             glyph_epoch,
             glyphs,
-            runtime: runtime_report(outcome, self.script_runtime.is_some()),
+            runtime: runtime_report(
+                outcome,
+                self.script_runtime.is_some(),
+                self.media_runtime_report(),
+            ),
             style: style_report(style),
             load,
             page_diagnostics,

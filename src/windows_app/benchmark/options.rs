@@ -104,6 +104,23 @@ impl LaunchOptions {
                         &argument,
                     )?));
                 }
+                "--activate-selector-after-ready" => {
+                    let selector = required(&mut arguments, &argument)?;
+                    if selector.trim().is_empty() {
+                        return Err("--activate-selector-after-ready cannot be empty".to_string());
+                    }
+                    if !diagnostic_selectors.contains(&selector) {
+                        diagnostic_selectors.push(selector.clone());
+                        diagnostics::validate_selector_count(&diagnostic_selectors)?;
+                    }
+                    navigation_targets.push(BenchmarkNavigation::ActivateSelector(selector));
+                }
+                "--click-after-ready" => {
+                    navigation_targets.push(click_point(&required(&mut arguments, &argument)?)?);
+                }
+                "--key-after-ready" => {
+                    navigation_targets.push(key_input(&required(&mut arguments, &argument)?)?);
+                }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
                         number::<u64>(&mut arguments, &argument)?.clamp(0, 60_000);
@@ -204,6 +221,39 @@ where
         .map_err(|_| format!("{option} requires a number"))
 }
 
+fn click_point(value: &str) -> Result<BenchmarkNavigation, String> {
+    let Some((x, y)) = value.split_once(',') else {
+        return Err("--click-after-ready requires x,y".into());
+    };
+    let x = x
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "--click-after-ready requires integer x,y".to_string())?;
+    let y = y
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "--click-after-ready requires integer x,y".to_string())?;
+    if x < 0 || y < 0 {
+        return Err("--click-after-ready coordinates cannot be negative".into());
+    }
+    Ok(BenchmarkNavigation::ClickPoint { x, y })
+}
+
+fn key_input(value: &str) -> Result<BenchmarkNavigation, String> {
+    let Some((key, code)) = value.split_once(',') else {
+        return Err("--key-after-ready requires key,code".into());
+    };
+    let key = key.trim();
+    let code = code.trim();
+    if key.is_empty() || code.is_empty() || key.len() > 64 || code.len() > 64 {
+        return Err("--key-after-ready requires non-empty key,code values up to 64 bytes".into());
+    }
+    Ok(BenchmarkNavigation::Key {
+        key: key.to_string(),
+        code: code.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +332,12 @@ mod tests {
                 "https://example.test/final",
                 "--activate-link-after-ready",
                 "https://example.test/clicked",
+                "--activate-selector-after-ready",
+                "button.play",
+                "--click-after-ready",
+                "320,180",
+                "--key-after-ready",
+                "k,KeyK",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -296,8 +352,15 @@ mod tests {
                 BenchmarkNavigation::Address("https://example.test/second".to_string()),
                 BenchmarkNavigation::Address("https://example.test/final".to_string()),
                 BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
+                BenchmarkNavigation::ActivateSelector("button.play".to_string()),
+                BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
+                BenchmarkNavigation::Key {
+                    key: "k".to_string(),
+                    code: "KeyK".to_string(),
+                },
             ]
         );
+        assert_eq!(benchmark.diagnostic_selectors, ["button.play"]);
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));
     }
 

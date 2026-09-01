@@ -12,6 +12,7 @@ mod state_updates;
 mod stream;
 #[cfg(test)]
 mod tests;
+mod viewport;
 mod wake;
 mod worker;
 use super::launcher::{RendererLaunchOptions, launch};
@@ -111,6 +112,7 @@ pub struct RendererSession {
     command_depth: QueueDepth,
     acknowledgements: acknowledgements::Sender,
     clock: clock::Sender,
+    viewport: viewport::Sender,
     state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
@@ -215,6 +217,7 @@ impl RendererSession {
         // Browser-owned progress must not compete with bounded page-generated commands.
         let (acknowledgements_tx, acknowledgements_rx) = acknowledgements::bounded();
         let (clock_tx, clock_rx) = clock::bounded();
+        let (viewport_tx, viewport_rx) = viewport::bounded();
         let (state_updates_tx, state_updates_rx) = state_updates::bounded();
         // Browser state serializes replacement to one lossless cancel plus one pending page.
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
@@ -242,6 +245,7 @@ impl RendererSession {
                     command_depth: worker_command_depth,
                     acknowledgements: acknowledgements_rx,
                     clock: clock_rx,
+                    viewport: viewport_rx,
                     state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
@@ -257,6 +261,7 @@ impl RendererSession {
             command_depth,
             acknowledgements: acknowledgements_tx,
             clock: clock_tx,
+            viewport: viewport_tx,
             state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,

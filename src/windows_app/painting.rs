@@ -1,3 +1,7 @@
+mod clip;
+mod crash;
+mod opacity;
+
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
     paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_alpha_image, paint_background_image,
@@ -6,6 +10,9 @@ use super::paint_primitives::{
 use super::platform::*;
 use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
 use better_web_browser::engine::{ControlKind, DisplayItem};
+use clip::ClipStack;
+use crash::paint_crash_page;
+use opacity::{OpacityLayer, OpacityLayerStart};
 use std::ptr::null_mut;
 use std::time::Instant;
 
@@ -40,9 +47,7 @@ impl BrowserState {
 
         if !memory_dc.is_null() && !bitmap.is_null() {
             let previous = SelectObject(memory_dc, bitmap);
-            // Allocate only for the invalidated region. The viewport origin keeps the renderer in
-            // client coordinates while mapping that rectangle to this compact backbuffer.
-            // <https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-setviewportorgex>
+            // Map client coordinates into a backbuffer sized to the invalidated region.
             SetViewportOrgEx(memory_dc, -dirty.left, -dirty.top, null_mut());
             IntersectClipRect(memory_dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
             self.paint_surface(memory_dc, &client, &dirty);
@@ -91,39 +96,7 @@ impl BrowserState {
         };
         let tab = self.tabs.active_mut();
         if tab.crashed {
-            FillRect(dc, &content, content_brush);
-            SetBkMode(dc, TRANSPARENT);
-            if let Some(fonts) = fonts {
-                let left = content.left + (48.0 * scale).round() as i32;
-                let top = content.top + (96.0 * scale).round() as i32;
-                let mut heading = Rect {
-                    left,
-                    top,
-                    right: content.right - (48.0 * scale).round() as i32,
-                    bottom: top + (52.0 * scale).round() as i32,
-                };
-                SelectObject(dc, fonts.heading2);
-                SetTextColor(dc, rgb(160, 36, 36));
-                draw_text_in_rect(
-                    dc,
-                    "This page stopped",
-                    &mut heading,
-                    DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-                );
-                let mut detail = Rect {
-                    top: heading.bottom + (12.0 * scale).round() as i32,
-                    bottom: heading.bottom + (52.0 * scale).round() as i32,
-                    ..heading
-                };
-                SelectObject(dc, fonts.body);
-                SetTextColor(dc, CHROME_THEME.text);
-                draw_text_in_rect(
-                    dc,
-                    &tab.status_text,
-                    &mut detail,
-                    DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-                );
-            }
+            paint_crash_page(dc, &content, content_brush, fonts, &tab.status_text, scale);
             self.paint_chrome(dc, client);
             return;
         }
@@ -145,9 +118,58 @@ impl BrowserState {
                 let dirty_content_bottom = (dirty.bottom - toolbar_height).max(0);
                 let visible_top = (tab.scroll_y + dirty_content_top) as f32 / scale;
                 let visible_bottom = (tab.scroll_y + dirty_content_bottom) as f32 / scale;
+                let mut opacity_layers = Vec::new();
+                let mut clip_stack = ClipStack::default();
+                let mut skipped_opacity_depth = 0_usize;
                 for range in tab.paint_index.visible_ranges(visible_top, visible_bottom) {
                     for item in &tab.page_layout.items[range] {
+                        if skipped_opacity_depth > 0 {
+                            match item {
+                                DisplayItem::BeginOpacity { .. } => skipped_opacity_depth += 1,
+                                DisplayItem::EndOpacity { .. } => skipped_opacity_depth -= 1,
+                                _ => {}
+                            }
+                            continue;
+                        }
+                        let item_dc = opacity_layers
+                            .iter()
+                            .rev()
+                            .find_map(OpacityLayer::dc)
+                            .unwrap_or(dc);
                         match item {
+                            DisplayItem::BeginOpacity { bounds, opacity } => {
+                                if *opacity <= 0.0 {
+                                    skipped_opacity_depth = 1;
+                                    continue;
+                                }
+                                match OpacityLayer::begin(
+                                    item_dc,
+                                    *bounds,
+                                    *opacity,
+                                    tab.scroll_y,
+                                    toolbar_height,
+                                    scale,
+                                    &content,
+                                    dirty,
+                                ) {
+                                    OpacityLayerStart::Hidden => skipped_opacity_depth = 1,
+                                    OpacityLayerStart::Layer(layer) => opacity_layers.push(layer),
+                                }
+                            }
+                            DisplayItem::EndOpacity { .. } => {
+                                if let Some(layer) = opacity_layers.pop() {
+                                    layer.finish();
+                                }
+                            }
+                            DisplayItem::BeginClip { .. } | DisplayItem::EndClip { .. } => {
+                                clip_stack.handle(
+                                    item,
+                                    item_dc,
+                                    tab.scroll_y,
+                                    toolbar_height,
+                                    scale,
+                                );
+                            }
                             DisplayItem::SolidRect {
                                 rect,
                                 color,
@@ -157,7 +179,7 @@ impl BrowserState {
                                     screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
                                     fill_color_shape(
-                                        dc,
+                                        item_dc,
                                         &rectangle,
                                         color.to_colorref(),
                                         *radius * scale,
@@ -174,7 +196,7 @@ impl BrowserState {
                                     screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
                                     paint_border(
-                                        dc,
+                                        item_dc,
                                         &rectangle,
                                         widths.map(|width| width * scale),
                                         color.to_colorref(),
@@ -203,11 +225,11 @@ impl BrowserState {
                                 // an active renderer identity and can only paint validated glyphs.
                                 if glyphs.is_empty() && tab.navigation.active_document().is_none() {
                                     let font_handle = tab.dynamic_fonts.get_or_create(font, dpi);
-                                    SelectObject(dc, font_handle);
-                                    SetTextColor(dc, color.to_colorref());
+                                    SelectObject(item_dc, font_handle);
+                                    SetTextColor(item_dc, color.to_colorref());
                                     let text = wide_without_null(text);
                                     TextOutW(
-                                        dc,
+                                        item_dc,
                                         (rect.x * scale).round() as i32,
                                         screen_y,
                                         text.as_ptr(),
@@ -222,7 +244,7 @@ impl BrowserState {
                                     &tab.presented_glyphs,
                                     tint,
                                     scale,
-                                    dc,
+                                    item_dc,
                                 ) {
                                     let destination = run.destination_rect(
                                         *rect,
@@ -233,7 +255,7 @@ impl BrowserState {
                                     if intersects(&destination, &content) {
                                         if glyph_source_dc.is_null() {
                                             paint_alpha_bitmap_size(
-                                                dc,
+                                                item_dc,
                                                 run.bitmap,
                                                 run.source_width,
                                                 run.source_height,
@@ -241,7 +263,7 @@ impl BrowserState {
                                             );
                                         } else {
                                             paint_alpha_bitmap_from_dc(
-                                                dc,
+                                                item_dc,
                                                 glyph_source_dc,
                                                 run.bitmap,
                                                 run.source_width,
@@ -280,19 +302,19 @@ impl BrowserState {
                                         resource.id,
                                         &resource.image,
                                         tint,
-                                        dc,
+                                        item_dc,
                                     );
                                     if !bitmap.is_null() {
                                         if glyph_source_dc.is_null() {
                                             paint_alpha_bitmap(
-                                                dc,
+                                                item_dc,
                                                 bitmap,
                                                 &resource.image,
                                                 &destination,
                                             );
                                         } else {
                                             paint_alpha_bitmap_from_dc(
-                                                dc,
+                                                item_dc,
                                                 glyph_source_dc,
                                                 bitmap,
                                                 resource.image.width,
@@ -322,24 +344,24 @@ impl BrowserState {
                                             url,
                                             image,
                                             [color.red, color.green, color.blue, color.alpha],
-                                            dc,
+                                            item_dc,
                                         )
                                     } else {
-                                        tab.image_bitmaps.get_or_create(url, image, dc)
+                                        tab.image_bitmaps.get_or_create(url, image, item_dc)
                                     };
                                     if !bitmap.is_null() {
                                         paint_alpha_image(
-                                            dc, bitmap, image, *rect, screen_y, scale,
+                                            item_dc, bitmap, image, *rect, screen_y, scale,
                                         );
                                     }
                                 } else if !alt.is_empty()
                                     && let Some(fonts) = fonts
                                 {
-                                    SelectObject(dc, fonts.body);
-                                    SetTextColor(dc, rgb(70, 70, 70));
+                                    SelectObject(item_dc, fonts.body);
+                                    SetTextColor(item_dc, rgb(70, 70, 70));
                                     let alt = wide_without_null(alt);
                                     TextOutW(
-                                        dc,
+                                        item_dc,
                                         (rect.x * scale).round() as i32,
                                         screen_y,
                                         alt.as_ptr(),
@@ -363,10 +385,11 @@ impl BrowserState {
                                     continue;
                                 }
                                 if let Some(image) = tab.presented_images.get(url) {
-                                    let bitmap = tab.image_bitmaps.get_or_create(url, image, dc);
+                                    let bitmap =
+                                        tab.image_bitmaps.get_or_create(url, image, item_dc);
                                     if !bitmap.is_null() {
                                         paint_background_image(
-                                            dc,
+                                            item_dc,
                                             bitmap,
                                             image,
                                             *clip_rect,
@@ -409,9 +432,9 @@ impl BrowserState {
                                         rectangle.bottom -= border_bottom + padding_bottom;
                                     }
                                     let font = tab.dynamic_fonts.get_or_create(&spec.font, dpi);
-                                    SelectObject(dc, font);
+                                    SelectObject(item_dc, font);
                                     SetTextColor(
-                                        dc,
+                                        item_dc,
                                         if spec.text_color.alpha == 0 {
                                             CHROME_THEME.text
                                         } else {
@@ -436,7 +459,7 @@ impl BrowserState {
                                         value
                                     };
                                     draw_text_in_rect(
-                                        dc,
+                                        item_dc,
                                         &text,
                                         &mut rectangle,
                                         DT_VCENTER

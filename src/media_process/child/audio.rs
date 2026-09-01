@@ -17,6 +17,10 @@ enum AudioCommand {
         volume_millis: u16,
         reply: StateReply,
     },
+    Seek {
+        position_100ns: u64,
+        reply: StateReply,
+    },
     State(StateReply),
     Shutdown,
 }
@@ -79,6 +83,13 @@ impl AudioPlayback {
         self.request(AudioCommand::State)
     }
 
+    pub(super) fn seek(&self, position_100ns: u64) -> Result<MediaPlaybackState, String> {
+        self.request(|reply| AudioCommand::Seek {
+            position_100ns,
+            reply,
+        })
+    }
+
     fn request(
         &self,
         command: impl FnOnce(StateReply) -> AudioCommand,
@@ -126,7 +137,7 @@ impl AudioRuntime {
         let output = if test_mode {
             AudioOutput::silent()
         } else {
-            AudioOutput::device(decoder.sample_rate(), decoder.channels())?
+            AudioOutput::device_or_silent(decoder.sample_rate(), decoder.channels())?
         };
         Ok(Self {
             source_id,
@@ -171,6 +182,13 @@ impl AudioRuntime {
                     let result = self.state();
                     let _ = reply.send(result);
                 }
+                AudioCommand::Seek {
+                    position_100ns,
+                    reply,
+                } => {
+                    let result = self.seek(position_100ns).and_then(|_| self.state());
+                    let _ = reply.send(result);
+                }
                 AudioCommand::Shutdown => break,
             }
         }
@@ -190,5 +208,14 @@ impl AudioRuntime {
             playing: output.playing && !ended,
             ended,
         })
+    }
+
+    fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        let position_100ns = position_100ns.min(self.duration_100ns);
+        self.decoder.seek(position_100ns)?;
+        self.output.seek(
+            position_100ns.saturating_sub(self.start_100ns),
+            &mut self.decoder,
+        )
     }
 }

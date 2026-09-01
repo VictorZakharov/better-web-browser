@@ -23,6 +23,24 @@ impl ChildConnection {
         // acknowledgements keep the renderer responsive without masking a hung worker.
         media.decode(bytes, || acknowledge_renderer_progress(writer, last_ack))
     }
+
+    pub(in crate::renderer_process::child) fn decode_media_tracks(
+        &mut self,
+        video_bytes: &[u8],
+        audio_bytes: &[u8],
+    ) -> Result<crate::media_process::RendererMediaDecode, String> {
+        let (media, writer, last_ack) = (
+            &mut self.media,
+            &mut self.writer,
+            &mut self.last_processed_work_ack,
+        );
+        let media = media
+            .as_mut()
+            .ok_or_else(|| "contained media worker is unavailable".to_string())?;
+        media.decode_tracks(video_bytes, audio_bytes, || {
+            acknowledge_renderer_progress(writer, last_ack)
+        })
+    }
 }
 
 pub(super) fn acknowledge_renderer_progress(

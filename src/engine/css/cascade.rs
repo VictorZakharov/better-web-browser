@@ -1,14 +1,19 @@
 //! Style-set construction and cascade ordering.
 
 mod presentational;
+mod pseudo;
+mod refresh;
+mod root_units;
 mod sheets;
 #[cfg(test)]
 mod tests;
 
 use super::media::MediaEnvironment;
 use super::rule_index::RuleIndex;
+use super::selector_match::selector_matches;
 use super::*;
 use presentational::apply_presentational_hints;
+use root_units::root_font_size_for;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StyleRefreshStats {
@@ -24,6 +29,9 @@ pub struct StyleRefreshStats {
 #[derive(Debug, Default)]
 pub struct StyleSet {
     pub styles: HashMap<NodeId, ComputedStyle>,
+    pseudo_styles: HashMap<(NodeId, PseudoElement), ComputedStyle>,
+    generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
+    generated_styles: HashMap<NodeId, ComputedStyle>,
     rules: Vec<Rule>,
     rule_index: RuleIndex,
     document_base_url: String,
@@ -138,6 +146,9 @@ impl StyleSet {
         let rule_index = RuleIndex::new(&rules);
         Self {
             styles: HashMap::new(),
+            pseudo_styles: HashMap::new(),
+            generated_nodes: HashMap::new(),
+            generated_styles: HashMap::new(),
             rules,
             rule_index,
             document_base_url: document_base_url.to_string(),
@@ -148,6 +159,8 @@ impl StyleSet {
 
     pub(crate) fn clear_computed_styles(&mut self) {
         self.styles.clear();
+        self.pseudo_styles.clear();
+        self.generated_styles.clear();
     }
 
     pub(crate) fn computed_style_for_node(&mut self, node: &NodeRef) -> Option<&ComputedStyle> {
@@ -163,6 +176,7 @@ impl StyleSet {
                     .cloned()
                     .unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
                 self.styles.insert(node_id(&ancestor), style.clone());
+                self.sync_generated_pseudos(&ancestor, &style);
                 parent_style = Some(style);
             }
         }
@@ -172,6 +186,7 @@ impl StyleSet {
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.styles
             .get(&node_id(node))
+            .or_else(|| self.generated_styles.get(&node_id(node)))
             .expect("style should exist for every DOM node")
     }
 
@@ -186,106 +201,56 @@ impl StyleSet {
         )
     }
 
-    pub(crate) fn refresh_subtree(
-        &mut self,
-        document: &NodeRef,
-        requested_root: &NodeRef,
-        removed_nodes: &[NodeId],
-    ) -> StyleRefreshStats {
-        let requested_root = requested_root
-            .shadow_host()
-            .unwrap_or_else(|| requested_root.clone());
-        let root = if is_descendant_of(&requested_root, document) {
-            requested_root
-        } else {
-            document.clone()
-        };
-        let parent_style = Node::composed_parent(&root)
-            .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
-        let mut stats = StyleRefreshStats::default();
-        self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
-
-        // A node may be removed and reinserted before the rendering checkpoint. Its identifier
-        // remains in the removal log, but its newly recomputed style must remain available.
-        let connected_nodes = Node::shadow_including_descendants(document)
-            .map(|node| node_id(&node))
-            .collect::<HashSet<_>>();
-        stats.removed_styles = removed_nodes
-            .iter()
-            .filter(|node| !connected_nodes.contains(node))
-            .filter(|node| self.styles.remove(node).is_some())
-            .count();
-        stats.total_styles = self.styles.len();
-        stats
-    }
-
-    fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
-        let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
-            } else {
-                let parent = Node::composed_parent(&node)
-                    .expect("connected composed-tree child has a parent");
-                let parent_style = self
-                    .styles
-                    .get(&node_id(&parent))
-                    .expect("parent style is computed before its children");
-                self.compute_style(&node, Some(parent_style))
-            };
-            self.styles.insert(node_id(&node), style);
-            pending.extend(Node::composed_children(&node).into_iter().rev());
-        }
-    }
-
-    fn recompute_subtree(
-        &mut self,
-        node: &NodeRef,
-        parent: Option<&ComputedStyle>,
-        stats: &mut StyleRefreshStats,
-    ) {
-        let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
-            } else {
-                let parent = Node::composed_parent(&node)
-                    .expect("connected composed-tree child has a parent");
-                let parent_style = self
-                    .styles
-                    .get(&node_id(&parent))
-                    .expect("parent style is recomputed before its children");
-                self.compute_style(&node, Some(parent_style))
-            };
-            stats.invalidated_nodes += 1;
-            stats.recomputed_styles += 1;
-            match self.styles.get(&node_id(&node)) {
-                Some(previous) if previous != &style => {
-                    stats.changed_styles += 1;
-                    stats.layout_changed |= !previous.layout_equivalent(&style);
-                }
-                None => {
-                    stats.changed_styles += 1;
-                    stats.layout_changed = true;
-                }
-                _ => {}
-            }
-            self.styles.insert(node_id(&node), style);
-            pending.extend(Node::composed_children(&node).into_iter().rev());
-        }
-    }
-
     fn compute_style(&self, node: &NodeRef, parent: Option<&ComputedStyle>) -> ComputedStyle {
         let mut style = ComputedStyle::inherit_from(parent);
+        style.root_font_size = root_font_size_for(&self.styles, node);
         apply_user_agent_defaults(node, &mut style);
+        let lower_origin = style.clone();
 
+        let matching = self.matching_rules(node, None);
+        let inline_declarations = node
+            .attr("style")
+            .map(|inline| parse_declarations(&inline))
+            .unwrap_or_default();
+
+        self.apply_author_cascade(
+            &mut style,
+            parent,
+            &lower_origin,
+            &matching,
+            &inline_declarations,
+        );
+        apply_presentational_hints(node, &mut style);
+        style.resolve_relative_units(
+            self.viewport_width,
+            self.viewport_height,
+            style.root_font_size,
+        );
+        if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
+            style.display = Display::None;
+        }
+        super::fullscreen::apply_fullscreen_ua_style(
+            node,
+            &mut style,
+            self.viewport_width,
+            self.viewport_height,
+        );
+        // CSS 2 makes `float` compute to `none` for absolutely positioned boxes. Resolve this
+        // after the cascade so the result is independent of declaration source order.
+        if matches!(style.position, Position::Absolute | Position::Fixed) {
+            style.float = Float::None;
+        }
+        style.line_height = style.line_height.max(style.font_size);
+        style
+    }
+
+    fn matching_rules(&self, node: &NodeRef, pseudo: Option<PseudoElement>) -> Vec<&Rule> {
         let mut matching = self
             .rule_index
             .candidates(node)
             .into_iter()
             .filter_map(|index| self.rules.get(index))
+            .filter(|rule| rule.pseudo == pseudo)
             .filter(|rule| rule_applies_to(rule, node))
             .filter(|rule| selector_matches(&rule.selector, node))
             .collect::<Vec<_>>();
@@ -295,17 +260,23 @@ impl StyleSet {
                 .cmp(&right.selector.specificity)
                 .then_with(|| left.order.cmp(&right.order))
         });
-        let inline_declarations = node
-            .attr("style")
-            .map(|inline| parse_declarations(&inline))
-            .unwrap_or_default();
+        matching
+    }
 
+    fn apply_author_cascade(
+        &self,
+        style: &mut ComputedStyle,
+        parent: Option<&ComputedStyle>,
+        lower_origin: &ComputedStyle,
+        matching: &[&Rule],
+        inline_declarations: &[Declaration],
+    ) {
         // CSS Cascade places every important author declaration above every normal author
         // declaration. Inline declarations retain their higher specificity within each group.
         // https://drafts.csswg.org/css-cascade/#importance
         let mut cascaded = Vec::new();
         for important in [false, true] {
-            for rule in &matching {
+            for rule in matching {
                 cascaded.extend(
                     rule.declarations
                         .iter()
@@ -322,54 +293,24 @@ impl StyleSet {
         }
 
         for &(declaration, _) in &cascaded {
-            apply_custom_properties(&mut style, std::slice::from_ref(declaration), parent);
+            apply_custom_properties(style, std::slice::from_ref(declaration), parent);
         }
-        for &(declaration, base_url) in &cascaded {
-            if declaration.name != "line-height" {
-                apply_resolved_declaration(
-                    &mut style,
-                    declaration,
-                    parent,
-                    base_url,
-                    self.viewport_width,
-                    self.viewport_height,
-                );
+        for line_height in [false, true] {
+            for &(declaration, base_url) in &cascaded {
+                if (declaration.name == "line-height") == line_height {
+                    apply_resolved_declaration(
+                        style,
+                        declaration,
+                        parent,
+                        lower_origin,
+                        base_url,
+                        self.viewport_width,
+                        self.viewport_height,
+                    );
+                }
             }
         }
-        // line-height depends on the winning font-size, independent of declaration source order.
-        for &(declaration, base_url) in &cascaded {
-            if declaration.name == "line-height" {
-                apply_resolved_declaration(
-                    &mut style,
-                    declaration,
-                    parent,
-                    base_url,
-                    self.viewport_width,
-                    self.viewport_height,
-                );
-            }
-        }
-        apply_presentational_hints(node, &mut style);
-        style.resolve_viewport_units(self.viewport_width, self.viewport_height);
-        if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
-            style.display = Display::None;
-        }
-        super::fullscreen::apply_fullscreen_ua_style(
-            node,
-            &mut style,
-            self.viewport_width,
-            self.viewport_height,
-        );
-        style.line_height = style.line_height.max(style.font_size);
-        style
     }
-}
-
-fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
-    std::iter::successors(Some(node.clone()), |current| {
-        current.shadow_including_parent()
-    })
-    .any(|current| current.id() == ancestor.id())
 }
 
 fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {

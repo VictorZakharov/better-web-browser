@@ -38,6 +38,7 @@ pub use message::{
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
+    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryUpdate, MediaRuntimeReport,
     NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
     PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
     RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport, SelectorDiagnostics,
@@ -51,7 +52,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 4;
-pub const PROTOCOL_MINOR: u16 = 5;
+pub const PROTOCOL_MINOR: u16 = 9;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

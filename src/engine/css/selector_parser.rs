@@ -2,6 +2,40 @@
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PseudoElement {
+    Before,
+    After,
+}
+
+pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option<PseudoElement>)> {
+    let input = input.trim();
+    let lower = input.to_ascii_lowercase();
+    let (origin, pseudo) = [
+        ("::before", PseudoElement::Before),
+        ("::after", PseudoElement::After),
+        (":before", PseudoElement::Before),
+        (":after", PseudoElement::After),
+    ]
+    .into_iter()
+    .find_map(|(suffix, pseudo)| {
+        lower
+            .strip_suffix(suffix)
+            .map(|origin| (&input[..origin.len()], pseudo))
+    })
+    .map_or((input, None), |(origin, pseudo)| (origin, Some(pseudo)));
+    let origin = if origin.trim().is_empty() {
+        "*"
+    } else {
+        origin.trim()
+    };
+    let mut selector = parse_selector(origin)?;
+    if pseudo.is_some() {
+        selector.specificity.tags = selector.specificity.tags.saturating_add(1);
+    }
+    Some((selector, pseudo))
+}
+
 pub(super) fn parse_selector(input: &str) -> Option<Selector> {
     if input.is_empty() || input.contains("::") {
         return None;
@@ -188,6 +222,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                     match name.as_str() {
                         "link" | "any-link" => compound.requires_link = true,
                         "first-child" => compound.requires_first_child = true,
+                        "first-of-type" => compound.requires_first_of_type = true,
+                        "last-child" => compound.requires_last_child = true,
                         "root" => compound.requires_root = true,
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
@@ -264,6 +300,8 @@ pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
         Some(SimpleSelector::Id(id.to_string()))
     } else if let Some(class) = input.strip_prefix('.') {
         Some(SimpleSelector::Class(class.to_string()))
+    } else if input.starts_with('[') && input.ends_with(']') {
+        parse_attribute_selector(&input[1..input.len() - 1]).map(SimpleSelector::Attribute)
     } else if !input.is_empty() {
         Some(SimpleSelector::Tag(input.to_ascii_lowercase()))
     } else {
@@ -286,6 +324,10 @@ pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specific
             ..Specificity::default()
         },
         SimpleSelector::Class(_) => Specificity {
+            classes: 1,
+            ..Specificity::default()
+        },
+        SimpleSelector::Attribute(_) => Specificity {
             classes: 1,
             ..Specificity::default()
         },
@@ -320,5 +362,19 @@ mod tests {
                 .unwrap()
                 .case_insensitive
         );
+    }
+
+    #[test]
+    fn generated_pseudo_elements_use_the_originating_selector() {
+        let (selector, pseudo) = parse_style_rule_selector(".card:before").unwrap();
+        assert_eq!(pseudo, Some(PseudoElement::Before));
+        assert_eq!(selector.specificity.classes, 1);
+        assert_eq!(selector.specificity.tags, 1);
+
+        let (selector, pseudo) = parse_style_rule_selector("#footer::AFTER").unwrap();
+        assert_eq!(pseudo, Some(PseudoElement::After));
+        assert_eq!(selector.specificity.ids, 1);
+        assert_eq!(selector.specificity.tags, 1);
+        assert!(parse_style_rule_selector(".card::marker").is_none());
     }
 }

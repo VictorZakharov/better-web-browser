@@ -1,6 +1,6 @@
 use super::{
-    ComApartment, MediaFoundation, output_type, source_reader, stream::copy_sample,
-    verify_native_type,
+    ComApartment, MediaFoundation, output_type, seek_source_reader, select_stream, source_reader,
+    stream::copy_sample, verify_native_type,
 };
 use crate::limits::{
     MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES, MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS,
@@ -20,6 +20,7 @@ pub(in crate::media_process) struct AudioDecoder {
     sample_rate: u32,
     channels: u16,
     remaining_samples: u32,
+    total_samples: u32,
     maximum_sample_bytes: u64,
     last_timestamp: Option<i64>,
     _foundation: MediaFoundation,
@@ -41,6 +42,11 @@ impl AudioDecoder {
         let foundation = MediaFoundation::start()
             .map_err(|status| format!("start audio Media Foundation: HRESULT {status:#x}"))?;
         let reader = source_reader(bytes)?;
+        select_stream(
+            &reader,
+            MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+            "playback audio",
+        )?;
         verify_native_type(
             &reader,
             MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
@@ -89,6 +95,7 @@ impl AudioDecoder {
             sample_rate,
             channels: expected_channels,
             remaining_samples: expected_samples,
+            total_samples: expected_samples,
             maximum_sample_bytes: MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES as u64,
             last_timestamp: None,
             _foundation: foundation,
@@ -102,6 +109,13 @@ impl AudioDecoder {
 
     pub(in crate::media_process) const fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        seek_source_reader(&self.reader, position_100ns)?;
+        self.remaining_samples = self.total_samples;
+        self.last_timestamp = None;
+        Ok(())
     }
 
     pub(in crate::media_process) fn next_sample(&mut self) -> Result<Option<Vec<u8>>, String> {

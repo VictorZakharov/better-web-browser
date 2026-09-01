@@ -250,13 +250,13 @@ pub(super) fn decode_renderer_document(
             document: DocumentId::new(reader.u64()?)?,
             revision: nonzero(reader.u64()?, "presentation revision")?,
         },
-        0x0120 => RendererMessage::RuntimeUpdate(RendererRuntimeUpdate {
+        0x0120 => RendererMessage::RuntimeUpdate(Box::new(RendererRuntimeUpdate {
             document: DocumentId::new(reader.u64()?)?,
             clock_advanced: reader.bool()?,
             runtime: decode_runtime(&mut reader)?,
             load: decode_load(&mut reader)?,
             next_timer_micros: reader.bool()?.then(|| reader.u64()).transpose()?,
-        }),
+        })),
         0x0118 => RendererMessage::DocumentFailed {
             document: DocumentId::new(reader.u64()?)?,
             detail: reader.string(MAX_CONTROL_PAYLOAD)?,

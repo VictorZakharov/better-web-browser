@@ -7,6 +7,18 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+fn run_scheduled_renderer_timer(
+    session: &RendererSession,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    next_timer_micros: Option<u64>,
+) {
+    if let Some(delay) = next_timer_micros {
+        session
+            .advance_time(document, Duration::from_micros(delay), 64)
+            .expect("run the renderer's advertised media checkpoint");
+    }
+}
+
 #[test]
 fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership() {
     let _serial = SERIAL
@@ -21,7 +33,14 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
         <video id="movie" src="/test.mp4" width="320" height="180" muted></video>
         <output id="state">waiting</output><script>
             movie.addEventListener('loadeddata', () => {
-                movie.play().then(() => state.textContent = 'playing');
+                movie.play().then(() => {
+                    movie.volume = 0.25;
+                    movie.muted = true;
+                    movie.currentTime = 0.5;
+                });
+            });
+            movie.addEventListener('seeked', () => {
+                state.textContent = 'seeked:' + movie.currentTime.toFixed(1);
             });
         </script>"#;
     let body = html.as_bytes().to_vec();
@@ -100,8 +119,20 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
                 {
                     break presentation;
                 }
+                session
+                    .acknowledge_presentation(PresentationAcknowledgement {
+                        document,
+                        revision: presentation.revision,
+                        presented: true,
+                        controls_applied: true,
+                    })
+                    .unwrap();
+                run_scheduled_renderer_timer(&session, document, presentation.next_timer_micros);
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected renderer event while decoding video: {event:?}"),
         }
     };
@@ -160,13 +191,177 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
     );
     assert!(
         advanced.layout.items.iter().any(|item| {
-            matches!(item, DisplayItem::Text { text, .. } if text.contains("playing"))
+            matches!(item, DisplayItem::Text { text, .. } if text.contains("seeked:0.5"))
         }),
-        "the acknowledged play() promise did not settle"
+        "the acknowledged play(), live volume, and seek lifecycle did not settle"
     );
     session
         .shutdown()
         .expect("shutdown contained playback pair");
+}
+
+#[test]
+fn contained_renderer_decodes_media_source_object_url_video() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut launch = options();
+    launch.enable_media = true;
+    launch.unresponsive_timeout = Duration::from_millis(500);
+    let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
+    let document = better_web_browser::renderer_protocol::DocumentId::new(191).unwrap();
+    let media_base64 = include_str!("../fixtures/media/test-1s.mp4.base64")
+        .chars()
+        .filter(|character| !character.is_ascii_whitespace())
+        .collect::<String>();
+    let html = format!(
+        r#"<!doctype html><title>mse video</title>
+        <video id="movie" width="320" height="180" muted></video>
+        <output id="state">waiting</output><script>
+            const source = new MediaSource();
+            let buffer;
+            let sourceOpenCount = 0;
+            source.addEventListener('sourceopen', () => sourceOpenCount++);
+            source.addEventListener('sourceopen', () => {{
+                buffer = source.addSourceBuffer(
+                    'video/mp4; codecs="avc1.42E01E,mp4a.40.2"'
+                );
+                buffer.addEventListener('updateend', () => source.endOfStream(), {{ once: true }});
+                const binary = atob('{media_base64}');
+                const bytes = Uint8Array.from(binary, value => value.charCodeAt(0));
+                buffer.appendBuffer(bytes);
+            }}, {{ once: true }});
+            source.addEventListener('sourceended', () => {{
+                movie.play().then(() => {{
+                    const beforeEnd = buffer.buffered.end(0);
+                    movie.currentTime = 0.5;
+                    buffer.addEventListener('updateend', () => {{
+                        state.textContent = [
+                            'mse-ready', buffer.buffered.start(0).toFixed(2),
+                            buffer.buffered.end(0).toFixed(2),
+                            movie.buffered.start(0).toFixed(2),
+                            movie.buffered.end(0).toFixed(2),
+                            beforeEnd.toFixed(2), source.readyState,
+                            sourceOpenCount, movie.currentTime.toFixed(1)
+                        ].join(':');
+                    }}, {{ once: true }});
+                    buffer.remove(0, 0.25);
+                }});
+            }});
+            movie.src = URL.createObjectURL(source);
+        </script>"#
+    );
+    let body = html.into_bytes();
+    session
+        .load_document(
+            document_start(document, body.len()),
+            empty_document_state(),
+            body,
+        )
+        .unwrap();
+
+    let rendered = loop {
+        match session.wait_for_event(Duration::from_secs(10)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                let has_media_frame = presentation
+                    .images
+                    .iter()
+                    .any(|image| image.url.starts_with("breeze-internal:media-frame:"));
+                let lifecycle_settled = presentation.layout.items.iter().any(|item| {
+                    matches!(item, DisplayItem::Text { text, .. }
+                        if text.contains("mse-ready:0.25:") && text.contains(":open:2:0.5"))
+                });
+                if has_media_frame && lifecycle_settled {
+                    break presentation;
+                }
+                session
+                    .acknowledge_presentation(PresentationAcknowledgement {
+                        document,
+                        revision: presentation.revision,
+                        presented: true,
+                        controls_applied: true,
+                    })
+                    .unwrap();
+                run_scheduled_renderer_timer(&session, document, presentation.next_timer_micros);
+            }
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            event => panic!("unexpected renderer event while decoding MSE video: {event:?}"),
+        }
+    };
+    assert!(rendered.layout.items.iter().any(|item| {
+        matches!(
+            item,
+            DisplayItem::Image { url, .. }
+                if url.starts_with("breeze-internal:media-frame:")
+        )
+    }));
+    assert!(
+        rendered.layout.items.iter().any(|item| {
+            matches!(item, DisplayItem::Text { text, .. }
+                if text.contains("mse-ready:0.25:") && text.contains(":open:2:0.5"))
+        }),
+        "MediaSource play/seek/range-eviction lifecycle did not settle"
+    );
+    let media = rendered
+        .runtime
+        .media
+        .as_ref()
+        .expect("media runtime report");
+    assert!(media.active && media.playing);
+    assert!(media.current_time_100ns >= 5_000_000);
+    assert_eq!(
+        media.mime_type,
+        "video/mp4; codecs=\"avc1.42E01E,mp4a.40.2\""
+    );
+    assert!(media.encoded_queue_bytes <= media.encoded_queue_limit_bytes);
+    assert_eq!(media.decoded_frame_queue_depth, 0);
+    assert_eq!(media.decoded_frame_queue_limit, 1);
+    assert_eq!(media.failure, None);
+    session
+        .shutdown()
+        .expect("shutdown contained MSE playback pair");
+}
+
+#[test]
+fn initial_script_media_action_for_removed_element_is_cancelled() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut launch = options();
+    launch.enable_media = true;
+    let mut session = RendererSession::launch(launch).expect("launch renderer and media worker");
+    let document = better_web_browser::renderer_protocol::DocumentId::new(192).unwrap();
+    let html = br#"<!doctype html><title>retired video</title><output id="state">waiting</output>
+        <script>
+            const video = document.createElement('video');
+            document.body.append(video);
+            video.play();
+            video.remove();
+            state.textContent = 'survived';
+        </script>"#;
+    session
+        .load_document(
+            document_start(document, html.len()),
+            empty_document_state(),
+            html.to_vec(),
+        )
+        .unwrap();
+    let presentation = loop {
+        match session.wait_for_event(Duration::from_secs(5)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                break presentation;
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            event => panic!("unexpected retired-media event: {event:?}"),
+        }
+    };
+    assert!(presentation.layout.items.iter().any(|item| {
+        matches!(item, DisplayItem::Text { text, .. } if text.contains("survived"))
+    }));
+    session.shutdown().expect("shutdown renderer");
 }
 
 fn decode_base64(input: &str) -> Vec<u8> {

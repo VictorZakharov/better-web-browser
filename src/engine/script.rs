@@ -1,16 +1,20 @@
 use super::css::{StyleSet, resolved_property_value};
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::invalidation::{InvalidationImpact, MutationKind, RenderInvalidation};
+use super::layout::RectF;
 use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
 use crate::limits::{
     MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
+    MAX_SCRIPT_NAVIGATIONS,
 };
 use crate::navigation::resolve_url;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+pub(crate) type LayoutFlushCallback = Box<dyn FnMut(&RenderInvalidation) -> HashMap<NodeId, RectF>>;
 
 mod attribute_host;
 mod binding_helpers;
@@ -21,6 +25,7 @@ mod dynamic_scripts;
 mod engine;
 mod execution;
 mod fullscreen_host;
+mod history_host;
 mod host_call;
 mod host_profiling;
 mod host_state;
@@ -37,10 +42,12 @@ mod runtime_guard;
 mod shadow_host;
 mod style_cache;
 mod style_host;
+mod task_mutation_profile;
 mod text_encoding_host;
 mod timer_execution;
 mod types;
 mod user_events;
+mod viewport_host;
 mod worker_bootstrap;
 mod worker_host;
 mod worker_module;
@@ -59,8 +66,8 @@ pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
     DynamicScriptLoader, DynamicScriptRequest, ScriptFetchOptions, ScriptFullscreenAction,
-    ScriptInput, ScriptKind, ScriptMediaAction, ScriptOutcome, UserInputEvent, UserInputModifiers,
-    UserInputResult,
+    ScriptHistoryAction, ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand,
+    ScriptOutcome, UserInputEvent, UserInputModifiers, UserInputResult,
 };
 use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;

@@ -10,7 +10,7 @@ use html5ever::{ParseOpts, parse_document};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dom {
     pub(super) identity: Rc<NodeIdAllocator>,
     pub document: NodeRef,

@@ -20,7 +20,7 @@ if ($destinationPath.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCa
 $configuration = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $repository = [string] $configuration.upstream.repository
 $revision = [string] $configuration.upstream.revision
-$requiredPaths = @('resources/testharness.js') + @($configuration.tests.path)
+$requiredPaths = @('resources/testharness.js') + @($configuration.support) + @($configuration.tests.path)
 $sparsePatterns = @($requiredPaths | ForEach-Object { '/' + $_ })
 
 if (Test-Path -LiteralPath $destinationPath) {

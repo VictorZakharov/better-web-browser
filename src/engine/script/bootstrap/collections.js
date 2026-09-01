@@ -46,6 +46,7 @@
             }
             return null;
         }
+        [Symbol.iterator]() { return collectionItems(this)[Symbol.iterator](); }
         get [Symbol.toStringTag]() { return 'HTMLCollection'; }
     }
 

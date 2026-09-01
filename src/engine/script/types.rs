@@ -106,6 +106,7 @@ pub struct ScriptOutcome {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
     pub storage_updates: Vec<StorageMutation>,
     pub fetch_actions: Vec<ScriptFetchAction>,
@@ -117,19 +118,48 @@ pub struct ScriptOutcome {
     pub invalidation: RenderInvalidation,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptHistoryAction {
+    pub url: String,
+    pub replace: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScriptFullscreenAction {
     pub request_id: u64,
     pub enter: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScriptMediaCommand {
+    SetPlayback {
+        playing: bool,
+        volume_millis: u16,
+    },
+    Configure {
+        volume_millis: u16,
+    },
+    Seek {
+        position_100ns: u64,
+    },
+    Commit {
+        mime_type: String,
+        bytes: Vec<u8>,
+    },
+    CommitAdaptive {
+        video_mime_type: String,
+        video_bytes: Vec<u8>,
+        audio_mime_type: String,
+        audio_bytes: Vec<u8>,
+    },
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptMediaAction {
     pub request_id: u64,
     pub node: crate::engine::dom::NodeId,
-    pub play: bool,
-    pub volume_millis: u16,
-    pub muted: bool,
+    pub command: ScriptMediaCommand,
 }
 
 impl ScriptOutcome {
@@ -186,6 +216,12 @@ pub enum UserInputEvent {
         bubbles: bool,
         cancelable: bool,
     },
+    ImageResource {
+        target: NodeRef,
+        event_type: &'static str,
+        natural_width: u32,
+        natural_height: u32,
+    },
     Scroll {
         x: f32,
         y: f32,
@@ -193,6 +229,8 @@ pub enum UserInputEvent {
     Viewport {
         width: f32,
         height: f32,
+        layout_width: f32,
+        layout_height: f32,
         scale: f32,
     },
     Lifecycle {

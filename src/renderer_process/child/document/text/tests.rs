@@ -13,6 +13,23 @@ fn spec() -> FontSpec {
 }
 
 #[test]
+fn measurement_shapes_advances_without_rasterizing_glyphs() {
+    let mut text = RendererTextSystem::new(96);
+    let font = spec();
+
+    let measured = text.measure("geometry only", &font);
+
+    assert!(measured.0 > 0.0);
+    assert!(measured.1 > 0.0);
+    assert!(text.take_pending_glyphs().is_empty());
+
+    let shaped = text.shape("geometry only", &font);
+    assert_eq!((shaped.width, shaped.height), measured);
+    assert!(!shaped.glyphs.is_empty());
+    assert!(!text.take_pending_glyphs().is_empty());
+}
+
+#[test]
 fn shapes_and_rasterizes_representative_scripts_deterministically() {
     let fixtures = [
         "office affinity",

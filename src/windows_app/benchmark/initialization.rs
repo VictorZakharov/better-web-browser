@@ -82,6 +82,7 @@ impl BenchmarkRun {
             script_errors: Vec::new(),
             script_console: Vec::new(),
             script_diagnostics: Vec::new(),
+            media: None,
             script_runtime_stopped: false,
             runtime_timeline: runtime_timeline::RuntimeTimeline::default(),
             completion_marker,

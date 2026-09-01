@@ -1,8 +1,9 @@
 use super::*;
 use crate::engine::MediaEnvironment;
-use crate::limits::MAX_DOM_MUTATIONS_PER_TASK;
+use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 
 mod idle;
+mod scheduling;
 
 #[test]
 fn match_media_uses_the_document_color_scheme_environment() {
@@ -40,171 +41,6 @@ fn match_media_uses_the_document_color_scheme_environment() {
 }
 
 #[test]
-fn drains_short_timers_before_layout() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            setTimeout(() => document.getElementById('status').textContent = 'ready', 20);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-}
-
-#[test]
-fn settles_bounded_one_second_startup_timers() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            setTimeout(() => document.getElementById('status').textContent = 'ready', 500);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-}
-
-#[test]
-fn settles_nested_startup_poll_within_the_explicit_horizon() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            setTimeout(() => {
-                setTimeout(() => {
-                    document.getElementById('status').textContent = 'ready';
-                }, 100);
-            }, 1200);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-}
-
-#[test]
-fn rescheduled_short_timer_does_not_starve_later_startup_timer() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            function poll() { setTimeout(poll, 300); }
-            setTimeout(poll, 300);
-            setTimeout(() => document.getElementById('status').textContent = 'ready', 1000);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-}
-
-#[test]
-fn runs_a_microtask_checkpoint_between_same_deadline_timer_tasks() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            const order = [];
-            setTimeout(() => {
-                order.push('timer-one');
-                queueMicrotask(() => order.push('microtask'));
-            }, 0);
-            setTimeout(() => {
-                order.push('timer-two');
-                document.getElementById('status').textContent = order.join(',');
-            }, 0);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "timer-one,microtask,timer-two"
-    );
-}
-
-#[test]
-fn clear_timeout_cancels_the_rust_scheduled_task() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            const cancelled = setTimeout(() => {
-                document.getElementById('status').textContent = 'cancelled task ran';
-            }, 10);
-            clearTimeout(cancelled);
-            setTimeout(() => {
-                document.getElementById('status').textContent = 'ready';
-            }, 10);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-}
-
-#[test]
-fn clear_interval_stops_a_rescheduled_repeating_task() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            let count = 0;
-            const interval = setInterval(() => {
-                count++;
-                if (count === 3) {
-                    clearInterval(interval);
-                    document.getElementById('status').textContent = String(count);
-                }
-            }, 10);
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "3"
-    );
-    assert!(
-        outcome
-            .diagnostics
-            .iter()
-            .all(|message| !message.contains("timers after settling")),
-        "{:?}",
-        outcome.diagnostics
-    );
-}
-
-#[test]
-fn a_throwing_timer_does_not_prevent_the_next_task() {
-    let (dom, outcome) = execute_html(
-        r#"<body><div id="status">waiting</div><script>
-            setTimeout(() => { throw new Error('expected timer failure'); }, 0);
-            setTimeout(() => {
-                document.getElementById('status').textContent = 'ready';
-            }, 0);
-        </script></body>"#,
-    );
-    assert_eq!(
-        dom.elements_named("div").next().unwrap().text_content(),
-        "ready"
-    );
-    assert!(
-        outcome
-            .errors
-            .iter()
-            .any(|error| error.contains("expected timer failure")),
-        "{:?}",
-        outcome.errors
-    );
-    assert!(
-        outcome
-            .errors
-            .iter()
-            .any(|error| error.contains("https://example.com/#inline")),
-        "{:?}",
-        outcome.errors
-    );
-}
-
-#[test]
 fn dom_mutations_request_one_render_checkpoint() {
     let (_, mutating) = execute_html(
         r#"<body><div id="status"></div><script>
@@ -233,30 +69,30 @@ fn dom_mutations_request_one_render_checkpoint() {
 fn dom_mutation_budget_is_enforced_per_event_loop_task() {
     let (_, runaway) = execute_html(&format!(
         r#"<body><script>
-            for (let i = 0; i < {}; i++) document.body.setAttribute('data-i', String(i));
+            for (let i = 0; i < {}; i++) document.body.appendChild(document.createElement('i'));
         </script></body>"#,
-        MAX_DOM_MUTATIONS_PER_TASK + 1
+        MAX_DOM_TREE_MUTATIONS_PER_TASK + 1
     ));
     assert!(
         runaway
             .errors
             .iter()
-            .any(|error| error.contains("DOM mutation task budget exceeded")),
+            .any(|error| error.contains("DOM tree mutation task budget exceeded")),
         "{:?}",
         runaway.errors
     );
-    assert_eq!(runaway.mutation_count, MAX_DOM_MUTATIONS_PER_TASK);
+    assert_eq!(runaway.mutation_count, MAX_DOM_TREE_MUTATIONS_PER_TASK);
 
-    let per_timer = MAX_DOM_MUTATIONS_PER_TASK * 3 / 5;
+    let per_timer = MAX_DOM_TREE_MUTATIONS_PER_TASK * 3 / 5;
     let (dom, bounded) = execute_html(&format!(
         r#"<body><script>
             setTimeout(() => {{
                 for (let i = 0; i < {per_timer}; i++)
-                    document.body.setAttribute('data-first', String(i));
+                    document.body.appendChild(document.createElement('i'));
             }}, 0);
             setTimeout(() => {{
                 for (let i = 0; i < {per_timer}; i++)
-                    document.body.setAttribute('data-second', String(i));
+                    document.body.appendChild(document.createElement('b'));
                 document.body.setAttribute('data-complete', 'yes');
             }}, 0);
         </script></body>"#
@@ -270,7 +106,29 @@ fn dom_mutation_budget_is_enforced_per_event_loop_task() {
             .as_deref(),
         Some("yes")
     );
-    assert!(bounded.mutation_count > MAX_DOM_MUTATIONS_PER_TASK);
+    assert!(bounded.mutation_count > MAX_DOM_TREE_MUTATIONS_PER_TASK);
+}
+
+#[test]
+fn tree_mutation_budget_does_not_block_attribute_or_text_node_updates() {
+    let (dom, outcome) = execute_html(&format!(
+        r#"<body><div id="target">before</div><script>
+            for (let i = 0; i < {}; i++)
+                document.body.appendChild(document.createElement('i'));
+            const target = document.getElementById('target');
+            target.setAttribute('data-state', 'ready');
+            target.firstChild.textContent = 'after';
+        </script></body>"#,
+        MAX_DOM_TREE_MUTATIONS_PER_TASK
+    ));
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let target = dom
+        .elements_named("div")
+        .find(|node| node.attr("id").as_deref() == Some("target"))
+        .expect("target element");
+    assert_eq!(target.attr("data-state").as_deref(), Some("ready"));
+    assert_eq!(target.text_content(), "after");
 }
 
 #[test]
@@ -317,6 +175,55 @@ fn records_script_requested_navigation() {
     assert_eq!(
         outcome.navigation_url.as_deref(),
         Some("https://example.com/next?q=1")
+    );
+}
+
+#[test]
+fn records_ordered_same_document_history_updates_and_advances_the_document_url() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+            history.pushState({ step: 1 }, '', '/watch?v=first');
+            history.replaceState({ step: 2 }, '', 'watch?v=second');
+            document.querySelector('output').textContent =
+                location.href + '|' + document.URL + '|' + history.length;
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.navigation_url.is_none());
+    assert_eq!(
+        outcome.history_actions,
+        [
+            ScriptHistoryAction {
+                url: "https://example.com/watch?v=first".into(),
+                replace: false,
+            },
+            ScriptHistoryAction {
+                url: "https://example.com/watch?v=second".into(),
+                replace: true,
+            }
+        ]
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "https://example.com/watch?v=second|https://example.com/watch?v=second|2"
+    );
+}
+
+#[test]
+fn rejects_cross_origin_history_urls_without_changing_the_document_url() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+            try { history.pushState(null, '', 'https://other.example/watch'); }
+            catch (error) { document.querySelector('output').textContent = error.name; }
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.history_actions.is_empty());
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "TypeError"
     );
 }
 

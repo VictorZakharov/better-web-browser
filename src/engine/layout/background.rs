@@ -130,6 +130,7 @@ pub(super) fn resolve_background_position(
             px,
             percent,
             em,
+            rem,
             vw,
             vh,
             vmin,
@@ -137,6 +138,7 @@ pub(super) fn resolve_background_position(
         } => {
             px + (area_size - image_size) * percent / 100.0
                 + font_size * em
+                + 16.0 * rem
                 + viewport.width * vw / 100.0
                 + viewport.height * vh / 100.0
                 + viewport.width.min(viewport.height) * vmin / 100.0
@@ -157,6 +159,7 @@ pub(super) fn resolve_background_length(
         Length::Px(value) => Some(value),
         Length::Percent(value) => Some(basis * value / 100.0),
         Length::Em(value) => Some(font_size * value),
+        Length::Rem(value) => Some(16.0 * value),
         Length::Vw(value) => Some(viewport.width * value / 100.0),
         Length::Vh(value) => Some(viewport.height * value / 100.0),
         Length::Vmin(value) => Some(viewport.width.min(viewport.height) * value / 100.0),
@@ -165,6 +168,7 @@ pub(super) fn resolve_background_length(
             px,
             percent,
             em,
+            rem,
             vw,
             vh,
             vmin,
@@ -172,6 +176,7 @@ pub(super) fn resolve_background_length(
         } => Some(
             px + basis * percent / 100.0
                 + font_size * em
+                + 16.0 * rem
                 + viewport.width * vw / 100.0
                 + viewport.height * vh / 100.0
                 + viewport.width.min(viewport.height) * vmin / 100.0

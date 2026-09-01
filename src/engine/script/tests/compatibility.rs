@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn global_object_exposes_the_window_interface_prototype_chain() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output>no</output><script>
+            let illegalConstructor = false;
+            try { new Window(); } catch (error) { illegalConstructor = error instanceof TypeError; }
+            if (window === self && window === globalThis && window instanceof Window &&
+                Window.prototype instanceof EventTarget && window.constructor === Window &&
+                document.defaultView === window && illegalConstructor)
+                document.querySelector('output').textContent = 'yes';
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn window_named_properties_track_scoped_tree_and_attribute_mutations() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="initial"></div><output id="status">no</output><script>
@@ -381,7 +400,8 @@ fn caught_native_errors_expose_a_non_enumerable_stack_and_console_preserves_it()
 fn window_named_access_and_cssom_use_the_computed_cascade() {
     let (dom, outcome) = execute_html(
         r#"<!doctype html><style>
-            .outer { opacity: 0.5 !important; font-size: 18px !important; line-height: 2em; }
+            .outer { opacity: 0.5 !important; font-size: 18px !important; line-height: 2em;
+                     position: relative; z-index: -4; }
             html { z-index: inherit; position: inherit; overflow: inherit; background-color: inherit; }
         </style><body><p class="outer" id="el" style="opacity: 1; font-size: 36px">text</p>
         <div id="status">no</div><script>
@@ -390,6 +410,7 @@ fn window_named_access_and_cssom_use_the_computed_cascade() {
             if (
                 el === document.getElementById('el') && style.opacity === '0.5' &&
                 style.fontSize === '18px' && style.lineHeight === '36px' &&
+                style.position === 'relative' && style.zIndex === '-4' &&
                 root.zIndex === 'auto' && root.position === 'static' &&
                 root.overflow === 'visible' && root.backgroundColor === 'rgba(0, 0, 0, 0)'
             ) document.getElementById('status').textContent = 'yes';
@@ -399,5 +420,29 @@ fn window_named_access_and_cssom_use_the_computed_cascade() {
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "yes"
+    );
+}
+
+#[test]
+fn assigning_element_style_forwards_to_the_same_css_text_declaration() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body><div id="target" style="color: red"></div><output>no</output>
+        <script>
+            const target = document.getElementById('target');
+            const declaration = target.style;
+            target.style = 'display: grid; color: blue';
+            document.querySelector('output').textContent = [
+                target.style === declaration,
+                declaration.cssText,
+                declaration.display,
+                declaration.color,
+                target.getAttribute('style')
+            ].join('|');
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true|display: grid; color: blue|grid|blue|display: grid; color: blue"
     );
 }

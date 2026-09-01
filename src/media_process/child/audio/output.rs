@@ -13,6 +13,9 @@ use windows::core::PCWSTR;
 
 const QUEUED_AUDIO_SAMPLES: usize = 4;
 const NTDDI_WIN10: u32 = 0x0a00_0000;
+// XAudio2 returns HRESULT_FROM_WIN32(ERROR_NOT_FOUND) when Windows has no default audio endpoint.
+// Video playback must remain available in that environment, including on headless systems.
+const AUDIO_ENDPOINT_NOT_FOUND: i32 = 0x8007_0490_u32 as i32;
 
 #[derive(Clone, Copy)]
 pub(super) struct OutputState {
@@ -31,8 +34,12 @@ impl AudioOutput {
         Self::Silent(SilentClock::new())
     }
 
-    pub(super) fn device(sample_rate: u32, channels: u16) -> Result<Self, String> {
-        XAudioOutput::new(sample_rate, channels).map(Self::Device)
+    pub(super) fn device_or_silent(sample_rate: u32, channels: u16) -> Result<Self, String> {
+        match XAudioOutput::new(sample_rate, channels) {
+            Ok(output) => Ok(Self::Device(output)),
+            Err(DeviceOutputError::EndpointUnavailable) => Ok(Self::silent()),
+            Err(DeviceOutputError::Fatal(error)) => Err(error),
+        }
     }
 
     pub(super) fn playing(&self) -> bool {
@@ -61,6 +68,20 @@ impl AudioOutput {
         match self {
             Self::Silent(output) => Ok(output.state()),
             Self::Device(output) => output.state(decoder),
+        }
+    }
+
+    pub(super) fn seek(
+        &mut self,
+        position_100ns: u64,
+        decoder: &mut AudioDecoder,
+    ) -> Result<(), String> {
+        match self {
+            Self::Silent(output) => {
+                output.seek(position_100ns);
+                Ok(())
+            }
+            Self::Device(output) => output.seek(position_100ns, decoder),
         }
     }
 }
@@ -105,6 +126,11 @@ impl SilentClock {
             ended: false,
         }
     }
+
+    fn seek(&mut self, position_100ns: u64) {
+        self.elapsed = Duration::from_nanos(position_100ns.saturating_mul(100));
+        self.started = self.playing.then(Instant::now);
+    }
 }
 
 pub(super) struct XAudioOutput {
@@ -116,19 +142,27 @@ pub(super) struct XAudioOutput {
     queued_bytes: usize,
     input_ended: bool,
     playing: bool,
+    position_base_100ns: u64,
+    sample_origin: u64,
+}
+
+enum DeviceOutputError {
+    EndpointUnavailable,
+    Fatal(String),
 }
 
 impl XAudioOutput {
-    fn new(sample_rate: u32, channels: u16) -> Result<Self, String> {
-        let format = pcm_format(sample_rate, channels)?;
+    fn new(sample_rate: u32, channels: u16) -> Result<Self, DeviceOutputError> {
+        let format = pcm_format(sample_rate, channels).map_err(DeviceOutputError::Fatal)?;
         let mut engine = None;
         unsafe {
             XAudio2CreateWithVersionInfo(&mut engine, 0, XAUDIO2_DEFAULT_PROCESSOR, NTDDI_WIN10)
         }
-        .map_err(|error| format!("create XAudio2 engine: {error}"))?;
-        let engine = engine.ok_or_else(|| "XAudio2 returned no engine".to_string())?;
+        .map_err(|error| DeviceOutputError::Fatal(format!("create XAudio2 engine: {error}")))?;
+        let engine = engine
+            .ok_or_else(|| DeviceOutputError::Fatal("XAudio2 returned no engine".to_string()))?;
         let mut mastering = None;
-        unsafe {
+        if let Err(error) = unsafe {
             engine.CreateMasteringVoice(
                 &mut mastering,
                 XAUDIO2_DEFAULT_CHANNELS,
@@ -138,10 +172,22 @@ impl XAudioOutput {
                 None,
                 AudioCategory_Media,
             )
+        } {
+            unsafe { engine.StopEngine() };
+            return if missing_default_audio_endpoint(error.code()) {
+                Err(DeviceOutputError::EndpointUnavailable)
+            } else {
+                Err(DeviceOutputError::Fatal(format!(
+                    "create XAudio2 mastering voice: {error}"
+                )))
+            };
         }
-        .map_err(|error| format!("create XAudio2 mastering voice: {error}"))?;
-        let mastering =
-            mastering.ok_or_else(|| "XAudio2 returned no mastering voice".to_string())?;
+        let Some(mastering) = mastering else {
+            unsafe { engine.StopEngine() };
+            return Err(DeviceOutputError::Fatal(
+                "XAudio2 returned no mastering voice".to_string(),
+            ));
+        };
         let mut source = None;
         if let Err(error) = unsafe {
             engine.CreateSourceVoice(
@@ -158,14 +204,18 @@ impl XAudioOutput {
                 mastering.DestroyVoice();
                 engine.StopEngine();
             }
-            return Err(format!("create XAudio2 source voice: {error}"));
+            return Err(DeviceOutputError::Fatal(format!(
+                "create XAudio2 source voice: {error}"
+            )));
         }
         let Some(source) = source else {
             unsafe {
                 mastering.DestroyVoice();
                 engine.StopEngine();
             }
-            return Err("XAudio2 returned no source voice".to_string());
+            return Err(DeviceOutputError::Fatal(
+                "XAudio2 returned no source voice".to_string(),
+            ));
         };
         Ok(Self {
             engine,
@@ -176,6 +226,8 @@ impl XAudioOutput {
             queued_bytes: 0,
             input_ended: false,
             playing: false,
+            position_base_100ns: 0,
+            sample_origin: 0,
         })
     }
 
@@ -213,14 +265,38 @@ impl XAudioOutput {
             self.playing = false;
         }
         Ok(OutputState {
-            position_100ns: state
-                .SamplesPlayed
-                .saturating_mul(10_000_000)
-                .checked_div(u64::from(self.sample_rate))
-                .unwrap_or_default(),
+            position_100ns: self.position_base_100ns.saturating_add(
+                state
+                    .SamplesPlayed
+                    .saturating_sub(self.sample_origin)
+                    .saturating_mul(10_000_000)
+                    .checked_div(u64::from(self.sample_rate))
+                    .unwrap_or_default(),
+            ),
             playing: self.playing,
             ended,
         })
+    }
+
+    fn seek(&mut self, position_100ns: u64, decoder: &mut AudioDecoder) -> Result<(), String> {
+        let resume = self.playing;
+        if resume {
+            unsafe { self.source.Stop(0, XAUDIO2_COMMIT_NOW) }
+                .map_err(|error| format!("stop XAudio2 for seek: {error}"))?;
+        }
+        unsafe { self.source.FlushSourceBuffers() }
+            .map_err(|error| format!("flush XAudio2 for seek: {error}"))?;
+        self.queued.clear();
+        self.queued_bytes = 0;
+        self.input_ended = false;
+        self.position_base_100ns = position_100ns;
+        self.sample_origin = self.voice_state().SamplesPlayed;
+        if resume {
+            self.pump(decoder)?;
+            unsafe { self.source.Start(0, XAUDIO2_COMMIT_NOW) }
+                .map_err(|error| format!("resume XAudio2 after seek: {error}"))?;
+        }
+        Ok(())
     }
 
     fn pump(&mut self, decoder: &mut AudioDecoder) -> Result<(), String> {
@@ -291,4 +367,23 @@ fn pcm_format(sample_rate: u32, channels: u16) -> Result<WAVEFORMATEX, String> {
         wBitsPerSample: 16,
         cbSize: 0,
     })
+}
+
+fn missing_default_audio_endpoint(code: windows::core::HRESULT) -> bool {
+    code.0 == AUDIO_ENDPOINT_NOT_FOUND
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_missing_default_endpoint_selects_silent_output() {
+        assert!(missing_default_audio_endpoint(windows::core::HRESULT(
+            AUDIO_ENDPOINT_NOT_FOUND
+        )));
+        assert!(!missing_default_audio_endpoint(windows::core::HRESULT(
+            0x8007_0057_u32 as i32
+        )));
+    }
 }
