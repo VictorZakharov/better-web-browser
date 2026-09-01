@@ -2,17 +2,24 @@
 
 use super::*;
 
-pub(crate) fn matches_selector_list(node: &NodeRef, input: &str) -> bool {
-    let mut matched = false;
-    let mut saw_selector = false;
-    for selector_text in split_css_top_level(input, ',') {
-        let Some(selector) = parse_selector(selector_text.trim()) else {
-            return false;
-        };
-        saw_selector = true;
-        matched |= selector_matches(&selector, node);
+pub(crate) struct CompiledSelectorList {
+    selectors: Vec<Selector>,
+}
+
+impl CompiledSelectorList {
+    pub(crate) fn matches(&self, node: &NodeRef) -> bool {
+        self.selectors
+            .iter()
+            .any(|selector| selector_matches(selector, node))
     }
-    saw_selector && matched
+}
+
+pub(crate) fn compile_selector_list(input: &str) -> Option<CompiledSelectorList> {
+    let selectors = split_css_top_level(input, ',')
+        .map(str::trim)
+        .map(parse_selector)
+        .collect::<Option<Vec<_>>>()?;
+    (!selectors.is_empty()).then_some(CompiledSelectorList { selectors })
 }
 
 pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {

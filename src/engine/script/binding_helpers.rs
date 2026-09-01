@@ -88,29 +88,34 @@ pub(super) fn sibling_id(state: &mut HostState, arguments: &[JsValue], next: boo
 }
 
 pub(super) fn query_selector(root: &NodeRef, selector: &str) -> Option<NodeRef> {
-    Node::descendants(root).skip(1).find(|node| {
-        node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
-    })
+    let selector = crate::engine::css::compile_selector_list(selector)?;
+    Node::descendants(root)
+        .skip(1)
+        .find(|node| node.element().is_some() && selector.matches(node))
 }
 
 pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef> {
+    let Some(selector) = crate::engine::css::compile_selector_list(selector) else {
+        return Vec::new();
+    };
     Node::descendants(root)
         .skip(1)
-        .filter(|node| {
-            node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
-        })
+        .filter(|node| node.element().is_some() && selector.matches(node))
         .collect()
 }
 
 pub(super) fn matches_selector_list(node: &NodeRef, selector: &str) -> bool {
-    node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
+    node.element().is_some()
+        && crate::engine::css::compile_selector_list(selector)
+            .is_some_and(|selector| selector.matches(node))
 }
 
 pub(super) fn closest_matching_element(node: &NodeRef, selector: &str) -> Option<NodeRef> {
+    let selector = crate::engine::css::compile_selector_list(selector)?;
     let mut candidate = Some(node.clone());
     while let Some(node) = candidate {
         candidate = node.parent();
-        if node.element().is_some() && crate::engine::css::matches_selector_list(&node, selector) {
+        if node.element().is_some() && selector.matches(&node) {
             return Some(node);
         }
     }

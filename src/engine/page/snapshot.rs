@@ -26,4 +26,24 @@ impl Page {
             layout_viewport: self.layout_viewport,
         }
     }
+
+    /// Copies source and resource state while retaining the snapshot's independent style cache.
+    pub(crate) fn synchronize_layout_snapshot(&mut self, source: &Self) {
+        let style_sources_changed = self.source_url != source.source_url
+            || self.stylesheet_sources != source.stylesheet_sources
+            || self.media_environment != source.media_environment;
+        self.dom = source.dom.clone();
+        self.title = source.title.clone();
+        self.source_url = source.source_url.clone();
+        self.character_set = source.character_set.clone();
+        self.base_url = source.base_url.clone();
+        self.external_stylesheets = source.external_stylesheets.clone();
+        self.stylesheet_sources = source.stylesheet_sources.clone();
+        self.images = source.images.clone();
+        self.media_environment = source.media_environment;
+        self.layout_viewport = source.layout_viewport;
+        if style_sources_changed {
+            self.cached_styles = None;
+        }
+    }
 }

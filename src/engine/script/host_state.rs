@@ -81,6 +81,7 @@ pub(super) struct HostState {
     pub(super) layout_viewport_height: f32,
     pub(super) quirks_mode: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
+    pub(super) pending_layout_invalidation: render_invalidation::PendingInvalidation,
 }
 
 impl HostState {
@@ -142,6 +143,7 @@ impl HostState {
             layout_viewport_height: 720.0,
             quirks_mode: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
+            pending_layout_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
         state
@@ -194,7 +196,8 @@ impl HostState {
         let Some(flush) = self.layout_flush.as_mut() else {
             return;
         };
-        self.layout_geometry = flush();
+        let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
+        self.layout_geometry = flush(&invalidation);
         self.layout_geometry_version = version;
         self.layout_geometry_initialized = true;
     }
@@ -293,6 +296,8 @@ impl HostState {
         if requires_render {
             self.pending_invalidation
                 .record(&self.document, target, kind);
+            self.pending_layout_invalidation
+                .record(&self.document, target, kind);
             self.timers.request_render();
         }
     }
@@ -303,10 +308,14 @@ impl HostState {
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
         self.pending_invalidation.extend(&self.document, target);
+        self.pending_layout_invalidation
+            .extend(&self.document, target);
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
         self.pending_invalidation.record_removed_subtree(root);
+        self.pending_layout_invalidation
+            .record_removed_subtree(root);
     }
 
     pub(super) fn mutation_requires_render(&self, target: &NodeRef) -> bool {
