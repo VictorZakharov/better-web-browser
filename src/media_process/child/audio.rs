@@ -137,7 +137,7 @@ impl AudioRuntime {
         let output = if test_mode {
             AudioOutput::silent()
         } else {
-            AudioOutput::device(decoder.sample_rate(), decoder.channels())?
+            AudioOutput::device_or_silent(decoder.sample_rate(), decoder.channels())?
         };
         Ok(Self {
             source_id,
