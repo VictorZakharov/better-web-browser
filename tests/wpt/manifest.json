@@ -555,6 +555,16 @@
       "expected": "pass"
     },
     {
+      "path": "css/cssom-view/table-client-props.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-offset-props.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
       "path": "dom/nodes/Node-isConnected-shadow-dom.html",
       "area": "Shadow DOM",
       "expected": "pass"

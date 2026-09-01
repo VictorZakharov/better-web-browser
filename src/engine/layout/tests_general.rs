@@ -11,12 +11,13 @@ mod opacity;
 mod positioned;
 #[path = "tests_svg.rs"]
 mod svg;
+#[path = "tests_table.rs"]
+mod table;
 
 #[test]
 fn lays_out_centered_image_form_and_links() {
     let mut page = Page::parse(
-        r#"
-            <style>body{margin:0} center{text-align:center}.logo{padding:20px 0}
+        r#"<style>body{margin:0} center{text-align:center}.logo{padding:20px 0}
             .search{width:300px;height:24px} a{color:#123456}</style>
             <center><img class="logo" src="/logo.png" width="100" height="40"><br>
             <form action="/search"><input class="search" name="q"><br>

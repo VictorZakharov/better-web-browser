@@ -293,6 +293,8 @@ pub struct ComputedStyle {
     pub flex_shrink: f32,
     pub flex_basis: Length,
     pub box_sizing: BoxSizing,
+    pub border_collapse: bool,
+    pub caption_side_bottom: bool,
     pub list_style_type: ListStyleType,
     pub grid_template_columns: String,
     pub grid_template_rows: String,
@@ -369,6 +371,8 @@ impl ComputedStyle {
             flex_shrink: 1.0,
             flex_basis: Length::Auto,
             box_sizing: BoxSizing::ContentBox,
+            border_collapse: false,
+            caption_side_bottom: false,
             list_style_type: ListStyleType::Disc,
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),
@@ -398,6 +402,8 @@ impl ComputedStyle {
             style.line_height = parent.line_height;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
+            style.border_collapse = parent.border_collapse;
+            style.caption_side_bottom = parent.caption_side_bottom;
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
             style.custom_properties = Arc::clone(&parent.custom_properties);

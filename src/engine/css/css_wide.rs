@@ -59,6 +59,8 @@ fn is_inherited_property(property: &str) -> bool {
     matches!(
         property,
         "color"
+            | "border-collapse"
+            | "caption-side"
             | "font"
             | "font-family"
             | "font-size"
@@ -190,6 +192,8 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.border_color = source.border_color;
         }
         "border-radius" => style.border_radius = source.border_radius,
+        "border-collapse" => style.border_collapse = source.border_collapse,
+        "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "visibility" => style.visibility = source.visibility,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),

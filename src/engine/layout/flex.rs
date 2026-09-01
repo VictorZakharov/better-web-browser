@@ -87,7 +87,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         available_width: f32,
     ) -> f32 {
         let margin = style.margin.resolve(available_width, style.font_size);
-        let border = style.border_width.resolve(available_width, style.font_size);
+        let border = table::resolved_table_borders(node, style, available_width);
         let padding = style.padding.resolve(available_width, style.font_size);
         let insets = border.horizontal() + padding.horizontal();
         let specified = if style.flex_basis != Length::Auto {

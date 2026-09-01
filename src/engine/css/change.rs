@@ -46,6 +46,8 @@ impl ComputedStyle {
             && self.flex_shrink == other.flex_shrink
             && self.flex_basis == other.flex_basis
             && self.box_sizing == other.box_sizing
+            && self.border_collapse == other.border_collapse
+            && self.caption_side_bottom == other.caption_side_bottom
             && self.list_style_type == other.list_style_type
             && self.grid_template_columns == other.grid_template_columns
             && self.grid_template_rows == other.grid_template_rows

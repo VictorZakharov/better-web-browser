@@ -72,6 +72,8 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "box-sizing" | "-webkit-box-sizing" => {
             matches!(value.as_str(), "content-box" | "border-box")
         }
+        "border-collapse" => matches!(value.as_str(), "separate" | "collapse"),
+        "caption-side" => matches!(value.as_str(), "top" | "bottom"),
         "visibility" => matches!(value.as_str(), "visible" | "hidden" | "collapse"),
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
