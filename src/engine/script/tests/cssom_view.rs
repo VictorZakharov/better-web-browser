@@ -157,7 +157,7 @@ fn geometry_reads_flush_layout_once_per_dom_mutation_version() {
     let observed_calls = std::rc::Rc::clone(&calls);
     let target_id = target.id();
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-    runtime.set_layout_flush_callback(Box::new(move || {
+    runtime.set_layout_flush_callback(Box::new(move |_| {
         let next = observed_calls.get() + 1;
         observed_calls.set(next);
         HashMap::from([(
@@ -175,6 +175,64 @@ fn geometry_reads_flush_layout_once_per_dom_mutation_version() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(body.attr("data-result").as_deref(), Some("100,100,200"));
     assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn layout_invalidation_survives_presentation_outcome_collection() {
+    let dom = dom::parse_with_scripting(
+        r#"<!doctype html><body><div id="target"></div>
+            <script id="mutator">document.getElementById('target').style.width = '200px'</script>
+            <script id="reader">document.body.dataset.result =
+                document.getElementById('target').getBoundingClientRect().width</script>
+        </body>"#,
+        true,
+    );
+    let scripts = dom.elements_named("script").collect::<Vec<_>>();
+    let target = dom.elements_named("div").next().unwrap();
+    let body = dom.elements_named("body").next().unwrap();
+    let observed = Rc::new(RefCell::new(Vec::<RenderInvalidation>::new()));
+    let callback_observed = Rc::clone(&observed);
+    let target_id = target.id();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_layout_geometry(&HashMap::from([(
+        target_id,
+        RectF {
+            width: 100.0,
+            height: 20.0,
+            ..RectF::default()
+        },
+    )]));
+    runtime.set_layout_flush_callback(Box::new(move |invalidation| {
+        callback_observed.borrow_mut().push(invalidation.clone());
+        HashMap::from([(
+            target_id,
+            RectF {
+                width: 200.0,
+                height: 20.0,
+                ..RectF::default()
+            },
+        )])
+    }));
+    let input = |node: &NodeRef, fragment: &str| ScriptInput {
+        source_url: format!("https://example.com/#{fragment}"),
+        code: node.text_content(),
+        node: node.clone(),
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+
+    let initial = runtime.execute_initial(&[input(&scripts[0], "mutator")]);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert!(initial.invalidation.impact.affects_style());
+    let additional = runtime.execute_additional_with_loader(&[input(&scripts[1], "reader")], None);
+
+    assert!(additional.errors.is_empty(), "{:?}", additional.errors);
+    assert_eq!(body.attr("data-result").as_deref(), Some("200"));
+    let observed = observed.borrow();
+    assert_eq!(observed.len(), 1);
+    assert!(observed[0].impact.affects_style());
+    assert!(!observed[0].roots.is_empty());
 }
 
 #[test]

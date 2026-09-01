@@ -32,7 +32,7 @@ pub(crate) use cssom::{diagnostic_custom_properties, resolved_property_value};
 use cssparser::color::{parse_hash_color, parse_named_color};
 use cssparser::{Parser, ParserInput, ToCss, Token};
 use properties::{apply_declaration, parse_text_spacing};
-pub(crate) use selector_match::matches_selector_list;
+pub(crate) use selector_match::compile_selector_list;
 use selector_model::*;
 pub(super) use selector_parser::PseudoElement;
 use selector_parser::{parse_selector, parse_style_rule_selector};

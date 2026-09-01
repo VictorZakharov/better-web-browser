@@ -133,67 +133,10 @@ impl Page {
                 ));
             }
         }
+        let (mut styles, style_stats) =
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
-        let mut invalidation_roots = invalidation
-            .roots
-            .iter()
-            .filter_map(|root| self.dom.find_node(*root))
-            .collect::<Vec<_>>();
-        if invalidation_roots.is_empty() {
-            invalidation_roots.push(self.dom.document.clone());
-        }
-        let invalidated_nodes = invalidation_roots
-            .iter()
-            .flat_map(Node::shadow_including_descendants)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>()
-            .len();
-        let cached = self.cached_styles.take();
-        let (mut styles, style_stats) = match cached {
-            Some((cached_width, cached_height, mut styles))
-                if !invalidation.rebuild_style_rules
-                    && (cached_width - viewport_width).abs() < 0.5
-                    && (cached_height - viewport_height).abs() < 0.5 =>
-            {
-                let stats = if invalidation.impact.affects_style() {
-                    styles.refresh_subtrees(
-                        &self.dom.document,
-                        &invalidation_roots,
-                        &invalidation.removed_nodes,
-                    )
-                } else {
-                    StyleRefreshStats {
-                        invalidated_nodes,
-                        total_styles: styles.styles.len(),
-                        ..StyleRefreshStats::default()
-                    }
-                };
-                (styles, stats)
-            }
-            _ => {
-                let styles = StyleSet::from_sources_for_media_environment(
-                    &self.dom,
-                    &self.base_url,
-                    &self.stylesheet_sources,
-                    self.media_environment
-                        .with_viewport(viewport_width, viewport_height),
-                );
-                let count = styles.styles.len();
-                (
-                    styles,
-                    StyleRefreshStats {
-                        invalidated_nodes,
-                        total_styles: count,
-                        recomputed_styles: count,
-                        changed_styles: count,
-                        layout_changed: true,
-                        full_rebuild: true,
-                        ..StyleRefreshStats::default()
-                    },
-                )
-            }
-        };
         let mut known_images = self
             .resources
             .iter()
@@ -251,6 +194,94 @@ impl Page {
         self.cached_styles = Some((viewport_width, viewport_height, styles));
         self.refresh_inline_svgs();
         style_stats
+    }
+
+    /// Refreshes only the style cache needed by a synchronous CSSOM View layout flush.
+    pub(crate) fn refresh_layout_styles_after_invalidation_for_viewport(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) -> StyleRefreshStats {
+        self.base_url = document_base_url(&self.dom, &self.source_url);
+        self.media_environment = self
+            .media_environment
+            .with_viewport(viewport_width, viewport_height);
+        let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
+        let (styles, stats) =
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
+        self.cached_styles = Some((viewport_width, viewport_height, styles));
+        stats
+    }
+
+    fn refresh_style_cache(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        invalidation: &RenderInvalidation,
+    ) -> (StyleSet, StyleRefreshStats) {
+        let viewport_width = viewport_width.max(1.0);
+        let viewport_height = viewport_height.max(1.0);
+        let mut invalidation_roots = invalidation
+            .roots
+            .iter()
+            .filter_map(|root| self.dom.find_node(*root))
+            .collect::<Vec<_>>();
+        if invalidation_roots.is_empty() {
+            invalidation_roots.push(self.dom.document.clone());
+        }
+        let invalidated_nodes = invalidation_roots
+            .iter()
+            .flat_map(Node::shadow_including_descendants)
+            .map(|node| node.id())
+            .collect::<HashSet<_>>()
+            .len();
+        let cached = self.cached_styles.take();
+        match cached {
+            Some((cached_width, cached_height, mut styles))
+                if !invalidation.rebuild_style_rules
+                    && (cached_width - viewport_width).abs() < 0.5
+                    && (cached_height - viewport_height).abs() < 0.5 =>
+            {
+                let stats = if invalidation.impact.affects_style() {
+                    styles.refresh_subtrees(
+                        &self.dom.document,
+                        &invalidation_roots,
+                        &invalidation.removed_nodes,
+                    )
+                } else {
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: styles.styles.len(),
+                        ..StyleRefreshStats::default()
+                    }
+                };
+                (styles, stats)
+            }
+            _ => {
+                let styles = StyleSet::from_sources_for_media_environment(
+                    &self.dom,
+                    &self.base_url,
+                    &self.stylesheet_sources,
+                    self.media_environment
+                        .with_viewport(viewport_width, viewport_height),
+                );
+                let count = styles.styles.len();
+                (
+                    styles,
+                    StyleRefreshStats {
+                        invalidated_nodes,
+                        total_styles: count,
+                        recomputed_styles: count,
+                        changed_styles: count,
+                        layout_changed: true,
+                        full_rebuild: true,
+                        ..StyleRefreshStats::default()
+                    },
+                )
+            }
+        }
     }
 
     fn add_requested_fonts(
