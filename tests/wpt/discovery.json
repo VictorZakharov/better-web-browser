@@ -12,10 +12,10 @@
   },
   "tests": [
     {
-      "path": "css/cssom-view/table-client-props.html",
+      "path": "css/cssom-view/table-scroll-props.html",
       "area": "CSS layout",
       "expected": "fail",
-      "reason": "CSS table wrapper and caption geometry is not complete across padding, separated/collapsed borders, flex participation, and caption placement."
+      "reason": "CSSOM scrolling geometry and mutable scroll positions are not complete for table wrappers and captions."
     }
   ]
 }

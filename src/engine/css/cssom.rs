@@ -34,6 +34,18 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "border-left-width" => serialize_length(style.border_width.left),
         "border-right-width" => serialize_length(style.border_width.right),
         "border-top-width" => serialize_length(style.border_width.top),
+        "border-collapse" => if style.border_collapse {
+            "collapse"
+        } else {
+            "separate"
+        }
+        .to_string(),
+        "caption-side" => if style.caption_side_bottom {
+            "bottom"
+        } else {
+            "top"
+        }
+        .to_string(),
         "color" => serialize_color(style.color),
         "display" => style.display.css_keyword().to_string(),
         "flex-direction" => match style.flex_direction {

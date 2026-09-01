@@ -340,6 +340,8 @@ pub(super) fn apply_declaration(
                 BoxSizing::ContentBox
             }
         }
+        "border-collapse" => style.border_collapse = value == "collapse",
+        "caption-side" => style.caption_side_bottom = value == "bottom",
         "list-style" | "list-style-type" => {
             style.list_style_type = if value
                 .split_ascii_whitespace()
