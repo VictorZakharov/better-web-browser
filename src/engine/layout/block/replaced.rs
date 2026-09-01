@@ -6,12 +6,30 @@ pub(super) struct BlockImage {
     url: String,
     intrinsic_width: f32,
     intrinsic_height: f32,
+    tint: Option<Color>,
+    alt: String,
+    available: bool,
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_image(&self, node: &NodeRef) -> Option<BlockImage> {
-        if !matches!(node.tag_name(), Some("img" | "image" | "video")) {
+        if !matches!(node.tag_name(), Some("img" | "image" | "video" | "svg")) {
             return None;
+        }
+        if node.tag_name() == Some("svg") {
+            let url = inline_svg_key(node);
+            let image = self.page.images.get(&url);
+            let (intrinsic_width, intrinsic_height) = image
+                .map(|image| (image.width as f32, image.height as f32))
+                .unwrap_or((300.0, 150.0));
+            return Some(BlockImage {
+                url,
+                intrinsic_width,
+                intrinsic_height,
+                tint: svg_uses_current_color(node).then_some(self.styles.get(node).color),
+                alt: node.attr("aria-label").unwrap_or_default(),
+                available: image.is_some(),
+            });
         }
         let url = self.page.image_url(node)?;
         let default_size = if node.tag_name() == Some("video") {
@@ -33,6 +51,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             url,
             intrinsic_width,
             intrinsic_height,
+            tint: None,
+            alt: node.attr("alt").unwrap_or_default(),
+            available: true,
         })
     }
 }
@@ -42,15 +63,18 @@ impl BlockImage {
         &self,
         node: &NodeRef,
         style: &ComputedStyle,
+        percentage_basis: f32,
         horizontal_insets: f32,
     ) -> f32 {
-        element_length(
+        self.resolve_length(
             node,
             "width",
             style.width,
-            self.intrinsic_width,
+            Some(percentage_basis),
             style.font_size,
-        ) + horizontal_insets
+        )
+        .unwrap_or(self.intrinsic_width)
+            + horizontal_insets
     }
 
     pub(super) fn content_height(
@@ -58,6 +82,7 @@ impl BlockImage {
         node: &NodeRef,
         style: &ComputedStyle,
         content_width: f32,
+        percentage_basis: Option<f32>,
     ) -> f32 {
         let scaled_height = if self.intrinsic_width > 0.0
             && (style.width != Length::Auto || node.attr("width").is_some())
@@ -66,15 +91,40 @@ impl BlockImage {
         } else {
             self.intrinsic_height
         };
-        element_length(node, "height", style.height, scaled_height, style.font_size)
+        self.resolve_length(
+            node,
+            "height",
+            style.height,
+            percentage_basis,
+            style.font_size,
+        )
+        .unwrap_or(scaled_height)
     }
 
-    pub(super) fn paint(self, node: &NodeRef, output: &mut LayoutOutput, rect: RectF) {
+    fn resolve_length(
+        &self,
+        node: &NodeRef,
+        attribute: &str,
+        css: Length,
+        percentage_basis: Option<f32>,
+        font_size: f32,
+    ) -> Option<f32> {
+        if node.tag_name() == Some("svg") {
+            resolve_svg_replaced_length(node, attribute, css, percentage_basis, font_size)
+        } else {
+            resolve_replaced_length(node, attribute, css, percentage_basis, font_size)
+        }
+    }
+
+    pub(super) fn paint(self, _node: &NodeRef, output: &mut LayoutOutput, rect: RectF) {
+        if !self.available {
+            return;
+        }
         output.items.push(DisplayItem::Image {
             rect,
             url: self.url,
-            alt: node.attr("alt").unwrap_or_default(),
-            tint: None,
+            alt: self.alt,
+            tint: self.tint,
         });
     }
 }

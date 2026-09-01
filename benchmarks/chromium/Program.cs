@@ -37,6 +37,7 @@ internal sealed class Options
     public int ViewportHeight { get; init; } = 607;
     public double DeviceScaleFactor { get; init; } = 1;
     public string Locale { get; init; } = "en-US";
+    public string? UserAgent { get; init; }
     public int SettleMs { get; init; } = 2_000;
     public int TimeoutMs { get; init; } = 30_000;
     public int ScrollSamples { get; init; }
@@ -45,17 +46,28 @@ internal sealed class Options
     public ClickPoint? ClickAfterReady { get; init; }
     public string? ActivateLinkAfterReady { get; init; }
     public int NavigationDelayMs { get; init; }
+    public IReadOnlyList<string> DiagnosticSelectors { get; init; } = Array.Empty<string>();
 
     public static Options Parse(string[] arguments)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var switches = new HashSet<string>(StringComparer.Ordinal);
+        var diagnosticSelectors = new List<string>();
         for (var index = 0; index < arguments.Length; index++)
         {
             var argument = arguments[index];
             if (argument is "--early-scroll" or "--require-fixture-ready")
             {
                 switches.Add(argument);
+                continue;
+            }
+            if (argument == "--diagnostic-selector")
+            {
+                if (++index >= arguments.Length || string.IsNullOrWhiteSpace(arguments[index]))
+                {
+                    throw new ArgumentException("--diagnostic-selector requires a non-empty selector.");
+                }
+                diagnosticSelectors.Add(arguments[index]);
                 continue;
             }
             if (!argument.StartsWith("--", StringComparison.Ordinal) || ++index >= arguments.Length)
@@ -115,6 +127,7 @@ internal sealed class Options
                 ? Math.Clamp(double.Parse(scale, System.Globalization.CultureInfo.InvariantCulture), 0.5, 4)
                 : 1,
             Locale = values.GetValueOrDefault("--locale") ?? "en-US",
+            UserAgent = values.GetValueOrDefault("--user-agent"),
             SettleMs = Integer("--settle-ms", 2_000, 100, 60_000),
             TimeoutMs = Integer("--timeout-ms", 30_000, 1_000, 120_000),
             ScrollSamples = Integer("--scroll-samples", 0, 0, 120),
@@ -123,6 +136,8 @@ internal sealed class Options
             ClickAfterReady = clickAfterReady,
             ActivateLinkAfterReady = values.GetValueOrDefault("--activate-link-after-ready"),
             NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000)
+            ,
+            DiagnosticSelectors = diagnosticSelectors
         };
     }
 

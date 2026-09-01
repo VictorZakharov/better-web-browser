@@ -13,7 +13,10 @@ pub const MAX_HTML_PARSE_ERRORS: usize = 256;
 pub const MAX_RENDERED_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 pub const MAX_CSS_SOURCE_BYTES: usize = 4 * 1024 * 1024;
-pub const MAX_CSS_RULES: usize = 20_000;
+/// A single stylesheet cannot monopolize renderer memory, while later sheets must still be able
+/// to participate in the cascade. Large production bundles routinely exceed 20,000 rules.
+pub const MAX_CSS_RULES_PER_STYLESHEET: usize = 30_000;
+pub const MAX_PAGE_CSS_RULES: usize = 100_000;
 pub const MAX_CSS_NESTING_DEPTH: usize = 64;
 pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 256;
 pub const MAX_ADOPTED_STYLESHEETS: usize = 256;
@@ -56,7 +59,10 @@ pub const MAX_SVG_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_EMBEDDED_IMAGE_URL_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PAGE_IMAGES: usize = 64;
 pub const MAX_STYLE_IMAGES: usize = 64;
-pub const MAX_INLINE_SVGS: usize = 64;
+/// Component-heavy pages routinely use more icon SVGs than raster image resources. The identity
+/// limit remains finite while the aggregate decoded-byte budget below is the memory boundary.
+pub const MAX_INLINE_SVGS: usize = 256;
+pub const MAX_PAGE_DECODED_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 /// Aggregate decoded image identities retained by a document and accepted in one presentation.
 /// HTML images, CSS images, inline SVGs, the video placeholder, and bounded media sessions are
 /// admitted independently, so the presentation protocol must cover their combined maximum.
@@ -149,6 +155,7 @@ pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25
 // slice may reduce these further after measuring real H.264/AAC queues; raising one requires a
 // hostile-media review and an update to ADR 0007.
 pub const MAX_MEDIA_CONTROL_PAYLOAD: usize = 4 * 1024;
+pub const MAX_MEDIA_FAILURE_BYTES: usize = 512;
 pub const MAX_MEDIA_DATA_CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_MEDIA_SESSIONS_PER_TAB: usize = 4;
 /// The first playback slice owns one decoder and one document clock. Raise this only when the

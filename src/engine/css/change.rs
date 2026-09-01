@@ -29,6 +29,7 @@ impl ComputedStyle {
             && self.right == other.right
             && self.bottom == other.bottom
             && self.left == other.left
+            && self.transform == other.transform
             && self.justify_content_end == other.justify_content_end
             && self.align_items_center == other.align_items_center
             && self.flex_direction == other.flex_direction

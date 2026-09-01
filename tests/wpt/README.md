@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 86 curated cases run with one offline command:
+After the fixtures exist, all 100 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -35,8 +35,9 @@ Use `-Filter "DOM events"` for a single area or a path substring. Use `-SkipBuil
 release binaries are current. `-Jobs 4` runs four isolated hidden processes concurrently. The
 command starts a loopback-only static server and launches a fresh hidden Breeze benchmark process
 per case. JavaScript `.any.js` and `.window.js` files run in a generated Window test page. This first
-curated set intentionally avoids WPT server substitutions, special hostnames, and support files;
-expanding beyond that contract should use the official WPT server rather than ad-hoc emulation.
+curated set intentionally avoids WPT server substitutions and special hostnames. A manifest can
+list immutable relative support files from the same pinned upstream checkout; expanding into tests
+that need WPT server behavior should use the official WPT server rather than ad-hoc emulation.
 
 CI passes `-BuildProfile debug -Jobs 8`: conformance is not a performance measurement, and benchmark
 processes launched by this runner request an explicitly sized headless UI-thread stack so large
@@ -52,27 +53,27 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 86 passing files
-and 610 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 100 passing files
+and 664 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 86 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 100 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
 |---|---:|---|
 | HTML parsing | 4 | Tree construction and malformed-input recovery |
-| DOM and mutation | 6 | Owned nodes, lookup, names, and live mutation |
-| Events, Abort API, and event loop | 16 | Dispatch semantics, cancellation, listeners, and microtasks |
+| DOM and mutation | 7 | Owned nodes, lookup, names, hierarchy validation, and atomic live mutation |
+| Events, Abort API, event loop, and animation frames | 23 | Dispatch semantics, cancellation, listeners, microtasks, and rendering callbacks |
 | URLs | 5 | URL and URLSearchParams bindings |
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
-| CSS cascade, selectors, and layout | 10 | Cascade, `:first-child`, flex display, and CSSOM geometry |
-| Forms | 2 | Form collections and select value behavior |
+| CSS cascade, selectors, and layout | 14 | Cascade, structural selectors, flex display, and CSSOM geometry |
+| Forms | 4 | Form collections, button types, datalist options/validation, and select values |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
 | Custom Elements | 1 | Registry isolation, definition lookup, and when-defined promises |
 | Shadow DOM | 3 | Root connectivity, detached slot assignment, and composed event retargeting |
@@ -88,7 +89,7 @@ silently copied or rewritten.
 
 `discovery.json` is a separate, deliberately failing compatibility sample. It covers nearby DOM,
 forms, selectors, flex, float, and geometry behavior that is not in the green gate. At the pinned
-revision its eight files contain 19 harness subtests: 3 pass and 16 fail. The known file-level
+revision its two files contain 3 harness subtests, all failing as expected. The known file-level
 failure mode and reason are explicit, so an unexpected pass tells maintainers to promote newly
 supported coverage instead of masking it.
 

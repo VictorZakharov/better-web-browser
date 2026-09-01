@@ -140,11 +140,92 @@ impl MediaClient {
                 report,
                 frame,
             } if actual == request_id => (report, frame),
+            WorkerMediaMessage::DecodeFailed {
+                request_id: actual,
+                error,
+            } if actual == request_id => {
+                return Err(format!("media worker rejected decode: {error}"));
+            }
             _ => return Err("media worker returned the wrong decode response".into()),
         };
         report
             .validate(self.limits)
             .map_err(|error| format!("invalid media decode report: {error}"))?;
+        let frame = self.receive_frame(metadata)?;
+        self.acknowledge(metadata.source_id, metadata.frame_id)?;
+        Ok(RendererMediaDecode { report, frame })
+    }
+
+    pub(crate) fn decode_tracks(
+        &mut self,
+        video_bytes: &[u8],
+        audio_bytes: &[u8],
+        mut progress: impl FnMut() -> Result<(), String>,
+    ) -> Result<RendererMediaDecode, String> {
+        let encoded_length = video_bytes
+            .len()
+            .checked_add(audio_bytes.len())
+            .ok_or_else(|| "adaptive media source length overflowed".to_string())?;
+        if video_bytes.is_empty()
+            || audio_bytes.is_empty()
+            || encoded_length as u64 > self.limits.max_encoded_queue_bytes
+        {
+            return Err("adaptive media source exceeds the contained worker queue limit".into());
+        }
+        let request_id = self.allocate_request()?;
+        let video_source_id = self.next_source;
+        let audio_source_id = checked_next(video_source_id, "media source identity")?;
+        self.next_source = checked_next(audio_source_id, "media source identity")?;
+        let frame_id = self.allocate_frame()?;
+        self.send(BrowserMediaMessage::DecodeTracks {
+            request_id,
+            video_source_id,
+            audio_source_id,
+            frame_id,
+            video_length: video_bytes.len() as u64,
+            audio_length: audio_bytes.len() as u64,
+        })?;
+        let video_source =
+            MediaSourceId::new(video_source_id).map_err(|error| error.to_string())?;
+        let audio_source =
+            MediaSourceId::new(audio_source_id).map_err(|error| error.to_string())?;
+        let output = self
+            .data_output
+            .try_clone()
+            .map_err(|error| format!("clone media data pipe: {error}"))?;
+        let session = self.session;
+        let nonce = self.nonce;
+        let sent = std::thread::scope(|scope| {
+            let sender = scope.spawn(move || {
+                let mut writer = MediaDataWriter::new(output, session, nonce);
+                writer.send_source(video_source, video_bytes)?;
+                writer.send_source(audio_source, audio_bytes)
+            });
+            let response = self.receive_with_progress("decode adaptive tracks", &mut progress)?;
+            let sent = sender
+                .join()
+                .map_err(|_| "media data writer panicked".to_string())?
+                .map_err(|error| format!("deliver adaptive media tracks: {error}"));
+            Ok::<_, String>((response, sent))
+        })?;
+        sent.1?;
+        let (report, metadata) = match sent.0 {
+            WorkerMediaMessage::Decoded {
+                request_id: actual,
+                report,
+                frame,
+            } if actual == request_id => (report, frame),
+            WorkerMediaMessage::DecodeFailed {
+                request_id: actual,
+                error,
+            } if actual == request_id => {
+                return Err(format!("media worker rejected adaptive decode: {error}"));
+            }
+            _ => return Err("media worker returned the wrong adaptive decode response".into()),
+        };
+        report
+            .validate(self.limits)
+            .map_err(|error| format!("invalid adaptive media decode report: {error}"))?;
         let frame = self.receive_frame(metadata)?;
         self.acknowledge(metadata.source_id, metadata.frame_id)?;
         Ok(RendererMediaDecode { report, frame })

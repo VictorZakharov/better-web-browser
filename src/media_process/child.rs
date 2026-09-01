@@ -169,7 +169,7 @@ fn command_loop(
                 frame_id,
                 encoded_length,
             } => {
-                playback.decode_source(
+                if let Err(error) = playback.decode_source(
                     request_id,
                     source_id,
                     frame_id,
@@ -178,7 +178,42 @@ fn command_loop(
                     frame_writer,
                     writer,
                     limits,
-                )?;
+                ) {
+                    writer
+                        .send_worker(&WorkerMediaMessage::DecodeFailed {
+                            request_id,
+                            error: bounded_media_failure(error),
+                        })
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            BrowserMediaMessage::DecodeTracks {
+                request_id,
+                video_source_id,
+                audio_source_id,
+                frame_id,
+                video_length,
+                audio_length,
+            } => {
+                if let Err(error) = playback.decode_tracks(
+                    request_id,
+                    video_source_id,
+                    audio_source_id,
+                    frame_id,
+                    video_length,
+                    audio_length,
+                    data_reader,
+                    frame_writer,
+                    writer,
+                    limits,
+                ) {
+                    writer
+                        .send_worker(&WorkerMediaMessage::DecodeFailed {
+                            request_id,
+                            error: bounded_media_failure(error),
+                        })
+                        .map_err(|error| error.to_string())?;
+                }
             }
             BrowserMediaMessage::AcknowledgeFrame {
                 source_id,
@@ -225,6 +260,17 @@ fn command_loop(
                 return Err("media worker received a duplicate Hello".into());
             }
         }
+    }
+}
+
+fn bounded_media_failure(mut error: String) -> String {
+    while error.len() > crate::limits::MAX_MEDIA_FAILURE_BYTES {
+        error.pop();
+    }
+    if error.is_empty() {
+        "media decode failed".into()
+    } else {
+        error
     }
 }
 

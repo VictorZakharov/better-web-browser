@@ -92,6 +92,11 @@
     const dispatchNativeSimple = input => nativeTarget(input.target).dispatchEvent(markTrusted(new Event(
         String(input.type), { bubbles: !!input.bubbles, cancelable: !!input.cancelable }
     )));
+    const dispatchNativeImageResource = input => {
+        const target = nativeTarget(input.target);
+        updateImageElementState(target, true, input.naturalWidth, input.naturalHeight);
+        return target.dispatchEvent(markTrusted(new Event(String(input.type))));
+    };
 
     Object.defineProperty(document, '__dispatchNativeInput', {
         configurable: false,
@@ -102,6 +107,7 @@
                 case 'text': return dispatchNativeText(input);
                 case 'focus': return dispatchNativeFocus(input);
                 case 'simple': return dispatchNativeSimple(input);
+                case 'imageResource': return dispatchNativeImageResource(input);
                 case 'scroll':
                     windowObject.scrollX = windowObject.pageXOffset = Number(input.x) || 0;
                     windowObject.scrollY = windowObject.pageYOffset = Number(input.y) || 0;
@@ -109,6 +115,8 @@
                 case 'viewport':
                     windowObject.innerWidth = Number(input.width) || 1;
                     windowObject.innerHeight = Number(input.height) || 1;
+                    layoutViewportWidth = Number(input.layoutWidth) || 1;
+                    layoutViewportHeight = Number(input.layoutHeight) || 1;
                     windowObject.devicePixelRatio = Number(input.scale) || 1;
                     const mediaChanges = prepareMediaQueryChanges();
                     const resizeAllowed =

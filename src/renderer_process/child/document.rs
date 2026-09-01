@@ -68,6 +68,8 @@ pub(super) struct DocumentRuntime {
     executed_async_scripts: HashSet<String>,
     pending_dynamic_script_fetch: Option<PendingDynamicScriptFetch>,
     pending_resource_preloads: Option<PendingResourceFetch>,
+    resource_render_pending: bool,
+    resource_style_refresh_pending: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
     accessibility: RendererAccessibility,
     accessibility_selection: Option<(crate::engine::dom::NodeId, u32, u32)>,
@@ -85,7 +87,9 @@ pub(super) struct DocumentRuntime {
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
     media_failure: Option<String>,
-    pending_media_outcome: ScriptOutcome,
+    pending_async_outcome: ScriptOutcome,
+    pending_resource_events: Vec<(PageResource, &'static str)>,
+    geometry_observers_pending: bool,
 }
 
 impl DocumentRuntime {
@@ -124,6 +128,9 @@ impl DocumentRuntime {
     pub(super) fn next_timer_micros(&mut self) -> Option<u64> {
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
             return None;
+        }
+        if self.geometry_observers_pending || self.resource_render_pending {
+            return Some(0);
         }
         let runtime_timer = self
             .script_runtime
@@ -174,11 +181,28 @@ impl DocumentRuntime {
                 next_timer_micros: None,
             })));
         }
-        let mut outcome = std::mem::take(&mut self.pending_media_outcome);
+        let mut outcome = std::mem::take(&mut self.pending_async_outcome);
+        if std::mem::take(&mut self.geometry_observers_pending)
+            && let Some(runtime) = self.script_runtime.as_mut()
+        {
+            merge_outcome(
+                &mut outcome,
+                runtime.notify_layout_changed(),
+                self.page.dom.document.id(),
+            );
+        }
         let mut script_fetch_time = Duration::ZERO;
-        let resources_changed = self
-            .finish_ready_resource_preloads(connection)?
-            .unwrap_or(false);
+        let mut resources_changed = std::mem::take(&mut self.resource_render_pending);
+        let mut resource_style_changed = std::mem::take(&mut self.resource_style_refresh_pending);
+        if let Some(changes) = self.finish_ready_resource_preloads(connection)? {
+            resources_changed |= changes.render;
+            resource_style_changed |= changes.style;
+        }
+        merge_outcome(
+            &mut outcome,
+            std::mem::take(&mut self.pending_async_outcome),
+            self.page.dom.document.id(),
+        );
         if resources_changed {
             self.text.register_web_fonts(&self.page.fonts);
         }
@@ -292,7 +316,7 @@ impl DocumentRuntime {
                 self.viewport.height,
                 &outcome.invalidation,
             )
-        } else if resources_changed {
+        } else if resource_style_changed {
             self.page
                 .refresh_resources_for_viewport(self.viewport.style_width, self.viewport.height)
         } else {
@@ -348,8 +372,10 @@ impl DocumentRuntime {
         self.text.set_dpi(viewport.dpi);
         let mut outcome = self
             .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
-                width: viewport.width,
+                width: viewport.style_width,
                 height: viewport.height,
+                layout_width: viewport.width,
+                layout_height: viewport.height,
                 scale: viewport.dpi as f32 / 96.0,
             })?
             .outcome;
@@ -376,6 +402,10 @@ impl DocumentRuntime {
             self.viewport.style_width,
             &mut self.text,
         );
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.set_layout_geometry(&self.layout.node_bounds);
+            self.geometry_observers_pending = true;
+        }
     }
 
     fn presentation(

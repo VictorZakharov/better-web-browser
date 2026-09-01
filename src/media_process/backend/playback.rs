@@ -1,6 +1,7 @@
 use super::{
-    ComApartment, MediaFoundation, output_type, seek_source_reader, source_reader,
-    stream::copy_sample, verify_native_type,
+    ComApartment, MediaFoundation, fragmented_mp4::VideoTrack, h264::TransformVideoDecoder,
+    output_type, seek_source_reader, select_stream, source_reader, stream::copy_sample,
+    verify_native_type,
 };
 use crate::limits::{MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS};
 use crate::media_protocol::MediaLimits;
@@ -17,9 +18,63 @@ pub(in crate::media_process) struct DecodedVideoSample {
     pub(in crate::media_process) duration_100ns: u64,
 }
 
+pub(in crate::media_process) struct VideoDecoder {
+    inner: Decoder,
+}
+
+enum Decoder {
+    SourceReader(SourceReaderVideoDecoder),
+    Transform(TransformVideoDecoder),
+}
+
+impl VideoDecoder {
+    pub(super) fn open(
+        bytes: &[u8],
+        limits: MediaLimits,
+        expected_samples: u32,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            inner: Decoder::SourceReader(SourceReaderVideoDecoder::open(
+                bytes,
+                limits,
+                expected_samples,
+            )?),
+        })
+    }
+
+    pub(super) fn open_fragmented(track: VideoTrack, limits: MediaLimits) -> Result<Self, String> {
+        Ok(Self {
+            inner: Decoder::Transform(TransformVideoDecoder::open(track, limits)?),
+        })
+    }
+
+    pub(in crate::media_process) fn dimensions(&self) -> (u32, u32) {
+        match &self.inner {
+            Decoder::SourceReader(decoder) => decoder.dimensions(),
+            Decoder::Transform(decoder) => decoder.dimensions(),
+        }
+    }
+
+    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        match &mut self.inner {
+            Decoder::SourceReader(decoder) => decoder.seek(position_100ns),
+            Decoder::Transform(decoder) => decoder.seek(position_100ns),
+        }
+    }
+
+    pub(in crate::media_process) fn next_frame(
+        &mut self,
+    ) -> Result<Option<DecodedVideoSample>, String> {
+        match &mut self.inner {
+            Decoder::SourceReader(decoder) => decoder.next_frame(),
+            Decoder::Transform(decoder) => decoder.next_frame(),
+        }
+    }
+}
+
 /// Pull-driven video decode. A frame acknowledgement is the queue bound: the worker never
 /// advances this decoder while an earlier decoded frame is outstanding.
-pub(in crate::media_process) struct VideoDecoder {
+struct SourceReaderVideoDecoder {
     reader: IMFSourceReader,
     width: u32,
     height: u32,
@@ -32,12 +87,8 @@ pub(in crate::media_process) struct VideoDecoder {
     _apartment: ComApartment,
 }
 
-impl VideoDecoder {
-    pub(super) fn open(
-        bytes: &[u8],
-        limits: MediaLimits,
-        expected_samples: u32,
-    ) -> Result<Self, String> {
+impl SourceReaderVideoDecoder {
+    fn open(bytes: &[u8], limits: MediaLimits, expected_samples: u32) -> Result<Self, String> {
         if expected_samples == 0 || expected_samples as usize > MAX_MEDIA_DECODED_SAMPLES {
             return Err("decoded video sample count exceeds worker limit".into());
         }
@@ -46,6 +97,11 @@ impl VideoDecoder {
         let foundation = MediaFoundation::start()
             .map_err(|status| format!("start playback Media Foundation: HRESULT {status:#x}"))?;
         let reader = source_reader(bytes)?;
+        select_stream(
+            &reader,
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+            "playback video",
+        )?;
         verify_native_type(
             &reader,
             MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
@@ -100,20 +156,18 @@ impl VideoDecoder {
         })
     }
 
-    pub(in crate::media_process) fn dimensions(&self) -> (u32, u32) {
+    fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
-    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+    fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
         seek_source_reader(&self.reader, position_100ns)?;
         self.remaining_samples = self.total_samples;
         self.last_timestamp = None;
         Ok(())
     }
 
-    pub(in crate::media_process) fn next_frame(
-        &mut self,
-    ) -> Result<Option<DecodedVideoSample>, String> {
+    fn next_frame(&mut self) -> Result<Option<DecodedVideoSample>, String> {
         if self.remaining_samples == 0 {
             return Ok(None);
         }

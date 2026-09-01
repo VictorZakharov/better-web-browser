@@ -56,6 +56,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::style_host::style_host_call(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::viewport_host::viewport_host_call(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::mutation_host::mutation_host_call(operation, args, state)? {
         return Ok(value);
     }
@@ -161,18 +164,18 @@ pub(super) fn dispatch_host_call(
             ))
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
-        "mediaMatches" => {
-            let query = argument_string(args, 1)?;
-            Ok(JsValue::from(
-                crate::engine::css::media::media_matches_for_environment(
-                    &query,
-                    state.media_environment,
-                ),
-            ))
+        "layoutRect" => {
+            let rect = state
+                .node(argument_id(args, 1))
+                .and_then(|node| state.layout_geometry.get(&node.id()).copied())
+                .unwrap_or_default();
+            Ok(JsValue::Array(vec![
+                JsValue::from(rect.x as f64),
+                JsValue::from(rect.y as f64),
+                JsValue::from(rect.width as f64),
+                JsValue::from(rect.height as f64),
+            ]))
         }
-        "mediaSerialize" => Ok(js_string(
-            crate::engine::css::media::serialize_media_query_list(&argument_string(args, 1)?),
-        )),
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
             state.set_cookie(argument_string(args, 1)?);

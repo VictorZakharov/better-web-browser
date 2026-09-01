@@ -33,6 +33,7 @@
     let shadowRootForTraversal = () => null;
     let resetAttributeNameMode = () => {};
     let invalidateMutationAncestors = () => {};
+    let replaceElementInnerHtml = () => {};
     let constructCustomElement = () => { throw new TypeError('Illegal constructor'); };
     const list = value => {
         if (!value) return [];
@@ -55,13 +56,27 @@
         if (!records) childCollectionCache.set(node, records = {});
         const key = elements ? 'elements' : 'nodes';
         let record = records[key];
+        if (elements) {
+            if (!record) {
+                const value = liveHtmlCollection(() =>
+                    list(host('elementChildren', node.__id)));
+                records[key] = record = { version, value };
+            }
+            return record.value;
+        }
         if (!record) {
-            const value = list(host(elements ? 'elementChildren' : 'children', node.__id));
+            const value = list(host('children', node.__id));
             records[key] = record = { version, value };
         } else if (record.version !== version) {
-            const next = list(host(elements ? 'elementChildren' : 'children', node.__id));
+            const next = list(host('children', node.__id));
             record.value.splice(0, record.value.length, ...next);
             record.version = version;
         }
         return record.value;
+    };
+    const elementSibling = (node, next) => {
+        let sibling = next ? node.nextSibling : node.previousSibling;
+        while (sibling && sibling.nodeType !== Node.ELEMENT_NODE)
+            sibling = next ? sibling.nextSibling : sibling.previousSibling;
+        return sibling;
     };

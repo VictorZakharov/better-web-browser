@@ -1,5 +1,5 @@
 use super::{
-    ComApartment, MediaFoundation, output_type, seek_source_reader, source_reader,
+    ComApartment, MediaFoundation, output_type, seek_source_reader, select_stream, source_reader,
     stream::copy_sample, verify_native_type,
 };
 use crate::limits::{
@@ -42,6 +42,11 @@ impl AudioDecoder {
         let foundation = MediaFoundation::start()
             .map_err(|status| format!("start audio Media Foundation: HRESULT {status:#x}"))?;
         let reader = source_reader(bytes)?;
+        select_stream(
+            &reader,
+            MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+            "playback audio",
+        )?;
         verify_native_type(
             &reader,
             MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,

@@ -88,176 +88,33 @@ pub(super) fn sibling_id(state: &mut HostState, arguments: &[JsValue], next: boo
 }
 
 pub(super) fn query_selector(root: &NodeRef, selector: &str) -> Option<NodeRef> {
-    let groups = selector_groups(selector);
     Node::descendants(root).skip(1).find(|node| {
-        node.element().is_some() && groups.iter().any(|group| matches_selector(node, group))
+        node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
     })
 }
 
 pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef> {
-    let groups = selector_groups(selector);
     Node::descendants(root)
         .skip(1)
         .filter(|node| {
-            node.element().is_some() && groups.iter().any(|group| matches_selector(node, group))
+            node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
         })
         .collect()
 }
 
 pub(super) fn matches_selector_list(node: &NodeRef, selector: &str) -> bool {
-    node.element().is_some()
-        && selector_groups(selector)
-            .iter()
-            .any(|group| matches_selector(node, group))
+    node.element().is_some() && crate::engine::css::matches_selector_list(node, selector)
 }
 
 pub(super) fn closest_matching_element(node: &NodeRef, selector: &str) -> Option<NodeRef> {
-    let groups = selector_groups(selector);
     let mut candidate = Some(node.clone());
     while let Some(node) = candidate {
         candidate = node.parent();
-        if node.element().is_some() && groups.iter().any(|group| matches_selector(&node, group)) {
+        if node.element().is_some() && crate::engine::css::matches_selector_list(&node, selector) {
             return Some(node);
         }
     }
     None
-}
-
-fn selector_groups(selector: &str) -> Vec<Vec<&str>> {
-    selector
-        .split(',')
-        .map(str::trim)
-        .filter(|group| !group.is_empty())
-        .map(|group| group.split_ascii_whitespace().collect())
-        .collect()
-}
-
-fn matches_selector(node: &NodeRef, parts: &[&str]) -> bool {
-    let Some(last) = parts.last() else {
-        return false;
-    };
-    if !matches_compound_selector(node, last) {
-        return false;
-    }
-    let mut ancestor = node.parent();
-    for wanted in parts[..parts.len() - 1].iter().rev() {
-        if *wanted == ">" {
-            continue;
-        }
-        let mut matched = None;
-        while let Some(candidate) = ancestor {
-            ancestor = candidate.parent();
-            if matches_compound_selector(&candidate, wanted) {
-                matched = Some(candidate);
-                break;
-            }
-        }
-        if matched.is_none() {
-            return false;
-        }
-    }
-    true
-}
-
-fn matches_compound_selector(node: &NodeRef, selector: &str) -> bool {
-    let selector = selector.trim_matches('>');
-    if selector == "*" {
-        return true;
-    }
-
-    let bytes = selector.as_bytes();
-    let mut index = 0;
-    let tag_end = selector
-        .find(['#', '.', '[', ':'])
-        .unwrap_or(selector.len());
-    if tag_end > 0 {
-        let tag = &selector[..tag_end];
-        if node
-            .tag_name()
-            .is_none_or(|actual| !actual.eq_ignore_ascii_case(tag))
-        {
-            return false;
-        }
-        index = tag_end;
-    }
-
-    while index < bytes.len() {
-        match bytes[index] {
-            b'#' | b'.' => {
-                let marker = bytes[index];
-                index += 1;
-                let end = selector[index..]
-                    .find(['#', '.', '[', ':'])
-                    .map(|offset| index + offset)
-                    .unwrap_or(selector.len());
-                let value = &selector[index..end];
-                if marker == b'#' {
-                    if node.attr("id").as_deref() != Some(value) {
-                        return false;
-                    }
-                } else if !node.has_class(value) {
-                    return false;
-                }
-                index = end;
-            }
-            b'[' => {
-                let Some(offset) = selector[index + 1..].find(']') else {
-                    return false;
-                };
-                let end = index + 1 + offset;
-                let expression = selector[index + 1..end].trim();
-                if let Some((name, value)) = expression.split_once('=') {
-                    let value = value.trim().trim_matches(['\'', '"']);
-                    if node.attr(name.trim()).as_deref() != Some(value) {
-                        return false;
-                    }
-                } else if node.attr(expression).is_none() {
-                    return false;
-                }
-                index = end + 1;
-            }
-            b':' => {
-                let pseudo = &selector[index + 1..];
-                match pseudo {
-                    "first-child" => {
-                        let Some(parent) = node.parent() else {
-                            return false;
-                        };
-                        if parent
-                            .children
-                            .borrow()
-                            .iter()
-                            .find(|child| child.element().is_some())
-                            .is_none_or(|child| child.id() != node.id())
-                        {
-                            return false;
-                        }
-                    }
-                    "last-child" => {
-                        let Some(parent) = node.parent() else {
-                            return false;
-                        };
-                        if parent
-                            .children
-                            .borrow()
-                            .iter()
-                            .rev()
-                            .find(|child| child.element().is_some())
-                            .is_none_or(|child| child.id() != node.id())
-                        {
-                            return false;
-                        }
-                    }
-                    "fullscreen" if !node.is_fullscreen() => return false,
-                    "fullscreen" => {}
-                    _ => return false,
-                }
-                index = selector.len();
-            }
-            _ => return false,
-        }
-    }
-    true
 }
 
 pub(super) fn serialize_children(node: &NodeRef) -> String {

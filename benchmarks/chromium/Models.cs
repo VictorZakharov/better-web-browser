@@ -63,6 +63,7 @@ internal sealed class BenchmarkResult
     public int DocumentHeightCssPx { get; set; }
     public bool FixtureReady { get; set; }
     public string? Screenshot { get; set; }
+    public JsonElement? Diagnostics { get; set; }
 }
 
 internal sealed class MediaProbe

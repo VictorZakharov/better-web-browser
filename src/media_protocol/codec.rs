@@ -29,6 +29,8 @@ pub(super) const BROWSER_SET_PLAYBACK: u16 = 16;
 pub(super) const BROWSER_PLAYBACK_STATE: u16 = 17;
 pub(super) const WORKER_PLAYBACK_STATE: u16 = 18;
 pub(super) const BROWSER_SEEK_PLAYBACK: u16 = 19;
+pub(super) const BROWSER_DECODE_TRACKS: u16 = 20;
+pub(super) const WORKER_DECODE_FAILED: u16 = 21;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -116,7 +118,7 @@ impl<W: Write> MediaFrameWriter<W> {
     }
 
     pub fn send_worker(&mut self, message: &WorkerMediaMessage) -> Result<(), MediaProtocolError> {
-        let (kind, payload) = encode::worker(*message)?;
+        let (kind, payload) = encode::worker(message.clone())?;
         self.write_frame(kind, &payload)
     }
 
@@ -239,6 +241,7 @@ impl Direction {
                     | BROWSER_SHUTDOWN
                     | BROWSER_PROBE
                     | BROWSER_DECODE_SOURCE
+                    | BROWSER_DECODE_TRACKS
                     | BROWSER_ACKNOWLEDGE_FRAME
                     | BROWSER_REQUEST_FRAME
                     | BROWSER_SET_PLAYBACK
@@ -253,6 +256,7 @@ impl Direction {
                     | WORKER_SHUTDOWN_COMPLETE
                     | WORKER_CAPABILITY
                     | WORKER_DECODED
+                    | WORKER_DECODE_FAILED
                     | WORKER_FRAME_ACKNOWLEDGED
                     | WORKER_FRAME_READY
                     | WORKER_END_OF_STREAM

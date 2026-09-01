@@ -88,6 +88,22 @@ impl Node {
         )
     }
 
+    pub fn create_doctype_for(
+        owner: &NodeRef,
+        name: &str,
+        public_id: &str,
+        system_id: &str,
+    ) -> NodeRef {
+        Node::new_in(
+            Rc::clone(&owner.identity),
+            NodeData::Doctype {
+                name: name.to_string(),
+                public_id: public_id.to_string(),
+                system_id: system_id.to_string(),
+            },
+        )
+    }
+
     pub fn create_document_fragment_for(owner: &NodeRef) -> NodeRef {
         Node::new_in(Rc::clone(&owner.identity), NodeData::Document)
     }

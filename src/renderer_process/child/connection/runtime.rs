@@ -23,7 +23,10 @@ impl ChildConnection {
             runtime.finish_completed_resource_preloads(self)
         }));
         match result {
-            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
+            Ok(Ok(Some(update))) => self
+                .writer
+                .send_renderer(&RendererMessage::RuntimeUpdate(Box::new(update)))
+                .map_err(|error| error.to_string())?,
             Ok(Ok(None)) => {}
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;

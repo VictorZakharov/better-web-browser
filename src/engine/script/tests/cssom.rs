@@ -64,6 +64,42 @@ fn document_stylesheets_are_live_same_object_and_owned_by_style_elements() {
 }
 
 #[test]
+fn custom_properties_are_case_sensitive_and_expose_resolved_computed_values() {
+    let (dom, outcome) = execute_html(
+        r#"<style>
+            :root { --Accent: 12px; --alias: var(--Accent); }
+            #target { --Accent: 24px; }
+        </style><body><div id="target" style="--Inline: red"></div><script>
+            const failures = [];
+            const check = (name, condition) => { if (!condition) failures.push(name); };
+            const target = document.getElementById('target');
+            const computed = getComputedStyle(target);
+            check('computed-own', computed.getPropertyValue('--Accent') === '24px');
+            check('computed-case', computed.getPropertyValue('--accent') === '');
+            check('computed-var', computed.getPropertyValue('--alias') === '24px');
+            check('inline-read', target.style.getPropertyValue('--Inline') === 'red');
+            check('inline-case', target.style.getPropertyValue('--inline') === '');
+            target.style.setProperty('--MixedCase', 'blue');
+            check('inline-write', target.style.getPropertyValue('--MixedCase') === 'blue');
+            check('inline-remove', target.style.removeProperty('--MixedCase') === 'blue' &&
+                target.style.getPropertyValue('--MixedCase') === '');
+
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync('#target { --RuleCase: green; }');
+            const ruleStyle = sheet.cssRules[0].style;
+            check('rule-read', ruleStyle.getPropertyValue('--RuleCase') === 'green');
+            check('rule-case', ruleStyle.getPropertyValue('--rulecase') === '');
+            ruleStyle.setProperty('--SecondCase', 'purple');
+            check('rule-write', ruleStyle.getPropertyValue('--SecondCase') === 'purple');
+            document.body.setAttribute('data-result', failures.length ? failures.join(',') : 'pass');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
 fn linked_stylesheets_expose_loaded_same_origin_rules_and_guard_cross_origin_rules() {
     let (dom, outcome) = execute_html_with_stylesheets(
         r#"<head>
@@ -241,4 +277,26 @@ fn separate_document_realms_do_not_retain_adopted_stylesheets() {
     );
     assert!(next_outcome.errors.is_empty(), "{:?}", next_outcome.errors);
     assert_eq!(result(&next).as_deref(), Some("0"));
+}
+
+#[test]
+fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+            const failures = [];
+            const check = (name, condition) => { if (!condition) failures.push(name); };
+            check('declaration-overload', CSS.supports('display', 'grid'));
+            check('condition-overload', CSS.supports('(display: grid) and (opacity: 25%)'));
+            check('custom-property', CSS.supports('--theme-accent', 'anything'));
+            check('unsupported-property', !CSS.supports('box-shadow', '0 0 1px black'));
+            check('unsupported-value', !CSS.supports('position', 'sticky'));
+            let missingArgument = false;
+            try { CSS.supports(); } catch (error) { missingArgument = error instanceof TypeError; }
+            check('argument-conversion', missingArgument);
+            document.body.setAttribute('data-result', failures.length ? failures.join(',') : 'pass');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
 }

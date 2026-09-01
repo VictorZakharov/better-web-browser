@@ -10,8 +10,9 @@ mod layout_sanitize;
 mod reader;
 
 pub use diagnostics::{
-    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, ResourceDiagnostics,
-    SelectorDiagnostics, ShadowRootDiagnostics, StyleDiagnostics,
+    AttributeDiagnostics, CustomPropertyDiagnostics, NodeDiagnostics, NodeIdentityDiagnostics,
+    PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, ShadowRootDiagnostics,
+    StyleDiagnostics,
 };
 
 use super::{AccessibilityUpdate, DocumentId, ProtocolError};
@@ -123,6 +124,7 @@ impl PresentedLayout {
                 .map(|form| (form.node_id, form))
                 .collect(),
             node_bounds: Default::default(),
+            node_paint_order: Default::default(),
         }
     }
 }
@@ -281,6 +283,17 @@ mod tests {
                     selector: "#main".into(),
                     total_matches: 1,
                     matches: vec![NodeDiagnostics {
+                        attribute_count: 2,
+                        attributes: vec![
+                            AttributeDiagnostics {
+                                name: "id".into(),
+                                value: "main".into(),
+                            },
+                            AttributeDiagnostics {
+                                name: "hidden".into(),
+                                value: String::new(),
+                            },
+                        ],
                         shadow_root: Some(ShadowRootDiagnostics {
                             child_count: 1,
                             descendant_count: 3,
@@ -348,6 +361,38 @@ mod tests {
         assert_eq!(decoded.runtime.media, sample().runtime.media);
         assert_eq!(decoded.page_diagnostics, sample().page_diagnostics);
         assert_eq!(decoded.accessibility, sample().accessibility);
+    }
+
+    #[test]
+    fn balanced_opacity_groups_round_trip_through_the_checked_codec() {
+        let mut presentation = sample();
+        let bounds = RectF {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+        };
+        presentation.layout.items.insert(
+            0,
+            DisplayItem::BeginOpacity {
+                bounds,
+                opacity: 0.5,
+            },
+        );
+        presentation
+            .layout
+            .items
+            .push(DisplayItem::EndOpacity { bounds });
+
+        let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+        assert!(matches!(
+            decoded.layout.items.as_slice(),
+            [
+                DisplayItem::BeginOpacity { opacity, .. },
+                DisplayItem::Text { .. },
+                DisplayItem::EndOpacity { .. }
+            ] if (*opacity - 0.5).abs() < f32::EPSILON
+        ));
     }
 
     #[test]
@@ -429,6 +474,18 @@ mod tests {
         presentation.page_diagnostics.selectors.clear();
         presentation.page_diagnostics.error =
             Some("x".repeat(crate::limits::MAX_PAGE_DIAGNOSTIC_BYTES));
+        assert!(matches!(
+            presentation.encode(),
+            Err(ProtocolError::InvalidPayload("page diagnostics"))
+        ));
+    }
+
+    #[test]
+    fn inconsistent_diagnostic_attribute_counts_fail_closed() {
+        let mut presentation = sample();
+        let node = &mut presentation.page_diagnostics.selectors[0].matches[0];
+        node.attributes_truncated = true;
+
         assert!(matches!(
             presentation.encode(),
             Err(ProtocolError::InvalidPayload("page diagnostics"))

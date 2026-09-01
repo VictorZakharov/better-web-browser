@@ -199,7 +199,9 @@
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {
                 pendingMediaRequests.set(requestId, { element: this, resolve, reject });
-                mediaCommand(this, requestId, 'playback', true, effectiveVolumeMillis(state));
+                const volumeMillis = effectiveVolumeMillis(state);
+                if (!prepareMediaSourcePlayback(this, requestId, volumeMillis))
+                    mediaCommand(this, requestId, 'playback', true, volumeMillis);
             });
         }
         pause() {

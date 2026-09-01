@@ -28,6 +28,16 @@ fn browser_and_worker_messages_round_trip() {
         })
         .unwrap();
     browser_writer
+        .send_browser(&BrowserMediaMessage::DecodeTracks {
+            request_id: 13,
+            video_source_id: 5,
+            audio_source_id: 6,
+            frame_id: 7,
+            video_length: 12_000,
+            audio_length: 1_932,
+        })
+        .unwrap();
+    browser_writer
         .send_browser(&BrowserMediaMessage::AcknowledgeFrame {
             source_id: 4,
             frame_id: 6,
@@ -74,6 +84,17 @@ fn browser_and_worker_messages_round_trip() {
             source_id: 4,
             frame_id: 6,
             encoded_length: 13_932,
+        }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::DecodeTracks {
+            request_id: 13,
+            video_source_id: 5,
+            audio_source_id: 6,
+            frame_id: 7,
+            video_length: 12_000,
+            audio_length: 1_932,
         }
     );
     assert_eq!(
@@ -151,6 +172,23 @@ fn browser_and_worker_messages_round_trip() {
             .read_worker()
             .unwrap(),
         WorkerMediaMessage::PlaybackState(state)
+    );
+
+    let mut worker_bytes = Vec::new();
+    MediaFrameWriter::new(&mut worker_bytes, session(9))
+        .send_worker(&WorkerMediaMessage::DecodeFailed {
+            request_id: 13,
+            error: "create video source reader: unsupported byte stream".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(worker_bytes), session(9))
+            .read_worker()
+            .unwrap(),
+        WorkerMediaMessage::DecodeFailed {
+            request_id: 13,
+            error: "create video source reader: unsupported byte stream".into(),
+        }
     );
 
     let decoded = MediaDecodeReport {

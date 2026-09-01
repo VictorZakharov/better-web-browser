@@ -213,14 +213,12 @@ impl DocumentRuntime {
             return Ok("reset");
         }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
-            if !mime_type
-                .split(';')
-                .next()
-                .is_some_and(|value| value.trim().eq_ignore_ascii_case("video/mp4"))
+            if !supports_media_track(mime_type, "video/mp4", "avc1.")
+                || !mime_type.to_ascii_lowercase().contains("mp4a.40.2")
             {
                 let failure = format!("unsupported MediaSource type: {mime_type}");
                 self.record_media_failure(failure.clone());
-                self.pending_media_outcome.diagnostics.push(failure);
+                self.pending_async_outcome.diagnostics.push(failure);
                 return Ok("media-error");
             }
             return match connection.decode_media(bytes).and_then(|decode| {
@@ -229,9 +227,41 @@ impl DocumentRuntime {
                 Ok(()) => Ok("committed"),
                 Err(error) => {
                     self.record_media_failure(error.clone());
-                    self.pending_media_outcome
+                    self.pending_async_outcome
                         .diagnostics
                         .push(format!("MediaSource decode rejected: {error}"));
+                    Ok("media-error")
+                }
+            };
+        }
+        if let ScriptMediaCommand::CommitAdaptive {
+            video_mime_type,
+            video_bytes,
+            audio_mime_type,
+            audio_bytes,
+        } = &action.command
+        {
+            if !supports_media_track(video_mime_type, "video/mp4", "avc1.")
+                || !supports_media_track(audio_mime_type, "audio/mp4", "mp4a.40.2")
+            {
+                let failure = format!(
+                    "unsupported adaptive MediaSource types: {video_mime_type} / {audio_mime_type}"
+                );
+                self.record_media_failure(failure.clone());
+                self.pending_async_outcome.diagnostics.push(failure);
+                return Ok("media-error");
+            }
+            let mime_type = format!("{video_mime_type} + {audio_mime_type}");
+            return match connection
+                .decode_media_tracks(video_bytes, audio_bytes)
+                .and_then(|decode| self.install_media_decode(action.node, decode, mime_type))
+            {
+                Ok(()) => Ok("committed"),
+                Err(error) => {
+                    self.record_media_failure(error.clone());
+                    self.pending_async_outcome
+                        .diagnostics
+                        .push(format!("adaptive MediaSource decode rejected: {error}"));
                     Ok("media-error")
                 }
             };
@@ -296,6 +326,7 @@ impl DocumentRuntime {
             }
             ScriptMediaCommand::Reset => unreachable!(),
             ScriptMediaCommand::Commit { .. } => unreachable!(),
+            ScriptMediaCommand::CommitAdaptive { .. } => unreachable!(),
         }
     }
 
@@ -326,7 +357,7 @@ impl DocumentRuntime {
     ) -> Result<(), String> {
         let response = self.media_state_outcome(request_id, disposition)?;
         super::merge_outcome(
-            &mut self.pending_media_outcome,
+            &mut self.pending_async_outcome,
             response,
             self.page.dom.document.id(),
         );
@@ -415,4 +446,13 @@ impl DocumentRuntime {
 
 fn frame_end(metadata: crate::media_protocol::MediaVideoFrameMetadata) -> u64 {
     (metadata.timestamp_100ns.max(0) as u64).saturating_add(metadata.duration_100ns)
+}
+
+fn supports_media_track(mime_type: &str, essence: &str, codec: &str) -> bool {
+    let mime_type = mime_type.to_ascii_lowercase();
+    mime_type
+        .split(';')
+        .next()
+        .is_some_and(|value| value.trim() == essence)
+        && mime_type.contains(codec)
 }

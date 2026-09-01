@@ -9,4 +9,14 @@ impl ScriptRuntime {
         host.media_environment = environment;
         host.computed_styles = None;
     }
+
+    pub(crate) fn set_layout_viewport(&mut self, width: f32, height: f32) {
+        let mut host = self.host.borrow_mut();
+        host.layout_viewport_width = width;
+        host.layout_viewport_height = height;
+    }
+
+    pub(crate) fn set_quirks_mode(&mut self, quirks_mode: bool) {
+        self.host.borrow_mut().quirks_mode = quirks_mode;
+    }
 }

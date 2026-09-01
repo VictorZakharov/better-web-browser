@@ -22,6 +22,7 @@ pub(super) fn encode_layout(
     writer: &mut WireWriter,
     layout: &PresentedLayout,
 ) -> Result<(), ProtocolError> {
+    validate_opacity_groups(&layout.items)?;
     writer.f32(layout.content_height);
     encode_color(writer, layout.background);
     writer.u32(layout.items.len() as u32);
@@ -48,6 +49,7 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
     for _ in 0..item_count {
         items.push(decode_item(reader)?);
     }
+    validate_opacity_groups(&items)?;
     let form_count = bounded_count(reader.u32()?, MAX_DOM_NODES, "forms")?;
     let mut forms = Vec::with_capacity(form_count);
     for _ in 0..form_count {
@@ -63,6 +65,15 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
 
 fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), ProtocolError> {
     match item {
+        DisplayItem::BeginOpacity { bounds, opacity } => {
+            writer.u8(7);
+            encode_rect(writer, *bounds);
+            writer.f32(*opacity);
+        }
+        DisplayItem::EndOpacity { bounds } => {
+            writer.u8(8);
+            encode_rect(writer, *bounds);
+        }
         DisplayItem::SolidRect {
             rect,
             color,
@@ -155,6 +166,13 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
 
 fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError> {
     match reader.u8()? {
+        7 => Ok(DisplayItem::BeginOpacity {
+            bounds: decode_rect(reader)?,
+            opacity: finite(reader.f32()?, 0.0, 1.0, "opacity")?,
+        }),
+        8 => Ok(DisplayItem::EndOpacity {
+            bounds: decode_rect(reader)?,
+        }),
         1 => Ok(DisplayItem::SolidRect {
             rect: decode_rect(reader)?,
             color: decode_color(reader)?,
@@ -237,6 +255,33 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
         6 => Ok(DisplayItem::Control(Box::new(decode_control(reader)?))),
         _ => Err(ProtocolError::InvalidPayload("display item tag")),
     }
+}
+
+fn validate_opacity_groups(items: &[DisplayItem]) -> Result<(), ProtocolError> {
+    let mut depth = 0_usize;
+    for item in items {
+        match item {
+            DisplayItem::BeginOpacity { opacity, .. } => {
+                if !opacity.is_finite() || !(0.0..=1.0).contains(opacity) {
+                    return Err(ProtocolError::InvalidPayload("opacity"));
+                }
+                depth = depth
+                    .checked_add(1)
+                    .filter(|depth| *depth <= 256)
+                    .ok_or(ProtocolError::InvalidPayload("opacity group depth"))?;
+            }
+            DisplayItem::EndOpacity { .. } => {
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or(ProtocolError::InvalidPayload("opacity group balance"))?;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(ProtocolError::InvalidPayload("opacity group balance"));
+    }
+    Ok(())
 }
 
 fn encode_rect(writer: &mut WireWriter, rect: RectF) {

@@ -36,6 +36,7 @@ impl DocumentRuntime {
             start.viewport.dpi as f32 / 96.0,
             start.prefers_dark_color_scheme,
         ));
+        page.set_layout_viewport(start.viewport.width, start.viewport.height);
         let html_parse_time = html_parse_started.elapsed();
         if let Some(url) = page.immediate_refresh_url() {
             if let Some(pending) = pending_first_paint {
@@ -67,6 +68,8 @@ impl DocumentRuntime {
             executed_async_scripts: HashSet::new(),
             pending_dynamic_script_fetch: None,
             pending_resource_preloads: pending_deferred,
+            resource_render_pending: false,
+            resource_style_refresh_pending: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
             accessibility: RendererAccessibility::default(),
             accessibility_selection: None,
@@ -81,7 +84,9 @@ impl DocumentRuntime {
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
             media: None,
             media_failure: None,
-            pending_media_outcome: ScriptOutcome::default(),
+            pending_async_outcome: ScriptOutcome::default(),
+            pending_resource_events: Vec::new(),
+            geometry_observers_pending: false,
         };
 
         let resource_started = Instant::now();
@@ -114,6 +119,19 @@ impl DocumentRuntime {
             )
             .map_err(|error| error.to_string())?;
         runtime.script_runtime = script_runtime;
+        runtime.flush_pending_resource_events()?;
+        merge_outcome(
+            &mut outcome,
+            std::mem::take(&mut runtime.pending_async_outcome),
+            runtime.page.dom.document.id(),
+        );
+        if let Some(script_runtime) = runtime.script_runtime.as_mut() {
+            merge_outcome(
+                &mut outcome,
+                script_runtime.finish_document_lifecycle(),
+                runtime.page.dom.document.id(),
+            );
+        }
         runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
@@ -121,7 +139,7 @@ impl DocumentRuntime {
         let script_time = script_started.elapsed();
 
         let style_started = Instant::now();
-        let style = runtime
+        let mut style = runtime
             .page
             .refresh_resources_for_viewport(runtime.viewport.style_width, runtime.viewport.height);
         runtime.start_presentational_preloads(connection)?;
@@ -129,6 +147,35 @@ impl DocumentRuntime {
         runtime.text.register_web_fonts(&runtime.page.fonts);
         let layout_started = Instant::now();
         runtime.rebuild_layout();
+        // The initial realm is created before the first layout checkpoint. Publish the actual
+        // viewport after that checkpoint just as the resize path does, so scripts that installed
+        // responsive layout handlers during startup can replace provisional zero-size geometry.
+        let mut viewport_outcome = runtime
+            .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
+                width: runtime.viewport.style_width,
+                height: runtime.viewport.height,
+                layout_width: runtime.viewport.width,
+                layout_height: runtime.viewport.height,
+                scale: runtime.viewport.dpi as f32 / 96.0,
+            })?
+            .outcome;
+        let viewport_render_requested = viewport_outcome.render_requested;
+        runtime.admit_user_input_outcome(&mut viewport_outcome, connection)?;
+        if viewport_render_requested {
+            style = runtime
+                .page
+                .refresh_resources_after_invalidation_for_viewport(
+                    runtime.viewport.style_width,
+                    runtime.viewport.height,
+                    &viewport_outcome.invalidation,
+                );
+            runtime.rebuild_layout();
+        }
+        merge_outcome(
+            &mut outcome,
+            viewport_outcome,
+            runtime.page.dom.document.id(),
+        );
         let layout_time = layout_started.elapsed();
         let report = runtime.text.finish_load_report(PageLoadReport {
             parse_micros: micros(parse_started.elapsed()),

@@ -1,5 +1,6 @@
 //! Renderer-side resource installation and script-network completions.
 
+mod events;
 mod streaming;
 
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
@@ -17,6 +18,11 @@ const MAX_RESOURCE_DIAGNOSTIC_BYTES: usize = 512;
 pub(super) struct PendingResourceFetch {
     batch: PendingFetchBatch,
     by_request: HashMap<u64, PageResource>,
+}
+
+pub(super) struct ResourceChanges {
+    pub(super) render: bool,
+    pub(super) style: bool,
 }
 
 impl PendingResourceFetch {
@@ -107,36 +113,37 @@ impl DocumentRuntime {
     pub(in crate::renderer_process::child) fn finish_completed_resource_preloads(
         &mut self,
         connection: &mut ChildConnection,
-    ) -> Result<Option<crate::renderer_protocol::RendererPresentation>, String> {
-        let Some(changed) = self.finish_ready_resource_preloads(connection)? else {
+    ) -> Result<Option<crate::renderer_protocol::RendererRuntimeUpdate>, String> {
+        let Some(changes) = self.finish_ready_resource_preloads(connection)? else {
             return Ok(None);
         };
-        if !changed {
+        if !changes.render {
             return Ok(None);
         }
-        let mut outcome = std::mem::take(&mut self.pending_media_outcome);
-        self.apply_media_actions(&mut outcome, connection)?;
-        connection.send_state_mutations(self.id, &mut outcome)?;
-        self.text.register_web_fonts(&self.page.fonts);
-        let style = self
-            .page
-            .refresh_resources_for_viewport(self.viewport.style_width, self.viewport.height);
-        self.start_presentational_preloads(connection)?;
-        let layout_started = std::time::Instant::now();
-        self.rebuild_layout();
-        let load = self
-            .text
-            .finish_load_report(crate::renderer_protocol::PageLoadReport {
-                layout_micros: super::micros(layout_started.elapsed()),
-                ..crate::renderer_protocol::PageLoadReport::default()
-            });
-        self.presentation(outcome, style, load).map(Some)
+        // A network burst commonly completes several images at once. Rendering from this
+        // response-end task serializes one complete style/layout/presentation pass per image and
+        // prevents the renderer from reading the remaining response messages. Schedule an
+        // immediate rendering checkpoint instead; messages already in the pipe are then handled
+        // first and all completed resources share one layout.
+        self.resource_render_pending = true;
+        self.resource_style_refresh_pending |= changes.style;
+        Ok(Some(crate::renderer_protocol::RendererRuntimeUpdate {
+            document: self.id,
+            clock_advanced: false,
+            runtime: super::runtime_report(
+                ScriptOutcome::default(),
+                self.script_runtime.is_some(),
+                self.media_runtime_report(),
+            ),
+            load: crate::renderer_protocol::PageLoadReport::default(),
+            next_timer_micros: Some(0),
+        }))
     }
 
     pub(super) fn finish_ready_resource_preloads(
         &mut self,
         connection: &mut ChildConnection,
-    ) -> Result<Option<bool>, String> {
+    ) -> Result<Option<ResourceChanges>, String> {
         let Some(mut pending) = self.pending_resource_preloads.take() else {
             return Ok(None);
         };
@@ -145,12 +152,21 @@ impl DocumentRuntime {
             self.pending_resource_preloads = Some(pending);
             return Ok(None);
         }
-        let changed =
+        let style = responses.iter().any(|response| {
+            pending
+                .by_request
+                .get(&response.head.request_id)
+                .is_some_and(|resource| matches!(resource, PageResource::Stylesheet { .. }))
+        });
+        let render =
             self.install_resource_responses(connection, responses, &mut pending.by_request, true)?;
         if !pending.batch.is_empty() {
             self.pending_resource_preloads = Some(pending);
         }
-        Ok(Some(changed))
+        Ok(Some(ResourceChanges {
+            render,
+            style: render && style,
+        }))
     }
 
     pub(super) fn finish_resource_preloads(
@@ -184,6 +200,7 @@ impl DocumentRuntime {
                 Ok(response) => response,
                 Err(error) => {
                     self.record_resource_diagnostic(format!("{label}: {error}"));
+                    retained |= self.dispatch_resource_event(&resource, "error")?;
                     continue;
                 }
             };
@@ -192,12 +209,14 @@ impl DocumentRuntime {
                     "{label}: server returned HTTP {}",
                     response.status
                 ));
+                retained |= self.dispatch_resource_event(&resource, "error")?;
                 continue;
             }
             if let PageResource::Script { kind, .. } = &resource
                 && let Err(error) = validate_script_response(&response, *kind)
             {
                 self.record_resource_diagnostic(format!("{label}: {error}"));
+                retained |= self.dispatch_resource_event(&resource, "error")?;
                 continue;
             }
             let size = response.body.len() as u64;
@@ -206,8 +225,10 @@ impl DocumentRuntime {
                     "{label}: skipped {size} bytes because only {} page-resource bytes remain",
                     self.resource_budget
                 ));
+                retained |= self.dispatch_resource_event(&resource, "error")?;
                 continue;
             }
+            let event_resource = resource.clone();
             let content_type = response.content_type().map(str::to_string);
             let bytes = response.body.into_bytes();
             let installed = match resource {
@@ -255,8 +276,12 @@ impl DocumentRuntime {
                 Ok(()) => {
                     retained = true;
                     self.resource_budget = self.resource_budget.saturating_sub(size);
+                    retained |= self.dispatch_resource_event(&event_resource, "load")?;
                 }
-                Err(error) => self.record_resource_diagnostic(format!("{label}: {error}")),
+                Err(error) => {
+                    self.record_resource_diagnostic(format!("{label}: {error}"));
+                    retained |= self.dispatch_resource_event(&event_resource, "error")?;
+                }
             }
         }
         Ok(retained)

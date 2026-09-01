@@ -188,6 +188,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                     match name.as_str() {
                         "link" | "any-link" => compound.requires_link = true,
                         "first-child" => compound.requires_first_child = true,
+                        "first-of-type" => compound.requires_first_of_type = true,
+                        "last-child" => compound.requires_last_child = true,
                         "root" => compound.requires_root = true,
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
@@ -264,6 +266,8 @@ pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
         Some(SimpleSelector::Id(id.to_string()))
     } else if let Some(class) = input.strip_prefix('.') {
         Some(SimpleSelector::Class(class.to_string()))
+    } else if input.starts_with('[') && input.ends_with(']') {
+        parse_attribute_selector(&input[1..input.len() - 1]).map(SimpleSelector::Attribute)
     } else if !input.is_empty() {
         Some(SimpleSelector::Tag(input.to_ascii_lowercase()))
     } else {
@@ -286,6 +290,10 @@ pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specific
             ..Specificity::default()
         },
         SimpleSelector::Class(_) => Specificity {
+            classes: 1,
+            ..Specificity::default()
+        },
+        SimpleSelector::Attribute(_) => Specificity {
             classes: 1,
             ..Specificity::default()
         },

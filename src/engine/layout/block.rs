@@ -1,8 +1,9 @@
 mod positioned;
 mod replaced;
+mod sizing;
 
 use super::*;
-
+use sizing::resolve_used_border_box_width;
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_block(
         &mut self,
@@ -10,50 +11,75 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_x: f32,
         y: f32,
         containing_width: f32,
+        containing_height: Option<f32>,
+        used_inline_size: Option<UsedInlineSize>,
+    ) -> BlockMetrics {
+        self.layout_block_with_content_height(
+            node,
+            containing_x,
+            y,
+            containing_width,
+            containing_height,
+            used_inline_size,
+            None,
+        )
+    }
+
+    pub(super) fn layout_block_with_content_height(
+        &mut self,
+        node: &NodeRef,
+        containing_x: f32,
+        y: f32,
+        containing_width: f32,
+        containing_height: Option<f32>,
+        used_inline_size: Option<UsedInlineSize>,
+        used_content_height: Option<f32>,
     ) -> BlockMetrics {
         let style = self.styles.get(node).clone();
         if style.display == Display::None || !style.visibility {
             return BlockMetrics { bottom: y };
         }
+        let item_start = self.output.items.len();
+        self.output.node_paint_order.push(node_id(node));
         let block_control = input_control_data(node);
         let block_image = self.block_image(node);
 
-        let margins = style.margin.resolve(containing_width, style.font_size);
+        let percentage_basis = used_inline_size
+            .map(|size| size.percentage_basis)
+            .unwrap_or(containing_width);
+        let margins = style.margin.resolve(percentage_basis, style.font_size);
         let borders = style
             .border_width
-            .resolve(containing_width, style.font_size);
-        let padding = style.padding.resolve(containing_width, style.font_size);
+            .resolve(percentage_basis, style.font_size);
+        let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
         let available_width = (containing_width - margins.horizontal()).max(0.0);
-        let mut border_box_width = resolve_outer_size(
-            style.width,
-            containing_width,
-            style.font_size,
-            horizontal_insets,
-            style.box_sizing,
-        )
-        .unwrap_or_else(|| {
-            block_image.as_ref().map_or(available_width, |image| {
-                image.outer_width(node, &style, horizontal_insets)
-            })
+        let automatic_width = block_image.as_ref().map_or(available_width, |image| {
+            image.outer_width(node, &style, percentage_basis, horizontal_insets)
         });
-        if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+        let mut border_box_width = resolve_used_border_box_width(
+            &style,
             containing_width,
-            style.font_size,
             horizontal_insets,
-            style.box_sizing,
-        ) {
-            border_box_width = border_box_width.min(maximum);
-        }
-        if let Some(minimum) = resolve_outer_size(
-            style.min_width,
-            containing_width,
-            style.font_size,
-            horizontal_insets,
-            style.box_sizing,
-        ) {
-            border_box_width = border_box_width.max(minimum);
+            margins,
+            automatic_width,
+            used_inline_size,
+        );
+        if style.width == Length::Auto
+            && matches!(style.position, Position::Absolute | Position::Fixed)
+        {
+            let positioning_width = if style.position == Position::Fixed {
+                self.viewport.width
+            } else {
+                containing_width
+            };
+            if let (Some(left), Some(right)) = (
+                style.left.resolve(positioning_width, style.font_size),
+                style.right.resolve(positioning_width, style.font_size),
+            ) {
+                border_box_width =
+                    (positioning_width - left - right - margins.horizontal()).max(0.0);
+            }
         }
         border_box_width = border_box_width.max(0.0);
 
@@ -62,6 +88,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             containing_x,
             y,
             containing_width,
+            containing_height,
             margins,
             border_box_width,
         );
@@ -71,15 +98,38 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal()).max(0.0);
         let vertical_insets = borders.vertical() + padding.vertical();
-        let specified_height = resolve_content_height(
-            style.height,
-            self.viewport,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        );
+        let percentage_height_basis = if style.position == Position::Fixed {
+            Some(self.viewport.height)
+        } else {
+            containing_height
+        };
+        let mut specified_height = used_content_height.or_else(|| {
+            resolve_content_height(
+                style.height,
+                percentage_height_basis,
+                self.viewport,
+                style.font_size,
+                vertical_insets,
+                style.box_sizing,
+            )
+        });
+        if specified_height.is_none()
+            && matches!(style.position, Position::Absolute | Position::Fixed)
+            && let Some(positioning_height) = percentage_height_basis
+            && let (Some(top), Some(bottom)) = (
+                style.top.resolve(positioning_height, style.font_size),
+                style.bottom.resolve(positioning_height, style.font_size),
+            )
+        {
+            // CSS 2.1 section 10.6.4: an absolutely positioned non-replaced box with
+            // auto height and definite top/bottom fills the remaining containing block.
+            specified_height = Some(
+                (positioning_height - top - bottom - margins.vertical() - vertical_insets).max(0.0),
+            );
+        }
         let minimum_height = resolve_content_height(
             style.min_height,
+            percentage_height_basis,
             self.viewport,
             style.font_size,
             vertical_insets,
@@ -88,14 +138,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         .unwrap_or(0.0);
         let maximum_height = resolve_content_height(
             style.max_height,
+            percentage_height_basis,
             self.viewport,
             style.font_size,
             vertical_insets,
             style.box_sizing,
         );
-        let block_image_height = block_image
-            .as_ref()
-            .map(|image| image.content_height(node, &style, content_width));
+        let block_image_height = block_image.as_ref().map(|image| {
+            image.content_height(node, &style, content_width, percentage_height_basis)
+        });
         let background_index = if style.background_color.alpha > 0 && style.mask_image.is_none() {
             let index = self.output.items.len();
             self.output.items.push(DisplayItem::SolidRect {
@@ -143,6 +194,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
             index
         });
+        // Negative positioned levels paint after this background and before in-flow descendants.
+        let in_flow_paint_start = self.output.items.len();
+        let in_flow_node_start = self.output.node_paint_order.len();
 
         let collapsed = style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
@@ -153,16 +207,38 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             content_y + height
         } else {
             match style.display {
-                Display::Flex | Display::InlineFlex => {
-                    self.layout_flex(node, content_x, content_y, content_width, &style)
-                }
-                Display::Grid => {
-                    self.layout_grid(node, content_x, content_y, content_width, &style)
-                }
-                Display::Table => {
-                    self.layout_table(node, content_x, content_y, content_width, &style)
-                }
-                _ => self.layout_block_children(node, content_x, content_y, content_width, &style),
+                Display::Flex | Display::InlineFlex => self.layout_flex(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                Display::Grid => self.layout_grid(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                Display::Table => self.layout_table(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                _ => self.layout_block_children(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
             }
         };
         let natural_content_height = (content_bottom - content_y).max(0.0);
@@ -181,6 +257,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             height: border_box_height,
         };
         self.output.node_bounds.insert(node_id(node), rect);
+        let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
+            RectF {
+                x: x + borders.left,
+                y: border_y + borders.top,
+                width: (border_box_width - borders.horizontal()).max(0.0),
+                height: padding.top + content_height + padding.bottom,
+            }
+        } else {
+            // A static box does not establish an absolute-position containing block. Preserve
+            // the context selected by its nearest positioned ancestor (or the initial block).
+            RectF {
+                x: containing_x,
+                y,
+                width: containing_width,
+                height: containing_height.unwrap_or(self.viewport.height),
+            }
+        };
+        self.layout_positioned_children(
+            node,
+            positioning_box,
+            in_flow_paint_start,
+            in_flow_node_start,
+        );
         let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
         if let Some(index) = background_index
             && let DisplayItem::SolidRect {
@@ -267,6 +366,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
                 })));
         }
+        self.apply_transform(node.id(), &style, rect, item_start);
+        self.wrap_opacity(item_start, style.opacity);
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
         BlockMetrics {
@@ -284,9 +385,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         mut y: f32,
         width: f32,
+        containing_height: Option<f32>,
         style: &ComputedStyle,
     ) -> f32 {
-        let positioning_y = y;
         let mut atoms = Vec::new();
         let mut pending_space = false;
         let mut left_float_width = 0.0_f32;
@@ -311,10 +412,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             let child_style = self.styles.get(child);
             if matches!(child_style.position, Position::Absolute | Position::Fixed) {
-                // CSS Display blockifies out-of-flow positioned boxes. In particular, an
-                // absolutely positioned inline-block button must form an independent box
-                // instead of becoming an inline atom in its containing flow.
-                self.layout_block(child, x, positioning_y, width);
+                // Defer until the completed padding box can resolve percentage geometry.
+                continue;
             } else if is_block_level(child_style.display) && child_style.float != Float::None {
                 let remaining_width = (width - left_float_width - right_float_width).max(0.0);
                 let float_width = self
@@ -325,7 +424,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 } else {
                     x + left_float_width
                 };
-                let metrics = self.layout_block(child, float_x, y, float_width);
+                let metrics = self.layout_block(
+                    child,
+                    float_x,
+                    y,
+                    float_width,
+                    containing_height,
+                    Some(UsedInlineSize {
+                        outer: float_width,
+                        percentage_basis: remaining_width,
+                    }),
+                );
                 float_bottom = float_bottom.max(metrics.bottom);
                 if child_style.float == Float::Right {
                     right_float_width += float_width;
@@ -351,10 +460,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
                 let child_width = (width - left_float_width - right_float_width).max(0.0);
                 y = self
-                    .layout_block(child, x + left_float_width, y, child_width)
+                    .layout_block(
+                        child,
+                        x + left_float_width,
+                        y,
+                        child_width,
+                        containing_height,
+                        None,
+                    )
                     .bottom;
             } else {
-                self.collect_inline(child, None, &mut atoms, &mut pending_space, true);
+                self.collect_inline(
+                    child,
+                    None,
+                    &mut atoms,
+                    &mut pending_space,
+                    true,
+                    InlineContainingBlock {
+                        width: (width - left_float_width - right_float_width).max(0.0),
+                        height: containing_height,
+                    },
+                );
             }
         }
         if !atoms.is_empty() {

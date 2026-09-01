@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 #[derive(Default)]
 pub(super) struct PendingInvalidation {
-    root: Option<NodeRef>,
+    roots: Vec<NodeRef>,
     impact: InvalidationImpact,
     rebuild_style_rules: bool,
     removed_nodes: BTreeSet<NodeId>,
@@ -35,15 +35,19 @@ impl PendingInvalidation {
             MutationKind::ChildList => target.clone(),
             MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
         };
-        self.extend(&root);
+        self.extend(document, &root);
     }
 
-    pub(super) fn extend(&mut self, target: &NodeRef) {
-        self.root = Some(
-            self.root
-                .as_ref()
-                .map_or_else(|| target.clone(), |root| common_ancestor(root, target)),
-        );
+    pub(super) fn extend(&mut self, document: &NodeRef, target: &NodeRef) {
+        if self.roots.iter().any(|root| is_descendant_of(target, root)) {
+            return;
+        }
+        self.roots.retain(|root| !is_descendant_of(root, target));
+        self.roots.push(target.clone());
+        if self.roots.len() > crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
+            self.roots.clear();
+            self.roots.push(document.clone());
+        }
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
@@ -53,7 +57,7 @@ impl PendingInvalidation {
 
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
         RenderInvalidation {
-            root: self.root.as_ref().map(|root| root.id()),
+            roots: self.roots.iter().map(|root| root.id()).collect(),
             impact: self.impact,
             mutation_count,
             rebuild_style_rules: self.rebuild_style_rules,
@@ -75,14 +79,9 @@ fn is_in_style_element(node: &NodeRef) -> bool {
     .any(|current| current.tag_name() == Some("style"))
 }
 
-fn common_ancestor(left: &NodeRef, right: &NodeRef) -> NodeRef {
-    let left_ancestors =
-        std::iter::successors(Some(left.clone()), |node| node.shadow_including_parent())
-            .map(|node| (node.id(), node))
-            .collect::<HashMap<_, _>>();
-    std::iter::successors(Some(right.clone()), |node| node.shadow_including_parent())
-        .find_map(|node| left_ancestors.get(&node.id()).cloned())
-        .unwrap_or_else(|| left.clone())
+fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
+    std::iter::successors(Some(node.clone()), |node| node.shadow_including_parent())
+        .any(|node| node.id() == ancestor.id())
 }
 
 #[cfg(test)]
@@ -108,7 +107,33 @@ mod tests {
         );
 
         let invalidation = pending.snapshot(2);
-        assert_eq!(invalidation.root, Some(main.id()));
+        assert_eq!(invalidation.roots, vec![main.id()]);
         assert_eq!(invalidation.mutation_count, 2);
+    }
+
+    #[test]
+    fn retains_disjoint_component_roots() {
+        let document = dom::parse("<main><section><p></p></section><aside><p></p></aside></main>");
+        let section = document.elements_named("section").next().unwrap();
+        let aside = document.elements_named("aside").next().unwrap();
+        let left = section.children.borrow()[0].clone();
+        let right = aside.children.borrow()[0].clone();
+        let mut pending = PendingInvalidation::default();
+        pending.record(
+            &document.document,
+            Some(&left),
+            MutationKind::Attribute("class"),
+        );
+        pending.record(
+            &document.document,
+            Some(&right),
+            MutationKind::Attribute("class"),
+        );
+
+        let mut roots = pending.snapshot(2).roots;
+        roots.sort_unstable();
+        let mut expected = vec![section.id(), aside.id()];
+        expected.sort_unstable();
+        assert_eq!(roots, expected);
     }
 }

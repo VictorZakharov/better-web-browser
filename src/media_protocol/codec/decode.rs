@@ -1,11 +1,11 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
-    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SEEK_PLAYBACK,
-    BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY,
-    WORKER_DECODED, WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY,
-    WORKER_PLAYBACK_STATE, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
-    WORKER_SHUTDOWN_COMPLETE,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS, BROWSER_HELLO,
+    BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
+    MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
+    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
+    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
     BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaCodecFamily,
@@ -41,6 +41,30 @@ pub(super) fn browser(
                 source_id,
                 frame_id,
                 encoded_length,
+            }
+        }
+        BROWSER_DECODE_TRACKS => {
+            let request_id = cursor.nonzero_u64("decode request")?;
+            let video_source_id = cursor.nonzero_u64("video source")?;
+            let audio_source_id = cursor.nonzero_u64("audio source")?;
+            let frame_id = cursor.nonzero_u64("frame generation")?;
+            let video_length = cursor.nonzero_u64("video length")?;
+            let audio_length = cursor.nonzero_u64("audio length")?;
+            let encoded_length = video_length
+                .checked_add(audio_length)
+                .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
+            if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length > MediaLimits::default().max_encoded_queue_bytes
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive source"));
+            }
+            BrowserMediaMessage::DecodeTracks {
+                request_id,
+                video_source_id,
+                audio_source_id,
+                frame_id,
+                video_length,
+                audio_length,
             }
         }
         BROWSER_ACKNOWLEDGE_FRAME => BrowserMediaMessage::AcknowledgeFrame {
@@ -143,6 +167,10 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 frame,
             }
         }
+        WORKER_DECODE_FAILED => WorkerMediaMessage::DecodeFailed {
+            request_id: cursor.nonzero_u64("decode request")?,
+            error: cursor.failure_string()?,
+        },
         WORKER_FRAME_ACKNOWLEDGED => WorkerMediaMessage::FrameAcknowledged {
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,

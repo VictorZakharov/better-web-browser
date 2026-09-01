@@ -152,6 +152,32 @@ fn retained_fetch_completion_resolves_response_body_and_headers() {
 }
 
 #[test]
+fn detached_image_constructor_loads_through_the_fetch_pipeline() {
+    let (dom, mut runtime, id) = pending_runtime(
+        r#"const image = new Image(320, 180);
+        image.onload = async () => {
+            await image.decode();
+            document.querySelector('div').textContent = [
+                image instanceof Image,
+                image instanceof HTMLImageElement,
+                image.complete,
+                image.getAttribute('width'),
+                image.getAttribute('height')
+            ].join('|');
+        };
+        image.onerror = () => document.querySelector('div').textContent = 'error';
+        image.src = '/thumbnail.jpg';"#,
+    );
+    let outcome = runtime.complete_fetch_with_loader(id, Ok(test_response(b"image")), None);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "true|true|true|320|180"
+    );
+}
+
+#[test]
 fn fetch_resolves_at_headers_and_streams_body_chunks() {
     let (dom, mut runtime, id) = pending_runtime(
         r#"fetch('/data').then(async response => {

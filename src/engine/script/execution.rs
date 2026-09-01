@@ -40,6 +40,7 @@ pub(super) fn execute_inner(
     total_bytes: &mut usize,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     defer_dynamic_scripts: bool,
+    request_document_lifecycle: bool,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
     if let Err(error) = context.initialize_iframe_realm(IFRAME_REALM_BOOTSTRAP) {
@@ -122,7 +123,7 @@ pub(super) fn execute_inner(
             .errors
             .push(format!("clear current script: {error}"));
     }
-    if finish_lifecycle {
+    if request_document_lifecycle && finish_lifecycle {
         super::module_lifecycle::request_document_lifecycle(host);
     }
     if let Err(error) = context.run_jobs() {

@@ -70,11 +70,107 @@ impl Playback {
         let bytes = data_reader
             .read_source(source, encoded_length)
             .map_err(|error| format!("read encoded media source: {error}"))?;
+        self.last_source_id = source_id;
+        self.last_frame_id = frame_id;
+        let decoded = backend::decode(&bytes, limits)?;
+        self.install_decoded(
+            request_id,
+            source_id,
+            source_id,
+            frame_id,
+            bytes,
+            decoded,
+            frame_writer,
+            writer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn decode_tracks(
+        &mut self,
+        request_id: u64,
+        video_source_id: u64,
+        audio_source_id: u64,
+        frame_id: u64,
+        video_length: u64,
+        audio_length: u64,
+        data_reader: &mut MediaDataReader<File>,
+        frame_writer: &mut DecodedFrameWriter<File>,
+        writer: &mut MediaFrameWriter<File>,
+        limits: MediaLimits,
+    ) -> Result<(), String> {
+        if self.pending.is_some() {
+            return Err("media worker received a decode before acknowledging its frame".into());
+        }
+        let expected_video_id = self
+            .last_source_id
+            .checked_add(1)
+            .ok_or_else(|| "media source generation exhausted".to_string())?;
+        let expected_audio_id = expected_video_id
+            .checked_add(1)
+            .ok_or_else(|| "media source generation exhausted".to_string())?;
+        if video_source_id != expected_video_id || audio_source_id != expected_audio_id {
+            return Err(format!(
+                "stale adaptive source generation {video_source_id}/{audio_source_id}; expected {expected_video_id}/{expected_audio_id}"
+            ));
+        }
+        let expected_frame_id = self
+            .last_frame_id
+            .checked_add(1)
+            .ok_or_else(|| "media frame generation exhausted".to_string())?;
+        if frame_id != expected_frame_id {
+            return Err(format!(
+                "stale media frame generation {frame_id}; expected {expected_frame_id}"
+            ));
+        }
+        let encoded_length = video_length
+            .checked_add(audio_length)
+            .ok_or_else(|| "adaptive media length overflowed".to_string())?;
+        if encoded_length > limits.max_encoded_queue_bytes {
+            return Err("declared adaptive source exceeds resident worker limits".into());
+        }
+        let video_source =
+            MediaSourceId::new(video_source_id).map_err(|error| error.to_string())?;
+        let audio_source =
+            MediaSourceId::new(audio_source_id).map_err(|error| error.to_string())?;
+        let video_bytes = data_reader
+            .read_source(video_source, video_length)
+            .map_err(|error| format!("read encoded video source: {error}"))?;
+        let audio_bytes = data_reader
+            .read_source(audio_source, audio_length)
+            .map_err(|error| format!("read encoded audio source: {error}"))?;
+        self.last_source_id = audio_source_id;
+        self.last_frame_id = frame_id;
+        let decoded = backend::decode_tracks(&video_bytes, &audio_bytes, limits)?;
+        self.install_decoded(
+            request_id,
+            video_source_id,
+            audio_source_id,
+            frame_id,
+            audio_bytes,
+            decoded,
+            frame_writer,
+            writer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn install_decoded(
+        &mut self,
+        request_id: u64,
+        source_id: u64,
+        last_transfer_source_id: u64,
+        frame_id: u64,
+        audio_bytes: Vec<u8>,
+        decoded: backend::DecodedMedia,
+        frame_writer: &mut DecodedFrameWriter<File>,
+        writer: &mut MediaFrameWriter<File>,
+    ) -> Result<(), String> {
         let backend::DecodedMedia {
             report,
             mut playback,
-        } = backend::decode(&bytes, limits)?;
-        let audio = AudioPlayback::spawn(source_id, bytes, report, self.test_mode)?;
+        } = decoded;
+        let audio = AudioPlayback::spawn(source_id, audio_bytes, report, self.test_mode)?;
         let video = playback
             .next_frame()?
             .ok_or_else(|| "decoded video stream did not produce a frame".to_string())?;
@@ -90,7 +186,7 @@ impl Playback {
             data_length: video.bytes.len() as u64,
         };
         validate_and_write(frame_writer, frame, &video.bytes)?;
-        self.last_source_id = source_id;
+        self.last_source_id = last_transfer_source_id;
         self.last_frame_id = frame_id;
         self.pending = Some((frame, video.bytes));
         self.active = Some((source_id, playback));

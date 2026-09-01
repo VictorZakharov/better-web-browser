@@ -1,6 +1,7 @@
 (() => {
     'use strict';
     const observers = new Set();
+    let hasLayoutSnapshot = false;
     const emptyRect = () => ({
         x: 0, y: 0, top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0,
         toJSON() { return { x: this.x, y: this.y, top: this.top, right: this.right,
@@ -65,7 +66,20 @@
     };
 
     class IntersectionObserverEntry {
-        constructor(init) { Object.assign(this, init); }
+        constructor(init) {
+            for (const name of [
+                'time', 'rootBounds', 'boundingClientRect', 'intersectionRect', 'isIntersecting',
+                'intersectionRatio', 'target', 'isVisible'
+            ]) this['_' + name] = init[name];
+        }
+        get time() { return this._time; }
+        get rootBounds() { return this._rootBounds; }
+        get boundingClientRect() { return this._boundingClientRect; }
+        get intersectionRect() { return this._intersectionRect; }
+        get isIntersecting() { return this._isIntersecting; }
+        get intersectionRatio() { return this._intersectionRatio; }
+        get target() { return this._target; }
+        get isVisible() { return this._isVisible; }
     }
     class IntersectionObserver {
         constructor(callback, options = {}) {
@@ -89,47 +103,77 @@
             this.trackVisibility = !!options.trackVisibility;
             this.delay = Math.max(this.trackVisibility ? 100 : 0, Number(options.delay) || 0);
             this._targets = new Set();
+            this._previous = new Map();
             this._records = [];
             this._scheduled = false;
             observers.add(this);
         }
+        _deliver() {
+            this._scheduled = false;
+            if (!this._targets.size) return;
+            const root = expandRect(this.root && this.root !== document
+                ? normalizeRect(this.root.getBoundingClientRect()) : viewportRect(), this._rootMargin);
+            for (const target of this._targets) {
+                const boundingClientRect = normalizeRect(target.getBoundingClientRect());
+                const intersection = intersect(boundingClientRect, root);
+                const targetArea = boundingClientRect.width * boundingClientRect.height;
+                const intersectionArea = intersection.rect.width * intersection.rect.height;
+                const intersectionRatio = targetArea ? intersectionArea / targetArea
+                    : intersection.isIntersecting ? 1 : 0;
+                const thresholdIndex = this.thresholds.filter(value => value <= intersectionRatio).length;
+                const previous = this._previous.get(target);
+                this._previous.set(target, {
+                    isIntersecting: intersection.isIntersecting,
+                    thresholdIndex
+                });
+                if (previous && previous.isIntersecting === intersection.isIntersecting &&
+                    previous.thresholdIndex === thresholdIndex) continue;
+                this._records.push(new IntersectionObserverEntry({
+                    time: performance.now(), target, rootBounds: root, boundingClientRect,
+                    intersectionRect: intersection.rect,
+                    isIntersecting: intersection.isIntersecting, intersectionRatio,
+                    isVisible: this.trackVisibility ? intersection.isIntersecting : false
+                }));
+            }
+            const records = this.takeRecords();
+            if (records.length) this.callback(records, this);
+        }
         _queue() {
             if (this._scheduled || !this._targets.size) return;
             this._scheduled = true;
-            setTimeout(() => {
-                this._scheduled = false;
-                const root = expandRect(this.root && this.root !== document
-                    ? normalizeRect(this.root.getBoundingClientRect()) : viewportRect(), this._rootMargin);
-                for (const target of this._targets) {
-                    const boundingClientRect = normalizeRect(target.getBoundingClientRect());
-                    const intersection = intersect(boundingClientRect, root);
-                    const targetArea = boundingClientRect.width * boundingClientRect.height;
-                    const intersectionArea = intersection.rect.width * intersection.rect.height;
-                    this._records.push(new IntersectionObserverEntry({
-                        time: performance.now(), target, rootBounds: root, boundingClientRect,
-                        intersectionRect: intersection.rect,
-                        isIntersecting: intersection.isIntersecting,
-                        intersectionRatio: targetArea ? intersectionArea / targetArea
-                            : intersection.isIntersecting ? 1 : 0,
-                        isVisible: this.trackVisibility ? intersection.isIntersecting : false
-                    }));
-                }
-                const records = this.takeRecords();
-                if (records.length) this.callback(records, this);
-            }, this.delay);
+            setTimeout(() => this._deliver(), this.delay);
         }
         observe(target) {
             if (!(target instanceof Element)) throw new TypeError('IntersectionObserver target must be an Element');
             if (this._targets.has(target)) return;
             this._targets.add(target);
-            this._queue();
+            // Intersection observations belong to the rendering update. Initial scripts run
+            // before Breeze has a layout snapshot, so delivering here would expose a synthetic
+            // zero rectangle and can permanently suppress lazy content. The renderer notifies
+            // us after its first layout; observers registered after that point may queue now.
+            if (hasLayoutSnapshot) this._queue();
         }
-        unobserve(target) { this._targets.delete(target); }
-        disconnect() { this._targets.clear(); this._records.length = 0; observers.delete(this); }
+        unobserve(target) { this._targets.delete(target); this._previous.delete(target); }
+        disconnect() {
+            this._targets.clear();
+            this._previous.clear();
+            this._records.length = 0;
+            observers.delete(this);
+        }
         takeRecords() { return this._records.splice(0); }
     }
-    const updateObservers = () => { for (const observer of observers) observer._queue(); };
+    const updateObservers = () => {
+        hasLayoutSnapshot = true;
+        // The embedding invokes this as a dedicated rendering-observer task after publishing a
+        // fresh layout snapshot. Do not enqueue through the page timer queue: a timer backlog may
+        // not delay rendering-observer notifications.
+        for (const observer of observers) observer._deliver();
+    };
     globalThis.addEventListener('resize', updateObservers);
     globalThis.addEventListener('scroll', updateObservers);
-    Object.assign(globalThis, { IntersectionObserver, IntersectionObserverEntry });
+    Object.assign(globalThis, {
+        IntersectionObserver,
+        IntersectionObserverEntry,
+        __notifyIntersectionObservers: updateObservers
+    });
 })();

@@ -3,11 +3,12 @@
 use crate::engine::{DisplayItem, LayoutOutput, Page};
 use crate::limits::{MAX_PAGE_DIAGNOSTIC_BYTES, bounded_utf8_prefix};
 use crate::renderer_protocol::{
-    NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, ResourceDiagnostics,
-    SelectorDiagnostics, StyleDiagnostics,
+    AttributeDiagnostics, CustomPropertyDiagnostics, NodeDiagnostics, NodeIdentityDiagnostics,
+    PageDiagnostics, ResourceDiagnostics, SelectorDiagnostics, StyleDiagnostics,
 };
 
 const MAX_MATCHES_PER_SELECTOR: usize = 32;
+const MAX_ATTRIBUTES_PER_NODE: usize = 64;
 const MAX_DIAGNOSTIC_TEXT_BYTES: usize = 512;
 
 pub(super) fn collect(
@@ -63,6 +64,8 @@ fn node_details(
     style: &crate::engine::css::ComputedStyle,
     node: &crate::engine::dom::NodeRef,
 ) -> NodeDiagnostics {
+    let (custom_property_count, custom_properties) =
+        crate::engine::css::diagnostic_custom_properties(style);
     let control_rect = layout.items.iter().find_map(|item| match item {
         DisplayItem::Control(control) if control.node_id == node.id() => Some(control.rect),
         _ => None,
@@ -77,11 +80,24 @@ fn node_details(
             text_length,
         }
     });
+    let node_attributes = node.attributes();
+    let attribute_count = node_attributes.len() as u64;
+    let attributes = node_attributes
+        .into_iter()
+        .take(MAX_ATTRIBUTES_PER_NODE)
+        .map(|attribute| AttributeDiagnostics {
+            name: diagnostic_text(&attribute.name.local),
+            value: diagnostic_text(&attribute.value),
+        })
+        .collect::<Vec<_>>();
     NodeDiagnostics {
         node_id: node.id().to_wire(),
         tag: node.tag_name().map(diagnostic_text),
         id: node.attr("id").map(|value| diagnostic_text(&value)),
         class: node.attr("class").map(|value| diagnostic_text(&value)),
+        attribute_count,
+        attributes_truncated: attribute_count > attributes.len() as u64,
+        attributes,
         parent: node.parent().map(|parent| node_identity(&parent)),
         composed_parent: crate::engine::dom::Node::composed_parent(node)
             .map(|parent| node_identity(&parent)),
@@ -113,6 +129,15 @@ fn node_details(
             background_color: color_hex(style.background_color),
             background_image: resource_details(page, layout, style.background_image.as_deref()),
             mask_image: resource_details(page, layout, style.mask_image.as_deref()),
+            custom_property_count,
+            custom_properties_truncated: custom_property_count > custom_properties.len() as u64,
+            custom_properties: custom_properties
+                .into_iter()
+                .map(|(name, value)| CustomPropertyDiagnostics {
+                    name: diagnostic_text(&name),
+                    value: diagnostic_text(&value),
+                })
+                .collect(),
         },
         layout_rect: layout.node_bounds.get(&node.id()).copied(),
         control_rect,

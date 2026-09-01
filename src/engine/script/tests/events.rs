@@ -233,6 +233,52 @@ fn idl_handlers_use_the_same_dispatcher_on_non_node_targets() {
 }
 
 #[test]
+fn image_resource_events_publish_completion_and_intrinsic_dimensions() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><img id="thumbnail" src="thumbnail.jpg"><output id="status"></output>
+        <script>
+            const image = document.getElementById('thumbnail');
+            image.addEventListener('load', () => {
+                document.getElementById('status').textContent = [
+                    image.complete, image.currentSrc, image.naturalWidth, image.naturalHeight
+                ].join('|');
+            });
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/#image".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let image = dom.elements_named("img").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial(&[input]);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+
+    let loaded = runtime.dispatch_user_input(UserInputEvent::ImageResource {
+        target: image,
+        event_type: "load",
+        natural_width: 336,
+        natural_height: 188,
+    });
+
+    assert!(
+        loaded.outcome.errors.is_empty(),
+        "{:?}",
+        loaded.outcome.errors
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true|https://example.com/thumbnail.jpg|336|188"
+    );
+}
+
+#[test]
 fn wheel_events_expose_mouse_state_deltas_and_unit_constants() {
     let status = status_after_script(
         r#"<script>
