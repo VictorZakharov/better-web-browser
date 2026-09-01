@@ -19,21 +19,34 @@ struct PaintChunk {
 impl PaintIndex {
     pub(super) fn rebuild(&mut self, items: &[DisplayItem]) {
         self.chunks.clear();
-        for start in (0..items.len()).step_by(ITEMS_PER_CHUNK) {
-            let end = (start + ITEMS_PER_CHUNK).min(items.len());
-            let mut top = f32::INFINITY;
-            let mut bottom = f32::NEG_INFINITY;
-            for item in &items[start..end] {
-                let (item_top, item_bottom) = vertical_bounds(item);
-                top = top.min(item_top);
-                bottom = bottom.max(item_bottom);
+        let mut start = 0;
+        let mut depth = 0_usize;
+        for (index, item) in items.iter().enumerate() {
+            match item {
+                DisplayItem::BeginOpacity { .. } => depth += 1,
+                DisplayItem::EndOpacity { .. } => depth = depth.saturating_sub(1),
+                _ => {}
             }
-            self.chunks.push(PaintChunk {
-                range: start..end,
-                top,
-                bottom,
-            });
+            let end = index + 1;
+            if depth == 0 && (end - start >= ITEMS_PER_CHUNK || end == items.len()) {
+                self.push_chunk(items, start..end);
+                start = end;
+            }
         }
+        if start < items.len() {
+            self.push_chunk(items, start..items.len());
+        }
+    }
+
+    fn push_chunk(&mut self, items: &[DisplayItem], range: Range<usize>) {
+        let mut top = f32::INFINITY;
+        let mut bottom = f32::NEG_INFINITY;
+        for item in &items[range.clone()] {
+            let (item_top, item_bottom) = vertical_bounds(item);
+            top = top.min(item_top);
+            bottom = bottom.max(item_bottom);
+        }
+        self.chunks.push(PaintChunk { range, top, bottom });
     }
 
     pub(super) fn visible_ranges(
@@ -50,6 +63,7 @@ impl PaintIndex {
 
 fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
     let rect = match item {
+        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
@@ -109,5 +123,29 @@ mod tests {
         let ranges = index.visible_ranges(80_000.0, 80_600.0).collect::<Vec<_>>();
 
         assert_eq!(ranges.first(), Some(&(0..ITEMS_PER_CHUNK)));
+    }
+
+    #[test]
+    fn opacity_groups_are_never_split_across_paint_chunks() {
+        let bounds = RectF {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 3_000.0,
+        };
+        let mut items = vec![DisplayItem::BeginOpacity {
+            bounds,
+            opacity: 0.5,
+        }];
+        items.extend((0..300).map(|index| item(index as f32 * 10.0, 8.0)));
+        items.push(DisplayItem::EndOpacity { bounds });
+        items.push(item(4_000.0, 10.0));
+        let mut index = PaintIndex::default();
+        index.rebuild(&items);
+
+        assert_eq!(
+            index.visible_ranges(1_000.0, 1_100.0).collect::<Vec<_>>(),
+            vec![0..302]
+        );
     }
 }

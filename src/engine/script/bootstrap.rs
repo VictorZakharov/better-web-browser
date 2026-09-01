@@ -5,6 +5,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/collections.js"),
     include_str!("bootstrap/events.js"),
     include_str!("bootstrap/event_interfaces.js"),
+    include_str!("bootstrap/node_insertion.js"),
     include_str!("bootstrap/nodes.js"),
     include_str!("bootstrap/attributes.js"),
     include_str!("bootstrap/elements.js"),

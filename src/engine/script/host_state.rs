@@ -71,7 +71,12 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
+    pub(super) layout_geometry: HashMap<NodeId, RectF>,
     pub(super) media_environment: MediaEnvironment,
+    pub(super) layout_viewport_width: f32,
+    pub(super) layout_viewport_height: f32,
+    pub(super) quirks_mode: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
 }
 
@@ -125,7 +130,11 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            layout_geometry: HashMap::new(),
             media_environment: MediaEnvironment::new(1280.0, 720.0, 1.0, false),
+            layout_viewport_width: 1280.0,
+            layout_viewport_height: 720.0,
+            quirks_mode: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
@@ -274,7 +283,7 @@ impl HostState {
     }
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
-        self.pending_invalidation.extend(target);
+        self.pending_invalidation.extend(&self.document, target);
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {

@@ -2,17 +2,51 @@
 
 use super::*;
 
+const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
+
+pub(crate) fn diagnostic_custom_properties(style: &ComputedStyle) -> (u64, Vec<(String, String)>) {
+    let mut names = style.custom_properties.keys().collect::<Vec<_>>();
+    names.sort_unstable();
+    let count = names.len() as u64;
+    if names.len() > MAX_DIAGNOSTIC_CUSTOM_PROPERTIES {
+        let half = MAX_DIAGNOSTIC_CUSTOM_PROPERTIES / 2;
+        names = names[..half]
+            .iter()
+            .chain(&names[names.len() - half..])
+            .copied()
+            .collect();
+    }
+    let values = names
+        .into_iter()
+        .filter_map(|name| resolved_property_value(style, name).map(|value| (name.clone(), value)))
+        .collect();
+    (count, values)
+}
+
 pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> Option<String> {
+    if property.starts_with("--") {
+        let value = style.custom_properties.get(property)?;
+        return super::variables::substitute_variables(value, &style.custom_properties);
+    }
     let value = match property {
         "background-color" => serialize_color(style.background_color),
         "color" => serialize_color(style.color),
         "display" => style.display.css_keyword().to_string(),
         "flex-direction" => match style.flex_direction {
             FlexDirection::Row => "row",
+            FlexDirection::RowReverse => "row-reverse",
             FlexDirection::Column => "column",
+            FlexDirection::ColumnReverse => "column-reverse",
         }
         .to_string(),
         "flex-grow" => serialize_number(style.flex_grow),
+        "flex-wrap" => if style.flex_wrap { "wrap" } else { "nowrap" }.to_string(),
+        "float" => match style.float {
+            Float::None => "none",
+            Float::Left => "left",
+            Float::Right => "right",
+        }
+        .to_string(),
         "font-size" => serialize_px(style.font_size),
         "font-weight" => style.font_weight.to_string(),
         "letter-spacing" => serialize_px(style.letter_spacing),
@@ -32,9 +66,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             Position::Fixed => "fixed",
         }
         .to_string(),
-        // The layout model does not expose positioned stacking yet, so every computed z-index is
-        // its standards-defined initial value.
-        "z-index" => "auto".to_string(),
+        "transform" => super::transform::serialize_transform(&style.transform),
+        "z-index" => style
+            .z_index
+            .map_or_else(|| "auto".to_string(), |level| level.to_string()),
         _ => return None,
     };
     Some(value)
@@ -75,6 +110,7 @@ mod tests {
         let mut style = ComputedStyle::initial();
         style.flex_direction = FlexDirection::Column;
         style.flex_grow = 2.5;
+        style.flex_wrap = true;
 
         assert_eq!(
             resolved_property_value(&style, "flex-direction").as_deref(),
@@ -84,5 +120,54 @@ mod tests {
             resolved_property_value(&style, "flex-grow").as_deref(),
             Some("2.5")
         );
+        assert_eq!(
+            resolved_property_value(&style, "flex-wrap").as_deref(),
+            Some("wrap")
+        );
+    }
+
+    #[test]
+    fn serializes_computed_float_keywords() {
+        let mut style = ComputedStyle::initial();
+        style.float = Float::Right;
+
+        assert_eq!(
+            resolved_property_value(&style, "float").as_deref(),
+            Some("right")
+        );
+    }
+
+    #[test]
+    fn serializes_integer_and_auto_z_index() {
+        let mut style = ComputedStyle::initial();
+        assert_eq!(
+            resolved_property_value(&style, "z-index").as_deref(),
+            Some("auto")
+        );
+
+        style.z_index = Some(-7);
+        assert_eq!(
+            resolved_property_value(&style, "z-index").as_deref(),
+            Some("-7")
+        );
+    }
+
+    #[test]
+    fn resolves_inherited_case_sensitive_custom_properties_for_cssom() {
+        let mut style = ComputedStyle::initial();
+        Arc::make_mut(&mut style.custom_properties)
+            .insert("--Accent".into(), "rgb(1, 2, 3)".into());
+        Arc::make_mut(&mut style.custom_properties)
+            .insert("--alias".into(), "var(--Accent)".into());
+
+        assert_eq!(
+            resolved_property_value(&style, "--Accent").as_deref(),
+            Some("rgb(1, 2, 3)")
+        );
+        assert_eq!(
+            resolved_property_value(&style, "--alias").as_deref(),
+            Some("rgb(1, 2, 3)")
+        );
+        assert_eq!(resolved_property_value(&style, "--accent"), None);
     }
 }

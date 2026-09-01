@@ -71,7 +71,9 @@ pub(super) fn default_control_content_height(
                 * style.line_height
                 + 10.0
         }
-        _ => style.line_height + 10.0,
+        // Text controls derive their auto content box from the line box. CSS padding and borders
+        // are added exactly once by normal replaced-element sizing.
+        _ => style.line_height,
     }
 }
 

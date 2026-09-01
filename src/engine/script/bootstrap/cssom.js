@@ -4,6 +4,10 @@
     const cssRuleConstructionToken = {};
     const cssIndex = property => typeof property === 'string' && /^(0|[1-9][0-9]*)$/.test(property);
     const cssName = property => String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase());
+    const declarationName = name => {
+        name = String(name);
+        return name.startsWith('--') ? name : name.toLowerCase();
+    };
 
     function scanCssRules(source) {
         source = String(source);
@@ -70,7 +74,7 @@
                 const declaration = source.slice(start, index).trim();
                 const colon = declaration.indexOf(':');
                 if (colon > 0) {
-                    const name = declaration.slice(0, colon).trim().toLowerCase();
+                    const name = declarationName(declaration.slice(0, colon).trim());
                     let value = declaration.slice(colon + 1).trim();
                     const important = /!\s*important\s*$/i.test(value);
                     if (important) value = value.replace(/!\s*important\s*$/i, '').trim();
@@ -103,13 +107,13 @@
         get length() { return this.__declarations.size; }
         item(index) { return [...this.__declarations.keys()][Number(index)] || ''; }
         getPropertyValue(name) {
-            return this.__declarations.get(String(name).toLowerCase())?.value || '';
+            return this.__declarations.get(declarationName(name))?.value || '';
         }
         getPropertyPriority(name) {
-            return this.__declarations.get(String(name).toLowerCase())?.priority || '';
+            return this.__declarations.get(declarationName(name))?.priority || '';
         }
         setProperty(name, value, priority = '') {
-            name = String(name).toLowerCase();
+            name = declarationName(name);
             value = String(value);
             priority = String(priority).toLowerCase();
             if (priority && priority !== 'important') return;
@@ -118,7 +122,7 @@
             this.__rule.__changed();
         }
         removeProperty(name) {
-            name = String(name).toLowerCase();
+            name = declarationName(name);
             const previous = this.getPropertyValue(name);
             if (this.__declarations.delete(name)) this.__rule.__changed();
             return previous;

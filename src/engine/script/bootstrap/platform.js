@@ -94,10 +94,19 @@
         }
     };
     iframeWindow.navigator = windowObject.navigator;
-    windowObject.screen = { width: 1280, height: 720, availWidth: 1280, availHeight: 680, colorDepth: 24, pixelDepth: 24 };
-    windowObject.innerWidth = 1280;
-    windowObject.innerHeight = 720;
-    windowObject.devicePixelRatio = 1;
+    const [initialViewportWidth = 1280, initialViewportHeight = 720, initialDeviceScale = 1,
+        initialLayoutViewportWidth = initialViewportWidth,
+        initialLayoutViewportHeight = initialViewportHeight] = host('viewportMetrics');
+    let layoutViewportWidth = initialLayoutViewportWidth;
+    let layoutViewportHeight = initialLayoutViewportHeight;
+    windowObject.screen = {
+        width: initialViewportWidth, height: initialViewportHeight,
+        availWidth: initialViewportWidth, availHeight: initialViewportHeight,
+        colorDepth: 24, pixelDepth: 24
+    };
+    windowObject.innerWidth = initialViewportWidth;
+    windowObject.innerHeight = initialViewportHeight;
+    windowObject.devicePixelRatio = initialDeviceScale;
     windowObject.scrollX = windowObject.pageXOffset = 0;
     windowObject.scrollY = windowObject.pageYOffset = 0;
     windowObject.scrollTo = windowObject.scrollBy = () => {};

@@ -1,4 +1,5 @@
 use super::MediaProtocolError;
+use crate::limits::MAX_MEDIA_FAILURE_BYTES;
 use crate::media_protocol::{
     MediaLimits, MediaPixelFormat, MediaTestCommand, MediaVideoFrameMetadata,
 };
@@ -157,6 +158,15 @@ impl<'a> Cursor<'a> {
 
     pub(super) fn array<const N: usize>(&mut self) -> Result<[u8; N], MediaProtocolError> {
         Ok(self.take(N)?.try_into().unwrap())
+    }
+
+    pub(super) fn failure_string(&mut self) -> Result<String, MediaProtocolError> {
+        let length = self.u16()? as usize;
+        if length == 0 || length > MAX_MEDIA_FAILURE_BYTES {
+            return Err(MediaProtocolError::InvalidPayload("media failure text"));
+        }
+        String::from_utf8(self.take(length)?.to_vec())
+            .map_err(|_| MediaProtocolError::InvalidPayload("media failure UTF-8"))
     }
 
     pub(super) fn finish(self) -> Result<(), MediaProtocolError> {

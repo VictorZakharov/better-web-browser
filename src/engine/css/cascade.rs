@@ -1,14 +1,18 @@
 //! Style-set construction and cascade ordering.
 
 mod presentational;
+mod refresh;
+mod root_units;
 mod sheets;
 #[cfg(test)]
 mod tests;
 
 use super::media::MediaEnvironment;
 use super::rule_index::RuleIndex;
+use super::selector_match::selector_matches;
 use super::*;
 use presentational::apply_presentational_hints;
+use root_units::root_font_size_for;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StyleRefreshStats {
@@ -186,100 +190,11 @@ impl StyleSet {
         )
     }
 
-    pub(crate) fn refresh_subtree(
-        &mut self,
-        document: &NodeRef,
-        requested_root: &NodeRef,
-        removed_nodes: &[NodeId],
-    ) -> StyleRefreshStats {
-        let requested_root = requested_root
-            .shadow_host()
-            .unwrap_or_else(|| requested_root.clone());
-        let root = if is_descendant_of(&requested_root, document) {
-            requested_root
-        } else {
-            document.clone()
-        };
-        let parent_style = Node::composed_parent(&root)
-            .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
-        let mut stats = StyleRefreshStats::default();
-        self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
-
-        // A node may be removed and reinserted before the rendering checkpoint. Its identifier
-        // remains in the removal log, but its newly recomputed style must remain available.
-        let connected_nodes = Node::shadow_including_descendants(document)
-            .map(|node| node_id(&node))
-            .collect::<HashSet<_>>();
-        stats.removed_styles = removed_nodes
-            .iter()
-            .filter(|node| !connected_nodes.contains(node))
-            .filter(|node| self.styles.remove(node).is_some())
-            .count();
-        stats.total_styles = self.styles.len();
-        stats
-    }
-
-    fn compute_subtree(&mut self, node: &NodeRef, parent: Option<&ComputedStyle>) {
-        let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
-            } else {
-                let parent = Node::composed_parent(&node)
-                    .expect("connected composed-tree child has a parent");
-                let parent_style = self
-                    .styles
-                    .get(&node_id(&parent))
-                    .expect("parent style is computed before its children");
-                self.compute_style(&node, Some(parent_style))
-            };
-            self.styles.insert(node_id(&node), style);
-            pending.extend(Node::composed_children(&node).into_iter().rev());
-        }
-    }
-
-    fn recompute_subtree(
-        &mut self,
-        node: &NodeRef,
-        parent: Option<&ComputedStyle>,
-        stats: &mut StyleRefreshStats,
-    ) {
-        let root = node_id(node);
-        let mut pending = vec![node.clone()];
-        while let Some(node) = pending.pop() {
-            let style = if node_id(&node) == root {
-                self.compute_style(&node, parent)
-            } else {
-                let parent = Node::composed_parent(&node)
-                    .expect("connected composed-tree child has a parent");
-                let parent_style = self
-                    .styles
-                    .get(&node_id(&parent))
-                    .expect("parent style is recomputed before its children");
-                self.compute_style(&node, Some(parent_style))
-            };
-            stats.invalidated_nodes += 1;
-            stats.recomputed_styles += 1;
-            match self.styles.get(&node_id(&node)) {
-                Some(previous) if previous != &style => {
-                    stats.changed_styles += 1;
-                    stats.layout_changed |= !previous.layout_equivalent(&style);
-                }
-                None => {
-                    stats.changed_styles += 1;
-                    stats.layout_changed = true;
-                }
-                _ => {}
-            }
-            self.styles.insert(node_id(&node), style);
-            pending.extend(Node::composed_children(&node).into_iter().rev());
-        }
-    }
-
     fn compute_style(&self, node: &NodeRef, parent: Option<&ComputedStyle>) -> ComputedStyle {
         let mut style = ComputedStyle::inherit_from(parent);
+        style.root_font_size = root_font_size_for(&self.styles, node);
         apply_user_agent_defaults(node, &mut style);
+        let lower_origin = style.clone();
 
         let mut matching = self
             .rule_index
@@ -330,6 +245,7 @@ impl StyleSet {
                     &mut style,
                     declaration,
                     parent,
+                    &lower_origin,
                     base_url,
                     self.viewport_width,
                     self.viewport_height,
@@ -343,6 +259,7 @@ impl StyleSet {
                     &mut style,
                     declaration,
                     parent,
+                    &lower_origin,
                     base_url,
                     self.viewport_width,
                     self.viewport_height,
@@ -350,7 +267,11 @@ impl StyleSet {
             }
         }
         apply_presentational_hints(node, &mut style);
-        style.resolve_viewport_units(self.viewport_width, self.viewport_height);
+        style.resolve_relative_units(
+            self.viewport_width,
+            self.viewport_height,
+            style.root_font_size,
+        );
         if node.attr("hidden").is_some() || is_hidden_by_html_rendering(node) {
             style.display = Display::None;
         }
@@ -360,16 +281,14 @@ impl StyleSet {
             self.viewport_width,
             self.viewport_height,
         );
+        // CSS 2 makes `float` compute to `none` for absolutely positioned boxes. Resolve this
+        // after the cascade so the result is independent of declaration source order.
+        if matches!(style.position, Position::Absolute | Position::Fixed) {
+            style.float = Float::None;
+        }
         style.line_height = style.line_height.max(style.font_size);
         style
     }
-}
-
-fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
-    std::iter::successors(Some(node.clone()), |current| {
-        current.shadow_including_parent()
-    })
-    .any(|current| current.id() == ancestor.id())
 }
 
 fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {

@@ -5,6 +5,9 @@ use crate::engine::font::discover_font_faces;
 use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
 
+const MAX_INLINE_SVG_DIAGNOSTICS: usize = 8;
+const MAX_INLINE_SVG_DIAGNOSTIC_BYTES: usize = 512;
+
 impl Page {
     pub fn style(&self, viewport_width: f32) -> StyleSet {
         self.style_for_viewport(viewport_width, viewport_width)
@@ -116,11 +119,20 @@ impl Page {
         }
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
-        let invalidated_nodes = invalidation
-            .root
-            .and_then(|root| self.dom.find_node(root))
-            .map(|root| Node::shadow_including_descendants(&root).count())
-            .unwrap_or_else(|| Node::shadow_including_descendants(&self.dom.document).count());
+        let mut invalidation_roots = invalidation
+            .roots
+            .iter()
+            .filter_map(|root| self.dom.find_node(*root))
+            .collect::<Vec<_>>();
+        if invalidation_roots.is_empty() {
+            invalidation_roots.push(self.dom.document.clone());
+        }
+        let invalidated_nodes = invalidation_roots
+            .iter()
+            .flat_map(Node::shadow_including_descendants)
+            .map(|node| node.id())
+            .collect::<HashSet<_>>()
+            .len();
         let cached = self.cached_styles.take();
         let (mut styles, style_stats) = match cached {
             Some((cached_width, cached_height, mut styles))
@@ -129,11 +141,11 @@ impl Page {
                     && (cached_height - viewport_height).abs() < 0.5 =>
             {
                 let stats = if invalidation.impact.affects_style() {
-                    let root = invalidation
-                        .root
-                        .and_then(|root| self.dom.find_node(root))
-                        .unwrap_or_else(|| self.dom.document.clone());
-                    styles.refresh_subtree(&self.dom.document, &root, &invalidation.removed_nodes)
+                    styles.refresh_subtrees(
+                        &self.dom.document,
+                        &invalidation_roots,
+                        &invalidation.removed_nodes,
+                    )
                 } else {
                     StyleRefreshStats {
                         invalidated_nodes,
@@ -262,19 +274,47 @@ impl Page {
     }
 
     fn refresh_inline_svgs(&mut self) {
-        let decoded = self
-            .dom
-            .elements_named("svg")
+        let svgs = Node::shadow_including_descendants(&self.dom.document)
+            .filter(|node| node.tag_name() == Some("svg"))
             .take(MAX_INLINE_SVGS)
-            .filter_map(|svg| {
-                let key = inline_svg_key(&svg);
-                (!self.images.contains_key(&key))
-                    .then(|| decode_inline_svg(&svg).ok().map(|image| (key, image)))
-                    .flatten()
-            })
             .collect::<Vec<_>>();
-        for (key, image) in decoded {
-            let _ = self.install_decoded_image(key, image);
+        let active_ids = svgs.iter().map(|svg| svg.id()).collect::<HashSet<_>>();
+        let active_keys = svgs.iter().map(inline_svg_key).collect::<HashSet<_>>();
+        self.inline_svg_versions
+            .retain(|node, _| active_ids.contains(node));
+        self.images
+            .retain(|key, _| !key.starts_with("inline-svg:") || active_keys.contains(key));
+
+        for svg in svgs {
+            let key = inline_svg_key(&svg);
+            let version = svg.subtree_mutation_version();
+            let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
+            if !changed {
+                continue;
+            }
+            self.inline_svg_versions.insert(svg.id(), version);
+            match decode_inline_svg(&svg) {
+                Ok(image) => {
+                    let _ = self.install_decoded_image(key, image);
+                }
+                Err(error) => {
+                    self.images.remove(&key);
+                    if self
+                        .diagnostics
+                        .iter()
+                        .filter(|message| message.starts_with("inline SVG "))
+                        .count()
+                        < MAX_INLINE_SVG_DIAGNOSTICS
+                    {
+                        let message = format!("inline SVG {:032x}: {error}", svg.id().to_wire());
+                        self.diagnostics.push(
+                            bounded_utf8_prefix(&message, MAX_INLINE_SVG_DIAGNOSTIC_BYTES)
+                                .0
+                                .to_string(),
+                        );
+                    }
+                }
+            }
         }
     }
 }

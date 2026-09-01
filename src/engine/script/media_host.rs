@@ -63,6 +63,36 @@ pub(super) fn media_host_call(
                 bytes: bytes.to_vec(),
             }
         }
+        "commit-adaptive" => {
+            let Some(JsValue::String(video_mime_type)) = args.get(4) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            let Some(video_bytes) = args.get(5).and_then(JsValue::as_bytes) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            let Some(JsValue::String(audio_mime_type)) = args.get(6) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            let Some(audio_bytes) = args.get(7).and_then(JsValue::as_bytes) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            let encoded_bytes = video_bytes.len().checked_add(audio_bytes.len());
+            if video_mime_type.len() > 256
+                || audio_mime_type.len() > 256
+                || video_bytes.is_empty()
+                || audio_bytes.is_empty()
+                || encoded_bytes
+                    .is_none_or(|bytes| bytes > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES)
+            {
+                return Ok(Some(JsValue::undefined()));
+            }
+            ScriptMediaCommand::CommitAdaptive {
+                video_mime_type: video_mime_type.clone(),
+                video_bytes: video_bytes.to_vec(),
+                audio_mime_type: audio_mime_type.clone(),
+                audio_bytes: audio_bytes.to_vec(),
+            }
+        }
         "reset" => ScriptMediaCommand::Reset,
         _ => return Ok(Some(JsValue::undefined())),
     };

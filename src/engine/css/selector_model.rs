@@ -19,6 +19,8 @@ pub(super) struct CompoundSelector {
     pub(super) not: Vec<Vec<SimpleSelector>>,
     pub(super) requires_link: bool,
     pub(super) requires_first_child: bool,
+    pub(super) requires_first_of_type: bool,
+    pub(super) requires_last_child: bool,
     pub(super) requires_root: bool,
     pub(super) requires_enabled: bool,
     pub(super) requires_disabled: bool,
@@ -50,6 +52,7 @@ pub(super) enum SimpleSelector {
     Tag(String),
     Id(String),
     Class(String),
+    Attribute(AttributeSelector),
 }
 
 #[derive(Debug, Clone, Copy)]

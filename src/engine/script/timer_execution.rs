@@ -69,6 +69,7 @@ pub(super) fn settle_timer_slice(
             break;
         };
 
+        let render_pending_before = host.borrow().timers.render_requested();
         host.borrow_mut().begin_task();
         let label = context
             .call_global("__timerLabel", &[timer_id.into()])
@@ -120,6 +121,13 @@ pub(super) fn settle_timer_slice(
         outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
+        // HTML exposes a rendering opportunity between tasks. Once one callback changes the
+        // connected document, return to the renderer so it can refresh style/layout before a
+        // later timer observes CSSOM View geometry. Continuing the batch here made those later
+        // tasks read boxes from the previous presentation.
+        if !render_pending_before && host.borrow().timers.render_requested() {
+            break;
+        }
         if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
             break;
         }

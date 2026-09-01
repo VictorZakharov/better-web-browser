@@ -5,7 +5,8 @@ use crate::engine::{ControlSpec, DisplayItem, FontSpec, LayoutOutput, Positioned
 use crate::limits::MAX_PRESENTATION_COORDINATE;
 
 pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
-    let items: Vec<_> = layout.items.into_iter().filter_map(sanitize_item).collect();
+    let mut items: Vec<_> = layout.items.into_iter().filter_map(sanitize_item).collect();
+    retain_balanced_opacity_groups(&mut items);
     let content_height = if layout.content_height.is_finite() {
         nonnegative(layout.content_height)
     } else {
@@ -28,6 +29,13 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
 fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
+        DisplayItem::BeginOpacity { bounds, opacity } => DisplayItem::BeginOpacity {
+            bounds: sanitize_rect(bounds)?,
+            opacity: finite_or(opacity, 1.0).clamp(0.0, 1.0),
+        },
+        DisplayItem::EndOpacity { bounds } => DisplayItem::EndOpacity {
+            bounds: sanitize_rect(bounds)?,
+        },
         DisplayItem::SolidRect {
             rect,
             color,
@@ -144,12 +152,34 @@ fn sanitize_rect(mut rect: RectF) -> Option<RectF> {
 
 fn item_rect(item: &DisplayItem) -> Option<RectF> {
     match item {
+        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => {
+            Some(*bounds)
+        }
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
         | DisplayItem::Image { rect, .. } => Some(*rect),
         DisplayItem::BackgroundImage { clip_rect, .. } => Some(*clip_rect),
         DisplayItem::Control(spec) => Some(spec.rect),
+    }
+}
+
+fn retain_balanced_opacity_groups(items: &mut Vec<DisplayItem>) {
+    let mut starts = Vec::new();
+    let mut index = 0;
+    while index < items.len() {
+        match items[index] {
+            DisplayItem::BeginOpacity { .. } => starts.push(index),
+            DisplayItem::EndOpacity { .. } if starts.pop().is_none() => {
+                items.remove(index);
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    if let Some(first_unmatched) = starts.first().copied() {
+        items.truncate(first_unmatched);
     }
 }
 

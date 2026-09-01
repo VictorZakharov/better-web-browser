@@ -1,3 +1,4 @@
+mod embedded;
 mod media;
 mod preload;
 mod refresh;
@@ -12,19 +13,18 @@ pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
 use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
-use super::dom::{self, Dom, NodeRef};
+use super::dom::{self, Dom, Node, NodeId, NodeRef};
 use super::font::{WebFont, WebFontFace, decode_web_font};
 use super::script::{
     self, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime,
 };
 use crate::limits::{
     MAX_CSS_SOURCE_BYTES, MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION,
-    MAX_DECODED_IMAGE_PIXELS, MAX_EMBEDDED_IMAGE_URL_BYTES, MAX_IMAGE_SOURCE_BYTES,
-    MAX_INLINE_SVGS, MAX_PAGE_IMAGES as MAX_IMAGES, MAX_SCRIPT_BYTES, MAX_STYLE_IMAGES,
-    MAX_WEB_FONTS, bounded_utf8_prefix,
+    MAX_DECODED_IMAGE_PIXELS, MAX_IMAGE_SOURCE_BYTES, MAX_INLINE_SVGS,
+    MAX_PAGE_IMAGES as MAX_IMAGES, MAX_SCRIPT_BYTES, MAX_STYLE_IMAGES, MAX_WEB_FONTS,
+    bounded_utf8_prefix,
 };
 use crate::navigation::resolve_url;
-use data_url::DataUrl;
 use image::ImageReader;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -85,9 +85,11 @@ pub struct Page {
     stylesheet_sources: Vec<(String, String)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
+    inline_svg_versions: HashMap<NodeId, u64>,
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
     media_environment: MediaEnvironment,
+    layout_viewport: (f32, f32),
 }
 
 impl Page {
@@ -119,9 +121,15 @@ impl Page {
         let (resources, scripts) = discover_resources(&dom, &base_url, media_environment);
 
         let mut images = HashMap::new();
-        for svg in dom.elements_named("svg").take(MAX_INLINE_SVGS) {
+        let mut inline_svg_versions = HashMap::new();
+        for svg in Node::shadow_including_descendants(&dom.document)
+            .filter(|node| node.tag_name() == Some("svg"))
+            .take(MAX_INLINE_SVGS)
+        {
+            inline_svg_versions.insert(svg.id(), svg.subtree_mutation_version());
             if let Ok(image) = decode_inline_svg(&svg) {
-                images.insert(inline_svg_key(&svg), image);
+                let _ =
+                    media::install_initial_decoded_image(&mut images, inline_svg_key(&svg), image);
             }
         }
         media::install_placeholder(&dom, &mut images);
@@ -138,9 +146,11 @@ impl Page {
             stylesheet_sources: Vec::new(),
             cached_styles: None,
             images,
+            inline_svg_versions,
             fonts: Vec::new(),
             diagnostics,
             media_environment,
+            layout_viewport: (1280.0, 720.0),
         };
         page.install_embedded_images();
         page
@@ -154,6 +164,10 @@ impl Page {
             self.cached_styles = None;
         }
         self.media_environment = environment;
+    }
+
+    pub(crate) fn set_layout_viewport(&mut self, width: f32, height: f32) {
+        self.layout_viewport = (width, height);
     }
 
     pub fn add_stylesheet(&mut self, css: String) -> bool {
@@ -288,47 +302,40 @@ impl Page {
         )
     }
 
-    pub(super) fn install_embedded_images(&mut self) {
-        let urls = self
-            .resources
-            .iter()
-            .filter_map(|resource| match resource {
-                PageResource::Image { url }
-                    if url.starts_with("data:") && !self.images.contains_key(url) =>
-                {
-                    Some(url.clone())
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        for url in urls {
-            let Ok(bytes) = decode_embedded_image(&url) else {
-                continue;
-            };
-            let _ = self.add_image(url, &bytes);
-        }
-    }
-
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {
+        if node.tag_name() == Some("svg") {
+            let key = inline_svg_key(node);
+            return self.images.contains_key(&key).then_some(key);
+        }
         if let Some(url) = media::image_url(self, node) {
             return Some(url);
         }
         resolve_image_url(node, &self.base_url, self.media_environment)
     }
-}
 
-fn decode_embedded_image(url: &str) -> Result<Vec<u8>, String> {
-    if url.len() > MAX_EMBEDDED_IMAGE_URL_BYTES {
-        return Err("embedded image URL is too large".into());
+    pub(crate) fn resource_event_targets(&self, resource: &PageResource) -> Vec<NodeRef> {
+        Node::shadow_including_descendants(&self.dom.document)
+            .filter(|node| match resource {
+                PageResource::Stylesheet { url } => {
+                    node.tag_name() == Some("link")
+                        && node.attr("rel").is_some_and(|rel| {
+                            rel.split_ascii_whitespace()
+                                .any(|token| token.eq_ignore_ascii_case("stylesheet"))
+                        })
+                        && node
+                            .attr("href")
+                            .and_then(|href| resolve_url(&self.base_url, &href))
+                            .as_ref()
+                            == Some(url)
+                }
+                PageResource::Image { url } => {
+                    matches!(node.tag_name(), Some("img" | "image"))
+                        && self.image_url(node).as_ref() == Some(url)
+                }
+                _ => false,
+            })
+            .collect()
     }
-    let data = DataUrl::process(url).map_err(|error| error.to_string())?;
-    if data.mime_type().type_ != "image" {
-        return Err("embedded resource is not an image".into());
-    }
-    let (bytes, _) = data
-        .decode_to_vec()
-        .map_err(|error| format!("decode embedded image: {error:?}"))?;
-    Ok(bytes)
 }
 
 fn parse_immediate_refresh_target(content: &str) -> Option<&str> {

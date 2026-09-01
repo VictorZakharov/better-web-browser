@@ -3,7 +3,9 @@ use super::*;
 mod flex_flow;
 mod fullscreen;
 mod queries;
+mod root_units;
 mod shadow;
+mod wide_keywords;
 use crate::engine::dom;
 
 #[test]
@@ -50,6 +52,28 @@ fn important_author_rules_beat_normal_inline_styles() {
 }
 
 #[test]
+fn opacity_accepts_numbers_and_percentages_and_clamps_at_computed_value_time() {
+    let dom = dom::parse(
+        r#"<style>
+            #percentage { opacity: 50% }
+            #high { opacity: 1.5 }
+            #low { opacity: -1 }
+        </style><i id=percentage></i><i id=high></i><i id=low></i>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    let opacity = |id| {
+        let node = dom
+            .elements_named("i")
+            .find(|node| node.attr("id").as_deref() == Some(id))
+            .unwrap();
+        styles.get(&node).opacity
+    };
+    assert_eq!(opacity("percentage"), 0.5);
+    assert_eq!(opacity("high"), 1.0);
+    assert_eq!(opacity("low"), 0.0);
+}
+
+#[test]
 fn resolves_author_relative_font_sizes_against_the_parent() {
     let dom = dom::parse(
         r#"<style>
@@ -64,6 +88,71 @@ fn resolves_author_relative_font_sizes_against_the_parent() {
     assert!((styles.get(&heading).font_size - 26.2).abs() < 0.01);
     assert!((styles.get(&shorthand).font_size - 25.0).abs() < 0.01);
     assert!((styles.get(&shorthand).line_height - 35.0).abs() < 0.01);
+}
+
+#[test]
+fn flex_shorthand_distinguishes_growth_numbers_from_a_definite_basis() {
+    let dom = dom::parse(
+        r#"<div id="three" style="flex: 0 1 732px"></div>
+        <div id="number" style="flex: 2"></div>
+        <div id="basis" style="flex: 10em"></div>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    let by_id = |id| {
+        dom.elements_named("div")
+            .find(|node| node.attr("id").as_deref() == Some(id))
+            .unwrap()
+    };
+    let three = styles.get(&by_id("three"));
+    assert_eq!((three.flex_grow, three.flex_shrink), (0.0, 1.0));
+    assert_eq!(three.flex_basis, Length::Px(732.0));
+    let number = styles.get(&by_id("number"));
+    assert_eq!((number.flex_grow, number.flex_shrink), (2.0, 1.0));
+    assert_eq!(number.flex_basis, Length::Px(0.0));
+    let basis = styles.get(&by_id("basis"));
+    assert_eq!((basis.flex_grow, basis.flex_shrink), (1.0, 1.0));
+    assert_eq!(basis.flex_basis, Length::Em(10.0));
+}
+
+#[test]
+fn legacy_webkit_box_does_not_replace_block_text_flow_with_modern_flex() {
+    let dom = dom::parse(
+        r#"<h1 style="display:block;display:-webkit-box">Me at the zoo</h1>
+           <nav style="display:-webkit-box;display:flex">navigation</nav>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    let heading = dom.elements_named("h1").next().unwrap();
+    let navigation = dom.elements_named("nav").next().unwrap();
+
+    assert_eq!(styles.get(&heading).display, Display::Block);
+    assert_eq!(styles.get(&navigation).display, Display::Flex);
+}
+
+#[test]
+fn inset_shorthand_expands_to_physical_offsets() {
+    let dom = dom::parse(
+        r#"<style>
+            #all { inset: 0 }
+            #sides { inset: 1px 2px 3px 4px }
+        </style><div id="all"></div><div id="sides"></div>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let by_id = |id| {
+        dom.elements_named("div")
+            .find(|node| node.attr("id").as_deref() == Some(id))
+            .unwrap()
+    };
+    let all = by_id("all");
+    let sides = by_id("sides");
+
+    assert_eq!(styles.get(&all).top, Length::Px(0.0));
+    assert_eq!(styles.get(&all).right, Length::Px(0.0));
+    assert_eq!(styles.get(&all).bottom, Length::Px(0.0));
+    assert_eq!(styles.get(&all).left, Length::Px(0.0));
+    assert_eq!(styles.get(&sides).top, Length::Px(1.0));
+    assert_eq!(styles.get(&sides).right, Length::Px(2.0));
+    assert_eq!(styles.get(&sides).bottom, Length::Px(3.0));
+    assert_eq!(styles.get(&sides).left, Length::Px(4.0));
 }
 
 #[test]

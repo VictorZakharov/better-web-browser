@@ -74,6 +74,7 @@ impl DisplayListDamage {
 
 fn item_bounds(item: &DisplayItem) -> RectF {
     match item {
+        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
@@ -112,6 +113,7 @@ mod tests {
             background: Color::WHITE,
             forms: HashMap::new(),
             node_bounds: HashMap::new(),
+            node_paint_order: Vec::new(),
         }
     }
 

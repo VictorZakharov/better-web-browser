@@ -125,10 +125,26 @@ pub struct ScriptFullscreenAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptMediaCommand {
-    SetPlayback { playing: bool, volume_millis: u16 },
-    Configure { volume_millis: u16 },
-    Seek { position_100ns: u64 },
-    Commit { mime_type: String, bytes: Vec<u8> },
+    SetPlayback {
+        playing: bool,
+        volume_millis: u16,
+    },
+    Configure {
+        volume_millis: u16,
+    },
+    Seek {
+        position_100ns: u64,
+    },
+    Commit {
+        mime_type: String,
+        bytes: Vec<u8>,
+    },
+    CommitAdaptive {
+        video_mime_type: String,
+        video_bytes: Vec<u8>,
+        audio_mime_type: String,
+        audio_bytes: Vec<u8>,
+    },
     Reset,
 }
 
@@ -193,6 +209,12 @@ pub enum UserInputEvent {
         bubbles: bool,
         cancelable: bool,
     },
+    ImageResource {
+        target: NodeRef,
+        event_type: &'static str,
+        natural_width: u32,
+        natural_height: u32,
+    },
     Scroll {
         x: f32,
         y: f32,
@@ -200,6 +222,8 @@ pub enum UserInputEvent {
     Viewport {
         width: f32,
         height: f32,
+        layout_width: f32,
+        layout_height: f32,
         scale: f32,
     },
     Lifecycle {

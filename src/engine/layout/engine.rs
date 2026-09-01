@@ -55,6 +55,7 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
             background: Color::WHITE,
             forms: collect_forms(page),
             node_bounds: HashMap::new(),
+            node_paint_order: Vec::new(),
         },
     };
 
@@ -67,7 +68,14 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
     {
         engine.output.background = body_style.background_color.composite_over(Color::WHITE);
     }
-    let metrics = engine.layout_block(&root, 0.0, 0.0, viewport_width.max(1.0));
+    let metrics = engine.layout_block(
+        &root,
+        0.0,
+        0.0,
+        viewport_width.max(1.0),
+        Some(viewport_height.max(1.0)),
+        None,
+    );
     engine.output.content_height = metrics.bottom.max(viewport_height);
     engine.output
 }
@@ -85,6 +93,12 @@ pub(super) struct LayoutEngine<'a, M> {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BlockMetrics {
     pub(super) bottom: f32,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct UsedInlineSize {
+    pub(super) outer: f32,
+    pub(super) percentage_basis: f32,
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {

@@ -46,6 +46,14 @@ internal static class ChromeRun
                 locale = options.Locale.Replace('-', '_')
             }, timeout);
             await cdp.CallAsync(nextId++, "Network.setCacheDisabled", new { cacheDisabled = true }, timeout);
+            if (!string.IsNullOrWhiteSpace(options.UserAgent))
+            {
+                await cdp.CallAsync(nextId++, "Network.setUserAgentOverride", new
+                {
+                    userAgent = options.UserAgent,
+                    acceptLanguage = options.Locale
+                }, timeout);
+            }
             var version = await cdp.CallAsync(nextId++, "Browser.getVersion", null, timeout);
             result.ChromeVersion = version.GetProperty("product").GetString() ?? string.Empty;
 
@@ -107,6 +115,14 @@ internal static class ChromeRun
             result.BrowserErrorSurface = probe.GetProperty("browserErrorSurface").GetBoolean();
             result.DocumentHeightCssPx = probe.GetProperty("documentHeight").GetInt32();
             result.FixtureReady = probe.GetProperty("fixtureReady").GetBoolean();
+            if (options.DiagnosticSelectors.Count > 0)
+            {
+                result.Diagnostics = (await EvaluateAsync(
+                    cdp,
+                    nextId++,
+                    BrowserScripts.SelectorDiagnostics(options.DiagnosticSelectors),
+                    timeout)).Clone();
+            }
             if (probe.GetProperty("media") is { ValueKind: JsonValueKind.Object } media)
             {
                 result.Media = new MediaProbe

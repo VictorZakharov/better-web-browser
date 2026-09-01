@@ -308,6 +308,14 @@ pub enum BrowserMediaMessage {
         frame_id: u64,
         encoded_length: u64,
     },
+    DecodeTracks {
+        request_id: u64,
+        video_source_id: u64,
+        audio_source_id: u64,
+        frame_id: u64,
+        video_length: u64,
+        audio_length: u64,
+    },
     AcknowledgeFrame {
         source_id: u64,
         frame_id: u64,
@@ -354,7 +362,7 @@ impl MediaPlaybackState {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkerMediaMessage {
     Ready {
         nonce: Nonce,
@@ -370,6 +378,10 @@ pub enum WorkerMediaMessage {
         request_id: u64,
         report: MediaDecodeReport,
         frame: crate::media_frame_protocol::MediaVideoFrameMetadata,
+    },
+    DecodeFailed {
+        request_id: u64,
+        error: String,
     },
     FrameAcknowledged {
         source_id: u64,

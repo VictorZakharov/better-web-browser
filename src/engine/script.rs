@@ -1,6 +1,7 @@
 use super::css::{StyleSet, resolved_property_value};
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::invalidation::{InvalidationImpact, MutationKind, RenderInvalidation};
+use super::layout::RectF;
 use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
 use crate::limits::{
     MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
@@ -42,6 +43,7 @@ mod text_encoding_host;
 mod timer_execution;
 mod types;
 mod user_events;
+mod viewport_host;
 mod worker_bootstrap;
 mod worker_host;
 mod worker_module;

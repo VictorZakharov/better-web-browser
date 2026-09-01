@@ -1,4 +1,41 @@
 use super::*;
+use crate::engine::RectF;
+
+#[test]
+fn html_element_inner_text_has_a_string_contract() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        r#"<body><div id="target"><span>alpha</span> beta</div><script>
+            const target = document.getElementById('target');
+            const initial = target.innerText;
+            target.innerText = null;
+            document.body.setAttribute('data-result', [
+                typeof initial, initial, target.innerText, target.childElementCount
+            ].join('|'));
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/#inline".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("string|alpha beta||0")
+    );
+}
 
 #[test]
 fn repeated_attribute_mutations_do_not_serialize_attribute_collections() {
@@ -36,6 +73,98 @@ fn repeated_attribute_mutations_do_not_serialize_attribute_collections() {
             .all(|line| !line.starts_with("host call attrRecords:")),
         "setAttribute serialized the attribute collection: {:?}",
         outcome.diagnostics
+    );
+}
+
+#[test]
+fn cssom_view_geometry_uses_the_latest_layout_snapshot() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        r#"<body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            const rect = target.getBoundingClientRect();
+            document.body.setAttribute('data-result',
+                [target.clientWidth, target.clientHeight, target.offsetWidth,
+                 target.offsetHeight, rect.x, rect.y, rect.right, rect.bottom].join(','));
+        </script></body>"#,
+        true,
+    );
+    let target = dom.elements_named("div").next().unwrap();
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.set_layout_geometry(&HashMap::from([(
+        target.id(),
+        RectF {
+            x: 12.5,
+            y: 24.25,
+            width: 320.0,
+            height: 180.0,
+        },
+    )]));
+
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/#inline".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("320,180,320,180,12.5,24.25,332.5,204.25")
+    );
+}
+
+#[test]
+fn resize_observer_delivers_after_a_layout_snapshot_changes() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        r#"<body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            new ResizeObserver(entries => {
+                document.body.setAttribute('data-width', String(entries[0].contentRect.width));
+            }).observe(target);
+        </script></body>"#,
+        true,
+    );
+    let target = dom.elements_named("div").next().unwrap();
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/#inline".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+
+    runtime.set_layout_geometry(&HashMap::from([(
+        target.id(),
+        RectF {
+            x: 0.0,
+            y: 0.0,
+            width: 640.0,
+            height: 360.0,
+        },
+    )]));
+    runtime.notify_layout_changed();
+    let outcome = runtime.advance_time(Duration::from_millis(1), 8);
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-width")
+            .as_deref(),
+        Some("640")
     );
 }
 

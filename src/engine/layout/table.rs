@@ -7,6 +7,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         mut y: f32,
         width: f32,
+        containing_height: Option<f32>,
         _style: &ComputedStyle,
     ) -> f32 {
         let rows = table_rows(node);
@@ -26,7 +27,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let mut row_bottom = y;
             for (cell, cell_width) in cells.iter().zip(widths) {
                 let cell_style = self.styles.get(cell).clone();
-                let bottom = self.layout_block_children(cell, cell_x, y, cell_width, &cell_style);
+                let in_flow_paint_start = self.output.items.len();
+                let in_flow_node_start = self.output.node_paint_order.len();
+                let bottom = self.layout_block_children(
+                    cell,
+                    cell_x,
+                    y,
+                    cell_width,
+                    containing_height,
+                    &cell_style,
+                );
+                self.layout_positioned_children(
+                    cell,
+                    RectF {
+                        x: cell_x,
+                        y,
+                        width: cell_width,
+                        height: (bottom - y).max(0.0),
+                    },
+                    in_flow_paint_start,
+                    in_flow_node_start,
+                );
                 row_bottom = row_bottom.max(bottom);
                 cell_x += cell_width;
             }

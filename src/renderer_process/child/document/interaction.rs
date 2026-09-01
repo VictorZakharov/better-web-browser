@@ -333,20 +333,16 @@ impl DocumentRuntime {
 
     fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
         self.layout
-            .node_bounds
+            .node_paint_order
             .iter()
-            .filter(|(_, rect)| rect.width > 0.0 && rect.height > 0.0 && contains(**rect, x, y))
-            .filter_map(|(id, rect)| {
-                let node = self.page.dom.find_node(*id)?;
-                let depth = std::iter::successors(node.parent(), |parent| parent.parent()).count();
-                Some((node, depth, rect.width * rect.height))
+            .rev()
+            .find_map(|id| {
+                let rect = self.layout.node_bounds.get(id)?;
+                (rect.width > 0.0 && rect.height > 0.0 && contains(*rect, x, y))
+                    .then(|| self.page.dom.find_node(*id))
+                    .flatten()
             })
-            .max_by(|(_, left_depth, left_area), (_, right_depth, right_area)| {
-                left_depth
-                    .cmp(right_depth)
-                    .then_with(|| right_area.total_cmp(left_area))
-            })
-            .map(|(node, _, _)| HitTarget {
+            .map(|node| HitTarget {
                 node,
                 link: None,
                 control: None,

@@ -140,11 +140,14 @@ fn script_inserted_stylesheets_and_images_load_after_first_paint() {
     let initial = load_html_document(
         &session,
         95,
-        r#"<!doctype html><head></head><body><div id="card">dynamic card</div><script>
+        r#"<!doctype html><head></head><body><div id="card">dynamic card</div><div id="status">pending</div><script>
             setTimeout(() => {
                 const link = document.createElement('link');
                 link.setAttribute('rel', 'stylesheet');
                 link.setAttribute('href', '/dynamic.css');
+                link.addEventListener('load', () => {
+                    document.querySelector('#status').textContent = 'stylesheet-loaded';
+                });
                 document.querySelector('head').appendChild(link);
                 const image = document.createElement('img');
                 image.setAttribute('src', '/dynamic.png');
@@ -219,26 +222,29 @@ fn script_inserted_stylesheets_and_images_load_after_first_paint() {
         "text/css",
         b"#card { background-color: rgb(1, 2, 3); width: 200px; }".to_vec(),
     );
-    let styled = wait_for_document_presentation(&session, initial.document);
-    assert!(styled.layout.items.iter().any(|item| {
-        matches!(
-            item,
-            DisplayItem::SolidRect { color, .. } if *color == Color::rgb(1, 2, 3)
-        )
-    }));
-    assert!(
-        !styled
-            .images
-            .iter()
-            .any(|image| image.url.ends_with("/dynamic.png")),
-        "a completed stylesheet must install without waiting for the image in the same batch"
-    );
-
     respond(
         &image_request.expect("dynamic image request"),
         "image/png",
         test_png(),
     );
+
+    let mut scheduled = 0;
+    while scheduled < 2 {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::RuntimeUpdate(update) if update.document == initial.document => {
+                assert_eq!(update.next_timer_micros, Some(0));
+                scheduled += 1;
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::Presentation(_) => panic!(
+                "a burst of completed resources must wait for one coalesced rendering checkpoint"
+            ),
+            event => panic!("unexpected event while scheduling resources: {event:?}"),
+        }
+    }
+    session
+        .advance_time(initial.document, Duration::ZERO, 1)
+        .expect("run coalesced resource checkpoint");
 
     let rendered = loop {
         let rendered = wait_for_document_presentation(&session, initial.document);
@@ -260,6 +266,75 @@ fn script_inserted_stylesheets_and_images_load_after_first_paint() {
     };
     assert!(rendered.images.iter().any(|image| {
         image.url.ends_with("/dynamic.png") && image.image.width == 2 && image.image.height == 1
+    }));
+    session.shutdown().expect("shutdown renderer");
+}
+
+#[test]
+fn blocking_stylesheet_load_precedes_window_load() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let document = better_web_browser::renderer_protocol::DocumentId::new(96).unwrap();
+    let html = r#"<!doctype html><head><link rel="stylesheet" href="/blocking.css"></head>
+        <body><div id="status">pending</div><script>
+            const order = [];
+            document.querySelector('link').addEventListener('load', () => order.push('style'));
+            window.addEventListener('load', () => {
+                order.push('window');
+                document.querySelector('#status').textContent = order.join(',');
+            });
+        </script></body>"#;
+    session
+        .load_document(
+            document_start(document, html.len()),
+            empty_document_state(),
+            html.as_bytes().to_vec(),
+        )
+        .unwrap();
+
+    let request = loop {
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::FetchBatch {
+                document: fetched_document,
+                requests,
+            } if fetched_document == document => {
+                assert_eq!(requests.len(), 1);
+                break requests.into_iter().next().unwrap();
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            event => panic!("unexpected event while waiting for stylesheet: {event:?}"),
+        }
+    };
+    assert_eq!(request.head.destination, ResourceDestination::Style);
+    let bytes = b"#status { color: rgb(1, 2, 3); }".to_vec();
+    let request_id = request.head.request_id;
+    let sink = session.fetch_response_sink(document);
+    sink.start(FetchResponseHead {
+        request_id,
+        result: FetchResponseResult::Success {
+            response_type: FetchResponseType::Basic,
+            urls: vec![request.head.url],
+            status: 200,
+            headers: vec![
+                ("content-type".into(), "text/css".into()),
+                ("content-length".into(), bytes.len().to_string()),
+            ],
+        },
+    })
+    .unwrap();
+    sink.chunk(TransferChunk {
+        transfer_id: request_id,
+        offset: 0,
+        bytes: bytes.clone(),
+    })
+    .unwrap();
+    sink.end(request_id, bytes.len() as u32).unwrap();
+
+    let rendered = wait_for_document_presentation(&session, document);
+    assert!(rendered.layout.items.iter().any(|item| {
+        matches!(item, DisplayItem::Text { text, .. } if text.contains("style,window"))
     }));
     session.shutdown().expect("shutdown renderer");
 }

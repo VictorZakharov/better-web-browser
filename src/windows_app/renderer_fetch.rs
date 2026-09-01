@@ -1,6 +1,7 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
 mod registry;
+mod scheduler;
 
 use super::*;
 use better_web_browser::fetch::{
@@ -61,53 +62,34 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         .name(format!("breeze-renderer-fetch-{}", tab_id.get()))
         .spawn(move || {
             let started = Instant::now();
-            let mut bytes = 0_u64;
-            for batch in requests.chunks(MAX_PARALLEL_RENDERER_FETCHES) {
-                let fetched = std::thread::scope(|scope| {
-                    batch
-                        .iter()
-                        .cloned()
-                        .map(|(request, request_signal)| {
-                            let request_id = request.head.request_id;
-                            let client = Arc::clone(&client);
-                            let signal = request_signal.clone();
-                            let sink = sink.clone();
-                            let registry = registry.clone();
-                            let document_url = &document_url;
-                            (
-                                request_id,
-                                scope.spawn(move || {
-                                    let bytes = execute(
-                                        &client,
-                                        &signal,
-                                        &sink,
-                                        document,
-                                        document_url,
-                                        request,
-                                    );
-                                    registry.complete(document, request_id);
-                                    bytes
-                                }),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .map(|(request_id, worker)| {
-                            worker.join().unwrap_or_else(|_| {
-                                let error = FetchError::new(
-                                    FetchErrorKind::Network,
-                                    "browser Fetch worker panicked",
-                                );
-                                let _ = send_failure(&sink, request_id, &error);
-                                0
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                });
-                for count in fetched {
-                    bytes = bytes.saturating_add(count);
-                }
-            }
+            // Keep every available network slot useful. Partitioning requests into fixed waves
+            // lets one slow media or font response prevent later styles and images from starting.
+            let bytes = scheduler::execute_bounded(
+                requests,
+                MAX_PARALLEL_RENDERER_FETCHES,
+                |(request, request_signal)| {
+                    let request_id = request.head.request_id;
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        execute(
+                            &client,
+                            &request_signal,
+                            &sink,
+                            document,
+                            &document_url,
+                            request,
+                        )
+                    }));
+                    registry.complete(document, request_id);
+                    result.unwrap_or_else(|_| {
+                        let error = FetchError::new(
+                            FetchErrorKind::Network,
+                            "browser Fetch worker panicked",
+                        );
+                        let _ = send_failure(&sink, request_id, &error);
+                        0
+                    })
+                },
+            );
             let completion = Box::new(RendererFetchCompletion {
                 document,
                 bytes,

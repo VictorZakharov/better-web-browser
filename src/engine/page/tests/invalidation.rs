@@ -35,7 +35,7 @@ fn refreshes_only_the_invalidated_style_subtree_without_stale_values() {
     let stats = page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(section.id()),
+            roots: vec![section.id()],
             impact: MutationKind::Attribute("class").impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -52,6 +52,72 @@ fn refreshes_only_the_invalidated_style_subtree_without_stale_values() {
 }
 
 #[test]
+fn refreshes_disjoint_component_subtrees_without_widening_to_the_document() {
+    let mut page = Page::parse(
+        r#"<style>.hot { color:#123456 }</style>
+            <main><section id=left-root><p id=left>left</p></section>
+            <aside id=right-root><p id=right>right</p></aside>
+            <footer><div>unrelated</div><div>unrelated</div><div>unrelated</div></footer></main>"#,
+        "https://example.com/",
+    );
+    let full = page.refresh_resources(800.0);
+    let left_root = element_with_id(&page, "section", "left-root");
+    let right_root = element_with_id(&page, "aside", "right-root");
+    let left = element_with_id(&page, "p", "left");
+    let right = element_with_id(&page, "p", "right");
+    left.set_attr("class", "hot");
+    right.set_attr("class", "hot");
+
+    let stats = page.refresh_resources_after_invalidation(
+        800.0,
+        &RenderInvalidation {
+            roots: vec![left_root.id(), right_root.id()],
+            impact: MutationKind::Attribute("class").impact(),
+            mutation_count: 2,
+            rebuild_style_rules: false,
+            removed_nodes: Vec::new(),
+        },
+    );
+
+    assert!(!stats.full_rebuild);
+    assert!(stats.recomputed_styles < full.total_styles);
+    assert_eq!(stats.recomputed_styles, 6);
+    let styles = page.cached_style(800.0).unwrap();
+    assert_eq!(styles.get(&left).color, Color::rgb(0x12, 0x34, 0x56));
+    assert_eq!(styles.get(&right).color, Color::rgb(0x12, 0x34, 0x56));
+}
+
+#[test]
+fn dynamic_loaded_class_resolves_visibility_inherit_without_stale_hidden_style() {
+    let mut page = Page::parse(
+        r#"<style>
+            .host { visibility: visible }
+            .resource { display: inline-block; visibility: hidden; width: 160px; height: 90px }
+            .loaded { visibility: inherit }
+        </style><div class=host><img id=resource class=resource></div>"#,
+        "https://example.com/",
+    );
+    page.refresh_resources(800.0);
+    let resource = element_with_id(&page, "img", "resource");
+    assert!(!page.cached_style(800.0).unwrap().get(&resource).visibility);
+
+    resource.set_attr("class", "resource loaded");
+    let stats = page.refresh_resources_after_invalidation(
+        800.0,
+        &RenderInvalidation {
+            roots: vec![resource.id()],
+            impact: MutationKind::Attribute("class").impact(),
+            mutation_count: 1,
+            rebuild_style_rules: false,
+            removed_nodes: Vec::new(),
+        },
+    );
+
+    assert_eq!(stats.recomputed_styles, 1);
+    assert!(page.cached_style(800.0).unwrap().get(&resource).visibility);
+}
+
+#[test]
 fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
     let mut page = Page::parse(
         "<main id=branch><p>before</p></main><aside>unrelated</aside>",
@@ -65,7 +131,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
     let text = page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::CharacterData.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -80,7 +146,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
     let insertion = page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -99,7 +165,7 @@ fn handles_text_insertion_removal_and_viewport_invalidation_conservatively() {
     let removal = page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -131,7 +197,7 @@ fn keeps_style_for_a_node_reinserted_before_the_rendering_checkpoint() {
     let stats = page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 2,
             rebuild_style_rules: false,
@@ -168,7 +234,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
     page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(first.id()),
+            roots: vec![first.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -195,7 +261,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
     page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -209,7 +275,7 @@ fn rebuilt_layout_does_not_retain_text_or_insertion_geometry() {
     page.refresh_resources_after_invalidation(
         800.0,
         &RenderInvalidation {
-            root: Some(branch.id()),
+            roots: vec![branch.id()],
             impact: MutationKind::ChildList.impact(),
             mutation_count: 1,
             rebuild_style_rules: false,
@@ -243,7 +309,7 @@ fn stylesheet_text_mutation_forces_rule_rebuild_without_stale_style() {
     let outcome = runtime.advance_time(std::time::Duration::from_millis(500), 128);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert!(outcome.invalidation.rebuild_style_rules);
-    assert_eq!(outcome.invalidation.root, Some(page.dom.document.id()));
+    assert_eq!(outcome.invalidation.roots, vec![page.dom.document.id()]);
     let stats = page.refresh_resources_after_invalidation(800.0, &outcome.invalidation);
 
     assert!(stats.full_rebuild);
@@ -281,7 +347,7 @@ fn constructed_stylesheet_replacement_forces_rule_rebuild_without_stale_style() 
     let outcome = runtime.advance_time(std::time::Duration::from_millis(500), 128);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert!(outcome.invalidation.rebuild_style_rules);
-    assert_eq!(outcome.invalidation.root, Some(page.dom.document.id()));
+    assert_eq!(outcome.invalidation.roots, vec![page.dom.document.id()]);
     let stats = page.refresh_resources_after_invalidation(800.0, &outcome.invalidation);
 
     assert!(stats.full_rebuild);

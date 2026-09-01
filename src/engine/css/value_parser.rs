@@ -21,7 +21,7 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
         ("px", Length::Px as fn(f32) -> Length),
         ("pt", |value| Length::Px(value * 96.0 / 72.0)),
         ("em", Length::Em),
-        ("rem", |value| Length::Px(value * 16.0)),
+        ("rem", Length::Rem),
         ("vw", Length::Vw),
         ("vh", Length::Vh),
         ("vmin", Length::Vmin),
@@ -37,11 +37,22 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
     None
 }
 
+pub(crate) fn parse_opacity(value: &str) -> Option<f32> {
+    let value = value.trim();
+    let opacity = if let Some(percentage) = value.strip_suffix('%') {
+        percentage.trim().parse::<f32>().ok()? / 100.0
+    } else {
+        value.parse::<f32>().ok()?
+    };
+    opacity.is_finite().then(|| opacity.clamp(0.0, 1.0))
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(super) struct CalcLength {
     px: f32,
     percent: f32,
     em: f32,
+    rem: f32,
     vw: f32,
     vh: f32,
     vmin: f32,
@@ -54,6 +65,7 @@ impl CalcLength {
             px: self.px * factor,
             percent: self.percent * factor,
             em: self.em * factor,
+            rem: self.rem * factor,
             vw: self.vw * factor,
             vh: self.vh * factor,
             vmin: self.vmin * factor,
@@ -66,6 +78,7 @@ impl CalcLength {
             px: self.px + other.px,
             percent: self.percent + other.percent,
             em: self.em + other.em,
+            rem: self.rem + other.rem,
             vw: self.vw + other.vw,
             vh: self.vh + other.vh,
             vmin: self.vmin + other.vmin,
@@ -78,6 +91,7 @@ impl CalcLength {
             self.px,
             self.percent,
             self.em,
+            self.rem,
             self.vw,
             self.vh,
             self.vmin,
@@ -91,6 +105,8 @@ impl CalcLength {
                 Length::Percent(self.percent)
             } else if self.em.abs() > f32::EPSILON {
                 Length::Em(self.em)
+            } else if self.rem.abs() > f32::EPSILON {
+                Length::Rem(self.rem)
             } else if self.vw.abs() > f32::EPSILON {
                 Length::Vw(self.vw)
             } else if self.vh.abs() > f32::EPSILON {
@@ -107,6 +123,7 @@ impl CalcLength {
                 px: self.px,
                 percent: self.percent,
                 em: self.em,
+                rem: self.rem,
                 vw: self.vw,
                 vh: self.vh,
                 vmin: self.vmin,
@@ -220,7 +237,7 @@ pub(super) fn parse_calc_value<'i, 't>(
             match unit.to_ascii_lowercase().as_str() {
                 "px" => length.px = value,
                 "pt" => length.px = value * 96.0 / 72.0,
-                "rem" => length.px = value * 16.0,
+                "rem" => length.rem = value,
                 "em" => length.em = value,
                 "vw" => length.vw = value,
                 "vh" => length.vh = value,

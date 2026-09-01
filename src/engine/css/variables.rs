@@ -14,7 +14,11 @@ pub(super) fn apply_custom_properties(
         let value = declaration.value.trim();
         if value.eq_ignore_ascii_case("initial") {
             Arc::make_mut(&mut style.custom_properties).remove(&declaration.name);
-        } else if value.eq_ignore_ascii_case("inherit") || value.eq_ignore_ascii_case("unset") {
+        } else if value.eq_ignore_ascii_case("inherit")
+            || value.eq_ignore_ascii_case("unset")
+            || value.eq_ignore_ascii_case("revert")
+            || value.eq_ignore_ascii_case("revert-layer")
+        {
             if let Some(value) = parent
                 .and_then(|parent| parent.custom_properties.get(&declaration.name))
                 .cloned()
@@ -34,6 +38,7 @@ pub(super) fn apply_resolved_declaration(
     style: &mut ComputedStyle,
     declaration: &Declaration,
     parent: Option<&ComputedStyle>,
+    lower_origin: &ComputedStyle,
     base_url: &str,
     viewport_width: f32,
     viewport_height: f32,
@@ -53,6 +58,7 @@ pub(super) fn apply_resolved_declaration(
         style,
         &resolved,
         parent,
+        lower_origin,
         base_url,
         viewport_width,
         viewport_height,

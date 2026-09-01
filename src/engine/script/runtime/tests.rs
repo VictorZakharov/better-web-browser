@@ -127,6 +127,55 @@ fn retained_runtime_executes_post_load_work_in_the_same_realm() {
 }
 
 #[test]
+fn timer_batches_yield_after_a_layout_mutation() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><div id="status">waiting</div><script>
+            setTimeout(() => {
+                document.getElementById('status').textContent = 'first';
+            }, 2000);
+            setTimeout(() => {
+                document.body.setAttribute('data-second', 'ran');
+            }, 2000);
+        </script></body>"#,
+        true,
+    );
+    let scripts = script_inputs(&dom);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+
+    let initial = runtime.execute_initial(&scripts);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+
+    let first = runtime.advance_time(Duration::from_millis(500), 8);
+    assert!(first.errors.is_empty(), "{:?}", first.errors);
+    assert!(first.render_requested);
+    assert_eq!(first.mutation_count, 1);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "first"
+    );
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-second"),
+        None
+    );
+    assert_eq!(runtime.next_timer_delay(), Some(Duration::ZERO));
+
+    let second = runtime.advance_time(Duration::ZERO, 8);
+    assert!(second.errors.is_empty(), "{:?}", second.errors);
+    assert!(second.render_requested);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-second")
+            .as_deref(),
+        Some("ran")
+    );
+}
+
+#[test]
 fn retained_runtime_executes_an_additional_script_in_the_same_realm() {
     let dom = dom::parse_with_scripting(
         r#"<body><div>waiting</div><script></script><script></script></body>"#,

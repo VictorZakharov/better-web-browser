@@ -8,6 +8,12 @@ pub(super) fn style_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "cssSupports" {
+        let condition = argument_string(args, 1)?;
+        return Ok(Some(JsValue::from(
+            crate::engine::css::supports::supports_matches(&condition),
+        )));
+    }
     if operation == "normalizeCssColor" {
         let value = argument_string(args, 1)?;
         let Some(color) = crate::engine::css::parse_color(&value) else {
@@ -31,7 +37,12 @@ pub(super) fn style_host_call(
         return Ok(None);
     }
     let node = state.node(argument_id(args, 1));
-    let property = argument_string(args, 2)?.to_ascii_lowercase();
+    let property = argument_string(args, 2)?;
+    let property = if property.starts_with("--") {
+        property
+    } else {
+        property.to_ascii_lowercase()
+    };
     let value = node
         .and_then(|node| state.computed_style_property(&node, &property))
         .unwrap_or_default();

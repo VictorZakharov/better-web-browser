@@ -15,18 +15,7 @@
         get host() { return wrap(host('shadowHost', this.__id)); }
         getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
         get innerHTML() { return host('innerHtmlGet', this.__id); }
-        set innerHTML(value) {
-            const wasConnected = this.isConnected;
-            const removedChildren = wasConnected ? [...this.childNodes] : [];
-            host('innerHtmlSet', this.__id, value == null ? '' : String(value));
-            markChildCollectionsChanged(this);
-            for (const child of removedChildren) disconnectCustomElementTree(child);
-            for (const child of this.childNodes) {
-                if (wasConnected) connectCustomElementTree(child);
-                else upgradeCustomElementTree(child);
-            }
-            scheduleSlotChangeCheck();
-        }
+        set innerHTML(value) { replaceElementInnerHtml(this, value); }
     }
     Object.defineProperty(ShadowRoot.prototype, Symbol.toStringTag,
         { value: 'ShadowRoot', configurable: true });

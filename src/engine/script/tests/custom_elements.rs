@@ -69,6 +69,29 @@ fn document_and_constructor_creation_preserve_custom_identity() {
 }
 
 #[test]
+fn importing_template_content_upgrades_for_the_destination_document() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+            let constructions = 0;
+            class ImportedElement extends HTMLElement {
+                constructor() { super(); constructions++; }
+            }
+            customElements.define('x-imported', ImportedElement);
+            const template = document.createElement('template');
+            template.innerHTML = '<x-imported></x-imported>';
+            const templateElement = template.content.firstElementChild;
+            const imported = document.importNode(template.content, true);
+            const valid = !(templateElement instanceof ImportedElement) &&
+                imported.firstElementChild instanceof ImportedElement && constructions === 1;
+            document.body.setAttribute('data-result', valid ? 'pass' : 'fail:' + constructions);
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
 fn lifecycle_and_nested_attribute_reactions_run_in_mutation_order() {
     let (dom, outcome) = execute_html(
         r#"<body><script>

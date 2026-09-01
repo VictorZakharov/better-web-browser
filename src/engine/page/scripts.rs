@@ -38,6 +38,7 @@ impl Page {
             None,
             true,
             false,
+            false,
         )
         .expect("empty Web Storage state is valid")
     }
@@ -58,6 +59,7 @@ impl Page {
             Some((cookie_version, local_storage, session_storage)),
             true,
             host_call_profiling,
+            true,
         )
     }
 
@@ -71,6 +73,7 @@ impl Page {
             dynamic_script_loader,
             "",
             None,
+            false,
             false,
             false,
         )
@@ -90,6 +93,7 @@ impl Page {
         )>,
         defer_dynamic_scripts: bool,
         host_call_profiling: bool,
+        defer_document_completion: bool,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
@@ -125,6 +129,10 @@ impl Page {
                 &self.character_set,
             );
             runtime.set_media_environment(self.media_environment);
+            runtime.set_layout_viewport(self.layout_viewport.0, self.layout_viewport.1);
+            runtime.set_quirks_mode(
+                self.dom.quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
+            );
             runtime.set_document_stylesheets(&self.stylesheet_sources);
             runtime.set_host_call_profiling(host_call_profiling);
             if let Some((cookie_version, local, session)) = document_state {
@@ -132,7 +140,9 @@ impl Page {
             } else {
                 runtime.set_document_cookie_header(cookie_header);
             }
-            let outcome = if defer_dynamic_scripts {
+            let outcome = if defer_document_completion {
+                runtime.execute_initial_before_document_completion(&inputs, dynamic_script_loader)
+            } else if defer_dynamic_scripts {
                 runtime.execute_initial_deferred(&inputs, dynamic_script_loader)
             } else {
                 runtime.execute_initial_with_loader(&inputs, dynamic_script_loader)

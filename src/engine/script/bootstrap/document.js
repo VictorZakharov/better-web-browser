@@ -32,6 +32,7 @@
         if (localName === 'textarea') return HTMLTextAreaElement;
         if (localName === 'ol') return HTMLOrderedListElement;
         if (localName === 'select') return HTMLSelectElement;
+        if (localName === 'option') return HTMLOptionElement;
         if (localName === 'button') return HTMLButtonElement;
         if (localName === 'label') return HTMLLabelElement;
         if (localName === 'fieldset') return HTMLFieldSetElement;
@@ -94,6 +95,7 @@
             if (!(node instanceof Node)) throw new TypeError('importNode requires a Node');
             const imported = wrap(host('importNode', this.__id, node.__id, !!deep));
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
+            upgradeCustomElementTree(imported);
             return imported;
         }
         adoptNode(node) {
@@ -168,12 +170,13 @@
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }
-        get compatMode() { return 'CSS1Compat'; }
+        get compatMode() { return host('documentCompatMode', this.__id); }
         get characterSet() { return host('documentCharacterSet', this.__id); }
         get contentType() { return 'text/html'; }
         get cookie() { return host('cookieGet'); }
         set cookie(value) { host('cookieSet', String(value)); }
     }
+    installParentNodeMembers(Document.prototype);
     installEventHandlerAttributes(Document.prototype);
 
     function wrap(id) {
@@ -260,6 +263,7 @@
     windowObject.HTMLTextAreaElement = HTMLTextAreaElement;
     windowObject.HTMLOrderedListElement = HTMLOrderedListElement;
     windowObject.HTMLSelectElement = HTMLSelectElement;
+    windowObject.HTMLOptionElement = HTMLOptionElement;
     windowObject.HTMLButtonElement = HTMLButtonElement;
     windowObject.HTMLLabelElement = HTMLLabelElement;
     windowObject.HTMLFieldSetElement = HTMLFieldSetElement;
