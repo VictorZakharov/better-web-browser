@@ -211,8 +211,12 @@
                 set(_, property, value) { element.setAttribute('data-' + String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()), value); return true; }
             });
         }
-        get contentWindow() { return this.localName === 'iframe' ? iframeWindow : null; }
-        get contentDocument() { return this.localName === 'iframe' ? iframeDocument : null; }
+        get contentWindow() {
+            return this.localName === 'iframe' && iframeDocumentFor(this) ? iframeWindow : null;
+        }
+        get contentDocument() {
+            return this.localName === 'iframe' ? iframeDocumentFor(this) : null;
+        }
         click() {
             const allowed = this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
             if (allowed && this.localName === 'summary') {

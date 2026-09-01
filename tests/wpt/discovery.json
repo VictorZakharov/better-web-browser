@@ -12,12 +12,6 @@
   },
   "tests": [
     {
-      "path": "dom/nodes/Node-isConnected.html",
-      "area": "DOM mutation",
-      "expected": "fail",
-      "reason": "Nested browsing-context connectivity is not implemented yet."
-    },
-    {
       "path": "css/cssom-view/GetBoundingRect.html",
       "area": "CSS layout",
       "expected": "fail",

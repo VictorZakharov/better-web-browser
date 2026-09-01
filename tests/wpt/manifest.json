@@ -420,6 +420,11 @@
       "expected": "pass"
     },
     {
+      "path": "dom/nodes/Node-isConnected.html",
+      "area": "DOM mutation",
+      "expected": "pass"
+    },
+    {
       "path": "html/semantics/forms/the-form-element/form-length.html",
       "area": "Forms",
       "expected": "pass"

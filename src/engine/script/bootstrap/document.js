@@ -56,6 +56,7 @@
     }
 
     let documentWriteRefreshQueued = false;
+    const documentDefaultViews = new WeakMap();
     const documentCollections = new WeakMap();
     const documentCollection = (document, name, selector) => {
         let collections = documentCollections.get(document);
@@ -147,7 +148,10 @@
         get documentURI() { return this.URL; }
         get baseURI() { return this.querySelector('base')?.href || this.URL; }
         get currentScript() { return this._currentScript; }
-        get defaultView() { return host('isPrimaryDocument', this.__id) ? windowObject : null; }
+        get defaultView() {
+            return documentDefaultViews.get(this) ||
+                (host('isPrimaryDocument', this.__id) ? windowObject : null);
+        }
         get implementation() { return this.__implementation ||= new DOMImplementation(); }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
         __dispatchNodeEvent(id, type) {
@@ -367,23 +371,24 @@
     iframeWindow.addEventListener = iframeEvents.addEventListener.bind(iframeEvents);
     iframeWindow.removeEventListener = iframeEvents.removeEventListener.bind(iframeEvents);
     iframeWindow.dispatchEvent = iframeEvents.dispatchEvent.bind(iframeEvents);
-    const iframeDocument = {
-        defaultView: iframeWindow,
-        readyState: 'complete',
-        URL: 'about:blank',
-        documentURI: 'about:blank',
-        baseURI: 'about:blank',
-        createElement: name => document.createElement(name),
-        createElementNS: (_namespace, name) => document.createElement(name),
-        createAttribute: name => document.createAttribute(name),
-        createAttributeNS: (namespace, name) => document.createAttributeNS(namespace, name),
-        createTextNode: text => document.createTextNode(text),
-        querySelector: selector => document.querySelector(selector),
-        querySelectorAll: selector => document.querySelectorAll(selector)
+    const iframeDocuments = new WeakMap();
+    const iframeDocumentFor = frame => {
+        let iframeDocument = iframeDocuments.get(frame);
+        if (!iframeDocument && frame.isConnected) {
+            // A same-origin about:blank iframe owns a real HTML document. Its descendants keep
+            // that document as their root even if the embedding element is later disconnected.
+            // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+            iframeDocument = wrap(host('createHtmlDocument', ''));
+            iframeDocument.readyState = 'complete';
+            documentDefaultViews.set(iframeDocument, iframeWindow);
+            iframeDocuments.set(frame, iframeDocument);
+        }
+        if (iframeDocument) iframeWindow.document = iframeDocument;
+        return iframeDocument || null;
     };
     iframeWindow.parent = windowObject;
     iframeWindow.top = windowObject;
-    iframeWindow.document = iframeDocument;
+    iframeWindow.document = null;
 
     let currentUrl = host('documentUrl');
     const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
