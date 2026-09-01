@@ -31,7 +31,11 @@ fn assert_advancing_contained_media(report: &serde_json::Value) {
         "media time did not progress: {media}"
     );
     assert_eq!(media["backend"], "Windows Media Foundation / XAudio2");
-    assert_eq!(media["mime_type"], "video/mp4");
+    let mime_type = media["mime_type"].as_str().unwrap_or_default();
+    assert!(
+        mime_type.starts_with("video/mp4") && mime_type.contains("audio/mp4"),
+        "media diagnostics did not report both selected tracks: {media}"
+    );
     assert_eq!(media["video_codec"], "H.264");
     assert_eq!(media["audio_codec"], "AAC-LC");
     assert!(

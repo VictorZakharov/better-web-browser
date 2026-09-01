@@ -5,6 +5,54 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const NAVIGATION_HOPS: usize = 5;
 
 #[test]
+fn same_document_history_from_a_trusted_click_updates_the_committed_url() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+    let address = listener.local_addr().expect("read fixture address");
+    let server = thread::spawn(move || {
+        serve_parallel_fixtures(listener, 1, move |_| {
+            FixtureResponse::html(
+                r##"<!doctype html><title>same-document history</title>
+                <a id="route" href="#activate">Open application route</a>
+                <script>
+                  route.addEventListener('click', event => {
+                    event.preventDefault();
+                    history.pushState({route: 1}, '', '/watch?v=history-contract');
+                  });
+                </script>"##,
+            )
+        })
+    });
+    let artifacts = TestArtifacts::new();
+    let url = format!("http://{address}/application");
+    let expected = format!("http://{address}/watch?v=history-contract");
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        200,
+        &[
+            "--diagnostic-selector",
+            "#route",
+            "--activate-selector-after-ready",
+            "#route",
+        ],
+    );
+    let status = wait_for_child(&mut child, Duration::from_secs(15));
+    server
+        .join()
+        .expect("fixture server panicked")
+        .expect("fixture server failed");
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+
+    let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
+    let json: serde_json::Value = serde_json::from_str(&report).expect("parse benchmark report");
+    assert_eq!(json["final_url"], expected, "History URL was not committed");
+    assert!(
+        json["renderer_exits"].as_array().is_some_and(Vec::is_empty),
+        "same-document history update lost the renderer: {report}"
+    );
+}
+
+#[test]
 fn repeated_document_navigations_do_not_inherit_stale_renderer_work() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
     let address = listener.local_addr().expect("read fixture address");

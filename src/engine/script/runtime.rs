@@ -178,7 +178,9 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn set_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
-        self.host.borrow_mut().stylesheet_sources = stylesheets.iter().cloned().collect();
+        let mut host = self.host.borrow_mut();
+        host.stylesheet_sources = stylesheets.iter().cloned().collect();
+        host.offset_parent_styles = None;
     }
 
     pub fn replace_cookie_snapshot(&mut self, version: u64, cookie_header: &str) {

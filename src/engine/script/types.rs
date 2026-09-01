@@ -106,6 +106,7 @@ pub struct ScriptOutcome {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
     pub storage_updates: Vec<StorageMutation>,
     pub fetch_actions: Vec<ScriptFetchAction>,
@@ -115,6 +116,12 @@ pub struct ScriptOutcome {
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptHistoryAction {
+    pub url: String,
+    pub replace: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

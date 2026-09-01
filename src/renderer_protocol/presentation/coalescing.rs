@@ -50,6 +50,8 @@ impl RuntimeReport {
         if next.navigation_url.is_none() {
             next.navigation_url = self.navigation_url;
         }
+        self.history_updates.append(&mut next.history_updates);
+        next.history_updates = self.history_updates;
         self.cookie_updates.append(&mut next.cookie_updates);
         next.cookie_updates = self.cookie_updates;
         next.runtime_stopped |= self.runtime_stopped;
@@ -145,6 +147,7 @@ impl RendererRuntimeUpdate {
 mod tests {
     use super::*;
     use crate::engine::DecodedImage;
+    use crate::renderer_protocol::HistoryUpdate;
     use crate::renderer_protocol::PresentedImage;
     use crate::renderer_protocol::presentation::tests::sample;
 
@@ -159,6 +162,10 @@ mod tests {
             console: vec!["first console".into()],
             diagnostics: vec!["first diagnostic".into()],
             navigation_url: Some("https://example.test/redirect".into()),
+            history_updates: vec![HistoryUpdate {
+                url: "https://example.test/first-state".into(),
+                replace: false,
+            }],
             cookie_updates: vec!["first=1".into()],
             runtime_active: true,
             render_requested: true,
@@ -187,6 +194,10 @@ mod tests {
             errors: vec!["next error".into()],
             console: vec!["next console".into()],
             diagnostics: vec!["next diagnostic".into()],
+            history_updates: vec![HistoryUpdate {
+                url: "https://example.test/next-state".into(),
+                replace: true,
+            }],
             cookie_updates: vec!["next=2".into()],
             runtime_stopped: true,
             ..RuntimeReport::default()
@@ -222,6 +233,19 @@ mod tests {
         assert_eq!(
             combined.runtime.navigation_url.as_deref(),
             Some("https://example.test/redirect")
+        );
+        assert_eq!(
+            combined.runtime.history_updates,
+            [
+                HistoryUpdate {
+                    url: "https://example.test/first-state".into(),
+                    replace: false,
+                },
+                HistoryUpdate {
+                    url: "https://example.test/next-state".into(),
+                    replace: true,
+                }
+            ]
         );
         assert!(!combined.runtime.runtime_active);
         assert!(combined.runtime.runtime_stopped);

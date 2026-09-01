@@ -127,6 +127,12 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    BeginClip {
+        bounds: RectF,
+    },
+    EndClip {
+        bounds: RectF,
+    },
     BeginOpacity {
         bounds: RectF,
         opacity: f32,

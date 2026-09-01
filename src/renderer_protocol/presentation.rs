@@ -28,11 +28,18 @@ pub struct RuntimeReport {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub history_updates: Vec<HistoryUpdate>,
     pub cookie_updates: Vec<String>,
     pub runtime_active: bool,
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub media: Option<MediaRuntimeReport>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryUpdate {
+    pub url: String,
+    pub replace: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -143,7 +150,6 @@ pub struct PresentedGlyphRaster {
     pub image: DecodedImage,
     pub color: bool,
 }
-
 #[derive(Clone, Debug)]
 pub struct RendererPresentation {
     pub document: DocumentId,

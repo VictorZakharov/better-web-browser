@@ -70,6 +70,7 @@ pub(super) fn finish_host(
     outcome.diagnostics.append(&mut state.diagnostics);
     state.append_host_call_diagnostics(&mut outcome.diagnostics);
     outcome.navigation_url = state.navigation_url.take();
+    outcome.history_actions.append(&mut state.history_actions);
     outcome.cookie_updates.append(&mut state.cookie_updates);
     outcome.storage_updates.append(&mut state.storage_updates);
     outcome

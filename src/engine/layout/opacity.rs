@@ -4,9 +4,10 @@ use super::*;
 
 pub(super) fn display_item_bounds(item: &DisplayItem) -> Option<RectF> {
     match item {
-        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => {
-            Some(*bounds)
-        }
+        DisplayItem::BeginClip { bounds }
+        | DisplayItem::EndClip { bounds }
+        | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::EndOpacity { bounds } => Some(*bounds),
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }

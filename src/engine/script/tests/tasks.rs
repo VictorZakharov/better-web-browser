@@ -179,6 +179,55 @@ fn records_script_requested_navigation() {
 }
 
 #[test]
+fn records_ordered_same_document_history_updates_and_advances_the_document_url() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+            history.pushState({ step: 1 }, '', '/watch?v=first');
+            history.replaceState({ step: 2 }, '', 'watch?v=second');
+            document.querySelector('output').textContent =
+                location.href + '|' + document.URL + '|' + history.length;
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.navigation_url.is_none());
+    assert_eq!(
+        outcome.history_actions,
+        [
+            ScriptHistoryAction {
+                url: "https://example.com/watch?v=first".into(),
+                replace: false,
+            },
+            ScriptHistoryAction {
+                url: "https://example.com/watch?v=second".into(),
+                replace: true,
+            }
+        ]
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "https://example.com/watch?v=second|https://example.com/watch?v=second|2"
+    );
+}
+
+#[test]
+fn rejects_cross_origin_history_urls_without_changing_the_document_url() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+            try { history.pushState(null, '', 'https://other.example/watch'); }
+            catch (error) { document.querySelector('output').textContent = error.name; }
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.history_actions.is_empty());
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "TypeError"
+    );
+}
+
+#[test]
 fn exposes_javascript_cookie_updates_to_the_network_layer() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="value"></div><script>

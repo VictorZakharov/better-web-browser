@@ -1,6 +1,6 @@
 use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{ScriptOutcome, StyleRefreshStats};
-use crate::renderer_protocol::{MediaRuntimeReport, RuntimeReport, StyleReport};
+use crate::renderer_protocol::{HistoryUpdate, MediaRuntimeReport, RuntimeReport, StyleReport};
 use std::time::Duration;
 
 pub(super) fn merge_outcome(
@@ -22,6 +22,7 @@ pub(super) fn merge_outcome(
     if source.navigation_url.is_some() {
         target.navigation_url = source.navigation_url;
     }
+    target.history_actions.append(&mut source.history_actions);
     target.cookie_updates.append(&mut source.cookie_updates);
     target.storage_updates.append(&mut source.storage_updates);
     target.fetch_actions.append(&mut source.fetch_actions);
@@ -46,6 +47,14 @@ pub(super) fn runtime_report(
         console: std::mem::take(&mut outcome.console),
         diagnostics: std::mem::take(&mut outcome.diagnostics),
         navigation_url: outcome.navigation_url,
+        history_updates: outcome
+            .history_actions
+            .into_iter()
+            .map(|action| HistoryUpdate {
+                url: action.url,
+                replace: action.replace,
+            })
+            .collect(),
         cookie_updates: outcome.cookie_updates,
         runtime_active,
         runtime_stopped: outcome.runtime_stopped,

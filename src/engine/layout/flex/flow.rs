@@ -100,7 +100,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             } else {
                 current_width + gap + item.basis
             };
-            if style.flex_wrap && !current.is_empty() && next_width > width {
+            // Percentage and calc() item sizes commonly divide a row into equal shares.
+            // Their independently rounded f32 outer sizes can add up a few ULPs wider than
+            // the same containing block even though the CSS sizes mathematically fit. Layout
+            // engines operate on subpixel units, so do not create a new flex line for noise
+            // below one CSS subpixel.
+            const LINE_FIT_TOLERANCE: f32 = 1.0 / 64.0;
+            if style.flex_wrap && !current.is_empty() && next_width > width + LINE_FIT_TOLERANCE {
                 lines.push(std::mem::take(&mut current));
                 current_width = 0.0;
             }

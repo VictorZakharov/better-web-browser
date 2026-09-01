@@ -6,6 +6,7 @@ use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource
 use crate::limits::{
     MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
+    MAX_SCRIPT_NAVIGATIONS,
 };
 use crate::navigation::resolve_url;
 use std::cell::RefCell;
@@ -24,6 +25,7 @@ mod dynamic_scripts;
 mod engine;
 mod execution;
 mod fullscreen_host;
+mod history_host;
 mod host_call;
 mod host_profiling;
 mod host_state;
@@ -64,8 +66,8 @@ pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
 pub use types::{
     DynamicScriptLoader, DynamicScriptRequest, ScriptFetchOptions, ScriptFullscreenAction,
-    ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand, ScriptOutcome, UserInputEvent,
-    UserInputModifiers, UserInputResult,
+    ScriptHistoryAction, ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand,
+    ScriptOutcome, UserInputEvent, UserInputModifiers, UserInputResult,
 };
 use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;

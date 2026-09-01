@@ -18,6 +18,7 @@ const MEDIA_EXIT_STARTUP: u32 = 0x4d01;
 const MEDIA_EXIT_PROTOCOL: u32 = 0x4d02;
 const MEDIA_EXIT_TIMEOUT: u32 = 0x4d03;
 const MEDIA_EXIT_DROP: u32 = 0x4d04;
+const MEDIA_EXIT_DECODE: u32 = 0x4d06;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MediaWorkerState {

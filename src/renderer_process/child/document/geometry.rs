@@ -2,6 +2,14 @@
 
 use super::*;
 
+struct GeometryTextMeasurer<'a, M>(&'a mut M);
+
+impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTextMeasurer<'_, M> {
+    fn measure(&mut self, text: &str, font: &crate::engine::FontSpec) -> (f32, f32) {
+        self.0.measure(text, font)
+    }
+}
+
 impl DocumentRuntime {
     pub(super) fn sync_script_layout_page(&mut self) {
         self.script_layout_viewport.set(self.viewport);
@@ -35,12 +43,13 @@ impl DocumentRuntime {
                 invalidation,
             );
             let mut text = text.borrow_mut();
+            let mut geometry_text = GeometryTextMeasurer(&mut *text);
             layout_page_with_style_viewport(
                 &page,
                 viewport.width,
                 viewport.height,
                 viewport.style_width,
-                &mut *text,
+                &mut geometry_text,
             )
             .node_bounds
         })

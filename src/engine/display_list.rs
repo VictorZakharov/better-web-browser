@@ -74,7 +74,10 @@ impl DisplayListDamage {
 
 fn item_bounds(item: &DisplayItem) -> RectF {
     match item {
-        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => *bounds,
+        DisplayItem::BeginClip { bounds }
+        | DisplayItem::EndClip { bounds }
+        | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }

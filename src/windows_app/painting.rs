@@ -1,3 +1,4 @@
+mod clip;
 mod crash;
 mod opacity;
 
@@ -9,6 +10,7 @@ use super::paint_primitives::{
 use super::platform::*;
 use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
 use better_web_browser::engine::{ControlKind, DisplayItem};
+use clip::ClipStack;
 use crash::paint_crash_page;
 use opacity::{OpacityLayer, OpacityLayerStart};
 use std::ptr::null_mut;
@@ -45,9 +47,7 @@ impl BrowserState {
 
         if !memory_dc.is_null() && !bitmap.is_null() {
             let previous = SelectObject(memory_dc, bitmap);
-            // Allocate only for the invalidated region. The viewport origin keeps the renderer in
-            // client coordinates while mapping that rectangle to this compact backbuffer.
-            // <https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-setviewportorgex>
+            // Map client coordinates into a backbuffer sized to the invalidated region.
             SetViewportOrgEx(memory_dc, -dirty.left, -dirty.top, null_mut());
             IntersectClipRect(memory_dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
             self.paint_surface(memory_dc, &client, &dirty);
@@ -119,6 +119,7 @@ impl BrowserState {
                 let visible_top = (tab.scroll_y + dirty_content_top) as f32 / scale;
                 let visible_bottom = (tab.scroll_y + dirty_content_bottom) as f32 / scale;
                 let mut opacity_layers = Vec::new();
+                let mut clip_stack = ClipStack::default();
                 let mut skipped_opacity_depth = 0_usize;
                 for range in tab.paint_index.visible_ranges(visible_top, visible_bottom) {
                     for item in &tab.page_layout.items[range] {
@@ -159,6 +160,15 @@ impl BrowserState {
                                 if let Some(layer) = opacity_layers.pop() {
                                     layer.finish();
                                 }
+                            }
+                            DisplayItem::BeginClip { .. } | DisplayItem::EndClip { .. } => {
+                                clip_stack.handle(
+                                    item,
+                                    item_dc,
+                                    tab.scroll_y,
+                                    toolbar_height,
+                                    scale,
+                                );
                             }
                             DisplayItem::SolidRect {
                                 rect,

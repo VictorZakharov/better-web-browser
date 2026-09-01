@@ -65,6 +65,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
         return Ok(value);
     }
+    if let Some(value) = super::history_host::history_host_call(operation, args, state)? {
+        return Ok(value);
+    }
 
     match operation {
         "parent" => {
