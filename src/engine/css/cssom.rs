@@ -47,6 +47,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "color" => serialize_color(style.color),
+        "content" => style.generated_content.css_text(),
         "display" => style.display.css_keyword().to_string(),
         "flex-direction" => match style.flex_direction {
             FlexDirection::Row => "row",

@@ -10,6 +10,7 @@ use crate::limits::{
 #[derive(Debug)]
 pub(super) struct Rule {
     pub(super) selector: Selector,
+    pub(super) pseudo: Option<PseudoElement>,
     pub(super) host_condition: Option<Selector>,
     pub(super) declarations: Vec<Declaration>,
     pub(super) order: u32,
@@ -144,7 +145,7 @@ fn parse_rule_list(
                     }
                     None => None,
                 };
-                if let Some(mut selector) = parse_selector(selector_text) {
+                if let Some((mut selector, pseudo)) = parse_style_rule_selector(selector_text) {
                     if let Some(condition) = host_condition.as_ref() {
                         selector.specificity.ids = selector
                             .specificity
@@ -161,6 +162,7 @@ fn parse_rule_list(
                     }
                     output.push(Rule {
                         selector,
+                        pseudo,
                         host_condition,
                         declarations: declarations.clone(),
                         order: *next_order,

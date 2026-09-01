@@ -431,7 +431,7 @@ fn cascades_inherited_custom_properties_before_var_substitution() {
         Some("672px")
     );
     assert_eq!(
-        substitute_variables(
+        variables::substitute_variables(
             "calc(var(--max-content-width) - 72px)",
             &styles.get(&target).custom_properties,
         )

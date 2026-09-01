@@ -4,7 +4,8 @@ use super::ComputedStyle;
 
 impl ComputedStyle {
     pub(crate) fn layout_equivalent(&self, other: &Self) -> bool {
-        self.display == other.display
+        self.generated_content == other.generated_content
+            && self.display == other.display
             && self.position == other.position
             && self.float == other.float
             && self.font_size == other.font_size

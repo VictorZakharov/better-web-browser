@@ -28,7 +28,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     &text.borrow(),
                     style,
                     inherited_link,
-                    node.id(),
+                    (!node.is_generated_pseudo_content()).then_some(node.id()),
                     output,
                     pending_space,
                 );
@@ -88,7 +88,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             output.push(InlineAtom::InlineBox {
                                 children,
                                 style: Box::new(style.clone()),
-                                node_id: node.id(),
+                                node_id: (!node.is_generated_pseudo()).then_some(node.id()),
                             });
                         } else if honor_block_boundaries && is_block_level(style.display) {
                             if !output.is_empty()

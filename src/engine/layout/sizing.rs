@@ -14,7 +14,7 @@ pub(super) fn collect_text_atoms(
     text: &str,
     style: &ComputedStyle,
     link: Option<(String, NodeId)>,
-    source_node: NodeId,
+    source_node: Option<NodeId>,
     output: &mut Vec<InlineAtom>,
     pending_space: &mut bool,
 ) {
@@ -28,7 +28,7 @@ pub(super) fn collect_text_atoms(
                     line.to_string(),
                     style,
                     link.clone(),
-                    Some(source_node),
+                    source_node,
                 ));
             }
         }
@@ -44,7 +44,7 @@ pub(super) fn collect_text_atoms(
                 if saw_space {
                     word.insert(0, ' ');
                 }
-                output.push(text_atom(word, style, link.clone(), Some(source_node)));
+                output.push(text_atom(word, style, link.clone(), source_node));
             }
             saw_space = true;
         } else if word_start.is_none() {
@@ -56,7 +56,7 @@ pub(super) fn collect_text_atoms(
         if saw_space {
             word.insert(0, ' ');
         }
-        output.push(text_atom(word, style, link, Some(source_node)));
+        output.push(text_atom(word, style, link, source_node));
         *pending_space = false;
     } else {
         *pending_space = saw_space;

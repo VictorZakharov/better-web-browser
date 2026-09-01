@@ -22,22 +22,23 @@ mod tests_edge_cases;
 mod tests_flex_sizing;
 #[cfg(test)]
 mod tests_general;
+#[cfg(test)]
+mod tests_pseudo;
 mod tracks;
 mod translate;
+use super::css::{
+    AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
+    Float, JustifyContent, Length, ListStyleType, Position, PseudoElement, ResolvedEdges, StyleSet,
+    TextAlign, WhiteSpace, parse_length,
+};
+use super::dom::{Node, NodeData, NodeId, NodeRef};
+use super::page::{Page, inline_svg_key};
+use crate::navigation::resolve_url;
 pub use engine::{layout_page, layout_page_with_style_viewport};
 pub use model::{
     ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
     RectF, SelectOption, ShapedText, TextMeasurer,
 };
-
-use super::css::{
-    AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
-    Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, StyleSet, TextAlign,
-    WhiteSpace, parse_length,
-};
-use super::dom::{Node, NodeData, NodeId, NodeRef};
-use super::page::{Page, inline_svg_key};
-use crate::navigation::resolve_url;
 use std::collections::HashMap;
 
 use engine::{BlockMetrics, LayoutEngine, UsedInlineSize};

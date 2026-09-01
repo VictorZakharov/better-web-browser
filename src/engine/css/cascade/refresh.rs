@@ -28,6 +28,12 @@ impl StyleSet {
             .filter(|node| !connected_nodes.contains(node))
             .filter(|node| self.styles.remove(node).is_some())
             .count();
+        let removed_origins = removed_nodes
+            .iter()
+            .filter(|node| !connected_nodes.contains(node))
+            .copied()
+            .collect::<HashSet<_>>();
+        self.remove_generated_pseudos(&removed_origins);
         stats.total_styles = self.styles.len();
         stats
     }
@@ -47,7 +53,8 @@ impl StyleSet {
                     .expect("parent style is computed before its children");
                 self.compute_style(&node, Some(parent_style))
             };
-            self.styles.insert(node_id(&node), style);
+            self.styles.insert(node_id(&node), style.clone());
+            self.sync_generated_pseudos(&node, &style);
             pending.extend(Node::composed_children(&node).into_iter().rev());
         }
     }
@@ -85,7 +92,12 @@ impl StyleSet {
                 }
                 _ => {}
             }
-            self.styles.insert(node_id(&node), style);
+            self.styles.insert(node_id(&node), style.clone());
+            // Attribute-backed generated content and pseudo-only declarations can change box
+            // geometry without changing the originating element's computed style.
+            if self.sync_generated_pseudos(&node, &style) {
+                stats.layout_changed = true;
+            }
             pending.extend(Node::composed_children(&node).into_iter().rev());
         }
     }

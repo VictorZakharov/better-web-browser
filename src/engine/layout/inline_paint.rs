@@ -180,7 +180,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: metrics.border_box_width,
                     height: metrics.border_box_height,
                 };
-                self.output.node_bounds.insert(*node_id, border_rect);
+                if let Some(node_id) = node_id {
+                    self.output.node_bounds.insert(*node_id, border_rect);
+                }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
                 if style.background_color.alpha > 0 && style.mask_image.is_none() {
@@ -261,7 +263,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     );
                     child_x += child.width;
                 }
-                self.apply_transform(*node_id, style, border_rect, item_start);
+                if let Some(node_id) = node_id {
+                    self.apply_transform(*node_id, style, border_rect, item_start);
+                } else {
+                    self.apply_generated_transform(style, border_rect, item_start);
+                }
                 self.wrap_opacity(item_start, style.opacity);
             }
             InlineAtom::Placeholder { node_id, .. } => {

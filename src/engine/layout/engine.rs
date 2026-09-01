@@ -110,7 +110,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             node: &NodeRef,
             output: &mut Vec<NodeRef>,
         ) {
-            for child in Node::composed_children(node) {
+            let mut children = Vec::new();
+            if !node.is_generated_pseudo()
+                && let Some(before) = engine.styles.generated_pseudo(node, PseudoElement::Before)
+            {
+                children.push(before);
+            }
+            children.extend(Node::composed_children(node));
+            if !node.is_generated_pseudo()
+                && let Some(after) = engine.styles.generated_pseudo(node, PseudoElement::After)
+            {
+                children.push(after);
+            }
+            for child in children {
                 if child.element().is_some()
                     && engine.styles.get(&child).display == Display::Contents
                 {

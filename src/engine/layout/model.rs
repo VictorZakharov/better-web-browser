@@ -225,7 +225,7 @@ pub(super) enum InlineAtom {
     InlineBox {
         children: Vec<InlineAtom>,
         style: Box<ComputedStyle>,
-        node_id: NodeId,
+        node_id: Option<NodeId>,
     },
     Placeholder {
         width: f32,

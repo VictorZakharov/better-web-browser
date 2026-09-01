@@ -1,6 +1,7 @@
 //! CSS facade for values, parsing, selector matching, cascade, and media evaluation.
 mod cascade;
 mod change;
+mod content;
 mod css_wide;
 mod cssom;
 mod fullscreen;
@@ -19,8 +20,8 @@ mod user_agent;
 mod value_parser;
 mod values;
 mod variables;
-
 pub use cascade::{StyleRefreshStats, StyleSet};
+pub use content::GeneratedContent;
 pub use values::{
     AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
     Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, TextAlign, WhiteSpace,
@@ -33,7 +34,8 @@ use cssparser::{Parser, ParserInput, ToCss, Token};
 use properties::{apply_declaration, parse_text_spacing};
 pub(crate) use selector_match::matches_selector_list;
 use selector_model::*;
-use selector_parser::parse_selector;
+pub(super) use selector_parser::PseudoElement;
+use selector_parser::{parse_selector, parse_style_rule_selector};
 use shorthands::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -44,8 +46,5 @@ pub(crate) use user_agent::is_hidden_by_html_rendering;
 use value_parser::consume_identifier;
 pub(crate) use value_parser::{parse_color, parse_length, parse_opacity};
 use variables::{apply_custom_properties, apply_resolved_declaration};
-
-#[cfg(test)]
-use variables::substitute_variables;
 #[cfg(test)]
 mod tests;

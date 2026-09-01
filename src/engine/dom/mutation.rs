@@ -77,6 +77,33 @@ impl Node {
         )
     }
 
+    pub(crate) fn create_generated_pseudo_for(
+        origin: &NodeRef,
+        tag_name: &str,
+        contents: &str,
+    ) -> NodeRef {
+        debug_assert!(matches!(
+            tag_name,
+            "breeze-pseudo-before" | "breeze-pseudo-after"
+        ));
+        let pseudo = Self::create_element_for(origin, tag_name);
+        let text = Self::create_text_for(origin, contents);
+        pseudo.parent.set(Some(Rc::downgrade(origin)));
+        text.parent.set(Some(Rc::downgrade(&pseudo)));
+        pseudo.children.borrow_mut().push(text);
+        pseudo
+    }
+
+    pub(crate) fn replace_generated_pseudo_text(pseudo: &NodeRef, contents: &str) {
+        debug_assert!(pseudo.is_generated_pseudo());
+        let text = pseudo.children.borrow().first().cloned();
+        if let Some(text) = text
+            && let NodeData::Text(value) = &text.data
+        {
+            *value.borrow_mut() = contents.to_string();
+        }
+    }
+
     pub fn create_comment(contents: &str) -> NodeRef {
         Node::new(NodeData::Comment(contents.to_string()))
     }
