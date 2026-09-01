@@ -203,7 +203,7 @@ impl TransformVideoDecoder {
         drop(events);
         match result {
             Ok(()) => {
-                let sample = sample.ok_or_else(|| "H.264 transform returned no output sample")?;
+                let sample = sample.ok_or("H.264 transform returned no output sample")?;
                 let timestamp = unsafe { sample.GetSampleTime() }.unwrap_or(0);
                 let duration = unsafe { sample.GetSampleDuration() }.unwrap_or(0).max(0) as u64;
                 if timestamp.unsigned_abs() > MAX_MEDIA_DURATION_100NS

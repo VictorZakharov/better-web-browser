@@ -63,6 +63,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_block_position(
         &self,
         style: &ComputedStyle,

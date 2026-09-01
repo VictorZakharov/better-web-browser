@@ -44,6 +44,7 @@ impl Page {
         .expect("empty Web Storage state is valid")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_first_paint_script_runtime_with_document_state(
         &mut self,
         dynamic_script_loader: &mut script::DynamicScriptLoader<'_>,
@@ -85,6 +86,7 @@ impl Page {
         .1
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_script_phase(
         &mut self,
         first_paint_only: bool,

@@ -29,6 +29,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_block_with_content_height(
         &mut self,
         node: &NodeRef,

@@ -151,6 +151,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         cursor_y
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex_row_line(
         &mut self,
         items: &[FlexItem],

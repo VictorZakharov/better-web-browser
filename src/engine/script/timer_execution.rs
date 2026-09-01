@@ -87,9 +87,11 @@ pub(super) fn settle_timer_slice(
         let callback_result = context.call_global("__runTimer", &[timer_id.into()]);
         let callback_elapsed = callback_started.elapsed();
         if let Err(error) = &callback_result {
-            let callback = (!label.is_empty())
-                .then(|| format!(" ({label})"))
-                .unwrap_or_default();
+            let callback = if label.is_empty() {
+                String::new()
+            } else {
+                format!(" ({label})")
+            };
             outcome
                 .errors
                 .push(format!("JavaScript timer {timer_id}{callback}: {error}"));
