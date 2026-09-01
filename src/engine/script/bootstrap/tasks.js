@@ -117,11 +117,11 @@
         return true;
     };
 
-    const computedStyleProxy = element => new Proxy({
+    const computedStyleProxy = (element, pseudo) => new Proxy({
         getPropertyValue(name) {
             name = String(name);
             if (!name.startsWith('--')) name = name.toLowerCase();
-            return element ? host('computedStyle', element.__id, name) : '';
+            return element ? host('computedStyle', element.__id, name, pseudo) : '';
         },
         get cssText() { return ''; }
     }, {
@@ -133,7 +133,12 @@
             return target.getPropertyValue(String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()));
         }
     });
-    windowObject.getComputedStyle = element => computedStyleProxy(element);
+    windowObject.getComputedStyle = (element, pseudo = '') => {
+        pseudo = pseudo == null ? '' : String(pseudo).trim().toLowerCase();
+        if (pseudo === ':before') pseudo = '::before';
+        if (pseudo === ':after') pseudo = '::after';
+        return computedStyleProxy(element, pseudo);
+    };
     windowObject.CSS = {
         supports(property, value) {
             if (arguments.length === 0)

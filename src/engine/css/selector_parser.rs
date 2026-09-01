@@ -2,6 +2,40 @@
 
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PseudoElement {
+    Before,
+    After,
+}
+
+pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option<PseudoElement>)> {
+    let input = input.trim();
+    let lower = input.to_ascii_lowercase();
+    let (origin, pseudo) = [
+        ("::before", PseudoElement::Before),
+        ("::after", PseudoElement::After),
+        (":before", PseudoElement::Before),
+        (":after", PseudoElement::After),
+    ]
+    .into_iter()
+    .find_map(|(suffix, pseudo)| {
+        lower
+            .strip_suffix(suffix)
+            .map(|origin| (&input[..origin.len()], pseudo))
+    })
+    .map_or((input, None), |(origin, pseudo)| (origin, Some(pseudo)));
+    let origin = if origin.trim().is_empty() {
+        "*"
+    } else {
+        origin.trim()
+    };
+    let mut selector = parse_selector(origin)?;
+    if pseudo.is_some() {
+        selector.specificity.tags = selector.specificity.tags.saturating_add(1);
+    }
+    Some((selector, pseudo))
+}
+
 pub(super) fn parse_selector(input: &str) -> Option<Selector> {
     if input.is_empty() || input.contains("::") {
         return None;
@@ -328,5 +362,19 @@ mod tests {
                 .unwrap()
                 .case_insensitive
         );
+    }
+
+    #[test]
+    fn generated_pseudo_elements_use_the_originating_selector() {
+        let (selector, pseudo) = parse_style_rule_selector(".card:before").unwrap();
+        assert_eq!(pseudo, Some(PseudoElement::Before));
+        assert_eq!(selector.specificity.classes, 1);
+        assert_eq!(selector.specificity.tags, 1);
+
+        let (selector, pseudo) = parse_style_rule_selector("#footer::AFTER").unwrap();
+        assert_eq!(pseudo, Some(PseudoElement::After));
+        assert_eq!(selector.specificity.ids, 1);
+        assert_eq!(selector.specificity.tags, 1);
+        assert!(parse_style_rule_selector(".card::marker").is_none());
     }
 }

@@ -460,6 +460,11 @@
       "expected": "pass"
     },
     {
+      "path": "css/css-pseudo/before-in-display-none-thcrash.html",
+      "area": "CSS pseudo-elements",
+      "expected": "pass"
+    },
+    {
       "path": "css/css-flexbox/getcomputedstyle/flexbox_computedstyle_display.html",
       "area": "CSS layout",
       "expected": "pass"

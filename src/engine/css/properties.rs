@@ -26,6 +26,11 @@ pub(super) fn apply_declaration(
         return;
     }
     match declaration.name.as_str() {
+        "content" => {
+            if let Some(content) = GeneratedContent::parse(value) {
+                style.generated_content = content;
+            }
+        }
         "display" => {
             style.display = match value.split_ascii_whitespace().next().unwrap_or("") {
                 "none" => Display::None,

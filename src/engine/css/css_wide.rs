@@ -90,6 +90,9 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             *style = source.clone();
             style.custom_properties = custom_properties;
         }
+        "content" => style
+            .generated_content
+            .clone_from(&source.generated_content),
         "display" => style.display = source.display,
         "position" => style.position = source.position,
         "z-index" => style.z_index = source.z_index,

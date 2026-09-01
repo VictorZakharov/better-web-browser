@@ -100,6 +100,45 @@ fn custom_properties_are_case_sensitive_and_expose_resolved_computed_values() {
 }
 
 #[test]
+fn computed_style_exposes_generated_pseudo_element_values() {
+    let (dom, outcome) = execute_html(
+        r#"<style>
+            #target { color: #123456; }
+            #target:before { content: "prefix"; display: block; color: #abcdef; }
+            #target::after { content: attr(data-label); }
+        </style><body><div id="target" data-label="suffix"></div><script>
+            const target = document.getElementById('target');
+            const before = getComputedStyle(target, '::before');
+            const legacy = getComputedStyle(target, ':before');
+            const after = getComputedStyle(target, '::after');
+            const pass = before.content === '"prefix"' && before.display === 'block' &&
+                before.color === 'rgb(171, 205, 239)' && legacy.content === '"prefix"' &&
+                after.content === 'attr(data-label)';
+            document.body.setAttribute('data-result', pass ? 'pass' : 'fail');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
+fn computed_pseudo_display_is_blockified_for_item_containers() {
+    let (dom, outcome) = execute_html(
+        r#"<style>#target { display: flex } #target::before { content: "item" }</style>
+        <body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            const pass = getComputedStyle(target, '::before').display === 'block' &&
+                getComputedStyle(target, '::after').display === 'block';
+            document.body.setAttribute('data-result', pass ? 'pass' : 'fail');
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
 fn linked_stylesheets_expose_loaded_same_origin_rules_and_guard_cross_origin_rules() {
     let (dom, outcome) = execute_html_with_stylesheets(
         r#"<head>

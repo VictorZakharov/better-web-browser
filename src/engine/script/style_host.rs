@@ -53,8 +53,18 @@ pub(super) fn style_host_call(
     } else {
         property.to_ascii_lowercase()
     };
+    let pseudo_text = argument_string(args, 3)?.trim().to_ascii_lowercase();
+    let pseudo = match pseudo_text.as_str() {
+        "" => None,
+        ":before" | "::before" => Some(crate::engine::css::PseudoElement::Before),
+        ":after" | "::after" => Some(crate::engine::css::PseudoElement::After),
+        _ => return Ok(Some(js_string(String::new()))),
+    };
     let value = node
-        .and_then(|node| state.computed_style_property(&node, &property))
+        .and_then(|node| match pseudo {
+            Some(pseudo) => state.computed_pseudo_style_property(&node, &property, pseudo),
+            None => state.computed_style_property(&node, &property),
+        })
         .unwrap_or_default();
     Ok(Some(js_string(value)))
 }

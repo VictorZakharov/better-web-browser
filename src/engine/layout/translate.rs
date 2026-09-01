@@ -27,6 +27,21 @@ pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn apply_generated_transform(
+        &mut self,
+        style: &ComputedStyle,
+        border_box: RectF,
+        item_start: usize,
+    ) {
+        let (offset_x, offset_y) =
+            style
+                .transform
+                .resolve(border_box.width, border_box.height, style.font_size);
+        if offset_x.abs() > f32::EPSILON || offset_y.abs() > f32::EPSILON {
+            translate_display_items(&mut self.output.items[item_start..], offset_x, offset_y);
+        }
+    }
+
     pub(super) fn translate_layout_subtree(
         &mut self,
         node: Option<&NodeRef>,

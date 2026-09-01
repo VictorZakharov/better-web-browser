@@ -234,6 +234,7 @@ pub enum BackgroundSize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
+    pub generated_content: GeneratedContent,
     pub display: Display,
     pub position: Position,
     pub z_index: Option<i32>,
@@ -312,6 +313,7 @@ pub struct ComputedStyle {
 impl ComputedStyle {
     pub(super) fn initial() -> Self {
         Self {
+            generated_content: GeneratedContent::Normal,
             display: Display::Inline,
             position: Position::Static,
             z_index: None,

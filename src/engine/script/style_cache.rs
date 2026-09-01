@@ -57,6 +57,24 @@ impl HostState {
         node: &NodeRef,
         property: &str,
     ) -> Option<String> {
+        self.computed_style_property_for(node, property, None)
+    }
+
+    pub(super) fn computed_pseudo_style_property(
+        &mut self,
+        node: &NodeRef,
+        property: &str,
+        pseudo: crate::engine::css::PseudoElement,
+    ) -> Option<String> {
+        self.computed_style_property_for(node, property, Some(pseudo))
+    }
+
+    fn computed_style_property_for(
+        &mut self,
+        node: &NodeRef,
+        property: &str,
+        pseudo: Option<crate::engine::css::PseudoElement>,
+    ) -> Option<String> {
         let version = self.document.document_mutation_version();
         let invalidation = self.pending_invalidation.snapshot(self.mutation_count);
         let mut styles = match self.computed_styles.take() {
@@ -78,9 +96,14 @@ impl HostState {
                 )
             }
         };
-        let value = styles
-            .computed_style_for_node(node)
-            .and_then(|style| resolved_property_value(style, property));
+        let value = match pseudo {
+            Some(pseudo) => styles
+                .computed_style_for_pseudo(node, pseudo)
+                .and_then(|style| resolved_property_value(style, property)),
+            None => styles
+                .computed_style_for_node(node)
+                .and_then(|style| resolved_property_value(style, property)),
+        };
         self.computed_styles = Some((version, styles));
         value
     }

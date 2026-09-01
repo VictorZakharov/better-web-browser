@@ -41,7 +41,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return BlockMetrics { bottom: y };
         }
         let item_start = self.output.items.len();
-        self.output.node_paint_order.push(node_id(node));
+        if !node.is_generated_pseudo() {
+            self.output.node_paint_order.push(node_id(node));
+        }
         let block_control = input_control_data(node);
         let block_image = self.block_image(node);
 
@@ -271,7 +273,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             width: border_box_width,
             height: border_box_height,
         };
-        self.output.node_bounds.insert(node_id(node), rect);
+        if !node.is_generated_pseudo() {
+            self.output.node_bounds.insert(node_id(node), rect);
+        }
         let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
             RectF {
                 x: x + borders.left,
@@ -381,7 +385,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
                 })));
         }
-        self.apply_transform(node.id(), &style, rect, item_start);
+        if node.is_generated_pseudo() {
+            self.apply_generated_transform(&style, rect, item_start);
+        } else {
+            self.apply_transform(node.id(), &style, rect, item_start);
+        }
         self.wrap_opacity(item_start, style.opacity);
 
         let flow_bottom = border_y + border_box_height + margins.bottom;

@@ -1,6 +1,7 @@
 //! Style-set construction and cascade ordering.
 
 mod presentational;
+mod pseudo;
 mod refresh;
 mod root_units;
 mod sheets;
@@ -28,6 +29,9 @@ pub struct StyleRefreshStats {
 #[derive(Debug, Default)]
 pub struct StyleSet {
     pub styles: HashMap<NodeId, ComputedStyle>,
+    pseudo_styles: HashMap<(NodeId, PseudoElement), ComputedStyle>,
+    generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
+    generated_styles: HashMap<NodeId, ComputedStyle>,
     rules: Vec<Rule>,
     rule_index: RuleIndex,
     document_base_url: String,
@@ -142,6 +146,9 @@ impl StyleSet {
         let rule_index = RuleIndex::new(&rules);
         Self {
             styles: HashMap::new(),
+            pseudo_styles: HashMap::new(),
+            generated_nodes: HashMap::new(),
+            generated_styles: HashMap::new(),
             rules,
             rule_index,
             document_base_url: document_base_url.to_string(),
@@ -152,6 +159,8 @@ impl StyleSet {
 
     pub(crate) fn clear_computed_styles(&mut self) {
         self.styles.clear();
+        self.pseudo_styles.clear();
+        self.generated_styles.clear();
     }
 
     pub(crate) fn computed_style_for_node(&mut self, node: &NodeRef) -> Option<&ComputedStyle> {
@@ -167,6 +176,7 @@ impl StyleSet {
                     .cloned()
                     .unwrap_or_else(|| self.compute_style(&ancestor, parent_style.as_ref()));
                 self.styles.insert(node_id(&ancestor), style.clone());
+                self.sync_generated_pseudos(&ancestor, &style);
                 parent_style = Some(style);
             }
         }
@@ -176,6 +186,7 @@ impl StyleSet {
     pub fn get(&self, node: &NodeRef) -> &ComputedStyle {
         self.styles
             .get(&node_id(node))
+            .or_else(|| self.generated_styles.get(&node_id(node)))
             .expect("style should exist for every DOM node")
     }
 
@@ -196,76 +207,19 @@ impl StyleSet {
         apply_user_agent_defaults(node, &mut style);
         let lower_origin = style.clone();
 
-        let mut matching = self
-            .rule_index
-            .candidates(node)
-            .into_iter()
-            .filter_map(|index| self.rules.get(index))
-            .filter(|rule| rule_applies_to(rule, node))
-            .filter(|rule| selector_matches(&rule.selector, node))
-            .collect::<Vec<_>>();
-        matching.sort_by(|left, right| {
-            left.selector
-                .specificity
-                .cmp(&right.selector.specificity)
-                .then_with(|| left.order.cmp(&right.order))
-        });
+        let matching = self.matching_rules(node, None);
         let inline_declarations = node
             .attr("style")
             .map(|inline| parse_declarations(&inline))
             .unwrap_or_default();
 
-        // CSS Cascade places every important author declaration above every normal author
-        // declaration. Inline declarations retain their higher specificity within each group.
-        // https://drafts.csswg.org/css-cascade/#importance
-        let mut cascaded = Vec::new();
-        for important in [false, true] {
-            for rule in &matching {
-                cascaded.extend(
-                    rule.declarations
-                        .iter()
-                        .filter(|declaration| declaration.important == important)
-                        .map(|declaration| (declaration, rule.base_url.as_str())),
-                );
-            }
-            cascaded.extend(
-                inline_declarations
-                    .iter()
-                    .filter(|declaration| declaration.important == important)
-                    .map(|declaration| (declaration, self.document_base_url.as_str())),
-            );
-        }
-
-        for &(declaration, _) in &cascaded {
-            apply_custom_properties(&mut style, std::slice::from_ref(declaration), parent);
-        }
-        for &(declaration, base_url) in &cascaded {
-            if declaration.name != "line-height" {
-                apply_resolved_declaration(
-                    &mut style,
-                    declaration,
-                    parent,
-                    &lower_origin,
-                    base_url,
-                    self.viewport_width,
-                    self.viewport_height,
-                );
-            }
-        }
-        // line-height depends on the winning font-size, independent of declaration source order.
-        for &(declaration, base_url) in &cascaded {
-            if declaration.name == "line-height" {
-                apply_resolved_declaration(
-                    &mut style,
-                    declaration,
-                    parent,
-                    &lower_origin,
-                    base_url,
-                    self.viewport_width,
-                    self.viewport_height,
-                );
-            }
-        }
+        self.apply_author_cascade(
+            &mut style,
+            parent,
+            &lower_origin,
+            &matching,
+            &inline_declarations,
+        );
         apply_presentational_hints(node, &mut style);
         style.resolve_relative_units(
             self.viewport_width,
@@ -288,6 +242,74 @@ impl StyleSet {
         }
         style.line_height = style.line_height.max(style.font_size);
         style
+    }
+
+    fn matching_rules(&self, node: &NodeRef, pseudo: Option<PseudoElement>) -> Vec<&Rule> {
+        let mut matching = self
+            .rule_index
+            .candidates(node)
+            .into_iter()
+            .filter_map(|index| self.rules.get(index))
+            .filter(|rule| rule.pseudo == pseudo)
+            .filter(|rule| rule_applies_to(rule, node))
+            .filter(|rule| selector_matches(&rule.selector, node))
+            .collect::<Vec<_>>();
+        matching.sort_by(|left, right| {
+            left.selector
+                .specificity
+                .cmp(&right.selector.specificity)
+                .then_with(|| left.order.cmp(&right.order))
+        });
+        matching
+    }
+
+    fn apply_author_cascade(
+        &self,
+        style: &mut ComputedStyle,
+        parent: Option<&ComputedStyle>,
+        lower_origin: &ComputedStyle,
+        matching: &[&Rule],
+        inline_declarations: &[Declaration],
+    ) {
+        // CSS Cascade places every important author declaration above every normal author
+        // declaration. Inline declarations retain their higher specificity within each group.
+        // https://drafts.csswg.org/css-cascade/#importance
+        let mut cascaded = Vec::new();
+        for important in [false, true] {
+            for rule in matching {
+                cascaded.extend(
+                    rule.declarations
+                        .iter()
+                        .filter(|declaration| declaration.important == important)
+                        .map(|declaration| (declaration, rule.base_url.as_str())),
+                );
+            }
+            cascaded.extend(
+                inline_declarations
+                    .iter()
+                    .filter(|declaration| declaration.important == important)
+                    .map(|declaration| (declaration, self.document_base_url.as_str())),
+            );
+        }
+
+        for &(declaration, _) in &cascaded {
+            apply_custom_properties(style, std::slice::from_ref(declaration), parent);
+        }
+        for line_height in [false, true] {
+            for &(declaration, base_url) in &cascaded {
+                if (declaration.name == "line-height") == line_height {
+                    apply_resolved_declaration(
+                        style,
+                        declaration,
+                        parent,
+                        lower_origin,
+                        base_url,
+                        self.viewport_width,
+                        self.viewport_height,
+                    );
+                }
+            }
+        }
     }
 }
 

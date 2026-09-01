@@ -48,6 +48,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         return true;
     }
     match property.as_str() {
+        "content" => GeneratedContent::parse(&value).is_some(),
         "display" => matches!(
             value.as_str(),
             "none"
