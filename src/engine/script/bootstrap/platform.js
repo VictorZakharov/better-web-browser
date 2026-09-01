@@ -99,13 +99,15 @@
         initialLayoutViewportHeight = initialViewportHeight] = host('viewportMetrics');
     let layoutViewportWidth = initialLayoutViewportWidth;
     let layoutViewportHeight = initialLayoutViewportHeight;
+    const exposedViewportWidth = Math.round(initialViewportWidth);
+    const exposedViewportHeight = Math.round(initialViewportHeight);
     windowObject.screen = {
-        width: initialViewportWidth, height: initialViewportHeight,
-        availWidth: initialViewportWidth, availHeight: initialViewportHeight,
+        width: exposedViewportWidth, height: exposedViewportHeight,
+        availWidth: exposedViewportWidth, availHeight: exposedViewportHeight,
         colorDepth: 24, pixelDepth: 24
     };
-    windowObject.innerWidth = initialViewportWidth;
-    windowObject.innerHeight = initialViewportHeight;
+    windowObject.innerWidth = exposedViewportWidth;
+    windowObject.innerHeight = exposedViewportHeight;
     windowObject.devicePixelRatio = initialDeviceScale;
     windowObject.scrollX = windowObject.pageXOffset = 0;
     windowObject.scrollY = windowObject.pageYOffset = 0;

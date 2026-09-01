@@ -59,6 +59,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "svg" => self.collect_svg(node, style, output, containing_block),
                     _ => {
                         if matches!(style.display, Display::InlineBlock | Display::InlineFlex)
+                            || (style.display == Display::Inline
+                                && self.box_children(node).is_empty())
                             || style.margin.left != Length::Px(0.0)
                             || style.margin.right != Length::Px(0.0)
                             || style.padding != Edges::ZERO

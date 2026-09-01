@@ -5,6 +5,7 @@ mod diagnostics;
 mod dynamic_scripts;
 mod fetch;
 mod fullscreen;
+mod geometry;
 mod interaction;
 mod load;
 mod media;
@@ -36,7 +37,9 @@ use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
     RendererPresentation, RendererRuntimeUpdate,
 };
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub(super) enum LoadResult {
@@ -56,7 +59,9 @@ pub(super) struct DocumentRuntime {
     reader: crate::document::Document,
     script_runtime: Option<ScriptRuntime>,
     viewport: crate::renderer_protocol::PresentedViewport,
-    text: RendererTextSystem,
+    text: Rc<RefCell<RendererTextSystem>>,
+    script_layout_page: Rc<RefCell<Page>>,
+    script_layout_viewport: Rc<Cell<crate::renderer_protocol::PresentedViewport>>,
     layout: crate::engine::LayoutOutput,
     loaded_resources: HashSet<PageResource>,
     resource_budget: u64,
@@ -121,8 +126,13 @@ impl DocumentRuntime {
     }
 
     pub(super) fn into_text(mut self) -> RendererTextSystem {
-        self.text.reset_for_navigation();
-        self.text
+        self.script_runtime.take();
+        let mut text = match Rc::try_unwrap(self.text) {
+            Ok(text) => text.into_inner(),
+            Err(_) => unreachable!("script layout callback outlived its runtime"),
+        };
+        text.reset_for_navigation();
+        text
     }
 
     pub(super) fn next_timer_micros(&mut self) -> Option<u64> {
@@ -204,7 +214,8 @@ impl DocumentRuntime {
             self.page.dom.document.id(),
         );
         if resources_changed {
-            self.text.register_web_fonts(&self.page.fonts);
+            self.text.borrow_mut().register_web_fonts(&self.page.fonts);
+            self.sync_script_layout_page();
         }
         let mut script_time = Duration::ZERO;
         let async_script_started = Instant::now();
@@ -334,7 +345,7 @@ impl DocumentRuntime {
             ))?;
             self.rebuild_layout();
         }
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
             script_fetch_micros: micros(script_fetch_time),
             layout_micros: micros(layout_started.elapsed()),
@@ -369,7 +380,8 @@ impl DocumentRuntime {
     ) -> Result<RendererPresentation, String> {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
         self.apply_media_environment(viewport);
-        self.text.set_dpi(viewport.dpi);
+        self.text.borrow_mut().set_dpi(viewport.dpi);
+        self.sync_script_layout_page();
         let mut outcome = self
             .dispatch_user_input(crate::engine::UserInputEvent::Viewport {
                 width: viewport.style_width,
@@ -386,26 +398,11 @@ impl DocumentRuntime {
         self.start_presentational_preloads(connection)?;
         let started = Instant::now();
         self.rebuild_layout();
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
         self.presentation(outcome, style, load)
-    }
-
-    fn rebuild_layout(&mut self) {
-        self.text.reset_layout_metrics();
-        self.layout = layout_page_with_style_viewport(
-            &self.page,
-            self.viewport.width,
-            self.viewport.height,
-            self.viewport.style_width,
-            &mut self.text,
-        );
-        if let Some(runtime) = self.script_runtime.as_mut() {
-            runtime.set_layout_geometry(&self.layout.node_bounds);
-            self.geometry_observers_pending = true;
-        }
     }
 
     fn presentation(
@@ -445,8 +442,8 @@ impl DocumentRuntime {
             }
         }
         let next_timer_micros = self.next_timer_micros();
-        let glyph_epoch = self.text.glyph_epoch();
-        let glyphs = self.text.take_pending_glyphs();
+        let glyph_epoch = self.text.borrow().glyph_epoch();
+        let glyphs = self.text.borrow_mut().take_pending_glyphs();
         let page_diagnostics = diagnostics::collect(
             &self.page,
             &self.layout,

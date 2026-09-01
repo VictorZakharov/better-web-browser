@@ -193,6 +193,11 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "visibility" => style.visibility = source.visibility,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
+        "perspective" => style.perspective_non_none = source.perspective_non_none,
+        "filter" => style.filter_non_none = source.filter_non_none,
+        "transform-style" => style.transform_style_preserve_3d = source.transform_style_preserve_3d,
+        "contain" => style.contain_layout_or_paint = source.contain_layout_or_paint,
+        "will-change" => style.will_change_containing_block = source.will_change_containing_block,
         "overflow" | "overflow-x" | "overflow-y" => style.overflow_hidden = source.overflow_hidden,
         "justify-content" | "-webkit-justify-content" | "-webkit-box-pack" => {
             style.justify_content_end = source.justify_content_end;

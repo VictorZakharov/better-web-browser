@@ -500,6 +500,61 @@
       "expected": "pass"
     },
     {
+      "path": "css/cssom-view/GetBoundingRect.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-fixed.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-body-and-html.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetTop-offsetLeft-nested-offsetParents.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent_element_test.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/offsetParent-block-in-inline.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-root.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-input.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/htmlelement-offset-width-001.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/client-props-inline-list-item.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-with-border-client-width-height.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
       "path": "dom/nodes/Node-isConnected-shadow-dom.html",
       "area": "Shadow DOM",
       "expected": "pass"

@@ -165,16 +165,18 @@ pub(super) fn dispatch_host_call(
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
         "layoutRect" => {
+            state.flush_layout_if_needed();
             let rect = state
                 .node(argument_id(args, 1))
-                .and_then(|node| state.layout_geometry.get(&node.id()).copied())
-                .unwrap_or_default();
-            Ok(JsValue::Array(vec![
-                JsValue::from(rect.x as f64),
-                JsValue::from(rect.y as f64),
-                JsValue::from(rect.width as f64),
-                JsValue::from(rect.height as f64),
-            ]))
+                .and_then(|node| state.layout_geometry.get(&node.id()).copied());
+            Ok(rect.map_or_else(JsValue::null, |rect| {
+                JsValue::Array(vec![
+                    JsValue::from(rect.x as f64),
+                    JsValue::from(rect.y as f64),
+                    JsValue::from(rect.width as f64),
+                    JsValue::from(rect.height as f64),
+                ])
+            }))
         }
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {

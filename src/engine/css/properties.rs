@@ -266,6 +266,25 @@ pub(super) fn apply_declaration(
                 style.transform = transform;
             }
         }
+        "perspective" => {
+            style.perspective_non_none = value != "none" && parse_length(value).is_some();
+        }
+        "filter" => {
+            style.filter_non_none = value != "none" && value.contains('(') && value.ends_with(')');
+        }
+        "transform-style" => style.transform_style_preserve_3d = value == "preserve-3d",
+        "contain" => {
+            style.contain_layout_or_paint = matches!(value, "content" | "strict")
+                || value
+                    .split_ascii_whitespace()
+                    .any(|token| matches!(token, "layout" | "paint"));
+        }
+        "will-change" => {
+            style.will_change_containing_block = value
+                .split(',')
+                .map(str::trim)
+                .any(|token| matches!(token, "transform" | "perspective" | "filter"));
+        }
         "overflow" | "overflow-x" | "overflow-y" => {
             style.overflow_hidden = matches!(value, "hidden" | "clip")
         }

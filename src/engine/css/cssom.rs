@@ -30,6 +30,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
     }
     let value = match property {
         "background-color" => serialize_color(style.background_color),
+        "border-bottom-width" => serialize_length(style.border_width.bottom),
+        "border-left-width" => serialize_length(style.border_width.left),
+        "border-right-width" => serialize_length(style.border_width.right),
+        "border-top-width" => serialize_length(style.border_width.top),
         "color" => serialize_color(style.color),
         "display" => style.display.css_keyword().to_string(),
         "flex-direction" => match style.flex_direction {
@@ -53,6 +57,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => serialize_px(style.line_height),
         "opacity" => serialize_number(style.opacity),
+        "padding-bottom" => serialize_length(style.padding.bottom),
+        "padding-left" => serialize_length(style.padding.left),
+        "padding-right" => serialize_length(style.padding.right),
+        "padding-top" => serialize_length(style.padding.top),
         "overflow" | "overflow-x" | "overflow-y" => if style.overflow_hidden {
             "hidden"
         } else {
@@ -67,6 +75,12 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
+        "transform-style" => if style.transform_style_preserve_3d {
+            "preserve-3d"
+        } else {
+            "flat"
+        }
+        .to_string(),
         "z-index" => style
             .z_index
             .map_or_else(|| "auto".to_string(), |level| level.to_string()),
@@ -91,6 +105,15 @@ fn serialize_color(color: Color) -> String {
 
 fn serialize_px(value: f32) -> String {
     format!("{}px", serialize_number(value))
+}
+
+fn serialize_length(value: Length) -> String {
+    match value {
+        Length::Px(value) => serialize_px(value),
+        Length::Percent(value) => format!("{}%", serialize_number(value)),
+        Length::Auto => "auto".to_string(),
+        _ => "0px".to_string(),
+    }
 }
 
 fn serialize_number(value: f32) -> String {

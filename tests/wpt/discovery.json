@@ -12,10 +12,10 @@
   },
   "tests": [
     {
-      "path": "css/cssom-view/GetBoundingRect.html",
+      "path": "css/cssom-view/table-client-props.html",
       "area": "CSS layout",
       "expected": "fail",
-      "reason": "CSSOM View geometry is not connected to the layout tree yet."
+      "reason": "CSS table wrapper and caption geometry is not complete across padding, separated/collapsed borders, flex participation, and caption placement."
     }
   ]
 }

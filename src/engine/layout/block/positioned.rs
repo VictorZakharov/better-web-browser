@@ -103,7 +103,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let left = style.left.resolve(positioning_width, style.font_size);
             let right = style.right.resolve(positioning_width, style.font_size);
             if let Some(left) = left {
-                x = positioning_x + left;
+                x = positioning_x + left + margins.left;
                 if right.is_some()
                     && auto_left
                     && auto_right
@@ -112,10 +112,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     x = positioning_x + (positioning_width - border_box_width) / 2.0;
                 }
             } else if let Some(right) = right {
-                x = positioning_x + positioning_width - border_box_width - right;
+                x = positioning_x + positioning_width - border_box_width - right - margins.right;
             }
             if let Some(top) = style.top.resolve(positioning_height, style.font_size) {
-                border_y = positioning_y + top;
+                border_y = positioning_y + top + margins.top;
             } else if let Some(bottom) = style.bottom.resolve(positioning_height, style.font_size) {
                 border_y = positioning_y + positioning_height - bottom;
             }
