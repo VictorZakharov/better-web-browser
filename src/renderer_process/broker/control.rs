@@ -14,7 +14,10 @@ impl RendererSession {
         snapshot.submitted_state_updates = state_updates.submitted;
         snapshot.coalesced_state_updates = state_updates.coalesced;
         snapshot.queues = RendererQueueDepths {
-            browser_commands: self.command_depth.pending(),
+            browser_commands: self
+                .command_depth
+                .pending()
+                .saturating_add(self.viewport.pending()),
             renderer_commands: self.outbound_diagnostics.pending(),
             renderer_messages: self.incoming_depth.pending(),
             browser_events: self.events.pending(),

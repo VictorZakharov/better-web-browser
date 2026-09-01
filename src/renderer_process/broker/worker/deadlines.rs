@@ -5,7 +5,11 @@ use super::*;
 impl Broker {
     fn queue_depths(&self) -> RendererQueueDepths {
         RendererQueueDepths {
-            browser_commands: self.resources().command_depth.pending(),
+            browser_commands: self
+                .resources()
+                .command_depth
+                .pending()
+                .saturating_add(self.resources().viewport.pending()),
             renderer_commands: self.writer().pending(),
             renderer_messages: self.resources().incoming_depth.pending(),
             browser_events: self.resources().events.pending(),
