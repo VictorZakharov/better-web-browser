@@ -36,6 +36,67 @@ fn translation_moves_paint_hit_and_cssom_geometry_without_affecting_flow() {
 }
 
 #[test]
+fn positioned_start_and_end_insets_include_the_corresponding_margin() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            #start { position: fixed; left: 5px; top: 20px; margin: 3px 0 0 5px;
+                     width: 20px; height: 20px; transform: translateX(10px) }
+            #end { position: fixed; right: 10px; top: 0; margin-right: 7px;
+                   width: 20px; height: 20px }
+        </style>
+        <div id=start></div><div id=end></div>"#,
+        "https://example.com/",
+    );
+    let node = |id: &str| {
+        page.dom
+            .elements_named("div")
+            .find(|node| node.attr("id").as_deref() == Some(id))
+            .unwrap()
+    };
+
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+
+    assert_eq!(output.node_bounds[&node("start").id()].x, 20.0);
+    assert_eq!(output.node_bounds[&node("start").id()].y, 23.0);
+    assert_eq!(output.node_bounds[&node("end").id()].x, 763.0);
+}
+
+#[test]
+fn empty_inline_box_keeps_its_line_position_inside_nested_positioned_boxes() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .square { width: 10px; height: 10px }
+            #one { position: absolute; top: 10px; left: 10px }
+            #two { position: absolute; top: 50px; left: 50px }
+            span.square { display: inline-block }
+        </style>
+        <div id=one class=square><div id=two class=square>
+            <div class=square></div><span class=square></span><span id=target></span>
+        </div></div>"#,
+        "https://example.com/",
+    );
+    let target = page
+        .dom
+        .elements_named("span")
+        .find(|node| node.attr("id").as_deref() == Some("target"))
+        .unwrap();
+
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+
+    assert_eq!(
+        output.node_bounds[&target.id()],
+        RectF {
+            x: 70.0,
+            y: 70.0,
+            width: 0.0,
+            height: 0.0,
+        }
+    );
+}
+
+#[test]
 fn positioned_stack_levels_surround_in_flow_content_and_keep_source_order() {
     let page = Page::parse(
         r#"<style>

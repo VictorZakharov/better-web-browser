@@ -3,6 +3,55 @@
 use super::*;
 
 impl HostState {
+    pub(super) fn offset_parent(&mut self, node: &NodeRef) -> Option<NodeRef> {
+        if !self.is_connected(node) || node.element().is_none() || node.tag_name() == Some("body") {
+            return None;
+        }
+        let sources = self
+            .stylesheet_sources
+            .iter()
+            .map(|(url, source)| (url.clone(), source.clone()))
+            .collect::<Vec<_>>();
+        let mut styles = StyleSet::for_computed_style_for_media_environment(
+            &self.document,
+            &self.document_url,
+            &sources,
+            self.media_environment,
+        );
+        let target = styles.computed_style_for_node(node)?.clone();
+        if target.display == crate::engine::css::Display::None {
+            return None;
+        }
+        let mut ancestor = node.parent();
+        while let Some(candidate) = ancestor {
+            ancestor = candidate.parent();
+            if candidate.element().is_none() {
+                continue;
+            }
+            let style = styles.computed_style_for_node(&candidate)?.clone();
+            if style.display == crate::engine::css::Display::None {
+                return None;
+            }
+            let fixed_containing_block = style.establishes_fixed_position_containing_block();
+            if target.position == crate::engine::css::Position::Fixed {
+                if fixed_containing_block {
+                    return Some(candidate);
+                }
+                continue;
+            }
+            if style.position != crate::engine::css::Position::Static || fixed_containing_block {
+                return Some(candidate);
+            }
+            if candidate.tag_name() == Some("body")
+                || (target.position == crate::engine::css::Position::Static
+                    && matches!(candidate.tag_name(), Some("td" | "th" | "table")))
+            {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
     pub(super) fn computed_style_property(
         &mut self,
         node: &NodeRef,

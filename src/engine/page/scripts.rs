@@ -39,6 +39,7 @@ impl Page {
             true,
             false,
             false,
+            None,
         )
         .expect("empty Web Storage state is valid")
     }
@@ -51,6 +52,7 @@ impl Page {
         local_storage: crate::storage::StorageAreaSnapshot,
         session_storage: crate::storage::StorageAreaSnapshot,
         host_call_profiling: bool,
+        layout_flush: Option<script::LayoutFlushCallback>,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.start_script_phase(
             true,
@@ -60,6 +62,7 @@ impl Page {
             true,
             host_call_profiling,
             true,
+            layout_flush,
         )
     }
 
@@ -76,6 +79,7 @@ impl Page {
             false,
             false,
             false,
+            None,
         )
         .expect("empty Web Storage state is valid")
         .1
@@ -94,6 +98,7 @@ impl Page {
         defer_dynamic_scripts: bool,
         host_call_profiling: bool,
         defer_document_completion: bool,
+        layout_flush: Option<script::LayoutFlushCallback>,
     ) -> Result<(Option<ScriptRuntime>, ScriptOutcome), crate::storage::StorageError> {
         self.cached_styles = None;
         let inputs = self
@@ -135,6 +140,9 @@ impl Page {
             );
             runtime.set_document_stylesheets(&self.stylesheet_sources);
             runtime.set_host_call_profiling(host_call_profiling);
+            if let Some(layout_flush) = layout_flush {
+                runtime.set_layout_flush_callback(layout_flush);
+            }
             if let Some((cookie_version, local, session)) = document_state {
                 runtime.set_document_state(cookie_version, cookie_header, local, session)?;
             } else {

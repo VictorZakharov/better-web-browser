@@ -276,6 +276,11 @@ pub struct ComputedStyle {
     pub visibility: bool,
     pub opacity: f32,
     pub(crate) transform: transform::TransformList,
+    pub(crate) perspective_non_none: bool,
+    pub(crate) filter_non_none: bool,
+    pub(crate) transform_style_preserve_3d: bool,
+    pub(crate) contain_layout_or_paint: bool,
+    pub(crate) will_change_containing_block: bool,
     pub overflow_hidden: bool,
     pub justify_content_end: bool,
     pub align_items_center: bool,
@@ -347,6 +352,11 @@ impl ComputedStyle {
             visibility: true,
             opacity: 1.0,
             transform: transform::TransformList::default(),
+            perspective_non_none: false,
+            filter_non_none: false,
+            transform_style_preserve_3d: false,
+            contain_layout_or_paint: false,
+            will_change_containing_block: false,
             overflow_hidden: false,
             justify_content_end: false,
             align_items_center: false,
@@ -393,5 +403,14 @@ impl ComputedStyle {
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style
+    }
+
+    pub(crate) fn establishes_fixed_position_containing_block(&self) -> bool {
+        !self.transform.is_none()
+            || self.perspective_non_none
+            || self.filter_non_none
+            || self.transform_style_preserve_3d
+            || self.contain_layout_or_paint
+            || self.will_change_containing_block
     }
 }

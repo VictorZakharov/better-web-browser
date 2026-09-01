@@ -4,6 +4,7 @@ mod preload;
 mod refresh;
 mod resources;
 mod scripts;
+mod snapshot;
 mod svg;
 
 pub(crate) use self::media::MEDIA_VIDEO_PLACEHOLDER;
@@ -249,7 +250,7 @@ impl Page {
                 return None;
             }
             let content = node.attr("content")?;
-            let target = parse_immediate_refresh_target(&content)?;
+            let target = refresh::parse_immediate_refresh_target(&content)?;
             resolve_url(&self.base_url, target)
         })
     }
@@ -336,22 +337,6 @@ impl Page {
             })
             .collect()
     }
-}
-
-fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
-    let (delay, directive) = content.split_once(';')?;
-    if delay.trim().parse::<f64>().ok()? > 0.0 {
-        return None;
-    }
-    let (name, target) = directive.trim().split_once('=')?;
-    if !name.trim().eq_ignore_ascii_case("url") {
-        return None;
-    }
-    let target = target
-        .trim()
-        .trim_matches(|character| matches!(character, '\'' | '"'))
-        .trim();
-    (!target.is_empty()).then_some(target)
 }
 
 #[cfg(test)]

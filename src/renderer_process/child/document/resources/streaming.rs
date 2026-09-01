@@ -152,7 +152,7 @@ impl DocumentRuntime {
         if needs_present {
             self.rebuild_layout();
         }
-        let current_load = self.text.finish_load_report(PageLoadReport {
+        let current_load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(started.elapsed()),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()

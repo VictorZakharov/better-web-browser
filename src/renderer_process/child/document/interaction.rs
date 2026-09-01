@@ -267,7 +267,7 @@ impl DocumentRuntime {
         if outcome.render_requested {
             self.rebuild_layout();
         }
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });

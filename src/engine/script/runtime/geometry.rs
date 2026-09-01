@@ -3,7 +3,14 @@ use super::*;
 impl ScriptRuntime {
     /// Publishes the renderer's latest layout snapshot to CSSOM View APIs in this realm.
     pub(crate) fn set_layout_geometry(&mut self, geometry: &HashMap<NodeId, RectF>) {
-        self.host.borrow_mut().layout_geometry.clone_from(geometry);
+        let mut host = self.host.borrow_mut();
+        host.layout_geometry.clone_from(geometry);
+        host.layout_geometry_version = host.document.subtree_mutation_version();
+        host.layout_geometry_initialized = true;
+    }
+
+    pub(crate) fn set_layout_flush_callback(&mut self, callback: LayoutFlushCallback) {
+        self.host.borrow_mut().layout_flush = Some(callback);
     }
 
     /// Runs the dedicated rendering-observer task against the latest layout snapshot.

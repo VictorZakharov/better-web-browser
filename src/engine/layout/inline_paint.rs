@@ -169,7 +169,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let metrics =
                     self.measure_inline_box(measured.atom, children, style, containing_width);
                 let border_x = x + metrics.margin.left;
-                let border_y = atom_y + metrics.margin.top;
+                let border_y = if metrics.border_box_height == 0.0 && children.is_empty() {
+                    y + metrics.margin.top
+                } else {
+                    atom_y + metrics.margin.top
+                };
                 let border_rect = RectF {
                     x: border_x,
                     y: border_y,

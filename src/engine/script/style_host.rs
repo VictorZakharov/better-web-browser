@@ -33,6 +33,16 @@ pub(super) fn style_host_call(
             color.red, color.green, color.blue, color.alpha
         ))));
     }
+    if operation == "offsetParent" {
+        let parent = state
+            .node(argument_id(args, 1))
+            .and_then(|node| state.offset_parent(&node));
+        return Ok(Some(JsValue::from(
+            parent
+                .map(|parent| state.id_for(&parent))
+                .unwrap_or_default(),
+        )));
+    }
     if operation != "computedStyle" {
         return Ok(None);
     }

@@ -73,6 +73,9 @@ pub(super) struct HostState {
     pub(super) computed_styles: Option<(u64, StyleSet)>,
     /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
     pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) layout_geometry_version: u64,
+    pub(super) layout_geometry_initialized: bool,
+    pub(super) layout_flush: Option<LayoutFlushCallback>,
     pub(super) media_environment: MediaEnvironment,
     pub(super) layout_viewport_width: f32,
     pub(super) layout_viewport_height: f32,
@@ -131,6 +134,9 @@ impl HostState {
             timer_handles: HashMap::new(),
             computed_styles: None,
             layout_geometry: HashMap::new(),
+            layout_geometry_version: 0,
+            layout_geometry_initialized: false,
+            layout_flush: None,
             media_environment: MediaEnvironment::new(1280.0, 720.0, 1.0, false),
             layout_viewport_width: 1280.0,
             layout_viewport_height: 720.0,
@@ -178,6 +184,19 @@ impl HostState {
                 ))
                 .into())
         }
+    }
+
+    pub(super) fn flush_layout_if_needed(&mut self) {
+        let version = self.document.subtree_mutation_version();
+        if self.layout_geometry_initialized && self.layout_geometry_version == version {
+            return;
+        }
+        let Some(flush) = self.layout_flush.as_mut() else {
+            return;
+        };
+        self.layout_geometry = flush();
+        self.layout_geometry_version = version;
+        self.layout_geometry_initialized = true;
     }
 
     pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {

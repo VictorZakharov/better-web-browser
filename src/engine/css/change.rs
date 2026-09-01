@@ -30,6 +30,11 @@ impl ComputedStyle {
             && self.bottom == other.bottom
             && self.left == other.left
             && self.transform == other.transform
+            && self.perspective_non_none == other.perspective_non_none
+            && self.filter_non_none == other.filter_non_none
+            && self.transform_style_preserve_3d == other.transform_style_preserve_3d
+            && self.contain_layout_or_paint == other.contain_layout_or_paint
+            && self.will_change_containing_block == other.will_change_containing_block
             && self.justify_content_end == other.justify_content_end
             && self.align_items_center == other.align_items_center
             && self.flex_direction == other.flex_direction

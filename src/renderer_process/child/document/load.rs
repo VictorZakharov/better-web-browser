@@ -49,6 +49,9 @@ impl DocumentRuntime {
         }
 
         text.set_dpi(start.viewport.dpi);
+        let text = Rc::new(RefCell::new(text));
+        let script_layout_page = Rc::new(RefCell::new(page.layout_snapshot()));
+        let script_layout_viewport = Rc::new(Cell::new(start.viewport));
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -57,6 +60,8 @@ impl DocumentRuntime {
             script_runtime: None,
             viewport: start.viewport,
             text,
+            script_layout_page,
+            script_layout_viewport,
             layout: Default::default(),
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
@@ -96,6 +101,7 @@ impl DocumentRuntime {
         runtime.fetch_resources(connection, |page, resource| {
             page.resource_blocks_first_paint(resource)
         })?;
+        runtime.sync_script_layout_page();
         let resource_processing_time = resource_started.elapsed();
 
         let script_started = Instant::now();
@@ -107,6 +113,7 @@ impl DocumentRuntime {
             script_fetch_time += started.elapsed();
             result
         };
+        let layout_flush = runtime.script_layout_flush_callback();
         let (script_runtime, mut outcome) = runtime
             .page
             .start_first_paint_script_runtime_with_document_state(
@@ -116,6 +123,7 @@ impl DocumentRuntime {
                 state.local_storage,
                 state.session_storage,
                 !runtime.diagnostic_selectors.is_empty(),
+                Some(layout_flush),
             )
             .map_err(|error| error.to_string())?;
         runtime.script_runtime = script_runtime;
@@ -144,7 +152,10 @@ impl DocumentRuntime {
             .refresh_resources_for_viewport(runtime.viewport.style_width, runtime.viewport.height);
         runtime.start_presentational_preloads(connection)?;
         let style_time = style_started.elapsed();
-        runtime.text.register_web_fonts(&runtime.page.fonts);
+        runtime
+            .text
+            .borrow_mut()
+            .register_web_fonts(&runtime.page.fonts);
         let layout_started = Instant::now();
         runtime.rebuild_layout();
         // The initial realm is created before the first layout checkpoint. Publish the actual
@@ -177,16 +188,19 @@ impl DocumentRuntime {
             runtime.page.dom.document.id(),
         );
         let layout_time = layout_started.elapsed();
-        let report = runtime.text.finish_load_report(PageLoadReport {
-            parse_micros: micros(parse_started.elapsed()),
-            html_parse_micros: micros(html_parse_time),
-            resource_processing_micros: micros(resource_processing_time),
-            script_micros: micros(script_time),
-            script_fetch_micros: micros(script_fetch_time),
-            style_micros: micros(style_time),
-            layout_micros: micros(layout_time),
-            ..PageLoadReport::default()
-        });
+        let report = runtime
+            .text
+            .borrow_mut()
+            .finish_load_report(PageLoadReport {
+                parse_micros: micros(parse_started.elapsed()),
+                html_parse_micros: micros(html_parse_time),
+                resource_processing_micros: micros(resource_processing_time),
+                script_micros: micros(script_time),
+                script_fetch_micros: micros(script_fetch_time),
+                style_micros: micros(style_time),
+                layout_micros: micros(layout_time),
+                ..PageLoadReport::default()
+            });
         let presentation = runtime.presentation(outcome, style, report)?;
         Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
     }

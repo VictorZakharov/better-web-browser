@@ -113,8 +113,8 @@
                     windowObject.scrollY = windowObject.pageYOffset = Number(input.y) || 0;
                     return document.dispatchEvent(markTrusted(new Event('scroll')));
                 case 'viewport':
-                    windowObject.innerWidth = Number(input.width) || 1;
-                    windowObject.innerHeight = Number(input.height) || 1;
+                    windowObject.innerWidth = Math.round(Number(input.width) || 1);
+                    windowObject.innerHeight = Math.round(Number(input.height) || 1);
                     layoutViewportWidth = Number(input.layoutWidth) || 1;
                     layoutViewportHeight = Number(input.layoutHeight) || 1;
                     windowObject.devicePixelRatio = Number(input.scale) || 1;

@@ -228,33 +228,6 @@
         }
         focus() { document.activeElement = this; this.dispatchEvent(new Event('focus')); }
         blur() { if (document.activeElement === this) document.activeElement = document.body; this.dispatchEvent(new Event('blur')); }
-        __layoutRect() {
-            const value = host('layoutRect', this.__id);
-            const [x = 0, y = 0, width = 0, height = 0] = Array.isArray(value) ? value : [];
-            return { x, y, width, height };
-        }
-        get clientWidth() {
-            if (this.ownerDocument === document &&
-                ((document.compatMode !== 'BackCompat' && this === document.documentElement) ||
-                 (document.compatMode === 'BackCompat' && this === document.body))) {
-                return Math.round(layoutViewportWidth);
-            }
-            return Math.round(this.__layoutRect().width);
-        }
-        get clientHeight() {
-            if (this.ownerDocument === document &&
-                ((document.compatMode !== 'BackCompat' && this === document.documentElement) ||
-                 (document.compatMode === 'BackCompat' && this === document.body))) {
-                return Math.round(layoutViewportHeight);
-            }
-            return Math.round(this.__layoutRect().height);
-        }
-        get offsetWidth() { return Math.round(this.__layoutRect().width); }
-        get offsetHeight() { return Math.round(this.__layoutRect().height); }
-        getBoundingClientRect() {
-            const { x, y, width, height } = this.__layoutRect();
-            return { x, y, top: y, left: x, right: x + width, bottom: y + height, width, height, toJSON() { return { x, y, top: y, left: x, right: x + width, bottom: y + height, width, height }; } };
-        }
     }
     installParentNodeMembers(Element.prototype);
     installChildNodeMembers(Element.prototype);
