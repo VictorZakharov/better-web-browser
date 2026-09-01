@@ -62,6 +62,7 @@ pub(super) fn parse_stylesheet(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_rule_list(
     css: &str,
     base_url: &str,

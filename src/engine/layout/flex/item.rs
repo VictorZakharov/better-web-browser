@@ -3,6 +3,7 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex_item(
         &mut self,
         item: &FlexItem,

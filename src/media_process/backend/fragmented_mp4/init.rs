@@ -18,6 +18,13 @@ pub(super) struct Metadata {
     pub(super) defaults: SampleDefaults,
 }
 
+struct AvcDescription {
+    width: u32,
+    height: u32,
+    nal_length_size: usize,
+    sequence_header: Vec<u8>,
+}
+
 pub(super) fn parse(moov: BoxView<'_>) -> Result<Metadata, String> {
     for trak in boxes::parse(moov.payload, moov.start + moov.header)?
         .into_iter()
@@ -26,7 +33,7 @@ pub(super) fn parse(moov: BoxView<'_>) -> Result<Metadata, String> {
         let Some(stsd) = boxes::descendant(trak, &[b"mdia", b"minf", b"stbl", b"stsd"])? else {
             continue;
         };
-        let Some((width, height, nal_length_size, sequence_header)) = parse_avc(stsd)? else {
+        let Some(description) = parse_avc(stsd)? else {
             continue;
         };
         let tkhd = boxes::descendant(trak, &[b"tkhd"])?
@@ -38,17 +45,17 @@ pub(super) fn parse(moov: BoxView<'_>) -> Result<Metadata, String> {
         return Ok(Metadata {
             track_id,
             timescale,
-            width,
-            height,
-            nal_length_size,
-            sequence_header,
+            width: description.width,
+            height: description.height,
+            nal_length_size: description.nal_length_size,
+            sequence_header: description.sequence_header,
             defaults: parse_trex(moov, track_id)?.unwrap_or_default(),
         });
     }
     Err("fragmented MP4 has no AVC video sample description".into())
 }
 
-fn parse_avc(stsd: BoxView<'_>) -> Result<Option<(u32, u32, usize, Vec<u8>)>, String> {
+fn parse_avc(stsd: BoxView<'_>) -> Result<Option<AvcDescription>, String> {
     if stsd.payload.len() < 8 {
         return Err("fragmented MP4 sample description is truncated".into());
     }
@@ -66,7 +73,12 @@ fn parse_avc(stsd: BoxView<'_>) -> Result<Option<(u32, u32, usize, Vec<u8>)>, St
             .find(|child| child.kind == *b"avcC")
             .ok_or_else(|| "AVC sample entry has no configuration box".to_string())?;
         let (length_size, header) = parse_avcc(avcc.payload)?;
-        return Ok(Some((width, height, length_size, header)));
+        return Ok(Some(AvcDescription {
+            width,
+            height,
+            nal_length_size: length_size,
+            sequence_header: header,
+        }));
     }
     Ok(None)
 }
