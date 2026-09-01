@@ -23,8 +23,10 @@ impl PaintIndex {
         let mut depth = 0_usize;
         for (index, item) in items.iter().enumerate() {
             match item {
-                DisplayItem::BeginOpacity { .. } => depth += 1,
-                DisplayItem::EndOpacity { .. } => depth = depth.saturating_sub(1),
+                DisplayItem::BeginClip { .. } | DisplayItem::BeginOpacity { .. } => depth += 1,
+                DisplayItem::EndClip { .. } | DisplayItem::EndOpacity { .. } => {
+                    depth = depth.saturating_sub(1);
+                }
                 _ => {}
             }
             let end = index + 1;
@@ -63,7 +65,10 @@ impl PaintIndex {
 
 fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
     let rect = match item {
-        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => *bounds,
+        DisplayItem::BeginClip { bounds }
+        | DisplayItem::EndClip { bounds }
+        | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::EndOpacity { bounds } => *bounds,
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
@@ -139,6 +144,27 @@ mod tests {
         }];
         items.extend((0..300).map(|index| item(index as f32 * 10.0, 8.0)));
         items.push(DisplayItem::EndOpacity { bounds });
+        items.push(item(4_000.0, 10.0));
+        let mut index = PaintIndex::default();
+        index.rebuild(&items);
+
+        assert_eq!(
+            index.visible_ranges(1_000.0, 1_100.0).collect::<Vec<_>>(),
+            vec![0..302]
+        );
+    }
+
+    #[test]
+    fn clip_groups_are_never_split_across_paint_chunks() {
+        let bounds = RectF {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 3_000.0,
+        };
+        let mut items = vec![DisplayItem::BeginClip { bounds }];
+        items.extend((0..300).map(|index| item(index as f32 * 10.0, 8.0)));
+        items.push(DisplayItem::EndClip { bounds });
         items.push(item(4_000.0, 10.0));
         let mut index = PaintIndex::default();
         index.rebuild(&items);

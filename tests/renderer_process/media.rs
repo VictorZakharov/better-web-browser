@@ -7,6 +7,18 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+fn run_scheduled_renderer_timer(
+    session: &RendererSession,
+    document: better_web_browser::renderer_protocol::DocumentId,
+    next_timer_micros: Option<u64>,
+) {
+    if let Some(delay) = next_timer_micros {
+        session
+            .advance_time(document, Duration::from_micros(delay), 64)
+            .expect("run the renderer's advertised media checkpoint");
+    }
+}
+
 #[test]
 fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership() {
     let _serial = SERIAL
@@ -107,8 +119,20 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
                 {
                     break presentation;
                 }
+                session
+                    .acknowledge_presentation(PresentationAcknowledgement {
+                        document,
+                        revision: presentation.revision,
+                        presented: true,
+                        controls_applied: true,
+                    })
+                    .unwrap();
+                run_scheduled_renderer_timer(&session, document, presentation.next_timer_micros);
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected renderer event while decoding video: {event:?}"),
         }
     };
@@ -239,11 +263,15 @@ fn contained_renderer_decodes_media_source_object_url_video() {
     let rendered = loop {
         match session.wait_for_event(Duration::from_secs(10)).unwrap() {
             RendererEvent::Presentation(presentation) if presentation.document == document => {
-                if presentation
+                let has_media_frame = presentation
                     .images
                     .iter()
-                    .any(|image| image.url.starts_with("breeze-internal:media-frame:"))
-                {
+                    .any(|image| image.url.starts_with("breeze-internal:media-frame:"));
+                let lifecycle_settled = presentation.layout.items.iter().any(|item| {
+                    matches!(item, DisplayItem::Text { text, .. }
+                        if text.contains("mse-ready:0.25:") && text.contains(":open:2:0.5"))
+                });
+                if has_media_frame && lifecycle_settled {
                     break presentation;
                 }
                 session
@@ -254,8 +282,12 @@ fn contained_renderer_decodes_media_source_object_url_video() {
                         controls_applied: true,
                     })
                     .unwrap();
+                run_scheduled_renderer_timer(&session, document, presentation.next_timer_micros);
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected renderer event while decoding MSE video: {event:?}"),
         }
     };

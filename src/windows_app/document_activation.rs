@@ -320,6 +320,7 @@ impl BrowserState {
                 set_window_text(self.controls.reader, "Reader");
             }
         }
+        self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
         if layout_changed {
             self.update_scrollbar();

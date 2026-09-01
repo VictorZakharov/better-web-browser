@@ -4,6 +4,9 @@ mod replaced;
 mod sizing;
 
 use super::*;
+
+#[path = "overflow.rs"]
+mod overflow;
 use sizing::resolve_used_border_box_width;
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_block(
@@ -208,6 +211,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
             index
         });
+        let overflow_clip = self.begin_overflow_clip(&style);
         // Negative positioned levels paint after this background and before in-flow descendants.
         let in_flow_paint_start = self.output.items.len();
         let in_flow_node_start = self.output.node_paint_order.len();
@@ -298,6 +302,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             positioning_box,
             in_flow_paint_start,
             in_flow_node_start,
+        );
+        self.finish_overflow_clip(
+            overflow_clip,
+            RectF {
+                x: x + borders.left,
+                y: border_y + borders.top,
+                width: (border_box_width - borders.horizontal()).max(0.0),
+                height: padding.top + content_height + padding.bottom,
+            },
         );
         let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
         if let Some(index) = background_index

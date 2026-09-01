@@ -136,6 +136,7 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            || !outcome.history_actions.is_empty()
             || outcome.runtime_stopped
             || !outcome.invalidation.is_empty();
         let style = if needs_present {

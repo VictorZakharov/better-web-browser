@@ -8,6 +8,7 @@ impl ScriptRuntime {
         let mut host = self.host.borrow_mut();
         host.media_environment = environment;
         host.computed_styles = None;
+        host.offset_parent_styles = None;
     }
 
     pub(crate) fn set_layout_viewport(&mut self, width: f32, height: f32) {

@@ -76,3 +76,34 @@ fn resolves_inline_replaced_percentages_against_a_definite_containing_block() {
         |item| matches!(item, DisplayItem::Image { rect, .. } if *rect == output.node_bounds[&image.id()])
     ));
 }
+
+#[test]
+fn keeps_subpixel_equal_share_flex_items_on_the_same_line() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .row { display: flex; flex-wrap: wrap; width: 1610.4px }
+            .item { width: 520.8px; height: 20px; margin: 0 8px; flex: 0 0 auto }
+        </style>
+        <div class=row>
+          <div id=first class=item></div>
+          <div id=second class=item></div>
+          <div id=third class=item></div>
+        </div>"#,
+        "https://example.com/",
+    );
+    let items = page
+        .dom
+        .elements_named("div")
+        .filter(|node| node.attr("id").is_some())
+        .collect::<Vec<_>>();
+
+    let output = layout_page(&page, 1897.0, 936.0, &mut FixedMeasurer);
+    let first = output.node_bounds[&items[0].id()];
+    let second = output.node_bounds[&items[1].id()];
+    let third = output.node_bounds[&items[2].id()];
+
+    assert_eq!(first.y, second.y);
+    assert_eq!(second.y, third.y);
+    assert!(first.x < second.x && second.x < third.x);
+}

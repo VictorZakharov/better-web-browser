@@ -3,7 +3,10 @@ use super::*;
 pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
     for item in items {
         let rect = match item {
-            DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => bounds,
+            DisplayItem::BeginClip { bounds }
+            | DisplayItem::EndClip { bounds }
+            | DisplayItem::BeginOpacity { bounds, .. }
+            | DisplayItem::EndOpacity { bounds } => bounds,
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }

@@ -2,7 +2,9 @@
 
 use super::tabs::TabId;
 use super::*;
-use better_web_browser::fetch::{FetchController, FetchRequest, FetchSignal, FetchUrl, Referrer};
+use better_web_browser::fetch::{
+    FetchController, FetchRequest, FetchSignal, FetchUrl, Origin, Referrer,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
@@ -13,6 +15,60 @@ pub(super) enum HistoryMode {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn apply_same_document_history_updates(
+        &mut self,
+        updates: &[better_web_browser::renderer_protocol::HistoryUpdate],
+    ) {
+        for update in updates {
+            let Some(current) = self.current_url().map(str::to_owned) else {
+                continue;
+            };
+            let same_origin = matches!(
+                (Origin::parse(&current), Origin::parse(&update.url)),
+                (Ok(current), Ok(target)) if current.is_same_origin(&target)
+            );
+            if !same_origin {
+                self.incidents.record(
+                    "history",
+                    format!("rejected cross-origin same-document URL: {}", update.url),
+                );
+                continue;
+            }
+            if update.replace {
+                let index = self.history_index;
+                if let Some(entry) = self.history.get_mut(index) {
+                    entry.clone_from(&update.url);
+                } else {
+                    self.history.push(update.url.clone());
+                    self.history_index = self.history.len() - 1;
+                }
+            } else {
+                let next_index = self.history_index.saturating_add(1);
+                self.history.truncate(next_index);
+                self.history.push(update.url.clone());
+                self.history_index = self.history.len() - 1;
+            }
+            self.reader_url.clone_from(&update.url);
+            self.omnibox_text.clone_from(&update.url);
+            self.incidents.record(
+                "history",
+                format!(
+                    "{} same-document URL: {}",
+                    if update.replace { "replace" } else { "push" },
+                    update.url
+                ),
+            );
+            if let Some(benchmark) = self.benchmark.as_mut() {
+                benchmark.final_url.clone_from(&update.url);
+            }
+        }
+        if updates.is_empty() || self.processing_background_tab {
+            return;
+        }
+        set_window_text(self.controls.address, &self.omnibox_text);
+        self.update_history_buttons();
+    }
+
     pub(super) unsafe fn navigate_from_address(&mut self) {
         let input = window_text(self.controls.address);
         self.navigate_from_input(&input, HistoryMode::Push);

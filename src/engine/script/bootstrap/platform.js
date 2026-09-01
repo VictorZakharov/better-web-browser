@@ -1,8 +1,16 @@
+    let historyLength = 1;
     windowObject.history = {
-        length: 1,
+        get length() { return historyLength; },
         state: null,
-        pushState(state, _title, url) { this.state = state; if (url != null) currentUrl = host('resolveUrl', String(url)); },
-        replaceState(state, _title, url) { this.state = state; if (url != null) currentUrl = host('resolveUrl', String(url)); },
+        pushState(state, _title, url) {
+            this.state = state;
+            currentUrl = host('historyUpdate', url == null ? currentUrl : String(url), false);
+            historyLength++;
+        },
+        replaceState(state, _title, url) {
+            this.state = state;
+            currentUrl = host('historyUpdate', url == null ? currentUrl : String(url), true);
+        },
         back() {}, forward() {}, go() {}
     };
 

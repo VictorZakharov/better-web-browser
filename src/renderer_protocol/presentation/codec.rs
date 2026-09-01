@@ -249,6 +249,14 @@ pub(in crate::renderer_protocol) fn encode_runtime(
     if let Some(url) = &report.navigation_url {
         writer.string(url)?;
     }
+    if report.history_updates.len() > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history update count"));
+    }
+    writer.u32(report.history_updates.len() as u32);
+    for update in &report.history_updates {
+        writer.string(&update.url)?;
+        writer.bool(update.replace);
+    }
     encode_strings(writer, &report.cookie_updates)?;
     writer.bool(report.runtime_active);
     writer.bool(report.runtime_stopped);
@@ -272,6 +280,17 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         .bool()?
         .then(|| reader.string(MAX_URL_BYTES))
         .transpose()?;
+    let history_update_count = reader.u32()? as usize;
+    if history_update_count > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history update count"));
+    }
+    let mut history_updates = Vec::with_capacity(history_update_count);
+    for _ in 0..history_update_count {
+        history_updates.push(HistoryUpdate {
+            url: reader.string(MAX_URL_BYTES)?,
+            replace: reader.bool()?,
+        });
+    }
     let cookie_updates = decode_strings(reader)?;
     let runtime_active = reader.bool()?;
     let runtime_stopped = reader.bool()?;
@@ -287,6 +306,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         console,
         diagnostics,
         navigation_url,
+        history_updates,
         cookie_updates,
         runtime_active,
         runtime_stopped,

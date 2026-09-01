@@ -6,7 +6,7 @@ use crate::limits::MAX_PRESENTATION_COORDINATE;
 
 pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
     let mut items: Vec<_> = layout.items.into_iter().filter_map(sanitize_item).collect();
-    retain_balanced_opacity_groups(&mut items);
+    retain_balanced_display_groups(&mut items);
     let content_height = if layout.content_height.is_finite() {
         nonnegative(layout.content_height)
     } else {
@@ -29,6 +29,12 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
 fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
+        DisplayItem::BeginClip { bounds } => DisplayItem::BeginClip {
+            bounds: sanitize_rect(bounds)?,
+        },
+        DisplayItem::EndClip { bounds } => DisplayItem::EndClip {
+            bounds: sanitize_rect(bounds)?,
+        },
         DisplayItem::BeginOpacity { bounds, opacity } => DisplayItem::BeginOpacity {
             bounds: sanitize_rect(bounds)?,
             opacity: finite_or(opacity, 1.0).clamp(0.0, 1.0),
@@ -152,9 +158,10 @@ fn sanitize_rect(mut rect: RectF) -> Option<RectF> {
 
 fn item_rect(item: &DisplayItem) -> Option<RectF> {
     match item {
-        DisplayItem::BeginOpacity { bounds, .. } | DisplayItem::EndOpacity { bounds } => {
-            Some(*bounds)
-        }
+        DisplayItem::BeginClip { bounds }
+        | DisplayItem::EndClip { bounds }
+        | DisplayItem::BeginOpacity { bounds, .. }
+        | DisplayItem::EndOpacity { bounds } => Some(*bounds),
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
@@ -164,21 +171,30 @@ fn item_rect(item: &DisplayItem) -> Option<RectF> {
     }
 }
 
-fn retain_balanced_opacity_groups(items: &mut Vec<DisplayItem>) {
-    let mut starts = Vec::new();
+fn retain_balanced_display_groups(items: &mut Vec<DisplayItem>) {
+    let mut starts = Vec::<(u8, usize)>::new();
     let mut index = 0;
     while index < items.len() {
-        match items[index] {
-            DisplayItem::BeginOpacity { .. } => starts.push(index),
-            DisplayItem::EndOpacity { .. } if starts.pop().is_none() => {
+        let action = match items[index] {
+            DisplayItem::BeginClip { .. } => Some((true, 1)),
+            DisplayItem::EndClip { .. } => Some((false, 1)),
+            DisplayItem::BeginOpacity { .. } => Some((true, 2)),
+            DisplayItem::EndOpacity { .. } => Some((false, 2)),
+            _ => None,
+        };
+        if let Some((begin, kind)) = action {
+            if begin {
+                starts.push((kind, index));
+            } else if starts.last().is_some_and(|(start, _)| *start == kind) {
+                starts.pop();
+            } else {
                 items.remove(index);
                 continue;
             }
-            _ => {}
         }
         index += 1;
     }
-    if let Some(first_unmatched) = starts.first().copied() {
+    if let Some((_, first_unmatched)) = starts.first().copied() {
         items.truncate(first_unmatched);
     }
 }
