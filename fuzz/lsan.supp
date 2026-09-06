@@ -1,0 +1,5 @@
+# rusty_v8 152.2.0 intentionally Box::leak's one IsolateLiveness cell per isolate
+# so late Global drops can observe a disposed isolate. Keep the allocation type
+# exact: suppressing Context::new or Isolate::new would hide unrelated leaks.
+# https://github.com/denoland/rusty_v8/blob/v152.2.0/src/isolate.rs
+leak:new<v8::isolate::IsolateLiveness>

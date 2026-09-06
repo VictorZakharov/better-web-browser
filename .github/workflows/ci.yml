@@ -89,11 +89,9 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-            ~/.cargo/registry/src
-          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            windows-cargo-registry-v3-
-            windows-cargo-registry-v2-
+            windows-cargo-registry-v4-
       - name: Prepare V8 build path
         shell: pwsh
         run: ./scripts/prepare-v8.ps1 -Profile debug
@@ -128,11 +126,9 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-            ~/.cargo/registry/src
-          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            windows-cargo-registry-v3-
-            windows-cargo-registry-v2-
+            windows-cargo-registry-v4-
       - name: Prepare V8 build path
         shell: pwsh
         run: ./scripts/prepare-v8.ps1 -Profile debug
@@ -156,11 +152,9 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-            ~/.cargo/registry/src
-          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            windows-cargo-registry-v3-
-            windows-cargo-registry-v2-
+            windows-cargo-registry-v4-
       - name: Prepare V8 build path
         shell: pwsh
         run: ./scripts/prepare-v8.ps1 -Profile debug
@@ -203,11 +197,15 @@ jobs:
         run: ./scripts/generate-third-party-notices.ps1 -Check
 
   alpha-compatibility:
-    name: Public alpha compatibility
+    name: Public alpha compatibility (${{ matrix.shard }})
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v7
       - name: Configure compiler cache
@@ -220,11 +218,9 @@ jobs:
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
-            ~/.cargo/registry/src
-          key: windows-cargo-registry-v3-${{ hashFiles('Cargo.lock') }}
+          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            windows-cargo-registry-v3-
-            windows-cargo-registry-v2-
+            windows-cargo-registry-v4-
       - name: Prepare V8 build path
         shell: pwsh
         run: ./scripts/prepare-v8.ps1 -Profile debug
@@ -243,6 +239,8 @@ jobs:
           ./benchmarks/run-alpha.ps1
           -BuildProfile debug
           -Iterations 1
+          -ShardIndex ${{ matrix.shard }}
+          -ShardCount 2
           -SkipBuild
           -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
 

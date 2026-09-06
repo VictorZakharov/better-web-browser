@@ -3,6 +3,8 @@ param(
     [string] $Matrix,
     [ValidateRange(1, 10)] [int] $Iterations = 3,
     [string[]] $Fixture = @(),
+    [ValidateRange(0, 63)] [int] $ShardIndex = 0,
+    [ValidateRange(1, 64)] [int] $ShardCount = 1,
     [string] $OutputDirectory,
     [ValidateSet('debug', 'release', 'performance')]
     [string] $BuildProfile = 'release',
@@ -25,6 +27,12 @@ if ($Fixture.Count -gt 0) {
 }
 if ($Live) {
     $cases = @($cases | Where-Object { -not [string]::IsNullOrWhiteSpace($_.live_url) })
+}
+if ($ShardIndex -ge $ShardCount) { throw 'ShardIndex must be less than ShardCount.' }
+if ($ShardCount -gt 1) {
+    $cases = @(for ($index = 0; $index -lt $cases.Count; $index++) {
+        if ($index % $ShardCount -eq $ShardIndex) { $cases[$index] }
+    })
 }
 if ($cases.Count -eq 0) { throw 'The selected alpha matrix is empty.' }
 

@@ -11,7 +11,7 @@ pub mod storage;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod media_data_protocol;
-#[cfg(target_os = "windows")]
+// Shared wire types are also consumed by the platform-independent media protocol.
 pub(crate) mod media_frame_protocol;
 #[cfg(target_os = "windows")]
 pub mod media_process;

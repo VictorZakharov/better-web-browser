@@ -4,6 +4,9 @@ env:
   CARGO_INCREMENTAL: 0
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
+  # Override the Windows default in .cargo/config.toml for the Linux release asset.
+  # Verified against denoland/rusty_v8 v152.2.0 release asset digest.
+  RUSTY_V8_ARCHIVE_SHA256: "b6683e9afcb77fbd8cb2c3acf45d34d52029ab216b332522c95179c12f0fed3c"
 
 on:
   workflow_dispatch:
@@ -67,6 +70,13 @@ jobs:
         run: cargo install cargo-fuzz --version 0.13.2 --locked
       - name: Build fuzz target
         run: cargo +nightly-2026-08-15 fuzz build ${{ matrix.target }}
+      - name: Configure sanitizer symbolization
+        shell: bash
+        run: |
+          symbolizer="$(find /usr/bin -maxdepth 1 -name 'llvm-symbolizer*' | sort -V | tail -n 1)"
+          test -x "$symbolizer"
+          echo "ASAN_SYMBOLIZER_PATH=$symbolizer" >> "$GITHUB_ENV"
+          echo "LSAN_OPTIONS=suppressions=$GITHUB_WORKSPACE/fuzz/lsan.supp:print_suppressions=1" >> "$GITHUB_ENV"
       - name: Run bounded fuzz campaign
         shell: pwsh
         env:
