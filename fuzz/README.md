@@ -13,6 +13,12 @@ cargo install cargo-fuzz --version 0.13.2 --locked
 
 Run one target from the repository root:
 
+On Linux x86-64, set `RUSTY_V8_ARCHIVE_SHA256` to
+`b6683e9afcb77fbd8cb2c3acf45d34d52029ab216b332522c95179c12f0fed3c` in the shell
+environment first. This is the published digest of the pinned V8 152.2.0 Linux release archive;
+it overrides the Windows archive checksum in `.cargo/config.toml`. The `Fuzz` workflow sets it
+for every job. Keep this pin aligned with the V8 version when upgrading; do not disable verification.
+
 ```text
 cargo +nightly-2026-08-15 fuzz run html_document fuzz/corpus/html_document -- -max_total_time=60
 ```
