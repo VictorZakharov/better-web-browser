@@ -22,6 +22,12 @@ Every checked-in page, stylesheet, script, and SVG is original project material.
 
 Run the same local matrix used by CI:
 
+CI runs two independent workers with `-ShardIndex 0 -ShardCount 2` and
+`-ShardIndex 1 -ShardCount 2`. Shards partition the selected fixtures by their matrix index,
+so every fixture runs once, including newly added fixtures. Both workers must pass the
+required `windows` gate. Local runs default to the complete matrix; each shard should use
+its own output directory when running concurrently.
+
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
 ```
