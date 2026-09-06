@@ -36,6 +36,12 @@ uncapped maximum interval, and bounded playback-state transitions. These are sof
 measurements, not display-vsync measurements. Use them alongside the 500 ms filmstrip; navigation
 "page ready" and first useful visible content are different milestones.
 
+The diagnostic report also includes bounded `media lifecycle:` records for commands and
+non-frame responses. They capture readiness, current time, decoded extent, and pending
+SourceBuffer state without resource URLs or media bytes. This retains evidence when a player
+handles its own failure without an uncaught JavaScript exception. Records are capped at 128 per
+element and 1 KiB each, within the existing host/report diagnostic limits.
+
 ## Playback permission
 
 Breeze permits silent playback or audible playback following sticky activation in the owning
@@ -66,8 +72,11 @@ support. Unbuffered seeking and full-length playback still require end-to-end va
 | --- | --- |
 | Uninterrupted 35-second watch capture | 30.08 completed paints/s; 47 ms p95 interval |
 | Live keyboard control capture | Pause/resume transitions observed; no JS errors or renderer exits |
-| Longer watch capture | Media connection failed after about 38 seconds of playback |
-| Worker memory trace | Private memory rose from 107 MiB to 456 MiB before termination |
+| Original longer watch capture | Media connection failed after about 38 seconds of playback |
+| Original worker memory trace | Private memory rose from 107 MiB to 456 MiB before termination |
+| Lazy decoder lifetime / EOS identity fix | One 220-second video reached its end, but with a 25-second gap and adaptive format errors; not a clean pass |
+| Worker after lazy decoder change | Observed private memory approximately 112–166 MiB during that longer run; not total browser memory |
+| Subsequent stride/readiness recovery capture | Approximately 34 completed paints/s before a handled player failure around 55 seconds; still blocks completion |
 
-Short playback passes do not establish stability. The longer-run failure blocks completion.
-The decoder-lifetime change must be remeasured against that failure before claiming a memory fix.
+Short playback passes and empty JavaScript-error lists do not establish stability. The longer-run
+failure blocks completion; visual verification must check for the player's own error screen.

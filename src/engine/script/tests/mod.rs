@@ -33,6 +33,7 @@ mod fullscreen;
 mod hyperlinks;
 mod intersection_observer;
 mod media;
+mod media_diagnostics;
 mod media_queries;
 mod media_source_segments;
 mod modules;

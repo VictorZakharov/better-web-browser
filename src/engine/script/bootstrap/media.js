@@ -37,8 +37,10 @@
     let nextMediaRequest = 1;
     const pendingMediaRequests = new Map();
     const effectiveVolumeMillis = state => state.muted ? 0 : Math.round(state.volume * 1000);
-    const mediaCommand = (element, requestId, command, ...args) =>
-        host('mediaRequest', element.__id, requestId, command, ...args);
+    const mediaCommand = (element, requestId, command, ...args) => {
+        traceMediaLifecycle(element, 'request:' + command);
+        return host('mediaRequest', element.__id, requestId, command, ...args);
+    };
     const supportedMediaType = type => {
         const source = String(type).trim().toLowerCase();
         if (!source) return '';
@@ -257,10 +259,26 @@
 
     reflectString(HTMLSourceElement.prototype, 'type');
 
+    const updateMediaCanPlay = element => {
+        const state = mediaStateFor(element);
+        for (let index = 0; index < state.buffered.length; index++) {
+            if (state.buffered.start(index) <= state.currentTime
+                && state.buffered.end(index) > state.currentTime
+                && state.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+                state.readyState = HTMLMediaElement.HAVE_FUTURE_DATA;
+                element.dispatchEvent(markTrusted(new Event('canplay')));
+                break;
+            }
+        }
+    };
+
     const applyMediaResponse = input => {
         const element = wrap(Number(input.target) || 0);
         if (!(element instanceof HTMLMediaElement)) return false;
         const state = mediaStateFor(element);
+        if (input.disposition !== 'time')
+            traceMediaLifecycle(element, 'response:' + input.disposition,
+                input.currentTime, input.duration);
         const requestId = Number(input.requestId) || 0;
         const pending = requestId ? pendingMediaRequests.get(requestId) : null;
         if (requestId) pendingMediaRequests.delete(requestId);
@@ -279,7 +297,7 @@
                     element.dispatchEvent(markTrusted(new Event('durationchange')));
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
-                element.dispatchEvent(markTrusted(new Event('canplay')));
+                updateMediaCanPlay(element);
                 if (element.autoplay) element.play().catch(() => {});
                 return true;
             case 'playing':
@@ -316,6 +334,7 @@
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 notifyMediaSourceAppended(element, Number(input.duration));
+                updateMediaCanPlay(element);
                 element.dispatchEvent(markTrusted(new Event('progress')));
                 return true;
             case 'media-error':

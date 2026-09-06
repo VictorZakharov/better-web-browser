@@ -109,7 +109,8 @@
                     apply();
                     this.updating = false;
                     this.dispatchEvent(markTrusted(new Event('update')));
-                } catch (_error) {
+                } catch (error) {
+                    host('console', 'error', 'SourceBuffer update failed: ' + String(error));
                     this.__parent.__release(this.__reservedBytes);
                     this.__reservedBytes = 0;
                     this.updating = false;

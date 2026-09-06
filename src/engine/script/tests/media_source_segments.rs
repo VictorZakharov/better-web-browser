@@ -91,9 +91,14 @@ fn execute_media_source(
 fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
     for pause_while_waiting in [false, true] {
         let script = format!(
-            r#"<body><video id="movie"></video><output></output><script>
+            r#"<body><video id="movie"></video><output></output><span id="ready"></span><script>
             const source = new MediaSource();
             const movie = document.getElementById('movie');
+            let canPlayEvents = 0;
+            movie.addEventListener('canplay', () => {{
+                document.getElementById('ready').textContent =
+                    [++canPlayEvents, movie.readyState].join(':');
+            }});
             source.addEventListener('sourceopen', () => {{
                 source.addSourceBuffer('video/mp4; codecs="avc1.4d401e, mp4a.40.2"');
                 source.duration = 220;
@@ -113,6 +118,7 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
             ("playing", 0.0, 10.0),
             ("ended", 10.0, 10.0),
             ("appended", 10.0, 20.0),
+            ("appended", 10.0, 30.0),
         ] {
             let result = runtime.dispatch_user_input(UserInputEvent::Media {
                 target: dom.elements_named("video").next().unwrap(),
@@ -135,12 +141,16 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
                         ScriptMediaCommand::SetPlayback { playing: true, .. }
                     )
                 });
-                assert_eq!(resumes, !pause_while_waiting);
+                assert_eq!(resumes, !pause_while_waiting && duration == 20.0);
             }
         }
         assert_eq!(
             dom.elements_named("output").next().unwrap().text_content(),
             "false:10:220"
+        );
+        assert_eq!(
+            dom.elements_named("span").next().unwrap().text_content(),
+            "2:3"
         );
     }
 }

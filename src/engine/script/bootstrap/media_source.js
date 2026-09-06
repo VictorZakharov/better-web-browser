@@ -306,6 +306,7 @@
                 new TimeRanges(timeRangesConstructionToken, ranges);
         }
         __fail(kind) {
+            host('console', 'error', 'MediaSource failed: ' + String(kind));
             this.readyState = 'ended';
             const element = this.__element;
             if (element) {

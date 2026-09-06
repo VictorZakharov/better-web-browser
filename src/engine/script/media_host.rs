@@ -8,13 +8,22 @@ pub(super) fn media_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
-    if operation != "mediaRequest" {
+    if operation != "mediaRequest" && operation != "mediaDiagnostic" {
         return Ok(None);
     }
     let Some(node) = state.node(argument_id(args, 1)) else {
         return Ok(Some(JsValue::undefined()));
     };
     if !matches!(node.tag_name(), Some("video" | "audio")) {
+        return Ok(Some(JsValue::undefined()));
+    }
+    if operation == "mediaDiagnostic" {
+        if let Some(JsValue::String(message)) = args.get(2) {
+            state.diagnose(format!(
+                "media lifecycle: {}",
+                crate::limits::bounded_utf8_prefix(message, 1024).0
+            ));
+        }
         return Ok(Some(JsValue::undefined()));
     }
     let request_id = args
