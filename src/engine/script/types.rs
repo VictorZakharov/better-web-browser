@@ -253,6 +253,7 @@ pub enum UserInputEvent {
         duration: f64,
         width: u32,
         height: u32,
+        buffered: Option<[[f64; 2]; 2]>,
     },
 }
 

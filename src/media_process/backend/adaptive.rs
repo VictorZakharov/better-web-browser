@@ -34,60 +34,17 @@ pub(super) fn decode(
         .unwrap_or(0);
     let video_duration = video_track.duration_100ns();
 
-    let _apartment = ComApartment::initialize().map_err(|status| {
-        format!("initialize adaptive audio COM apartment: HRESULT {status:#x}")
-    })?;
-    let _foundation = MediaFoundation::start()
-        .map_err(|status| format!("start adaptive audio Media Foundation: HRESULT {status:#x}"))?;
-    let audio_reader = source_reader(audio_bytes)?;
-    select_stream(
-        &audio_reader,
-        MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
-        "adaptive audio",
-    )?;
-    verify_native_type(
-        &audio_reader,
-        MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
-        MFMediaType_Audio,
-        MFAudioFormat_AAC,
-        "AAC audio",
-    )?;
-    let audio_type = output_type(MFMediaType_Audio, MFAudioFormat_PCM)?;
-    unsafe {
-        audio_reader
-            .SetCurrentMediaType(
-                MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
-                None,
-                &audio_type,
-            )
-            .map_err(|error| format!("configure adaptive PCM audio output: {error}"))?;
-    }
-    let current_audio = unsafe {
-        audio_reader
-            .GetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32)
-            .map_err(|error| format!("read adaptive audio format: {error}"))?
-    };
-    let audio_sample_rate = unsafe {
-        current_audio
-            .GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND)
-            .map_err(|error| format!("read adaptive audio sample rate: {error}"))?
-    };
-    let audio_channels = unsafe {
-        current_audio
-            .GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS)
-            .map_err(|error| format!("read adaptive audio channels: {error}"))?
-    };
-    let audio = read_stream(
-        &audio_reader,
-        MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
-        "adaptive audio",
-        limits.max_decoded_frame_bytes,
-    )?;
-    if audio.samples == 0 {
-        return Err("adaptive audio stream produced no samples".into());
-    }
+    let (audio_report, audio) = adaptive_audio::inspect(audio_bytes, limits)?;
+    let audio_sample_rate = audio_report.audio_sample_rate;
+    let audio_channels = u32::from(audio_report.audio_channels);
     let playback = VideoDecoder::open_fragmented(video_track, limits)?;
     let report = MediaDecodeReport {
+        buffered: crate::media_protocol::MediaBufferedExtent {
+            video_start_100ns: video_first_timestamp.max(0),
+            video_end_100ns: video_duration,
+            audio_start_100ns: audio.first_timestamp.unwrap_or(0).max(0),
+            audio_end_100ns: audio.end_100ns,
+        },
         encoded_bytes,
         video_codec: MediaCodecFamily::H264,
         audio_codec: MediaCodecFamily::AacLc,

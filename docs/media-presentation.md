@@ -37,7 +37,8 @@ measurements, not display-vsync measurements. Use them alongside the 500 ms film
 "page ready" and first useful visible content are different milestones.
 
 The diagnostic report also includes bounded `media lifecycle:` records for commands and
-non-frame responses. They capture readiness, current time, decoded extent, and pending
+non-frame responses, plus one clock sample per five seconds of media time. They capture
+readiness, current time, decoded extent, and pending
 SourceBuffer state without resource URLs or media bytes. This retains evidence when a player
 handles its own failure without an uncaught JavaScript exception. Records are capped at 128 per
 element and 1 KiB each, within the existing host/report diagnostic limits.
@@ -77,6 +78,22 @@ support. Unbuffered seeking and full-length playback still require end-to-end va
 | Lazy decoder lifetime / EOS identity fix | One 220-second video reached its end, but with a 25-second gap and adaptive format errors; not a clean pass |
 | Worker after lazy decoder change | Observed private memory approximately 112–166 MiB during that longer run; not total browser memory |
 | Subsequent stride/readiness recovery capture | Approximately 34 completed paints/s before a handled player failure around 55 seconds; still blocks completion |
+| Independent track append and native acknowledgment capture | 31.65 completed paints/s over 59.18 seconds; player calls `load()` at media time 58.10 s while video remains buffered to 60.52 s and audio to 69.89 s; no reported native decode error; still a failure |
+
+Audio and video appends now cross the worker boundary independently after initial track setup.
+Each append acknowledges actual per-track extents; `HTMLMediaElement.buffered` intersects the
+active tracks rather than treating the longest track as playable video. `updateend` follows
+native acceptance, so applications observe the accepted range in their completion handler.
+Owned H.264/AAC fragmented fixtures and script tests cover these contracts. This does not yet
+establish complete MSE support: native eviction, append-window filtering, and unbuffered seeks
+remain separate correctness work.
+
+Readiness monitoring uses a three-second contiguous active-track buffer threshold for
+`HAVE_ENOUGH_DATA`, or the complete remaining resource when shorter. It reevaluates on playback
+clock updates and accepted appends, and queues `canplay`/`canplaythrough` only on upward threshold
+crossings. This is a user-agent buffering policy under
+[MSE SourceBuffer Monitoring](https://www.w3.org/TR/media-source-2/#sourcebuffer-monitoring),
+not a promise that future network requests will succeed.
 
 Short playback passes and empty JavaScript-error lists do not establish stability. The longer-run
 failure blocks completion; visual verification must check for the player's own error screen.

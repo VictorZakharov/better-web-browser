@@ -1,5 +1,6 @@
 use super::super::backend::AudioDecoder;
-use crate::media_protocol::{MediaDecodeReport, MediaPlaybackState};
+use super::super::backend::AudioTrackReport;
+use crate::media_protocol::MediaPlaybackState;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -25,7 +26,7 @@ enum AudioCommand {
     State(StateReply),
     Append {
         bytes: Vec<u8>,
-        report: MediaDecodeReport,
+        report: AudioTrackReport,
         reply: AppendReply,
     },
     Shutdown,
@@ -40,7 +41,7 @@ impl AudioPlayback {
     pub(super) fn spawn(
         source_id: u64,
         bytes: Vec<u8>,
-        report: MediaDecodeReport,
+        report: AudioTrackReport,
         silent_audio: bool,
     ) -> Result<Self, String> {
         let (commands, receiver) = mpsc::sync_channel(4);
@@ -96,7 +97,7 @@ impl AudioPlayback {
         })
     }
 
-    pub(super) fn append(&self, bytes: Vec<u8>, report: MediaDecodeReport) -> Result<(), String> {
+    pub(super) fn append(&self, bytes: Vec<u8>, report: AudioTrackReport) -> Result<(), String> {
         let (reply, result) = mpsc::sync_channel(1);
         self.commands
             .send(AudioCommand::Append {
@@ -145,7 +146,7 @@ impl AudioRuntime {
     fn new(
         source_id: u64,
         bytes: &[u8],
-        report: MediaDecodeReport,
+        report: AudioTrackReport,
         silent_audio: bool,
     ) -> Result<Self, String> {
         let decoder = AudioDecoderQueue::new(bytes, report)?;
@@ -275,7 +276,7 @@ struct AudioDecoderSegment {
 }
 
 impl AudioDecoderQueue {
-    fn new(bytes: &[u8], report: MediaDecodeReport) -> Result<Self, String> {
+    fn new(bytes: &[u8], report: AudioTrackReport) -> Result<Self, String> {
         let mut queue = Self {
             segments: Vec::new(),
             current: 0,
@@ -286,7 +287,7 @@ impl AudioDecoderQueue {
         Ok(queue)
     }
 
-    fn append(&mut self, bytes: &[u8], report: MediaDecodeReport) -> Result<(), String> {
+    fn append(&mut self, bytes: &[u8], report: AudioTrackReport) -> Result<(), String> {
         if report.audio_sample_rate != self.sample_rate || report.audio_channels != self.channels {
             return Err("incremental AAC format changed".into());
         }

@@ -1,6 +1,13 @@
     // Retain bounded lifecycle evidence without media bytes, URLs, or per-frame log traffic.
     // Player applications can handle failures internally without emitting a console error.
     const mediaDiagnosticCounts = new WeakMap();
+    const mediaDiagnosticTimes = new WeakMap();
+    const traceMediaClock = (element, input) => {
+        const bucket = Math.floor(Number(input.currentTime) / 5);
+        if (mediaDiagnosticTimes.get(element) === bucket) return;
+        mediaDiagnosticTimes.set(element, bucket);
+        traceMediaLifecycle(element, 'clock', input.currentTime, input.duration);
+    };
     const traceMediaLifecycle = (element, event, position = '', duration = '') => {
         const count = mediaDiagnosticCounts.get(element) || 0;
         if (count >= 128) return;

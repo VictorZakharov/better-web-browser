@@ -23,6 +23,7 @@ pub(super) struct MediaPlayback {
     clock_100ns: u64,
     frame_end_100ns: u64,
     duration_100ns: u64,
+    buffered: crate::media_protocol::MediaBufferedExtent,
     playing: bool,
     ended: bool,
     video_ended: bool,
@@ -152,6 +153,7 @@ impl DocumentRuntime {
             duration,
             width,
             height,
+            buffered: Some(playback.buffered.seconds()),
         })
         .map(|response| response.outcome)
     }

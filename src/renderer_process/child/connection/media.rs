@@ -4,7 +4,7 @@ mod video;
 
 pub(in crate::renderer_process::child) enum MediaOperationCompletion {
     Decoded(Result<crate::media_process::RendererMediaDecode, String>),
-    Appended(Result<(u64, u64), String>),
+    Appended(Result<(u64, u64, crate::media_protocol::MediaBufferedExtent), String>),
 }
 
 pub(super) struct AsyncMediaClient {

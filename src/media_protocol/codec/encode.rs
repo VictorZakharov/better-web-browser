@@ -92,12 +92,11 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             require_nonzero(source_id, "playback source")?;
             require_nonzero(video_source_id, "video source")?;
             require_nonzero(audio_source_id, "audio source")?;
-            require_nonzero(video_length, "video length")?;
-            require_nonzero(audio_length, "audio length")?;
             let encoded_length = video_length
                 .checked_add(audio_length)
                 .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
             if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length == 0
                 || encoded_length > MediaLimits::default().max_encoded_queue_bytes
             {
                 return Err(MediaProtocolError::InvalidPayload("adaptive append"));
@@ -231,10 +230,12 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_i64(&mut payload, report.audio_last_timestamp_100ns);
             vec_u64(&mut payload, report.duration_100ns);
             vec_u64(&mut payload, report.decode_micros);
+            super::wire::encode_buffered(&mut payload, report.buffered);
             encode_frame_metadata(&mut payload, frame);
             WORKER_DECODED
         }
         WorkerMediaMessage::Appended {
+            buffered,
             request_id,
             source_id,
             encoded_bytes,
@@ -244,8 +245,10 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             require_nonzero(source_id, "playback source")?;
             require_nonzero(encoded_bytes, "encoded length")?;
             require_nonzero(duration_100ns, "media duration")?;
+            buffered.validate()?;
             if encoded_bytes > MediaLimits::default().max_encoded_bytes
                 || duration_100ns > crate::limits::MAX_MEDIA_DURATION_100NS
+                || buffered.end_100ns() > duration_100ns
             {
                 return Err(MediaProtocolError::InvalidPayload("adaptive append report"));
             }
@@ -253,6 +256,7 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_u64(&mut payload, source_id);
             vec_u64(&mut payload, encoded_bytes);
             vec_u64(&mut payload, duration_100ns);
+            super::wire::encode_buffered(&mut payload, buffered);
             WORKER_APPENDED
         }
         WorkerMediaMessage::DecodeFailed { request_id, error } => {

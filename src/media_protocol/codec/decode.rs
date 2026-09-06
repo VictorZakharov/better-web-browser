@@ -72,12 +72,13 @@ pub(super) fn browser(
             let source_id = cursor.nonzero_u64("playback source")?;
             let video_source_id = cursor.nonzero_u64("video source")?;
             let audio_source_id = cursor.nonzero_u64("audio source")?;
-            let video_length = cursor.nonzero_u64("video length")?;
-            let audio_length = cursor.nonzero_u64("audio length")?;
+            let video_length = cursor.u64()?;
+            let audio_length = cursor.u64()?;
             let encoded_length = video_length
                 .checked_add(audio_length)
                 .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
             if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length == 0
                 || encoded_length > MediaLimits::default().max_encoded_queue_bytes
             {
                 return Err(MediaProtocolError::InvalidPayload("adaptive append"));
@@ -183,6 +184,7 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 audio_last_timestamp_100ns: cursor.i64()?,
                 duration_100ns: cursor.u64()?,
                 decode_micros: cursor.u64()?,
+                buffered: super::wire::decode_buffered(&mut cursor)?,
             };
             let frame = decode_frame_metadata(&mut cursor)?;
             WorkerMediaMessage::Decoded {
@@ -196,12 +198,15 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
             let source_id = cursor.nonzero_u64("playback source")?;
             let encoded_bytes = cursor.nonzero_u64("encoded length")?;
             let duration_100ns = cursor.nonzero_u64("media duration")?;
+            let buffered = super::wire::decode_buffered(&mut cursor)?;
             if encoded_bytes > MediaLimits::default().max_encoded_bytes
                 || duration_100ns > crate::limits::MAX_MEDIA_DURATION_100NS
+                || buffered.end_100ns() > duration_100ns
             {
                 return Err(MediaProtocolError::InvalidPayload("adaptive append report"));
             }
             WorkerMediaMessage::Appended {
+                buffered,
                 request_id,
                 source_id,
                 encoded_bytes,

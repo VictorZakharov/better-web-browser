@@ -2,6 +2,15 @@
     'use strict';
     const host = (...args) => __hostCall(...args);
     const pending = new Map();
+    let failureDiagnostics = 0;
+    const reportFailure = (id, detail) => {
+        // Handled rejections still need diagnostic evidence. Never include request URLs,
+        // response bodies, or server error text, which may contain credentials.
+        if (failureDiagnostics++ < 32) {
+            const origin = new URL(pending.get(Number(id)).request.url).origin;
+            host('console', 'warn', 'Fetch ' + id + ' failed: ' + detail + ' origin=' + origin);
+        }
+    };
 
     globalThis.fetch = function fetch(input, init = undefined) {
         let request;
@@ -58,6 +67,7 @@
         if (!operation || operation.completed || operation.responseStarted) return;
         const metadata = JSON.parse(String(serialized));
         if (metadata.errorName) {
+            reportFailure(id, metadata.errorName === 'AbortError' ? 'aborted' : 'network error');
             finish(operation);
             operation.reject(metadata.errorName === 'AbortError'
                 ? new DOMException(metadata.errorMessage, 'AbortError')
@@ -67,6 +77,7 @@
         const nullBody = operation.request.method === 'HEAD' ||
             [101, 204, 205, 304].includes(metadata.status) ||
             ['opaque', 'opaqueredirect', 'error'].includes(metadata.responseType);
+        if (metadata.status >= 400) reportFailure(id, 'HTTP ' + metadata.status);
         let stream = null;
         if (!nullBody) {
             stream = new ReadableStream({
@@ -103,6 +114,7 @@
         if (!operation || operation.completed) return;
         const error = String(name) === 'AbortError'
             ? new DOMException(String(message), 'AbortError') : new TypeError(String(message));
+        reportFailure(id, String(name) === 'AbortError' ? 'aborted' : 'body stream error');
         if (operation.responseStarted) operation.controller?.error(error);
         else operation.reject(error);
         finish(operation);

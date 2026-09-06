@@ -122,6 +122,7 @@
             this.__element = null;
             this.__encodedBytes = 0;
             this.__committing = false;
+            this.__commitBuffers = [];
             this.__loadedState = false;
             this.__waiting = false;
             this.__pendingPlayback = [];
@@ -217,18 +218,20 @@
             this.readyState = 'open';
             queueMediaEvent(this, 'sourceopen');
         }
-        __loaded(duration) {
+        __loaded(duration, buffered) {
             this.__loadedState = true;
             this.__committing = false;
-            this.__updateExtent(duration);
+            this.__updateExtent(duration, buffered);
+            this.__finishCommit();
             const playback = this.__pendingPlayback.splice(0);
             for (const pending of playback)
                 mediaCommand(this.__element, pending.requestId, 'playback', true, pending.volumeMillis);
             this.__maybeCommit();
         }
-        __appended(duration) {
+        __appended(duration, buffered) {
             this.__committing = false;
-            this.__updateExtent(duration);
+            this.__updateExtent(duration, buffered);
+            this.__finishCommit();
             if (this.__waiting && this.__element) {
                 const state = mediaStateFor(this.__element);
                 if (Number(duration) > state.currentTime) {
@@ -239,12 +242,18 @@
             }
             this.__maybeCommit();
         }
-        __updateExtent(duration) {
+        __updateExtent(duration, buffered) {
             const end = Math.max(0, Number(duration) || 0);
             // A decoded append extends buffered media, not an author's declared timeline.
             // MSE coded-frame processing may grow duration, but must never shrink it.
             this.__setDuration(Number.isNaN(this.__duration) ? end : Math.max(this.__duration, end));
-            for (const buffer of this.sourceBuffers) buffer.__setBuffered(end);
+            const tracks = buffered || [[0, end], [0, end]];
+            for (const buffer of this.sourceBuffers) {
+                const kind = mediaTrackKind(buffer.__type);
+                const range = kind === 'video' ? tracks[0] : kind === 'audio' ? tracks[1]
+                    : [Math.max(tracks[0][0], tracks[1][0]), Math.min(tracks[0][1], tracks[1][1])];
+                if (range[1] > range[0]) buffer.__setBuffered(range[0], range[1]);
+            }
         }
         __requestPlayback(requestId, volumeMillis) {
             if (this.__loadedState) {
@@ -261,17 +270,21 @@
             this.__encodedBytes = next;
         }
         __release(bytes) { this.__encodedBytes = Math.max(0, this.__encodedBytes - Number(bytes)); }
+        __finishCommit(event = 'update') {
+            for (const [buffer, operation] of this.__commitBuffers.splice(0))
+                buffer.__finishUpdate(operation, event);
+        }
         __maybeCommit(force = false) {
-            if (this.__committing || !this.__element || [...this.sourceBuffers].some(buffer => buffer.updating))
+            if (this.__committing || !this.__element)
                 return this.__committing;
-            if (!force && !this.__pendingPlayback.length && !this.__loadedState) return false;
-            const populated = [...this.sourceBuffers].filter(buffer => buffer.__bytes > 0);
-            if (!populated.length || populated.some(buffer => !buffer.__hasMediaData)) return false;
+            const populated = [...this.sourceBuffers].filter(buffer => buffer.__bytes > 0 && buffer.__hasMediaData);
+            if (!populated.length) return false;
             const muxed = populated.length === 1 && mediaTrackKind(populated[0].__type) === 'muxed';
             const video = populated.find(buffer => mediaTrackKind(buffer.__type) === 'video');
             const audio = populated.find(buffer => mediaTrackKind(buffer.__type) === 'audio');
-            if (!muxed && !(populated.length === 2 && video && audio)) return false;
+            if (!muxed && !this.__loadedState && !(video && audio)) return false;
             this.__committing = true;
+            this.__commitBuffers = populated.map(buffer => [buffer, buffer.__operation]);
             if (muxed) {
                 if (this.__loadedState) {
                     this.__committing = false;
@@ -285,12 +298,14 @@
                     releaseInternalMediaBytes(bytes);
                 }
             } else {
-                const videoBytes = video.__takeBytes();
-                const audioBytes = audio.__takeBytes();
+                const videoBytes = video ? video.__takeBytes() : new Uint8Array();
+                const audioBytes = audio ? audio.__takeBytes() : new Uint8Array();
+                const videoType = [...this.sourceBuffers].find(buffer => mediaTrackKind(buffer.__type) === 'video')?.__type || '';
+                const audioType = [...this.sourceBuffers].find(buffer => mediaTrackKind(buffer.__type) === 'audio')?.__type || '';
                 try {
                     mediaCommand(this.__element, 0,
                         this.__loadedState ? 'append-adaptive' : 'commit-adaptive',
-                        video.__type, videoBytes, audio.__type, audioBytes);
+                        videoType, videoBytes, audioType, audioBytes);
                 } finally {
                     releaseInternalMediaBytes(videoBytes);
                     releaseInternalMediaBytes(audioBytes);
@@ -300,12 +315,21 @@
         }
         __bufferedChanged() {
             if (!this.__element) return;
-            const buffer = this.sourceBuffers.item(0);
-            const ranges = buffer ? buffer.__ranges.map(range => [...range]) : [];
+            // MSE exposes the intersection of active track buffers, never their union/max end.
+            let ranges = null;
+            for (const buffer of this.activeSourceBuffers) {
+                const next = buffer.__ranges;
+                ranges = ranges === null ? next.map(range => [...range])
+                    : ranges.flatMap(([start, end]) => next.flatMap(([otherStart, otherEnd]) => {
+                        const low = Math.max(start, otherStart), high = Math.min(end, otherEnd);
+                        return high > low ? [[low, high]] : [];
+                    }));
+            }
             mediaStateFor(this.__element).buffered =
-                new TimeRanges(timeRangesConstructionToken, ranges);
+                new TimeRanges(timeRangesConstructionToken, ranges || []);
         }
         __fail(kind) {
+            this.__finishCommit('error');
             host('console', 'error', 'MediaSource failed: ' + String(kind));
             this.readyState = 'ended';
             const element = this.__element;
@@ -327,10 +351,10 @@
     }
     installEventHandlerAttributes(MediaSource.prototype);
 
-    const notifyMediaSourceLoaded = (element, duration) =>
-        mediaSourceForElement.get(element)?.__loaded(duration);
-    const notifyMediaSourceAppended = (element, duration) =>
-        mediaSourceForElement.get(element)?.__appended(duration);
+    const notifyMediaSourceLoaded = (element, duration, buffered) =>
+        mediaSourceForElement.get(element)?.__loaded(duration, buffered);
+    const notifyMediaSourceAppended = (element, duration, buffered) =>
+        mediaSourceForElement.get(element)?.__appended(duration, buffered);
     const notifyMediaSourceError = element =>
         mediaSourceForElement.get(element)?.__fail('decode');
     const waitForMediaSourceData = (element, position) => {

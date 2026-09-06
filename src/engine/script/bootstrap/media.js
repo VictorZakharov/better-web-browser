@@ -179,6 +179,7 @@
             mediaStateFor(this).srcObject = null;
         }
         load() {
+            traceMediaLifecycle(this, 'load');
             const state = mediaStateFor(this);
             const hadResource = state.networkState !== HTMLMediaElement.NETWORK_EMPTY;
             state.networkState = HTMLMediaElement.NETWORK_EMPTY;
@@ -261,15 +262,26 @@
 
     const updateMediaCanPlay = element => {
         const state = mediaStateFor(element);
+        if (state.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+        let next = HTMLMediaElement.HAVE_CURRENT_DATA;
         for (let index = 0; index < state.buffered.length; index++) {
             if (state.buffered.start(index) <= state.currentTime
-                && state.buffered.end(index) > state.currentTime
-                && state.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
-                state.readyState = HTMLMediaElement.HAVE_FUTURE_DATA;
-                element.dispatchEvent(markTrusted(new Event('canplay')));
+                && state.buffered.end(index) > state.currentTime) {
+                // MSE SourceBuffer Monitoring permits a UA buffering threshold. Use three
+                // seconds of contiguous active-track data, or the complete remaining resource.
+                // https://www.w3.org/TR/media-source-2/#sourcebuffer-monitoring
+                const end = state.buffered.end(index);
+                next = end - state.currentTime >= 3 || end >= state.duration
+                    ? HTMLMediaElement.HAVE_ENOUGH_DATA : HTMLMediaElement.HAVE_FUTURE_DATA;
                 break;
             }
         }
+        const previous = state.readyState;
+        state.readyState = next;
+        if (previous < HTMLMediaElement.HAVE_FUTURE_DATA && next >= HTMLMediaElement.HAVE_FUTURE_DATA)
+            queueMediaEvent(element, 'canplay');
+        if (previous < HTMLMediaElement.HAVE_ENOUGH_DATA && next === HTMLMediaElement.HAVE_ENOUGH_DATA)
+            queueMediaEvent(element, 'canplaythrough');
     };
 
     const applyMediaResponse = input => {
@@ -284,6 +296,7 @@
         if (requestId) pendingMediaRequests.delete(requestId);
         switch (input.disposition) {
             case 'loaded':
+                state.currentTime = Math.max(0, Number(input.currentTime) || 0);
                 state.networkState = HTMLMediaElement.NETWORK_IDLE;
                 state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
                 state.currentSrc = element.src;
@@ -292,7 +305,7 @@
                 state.videoHeight = Number(input.height) || 0;
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
-                notifyMediaSourceLoaded(element, state.duration);
+                notifyMediaSourceLoaded(element, state.duration, input.buffered);
                 if (!mediaSourceForElement.has(element))
                     element.dispatchEvent(markTrusted(new Event('durationchange')));
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
@@ -315,7 +328,9 @@
                 }
                 return true;
             case 'time':
+                traceMediaClock(element, input);
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                updateMediaCanPlay(element);
                 state.played = new TimeRanges(timeRangesConstructionToken, [[0, state.currentTime]]);
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));
                 return true;
@@ -333,7 +348,7 @@
                 state.duration = Math.max(Number(state.duration) || 0, Number(input.duration) || 0);
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
-                notifyMediaSourceAppended(element, Number(input.duration));
+                notifyMediaSourceAppended(element, Number(input.duration), input.buffered);
                 updateMediaCanPlay(element);
                 element.dispatchEvent(markTrusted(new Event('progress')));
                 return true;

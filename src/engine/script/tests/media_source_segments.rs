@@ -24,6 +24,7 @@ fn media_source_declared_duration_survives_partial_decode_and_append() {
         ("appended", 230.0, "230:230:230:230"),
     ] {
         let result = runtime.dispatch_user_input(UserInputEvent::Media {
+            buffered: None,
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
             disposition,
@@ -69,7 +70,7 @@ fn media_source_duration_assignment_validates_state_and_numbers() {
     );
 }
 
-fn execute_media_source(
+pub(super) fn execute_media_source(
     html: &str,
 ) -> (super::super::super::dom::Dom, ScriptRuntime, ScriptOutcome) {
     let dom = dom::parse_with_scripting(html, true);
@@ -121,6 +122,7 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
             ("appended", 10.0, 30.0),
         ] {
             let result = runtime.dispatch_user_input(UserInputEvent::Media {
+                buffered: None,
                 target: dom.elements_named("video").next().unwrap(),
                 request_id: 0,
                 disposition,
@@ -150,7 +152,7 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
         );
         assert_eq!(
             dom.elements_named("span").next().unwrap().text_content(),
-            "2:3"
+            "2:4"
         );
     }
 }
@@ -231,10 +233,13 @@ fn adaptive_media_source_sends_later_segments_as_bounded_appends() {
                 video.appendBuffer(initial);
                 audio.appendBuffer(initial);
                 movie.play();
-                Promise.resolve().then(() => {
-                    video.appendBuffer(later);
-                    audio.appendBuffer(later);
-                });
+                let completed = 0;
+                for (const buffer of [video, audio]) buffer.addEventListener('updateend', () => {
+                    if (++completed === 2) {
+                        video.appendBuffer(later);
+                        audio.appendBuffer(later);
+                    }
+                }, { once: true });
             }, { once: true });
             movie.src = URL.createObjectURL(mediaSource);
         </script></body>"#,
@@ -257,6 +262,7 @@ fn adaptive_media_source_sends_later_segments_as_bounded_appends() {
 
     let video = dom.elements_named("video").next().unwrap();
     let loaded = runtime.dispatch_user_input(UserInputEvent::Media {
+        buffered: None,
         target: video,
         request_id: 0,
         disposition: "loaded",

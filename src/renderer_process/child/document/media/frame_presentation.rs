@@ -25,6 +25,7 @@ impl DocumentRuntime {
             clock_100ns: metadata.timestamp_100ns.max(0) as u64,
             frame_end_100ns: frame_end(metadata),
             duration_100ns: report.duration_100ns,
+            buffered: report.buffered,
             playing: false,
             ended: false,
             video_ended: false,

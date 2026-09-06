@@ -19,6 +19,15 @@ pub(super) fn media_host_call(
     }
     if operation == "mediaDiagnostic" {
         if let Some(JsValue::String(message)) = args.get(2) {
+            // Lifecycle failures must survive mutation-heavy callbacks filling the general log.
+            if state.diagnostics.len() >= 64 {
+                let index = state
+                    .diagnostics
+                    .iter()
+                    .position(|entry| !entry.starts_with("media lifecycle:"))
+                    .unwrap_or(0);
+                state.diagnostics.remove(index);
+            }
             state.diagnose(format!(
                 "media lifecycle: {}",
                 crate::limits::bounded_utf8_prefix(message, 1024).0
@@ -88,8 +97,9 @@ pub(super) fn media_host_call(
             let encoded_bytes = video_bytes.len().checked_add(audio_bytes.len());
             if video_mime_type.len() > 256
                 || audio_mime_type.len() > 256
-                || video_bytes.is_empty()
-                || audio_bytes.is_empty()
+                || (operation == "commit-adaptive"
+                    && (video_bytes.is_empty() || audio_bytes.is_empty()))
+                || encoded_bytes == Some(0)
                 || encoded_bytes
                     .is_none_or(|bytes| bytes > crate::limits::MAX_MEDIA_ENCODED_QUEUE_BYTES)
             {

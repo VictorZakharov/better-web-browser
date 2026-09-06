@@ -64,9 +64,10 @@ impl DocumentRuntime {
             },
             (PendingMediaAction::Append { .. }, MediaOperationCompletion::Appended(result)) => {
                 match result {
-                    Ok((encoded_bytes, duration_100ns)) => {
+                    Ok((encoded_bytes, duration_100ns, buffered)) => {
                         if let Some(playback) = self.media.as_mut() {
                             playback.encoded_bytes = encoded_bytes;
+                            playback.buffered = buffered;
                             playback.duration_100ns = playback.duration_100ns.max(duration_100ns);
                             playback.video_ended = false;
                             playback.ended = false;
@@ -108,6 +109,11 @@ impl DocumentRuntime {
             duration,
             width,
             height,
+            buffered: self
+                .media
+                .as_ref()
+                .filter(|media| media.node == node)
+                .map(|media| media.buffered.seconds()),
         })?;
         super::super::merge_outcome(outcome, response.outcome, self.page.dom.document.id());
         Ok(())

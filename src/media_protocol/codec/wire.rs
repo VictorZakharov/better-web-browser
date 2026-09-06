@@ -4,6 +4,29 @@ use crate::media_protocol::{
     MediaLimits, MediaPixelFormat, MediaTestCommand, MediaVideoFrameMetadata,
 };
 
+pub(super) fn encode_buffered(
+    payload: &mut Vec<u8>,
+    extent: crate::media_protocol::MediaBufferedExtent,
+) {
+    vec_i64(payload, extent.video_start_100ns);
+    vec_u64(payload, extent.video_end_100ns);
+    vec_i64(payload, extent.audio_start_100ns);
+    vec_u64(payload, extent.audio_end_100ns);
+}
+
+pub(super) fn decode_buffered(
+    cursor: &mut Cursor<'_>,
+) -> Result<crate::media_protocol::MediaBufferedExtent, MediaProtocolError> {
+    let extent = crate::media_protocol::MediaBufferedExtent {
+        video_start_100ns: cursor.i64()?,
+        video_end_100ns: cursor.u64()?,
+        audio_start_100ns: cursor.i64()?,
+        audio_end_100ns: cursor.u64()?,
+    };
+    extent.validate()?;
+    Ok(extent)
+}
+
 pub(super) fn encode_limits(payload: &mut Vec<u8>, limits: MediaLimits) {
     vec_u32(payload, limits.max_control_payload);
     vec_u16(payload, limits.max_tracks);

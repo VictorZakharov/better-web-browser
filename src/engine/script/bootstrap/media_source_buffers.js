@@ -28,6 +28,7 @@
             this.__initializationBytes = null;
             this.__ranges = [];
             this.__operation = 0;
+            this.__awaitingCommit = false;
             this.updating = false;
             this.mode = 'segments';
             this.timestampOffset = 0;
@@ -54,12 +55,13 @@
                 this.__completeBytes = parsed.length;
                 this.__initializationLength = parsed.initializationLength;
                 this.__hasMediaData = parsed.hasMediaData;
-            });
+            }, true);
         }
         abort() {
             this.__requireOpen();
             if (!this.updating) return;
             this.__operation++;
+            this.__awaitingCommit = false;
             this.updating = false;
             this.__parent.__release(this.__reservedBytes);
             this.__reservedBytes = 0;
@@ -99,7 +101,7 @@
                 throw new DOMException('The media type is not supported', 'NotSupportedError');
             this.__type = String(type);
         }
-        __beginUpdate(apply) {
+        __beginUpdate(apply, append = false) {
             this.updating = true;
             const operation = ++this.__operation;
             queueMicrotask(() => {
@@ -107,18 +109,29 @@
                 this.dispatchEvent(markTrusted(new Event('updatestart')));
                 try {
                     apply();
-                    this.updating = false;
-                    this.dispatchEvent(markTrusted(new Event('update')));
+                    if (append && this.__hasMediaData) {
+                        // Coded-frame acceptance is asynchronous. updateend must observe the
+                        // worker-acknowledged range, not merely a copy into the transfer queue.
+                        this.__awaitingCommit = true;
+                        queueMicrotask(() => this.__parent.__maybeCommit());
+                        return;
+                    }
+                    this.__finishUpdate(operation);
                 } catch (error) {
                     host('console', 'error', 'SourceBuffer update failed: ' + String(error));
                     this.__parent.__release(this.__reservedBytes);
                     this.__reservedBytes = 0;
-                    this.updating = false;
-                    this.dispatchEvent(markTrusted(new Event('error')));
+                    this.__finishUpdate(operation, 'error');
                 }
-                this.dispatchEvent(markTrusted(new Event('updateend')));
                 this.__parent.__maybeCommit();
             });
+        }
+        __finishUpdate(operation, event = 'update') {
+            if (operation !== this.__operation || !this.updating) return;
+            this.updating = false;
+            this.__awaitingCommit = false;
+            queueMediaEvent(this, event);
+            queueMediaEvent(this, 'updateend');
         }
         __requireOpen() {
             if (this.__parent.readyState !== 'open')
@@ -147,10 +160,18 @@
             this.__hasMediaData = false;
             return transfer;
         }
-        __setBuffered(duration) {
-            const start = Math.max(0, this.appendWindowStart);
-            const end = Math.min(Number(duration) || 0, this.appendWindowEnd);
-            this.__ranges = end > start ? [[start, end]] : [];
+        __setBuffered(start, end) {
+            start = Math.max(Number(start) || 0, this.appendWindowStart);
+            end = Math.min(Number(end) || 0, this.appendWindowEnd);
+            if (end > start) {
+                const merged = [];
+                for (const range of [...this.__ranges, [start, end]].sort((a, b) => a[0] - b[0])) {
+                    const previous = merged[merged.length - 1];
+                    if (previous && range[0] <= previous[1]) previous[1] = Math.max(previous[1], range[1]);
+                    else merged.push([...range]);
+                }
+                this.__ranges = merged;
+            }
             this.__parent.__bufferedChanged();
         }
     }
