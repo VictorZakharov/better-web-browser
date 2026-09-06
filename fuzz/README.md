@@ -37,5 +37,12 @@ crash, panic, excessive allocation, or five-second input timeout fails the run. 
 minimized, added to the matching corpus, and covered by a stable regression test before the fix is
 merged.
 
+Linux campaigns enable symbolized sanitizer reports. `lsan.supp` exempts only the pinned
+rusty_v8 allocation `new<v8::isolate::IsolateLiveness>`: upstream deliberately retains this
+64-byte liveness cell per isolate so late persistent-handle drops remain safe. Leak detection
+stays enabled for all other allocation stacks, and suppression counts are printed. Revisit
+this exact exception when upgrading V8. For local runs, set `ASAN_SYMBOLIZER_PATH` to an LLVM
+symbolizer executable and `LSAN_OPTIONS=suppressions=/absolute/path/to/fuzz/lsan.supp:print_suppressions=1`.
+
 All checked-in corpus seeds were authored for this repository. Tool licensing and versions are
 recorded in `THIRD_PARTY_NOTICES.md`; generated artifacts are ignored and must not be committed.
