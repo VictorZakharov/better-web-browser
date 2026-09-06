@@ -181,7 +181,7 @@ mod tests {
             image: DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![1; 4],
+                bgra: vec![1; 4].into(),
             },
         });
 
@@ -212,7 +212,7 @@ mod tests {
             image: DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![2; 4],
+                bgra: vec![2; 4].into(),
             },
         });
         next.glyphs[0].id = 2;

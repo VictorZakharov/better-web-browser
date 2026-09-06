@@ -37,6 +37,7 @@ impl DocumentRuntime {
             });
         }
         self.last_input_sequence = input.sequence();
+        self.media_activation.observe(&input);
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
         let mut cursor = None;

@@ -29,6 +29,7 @@ use crate::navigation::resolve_url;
 use image::ImageReader;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageResource {
@@ -70,7 +71,11 @@ pub struct PageScript {
 pub struct DecodedImage {
     pub width: u32,
     pub height: u32,
-    pub bgra: Vec<u8>,
+    /// Immutable decoded pixels shared by the owning page and in-flight presentations.
+    ///
+    /// Presentation encoding borrows these bytes. Cloning a resource must not duplicate a full
+    /// image or video frame merely to cross the renderer's bounded outbound queue.
+    pub bgra: Arc<[u8]>,
 }
 
 #[derive(Debug)]
@@ -298,7 +303,7 @@ impl Page {
             DecodedImage {
                 width,
                 height,
-                bgra,
+                bgra: bgra.into(),
             },
         )
     }

@@ -1,7 +1,7 @@
 use super::{ContainmentReport, MediaProtocolError, Nonce};
 use crate::limits::{
-    MAX_MEDIA_CONTROL_PAYLOAD, MAX_MEDIA_DECODED_FRAME_BYTES, MAX_MEDIA_DECODED_FRAMES,
-    MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DECODED_SOURCE_BYTES, MAX_MEDIA_DECODER_CANDIDATES,
+    MAX_MEDIA_CONTROL_PAYLOAD, MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES, MAX_MEDIA_DECODED_FRAME_BYTES,
+    MAX_MEDIA_DECODED_FRAMES, MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DECODER_CANDIDATES,
     MAX_MEDIA_DIMENSION, MAX_MEDIA_DURATION_100NS, MAX_MEDIA_ENCODED_BYTES,
     MAX_MEDIA_ENCODED_QUEUE_BYTES, MAX_MEDIA_TRACKS, MEDIA_COMMAND_TIMEOUT,
 };
@@ -232,11 +232,25 @@ impl MediaDecodeReport {
         {
             return Err(MediaProtocolError::InvalidPayload("decoded sample count"));
         }
-        let decoded_bytes = self
-            .video_decoded_bytes
-            .checked_add(self.audio_decoded_bytes)
-            .ok_or(MediaProtocolError::InvalidPayload("decoded byte count"))?;
-        if decoded_bytes == 0 || decoded_bytes > MAX_MEDIA_DECODED_SOURCE_BYTES {
+        // These counters describe cumulative streamed output, not resident allocations. Video is
+        // pull-decoded one frame at a time and audio samples are consumed by the bounded output
+        // queue. Bound each unit and the independently checked sample counts instead of rejecting
+        // ordinary high-frame-rate segments because their theoretical full decode exceeds RAM.
+        let maximum_video_bytes = limits
+            .max_decoded_frame_bytes
+            .checked_mul(u64::from(self.video_samples))
+            .ok_or(MediaProtocolError::InvalidPayload(
+                "decoded video byte count",
+            ))?;
+        let maximum_audio_bytes = (MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES as u64)
+            .checked_mul(u64::from(self.audio_samples))
+            .ok_or(MediaProtocolError::InvalidPayload(
+                "decoded audio byte count",
+            ))?;
+        if self.video_decoded_bytes == 0 || self.video_decoded_bytes > maximum_video_bytes {
+            return Err(MediaProtocolError::InvalidPayload("decoded byte count"));
+        }
+        if self.audio_decoded_bytes == 0 || self.audio_decoded_bytes > maximum_audio_bytes {
             return Err(MediaProtocolError::InvalidPayload("decoded byte count"));
         }
         if self.duration_100ns == 0 || self.duration_100ns > MAX_MEDIA_DURATION_100NS {
@@ -316,6 +330,14 @@ pub enum BrowserMediaMessage {
         video_length: u64,
         audio_length: u64,
     },
+    AppendTracks {
+        request_id: u64,
+        source_id: u64,
+        video_source_id: u64,
+        audio_source_id: u64,
+        video_length: u64,
+        audio_length: u64,
+    },
     AcknowledgeFrame {
         source_id: u64,
         frame_id: u64,
@@ -378,6 +400,12 @@ pub enum WorkerMediaMessage {
         request_id: u64,
         report: MediaDecodeReport,
         frame: crate::media_frame_protocol::MediaVideoFrameMetadata,
+    },
+    Appended {
+        request_id: u64,
+        source_id: u64,
+        encoded_bytes: u64,
+        duration_100ns: u64,
     },
     DecodeFailed {
         request_id: u64,

@@ -206,6 +206,10 @@
         }
         pause() {
             const state = mediaStateFor(this);
+            if (!state.paused) {
+                state.paused = true;
+                queueMediaEvent(this, 'pause');
+            }
             mediaCommand(this, 0, 'playback', false, effectiveVolumeMillis(state));
         }
         fastSeek(time) { this.currentTime = time; }
@@ -271,17 +275,19 @@
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 notifyMediaSourceLoaded(element, state.duration);
-                element.dispatchEvent(markTrusted(new Event('durationchange')));
+                if (!mediaSourceForElement.has(element))
+                    element.dispatchEvent(markTrusted(new Event('durationchange')));
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
                 element.dispatchEvent(markTrusted(new Event('canplay')));
                 if (element.autoplay) element.play().catch(() => {});
                 return true;
             case 'playing':
+                const wasPaused = state.paused;
                 state.paused = false;
                 state.ended = false;
                 pending?.resolve();
-                element.dispatchEvent(markTrusted(new Event('play')));
+                if (wasPaused) element.dispatchEvent(markTrusted(new Event('play')));
                 element.dispatchEvent(markTrusted(new Event('playing')));
                 return true;
             case 'paused':
@@ -305,10 +311,21 @@
             case 'reset':
             case 'committed':
                 return true;
+            case 'appended':
+                state.duration = Math.max(Number(state.duration) || 0, Number(input.duration) || 0);
+                state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                notifyMediaSourceAppended(element, Number(input.duration));
+                element.dispatchEvent(markTrusted(new Event('progress')));
+                return true;
             case 'media-error':
                 notifyMediaSourceError(element);
                 return false;
+            case 'not-allowed':
+                pending?.reject(new DOMException('Audible playback requires user activation', 'NotAllowedError'));
+                return false;
             case 'ended':
+                if (waitForMediaSourceData(element, input.currentTime)) return true;
                 state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;
                 state.paused = true;
                 state.ended = true;

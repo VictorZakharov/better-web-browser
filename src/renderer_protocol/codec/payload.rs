@@ -140,8 +140,12 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
 }
 
 pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>), ProtocolError> {
+    if let RendererMessage::VideoFrame(chunk) = message {
+        return Ok((0x0160, chunk.encode()?));
+    }
     let mut payload = Vec::new();
     let kind = match message {
+        RendererMessage::VideoFrame(_) => unreachable!("handled above"),
         RendererMessage::Ready {
             nonce,
             context,
@@ -197,6 +201,10 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
 }
 
 pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessage, ProtocolError> {
+    if kind == 0x0160 {
+        return super::super::video::VideoFrameChunk::decode(payload)
+            .map(RendererMessage::VideoFrame);
+    }
     match kind {
         2 => {
             require_length(payload, NONCE_LENGTH + 11)?;

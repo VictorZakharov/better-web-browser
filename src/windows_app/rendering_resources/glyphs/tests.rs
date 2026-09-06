@@ -6,7 +6,7 @@ fn raster(id: u32, color: bool) -> PresentedGlyphRaster {
         image: DecodedImage {
             width: 1,
             height: 1,
-            bgra: vec![255; 4],
+            bgra: vec![255; 4].into(),
         },
         color,
     }

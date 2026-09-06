@@ -1,5 +1,5 @@
 use super::fragmented_mp4::{self, VideoSample, VideoTrack};
-use super::{ActivationList, ComApartment, MediaFoundation, stream::copy_sample};
+use super::{ActivationList, ComApartment, MediaFoundation};
 use crate::limits::MAX_MEDIA_DURATION_100NS;
 use crate::media_process::backend::playback::DecodedVideoSample;
 use crate::media_protocol::MediaLimits;
@@ -74,10 +74,6 @@ impl TransformVideoDecoder {
             _foundation: foundation,
             _apartment: apartment,
         })
-    }
-
-    pub(super) fn dimensions(&self) -> (u32, u32) {
-        (self.width, self.height)
     }
 
     pub(super) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
@@ -211,9 +207,16 @@ impl TransformVideoDecoder {
                 {
                     return Err("H.264 output timestamp exceeds worker limits".into());
                 }
+                let format = unsafe { self.transform.GetOutputCurrentType(0) }
+                    .map_err(|error| format!("read H.264 output layout: {error}"))?;
+                let stride = super::video_buffer::default_stride(&format, self.stride);
+                let (bytes, stride) =
+                    super::video_buffer::copy(&sample, stride, self.maximum_frame_bytes)?;
                 Ok(Pull::Frame(DecodedVideoSample {
-                    bytes: copy_sample(&sample, "H.264 output", self.maximum_frame_bytes)?,
-                    stride: self.stride,
+                    bytes,
+                    stride,
+                    width: self.width,
+                    height: self.height,
                     timestamp_100ns: timestamp,
                     duration_100ns: duration,
                 }))

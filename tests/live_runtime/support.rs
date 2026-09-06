@@ -60,6 +60,7 @@ fn spawn_hidden_benchmark(
             &settle_ms,
         ])
         .args(extra_arguments)
+        .env("BREEZE_REQUIRE_HIDDEN_BENCHMARK", "1")
         .creation_flags(CREATE_NO_WINDOW);
     if let Some(profile) = profile {
         command.env("BREEZE_PROFILE_DIRECTORY", profile);

@@ -14,7 +14,7 @@ internal static class Program
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             await File.WriteAllTextAsync(output, JsonSerializer.Serialize(result, JsonDefaults.Options));
             Console.WriteLine($"Chromium benchmark written to {output}");
-            return result.Error is null ? 0 : 2;
+            return result.Error is null && result.CleanupError is null ? 0 : 2;
         }
         catch (Exception exception)
         {

@@ -20,6 +20,7 @@ internal sealed class BenchmarkResult
     public string RequestedUrl { get; init; } = string.Empty;
     public string FinalUrl { get; set; } = string.Empty;
     public string? Error { get; set; }
+    public string? CleanupError { get; set; }
     public int HttpStatus { get; set; }
     public int RequestedViewportWidthCssPx { get; init; }
     public int RequestedViewportHeightCssPx { get; init; }

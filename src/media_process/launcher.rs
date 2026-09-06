@@ -37,6 +37,7 @@ pub struct MediaLaunchOptions {
     pub command_timeout: Duration,
     pub shutdown_timeout: Duration,
     pub test_mode: bool,
+    pub silent_audio: bool,
     pub startup_fault: Option<MediaStartupFault>,
 }
 
@@ -48,6 +49,7 @@ impl MediaLaunchOptions {
             command_timeout: MEDIA_COMMAND_TIMEOUT,
             shutdown_timeout: MEDIA_SHUTDOWN_TIMEOUT,
             test_mode: false,
+            silent_audio: false,
             startup_fault: None,
         }
     }
@@ -218,6 +220,9 @@ fn command_line(
     if options.test_mode {
         command.push_str(" --media-test-mode");
     }
+    if options.silent_audio {
+        command.push_str(" --media-silent-audio");
+    }
     if let Some(fault) = options.startup_fault {
         command.push_str(" --media-startup-fault ");
         command.push_str(match fault {
@@ -245,7 +250,8 @@ mod tests {
 
     #[test]
     fn command_line_is_hidden_role_bound_and_nonce_bound() {
-        let options = MediaLaunchOptions::new(PathBuf::from("C:\\Breeze\\browser.exe"));
+        let mut options = MediaLaunchOptions::new(PathBuf::from("C:\\Breeze\\browser.exe"));
+        options.silent_audio = true;
         let nonce = Nonce::new([3; 32]);
         let line = command_line(&options, nonce, MediaSessionId::new(7).unwrap(), 42, 43);
         assert!(line.contains("--media-process"));
@@ -253,6 +259,7 @@ mod tests {
         assert!(line.contains("--media-session 7"));
         assert!(line.contains("--media-data-handle 42"));
         assert!(line.contains("--media-frame-handle 43"));
+        assert!(line.contains("--media-silent-audio"));
         assert!(!line.contains("--benchmark"));
     }
 }

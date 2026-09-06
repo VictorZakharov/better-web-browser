@@ -1,9 +1,9 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS, BROWSER_HELLO,
-    BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS,
+    BROWSER_HELLO, BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
     BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
-    MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
+    MediaProtocolError, WORKER_APPENDED, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
     WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
@@ -63,6 +63,30 @@ pub(super) fn browser(
                 video_source_id,
                 audio_source_id,
                 frame_id,
+                video_length,
+                audio_length,
+            }
+        }
+        BROWSER_APPEND_TRACKS => {
+            let request_id = cursor.nonzero_u64("append request")?;
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let video_source_id = cursor.nonzero_u64("video source")?;
+            let audio_source_id = cursor.nonzero_u64("audio source")?;
+            let video_length = cursor.nonzero_u64("video length")?;
+            let audio_length = cursor.nonzero_u64("audio length")?;
+            let encoded_length = video_length
+                .checked_add(audio_length)
+                .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
+            if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length > MediaLimits::default().max_encoded_queue_bytes
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive append"));
+            }
+            BrowserMediaMessage::AppendTracks {
+                request_id,
+                source_id,
+                video_source_id,
+                audio_source_id,
                 video_length,
                 audio_length,
             }
@@ -165,6 +189,23 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 request_id,
                 report,
                 frame,
+            }
+        }
+        WORKER_APPENDED => {
+            let request_id = cursor.nonzero_u64("append request")?;
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let encoded_bytes = cursor.nonzero_u64("encoded length")?;
+            let duration_100ns = cursor.nonzero_u64("media duration")?;
+            if encoded_bytes > MediaLimits::default().max_encoded_bytes
+                || duration_100ns > crate::limits::MAX_MEDIA_DURATION_100NS
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive append report"));
+            }
+            WorkerMediaMessage::Appended {
+                request_id,
+                source_id,
+                encoded_bytes,
+                duration_100ns,
             }
         }
         WORKER_DECODE_FAILED => WorkerMediaMessage::DecodeFailed {

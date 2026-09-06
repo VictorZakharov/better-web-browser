@@ -15,7 +15,7 @@ pub(super) fn install_placeholder(dom: &Dom, images: &mut HashMap<String, Decode
             DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![0, 0, 0, 255],
+                bgra: vec![0, 0, 0, 255].into(),
             },
         );
     }
@@ -116,12 +116,13 @@ fn frame_key(node: NodeId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn image(bytes: usize) -> DecodedImage {
         DecodedImage {
             width: 1,
             height: 1,
-            bgra: vec![0; bytes],
+            bgra: vec![0; bytes].into(),
         }
     }
 
@@ -140,5 +141,12 @@ mod tests {
             9
         ));
         assert!(!fits_decoded_image_budget(usize::MAX, 1));
+    }
+
+    #[test]
+    fn decoded_image_clones_share_immutable_pixels() {
+        let image = image(4);
+        let clone = image.clone();
+        assert!(Arc::ptr_eq(&image.bgra, &clone.bgra));
     }
 }

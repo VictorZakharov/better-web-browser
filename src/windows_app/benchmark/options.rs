@@ -63,7 +63,8 @@ impl LaunchOptions {
                         Some(number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000));
                 }
                 "--settle-ms" => {
-                    settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000);
+                    // Playback endurance checks must outlive a short initial buffer.
+                    settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 600_000);
                 }
                 "--completion-marker" => {
                     let marker = required(&mut arguments, &argument)?;
@@ -257,6 +258,28 @@ fn key_input(value: &str) -> Result<BenchmarkNavigation, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endurance_settle_is_bounded_but_can_outlive_a_short_video() {
+        for (requested, expected) in [(245_000_u64, 245_000_u64), (900_000, 600_000)] {
+            let options = LaunchOptions::parse_from(
+                Instant::now(),
+                [
+                    "--benchmark".to_string(),
+                    "https://example.test".to_string(),
+                    "--output".to_string(),
+                    "report.json".to_string(),
+                    "--settle-ms".to_string(),
+                    requested.to_string(),
+                ],
+            )
+            .unwrap();
+            assert_eq!(
+                options.benchmark.unwrap().settle,
+                Duration::from_millis(expected)
+            );
+        }
+    }
 
     #[test]
     fn parses_reproducible_hidden_viewport_and_diagnostics() {

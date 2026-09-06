@@ -38,6 +38,16 @@ fn browser_and_worker_messages_round_trip() {
         })
         .unwrap();
     browser_writer
+        .send_browser(&BrowserMediaMessage::AppendTracks {
+            request_id: 14,
+            source_id: 5,
+            video_source_id: 7,
+            audio_source_id: 8,
+            video_length: 8_000,
+            audio_length: 1_000,
+        })
+        .unwrap();
+    browser_writer
         .send_browser(&BrowserMediaMessage::AcknowledgeFrame {
             source_id: 4,
             frame_id: 6,
@@ -95,6 +105,17 @@ fn browser_and_worker_messages_round_trip() {
             frame_id: 7,
             video_length: 12_000,
             audio_length: 1_932,
+        }
+    );
+    assert_eq!(
+        browser_reader.read_browser().unwrap(),
+        BrowserMediaMessage::AppendTracks {
+            request_id: 14,
+            source_id: 5,
+            video_source_id: 7,
+            audio_source_id: 8,
+            video_length: 8_000,
+            audio_length: 1_000,
         }
     );
     assert_eq!(
@@ -235,6 +256,14 @@ fn browser_and_worker_messages_round_trip() {
             })
             .unwrap();
         worker_writer
+            .send_worker(&WorkerMediaMessage::Appended {
+                request_id: 14,
+                source_id: 4,
+                encoded_bytes: 22_932,
+                duration_100ns: 20_000_000,
+            })
+            .unwrap();
+        worker_writer
             .send_worker(&WorkerMediaMessage::FrameAcknowledged {
                 source_id: 4,
                 frame_id: 6,
@@ -260,6 +289,15 @@ fn browser_and_worker_messages_round_trip() {
             request_id: 12,
             report: decoded,
             frame,
+        }
+    );
+    assert_eq!(
+        worker_reader.read_worker().unwrap(),
+        WorkerMediaMessage::Appended {
+            request_id: 14,
+            source_id: 4,
+            encoded_bytes: 22_932,
+            duration_100ns: 20_000_000,
         }
     );
     assert_eq!(
@@ -359,6 +397,29 @@ fn media_limits_and_capabilities_fail_closed() {
         decode_micros: 1,
     };
     assert!(impossible_decode.validate(MediaLimits::default()).is_err());
+
+    let streamed_decode = MediaDecodeReport {
+        video_width: 1280,
+        video_height: 720,
+        video_samples: 600,
+        audio_samples: 480,
+        video_decoded_bytes: 1280 * 720 * 3 / 2 * 600,
+        audio_decoded_bytes: 480 * 4096,
+        duration_100ns: 10 * 10_000_000,
+        ..impossible_decode
+    };
+    assert!(
+        streamed_decode.validate(MediaLimits::default()).is_ok(),
+        "cumulative pull-decoded output must not be treated as resident memory"
+    );
+    assert!(
+        MediaDecodeReport {
+            video_decoded_bytes: u64::MAX,
+            ..streamed_decode
+        }
+        .validate(MediaLimits::default())
+        .is_err()
+    );
 }
 
 #[test]

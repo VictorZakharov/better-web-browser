@@ -106,6 +106,9 @@ impl BrowserState {
                         state.activate_renderer_presentation(*presentation)
                     });
                 }
+                RendererEvent::VideoFrame(update) => {
+                    self.process_for_tab(id, |state| state.activate_video_frame(*update));
+                }
                 RendererEvent::RuntimeUpdate(update) => {
                     self.process_for_tab(id, |state| {
                         state.complete_renderer_runtime_update(*update)

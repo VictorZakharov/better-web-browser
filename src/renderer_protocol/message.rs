@@ -178,6 +178,7 @@ pub enum TestCommand {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RendererMessage {
+    VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,
         context: BrowsingContextId,

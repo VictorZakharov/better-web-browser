@@ -133,6 +133,9 @@ impl BrowserState {
             .script_diagnostics
             .extend(runtime.diagnostics.iter().cloned());
         benchmark.media = runtime.media.clone();
+        benchmark
+            .video_cadence
+            .observe(benchmark.process_started.elapsed(), runtime.media.as_ref());
         benchmark.script_runtime_stopped |= runtime.runtime_stopped;
         benchmark_completed
     }

@@ -160,14 +160,14 @@ fn geometry_reads_flush_layout_once_per_dom_mutation_version() {
     runtime.set_layout_flush_callback(Box::new(move |_| {
         let next = observed_calls.get() + 1;
         observed_calls.set(next);
-        HashMap::from([(
+        Some(HashMap::from([(
             target_id,
             RectF {
                 width: if next == 1 { 100.0 } else { 200.0 },
                 height: 20.0,
                 ..RectF::default()
             },
-        )])
+        )]))
     }));
 
     let outcome = execute_viewport_script(&dom, &mut runtime, "synchronous-layout");
@@ -204,14 +204,14 @@ fn layout_invalidation_survives_presentation_outcome_collection() {
     )]));
     runtime.set_layout_flush_callback(Box::new(move |invalidation| {
         callback_observed.borrow_mut().push(invalidation.clone());
-        HashMap::from([(
+        Some(HashMap::from([(
             target_id,
             RectF {
                 width: 200.0,
                 height: 20.0,
                 ..RectF::default()
             },
-        )])
+        )]))
     }));
     let input = |node: &NodeRef, fragment: &str| ScriptInput {
         source_url: format!("https://example.com/#{fragment}"),

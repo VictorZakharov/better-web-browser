@@ -11,6 +11,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod document_lifecycle;
 mod geometry;
+mod memory;
 
 /// Owns one document's JavaScript realm and all native state that must remain on the realm's
 /// creating thread. Embedders must keep this runtime and its document together on that owner
@@ -21,6 +22,7 @@ pub struct ScriptRuntime {
     total_script_bytes: usize,
     initialized: bool,
     prefer_timer_task: bool,
+    last_heap_sample: Option<Instant>,
 }
 
 impl ScriptRuntime {
@@ -50,6 +52,7 @@ impl ScriptRuntime {
             total_script_bytes: 0,
             initialized: false,
             prefer_timer_task: true,
+            last_heap_sample: None,
         }
     }
 
@@ -462,7 +465,7 @@ impl ScriptRuntime {
         &mut self,
         result: Result<ScriptOutcome, Box<dyn std::any::Any + Send>>,
     ) -> ScriptOutcome {
-        let outcome = match result {
+        let mut outcome = match result {
             Ok(outcome) => outcome,
             Err(payload) => {
                 // The V8 entry guard restores isolate state during unwinding, so the damaged
@@ -471,6 +474,7 @@ impl ScriptRuntime {
                 stopped_runtime_outcome(panic_detail(payload))
             }
         };
+        self.append_memory_diagnostic(&mut outcome);
         finish_host(outcome, &self.host)
     }
 }

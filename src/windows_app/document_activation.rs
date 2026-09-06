@@ -1,6 +1,7 @@
 //! Commits browser-fetched bytes to the page-owning renderer and installs validated output.
 
 mod metrics;
+mod video;
 
 use super::browser_navigation::HistoryMode;
 use super::paint_primitives::screen_rect;

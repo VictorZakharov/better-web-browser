@@ -30,7 +30,7 @@ fn lays_out_centered_image_form_and_links() {
         super::super::page::DecodedImage {
             width: 100,
             height: 40,
-            bgra: vec![0; 100 * 40 * 4],
+            bgra: vec![0; 100 * 40 * 4].into(),
         },
     );
     let mut measurer = FixedMeasurer;
@@ -344,7 +344,7 @@ fn centers_explicitly_sized_background_images_in_block_boxes() {
         super::super::page::DecodedImage {
             width: 48,
             height: 48,
-            bgra: vec![0; 48 * 48 * 4],
+            bgra: vec![0; 48 * 48 * 4].into(),
         },
     );
     let mut measurer = FixedMeasurer;

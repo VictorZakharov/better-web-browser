@@ -6,6 +6,7 @@ mod navigation;
 mod options;
 mod renderer_diagnostics;
 mod runtime_timeline;
+mod video;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
@@ -72,6 +73,7 @@ pub(super) struct BenchmarkRun {
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
     pub(super) media: Option<better_web_browser::renderer_protocol::MediaRuntimeReport>,
+    pub(super) video_cadence: video::VideoCadence,
     pub(super) script_runtime_stopped: bool,
     pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
     pub(super) completion_marker: Option<String>,
@@ -384,6 +386,7 @@ impl BrowserState {
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
                 "  \"media\": {},\n",
+                "  \"video_paint_cadence\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
                 "  \"renderer_runtime_timeline\": {},\n",
                 "  \"diagnostics\": {},\n",
@@ -466,6 +469,7 @@ impl BrowserState {
             script_console,
             script_diagnostics,
             media,
+            benchmark.video_cadence.json(),
             benchmark.script_runtime_stopped,
             benchmark.runtime_timeline.to_json(),
             diagnostics,

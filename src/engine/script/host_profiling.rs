@@ -21,6 +21,10 @@ struct HostCallStats {
 }
 
 impl HostCallProfile {
+    pub(super) fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     pub(super) fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
         if !enabled {

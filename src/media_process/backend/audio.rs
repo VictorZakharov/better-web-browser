@@ -17,8 +17,6 @@ const PCM_BITS_PER_SAMPLE: u32 = 16;
 /// Pull-driven AAC-to-PCM decoder owned exclusively by the restricted media process.
 pub(in crate::media_process) struct AudioDecoder {
     reader: IMFSourceReader,
-    sample_rate: u32,
-    channels: u16,
     remaining_samples: u32,
     total_samples: u32,
     maximum_sample_bytes: u64,
@@ -92,8 +90,6 @@ impl AudioDecoder {
         }
         Ok(Self {
             reader,
-            sample_rate,
-            channels: expected_channels,
             remaining_samples: expected_samples,
             total_samples: expected_samples,
             maximum_sample_bytes: MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES as u64,
@@ -101,14 +97,6 @@ impl AudioDecoder {
             _foundation: foundation,
             _apartment: apartment,
         })
-    }
-
-    pub(in crate::media_process) const fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    pub(in crate::media_process) const fn channels(&self) -> u16 {
-        self.channels
     }
 
     pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {

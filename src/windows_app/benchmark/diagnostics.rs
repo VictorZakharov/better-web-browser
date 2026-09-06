@@ -35,7 +35,7 @@ pub(super) fn media_runtime_json(media: Option<&MediaRuntimeReport>) -> String {
             "\"backend\":{},\"mime_type\":{},\"video_codec\":{},\"audio_codec\":{},",
             "\"encoded_queue_bytes\":{},\"encoded_queue_limit_bytes\":{},",
             "\"decoded_frame_queue_depth\":{},\"decoded_frame_queue_limit\":{},",
-            "\"frames_presented\":{},\"dropped_frames\":{},",
+            "\"frames_submitted\":{},\"dropped_frames\":{},",
             "\"width\":{},\"height\":{},\"failure\":{}}}"
         ),
         media.active,
@@ -51,7 +51,7 @@ pub(super) fn media_runtime_json(media: Option<&MediaRuntimeReport>) -> String {
         media.encoded_queue_limit_bytes,
         media.decoded_frame_queue_depth,
         media.decoded_frame_queue_limit,
-        media.frames_presented,
+        media.frames_submitted,
         media.dropped_frames,
         media.width,
         media.height,

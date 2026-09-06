@@ -233,7 +233,9 @@ provenance that are intentionally absent from the shipped graph are tracked sepa
 
 The deterministic alpha matrix now covers long-form and portal pages, responsive articles, search results, a capability dashboard, forms/storage, layout, media/fonts, and asynchronous mutation. Its opt-in live URLs provide side-by-side evidence rather than CI truth. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results remain a compatibility target, not evidence that Google search is solved.
 
-As of 2026-08-13, the hidden release build completes HTML5test and renders a score of **158 / 588** with zero JavaScript errors. That deliberately low result is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
+As of 2026-09-02, the development build renders an HTML5test score of **284 / 588**. A fresh-profile hidden release run at `https://html5test.co/` also completed with zero JavaScript errors and no renderer exit. This score is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
+
+YouTube playback remains work in progress: non-DRM video and audio can play, but startup, video frame cadence, layout fidelity, and memory use are not yet at an acceptable browser baseline. Passing media fixtures does not establish usable live-site playback.
 
 ## License
 

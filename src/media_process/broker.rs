@@ -10,7 +10,10 @@ use crate::renderer_process::windows::{
 };
 use std::fs::File;
 use std::os::windows::io::OwnedHandle;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Arc,
+    mpsc::{self, Receiver},
+};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -30,7 +33,7 @@ pub enum MediaWorkerState {
 pub struct DecodedMediaFrame {
     pub metadata: crate::media_protocol::MediaVideoFrameMetadata,
     pub nv12: Vec<u8>,
-    pub bgra: Vec<u8>,
+    pub bgra: Arc<[u8]>,
 }
 
 #[derive(Clone, Debug)]

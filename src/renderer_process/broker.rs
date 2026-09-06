@@ -88,6 +88,7 @@ pub enum RendererEvent {
         request_id: u64,
     },
     Presentation(Box<RendererPresentation>),
+    VideoFrame(Box<crate::renderer_protocol::VideoFrameUpdate>),
     RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {
         document: DocumentId,

@@ -83,6 +83,7 @@ impl BenchmarkRun {
             script_console: Vec::new(),
             script_diagnostics: Vec::new(),
             media: None,
+            video_cadence: Default::default(),
             script_runtime_stopped: false,
             runtime_timeline: runtime_timeline::RuntimeTimeline::default(),
             completion_marker,

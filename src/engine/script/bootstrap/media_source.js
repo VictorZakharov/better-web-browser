@@ -1,6 +1,6 @@
     // A deliberately bounded Media Source implementation. It supports the two SourceBuffer
     // configurations required by MSE: one muxed buffer, or separate video and audio buffers.
-    // Encoded tracks cross the contained-media boundary once when playback is requested.
+    // Complete encoded media segments cross the contained-media boundary as bounded batches.
     const MAX_MEDIA_SOURCE_BYTES = 8 * 1024 * 1024;
     const objectUrlEntries = new Map();
     const mediaSourceForElement = new WeakMap();
@@ -21,6 +21,13 @@
         }
         return output;
     };
+    const releaseInternalMediaBytes = bytes => {
+        // __hostCall copied this Breeze-owned transfer view into a Rust Vec synchronously. Detach
+        // only this internal buffer so V8 can release its backing store without changing the
+        // caller-owned appendBuffer input required by MSE.
+        if (ArrayBuffer.isView(bytes) && bytes.buffer.byteLength)
+            host('arrayBufferDetach', bytes.buffer);
+    };
     const mediaTrackKind = type => {
         const source = String(type).toLowerCase();
         const video = source.includes('avc1.');
@@ -30,30 +37,61 @@
         if (audio) return 'audio';
         return '';
     };
-    const completeMediaDataBoxes = bytes => {
+    const completeMediaSegmentPrefix = bytes => {
         const read32 = offset => ((bytes[offset] << 24) | (bytes[offset + 1] << 16)
             | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
         let offset = 0;
+        let completeLength = 0;
+        let initializationLength = 0;
         let foundMediaData = false;
+        let waitingForMediaData = false;
         while (offset + 8 <= bytes.byteLength) {
             let size = read32(offset);
             let header = 8;
             if (size === 1) {
-                if (offset + 16 > bytes.byteLength) return false;
+                if (offset + 16 > bytes.byteLength)
+                    return { length: completeLength, initializationLength,
+                        hasMediaData: foundMediaData, invalid: false };
                 const high = read32(offset + 8);
                 const low = read32(offset + 12);
                 size = high * 0x100000000 + low;
                 header = 16;
-                if (!Number.isSafeInteger(size)) return false;
+                if (!Number.isSafeInteger(size))
+                    return { length: 0, initializationLength: 0,
+                        hasMediaData: false, invalid: true };
             } else if (size === 0) {
                 size = bytes.byteLength - offset;
             }
-            if (size < header || offset + size > bytes.byteLength) return false;
-            foundMediaData ||= bytes[offset + 4] === 0x6d && bytes[offset + 5] === 0x64
-                && bytes[offset + 6] === 0x61 && bytes[offset + 7] === 0x74;
+            if (size < header) return { length: 0, initializationLength: 0,
+                hasMediaData: false, invalid: true };
+            if (offset + size > bytes.byteLength)
+                return { length: completeLength, initializationLength,
+                    hasMediaData: foundMediaData, invalid: false };
+            const kind = String.fromCharCode(
+                bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]
+            );
             offset += size;
+            if (kind === 'moof') {
+                // ISO-BMFF MSE media segments are a moof followed by one or more mdat boxes.
+                // A complete moof is not a safe prefix while its referenced mdat is partial.
+                waitingForMediaData = true;
+            } else if (kind === 'moov' && !foundMediaData) {
+                initializationLength = offset;
+            } else if (kind === 'mdat') {
+                foundMediaData = true;
+                waitingForMediaData = false;
+                completeLength = offset;
+            } else if (!waitingForMediaData && foundMediaData) {
+                // Boxes between complete media segments may travel with the preceding segment.
+                completeLength = offset;
+            }
         }
-        return foundMediaData && offset === bytes.byteLength;
+        return {
+            length: waitingForMediaData ? completeLength : Math.max(completeLength, offset),
+            initializationLength,
+            hasMediaData: foundMediaData,
+            invalid: false
+        };
     };
 
     const mediaSourceTypeSupported = type => {
@@ -73,157 +111,46 @@
     const queueMediaEvent = (target, name) => queueMicrotask(() =>
         target.dispatchEvent(markTrusted(new Event(name))));
 
-    class SourceBufferList extends EventTarget {
-        constructor() {
-            super();
-            this.__items = [];
-        }
-        get length() { return this.__items.length; }
-        item(index) { return this.__items[Number(index)] || null; }
-        [Symbol.iterator]() { return this.__items[Symbol.iterator](); }
-        __replace(items) {
-            for (let index = 0; index < this.__items.length; index++) delete this[index];
-            this.__items = [...items];
-            for (let index = 0; index < this.__items.length; index++)
-                Object.defineProperty(this, index, { configurable: true, get: () => this.__items[index] });
-        }
-    }
-
-    class SourceBuffer extends EventTarget {
-        constructor(parent, type) {
-            super();
-            this.__parent = parent;
-            this.__type = type;
-            this.__chunks = [];
-            this.__bytes = 0;
-            this.__reservedBytes = 0;
-            this.__hasMediaData = false;
-            this.__ranges = [];
-            this.__operation = 0;
-            this.updating = false;
-            this.mode = 'segments';
-            this.timestampOffset = 0;
-            this.appendWindowStart = 0;
-            this.appendWindowEnd = Infinity;
-        }
-        get buffered() { return new TimeRanges(timeRangesConstructionToken, this.__ranges); }
-        appendBuffer(value) {
-            this.__prepareUpdate();
-            if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
-            const bytes = copyMediaBytes(value);
-            if (!bytes) throw new TypeError('appendBuffer requires an ArrayBuffer or view');
-            this.__parent.__reserve(bytes.byteLength);
-            this.__reservedBytes += bytes.byteLength;
-            this.__beginUpdate(() => {
-                this.__chunks.push(bytes);
-                this.__bytes += bytes.byteLength;
-                this.__reservedBytes -= bytes.byteLength;
-                this.__hasMediaData = completeMediaDataBoxes(this.__materialize());
-            });
-        }
-        abort() {
-            this.__requireOpen();
-            if (!this.updating) return;
-            this.__operation++;
-            this.updating = false;
-            this.__parent.__release(this.__reservedBytes);
-            this.__reservedBytes = 0;
-            queueMediaEvent(this, 'abort');
-            queueMediaEvent(this, 'updateend');
-        }
-        remove(start, end) {
-            if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
-            start = Number(start);
-            end = Number(end);
-            const duration = Number(this.__parent.duration);
-            if (!Number.isFinite(duration) || !Number.isFinite(start) || start < 0
-                || start > duration || Number.isNaN(end) || end <= start)
-                throw new TypeError('remove requires an increasing finite time range');
-            this.__prepareUpdate();
-            this.__beginUpdate(() => {
-                this.__ranges = this.__ranges.flatMap(([rangeStart, rangeEnd]) => {
-                    if (end <= rangeStart || start >= rangeEnd) return [[rangeStart, rangeEnd]];
-                    const ranges = [];
-                    if (start > rangeStart) ranges.push([rangeStart, Math.min(start, rangeEnd)]);
-                    if (end < rangeEnd) ranges.push([Math.max(end, rangeStart), rangeEnd]);
-                    return ranges;
-                });
-                if (!this.__ranges.length) {
-                    this.__parent.__release(this.__bytes);
-                    this.__chunks = [];
-                    this.__bytes = 0;
-                    this.__hasMediaData = false;
-                }
-                this.__parent.__bufferedChanged();
-            });
-        }
-        changeType(type) {
-            this.__requireOpen();
-            if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
-            if (!mediaSourceTypeSupported(type))
-                throw new DOMException('The media type is not supported', 'NotSupportedError');
-            this.__type = String(type);
-        }
-        __beginUpdate(apply) {
-            this.updating = true;
-            const operation = ++this.__operation;
-            queueMicrotask(() => {
-                if (operation !== this.__operation || !this.updating) return;
-                this.dispatchEvent(markTrusted(new Event('updatestart')));
-                try {
-                    apply();
-                    this.updating = false;
-                    this.dispatchEvent(markTrusted(new Event('update')));
-                } catch (_error) {
-                    this.__parent.__release(this.__reservedBytes);
-                    this.__reservedBytes = 0;
-                    this.updating = false;
-                    this.dispatchEvent(markTrusted(new Event('error')));
-                }
-                this.dispatchEvent(markTrusted(new Event('updateend')));
-                this.__parent.__maybeCommit();
-            });
-        }
-        __requireOpen() {
-            if (this.__parent.readyState !== 'open')
-                throw new DOMException('The MediaSource is not open', 'InvalidStateError');
-        }
-        __prepareUpdate() {
-            if (this.__parent.readyState === 'closed')
-                throw new DOMException('The MediaSource is closed', 'InvalidStateError');
-            if (this.__parent.readyState === 'ended') this.__parent.__reopen();
-        }
-        __materialize() { return concatMediaBytes(this.__chunks); }
-        __takeBytes() {
-            const bytes = this.__materialize();
-            this.__parent.__release(this.__bytes);
-            this.__chunks = [];
-            this.__bytes = 0;
-            return bytes;
-        }
-        __setBuffered(duration) {
-            const start = Math.max(0, this.appendWindowStart);
-            const end = Math.min(Number(duration) || 0, this.appendWindowEnd);
-            this.__ranges = end > start ? [[start, end]] : [];
-            this.__parent.__bufferedChanged();
-        }
-    }
-    installEventHandlerAttributes(SourceBuffer.prototype);
 
     class MediaSource extends EventTarget {
         constructor() {
             super();
             this.readyState = 'closed';
-            this.duration = NaN;
+            this.__duration = NaN;
             this.sourceBuffers = new SourceBufferList();
             this.activeSourceBuffers = new SourceBufferList();
             this.__element = null;
             this.__encodedBytes = 0;
             this.__committing = false;
             this.__loadedState = false;
+            this.__waiting = false;
             this.__pendingPlayback = [];
         }
         static isTypeSupported(type) { return mediaSourceTypeSupported(type); }
+        get duration() { return this.__duration; }
+        set duration(value) {
+            value = Number(value);
+            if (Number.isNaN(value) || value < 0) throw new TypeError('Invalid media duration');
+            if (this.readyState !== 'open' || [...this.sourceBuffers].some(buffer => buffer.updating))
+                throw new DOMException('The MediaSource cannot change duration now', 'InvalidStateError');
+            // The contained decoder currently reports range ends, not individual coded-frame
+            // presentation timestamps. Reject truncation conservatively until those are exposed.
+            const end = Math.max(0, ...[...this.sourceBuffers].flatMap(buffer =>
+                buffer.__ranges.map(range => range[1])));
+            if (value < end)
+                throw new DOMException('Remove buffered media before reducing duration', 'InvalidStateError');
+            this.__setDuration(value);
+        }
+        __setDuration(value) {
+            const changed = this.__duration !== value;
+            this.__duration = value;
+            if (!this.__element) return;
+            const state = mediaStateFor(this.__element);
+            state.duration = value;
+            state.seekable = new TimeRanges(timeRangesConstructionToken,
+                Number.isFinite(value) && value > 0 ? [[0, value]] : []);
+            if (changed) queueMediaEvent(this.__element, 'durationchange');
+        }
         addSourceBuffer(type) {
             if (this.readyState !== 'open')
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
@@ -266,9 +193,11 @@
                 this.__fail(error);
                 return;
             }
-            if (!this.__maybeCommit(true))
+            if (!this.__maybeCommit(true) && !this.__loadedState)
                 throw new DOMException('A complete supported SourceBuffer configuration is required', 'NotSupportedError');
             this.readyState = 'ended';
+            this.__setDuration(Math.max(0, ...[...this.sourceBuffers].flatMap(buffer =>
+                buffer.__ranges.map(range => range[1]))));
             queueMediaEvent(this, 'sourceended');
         }
         setLiveSeekableRange() {
@@ -290,11 +219,32 @@
         }
         __loaded(duration) {
             this.__loadedState = true;
-            this.duration = Number(duration);
-            for (const buffer of this.sourceBuffers) buffer.__setBuffered(this.duration);
+            this.__committing = false;
+            this.__updateExtent(duration);
             const playback = this.__pendingPlayback.splice(0);
             for (const pending of playback)
                 mediaCommand(this.__element, pending.requestId, 'playback', true, pending.volumeMillis);
+            this.__maybeCommit();
+        }
+        __appended(duration) {
+            this.__committing = false;
+            this.__updateExtent(duration);
+            if (this.__waiting && this.__element) {
+                const state = mediaStateFor(this.__element);
+                if (Number(duration) > state.currentTime) {
+                    this.__waiting = false;
+                    if (!state.paused)
+                        mediaCommand(this.__element, 0, 'playback', true, effectiveVolumeMillis(state));
+                }
+            }
+            this.__maybeCommit();
+        }
+        __updateExtent(duration) {
+            const end = Math.max(0, Number(duration) || 0);
+            // A decoded append extends buffered media, not an author's declared timeline.
+            // MSE coded-frame processing may grow duration, but must never shrink it.
+            this.__setDuration(Number.isNaN(this.__duration) ? end : Math.max(this.__duration, end));
+            for (const buffer of this.sourceBuffers) buffer.__setBuffered(end);
         }
         __requestPlayback(requestId, volumeMillis) {
             if (this.__loadedState) {
@@ -314,7 +264,7 @@
         __maybeCommit(force = false) {
             if (this.__committing || !this.__element || [...this.sourceBuffers].some(buffer => buffer.updating))
                 return this.__committing;
-            if (!force && !this.__pendingPlayback.length) return false;
+            if (!force && !this.__pendingPlayback.length && !this.__loadedState) return false;
             const populated = [...this.sourceBuffers].filter(buffer => buffer.__bytes > 0);
             if (!populated.length || populated.some(buffer => !buffer.__hasMediaData)) return false;
             const muxed = populated.length === 1 && mediaTrackKind(populated[0].__type) === 'muxed';
@@ -323,11 +273,28 @@
             if (!muxed && !(populated.length === 2 && video && audio)) return false;
             this.__committing = true;
             if (muxed) {
+                if (this.__loadedState) {
+                    this.__committing = false;
+                    return false;
+                }
                 const buffer = populated[0];
-                mediaCommand(this.__element, 0, 'commit', buffer.__type, buffer.__takeBytes());
+                const bytes = buffer.__takeBytes();
+                try {
+                    mediaCommand(this.__element, 0, 'commit', buffer.__type, bytes);
+                } finally {
+                    releaseInternalMediaBytes(bytes);
+                }
             } else {
-                mediaCommand(this.__element, 0, 'commit-adaptive',
-                    video.__type, video.__takeBytes(), audio.__type, audio.__takeBytes());
+                const videoBytes = video.__takeBytes();
+                const audioBytes = audio.__takeBytes();
+                try {
+                    mediaCommand(this.__element, 0,
+                        this.__loadedState ? 'append-adaptive' : 'commit-adaptive',
+                        video.__type, videoBytes, audio.__type, audioBytes);
+                } finally {
+                    releaseInternalMediaBytes(videoBytes);
+                    releaseInternalMediaBytes(audioBytes);
+                }
             }
             return true;
         }
@@ -361,8 +328,20 @@
 
     const notifyMediaSourceLoaded = (element, duration) =>
         mediaSourceForElement.get(element)?.__loaded(duration);
+    const notifyMediaSourceAppended = (element, duration) =>
+        mediaSourceForElement.get(element)?.__appended(duration);
     const notifyMediaSourceError = element =>
         mediaSourceForElement.get(element)?.__fail('decode');
+    const waitForMediaSourceData = (element, position) => {
+        const source = mediaSourceForElement.get(element);
+        if (!source || source.readyState === 'ended') return false;
+        const state = mediaStateFor(element);
+        state.currentTime = Math.max(0, Number(position) || 0);
+        state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+        if (!source.__waiting) queueMediaEvent(element, 'waiting');
+        source.__waiting = true;
+        return true;
+    };
     const prepareMediaSourcePlayback = (element, requestId, volumeMillis) => {
         const source = mediaSourceForElement.get(element);
         if (!source) return false;

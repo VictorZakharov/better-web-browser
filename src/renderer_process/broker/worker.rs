@@ -2,6 +2,7 @@ mod commands;
 mod deadlines;
 mod document;
 mod stream;
+mod video;
 
 use self::document::{IncomingFetchBatch, IncomingPresentation};
 use super::diagnostics::{
@@ -90,6 +91,7 @@ struct Broker {
     exit_reason: Option<RendererExitReason>,
     incoming_fetch: Option<IncomingFetchBatch>,
     incoming_presentation: Option<IncomingPresentation>,
+    incoming_video: crate::renderer_protocol::VideoFrameAssembler,
     active_document: Option<DocumentId>,
     retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
@@ -114,6 +116,7 @@ impl Broker {
             exit_reason: None,
             incoming_fetch: None,
             incoming_presentation: None,
+            incoming_video: Default::default(),
             active_document: None,
             retired_document: None,
             outgoing_fetch: HashMap::new(),
@@ -156,6 +159,7 @@ impl Broker {
                 Err(mpsc::TryRecvError::Disconnected) => break,
             };
             match message {
+                Ok(RendererMessage::VideoFrame(chunk)) => self.process_video_chunk(chunk),
                 Ok(RendererMessage::Pong(token)) => {
                     // Token zero acknowledges completed work or independently bounded progress.
                     // Real Ping tokens start at one and retain reply routing.

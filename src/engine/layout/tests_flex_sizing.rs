@@ -62,7 +62,7 @@ fn resolves_inline_replaced_percentages_against_a_definite_containing_block() {
         crate::engine::page::DecodedImage {
             width: 336,
             height: 188,
-            bgra: vec![0; 336 * 188 * 4],
+            bgra: vec![0; 336 * 188 * 4].into(),
         },
     );
     let image = page.dom.elements_named("img").next().unwrap();

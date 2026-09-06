@@ -126,7 +126,29 @@ fn truncation_and_bytes_after_end_never_join_another_frame() {
 fn converts_limited_range_nv12_to_opaque_premultiplied_bgra() {
     let metadata = metadata(2, 2, 2);
     let black = nv12_to_bgra(metadata, &[16, 16, 16, 16, 128, 128]).unwrap();
-    assert_eq!(black.bgra, [0, 0, 0, 255].repeat(4));
+    assert_eq!(black.bgra.as_ref(), [0, 0, 0, 255].repeat(4));
     let white = nv12_to_bgra(metadata, &[235, 235, 235, 235, 128, 128]).unwrap();
-    assert_eq!(white.bgra, [255, 255, 255, 255].repeat(4));
+    assert_eq!(white.bgra.as_ref(), [255, 255, 255, 255].repeat(4));
+}
+
+#[test]
+fn converts_a_vertically_padded_nv12_surface_using_the_visible_crop() {
+    let mut padded = metadata(2, 2, 2);
+    padded.data_length = 12;
+    let bytes = [
+        16, 16, 16, 16, // visible luma
+        235, 235, 235, 235, // padded luma rows
+        128, 128, 0, 0, // visible and padded chroma rows
+    ];
+    assert_eq!(padded.storage_height().unwrap(), 4);
+    let image = nv12_to_bgra(padded, &bytes).unwrap();
+    assert_eq!(image.width, 2);
+    assert_eq!(image.height, 2);
+    assert_eq!(image.bgra.as_ref(), [0, 0, 0, 255].repeat(4));
+
+    padded.data_length = 10;
+    assert!(matches!(
+        padded.validate(),
+        Err(MediaFrameError::InvalidLength(10))
+    ));
 }

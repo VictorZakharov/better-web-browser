@@ -31,6 +31,8 @@ pub(super) const WORKER_PLAYBACK_STATE: u16 = 18;
 pub(super) const BROWSER_SEEK_PLAYBACK: u16 = 19;
 pub(super) const BROWSER_DECODE_TRACKS: u16 = 20;
 pub(super) const WORKER_DECODE_FAILED: u16 = 21;
+pub(super) const BROWSER_APPEND_TRACKS: u16 = 22;
+pub(super) const WORKER_APPENDED: u16 = 23;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -242,6 +244,7 @@ impl Direction {
                     | BROWSER_PROBE
                     | BROWSER_DECODE_SOURCE
                     | BROWSER_DECODE_TRACKS
+                    | BROWSER_APPEND_TRACKS
                     | BROWSER_ACKNOWLEDGE_FRAME
                     | BROWSER_REQUEST_FRAME
                     | BROWSER_SET_PLAYBACK
@@ -256,6 +259,7 @@ impl Direction {
                     | WORKER_SHUTDOWN_COMPLETE
                     | WORKER_CAPABILITY
                     | WORKER_DECODED
+                    | WORKER_APPENDED
                     | WORKER_DECODE_FAILED
                     | WORKER_FRAME_ACKNOWLEDGED
                     | WORKER_FRAME_READY

@@ -214,7 +214,12 @@ internal static class ChromeRun
                 }
                 chrome.Dispose();
             }
-            DeleteFreshProfile(profile);
+            try { DeleteFreshProfile(profile); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // Preserve collected evidence, but keep cleanup failure visible and fail the run.
+                result.CleanupError = $"Temporary profile {profile}: {error.Message}";
+            }
         }
     }
 
@@ -242,6 +247,7 @@ internal static class ChromeRun
         foreach (var argument in new[]
         {
             "--headless",
+            "--mute-audio",
             $"--user-data-dir={profile}",
             "--remote-debugging-port=0",
             "--no-first-run",

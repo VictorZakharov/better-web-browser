@@ -67,20 +67,37 @@ impl MediaVideoFrameMetadata {
         {
             return Err(MediaFrameError::InvalidTimestamp);
         }
-        let rows = u64::from(self.height)
-            .checked_add(u64::from(self.height / 2))
-            .ok_or(MediaFrameError::InvalidLength(self.data_length))?;
-        let expected = u64::from(self.stride)
-            .checked_mul(rows)
-            .ok_or(MediaFrameError::InvalidLength(self.data_length))?;
         if self.format != MediaPixelFormat::Nv12
-            || self.data_length != expected
             || self.data_length == 0
             || self.data_length > MAX_MEDIA_DECODED_FRAME_BYTES as u64
         {
             return Err(MediaFrameError::InvalidLength(self.data_length));
         }
+        self.storage_height()?;
         Ok(())
+    }
+
+    pub(crate) fn storage_height(self) -> Result<u32, MediaFrameError> {
+        // Media Foundation commonly pads NV12 surfaces vertically (for example 1080 visible rows
+        // in a 1088-row allocation). The wire length and stride define that storage height; the
+        // public height remains the visible crop. Requiring exact arithmetic keeps malformed or
+        // ambiguously shaped surfaces from crossing the contained-process boundary.
+        let numerator = self
+            .data_length
+            .checked_mul(2)
+            .ok_or(MediaFrameError::InvalidLength(self.data_length))?;
+        let denominator = u64::from(self.stride)
+            .checked_mul(3)
+            .ok_or(MediaFrameError::InvalidLength(self.data_length))?;
+        if denominator == 0 || !numerator.is_multiple_of(denominator) {
+            return Err(MediaFrameError::InvalidLength(self.data_length));
+        }
+        let height = u32::try_from(numerator / denominator)
+            .map_err(|_| MediaFrameError::InvalidLength(self.data_length))?;
+        if height < self.height || height > MAX_MEDIA_DIMENSION || !height.is_multiple_of(2) {
+            return Err(MediaFrameError::InvalidLength(self.data_length));
+        }
+        Ok(height)
     }
 }
 

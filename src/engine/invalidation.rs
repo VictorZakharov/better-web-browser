@@ -25,6 +25,10 @@ impl InvalidationImpact {
         self.0 & (Self::LAYOUT.0 | Self::INTRINSIC_SIZE.0) != 0
     }
 
+    pub const fn affects_intrinsic_size(self) -> bool {
+        self.0 & Self::INTRINSIC_SIZE.0 != 0
+    }
+
     pub const fn affects_paint(self) -> bool {
         self.0 & Self::PAINT.0 != 0
     }
@@ -155,6 +159,16 @@ mod tests {
     fn classifies_mutations_conservatively() {
         assert!(MutationKind::Attribute("class").impact().affects_style());
         assert!(MutationKind::Attribute("width").impact().affects_layout());
+        assert!(
+            MutationKind::Attribute("width")
+                .impact()
+                .affects_intrinsic_size()
+        );
+        assert!(
+            !MutationKind::Attribute("aria-label")
+                .impact()
+                .affects_intrinsic_size()
+        );
         assert!(MutationKind::CharacterData.impact().affects_layout());
         assert!(!MutationKind::CharacterData.impact().affects_style());
         assert!(MutationKind::ChildList.impact().affects_paint());

@@ -1,4 +1,4 @@
-use super::super::super::backend::AudioDecoder;
+use super::AudioDecoderQueue;
 use crate::limits::MAX_MEDIA_DECODED_AUDIO_QUEUE_BYTES;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -21,7 +21,6 @@ const AUDIO_ENDPOINT_NOT_FOUND: i32 = 0x8007_0490_u32 as i32;
 pub(super) struct OutputState {
     pub(super) position_100ns: u64,
     pub(super) playing: bool,
-    pub(super) ended: bool,
 }
 
 pub(super) enum AudioOutput {
@@ -53,7 +52,7 @@ impl AudioOutput {
         &mut self,
         playing: bool,
         volume_millis: u16,
-        decoder: &mut AudioDecoder,
+        decoder: &mut AudioDecoderQueue,
     ) -> Result<(), String> {
         match self {
             Self::Silent(output) => {
@@ -64,7 +63,7 @@ impl AudioOutput {
         }
     }
 
-    pub(super) fn state(&mut self, decoder: &mut AudioDecoder) -> Result<OutputState, String> {
+    pub(super) fn state(&mut self, decoder: &mut AudioDecoderQueue) -> Result<OutputState, String> {
         match self {
             Self::Silent(output) => Ok(output.state()),
             Self::Device(output) => output.state(decoder),
@@ -74,7 +73,7 @@ impl AudioOutput {
     pub(super) fn seek(
         &mut self,
         position_100ns: u64,
-        decoder: &mut AudioDecoder,
+        decoder: &mut AudioDecoderQueue,
     ) -> Result<(), String> {
         match self {
             Self::Silent(output) => {
@@ -82,6 +81,12 @@ impl AudioOutput {
                 Ok(())
             }
             Self::Device(output) => output.seek(position_100ns, decoder),
+        }
+    }
+
+    pub(super) fn input_appended(&mut self) {
+        if let Self::Device(output) = self {
+            output.input_ended = false;
         }
     }
 }
@@ -123,7 +128,6 @@ impl SilentClock {
                 .saturating_div(100)
                 .min(u128::from(u64::MAX)) as u64,
             playing: self.playing,
-            ended: false,
         }
     }
 
@@ -235,7 +239,7 @@ impl XAudioOutput {
         &mut self,
         playing: bool,
         volume_millis: u16,
-        decoder: &mut AudioDecoder,
+        decoder: &mut AudioDecoderQueue,
     ) -> Result<(), String> {
         unsafe {
             self.source
@@ -257,13 +261,9 @@ impl XAudioOutput {
         Ok(())
     }
 
-    fn state(&mut self, decoder: &mut AudioDecoder) -> Result<OutputState, String> {
+    fn state(&mut self, decoder: &mut AudioDecoderQueue) -> Result<OutputState, String> {
         self.pump(decoder)?;
         let state = self.voice_state();
-        let ended = self.input_ended && state.BuffersQueued == 0;
-        if ended {
-            self.playing = false;
-        }
         Ok(OutputState {
             position_100ns: self.position_base_100ns.saturating_add(
                 state
@@ -274,11 +274,10 @@ impl XAudioOutput {
                     .unwrap_or_default(),
             ),
             playing: self.playing,
-            ended,
         })
     }
 
-    fn seek(&mut self, position_100ns: u64, decoder: &mut AudioDecoder) -> Result<(), String> {
+    fn seek(&mut self, position_100ns: u64, decoder: &mut AudioDecoderQueue) -> Result<(), String> {
         let resume = self.playing;
         if resume {
             unsafe { self.source.Stop(0, XAUDIO2_COMMIT_NOW) }
@@ -299,7 +298,7 @@ impl XAudioOutput {
         Ok(())
     }
 
-    fn pump(&mut self, decoder: &mut AudioDecoder) -> Result<(), String> {
+    fn pump(&mut self, decoder: &mut AudioDecoderQueue) -> Result<(), String> {
         let state = self.voice_state();
         while self.queued.len() > state.BuffersQueued as usize {
             if let Some(bytes) = self.queued.pop_front() {

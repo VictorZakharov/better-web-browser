@@ -11,7 +11,7 @@ param(
     [int] $FilmstripIntervalMs = 500,
     [ValidateRange(100, 60000)]
     [int] $FilmstripDurationMs = 10000,
-    [ValidateRange(100, 60000)]
+    [ValidateRange(100, 600000)]
     [int] $SettleMs = 2000,
     [ValidateRange(5, 600)]
     [int] $TimeoutSeconds = 120,
@@ -31,6 +31,7 @@ param(
     [string[]] $LinkActivationTarget = @(),
     [string[]] $SelectorActivationTarget = @(),
     [string[]] $ClickTarget = @(),
+    [string[]] $KeyTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -166,8 +167,13 @@ foreach ($target in $ClickTarget) {
     $arguments.Add('--click-after-ready')
     $arguments.Add($target)
 }
+foreach ($target in $KeyTarget) {
+    if ($target -notmatch '^[^,]+,[^,]+$') { throw '-KeyTarget must use key,code pairs.' }
+    $arguments.Add('--key-after-ready')
+    $arguments.Add($target)
+}
 if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
-    $SelectorActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0) {
+    $SelectorActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {

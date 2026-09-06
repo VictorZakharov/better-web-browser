@@ -260,6 +260,7 @@ impl Direction {
                     | 0x0134
                     | 0x0136
                     | 0x0150
+                    | 0x0160
                     | 0x8002
             ),
         }
@@ -269,7 +270,7 @@ impl Direction {
 fn payload_limit(kind: u16) -> usize {
     match kind {
         // Document, request, response, and presentation body chunks are the only bulk frames.
-        0x0103 | 0x0106 | 0x0113 | 0x0114 => MAX_FRAME_PAYLOAD,
+        0x0103 | 0x0106 | 0x0113 | 0x0114 | 0x0160 => MAX_FRAME_PAYLOAD,
         _ => MAX_CONTROL_PAYLOAD,
     }
 }

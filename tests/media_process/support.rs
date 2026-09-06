@@ -69,7 +69,7 @@ pub(super) fn capture_frame_if_requested(frame: &DecodedMediaFrame) {
     let Some(path) = std::env::var_os("BREEZE_MEDIA_FRAME_CAPTURE") else {
         return;
     };
-    let mut rgba = frame.bgra.clone();
+    let mut rgba = frame.bgra.to_vec();
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }

@@ -159,7 +159,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             image: DecodedImage {
                 width,
                 height,
-                bgra,
+                bgra: bgra.into(),
             },
         });
     }
@@ -208,7 +208,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             image: DecodedImage {
                 width,
                 height,
-                bgra,
+                bgra: bgra.into(),
             },
             color,
         });
@@ -339,7 +339,7 @@ fn encode_media_runtime(
     writer.u64(report.encoded_queue_limit_bytes);
     writer.u16(report.decoded_frame_queue_depth);
     writer.u16(report.decoded_frame_queue_limit);
-    writer.u64(report.frames_presented);
+    writer.u64(report.frames_submitted);
     writer.u64(report.dropped_frames);
     writer.u32(report.width);
     writer.u32(report.height);
@@ -368,7 +368,7 @@ fn decode_media_runtime(reader: &mut WireReader<'_>) -> Result<MediaRuntimeRepor
         encoded_queue_limit_bytes: reader.u64()?,
         decoded_frame_queue_depth: reader.u16()?,
         decoded_frame_queue_limit: reader.u16()?,
-        frames_presented: reader.u64()?,
+        frames_submitted: reader.u64()?,
         dropped_frames: reader.u64()?,
         width: reader.u32()?,
         height: reader.u32()?,

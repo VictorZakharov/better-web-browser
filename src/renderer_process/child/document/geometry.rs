@@ -34,24 +34,38 @@ impl DocumentRuntime {
         let page = Rc::clone(&self.script_layout_page);
         let viewport = Rc::clone(&self.script_layout_viewport);
         let text = Rc::clone(&self.text);
+        let mut geometry_ready = false;
         Box::new(move |invalidation| {
             let viewport = viewport.get();
             let mut page = page.borrow_mut();
-            page.refresh_layout_styles_after_invalidation_for_viewport(
+            let style_refresh = page.refresh_layout_styles_after_invalidation_for_viewport(
                 viewport.style_width,
                 viewport.height,
                 invalidation,
             );
+            // Attribute invalidation is conservative because arbitrary attributes can participate
+            // in selectors. Recompute styles first, then retain the current geometry when neither
+            // computed box styles nor content/intrinsic sizing changed. This is the same
+            // style-before-layout gate used by mature rendering engines and prevents repeated
+            // ARIA/data updates from forcing full synchronous page layouts.
+            if geometry_ready
+                && !style_refresh.layout_changed
+                && !invalidation.impact.affects_intrinsic_size()
+            {
+                return None;
+            }
             let mut text = text.borrow_mut();
             let mut geometry_text = GeometryTextMeasurer(&mut *text);
-            layout_page_with_style_viewport(
+            let geometry = layout_page_with_style_viewport(
                 &page,
                 viewport.width,
                 viewport.height,
                 viewport.style_width,
                 &mut geometry_text,
             )
-            .node_bounds
+            .node_bounds;
+            geometry_ready = true;
+            Some(geometry)
         })
     }
 

@@ -131,6 +131,7 @@ fn run_protocol(
         &mut frame_writer,
         limits,
         options.test_mode,
+        options.test_mode || options.silent_audio,
     )
 }
 
@@ -141,8 +142,9 @@ fn command_loop(
     frame_writer: &mut DecodedFrameWriter<File>,
     limits: MediaLimits,
     test_mode: bool,
+    silent_audio: bool,
 ) -> Result<(), String> {
-    let mut playback = Playback::new(test_mode);
+    let mut playback = Playback::new(silent_audio);
     loop {
         match reader
             .read_browser()
@@ -215,6 +217,37 @@ fn command_loop(
                         .map_err(|error| error.to_string())?;
                 }
             }
+            BrowserMediaMessage::AppendTracks {
+                request_id,
+                source_id,
+                video_source_id,
+                audio_source_id,
+                video_length,
+                audio_length,
+            } => match playback.append_tracks(
+                source_id,
+                video_source_id,
+                audio_source_id,
+                video_length,
+                audio_length,
+                data_reader,
+                limits,
+            ) {
+                Ok((encoded_bytes, duration_100ns)) => writer
+                    .send_worker(&WorkerMediaMessage::Appended {
+                        request_id,
+                        source_id,
+                        encoded_bytes,
+                        duration_100ns,
+                    })
+                    .map_err(|error| error.to_string())?,
+                Err(error) => writer
+                    .send_worker(&WorkerMediaMessage::DecodeFailed {
+                        request_id,
+                        error: bounded_media_failure(error),
+                    })
+                    .map_err(|error| error.to_string())?,
+            },
             BrowserMediaMessage::AcknowledgeFrame {
                 source_id,
                 frame_id,
@@ -225,7 +258,15 @@ fn command_loop(
                 source_id,
                 frame_id,
             } => {
-                playback.request_frame(source_id, frame_id, frame_writer, writer)?;
+                if let Err(error) =
+                    playback.request_frame(source_id, frame_id, frame_writer, writer)
+                {
+                    let _ = writer.send_worker(&WorkerMediaMessage::DecodeFailed {
+                        request_id: frame_id,
+                        error: bounded_media_failure(error.clone()),
+                    });
+                    return Err(error);
+                }
             }
             BrowserMediaMessage::SetPlayback {
                 source_id,

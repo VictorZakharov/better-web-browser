@@ -34,6 +34,7 @@ mod hyperlinks;
 mod intersection_observer;
 mod media;
 mod media_queries;
+mod media_source_segments;
 mod modules;
 mod mutations;
 mod network;

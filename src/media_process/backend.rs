@@ -30,9 +30,10 @@ mod fragmented_mp4;
 mod h264;
 mod playback;
 mod stream;
+mod video_buffer;
 
 pub(in crate::media_process) use audio::AudioDecoder;
-pub(in crate::media_process) use playback::VideoDecoder;
+pub(in crate::media_process) use playback::{DecodedVideoSample, VideoDecoder};
 use stream::read_stream;
 
 pub(super) struct DecodedMedia {

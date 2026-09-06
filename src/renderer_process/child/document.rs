@@ -91,7 +91,9 @@ pub(super) struct DocumentRuntime {
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
+    media_activation: media::MediaActivation,
     media_failure: Option<String>,
+    pending_media_action: Option<media::PendingMediaAction>,
     pending_async_outcome: ScriptOutcome,
     pending_resource_events: Vec<(PageResource, &'static str)>,
     geometry_observers_pending: bool,
@@ -414,12 +416,16 @@ impl DocumentRuntime {
         if !self.diagnostic_selectors.is_empty()
             && outcome.diagnostics.len() < MAX_RUNTIME_REPORT_ENTRIES
         {
+            let decoded_image_bytes = self.page.images.values().fold(0_usize, |total, image| {
+                total.saturating_add(image.bgra.len())
+            });
             outcome.diagnostics.push(format!(
-                "page resources: {} discovered, {} settled, {} stylesheets, {} decoded images, {} fonts, {} bytes remaining",
+                "page resources: {} discovered, {} settled, {} stylesheets, {} decoded images / {} bytes, {} fonts, {} bytes remaining",
                 self.page.resources.len(),
                 self.loaded_resources.len(),
                 self.page.external_stylesheets.len(),
                 self.page.images.len(),
+                decoded_image_bytes,
                 self.page.fonts.len(),
                 self.resource_budget
             ));

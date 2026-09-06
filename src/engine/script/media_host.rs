@@ -63,7 +63,7 @@ pub(super) fn media_host_call(
                 bytes: bytes.to_vec(),
             }
         }
-        "commit-adaptive" => {
+        "commit-adaptive" | "append-adaptive" => {
             let Some(JsValue::String(video_mime_type)) = args.get(4) else {
                 return Ok(Some(JsValue::undefined()));
             };
@@ -86,11 +86,18 @@ pub(super) fn media_host_call(
             {
                 return Ok(Some(JsValue::undefined()));
             }
-            ScriptMediaCommand::CommitAdaptive {
-                video_mime_type: video_mime_type.clone(),
-                video_bytes: video_bytes.to_vec(),
-                audio_mime_type: audio_mime_type.clone(),
-                audio_bytes: audio_bytes.to_vec(),
+            if operation == "commit-adaptive" {
+                ScriptMediaCommand::CommitAdaptive {
+                    video_mime_type: video_mime_type.clone(),
+                    video_bytes: video_bytes.to_vec(),
+                    audio_mime_type: audio_mime_type.clone(),
+                    audio_bytes: audio_bytes.to_vec(),
+                }
+            } else {
+                ScriptMediaCommand::AppendAdaptive {
+                    video_bytes: video_bytes.to_vec(),
+                    audio_bytes: audio_bytes.to_vec(),
+                }
             }
         }
         "reset" => ScriptMediaCommand::Reset,

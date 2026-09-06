@@ -57,7 +57,7 @@ pub struct MediaRuntimeReport {
     pub encoded_queue_limit_bytes: u64,
     pub decoded_frame_queue_depth: u16,
     pub decoded_frame_queue_limit: u16,
-    pub frames_presented: u64,
+    pub frames_submitted: u64,
     pub dropped_frames: u64,
     pub width: u32,
     pub height: u32,
@@ -249,7 +249,7 @@ mod tests {
                 image: DecodedImage {
                     width: 1,
                     height: 1,
-                    bgra: vec![255; 4],
+                    bgra: vec![255; 4].into(),
                 },
                 color: false,
             }],
@@ -266,7 +266,7 @@ mod tests {
                     encoded_queue_bytes: 1024,
                     encoded_queue_limit_bytes: 2048,
                     decoded_frame_queue_limit: 1,
-                    frames_presented: 2,
+                    frames_submitted: 2,
                     width: 320,
                     height: 240,
                     ..MediaRuntimeReport::default()

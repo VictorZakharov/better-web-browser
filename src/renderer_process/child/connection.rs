@@ -4,10 +4,12 @@ mod fetch;
 mod media;
 mod runtime;
 mod state;
+mod writer;
 
 pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
 use self::fetch::state::FetchState;
 pub(in crate::renderer_process::child) use self::fetch::state::ScriptFetchDelivery;
+pub(in crate::renderer_process::child) use self::media::MediaOperationCompletion;
 use self::state::{IncomingDocumentState, IncomingStorageUpdate};
 use super::document::{DocumentRuntime, RendererTextSystem};
 use super::handle_test;
@@ -26,7 +28,7 @@ const PROCESSED_WORK_ACK_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(super) struct ChildConnection {
     reader: FrameReader<File>,
-    writer: FrameWriter<File>,
+    writer: writer::SharedWriter,
     test_mode: bool,
     stopping: bool,
     pending: VecDeque<BrowserMessage>,
@@ -39,7 +41,7 @@ pub(super) struct ChildConnection {
     // the runtime. Keep its identity long enough to validate and drain those transfers.
     failed_document: Option<DocumentId>,
     prepared_text: Option<RendererTextSystem>,
-    media: Option<crate::media_process::MediaClient>,
+    media: Option<media::AsyncMediaClient>,
     next_request_id: u64,
     next_batch_id: u64,
     last_processed_work_ack: Instant,
@@ -53,6 +55,8 @@ impl ChildConnection {
         text: RendererTextSystem,
         media: Option<crate::media_process::MediaClient>,
     ) -> Self {
+        let writer = writer::SharedWriter::new(writer);
+        let media = media.map(|client| media::AsyncMediaClient::new(client, writer.clone()));
         Self {
             reader,
             writer,
@@ -205,9 +209,10 @@ impl ChildConnection {
                         })?;
                 self.send_document_failure(document, "injected document error".into())
             }
-            BrowserMessage::Test(command) if self.test_mode => {
-                handle_test(command, &mut self.writer)
-            }
+            BrowserMessage::Test(command) if self.test_mode => handle_test(
+                command,
+                &mut *self.writer.lock().map_err(|error| error.to_string())?,
+            ),
             BrowserMessage::Test(_) => Err("test command rejected".into()),
             BrowserMessage::BeginDocument(start) => self.begin_document(start),
             BrowserMessage::DocumentChunk(chunk) => self.document_chunk(chunk),
@@ -230,6 +235,7 @@ impl ChildConnection {
             }
             BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
             BrowserMessage::CancelDocument(document) => {
+                self.retire_video();
                 self.cancel_document_fetches(document);
                 if self
                     .incoming_storage_update
@@ -291,7 +297,9 @@ impl ChildConnection {
                 document: presentation.document,
                 revision: presentation.revision,
             })
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        self.video_revision(presentation.document, presentation.revision);
+        Ok(())
     }
 
     fn send_renderer_chunks(
@@ -320,6 +328,7 @@ impl ChildConnection {
         document: DocumentId,
         detail: String,
     ) -> Result<(), String> {
+        self.retire_video();
         self.document.take();
         self.failed_document = Some(document);
         let detail = bounded_detail(&detail);
@@ -329,6 +338,7 @@ impl ChildConnection {
     }
 
     fn shutdown(&mut self) -> Result<(), String> {
+        self.retire_video();
         self.document.take();
         self.incoming_document.take();
         self.writer

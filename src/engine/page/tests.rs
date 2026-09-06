@@ -201,7 +201,7 @@ fn decodes_images_to_bgra() {
         .unwrap();
     let image = &page.images["https://example.com/a.png"];
     assert_eq!((image.width, image.height), (1, 1));
-    assert_eq!(image.bgra, vec![56, 34, 12, 255]);
+    assert_eq!(image.bgra.as_ref(), [56, 34, 12, 255]);
 }
 
 #[test]

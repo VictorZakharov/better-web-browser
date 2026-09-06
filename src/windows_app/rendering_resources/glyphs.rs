@@ -131,7 +131,7 @@ impl GlyphBitmaps {
         let image = DecodedImage {
             width,
             height,
-            bgra,
+            bgra: bgra.into(),
         };
         let info = bitmap_info(&image);
         let mut destination = null_mut();
@@ -174,10 +174,12 @@ impl GlyphBitmaps {
         if let Some(bitmap) = self.glyphs.get(&key) {
             return *bitmap;
         }
+        let tinted;
         let pixels = if let Some(tint) = tint {
-            tint_mask(image, tint)
+            tinted = tint_mask(image, tint);
+            tinted.as_slice()
         } else {
-            image.bgra.clone()
+            image.bgra.as_ref()
         };
         let info = bitmap_info(image);
         let mut destination = null_mut();

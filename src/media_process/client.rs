@@ -2,22 +2,24 @@
 
 use super::broker::DecodedMediaFrame;
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
-use crate::media_frame_protocol::{
-    MediaFramePacket, MediaFrameReader as DecodedFrameReader, nv12_to_bgra,
-};
+use crate::media_frame_protocol::{MediaFramePacket, nv12_to_bgra};
 use crate::media_protocol::{
-    BrowserMediaMessage, ContainmentReport, MediaDecodeReport, MediaFrameReader, MediaFrameWriter,
-    MediaLimits, MediaPlaybackState, MediaProtocolError, MediaSessionId, Nonce, WorkerMediaMessage,
+    BrowserMediaMessage, MediaDecodeReport, MediaFrameWriter, MediaLimits, MediaPlaybackState,
+    MediaProtocolError, MediaSessionId, Nonce, WorkerMediaMessage,
 };
 use std::fs::File;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-const MEDIA_PROGRESS_POLL: Duration = Duration::from_millis(100);
-
+mod support;
 #[cfg(test)]
 mod tests;
+
+use support::{
+    checked_next, receive_from, receive_from_with_progress, spawn_control_reader,
+    spawn_frame_reader, validate_ready,
+};
 
 type ControlIncoming = Receiver<Result<WorkerMediaMessage, MediaProtocolError>>;
 type FrameIncoming = Receiver<Result<MediaFramePacket, String>>;
@@ -231,6 +233,79 @@ impl MediaClient {
         Ok(RendererMediaDecode { report, frame })
     }
 
+    pub(crate) fn append_tracks(
+        &mut self,
+        source_id: u64,
+        video_bytes: &[u8],
+        audio_bytes: &[u8],
+        mut progress: impl FnMut() -> Result<(), String>,
+    ) -> Result<(u64, u64), String> {
+        let encoded_length = video_bytes
+            .len()
+            .checked_add(audio_bytes.len())
+            .ok_or_else(|| "adaptive append length overflowed".to_string())?;
+        if source_id == 0
+            || video_bytes.is_empty()
+            || audio_bytes.is_empty()
+            || encoded_length as u64 > self.limits.max_encoded_queue_bytes
+        {
+            return Err("adaptive append exceeds the contained worker queue limit".into());
+        }
+        let request_id = self.allocate_request()?;
+        let video_source_id = self.next_source;
+        let audio_source_id = checked_next(video_source_id, "media source identity")?;
+        self.next_source = checked_next(audio_source_id, "media source identity")?;
+        self.send(BrowserMediaMessage::AppendTracks {
+            request_id,
+            source_id,
+            video_source_id,
+            audio_source_id,
+            video_length: video_bytes.len() as u64,
+            audio_length: audio_bytes.len() as u64,
+        })?;
+        let video_source =
+            MediaSourceId::new(video_source_id).map_err(|error| error.to_string())?;
+        let audio_source =
+            MediaSourceId::new(audio_source_id).map_err(|error| error.to_string())?;
+        let output = self
+            .data_output
+            .try_clone()
+            .map_err(|error| format!("clone media data pipe: {error}"))?;
+        let session = self.session;
+        let nonce = self.nonce;
+        let sent = std::thread::scope(|scope| {
+            let sender = scope.spawn(move || {
+                let mut writer = MediaDataWriter::new(output, session, nonce);
+                writer.send_source(video_source, video_bytes)?;
+                writer.send_source(audio_source, audio_bytes)
+            });
+            let response = self.receive_with_progress("append adaptive tracks", &mut progress)?;
+            let sent = sender
+                .join()
+                .map_err(|_| "media data writer panicked".to_string())?
+                .map_err(|error| format!("deliver adaptive media append: {error}"));
+            Ok::<_, String>((response, sent))
+        })?;
+        sent.1?;
+        match sent.0 {
+            WorkerMediaMessage::Appended {
+                request_id: actual,
+                source_id: actual_source,
+                encoded_bytes,
+                duration_100ns,
+            } if actual == request_id && actual_source == source_id => {
+                Ok((encoded_bytes, duration_100ns))
+            }
+            WorkerMediaMessage::DecodeFailed {
+                request_id: actual,
+                error,
+            } if actual == request_id => {
+                Err(format!("media worker rejected adaptive append: {error}"))
+            }
+            _ => Err("media worker returned the wrong adaptive append response".into()),
+        }
+    }
+
     pub(crate) fn next_frame(
         &mut self,
         source_id: u64,
@@ -248,6 +323,9 @@ impl MediaClient {
             }
             WorkerMediaMessage::EndOfStream { source_id: actual } if actual == source_id => {
                 return Ok(None);
+            }
+            WorkerMediaMessage::DecodeFailed { request_id, error } if request_id == frame_id => {
+                return Err(format!("media worker failed to decode frame: {error}"));
             }
             _ => return Err("media worker returned the wrong frame response".into()),
         };
@@ -367,105 +445,4 @@ impl MediaClient {
         self.next_frame = checked_next(current, "media frame identity")?;
         Ok(current)
     }
-}
-
-fn checked_next(value: u64, label: &str) -> Result<u64, String> {
-    value
-        .checked_add(1)
-        .ok_or_else(|| format!("{label} exhausted"))
-}
-
-fn receive_from(
-    incoming: &ControlIncoming,
-    operation: &str,
-    timeout: Duration,
-) -> Result<WorkerMediaMessage, String> {
-    incoming
-        .recv_timeout(timeout)
-        .map_err(|error| format!("media {operation} timed out or disconnected: {error}"))?
-        .map_err(|error| format!("media {operation} protocol failed: {error}"))
-}
-
-fn receive_from_with_progress(
-    incoming: &ControlIncoming,
-    operation: &str,
-    timeout: Duration,
-    mut progress: impl FnMut() -> Result<(), String>,
-) -> Result<WorkerMediaMessage, String> {
-    let started = Instant::now();
-    loop {
-        let remaining = timeout.saturating_sub(started.elapsed());
-        match incoming.recv_timeout(remaining.min(MEDIA_PROGRESS_POLL)) {
-            Ok(message) => {
-                return message
-                    .map_err(|error| format!("media {operation} protocol failed: {error}"));
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) if started.elapsed() < timeout => progress()?,
-            Err(error) => {
-                return Err(format!(
-                    "media {operation} timed out or disconnected: {error}"
-                ));
-            }
-        }
-    }
-}
-
-fn spawn_control_reader(
-    input: File,
-    session: MediaSessionId,
-) -> Result<(ControlIncoming, JoinHandle<()>), String> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let thread = std::thread::Builder::new()
-        .name("breeze-renderer-media-control".into())
-        .spawn(move || {
-            let mut reader = MediaFrameReader::new(input, session);
-            loop {
-                let message = reader.read_worker();
-                let failed = message.is_err();
-                if sender.send(message).is_err() || failed {
-                    break;
-                }
-            }
-        })
-        .map_err(|error| format!("start renderer media control reader: {error}"))?;
-    Ok((receiver, thread))
-}
-
-fn spawn_frame_reader(
-    input: File,
-    session: MediaSessionId,
-    nonce: Nonce,
-) -> Result<(FrameIncoming, JoinHandle<()>), String> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let thread = std::thread::Builder::new()
-        .name("breeze-renderer-media-frames".into())
-        .spawn(move || {
-            let mut reader = DecodedFrameReader::new(input, session, nonce);
-            loop {
-                let frame = reader.read_next_frame().map_err(|error| error.to_string());
-                let failed = frame.is_err();
-                if sender.send(frame).is_err() || failed {
-                    break;
-                }
-            }
-        })
-        .map_err(|error| format!("start renderer media frame reader: {error}"))?;
-    Ok((receiver, thread))
-}
-
-fn validate_ready(
-    expected: Nonce,
-    actual: Nonce,
-    containment: ContainmentReport,
-) -> Result<(), String> {
-    if expected != actual {
-        return Err("media worker returned a stale bootstrap nonce".into());
-    }
-    if !containment.app_container
-        || !containment.no_console_window
-        || !containment.minimal_environment
-    {
-        return Err("media worker did not satisfy its containment contract".into());
-    }
-    Ok(())
 }

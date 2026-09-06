@@ -6,6 +6,8 @@ use better_web_browser::renderer_protocol::{
     ResourceDestination, TransferChunk,
 };
 use std::time::Duration;
+#[path = "media/cadence.rs"]
+mod cadence;
 
 fn run_scheduled_renderer_timer(
     session: &RendererSession,
@@ -132,7 +134,7 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
             RendererEvent::RuntimeUpdate(update) if update.document == document => {
                 run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
             }
-            RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::VideoFrame(_) => {}
             event => panic!("unexpected renderer event while decoding video: {event:?}"),
         }
     };
@@ -162,37 +164,31 @@ fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership
     session
         .advance_time(document, Duration::ZERO, 2)
         .expect("poll the worker-owned audio clock and advance video presentation");
-    let advanced = loop {
+    let mut seek_settled =
+        rendered.layout.items.iter().any(
+            |item| matches!(item, DisplayItem::Text { text, .. } if text.contains("seeked:0.5")),
+        );
+    let advanced_pixels = loop {
         match session.wait_for_event(Duration::from_secs(5)).unwrap() {
             RendererEvent::Presentation(presentation) if presentation.document == document => {
-                if presentation
-                    .images
-                    .iter()
-                    .find(|image| image.url.starts_with("breeze-internal:media-frame:"))
-                    .is_some()
-                {
-                    break presentation;
-                }
+                seek_settled |= presentation.layout.items.iter().any(|item| {
+                    matches!(item, DisplayItem::Text { text, .. } if text.contains("seeked:0.5"))
+                });
+            }
+            RendererEvent::VideoFrame(update) if update.identity.document == document => {
+                assert_eq!((update.identity.width, update.identity.height), (320, 240));
+                break update.pixels;
             }
             RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected renderer event while advancing video: {event:?}"),
         }
     };
-    let advanced_pixels = &advanced
-        .images
-        .iter()
-        .find(|image| image.url.starts_with("breeze-internal:media-frame:"))
-        .unwrap()
-        .image
-        .bgra;
     assert_ne!(
-        advanced_pixels, &first_pixels,
+        advanced_pixels, first_pixels,
         "video presentation did not advance"
     );
     assert!(
-        advanced.layout.items.iter().any(|item| {
-            matches!(item, DisplayItem::Text { text, .. } if text.contains("seeked:0.5"))
-        }),
+        seek_settled,
         "the acknowledged play(), live volume, and seek lifecycle did not settle"
     );
     session
@@ -287,7 +283,7 @@ fn contained_renderer_decodes_media_source_object_url_video() {
             RendererEvent::RuntimeUpdate(update) if update.document == document => {
                 run_scheduled_renderer_timer(&session, document, update.next_timer_micros);
             }
-            RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::VideoFrame(_) => {}
             event => panic!("unexpected renderer event while decoding MSE video: {event:?}"),
         }
     };

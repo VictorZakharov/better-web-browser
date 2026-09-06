@@ -10,7 +10,7 @@ fn aggregate_presented_image_limit_round_trips_and_fails_closed() {
             image: DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![0, 0, 0, 255],
+                bgra: vec![0, 0, 0, 255].into(),
             },
         })
         .collect();
@@ -22,7 +22,7 @@ fn aggregate_presented_image_limit_round_trips_and_fails_closed() {
         image: DecodedImage {
             width: 1,
             height: 1,
-            bgra: vec![0, 0, 0, 255],
+            bgra: vec![0, 0, 0, 255].into(),
         },
     });
     assert!(matches!(

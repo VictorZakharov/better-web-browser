@@ -7,6 +7,7 @@ pub(super) struct ChildOptions {
     pub(super) data_handle: usize,
     pub(super) frame_handle: usize,
     pub(super) test_mode: bool,
+    pub(super) silent_audio: bool,
     pub(super) fault: Option<MediaStartupFault>,
 }
 
@@ -49,6 +50,9 @@ impl ChildOptions {
             test_mode: arguments
                 .iter()
                 .any(|argument| argument == "--media-test-mode"),
+            silent_audio: arguments
+                .iter()
+                .any(|argument| argument == "--media-silent-audio"),
             fault,
         })
     }

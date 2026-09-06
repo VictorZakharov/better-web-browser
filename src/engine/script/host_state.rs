@@ -201,7 +201,9 @@ impl HostState {
             return;
         };
         let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
-        self.layout_geometry = flush(&invalidation);
+        if let Some(geometry) = flush(&invalidation) {
+            self.layout_geometry = geometry;
+        }
         self.layout_geometry_version = version;
         self.layout_geometry_initialized = true;
     }

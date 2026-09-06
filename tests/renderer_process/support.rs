@@ -11,6 +11,7 @@ pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 pub(super) fn options() -> RendererLaunchOptions {
     let mut options = RendererLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
     options.test_mode = true;
+    options.silent_audio = true;
     options.heartbeat_interval = Duration::from_millis(50);
     options.unresponsive_timeout = Duration::from_secs(2);
     options.unresponsive_kill_timeout = Duration::from_millis(500);

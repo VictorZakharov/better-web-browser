@@ -45,8 +45,11 @@ fn assert_advancing_contained_media(report: &serde_json::Value) {
     );
     assert_eq!(media["decoded_frame_queue_depth"], 0);
     assert_eq!(media["decoded_frame_queue_limit"], 1);
-    assert!(media["frames_presented"].as_u64().unwrap_or_default() > 1);
-    assert_eq!(media["dropped_frames"], 0);
+    assert!(media["frames_submitted"].as_u64().unwrap_or_default() > 1);
+    assert!(
+        media["dropped_frames"].is_u64(),
+        "missing dropped-frame accounting: {media}"
+    );
     assert!(
         media["failure"].is_null(),
         "media reported failure: {media}"

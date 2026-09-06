@@ -141,12 +141,14 @@ impl BrowserState {
         });
 
         let tab_router = self.app.tab_router.clone();
+        let silent_audio = self.benchmark.is_some();
         let (sender, receiver) = mpsc::channel();
         let spawn = std::thread::Builder::new()
             .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result = RendererLaunchOptions::current_executable().and_then(|mut options| {
                     options.enable_media = true;
+                    options.silent_audio = silent_audio;
                     options.browsing_context = BrowsingContextId::new(id.get())
                         .map_err(|error| format!("allocate browsing context: {error}"))?;
                     RendererSession::launch(options)

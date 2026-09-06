@@ -152,6 +152,10 @@ pub enum ScriptMediaCommand {
         audio_mime_type: String,
         audio_bytes: Vec<u8>,
     },
+    AppendAdaptive {
+        video_bytes: Vec<u8>,
+        audio_bytes: Vec<u8>,
+    },
     Reset,
 }
 

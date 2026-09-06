@@ -215,7 +215,7 @@ fn decode_swash_image(image: &swash::scale::image::Image) -> Option<DecodedImage
     Some(DecodedImage {
         width,
         height,
-        bgra,
+        bgra: bgra.into(),
     })
 }
 

@@ -47,6 +47,7 @@ pub struct RendererLaunchOptions {
     pub first_presentation_timeout: Duration,
     pub test_mode: bool,
     pub enable_media: bool,
+    pub silent_audio: bool,
     pub startup_fault: Option<StartupFault>,
 }
 
@@ -63,6 +64,7 @@ impl RendererLaunchOptions {
             first_presentation_timeout: RENDERER_FIRST_PRESENTATION_TIMEOUT,
             test_mode: false,
             enable_media: false,
+            silent_audio: false,
             startup_fault: None,
         }
     }
@@ -97,6 +99,7 @@ pub(super) fn launch(options: &RendererLaunchOptions) -> Result<LaunchedRenderer
         .then(|| {
             let mut media_options = MediaLaunchOptions::new(options.executable.clone());
             media_options.test_mode = options.test_mode;
+            media_options.silent_audio = options.test_mode || options.silent_audio;
             launch_media(&media_options)
         })
         .transpose()?;
