@@ -70,6 +70,12 @@ jobs:
         run: cargo install cargo-fuzz --version 0.13.2 --locked
       - name: Build fuzz target
         run: cargo +nightly-2026-08-15 fuzz build ${{ matrix.target }}
+      - name: Configure sanitizer symbolization
+        shell: bash
+        run: |
+          symbolizer="$(find /usr/bin -maxdepth 1 -name 'llvm-symbolizer*' | sort -V | tail -n 1)"
+          test -x "$symbolizer"
+          echo "ASAN_SYMBOLIZER_PATH=$symbolizer" >> "$GITHUB_ENV"
       - name: Run bounded fuzz campaign
         shell: pwsh
         env:
