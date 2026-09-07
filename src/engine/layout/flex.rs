@@ -110,9 +110,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let intrinsic_width = if specified.is_some() {
             0.0
         } else if matches!(style.display, Display::Flex | Display::InlineFlex) {
-            self.flex_container_intrinsic_width(node, style, available_width)
+            self.flex_container_intrinsic_width(node, style, Some(available_width))
         } else {
-            self.block_container_intrinsic_width(node, available_width)
+            self.block_container_intrinsic_width(node, Some(available_width))
         };
         let mut basis =
             specified.unwrap_or(intrinsic_width + insets).max(0.0) + margin.horizontal();
@@ -137,7 +137,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         basis
     }
 
-    fn block_container_intrinsic_width(&mut self, node: &NodeRef, available_width: f32) -> f32 {
+    fn block_container_intrinsic_width(
+        &mut self,
+        node: &NodeRef,
+        percentage_basis: Option<f32>,
+    ) -> f32 {
+        let available_width = percentage_basis.unwrap_or(0.0);
         let mut widest = 0.0_f32;
         let mut inline_atoms = Vec::new();
         let mut pending_space = false;
@@ -159,7 +164,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 widest = widest.max(self.flex_item_max_content_contribution(
                     &child,
                     &child_style,
-                    available_width,
+                    percentage_basis,
                 ));
             } else {
                 self.collect_inline(
@@ -185,8 +190,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         node: &NodeRef,
         style: &ComputedStyle,
-        available_width: f32,
+        percentage_basis: Option<f32>,
     ) -> f32 {
+        let available_width = percentage_basis.unwrap_or(0.0);
         let mut contributions = Vec::new();
         let mut anonymous_atoms = Vec::new();
         let mut pending_space = false;
@@ -225,7 +231,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             contributions.push(self.flex_item_max_content_contribution(
                 &child,
                 &child_style,
-                available_width,
+                percentage_basis,
             ));
         }
         if !anonymous_atoms.is_empty() {
@@ -251,17 +257,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         node: &NodeRef,
         style: &ComputedStyle,
-        available_width: f32,
+        percentage_basis: Option<f32>,
     ) -> f32 {
+        let available_width = percentage_basis.unwrap_or(0.0);
         let margin = style.margin.resolve(available_width, style.font_size);
         let border = style.border_width.resolve(available_width, style.font_size);
         let padding = style.padding.resolve(available_width, style.font_size);
         let insets = border.horizontal() + padding.horizontal();
-        // Percentage preferred sizes are indefinite under a max-content constraint. Passing the
-        // actual containing width here incorrectly turns every nested `width: 100%` wrapper into
-        // another full viewport contribution. A zero percentage basis preserves fixed lengths
-        // and content while treating those percentages as zero for this intrinsic pass.
-        let intrinsic_basis = 0.0;
+        // A descendant's percentage basis depends on this intrinsic result. Preserve that
+        // indefiniteness: cyclic percentage maxima act as none, not a zero-width maximum
+        // (CSS Sizing 3 section 5.2.1). Resolve them normally in the subsequent layout pass.
+        let intrinsic_basis = None;
         let intrinsic = if matches!(style.display, Display::Flex | Display::InlineFlex) {
             self.flex_container_intrinsic_width(node, style, intrinsic_basis)
         } else {
@@ -285,8 +291,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         ) {
             contribution = contribution.max(minimum);
         }
+        let maximum_width = if percentage_basis.is_none()
+            && (matches!(style.max_width, Length::Percent(_))
+                || matches!(style.max_width, Length::Calc { percent, .. } if percent != 0.0))
+        {
+            Length::Auto
+        } else {
+            style.max_width
+        };
         if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+            maximum_width,
             available_width,
             style.font_size,
             insets,

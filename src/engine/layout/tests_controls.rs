@@ -35,6 +35,21 @@ fn nested_block_intrinsic_width_does_not_use_descendant_flex_basis() {
 }
 
 #[test]
+fn cyclic_percentage_maximum_does_not_erase_intrinsic_button_width() {
+    for maximum in ["100%", "calc(100% - 2px)"] {
+        let page = Page::parse(
+            &format!(
+                "<div style='display:flex'><div><div style='display:flex'><span style='max-width:{maximum}'><div><div style='display:flex;max-width:{maximum}'><button style='display:flex;flex:1 1 0%;padding:0;border:0'><span>Subscribe</span></button></div></div></span></div></div></div>"
+            ),
+            "https://example.com/",
+        );
+        let button = page.dom.elements_named("button").next().unwrap();
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        assert!(output.node_bounds[&button.id()].width > 50.0, "{maximum}");
+    }
+}
+
+#[test]
 fn authored_flex_button_preserves_child_layout_and_form_metadata() {
     let page = Page::parse(
         "<form><button name='action' value='save' style='display:flex;width:140px;height:40px;gap:8px'><span style='width:20px;height:20px;background:red'></span><span>Save</span></button></form>",

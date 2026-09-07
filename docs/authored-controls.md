@@ -25,6 +25,12 @@ using their flex base sizes. A zero flex basis controls later flex distribution;
 collapse an ancestor's content measurement. The owned regression reproduces the one-pixel
 Subscribe control without any site selectors.
 
+The live wrapper chain additionally required distinguishing an indefinite percentage basis
+from a definite zero. During intrinsic measurement, cyclic percentage maximum widths
+(including percentage-bearing `calc()`) behave as `none`; the normal layout pass resolves
+them against the resulting containing block. See
+[CSS Sizing 3 cyclic percentages](https://www.w3.org/TR/css-sizing-3/#cyclic-percentage-contribution).
+
 Text painting retains the shaped font height separately from the line-box height and splits
 extra leading above and below the font, following CSS 2.2 section 10.8.1. Previously, taller
 line boxes reserved the right space but painted labels at the top. This fixes that leading
