@@ -183,3 +183,25 @@ struct PositionedPaintGroup {
     items: Vec<DisplayItem>,
     nodes: Vec<NodeId>,
 }
+
+pub(super) fn bottom_alignment_shift(
+    style: &ComputedStyle,
+    containing_height: f32,
+    border_box_height: f32,
+    margin_bottom: f32,
+) -> f32 {
+    // With an automatic top inset, bottom constrains the bottom margin edge. Resolve
+    // the used height first (including auto/min/max sizing), then solve for the top.
+    // https://www.w3.org/TR/CSS22/visudet.html#abs-non-replaced-height
+    if matches!(style.position, Position::Absolute | Position::Fixed)
+        && style.top == Length::Auto
+        && style
+            .bottom
+            .resolve(containing_height, style.font_size)
+            .is_some()
+    {
+        -border_box_height - margin_bottom
+    } else {
+        0.0
+    }
+}

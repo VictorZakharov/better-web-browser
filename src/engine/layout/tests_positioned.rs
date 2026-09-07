@@ -2,6 +2,52 @@ use super::super::test_support::FixedMeasurer;
 use super::super::*;
 
 #[test]
+fn bottom_insets_anchor_the_margin_box_after_used_height_is_known() {
+    for (position, basis) in [("absolute", 300.0), ("fixed", 600.0)] {
+        for (height, content_height) in [
+            ("height:40px", 40.0),
+            ("height:auto;min-height:40px", 40.0),
+            ("height:80px;max-height:40px", 40.0),
+            ("height:auto", 20.0),
+        ] {
+            let page = Page::parse(
+                &format!(
+                    "<style>body{{margin:0}}#container{{position:relative;height:300px}}#bar{{position:{position};bottom:10%;{height};padding:3px;border:2px solid red;margin-bottom:7px;width:200px;background:blue}}#label{{height:20px;background:green}}</style><div id=container><div id=bar><div id=label>controls</div></div></div>"
+                ),
+                "https://example.com/",
+            );
+            let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+            let node = |id| {
+                page.dom
+                    .elements_named("div")
+                    .find(|n| n.attr("id").as_deref() == Some(id))
+                    .unwrap()
+            };
+            let bar = output.node_bounds[&node("bar").id()];
+            let label = output.node_bounds[&node("label").id()];
+            assert!(
+                (bar.y - (basis * 0.9 - content_height - 17.0)).abs() < 0.01,
+                "{position} {height}: {bar:?}"
+            );
+            assert!((label.y - (bar.y + 5.0)).abs() < 0.01, "{label:?} {bar:?}");
+            let painted = output
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    DisplayItem::SolidRect { rect, color, .. }
+                        if *color == Color::rgb(0, 0, 255) =>
+                    {
+                        Some(*rect)
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(painted, bar);
+        }
+    }
+}
+
+#[test]
 fn relative_positioned_box_paints_after_later_normal_flow_background() {
     let page = Page::parse(
         "<style>body{margin:0}#player{position:relative;z-index:1;height:0}#frame{position:absolute;width:100px;height:100px;background:red}#app{height:100px;background:white}</style><div id=player><div id=frame></div></div><div id=app></div>",

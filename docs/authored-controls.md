@@ -109,3 +109,17 @@ This is not a claim of complete pointer support: pointer capture, boundary re-hi
 stationary-pointer layout changes, and the separate active/focus pseudo-classes remain gaps.
 Live YouTube controls, navigation metadata, comments, and playback cadence require separate
 end-to-end verification; these regressions alone do not establish site completion.
+
+## Bottom-anchored positioned boxes
+
+An absolutely/fixed positioned box with automatic `top` and a definite `bottom` aligns
+its bottom margin edge, not its top border edge, to that inset. Resolve its used height
+first, including natural height, padding/border, and min/max constraints, then translate
+its in-flow paint and hit-test geometry together before laying out positioned children.
+This follows [CSS 2.2 positioned height constraints](https://www.w3.org/TR/CSS22/visudet.html#abs-non-replaced-height).
+Previously the controls bar's top landed at the player's bottom, outside its clipping box.
+
+Regressions exercise absolute and fixed boxes, percentage bottom insets, explicit and auto
+heights, min/max constraints, margins, borders/padding, descendant bounds, and painted bounds.
+This does not close the separate hit-testing/initial-container, metadata, comments, or
+playback-cadence issues on live pages.

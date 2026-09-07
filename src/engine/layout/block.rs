@@ -109,7 +109,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         border_box_width = border_box_width.max(0.0);
 
-        let (x, border_y) = self.resolve_block_position(
+        let (x, mut border_y) = self.resolve_block_position(
             &style,
             containing_x,
             y,
@@ -120,7 +120,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         );
 
         let content_x = x + borders.left + padding.left;
-        let content_y = border_y + borders.top + padding.top;
+        let mut content_y = border_y + borders.top + padding.top;
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal()).max(0.0);
         let vertical_insets = borders.vertical() + padding.vertical();
@@ -129,46 +129,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             containing_height
         };
-        let mut specified_height = used_content_height.or_else(|| {
-            resolve_content_height(
-                style.height,
-                percentage_height_basis,
-                self.viewport,
-                style.font_size,
-                vertical_insets,
-                style.box_sizing,
-            )
-        });
-        if specified_height.is_none()
-            && matches!(style.position, Position::Absolute | Position::Fixed)
-            && let Some(positioning_height) = percentage_height_basis
-            && let (Some(top), Some(bottom)) = (
-                style.top.resolve(positioning_height, style.font_size),
-                style.bottom.resolve(positioning_height, style.font_size),
-            )
-        {
-            // CSS 2.1 section 10.6.4: an absolutely positioned non-replaced box with
-            // auto height and definite top/bottom fills the remaining containing block.
-            specified_height = Some(
-                (positioning_height - top - bottom - margins.vertical() - vertical_insets).max(0.0),
-            );
-        }
-        let minimum_height = resolve_content_height(
-            style.min_height,
+        let (specified_height, minimum_height, maximum_height) = sizing::resolve_height_constraints(
+            &style,
+            used_content_height,
             percentage_height_basis,
             self.viewport,
-            style.font_size,
             vertical_insets,
-            style.box_sizing,
-        )
-        .unwrap_or(0.0);
-        let maximum_height = resolve_content_height(
-            style.max_height,
-            percentage_height_basis,
-            self.viewport,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
+            margins,
         );
         let block_image_height = block_image.as_ref().map(|image| {
             image.content_height(node, &style, content_width, percentage_height_basis)
@@ -280,6 +247,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let border_box_height =
             borders.top + padding.top + content_height + padding.bottom + borders.bottom;
+        let bottom_shift = positioned::bottom_alignment_shift(
+            &style,
+            percentage_height_basis.unwrap_or(self.viewport.height),
+            border_box_height,
+            margins.bottom,
+        );
+        if bottom_shift != 0.0 {
+            self.translate_layout_subtree(
+                Some(node),
+                item_start,
+                self.output.items.len(),
+                0.0,
+                bottom_shift,
+            );
+            border_y += bottom_shift;
+            content_y += bottom_shift;
+        }
         let rect = RectF {
             x,
             y: border_y,
