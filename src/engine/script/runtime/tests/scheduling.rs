@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn live_initial_task_does_not_fast_forward_timers_before_first_presentation() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><script>
+            Promise.resolve().then(() => document.body.setAttribute('data-microtask', 'ran'));
+            setTimeout(() => document.body.setAttribute('data-timer', 'ran'), 2000);
+            document.addEventListener('DOMContentLoaded', () =>
+                document.body.setAttribute('data-loaded', 'ran'));
+        </script></body>"#,
+        true,
+    );
+    let scripts = script_inputs(&dom);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let initial = runtime.execute_initial_before_document_completion(&scripts, None);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-microtask").as_deref(), Some("ran"));
+    assert_eq!(body.attr("data-timer"), None);
+    assert_eq!(
+        runtime.next_timer_delay(),
+        Some(Duration::from_millis(2000))
+    );
+    let complete = runtime.finish_document_lifecycle();
+    assert!(complete.errors.is_empty(), "{:?}", complete.errors);
+    assert_eq!(body.attr("data-loaded").as_deref(), Some("ran"));
+    assert_eq!(
+        runtime.next_timer_delay(),
+        Some(Duration::from_millis(2000))
+    );
+    let advanced = runtime.advance_time(Duration::from_millis(1999), 16);
+    assert!(advanced.errors.is_empty(), "{:?}", advanced.errors);
+    assert_eq!(body.attr("data-timer"), None);
+    let advanced = runtime.advance_time(Duration::from_millis(1), 16);
+    assert!(advanced.errors.is_empty(), "{:?}", advanced.errors);
+    assert_eq!(body.attr("data-timer").as_deref(), Some("ran"));
+}
+
+#[test]
 fn external_script_tasks_allow_a_rendering_callback_before_the_next_script() {
     let dom = dom::parse_with_scripting(
         r#"<body><script src="first.js"></script><script src="second.js"></script></body>"#,

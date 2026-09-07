@@ -138,6 +138,14 @@ pub(super) fn execute_inner(
         total_bytes,
         defer_dynamic_scripts,
     );
+    // A live document returns to its embedder for the first rendering opportunity.
+    // Timer tasks must use subsequent real clock advances, not the synthetic settling
+    // horizon used by the standalone execution helper. Microtasks above still complete.
+    // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
+    if !request_document_lifecycle {
+        append_timer_summary(host, &mut outcome);
+        return outcome;
+    }
     for _ in 0..STARTUP_TIMER_PASSES {
         if defer_dynamic_scripts {
             let mut no_dynamic_script_loader = None;
