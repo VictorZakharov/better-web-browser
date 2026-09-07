@@ -19,13 +19,7 @@ impl BrowserState {
         }
         image.bgra = update.pixels;
         self.image_bitmaps.remove(&key);
-        if self.benchmark.is_some() {
-            match self.paint_benchmark_frame() {
-                Ok(_) => self.benchmark.as_mut().unwrap().video_cadence.painted(),
-                Err(error) => self.benchmark.as_mut().unwrap().error = Some(error),
-            }
-            return;
-        }
+        self.video_presentation.accept(Instant::now());
         if !self.processing_background_tab {
             let mut client = Rect::default();
             GetClientRect(self.window, &mut client);

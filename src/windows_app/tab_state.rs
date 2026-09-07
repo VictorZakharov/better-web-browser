@@ -32,6 +32,7 @@ pub(super) struct BrowserTab {
     pub(super) dynamic_fonts: DynamicFonts,
     pub(super) image_bitmaps: ImageBitmaps,
     pub(super) presented_images: HashMap<String, DecodedImage>,
+    pub(super) video_presentation: video_presentation::VideoPresentationSchedule,
     pub(super) glyph_bitmaps: GlyphBitmaps,
     pub(super) presented_glyphs: HashMap<u32, PresentedGlyphRaster>,
     pub(super) glyph_epoch: u64,
@@ -89,6 +90,7 @@ impl BrowserTab {
             dynamic_fonts: DynamicFonts::default(),
             image_bitmaps: ImageBitmaps::default(),
             presented_images: HashMap::new(),
+            video_presentation: Default::default(),
             glyph_bitmaps: GlyphBitmaps::default(),
             presented_glyphs: HashMap::new(),
             glyph_epoch: 0,
@@ -149,6 +151,7 @@ impl BrowserTab {
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;
         self.renderer_input_poll_budget = 0;
+        self.video_presentation = Default::default();
         self.pending_renderer_inputs.clear();
         self.renderer_revision = 0;
         self.renderer_load_metrics = None;

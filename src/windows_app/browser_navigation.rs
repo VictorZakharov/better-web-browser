@@ -139,6 +139,7 @@ impl BrowserState {
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
             tab.renderer_revision = 0;
+            tab.video_presentation = Default::default();
             tab.last_renderer_snapshot = None;
             tab.renderer_load_metrics = None;
             tab.page_diagnostics = Default::default();

@@ -24,6 +24,20 @@ The document retains a shared copy of the latest pixels for later scene snapshot
 changes do not require a complete display-list transfer. A changed intrinsic size still requires
 document layout before the browser accepts the new dimensions.
 
+## Window presentation scheduling
+
+Accepted video frames keep renderer polling at the active 16 ms interval, even when the document
+has no JavaScript timer. The scheduler returns to idle polling after 500 ms without a frame.
+Hidden benchmarks use the same decision; they no longer force active polling merely because
+they are benchmarks. Multiple frames accepted in one message batch request one paint.
+
+After dispatching the current message, the normal window flushes an invalidated video region
+through `UpdateWindow`. This occurs outside the window procedure's mutable state borrow.
+[WM_PAINT is otherwise deferred behind queued messages](https://learn.microsoft.com/en-us/windows/win32/gdi/wm-paint),
+so a busy input/network queue must not be the only driver of video presentation. Hidden runs use
+the offscreen destination at that same scheduling point. This unifies scheduling, not the final
+display destination; screenshot evidence does not by itself verify the user's physical display.
+
 ## Measurement
 
 `media.frames_submitted` is a producer count, not proof that every frame reached a paint. The media
@@ -97,3 +111,23 @@ not a promise that future network requests will succeed.
 
 Short playback passes and empty JavaScript-error lists do not establish stability. The longer-run
 failure blocks completion; visual verification must check for the player's own error screen.
+
+## September 7 presentation checkpoint (not completion)
+
+The hidden capture previously forced active polling and painted directly when a frame arrived,
+unlike normal windows. Those benchmark-only scheduling privileges have been removed. Both paths
+now keep polling active after video delivery and coalesce presentation after message dispatch;
+the final destination remains an offscreen bitmap for captures and `WM_PAINT` for normal windows.
+
+| Check | Observed result |
+| --- | --- |
+| Fresh-profile watch capture with shared scheduling | 1,122 completed paints over 30.829 seconds: 36.36 paints/s |
+| Presentation intervals | 46 ms p95; 101.433 ms maximum |
+| Captured pictures at 20 and 30 seconds | Different video scenes visibly rendered, not only a moving spinner or media clock |
+| First reported playing transition | 10.911 seconds after benchmark start; startup remains slow |
+| End of short run | Playing at 31.17 seconds; no JS errors, renderer exits, or reported native media failure |
+| Longer playback on the preceding revision | One run played beyond 87 seconds, but another reset around 52 seconds; not reliable |
+
+This is evidence for shared scheduling and actual offscreen picture progression, not a measurement
+of the user's physical display. The normal-window symptom needs confirmation with the rebuilt
+browser. Longer playback and full YouTube acceptance remain incomplete.
