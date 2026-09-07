@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn script_media_reset_callsite_redacts_script_urls() {
+    let dom = dom::parse_with_scripting(
+        "<video></video><script>document.querySelector('video').load()</script>",
+        true,
+    );
+    let node = dom.elements_named("script").next().unwrap();
+    let outcome = execute(
+        dom.document.clone(),
+        "https://example.com/",
+        &[ScriptInput {
+            source_url: "https://example.com/private-script.js?token=secret".into(),
+            code: node.text_content(),
+            node,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        }],
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let event = outcome
+        .diagnostics
+        .iter()
+        .find(|line| line.contains("load caller="))
+        .unwrap();
+    assert!(!event.contains("private-script"));
+    assert!(!event.contains("secret"));
+    assert!(!event.contains("https://"));
+    assert!(event.len() <= 1041);
+}
+
+#[test]
 fn media_lifecycle_diagnostics_are_bounded_and_do_not_include_resource_urls() {
     let (_, outcome) = execute_html(
         r#"<video id="movie" src="https://example.com/private-media?token=secret"></video>

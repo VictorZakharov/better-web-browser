@@ -2,6 +2,14 @@
     // Player applications can handle failures internally without emitting a console error.
     const mediaDiagnosticCounts = new WeakMap();
     const mediaDiagnosticTimes = new WeakMap();
+    const traceMediaCallsite = element => {
+        const stack = String(new Error().stack || '').split('\n').slice(2, 12).join(' | ')
+            .replace(/(?:https?|file):\/\/[^\s)]+/g, value => {
+                const position = value.match(/:\d+:\d+$/);
+                return '[script]' + (position ? position[0] : '');
+            });
+        traceMediaLifecycle(element, 'load caller=' + stack.slice(0, 512));
+    };
     const traceMediaClock = (element, input) => {
         const bucket = Math.floor(Number(input.currentTime) / 5);
         if (mediaDiagnosticTimes.get(element) === bucket) return;

@@ -179,7 +179,7 @@
             mediaStateFor(this).srcObject = null;
         }
         load() {
-            traceMediaLifecycle(this, 'load');
+            traceMediaCallsite(this);
             const state = mediaStateFor(this);
             const hadResource = state.networkState !== HTMLMediaElement.NETWORK_EMPTY;
             state.networkState = HTMLMediaElement.NETWORK_EMPTY;
