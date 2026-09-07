@@ -111,7 +111,8 @@
                 case 'scroll':
                     windowObject.scrollX = windowObject.pageXOffset = Number(input.x) || 0;
                     windowObject.scrollY = windowObject.pageYOffset = Number(input.y) || 0;
-                    return document.dispatchEvent(markTrusted(new Event('scroll')));
+                    // CSSOM View viewport scroll events target Document and bubble to Window.
+                    return document.dispatchEvent(markTrusted(new Event('scroll', { bubbles: true })));
                 case 'viewport':
                     windowObject.innerWidth = Math.round(Number(input.width) || 1);
                     windowObject.innerHeight = Math.round(Number(input.height) || 1);

@@ -76,7 +76,10 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
         Some(viewport_height.max(1.0)),
         None,
     );
-    engine.output.content_height = metrics.bottom.max(viewport_height);
+    engine.output.content_height = metrics
+        .bottom
+        .max(engine.scrollable_overflow_bottom(&root))
+        .max(viewport_height);
     engine.output
 }
 

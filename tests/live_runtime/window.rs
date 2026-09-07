@@ -106,6 +106,16 @@ struct WindowSearch {
 }
 
 const WM_COMMAND: u32 = 0x0111;
+pub(super) fn wheel_when_title_contains(child: &std::process::Child, expected: &str, delta: i16) {
+    let window = wait_for_title(child.id(), expected, Duration::from_secs(10));
+    let wparam = usize::from(delta as u16) << 16;
+    assert_ne!(
+        unsafe { PostMessageW(window as *mut c_void, 0x020A, wparam, 0) },
+        0,
+        "post wheel input to hidden browser"
+    );
+}
+
 const WM_KEYDOWN: u32 = 0x0100;
 const VK_ESCAPE: usize = 0x1b;
 const RELOAD_COMMAND_ID: usize = 1003;

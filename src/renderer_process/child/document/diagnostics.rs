@@ -1,4 +1,5 @@
 //! Bounded opt-in benchmark diagnostics collected beside the renderer-owned DOM and styles.
+mod image_clipping;
 
 use crate::engine::{DisplayItem, LayoutOutput, Page};
 use crate::limits::{MAX_PAGE_DIAGNOSTIC_BYTES, bounded_utf8_prefix};
@@ -207,6 +208,7 @@ fn resource_details(
         height: decoded.map(|image| image.height),
         nontransparent_pixels,
         paint_rects,
+        clipped_paint_rects: image_clipping::rects(&layout.items, url),
         control_rects,
     })
 }

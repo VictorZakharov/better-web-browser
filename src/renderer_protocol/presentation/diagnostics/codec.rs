@@ -245,6 +245,7 @@ fn encode_optional_resource(
     optional_u32(writer, value.height);
     optional_u64(writer, value.nontransparent_pixels);
     encode_rects(writer, &value.paint_rects)?;
+    encode_rects(writer, &value.clipped_paint_rects)?;
     encode_rects(writer, &value.control_rects)
 }
 
@@ -263,6 +264,7 @@ fn decode_optional_resource(
         height: decode_optional_u32(reader)?,
         nontransparent_pixels: decode_optional_u64(reader)?,
         paint_rects: decode_rects(reader)?,
+        clipped_paint_rects: decode_rects(reader)?,
         control_rects: decode_rects(reader)?,
     }))
 }
@@ -334,4 +336,34 @@ fn count(value: usize, maximum: usize) -> Result<(), ProtocolError> {
 
 fn invalid<T>() -> Result<T, ProtocolError> {
     Err(ProtocolError::InvalidPayload("page diagnostics"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipped_image_rectangles_round_trip_and_remain_bounded() {
+        let rect = RectF {
+            x: 1.0,
+            y: 2.0,
+            width: 30.0,
+            height: 40.0,
+        };
+        let mut resource = ResourceDiagnostics {
+            clipped_paint_rects: vec![rect],
+            ..ResourceDiagnostics::default()
+        };
+        let mut writer = WireWriter::new();
+        encode_optional_resource(&mut writer, Some(&resource)).unwrap();
+        let bytes = writer.finish();
+        let mut reader = WireReader::new(&bytes);
+        assert_eq!(
+            decode_optional_resource(&mut reader).unwrap(),
+            Some(resource.clone())
+        );
+        reader.finish().unwrap();
+        resource.clipped_paint_rects = vec![rect; MAX_RESOURCE_RECTS + 1];
+        assert!(encode_optional_resource(&mut WireWriter::new(), Some(&resource)).is_err());
+    }
 }

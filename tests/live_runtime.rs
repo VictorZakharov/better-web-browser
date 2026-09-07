@@ -20,6 +20,8 @@ mod navigation;
 mod network;
 #[path = "live_runtime/reload.rs"]
 mod reload;
+#[path = "live_runtime/scrolling.rs"]
+mod scrolling;
 #[path = "live_runtime/streaming_network.rs"]
 mod streaming_network;
 #[path = "live_runtime/window.rs"]

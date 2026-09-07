@@ -107,6 +107,7 @@ pub struct ResourceDiagnostics {
     pub height: Option<u32>,
     pub nontransparent_pixels: Option<u64>,
     pub paint_rects: Vec<RectF>,
+    pub clipped_paint_rects: Vec<RectF>,
     pub control_rects: Vec<RectF>,
 }
 
@@ -230,6 +231,7 @@ impl ResourceDiagnostics {
             "height": self.height,
             "nontransparent_pixels": self.nontransparent_pixels,
             "paint_rects": self.paint_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
+            "clipped_paint_rects": self.clipped_paint_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
             "control_rects": self.control_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
         })
     }
