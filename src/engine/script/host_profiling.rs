@@ -44,6 +44,13 @@ impl HostCallProfile {
         let Some(elapsed) = started.map(|started| started.elapsed()) else {
             return;
         };
+        self.record_elapsed(operation, elapsed);
+    }
+
+    pub(super) fn record_elapsed(&mut self, operation: &str, elapsed: Duration) {
+        if !self.enabled || elapsed.is_zero() {
+            return;
+        }
         let stats = self.operations.entry(operation.to_owned()).or_default();
         stats.calls += 1;
         stats.total += elapsed;
@@ -127,6 +134,22 @@ mod tests {
         assert_eq!(diagnostics.len(), 2);
         assert_eq!(diagnostics[0], "attribute writes: class:1");
         assert!(diagnostics[1].starts_with("host call query: 1 calls,"));
+        assert!(profile.take_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn explicit_phase_durations_are_opt_in_and_aggregate_without_zero_work() {
+        let mut profile = HostCallProfile::default();
+        profile.record_elapsed("layoutFlush::style", Duration::from_millis(3));
+        assert!(profile.take_diagnostics().is_empty());
+        profile.set_enabled(true);
+        profile.record_elapsed("layoutFlush::style", Duration::from_millis(3));
+        profile.record_elapsed("layoutFlush::style", Duration::from_millis(2));
+        profile.record_elapsed("layoutFlush::layout", Duration::ZERO);
+        assert_eq!(
+            profile.take_diagnostics(),
+            vec!["host call layoutFlush::style: 2 calls, 5.000 ms total, 3.000 ms max"]
+        );
         assert!(profile.take_diagnostics().is_empty());
     }
 }

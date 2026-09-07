@@ -4,6 +4,7 @@ use super::*;
 use crate::engine::MediaEnvironment;
 
 mod cookies;
+pub(crate) mod geometry;
 mod storage;
 
 use crate::storage::{StorageAreaState, StorageMutation};
@@ -192,22 +193,6 @@ impl HostState {
                 ))
                 .into())
         }
-    }
-
-    pub(super) fn flush_layout_if_needed(&mut self) {
-        let version = self.document.subtree_mutation_version();
-        if self.layout_geometry_initialized && self.layout_geometry_version == version {
-            return;
-        }
-        let Some(flush) = self.layout_flush.as_mut() else {
-            return;
-        };
-        let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
-        if let Some(geometry) = flush(&invalidation) {
-            self.layout_geometry = geometry;
-        }
-        self.layout_geometry_version = version;
-        self.layout_geometry_initialized = true;
     }
 
     pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {

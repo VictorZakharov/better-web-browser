@@ -144,3 +144,11 @@ Live verification removed YouTube's initial player skeleton, which had intercept
 over recommendations. A subsequent recommendation click now reaches the next URL, but
 revealed a separate synchronous-layout timeout retaining the previous metadata. This is
 progress on initialization, not a claim that navigation or playback is complete.
+
+## Synchronous style/layout profiling
+
+Opt-in host-call diagnostics split synchronous geometry flushes into
+`layoutFlush::style` and `layoutFlush::layout`. These are sub-phases of `layoutRect`,
+not additional time to add to that total. Zero-work phases are omitted; aggregation
+is drained with the surrounding script task's diagnostics. Ordinary browsing does
+not collect the host-call profile.

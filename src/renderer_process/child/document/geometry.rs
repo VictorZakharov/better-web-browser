@@ -35,7 +35,8 @@ impl DocumentRuntime {
         let viewport = Rc::clone(&self.script_layout_viewport);
         let text = Rc::clone(&self.text);
         let mut geometry_ready = false;
-        Box::new(move |invalidation| {
+        Box::new(move |invalidation, metrics| {
+            let started = std::time::Instant::now();
             let viewport = viewport.get();
             let mut page = page.borrow_mut();
             let style_refresh = page.refresh_layout_styles_after_invalidation_for_viewport(
@@ -43,6 +44,7 @@ impl DocumentRuntime {
                 viewport.height,
                 invalidation,
             );
+            metrics.style = started.elapsed();
             // Attribute invalidation is conservative because arbitrary attributes can participate
             // in selectors. Recompute styles first, then retain the current geometry when neither
             // computed box styles nor content/intrinsic sizing changed. This is the same
@@ -55,6 +57,7 @@ impl DocumentRuntime {
                 return None;
             }
             let mut text = text.borrow_mut();
+            let started = std::time::Instant::now();
             let mut geometry_text = GeometryTextMeasurer(&mut *text);
             let geometry = layout_page_with_style_viewport(
                 &page,
@@ -64,6 +67,7 @@ impl DocumentRuntime {
                 &mut geometry_text,
             )
             .node_bounds;
+            metrics.layout = started.elapsed();
             geometry_ready = true;
             Some(geometry)
         })

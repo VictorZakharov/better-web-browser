@@ -14,8 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-pub(crate) type LayoutFlushCallback =
-    Box<dyn FnMut(&RenderInvalidation) -> Option<HashMap<NodeId, RectF>>>;
+pub(crate) use host_state::geometry::LayoutFlushCallback;
 
 mod attribute_host;
 mod binding_helpers;

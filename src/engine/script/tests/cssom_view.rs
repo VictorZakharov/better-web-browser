@@ -157,7 +157,7 @@ fn geometry_reads_flush_layout_once_per_dom_mutation_version() {
     let observed_calls = std::rc::Rc::clone(&calls);
     let target_id = target.id();
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-    runtime.set_layout_flush_callback(Box::new(move |_| {
+    runtime.set_layout_flush_callback(Box::new(move |_, _| {
         let next = observed_calls.get() + 1;
         observed_calls.set(next);
         Some(HashMap::from([(
@@ -202,7 +202,7 @@ fn layout_invalidation_survives_presentation_outcome_collection() {
             ..RectF::default()
         },
     )]));
-    runtime.set_layout_flush_callback(Box::new(move |invalidation| {
+    runtime.set_layout_flush_callback(Box::new(move |invalidation, _| {
         callback_observed.borrow_mut().push(invalidation.clone());
         Some(HashMap::from([(
             target_id,
