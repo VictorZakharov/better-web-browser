@@ -26,9 +26,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return BlockMetrics { bottom };
         };
         let original_style = self.styles.get(node).clone();
+        // Flexbox cross-axis alignment stretches heights only in row containers.
+        // Column widths are resolved by layout_flex_column; their available height
+        // remains a percentage basis, not an instruction to stretch every child.
         let stretched_sizes = containing_height
             .filter(|_| {
-                container_style.align_items == AlignItems::Stretch
+                container_style.flex_direction.is_row()
+                    && container_style.align_items == AlignItems::Stretch
                     && original_style.height == Length::Auto
                     && original_style.margin.top != Length::Auto
                     && original_style.margin.bottom != Length::Auto

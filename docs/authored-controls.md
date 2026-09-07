@@ -73,3 +73,16 @@ followed by an opaque application background. Painting the former as ordinary fl
 that later background hide valid decoded video. An owned hidden screenshot test checks the
 equivalent relationship without any site-specific markup or overrides. This does not claim
 complete CSS stacking support, including positioned descendants escaping nested auto-level groups.
+
+## Flex cross-axis orientation
+
+Automatic height stretching applies to row and row-reverse containers, not columns.
+In a column, the cross axis is horizontal; the available container height remains a basis
+for percentage heights without becoming every child's used height. This follows
+[Flexbox cross-axis alignment](https://www.w3.org/TR/css-flexbox-1/#align-items-property).
+Previously, an empty spacer in a fixed-height column expanded to the full container height
+and pushed its following navigation content below the viewport.
+
+Regressions cover both column directions, continued row stretching, and a hidden native
+drawer capture with trusted coordinate activation. This correction is not a claim of full
+column flex-grow/shrink, wrapping, or automatic minimum-size support.

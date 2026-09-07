@@ -2,6 +2,51 @@ use super::test_support::FixedMeasurer;
 use super::*;
 
 #[test]
+fn column_cross_axis_stretch_does_not_expand_empty_spacers_vertically() {
+    for direction in ["column", "column-reverse"] {
+        let page = Page::parse(
+            &format!(
+                r#"<style>
+              body {{ margin: 0 }}
+              main {{ display: flex; flex-direction: {direction}; width: 240px; height: 300px }}
+              #content > div {{ height: 20px }}
+            </style><main><div id=spacer></div><div id=content><div>Navigation</div></div></main>"#
+            ),
+            "https://example.com/",
+        );
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        for (id, expected_height) in [("spacer", 0.0), ("content", 20.0)] {
+            let node = page
+                .dom
+                .elements_named("div")
+                .find(|node| node.attr("id").as_deref() == Some(id))
+                .unwrap();
+            let rect = output.node_bounds[&node.id()];
+            assert_eq!(rect.height, expected_height, "{direction} {id}: {rect:?}");
+            assert_eq!(rect.width, 240.0, "{direction} {id}: {rect:?}");
+        }
+    }
+}
+
+#[test]
+fn row_cross_axis_stretch_still_fills_the_container_height() {
+    for direction in ["row", "row-reverse"] {
+        let page = Page::parse(
+            &format!(
+                r#"<style>body {{ margin: 0 }}
+              main {{ display: flex; flex-direction: {direction}; width: 240px; height: 300px }}
+              div {{ width: 40px }}
+            </style><main><div></div></main>"#
+            ),
+            "https://example.com/",
+        );
+        let node = page.dom.elements_named("div").next().unwrap();
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        assert_eq!(output.node_bounds[&node.id()].height, 300.0, "{direction}");
+    }
+}
+
+#[test]
 fn uses_the_resolved_flex_main_size_without_applying_percentage_width_twice() {
     let page = Page::parse(
         r#"<style>

@@ -12,6 +12,8 @@ use support::*;
 mod authored_controls;
 #[path = "live_runtime/dynamic_scripts.rs"]
 mod dynamic_scripts;
+#[path = "live_runtime/flex_axes.rs"]
+mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
 #[path = "live_runtime/media_controls.rs"]
