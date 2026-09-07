@@ -12,6 +12,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     ActivateLink(String),
     ActivateSelector(String),
     ClickPoint { x: i32, y: i32 },
+    MovePoint { x: i32, y: i32 },
     Key { key: String, code: String },
 }
 
@@ -44,6 +45,13 @@ impl BrowserState {
                 BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
                 BenchmarkNavigation::ActivateSelector(selector) => {
                     let result = self.activate_benchmark_selector(&selector);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::MovePoint { x, y } => {
+                    let result = self.move_benchmark_pointer(x as f32, y as f32);
                     if result.is_ok() {
                         self.continue_or_finish_benchmark_actions();
                     }
@@ -176,6 +184,26 @@ impl BrowserState {
             }
         }
         Ok(())
+    }
+
+    fn move_benchmark_pointer(&mut self, x: f32, y: f32) -> Result<(), String> {
+        let (document, sequence) = self
+            .next_renderer_input()
+            .ok_or_else(|| "benchmark pointer has no active renderer document".to_string())?;
+        if self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+            document,
+            sequence,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            x,
+            y,
+            modifiers: InputModifiers::default(),
+            target: None,
+        })) {
+            Ok(())
+        } else {
+            Err("benchmark pointer movement was rejected by the renderer".into())
+        }
     }
 
     fn press_benchmark_key(&mut self, key: String, code: String) -> Result<(), String> {

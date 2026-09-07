@@ -58,6 +58,8 @@ pub enum MutationKind<'a> {
     ChildList,
     Stylesheet,
     Viewport,
+    /// User-agent state (for example pointer designation), not an attribute mutation.
+    State,
 }
 
 impl MutationKind<'_> {
@@ -83,7 +85,7 @@ impl MutationKind<'_> {
                 .union(InvalidationImpact::LAYOUT)
                 .union(InvalidationImpact::INTRINSIC_SIZE)
                 .union(InvalidationImpact::PAINT),
-            Self::Viewport => InvalidationImpact::STYLE
+            Self::Viewport | Self::State => InvalidationImpact::STYLE
                 .union(InvalidationImpact::LAYOUT)
                 .union(InvalidationImpact::PAINT),
         }

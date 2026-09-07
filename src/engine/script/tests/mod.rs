@@ -45,6 +45,7 @@ mod network;
 mod network_body;
 mod network_diagnostics;
 mod nodes;
+mod pointer_hover;
 mod ranges;
 mod selectors;
 mod shadow_dom;

@@ -32,6 +32,7 @@ pub(super) struct CompletedModuleEvaluation {
 pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) document_url: String,
+    pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
     pub(super) stylesheet_sources: HashMap<String, String>,
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
@@ -99,6 +100,7 @@ impl HostState {
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
             stylesheet_sources: HashMap::new(),
+            pointer_path: Vec::new(),
             module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),

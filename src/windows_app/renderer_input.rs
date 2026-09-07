@@ -90,6 +90,7 @@ impl BrowserState {
         }
         let toolbar = self.toolbar_height();
         if x < 0 || y < toolbar || y > toolbar + self.viewport_height() {
+            self.reset_pointer_cursor();
             return false;
         }
         let scale = self.page_scale().max(f32::EPSILON);

@@ -13,7 +13,10 @@ impl TaskMutationProfile {
         let counter = match kind {
             MutationKind::ChildList => &mut self.child_list,
             MutationKind::Stylesheet => &mut self.stylesheets,
-            MutationKind::Attribute(_) | MutationKind::CharacterData | MutationKind::Viewport => {
+            MutationKind::Attribute(_)
+            | MutationKind::CharacterData
+            | MutationKind::Viewport
+            | MutationKind::State => {
                 return;
             }
         };

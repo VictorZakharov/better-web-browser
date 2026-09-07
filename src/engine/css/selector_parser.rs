@@ -228,7 +228,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
                         "fullscreen" => compound.requires_fullscreen = true,
-                        "hover" | "active" | "focus" | "visited" | "focus-visible" => {
+                        "hover" => compound.requires_hover = true,
+                        "active" | "focus" | "visited" | "focus-visible" => {
                             compound.never_matches = true
                         }
                         _ => compound.never_matches = true,

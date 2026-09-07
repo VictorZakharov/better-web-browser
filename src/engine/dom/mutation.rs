@@ -1,6 +1,8 @@
 //! Node creation and tree/attribute mutation operations.
 
 mod attributes;
+#[path = "hover.rs"]
+mod hover;
 
 use super::budget::enforce;
 use super::document::Dom;
@@ -45,6 +47,7 @@ impl Node {
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
                 fullscreen: std::cell::Cell::new(false),
+                hovered: std::cell::Cell::new(false),
             }),
         )
     }
@@ -62,6 +65,7 @@ impl Node {
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
                 fullscreen: std::cell::Cell::new(false),
+                hovered: std::cell::Cell::new(false),
             }),
         )
     }

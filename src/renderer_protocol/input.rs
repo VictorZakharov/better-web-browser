@@ -34,6 +34,7 @@ pub struct InputModifiers {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PointerPhase {
     Move,
+    Leave,
     Down,
     Up,
     Activate,

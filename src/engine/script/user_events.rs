@@ -34,6 +34,29 @@ pub(super) fn dispatch(
     }
 }
 
+fn pointer_boundary(state: &mut HostState, target: Option<NodeRef>) -> serde_json::Value {
+    let boundary = Node::update_hover_path(&mut state.pointer_path, target);
+    for node in boundary.leaving.iter().chain(&boundary.entering) {
+        if state.mutation_requires_render(node) {
+            state
+                .pending_invalidation
+                .record(&state.document, Some(node), MutationKind::State);
+            state.pending_layout_invalidation.record(
+                &state.document,
+                Some(node),
+                MutationKind::State,
+            );
+            state.timers.request_render();
+        }
+    }
+    serde_json::json!({
+        "previous": boundary.previous.as_ref().map(|node| state.id_for(node)).unwrap_or(0),
+        "next": boundary.next.as_ref().map(|node| state.id_for(node)).unwrap_or(0),
+        "leave": boundary.leaving.iter().map(|node| state.id_for(node)).collect::<Vec<_>>(),
+        "enter": boundary.entering.iter().rev().map(|node| state.id_for(node)).collect::<Vec<_>>()
+    })
+}
+
 fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::Value {
     let target = |node: Option<NodeRef>| {
         node.map(|node| host.borrow_mut().id_for(&node))
@@ -49,12 +72,16 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             y,
             activate,
             modifiers,
-        } => serde_json::json!({
-            "kind": "pointer", "target": target(node), "phase": phase,
-            "button": button, "buttons": buttons, "x": x, "y": y,
-            "activate": activate, "alt": modifiers.alt,
-            "control": modifiers.control, "shift": modifiers.shift, "meta": modifiers.meta
-        }),
+        } => {
+            let boundary = pointer_boundary(&mut host.borrow_mut(), node.clone());
+            serde_json::json!({
+                "kind": "pointer", "target": target(node), "phase": phase,
+                "boundary": boundary,
+                "button": button, "buttons": buttons, "x": x, "y": y,
+                "activate": activate, "alt": modifiers.alt,
+                "control": modifiers.control, "shift": modifiers.shift, "meta": modifiers.meta
+            })
+        }
         UserInputEvent::Keyboard {
             target: node,
             phase,

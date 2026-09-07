@@ -31,6 +31,7 @@ param(
     [string[]] $LinkActivationTarget = @(),
     [string[]] $SelectorActivationTarget = @(),
     [string[]] $ClickTarget = @(),
+    [string[]] $PointerMoveTarget = @(),
     [string[]] $KeyTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
@@ -160,6 +161,13 @@ foreach ($target in $SelectorActivationTarget) {
     $arguments.Add('--activate-selector-after-ready')
     $arguments.Add($target)
 }
+foreach ($target in $PointerMoveTarget) {
+    if ($target -notmatch '^\d+\s*,\s*\d+$') {
+        throw '-PointerMoveTarget values must use non-negative x,y document coordinates.'
+    }
+    $arguments.Add('--move-after-ready')
+    $arguments.Add($target)
+}
 foreach ($target in $ClickTarget) {
     if ($target -notmatch '^\d+\s*,\s*\d+$') {
         throw '-ClickTarget values must use non-negative x,y coordinates.'
@@ -173,7 +181,7 @@ foreach ($target in $KeyTarget) {
     $arguments.Add($target)
 }
 if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
-    $SelectorActivationTarget.Count -gt 0 -or $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0) {
+    $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {

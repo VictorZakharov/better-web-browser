@@ -164,6 +164,7 @@ pub struct ElementData {
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
+    pub hovered: Cell<bool>,
 }
 
 #[derive(Debug)]
@@ -258,6 +259,21 @@ impl Node {
     pub fn is_fullscreen(&self) -> bool {
         self.element()
             .is_some_and(|element| element.fullscreen.get())
+    }
+
+    pub fn is_hovered(&self) -> bool {
+        self.element().is_some_and(|element| element.hovered.get())
+    }
+
+    pub fn set_hovered(&self, hovered: bool) -> bool {
+        let Some(element) = self.element() else {
+            return false;
+        };
+        if element.hovered.replace(hovered) == hovered {
+            return false;
+        }
+        self.mark_mutated();
+        true
     }
 
     pub fn set_fullscreen(&self, fullscreen: bool) {

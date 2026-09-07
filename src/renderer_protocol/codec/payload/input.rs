@@ -245,6 +245,7 @@ fn decode_target(reader: &mut WireReader<'_>) -> Result<Option<DocumentNodeId>, 
 fn pointer_phase_tag(phase: PointerPhase) -> u8 {
     match phase {
         PointerPhase::Move => 1,
+        PointerPhase::Leave => 5,
         PointerPhase::Down => 2,
         PointerPhase::Up => 3,
         PointerPhase::Activate => 4,
@@ -254,6 +255,7 @@ fn pointer_phase_tag(phase: PointerPhase) -> u8 {
 fn decode_pointer_phase(tag: u8) -> Result<PointerPhase, ProtocolError> {
     match tag {
         1 => Ok(PointerPhase::Move),
+        5 => Ok(PointerPhase::Leave),
         2 => Ok(PointerPhase::Down),
         3 => Ok(PointerPhase::Up),
         4 => Ok(PointerPhase::Activate),

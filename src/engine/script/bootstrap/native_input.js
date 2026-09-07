@@ -33,6 +33,8 @@
             pressure: input.buttons ? 0.5 : 0,
             ...nativeModifiers(input)
         };
+        dispatchPointerBoundary(input.boundary, init);
+        if (input.phase === 'leave') return true;
         if (input.phase === 'activate') {
             dispatchPair('down', { ...init, buttons: 1, pressure: 0.5 });
             dispatchPair('up', { ...init, buttons: 0, pressure: 0 });

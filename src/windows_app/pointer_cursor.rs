@@ -32,9 +32,32 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reset_pointer_cursor(&mut self) {
+        self.route_pointer_exit();
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;
         self.apply_current_pointer_cursor();
+    }
+
+    unsafe fn route_pointer_exit(&mut self) {
+        use better_web_browser::renderer_protocol::{
+            DocumentInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
+        };
+        if self.surface != Surface::Page || self.pointer_cursor_request.is_none() {
+            return;
+        }
+        let Some((document, sequence)) = self.next_renderer_input() else {
+            return;
+        };
+        self.submit_renderer_input(DocumentInput::Pointer(PointerInput {
+            document,
+            sequence,
+            phase: PointerPhase::Leave,
+            button: PointerButton::None,
+            x: 0.0,
+            y: 0.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }));
     }
 
     pub(super) unsafe fn apply_current_pointer_cursor(&self) {

@@ -156,10 +156,14 @@ impl DocumentRuntime {
     }
 
     fn pointer_input(&mut self, input: PointerInput) -> Result<PointerInteraction, String> {
-        let target = input
-            .target
-            .and_then(|target| self.explicit_target(target))
-            .or_else(|| self.hit_target(input.x, input.y));
+        let target = (input.phase != PointerPhase::Leave)
+            .then(|| {
+                input
+                    .target
+                    .and_then(|target| self.explicit_target(target))
+                    .or_else(|| self.hit_target(input.x, input.y))
+            })
+            .flatten();
         let cursor = (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
             document: self.id,
             sequence: input.sequence,
@@ -178,12 +182,13 @@ impl DocumentRuntime {
             PointerPhase::Activate => {
                 matches!(input.button, PointerButton::Primary | PointerButton::Middle)
             }
-            PointerPhase::Move => false,
+            PointerPhase::Move | PointerPhase::Leave => false,
         };
         let result = self.dispatch_user_input(UserInputEvent::Pointer {
             target: target.as_ref().map(|target| target.node.clone()),
             phase: match input.phase {
                 PointerPhase::Move => "move",
+                PointerPhase::Leave => "leave",
                 PointerPhase::Down => "down",
                 PointerPhase::Up => "up",
                 PointerPhase::Activate => "activate",
@@ -200,6 +205,22 @@ impl DocumentRuntime {
             modifiers: input.modifiers.into(),
         })?;
         let mut outcome = result.outcome;
+        if self.script_runtime.is_none() {
+            let boundary = crate::engine::dom::Node::update_hover_path(
+                &mut self.scriptless_pointer_path,
+                target.as_ref().map(|target| target.node.clone()),
+            );
+            if !boundary.entering.is_empty() || !boundary.leaving.is_empty() {
+                outcome.render_requested = true;
+                outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
+                    roots: vec![self.page.dom.document.id()],
+                    impact: crate::engine::invalidation::MutationKind::State.impact(),
+                    mutation_count: 0,
+                    rebuild_style_rules: false,
+                    removed_nodes: Vec::new(),
+                };
+            }
+        }
         let navigation = if activate && result.default_allowed {
             self.pointer_default_action(target.as_ref(), input, &mut outcome)?
         } else {

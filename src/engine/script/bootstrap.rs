@@ -30,6 +30,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/performance.js"),
     include_str!("bootstrap/media_queries.js"),
     include_str!("bootstrap/native_input.js"),
+    include_str!("bootstrap/pointer_boundary.js"),
     include_str!("bootstrap/custom_elements.js"),
     include_str!("bootstrap/url.js"),
     include_str!("bootstrap/tasks.js"),

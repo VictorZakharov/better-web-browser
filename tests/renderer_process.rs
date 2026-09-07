@@ -8,6 +8,8 @@ mod backpressure;
 mod clock_backpressure;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
+#[path = "renderer_process/hover.rs"]
+mod hover;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/media.rs"]

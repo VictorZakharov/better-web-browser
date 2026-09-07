@@ -86,3 +86,26 @@ and pushed its following navigation content below the viewport.
 Regressions cover both column directions, continued row stretching, and a hidden native
 drawer capture with trusted coordinate activation. This correction is not a claim of full
 column flex-grow/shrink, wrapping, or automatic minimum-size support.
+
+## Pointer hover designation and boundary events
+
+Native mouse target changes now update `:hover` designation through flat-tree ancestors,
+including assigned slots and shadow hosts. Both script-free and scripted documents invalidate
+computed styles and repaint on entry and exit; repeated moves inside the same target do not
+invalidate styles again. Designation is user-agent state, not an HTML attribute mutation, and
+is not copied by node cloning or changed by synthetic mouse events.
+
+Scripted documents receive trusted pointer/mouse over, out, enter, and leave events. Enter/leave
+do not bubble or cross shadow boundaries; common ancestors are not re-entered when moving
+between their children. Event dispatch retargets `relatedTarget` alongside `target`, suppressing
+internal shadow-tree transitions outside that tree. Window/content exit clears designation.
+The contracts follow [Selectors hover](https://www.w3.org/TR/selectors-4/#the-hover-pseudo),
+[Pointer Events boundary events](https://www.w3.org/TR/pointerevents3/#boundary-events), and
+[DOM event dispatch](https://dom.spec.whatwg.org/#concept-event-dispatch).
+
+Coverage includes a hidden renderer repaint test with and without JavaScript, boundary event
+counts, computed style during entry, shadow retargeting, slots, cloning, and repeated moves.
+This is not a claim of complete pointer support: pointer capture, boundary re-hit-testing after
+stationary-pointer layout changes, and the separate active/focus pseudo-classes remain gaps.
+Live YouTube controls, navigation metadata, comments, and playback cadence require separate
+end-to-end verification; these regressions alone do not establish site completion.

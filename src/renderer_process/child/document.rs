@@ -84,6 +84,7 @@ pub(super) struct DocumentRuntime {
         crate::engine::dom::NodeId,
         crate::renderer_protocol::PointerButton,
     )>,
+    scriptless_pointer_path: Vec<crate::engine::dom::NodeRef>,
     last_input_sequence: u64,
     last_acknowledged_revision: u64,
     revision: u64,

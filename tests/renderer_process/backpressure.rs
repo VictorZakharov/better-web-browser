@@ -392,6 +392,19 @@ fn wait_for_navigation(
                 disposition,
                 cause,
             } if event_document == document => return (url, disposition, cause),
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                // Pointer entry may repaint hover styles before the click navigates.
+                session
+                    .acknowledge_presentation(
+                        better_web_browser::renderer_protocol::PresentationAcknowledgement {
+                            document,
+                            revision: presentation.revision,
+                            presented: true,
+                            controls_applied: true,
+                        },
+                    )
+                    .unwrap();
+            }
             RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected navigation event: {event:?}"),
         }

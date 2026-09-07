@@ -27,9 +27,11 @@ impl PendingInvalidation {
             return;
         };
         let root = match kind {
-            MutationKind::Attribute(_) | MutationKind::CharacterData => target
-                .shadow_including_parent()
-                .unwrap_or_else(|| target.clone()),
+            MutationKind::Attribute(_) | MutationKind::CharacterData | MutationKind::State => {
+                target
+                    .shadow_including_parent()
+                    .unwrap_or_else(|| target.clone())
+            }
             MutationKind::ChildList => target.clone(),
             MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
         };
