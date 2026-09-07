@@ -1,6 +1,6 @@
 //! Renderer-side resource installation and script-network completions.
 
-mod events;
+pub(super) mod events;
 mod streaming;
 
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
@@ -91,6 +91,9 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        if self.dispatch_cached_resource_events()? {
+            self.resource_render_pending = true;
+        }
         if self.pending_resource_preloads.is_some() {
             return Ok(());
         }

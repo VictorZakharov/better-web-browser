@@ -123,3 +123,24 @@ Regressions exercise absolute and fixed boxes, percentage bottom insets, explici
 heights, min/max constraints, margins, borders/padding, descendant bounds, and painted bounds.
 This does not close the separate hit-testing/initial-container, metadata, comments, or
 playback-cadence issues on live pages.
+
+## Cached resource completion belongs to each element
+
+Fetch deduplication must not suppress a newly attached stylesheet link's `load` event.
+The renderer keeps completed resource results separate from the set of element owners
+already notified. A later owner of cached bytes receives its own asynchronous completion,
+without fetching the URL again or replaying events on existing owners. Stylesheet handlers
+observe the installed cascade through computed style and synchronous geometry APIs.
+This follows the per-element completion steps in
+[HTML stylesheet processing](https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet).
+
+An owned HTTP fixture checks two sequential links, one stylesheet request, asynchronous
+delivery, computed color, and exactly one event per link. Ownership tests cover cloning,
+unrelated mutations, and removal/reinsertion or URL changes observed across checkpoints.
+Full per-request generation tracking for multiple retargets within one script task remains
+outside this change. Image owners share the completion bookkeeping as before.
+
+Live verification removed YouTube's initial player skeleton, which had intercepted clicks
+over recommendations. A subsequent recommendation click now reaches the next URL, but
+revealed a separate synchronous-layout timeout retaining the previous metadata. This is
+progress on initialization, not a claim that navigation or playback is complete.

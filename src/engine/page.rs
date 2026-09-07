@@ -2,6 +2,7 @@ mod embedded;
 mod media;
 mod preload;
 mod refresh;
+mod resource_events;
 mod resources;
 mod scripts;
 mod snapshot;
@@ -317,30 +318,6 @@ impl Page {
             return Some(url);
         }
         resolve_image_url(node, &self.base_url, self.media_environment)
-    }
-
-    pub(crate) fn resource_event_targets(&self, resource: &PageResource) -> Vec<NodeRef> {
-        Node::shadow_including_descendants(&self.dom.document)
-            .filter(|node| match resource {
-                PageResource::Stylesheet { url } => {
-                    node.tag_name() == Some("link")
-                        && node.attr("rel").is_some_and(|rel| {
-                            rel.split_ascii_whitespace()
-                                .any(|token| token.eq_ignore_ascii_case("stylesheet"))
-                        })
-                        && node
-                            .attr("href")
-                            .and_then(|href| resolve_url(&self.base_url, &href))
-                            .as_ref()
-                            == Some(url)
-                }
-                PageResource::Image { url } => {
-                    matches!(node.tag_name(), Some("img" | "image"))
-                        && self.image_url(node).as_ref() == Some(url)
-                }
-                _ => false,
-            })
-            .collect()
     }
 }
 

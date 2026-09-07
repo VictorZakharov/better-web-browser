@@ -1,6 +1,8 @@
 //! DOM events for completed element-owned page resources.
 
 use super::super::*;
+mod state;
+pub(in crate::renderer_process::child::document) use state::ResourceEvents;
 
 impl DocumentRuntime {
     pub(super) fn dispatch_resource_event(
@@ -8,16 +10,21 @@ impl DocumentRuntime {
         resource: &PageResource,
         event_type: &'static str,
     ) -> Result<bool, String> {
-        let targets = self.page.resource_event_targets(resource);
-        let dispatched = !targets.is_empty();
+        self.resource_events.complete(resource, event_type);
+        self.dispatch_cached_resource_events()
+    }
+
+    pub(in crate::renderer_process::child::document) fn dispatch_cached_resource_events(
+        &mut self,
+    ) -> Result<bool, String> {
         if self.script_runtime.is_none() {
-            if dispatched {
-                self.pending_resource_events
-                    .push((resource.clone(), event_type));
-            }
-            return Ok(dispatched);
+            return Ok(false);
         }
-        if event_type == "load" && matches!(resource, PageResource::Stylesheet { .. }) {
+        let targets = self.resource_events.pending(&self.page);
+        let dispatched = !targets.is_empty();
+        if targets.iter().any(|(resource, event, _)| {
+            *event == "load" && matches!(resource, PageResource::Stylesheet { .. })
+        }) {
             // A load handler must observe the sheet that has just joined the cascade,
             // through both computed-style reads and synchronous geometry queries.
             self.sync_script_layout_page();
@@ -25,17 +32,24 @@ impl DocumentRuntime {
                 self.page.synchronize_script_stylesheets(runtime);
             }
         }
-        let image_dimensions = match resource {
-            PageResource::Image { url } if event_type == "load" => self
-                .page
-                .images
-                .get(url)
-                .map(|image| (image.width, image.height))
-                .unwrap_or_default(),
-            PageResource::Image { .. } => (0, 0),
-            _ => (0, 0),
-        };
-        for target in targets {
+        for (resource, event_type, target) in targets {
+            // An earlier completion callback may detach or retarget a later owner.
+            if crate::engine::dom::Node::shadow_including_root(&target).id()
+                != self.page.dom.document.id()
+                || self.page.resource_event_key(&target).as_ref() != Some(&resource)
+            {
+                continue;
+            }
+            let image_dimensions = match &resource {
+                PageResource::Image { url } if event_type == "load" => self
+                    .page
+                    .images
+                    .get(url)
+                    .map(|image| (image.width, image.height))
+                    .unwrap_or_default(),
+                PageResource::Image { .. } => (0, 0),
+                _ => (0, 0),
+            };
             let event = if matches!(resource, PageResource::Image { .. }) {
                 crate::engine::UserInputEvent::ImageResource {
                     target,
@@ -64,10 +78,6 @@ impl DocumentRuntime {
     pub(in crate::renderer_process::child::document) fn flush_pending_resource_events(
         &mut self,
     ) -> Result<(), String> {
-        let events = std::mem::take(&mut self.pending_resource_events);
-        for (resource, event_type) in events {
-            self.dispatch_resource_event(&resource, event_type)?;
-        }
-        Ok(())
+        self.dispatch_cached_resource_events().map(|_| ())
     }
 }

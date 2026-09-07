@@ -96,7 +96,7 @@ pub(super) struct DocumentRuntime {
     media_failure: Option<String>,
     pending_media_action: Option<media::PendingMediaAction>,
     pending_async_outcome: ScriptOutcome,
-    pending_resource_events: Vec<(PageResource, &'static str)>,
+    resource_events: resources::events::ResourceEvents,
     geometry_observers_pending: bool,
 }
 

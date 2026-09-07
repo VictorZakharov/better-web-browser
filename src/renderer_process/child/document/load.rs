@@ -93,7 +93,7 @@ impl DocumentRuntime {
             media_failure: None,
             pending_media_action: None,
             pending_async_outcome: ScriptOutcome::default(),
-            pending_resource_events: Vec::new(),
+            resource_events: Default::default(),
             geometry_observers_pending: false,
         };
 
