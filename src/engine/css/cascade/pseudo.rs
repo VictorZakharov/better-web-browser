@@ -30,18 +30,32 @@ impl StyleSet {
         origin: &NodeRef,
         origin_style: &ComputedStyle,
     ) -> bool {
-        let mut touched = false;
+        let mut layout_changed = false;
         for pseudo in [PseudoElement::Before, PseudoElement::After] {
-            touched |= self.pseudo_styles.contains_key(&(origin.id(), pseudo));
+            let key = (origin.id(), pseudo);
+            let previous = self.generated_nodes.get(&key).and_then(|node| {
+                self.generated_styles
+                    .get(&node.id())
+                    .map(|style| (style.clone(), node.text_content()))
+            });
             let (style, matched) = self.compute_pseudo_style(origin, pseudo, origin_style);
             if matched {
-                touched = true;
                 self.install_pseudo(origin, pseudo, style);
             } else {
                 self.remove_pseudo(origin.id(), pseudo);
             }
+            // Matching a rule is not a geometry change. Compare materialized boxes as well as
+            // their resolved text: attr() content can change without a computed-style change.
+            layout_changed |= match (previous, self.generated_nodes.get(&key)) {
+                (Some((style, text)), Some(node)) => {
+                    !style.layout_equivalent(&self.generated_styles[&node.id()])
+                        || text != node.text_content()
+                }
+                (None, None) => false,
+                _ => true,
+            };
         }
-        touched
+        layout_changed
     }
 
     pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) {

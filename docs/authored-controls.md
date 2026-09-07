@@ -152,3 +152,26 @@ Opt-in host-call diagnostics split synchronous geometry flushes into
 not additional time to add to that total. Zero-work phases are omitted; aggregation
 is drained with the surrounding script task's diagnostics. Ordinary browsing does
 not collect the host-call profile.
+
+`layoutFlush::style-full` and `layoutFlush::style-incremental` partition that style
+time by whether stylesheet rules were rebuilt. They overlap `layoutFlush::style`
+and must not be added to it.
+
+For incremental recalculation, `layoutFlush::elements` and `layoutFlush::pseudos`
+measure ordinary computed-style construction and generated pseudo-element updates.
+They are included in style time; the remainder includes invalidation traversal,
+style comparisons, and cache maintenance.
+
+Incremental refresh preserves the storage of an exactly equal custom-property map
+from the preceding computed style. This avoids repeated deep comparisons in
+descendants without reusing values when a custom property actually changes.
+
+Generated `::before`/`::after` rules no longer force geometry invalidation merely
+because they match. Refresh compares the materialized box's geometry-affecting
+style and resolved text, including `attr()` values. Box creation/removal and real
+size or content changes still invalidate layout; paint-only changes still update
+the generated style. Regression tests cover each of those transitions.
+
+These are bounded reductions in redundant work, not a claim that YouTube's
+navigation timeout or playback cadence is resolved. Live recommendation switches
+still need end-to-end validation of the new URL, metadata, and visible playback.

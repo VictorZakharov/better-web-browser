@@ -24,6 +24,8 @@ pub struct StyleRefreshStats {
     pub removed_styles: usize,
     pub layout_changed: bool,
     pub full_rebuild: bool,
+    pub element_style_time: std::time::Duration,
+    pub pseudo_style_time: std::time::Duration,
 }
 
 #[derive(Debug, Default)]
@@ -241,17 +243,31 @@ impl StyleSet {
             style.float = Float::None;
         }
         style.line_height = style.line_height.max(style.font_size);
+        // Preserve inherited-map identity across incremental recalculation. Otherwise an
+        // unchanged ancestor's rebuilt variable map makes every descendant compare a large
+        // equivalent map again. Equality is exact; changed values never reuse stale storage.
+        if let Some(previous) = self.styles.get(&node_id(node))
+            && previous.custom_properties == style.custom_properties
+        {
+            style.custom_properties = Arc::clone(&previous.custom_properties);
+        }
         style
     }
 
     fn matching_rules(&self, node: &NodeRef, pseudo: Option<PseudoElement>) -> Vec<&Rule> {
+        // Selectors match elements, and rule scope is invariant during this read-only pass.
+        // Resolve the tree root once rather than walking ancestors for every candidate rule.
+        if node.element().is_none() {
+            return Vec::new();
+        }
+        let tree_root = Node::tree_root(node);
         let mut matching = self
             .rule_index
             .candidates(node)
             .into_iter()
             .filter_map(|index| self.rules.get(index))
             .filter(|rule| rule.pseudo == pseudo)
-            .filter(|rule| rule_applies_to(rule, node))
+            .filter(|rule| rule_applies_to(rule, node, &tree_root))
             .filter(|rule| selector_matches(&rule.selector, node))
             .collect::<Vec<_>>();
         matching.sort_by(|left, right| {
@@ -313,10 +329,10 @@ impl StyleSet {
     }
 }
 
-fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {
+fn rule_applies_to(rule: &Rule, node: &NodeRef, tree_root: &NodeRef) -> bool {
     let scope_matches = match rule.scope {
-        RuleScope::Document => !matches!(Node::tree_root(node).data, NodeData::ShadowRoot(_)),
-        RuleScope::Shadow(root) => Node::tree_root(node).id() == root,
+        RuleScope::Document => !matches!(tree_root.data, NodeData::ShadowRoot(_)),
+        RuleScope::Shadow(root) => tree_root.id() == root,
         RuleScope::Host(root) => node.shadow_root().is_some_and(|shadow| shadow.id() == root),
         RuleScope::Slotted(root) => {
             Node::assigned_slot(node).is_some_and(|slot| Node::tree_root(&slot).id() == root)
@@ -324,7 +340,7 @@ fn rule_applies_to(rule: &Rule, node: &NodeRef) -> bool {
     };
     scope_matches
         && rule.host_condition.as_ref().is_none_or(|condition| {
-            Node::tree_root(node)
+            tree_root
                 .shadow_host()
                 .is_some_and(|host| selector_matches(condition, &host))
         })

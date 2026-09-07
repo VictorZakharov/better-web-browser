@@ -5,6 +5,9 @@ use super::*;
 pub struct LayoutFlushMetrics {
     pub(crate) style: Duration,
     pub(crate) layout: Duration,
+    pub(crate) rebuilt_rules: bool,
+    pub(crate) elements: Duration,
+    pub(crate) pseudos: Duration,
 }
 
 pub(crate) type LayoutFlushCallback =
@@ -26,8 +29,20 @@ impl HostState {
         }
         self.host_call_profile
             .record_elapsed("layoutFlush::style", metrics.style);
+        self.host_call_profile.record_elapsed(
+            if metrics.rebuilt_rules {
+                "layoutFlush::style-full"
+            } else {
+                "layoutFlush::style-incremental"
+            },
+            metrics.style,
+        );
         self.host_call_profile
             .record_elapsed("layoutFlush::layout", metrics.layout);
+        self.host_call_profile
+            .record_elapsed("layoutFlush::elements", metrics.elements);
+        self.host_call_profile
+            .record_elapsed("layoutFlush::pseudos", metrics.pseudos);
         self.layout_geometry_version = version;
         self.layout_geometry_initialized = true;
     }

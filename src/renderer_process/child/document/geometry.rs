@@ -45,6 +45,9 @@ impl DocumentRuntime {
                 invalidation,
             );
             metrics.style = started.elapsed();
+            metrics.rebuilt_rules = style_refresh.full_rebuild;
+            metrics.elements = style_refresh.element_style_time;
+            metrics.pseudos = style_refresh.pseudo_style_time;
             // Attribute invalidation is conservative because arbitrary attributes can participate
             // in selectors. Recompute styles first, then retain the current geometry when neither
             // computed box styles nor content/intrinsic sizing changed. This is the same

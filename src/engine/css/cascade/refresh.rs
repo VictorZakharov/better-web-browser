@@ -68,6 +68,7 @@ impl StyleSet {
         let root = node_id(node);
         let mut pending = vec![node.clone()];
         while let Some(node) = pending.pop() {
+            let style_started = std::time::Instant::now();
             let style = if node_id(&node) == root {
                 self.compute_style(&node, parent)
             } else {
@@ -79,6 +80,7 @@ impl StyleSet {
                     .expect("parent style is recomputed before its children");
                 self.compute_style(&node, Some(parent_style))
             };
+            stats.element_style_time += style_started.elapsed();
             stats.invalidated_nodes += 1;
             stats.recomputed_styles += 1;
             match self.styles.get(&node_id(&node)) {
@@ -95,9 +97,11 @@ impl StyleSet {
             self.styles.insert(node_id(&node), style.clone());
             // Attribute-backed generated content and pseudo-only declarations can change box
             // geometry without changing the originating element's computed style.
+            let pseudo_started = std::time::Instant::now();
             if self.sync_generated_pseudos(&node, &style) {
                 stats.layout_changed = true;
             }
+            stats.pseudo_style_time += pseudo_started.elapsed();
             pending.extend(Node::composed_children(&node).into_iter().rev());
         }
     }
