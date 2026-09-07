@@ -2,6 +2,62 @@ use super::super::test_support::FixedMeasurer;
 use super::super::*;
 
 #[test]
+fn relative_positioned_box_paints_after_later_normal_flow_background() {
+    let page = Page::parse(
+        "<style>body{margin:0}#player{position:relative;z-index:1;height:0}#frame{position:absolute;width:100px;height:100px;background:red}#app{height:100px;background:white}</style><div id=player><div id=frame></div></div><div id=app></div>",
+        "https://example.com/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let colors = output
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::SolidRect { color, .. } => Some(*color),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(colors, vec![Color::WHITE, Color::rgb(255, 0, 0)]);
+    let frame = page
+        .dom
+        .elements_named("div")
+        .find(|node| node.attr("id").as_deref() == Some("frame"))
+        .unwrap();
+    assert_eq!(output.node_paint_order.last(), Some(&frame.id()));
+}
+
+#[test]
+fn relative_and_absolute_stack_levels_share_source_order_and_keep_flow_geometry() {
+    let page = Page::parse(
+        "<style>body{margin:0}#negative{position:relative;z-index:-1;height:10px;background:red}#normal{height:10px;background:blue}#absolute{position:absolute;z-index:0;width:10px;height:10px;background:cyan}#relative{position:relative;z-index:0;height:10px;background:lime}</style><div id=negative></div><div id=normal></div><div id=absolute></div><div id=relative></div>",
+        "https://example.com/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let colors = output
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::SolidRect { color, .. } => Some(*color),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        colors,
+        vec![
+            Color::rgb(255, 0, 0),
+            Color::rgb(0, 0, 255),
+            Color::rgb(0, 255, 255),
+            Color::rgb(0, 255, 0)
+        ]
+    );
+    let normal = page
+        .dom
+        .elements_named("div")
+        .find(|node| node.attr("id").as_deref() == Some("normal"))
+        .unwrap();
+    assert_eq!(output.node_bounds[&normal.id()].y, 10.0);
+}
+
+#[test]
 fn translation_moves_paint_hit_and_cssom_geometry_without_affecting_flow() {
     let page = Page::parse(
         r#"<style>

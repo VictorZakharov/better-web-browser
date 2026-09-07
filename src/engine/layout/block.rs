@@ -46,6 +46,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return BlockMetrics { bottom: y };
         }
         let item_start = self.output.items.len();
+        let node_start = self.output.node_paint_order.len();
+        self.positioned_flow_scopes.push(Vec::new());
         if !node.is_generated_pseudo() {
             self.output.node_paint_order.push(node_id(node));
         }
@@ -384,6 +386,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.apply_transform(node.id(), &style, rect, item_start);
         }
         self.wrap_opacity(item_start, style.opacity);
+        self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
         BlockMetrics {

@@ -24,6 +24,8 @@ mod network;
 mod reload;
 #[path = "live_runtime/scrolling.rs"]
 mod scrolling;
+#[path = "live_runtime/stacking.rs"]
+mod stacking;
 #[path = "live_runtime/streaming_network.rs"]
 mod streaming_network;
 #[path = "live_runtime/stylesheets.rs"]

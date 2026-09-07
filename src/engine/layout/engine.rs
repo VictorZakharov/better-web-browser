@@ -43,6 +43,7 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
         measurer,
         measurement_cache: HashMap::new(),
         inline_box_cache: HashMap::new(),
+        positioned_flow_scopes: Vec::new(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -91,6 +92,14 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,
+    pub(super) positioned_flow_scopes: Vec<Vec<InFlowPaintRange>>,
+}
+
+pub(super) struct InFlowPaintRange {
+    pub(super) node: NodeId,
+    pub(super) level: i32,
+    pub(super) items: std::ops::Range<usize>,
+    pub(super) nodes: std::ops::Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]

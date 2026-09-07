@@ -60,3 +60,16 @@ Script style caches consume rule invalidation independently of presentation. The
 accumulated dirty flag can remain set across many script queries; using it to invalidate
 each query repeatedly reparsed unchanged external CSS after ordinary attribute mutations.
 Actual stylesheet mutations still invalidate both script caches immediately.
+
+## In-flow positioned painting
+
+Relatively positioned boxes retain their normal-flow geometry but participate in positioned
+painting, alongside absolute/fixed boxes. Paint ranges are collected after layout and alignment,
+then ordered by stack level and source order; hit-test order follows the same ordering.
+This follows [CSS 2.2 Appendix E](https://www.w3.org/TR/CSS22/zindex.html).
+
+The live blank-player failure involved a relatively positioned player sibling at stack level 1,
+followed by an opaque application background. Painting the former as ordinary flow content let
+that later background hide valid decoded video. An owned hidden screenshot test checks the
+equivalent relationship without any site-specific markup or overrides. This does not claim
+complete CSS stacking support, including positioned descendants escaping nested auto-level groups.

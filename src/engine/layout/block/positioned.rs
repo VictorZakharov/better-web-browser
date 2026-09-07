@@ -3,6 +3,26 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn finish_positioned_flow_scope(
+        &mut self,
+        node: NodeId,
+        style: &ComputedStyle,
+        item_start: usize,
+        node_start: usize,
+    ) {
+        self.positioned_flow_scopes.pop();
+        if style.position == Position::Relative
+            && let Some(parent) = self.positioned_flow_scopes.last_mut()
+        {
+            parent.push(engine::InFlowPaintRange {
+                node,
+                level: style.z_index.unwrap_or(0),
+                items: item_start..self.output.items.len(),
+                nodes: node_start..self.output.node_paint_order.len(),
+            });
+        }
+    }
+
     pub(in crate::engine::layout) fn layout_positioned_children(
         &mut self,
         node: &NodeRef,
@@ -10,8 +30,28 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         in_flow_paint_start: usize,
         in_flow_node_start: usize,
     ) {
+        let children = self.box_children(node);
         let mut groups = Vec::new();
-        for (source_order, child) in self.box_children(node).into_iter().enumerate() {
+        // In-flow geometry is already complete (including flex/grid alignment). Extract
+        // positioned paint ranges only now so deferring paint cannot change sizing.
+        let mut in_flow = self
+            .positioned_flow_scopes
+            .last_mut()
+            .map(std::mem::take)
+            .unwrap_or_default();
+        in_flow.sort_by_key(|group| group.items.start);
+        for group in in_flow.into_iter().rev() {
+            groups.push(PositionedPaintGroup {
+                level: group.level,
+                source_order: children
+                    .iter()
+                    .position(|child| child.id() == group.node)
+                    .unwrap_or(usize::MAX),
+                items: self.output.items.drain(group.items).collect(),
+                nodes: self.output.node_paint_order.drain(group.nodes).collect(),
+            });
+        }
+        for (source_order, child) in children.into_iter().enumerate() {
             let child_style = self.styles.get(&child);
             if matches!(child_style.position, Position::Absolute | Position::Fixed)
                 && child_style.display != Display::None
