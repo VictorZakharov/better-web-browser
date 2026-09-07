@@ -1,4 +1,5 @@
 mod children;
+mod control;
 mod positioned;
 mod replaced;
 mod sizing;
@@ -49,6 +50,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output.node_paint_order.push(node_id(node));
         }
         let block_control = input_control_data(node);
+        let authored_button = node.tag_name() == Some("button")
+            && matches!(
+                style.display,
+                Display::Flex | Display::InlineFlex | Display::Grid
+            );
         let block_image = self.block_image(node);
 
         let percentage_basis = used_inline_size
@@ -220,7 +226,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let collapsed = style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
             content_y
-        } else if let Some((kind, _)) = block_control.as_ref() {
+        } else if let Some((kind, _)) = block_control.as_ref().filter(|_| !authored_button) {
             content_y + default_control_content_height(node, kind, &style)
         } else if let Some(height) = block_image_height {
             content_y + height
@@ -363,42 +369,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 radius,
             });
         }
-        if let Some((kind, value)) = block_control {
-            let icon = self.control_background_icon(&style, rect.width, rect.height);
-            let mut label = input_control_label(node, kind, &value);
-            if icon.is_some() && value.is_empty() {
-                label.clear();
-            }
-            self.output
-                .items
-                .push(DisplayItem::Control(Box::new(ControlSpec {
-                    node_id: node_id(node),
-                    rect,
-                    kind,
-                    name: node.attr("name").unwrap_or_default(),
-                    value,
-                    label,
-                    options: Vec::new(),
-                    selected_index: 0,
-                    placeholder: node
-                        .attr("placeholder")
-                        .or_else(|| node.attr("title"))
-                        .unwrap_or_default(),
-                    form_id: nearest_form(node).map(|form| node_id(&form)),
-                    background_color: self.effective_background_color(node),
-                    text_color: style.color,
-                    border_color: style
-                        .border_color
-                        .composite_over(self.effective_background_color(node)),
-                    border_width: [borders.top, borders.right, borders.bottom, borders.left],
-                    border_radius: radius,
-                    padding: [padding.top, padding.right, padding.bottom, padding.left],
-                    font: FontSpec::from_style(&style),
-                    icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
-                    icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
-                    icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
-                })));
-        }
+        self.project_control(
+            node,
+            block_control,
+            &style,
+            rect,
+            borders,
+            padding,
+            authored_button,
+        );
         if node.is_generated_pseudo() {
             self.apply_generated_transform(&style, rect, item_start);
         } else {

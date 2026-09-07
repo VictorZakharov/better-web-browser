@@ -43,12 +43,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             } => {
                 let text = measured.text.unwrap_or_default();
                 if !text.is_empty() {
+                    // CSS 2.2 10.8.1: split extra line leading above and below the font.
+                    let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
                         rect: RectF {
                             x,
-                            y: atom_y,
+                            y: text_y,
                             width: measured.width,
-                            height: measured.height,
+                            height: measured.content_height,
                         },
                         text: text.to_string(),
                         font: font.clone(),
@@ -63,7 +65,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         self.output.items.push(DisplayItem::SolidRect {
                             rect: RectF {
                                 x,
-                                y: atom_y + measured.height - thickness,
+                                y: text_y + measured.content_height - thickness,
                                 width: measured.width,
                                 height: thickness,
                             },

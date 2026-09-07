@@ -31,6 +31,7 @@ pub(super) fn encode_control(
     encode_optional_string(writer, spec.icon_url.as_deref())?;
     writer.f32(spec.icon_width);
     writer.f32(spec.icon_height);
+    writer.bool(spec.authored_content);
     Ok(())
 }
 
@@ -91,6 +92,7 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
             MAX_PRESENTATION_COORDINATE,
             "control icon height",
         )?,
+        authored_content: reader.bool()?,
     })
 }
 

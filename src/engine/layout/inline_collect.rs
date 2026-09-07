@@ -1,4 +1,43 @@
 use super::*;
+mod replaced_constraints;
+
+fn inline_child_containing_block(
+    style: &ComputedStyle,
+    parent: InlineContainingBlock,
+    viewport: RectF,
+) -> InlineContainingBlock {
+    // CSS 2.2 10.1: inline-block establishes a content-box containing block;
+    // an ordinary inline span does not establish a new percentage basis.
+    if !matches!(style.display, Display::InlineBlock | Display::InlineFlex) {
+        return parent;
+    }
+    let padding = style.padding.resolve(parent.width, style.font_size);
+    let border = style.border_width.resolve(parent.width, style.font_size);
+    let border_box = style.box_sizing == BoxSizing::BorderBox;
+    InlineContainingBlock {
+        width: style
+            .width
+            .resolve(parent.width, style.font_size)
+            .map(|width| {
+                (width
+                    - if border_box {
+                        padding.horizontal() + border.horizontal()
+                    } else {
+                        0.0
+                    })
+                .max(0.0)
+            })
+            .unwrap_or(parent.width),
+        height: resolve_content_height(
+            style.height,
+            parent.height,
+            viewport,
+            style.font_size,
+            padding.vertical() + border.vertical(),
+            style.box_sizing,
+        ),
+    }
+}
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn collect_inline(
@@ -75,6 +114,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             }
                             let mut children = Vec::new();
                             let mut child_pending_space = false;
+                            let child_containing_block = inline_child_containing_block(
+                                style,
+                                containing_block,
+                                self.viewport,
+                            );
                             for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,
@@ -82,7 +126,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                                     &mut children,
                                     &mut child_pending_space,
                                     honor_block_boundaries,
-                                    containing_block,
+                                    child_containing_block,
                                 );
                             }
                             output.push(InlineAtom::InlineBox {
@@ -184,6 +228,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let border = style
             .border_width
             .resolve(containing_block.width, style.font_size);
+        (width, height) = replaced_constraints::constrain(
+            width,
+            height,
+            specified_width.is_none(),
+            specified_height.is_none(),
+            style,
+            containing_block,
+            self.viewport,
+        );
         let outer_width = width + margin.horizontal() + padding.horizontal() + border.horizontal();
         let outer_height = height + margin.vertical() + padding.vertical() + border.vertical();
         if let Some(url) = url {

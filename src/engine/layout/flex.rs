@@ -154,7 +154,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     ));
                     pending_space = false;
                 }
-                widest = widest.max(self.flex_item_basis(&child, &child_style, available_width));
+                // This is an intrinsic contribution, not flex main-size resolution.
+                // A descendant's zero flex basis must not erase its content width.
+                widest = widest.max(self.flex_item_max_content_contribution(
+                    &child,
+                    &child_style,
+                    available_width,
+                ));
             } else {
                 self.collect_inline(
                     &child,

@@ -50,10 +50,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 )
             });
         let tag = node.tag_name().unwrap_or_default();
-        if !matches!(
-            tag,
-            "img" | "image" | "input" | "textarea" | "button" | "svg"
-        ) {
+        if (tag == "button"
+            && matches!(
+                original_style.display,
+                Display::Flex | Display::InlineFlex | Display::Grid
+            ))
+            || !matches!(
+                tag,
+                "img" | "image" | "input" | "textarea" | "button" | "svg"
+            )
+        {
             return self.layout_block_with_content_height(
                 node,
                 x,

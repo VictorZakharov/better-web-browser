@@ -404,7 +404,7 @@ impl BrowserState {
                                 }
                             }
                             DisplayItem::Control(spec) => {
-                                if benchmark_mode {
+                                if benchmark_mode && !spec.authored_content {
                                     let mut rectangle =
                                         screen_rect(spec.rect, tab.scroll_y, toolbar_height, scale);
                                     if !intersects(&rectangle, &content) {

@@ -95,6 +95,8 @@ pub struct SelectOption {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControlSpec {
+    /// The retained descendants paint this control; no native child may cover them.
+    pub authored_content: bool,
     pub node_id: NodeId,
     pub rect: RectF,
     pub kind: ControlKind,
@@ -252,6 +254,7 @@ pub(super) struct MeasuredAtom<'a> {
     pub(super) text: Option<&'a str>,
     pub(super) width: f32,
     pub(super) height: f32,
+    pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
     pub(super) raster_run_id: u64,
@@ -263,6 +266,7 @@ pub(super) struct CachedAtomMeasurement {
     pub(super) text_start: Option<usize>,
     pub(super) width: f32,
     pub(super) height: f32,
+    pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
     pub(super) raster_run_id: u64,
@@ -280,6 +284,7 @@ impl CachedAtomMeasurement {
             text,
             width: self.width,
             height: self.height,
+            content_height: self.content_height,
             no_wrap: self.no_wrap,
             break_before: self.break_before,
             raster_run_id: self.raster_run_id,
@@ -299,6 +304,7 @@ impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
             }),
             width: measured.width,
             height: measured.height,
+            content_height: measured.content_height,
             no_wrap: measured.no_wrap,
             break_before: measured.break_before,
             raster_run_id: measured.raster_run_id,

@@ -8,6 +8,8 @@ use std::time::Duration;
 #[path = "live_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "live_runtime/authored_controls.rs"]
+mod authored_controls;
 #[path = "live_runtime/dynamic_scripts.rs"]
 mod dynamic_scripts;
 #[path = "live_runtime/fullscreen.rs"]
