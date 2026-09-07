@@ -18,9 +18,7 @@ impl PendingInvalidation {
         target: Option<&NodeRef>,
         mut kind: MutationKind<'_>,
     ) {
-        if target.is_some_and(is_in_style_element)
-            && matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
-        {
+        if rebuilds_style_rules(target, kind) {
             kind = MutationKind::Stylesheet;
         }
         self.impact = self.impact.union(kind.impact());
@@ -70,6 +68,12 @@ impl PendingInvalidation {
         *self = Self::default();
         result
     }
+}
+
+pub(super) fn rebuilds_style_rules(target: Option<&NodeRef>, kind: MutationKind<'_>) -> bool {
+    matches!(kind, MutationKind::Stylesheet)
+        || (matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
+            && target.is_some_and(is_in_style_element))
 }
 
 fn is_in_style_element(node: &NodeRef) -> bool {

@@ -42,3 +42,21 @@ to minor 12 to carry the authored-content projection flag explicitly.
 
 These changes concern controls and sizing. They do not resolve the separately tracked blank
 video player, startup delay, or long-playback reset, and do not complete YouTube acceptance.
+
+## Stylesheet completion and script measurements
+
+Computed-style queries include downloaded stylesheets as well as inline rules. A stylesheet
+resource completing without a DOM mutation invalidates the script realm's style and geometry
+caches. Before its `load` handler runs, the synchronous layout snapshot receives the same
+stylesheet sources as the presentation pipeline. This follows the
+[CSSOM computed-style model](https://drafts.csswg.org/cssom/#dom-window-getcomputedstyle) and
+[HTML stylesheet processing](https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet).
+
+An owned hidden integration test installs an external stylesheet dynamically and reads both
+computed color/position and bounding width inside its load handler. This is a compatibility
+regression test, not evidence that the remaining live playback or layout problems are resolved.
+
+Script style caches consume rule invalidation independently of presentation. The renderer's
+accumulated dirty flag can remain set across many script queries; using it to invalidate
+each query repeatedly reparsed unchanged external CSS after ordinary attribute mutations.
+Actual stylesheet mutations still invalidate both script caches immediately.

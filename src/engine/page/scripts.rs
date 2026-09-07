@@ -3,6 +3,10 @@
 use super::*;
 
 impl Page {
+    pub(crate) fn synchronize_script_stylesheets(&self, runtime: &mut ScriptRuntime) {
+        runtime.set_document_stylesheets(&self.stylesheet_sources);
+    }
+
     pub fn execute_scripts(&mut self) -> ScriptOutcome {
         self.execute_script_phase(false, None)
     }

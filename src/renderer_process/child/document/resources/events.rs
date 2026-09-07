@@ -17,6 +17,14 @@ impl DocumentRuntime {
             }
             return Ok(dispatched);
         }
+        if event_type == "load" && matches!(resource, PageResource::Stylesheet { .. }) {
+            // A load handler must observe the sheet that has just joined the cascade,
+            // through both computed-style reads and synchronous geometry queries.
+            self.sync_script_layout_page();
+            if let Some(runtime) = self.script_runtime.as_mut() {
+                self.page.synchronize_script_stylesheets(runtime);
+            }
+        }
         let image_dimensions = match resource {
             PageResource::Image { url } if event_type == "load" => self
                 .page

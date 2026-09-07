@@ -299,6 +299,7 @@ impl HostState {
     ) {
         self.mutation_count += 1;
         self.task_mutations.record(kind);
+        self.invalidate_style_rules_for_mutation(target, kind);
         if requires_render {
             self.pending_invalidation
                 .record(&self.document, target, kind);
