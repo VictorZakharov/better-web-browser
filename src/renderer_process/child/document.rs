@@ -1,6 +1,7 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
 mod accessibility;
+mod async_scripts;
 mod diagnostics;
 mod dynamic_scripts;
 mod fetch;
@@ -70,9 +71,9 @@ pub(super) struct DocumentRuntime {
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,
     workers: RendererWorkers,
-    executed_async_scripts: HashSet<String>,
+    async_scripts: async_scripts::AsyncScripts,
     pending_dynamic_script_fetch: Option<PendingDynamicScriptFetch>,
-    pending_resource_preloads: Option<PendingResourceFetch>,
+    pending_resource_preloads: Vec<PendingResourceFetch>,
     resource_render_pending: bool,
     resource_style_refresh_pending: bool,
     lifecycle: crate::renderer_protocol::DocumentLifecycle,
@@ -169,10 +170,7 @@ impl DocumentRuntime {
                 .script_runtime
                 .as_ref()
                 .is_some_and(ScriptRuntime::has_pending_dynamic_scripts)
-            || self.page.scripts.iter().any(|script| {
-                !script.blocks_first_paint
-                    && !self.executed_async_scripts.contains(&script.source_url)
-            })
+            || self.async_scripts.has_ready()
     }
 
     pub(super) fn advance(

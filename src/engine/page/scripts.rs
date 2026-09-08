@@ -145,6 +145,9 @@ impl Page {
                 self.dom.quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
             );
             runtime.set_document_stylesheets(&self.stylesheet_sources);
+            for script in &self.scripts {
+                runtime.mark_parser_script_prepared(&script.node);
+            }
             runtime.set_host_call_profiling(host_call_profiling);
             if let Some(layout_flush) = layout_flush {
                 runtime.set_layout_flush_callback(layout_flush);

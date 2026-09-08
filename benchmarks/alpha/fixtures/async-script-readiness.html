@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Async scripts pending</title>
+<style>
+  body { margin: 32px; background: #f4f6fa; color: #142334; font: 20px sans-serif; }
+  #fast { padding: 28px; background: #ddd; }
+  #slow { padding: 28px; background: #eee; }
+</style>
+<h1>Independent async script tasks</h1>
+<p>The fast content must appear while the earlier slow download is still pending.</p>
+<div id="fast">Fast content pending</div>
+<div id="slow">Slow content pending</div>
+<p id="result">Checking element execution, promise jobs, and load events.</p>
+<script>
+  window.trace = [];
+  window.fastRuns = 0;
+  window.scriptLoads = 0;
+  window.scriptErrors = 0;
+  window.fixtureStart = performance.now();
+  window.record = value => { trace.push(value); };
+  window.updateResult = () => {
+    document.getElementById('result').textContent = trace.join(' | ');
+    if (scriptLoads === 3 && scriptErrors === 2) {
+      document.title = fastRuns === 2 ? 'Async scripts complete' : 'Async scripts FAILED';
+      console.log('ASYNC_TRACE ' + trace.join('|'));
+    }
+  };
+  window.loaded = (element, event) => {
+    record('load:' + element.id + ':' + event.isTrusted + ':' + (document.currentScript === null));
+    scriptLoads++;
+    updateResult();
+  };
+  window.failed = (element, event) => {
+    record('error:' + element.id + ':' + event.isTrusted);
+    scriptErrors++;
+    updateResult();
+  };
+</script>
+<script id="slow-script" async src="async-slow.js?delay_ms=2000"></script>
+<script id="fast-a" async src="async-fast.js?delay_ms=100"></script>
+<script id="fast-b" async src="async-fast.js?delay_ms=100"></script>
+<script id="missing-a" async src="async-missing.js?delay_ms=200"></script>
+<script id="missing-b" async src="async-missing.js?delay_ms=200"></script>
+<script>
+  for (const id of ['slow-script', 'fast-a', 'fast-b', 'missing-a', 'missing-b']) {
+    const element = document.getElementById(id);
+    element.onload = event => loaded(element, event);
+    element.onerror = event => failed(element, event);
+  }
+</script>

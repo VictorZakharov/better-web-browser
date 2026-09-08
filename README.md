@@ -233,6 +233,11 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.
 
+The [loading standards implementation sequence](docs/loading-standards.md) records the
+code-backed scheduling/lifecycle gaps and owned-fixture acceptance criteria. The first
+slice replaces URL-based async script execution with per-element readiness tasks;
+this is not a claim that the complete HTML loading model or Chromium-level startup is finished.
+
 The [technical-alpha release notes](docs/technical-alpha-release.md) describe the reproducible
 unsigned Windows x64 archive, verification and cleanup, acceptance evidence, dependency policy,
 and the safety limitations that apply before trying a public build. Development-only licenses and

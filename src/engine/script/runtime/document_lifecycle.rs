@@ -1,6 +1,16 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn mark_parser_script_prepared(&mut self, node: &NodeRef) {
+        self.host.borrow_mut().mark_script_started(node);
+    }
+
+    pub(crate) fn owns_prepared_script(&self, node: &NodeRef) -> bool {
+        let host = self.host.borrow();
+        host.document_for(node)
+            .is_some_and(|document| document.id() == host.document.id())
+    }
+
     pub(crate) fn execute_initial_before_document_completion(
         &mut self,
         scripts: &[ScriptInput],

@@ -3,14 +3,13 @@
 pub(super) mod events;
 mod streaming;
 
+use super::DocumentRuntime;
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
-use super::{DocumentRuntime, merge_outcome};
-use crate::engine::script::ScriptInput;
 use crate::engine::{Page, PageResource, ScriptKind, ScriptOutcome};
 use crate::limits::bounded_utf8_prefix;
 use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
 use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MAX_RESOURCE_DIAGNOSTICS: usize = 32;
 const MAX_RESOURCE_DIAGNOSTIC_BYTES: usize = 512;
@@ -94,22 +93,29 @@ impl DocumentRuntime {
         if self.dispatch_cached_resource_events()? {
             self.resource_render_pending = true;
         }
-        if self.pending_resource_preloads.is_some() {
-            return Ok(());
-        }
+        let mut seen = HashSet::new();
         let resources = self
             .page
             .resources
             .iter()
-            .filter(|resource| !self.loaded_resources.contains(*resource))
             .filter(|resource| is_presentational_resource(resource))
             .cloned()
+            .chain(self.async_scripts.resources())
+            .filter(|resource| !self.loaded_resources.contains(resource))
+            .filter(|resource| {
+                !self
+                    .pending_resource_preloads
+                    .iter()
+                    .any(|pending| pending.contains(resource))
+            })
+            .filter(|resource| seen.insert(resource.clone()))
             .collect::<Vec<_>>();
         let (requests, by_request) = resource_requests(connection, self.id, resources);
         let Some(batch) = connection.start_fetch_batch(self.id, requests)? else {
             return Ok(());
         };
-        self.pending_resource_preloads = Some(PendingResourceFetch { batch, by_request });
+        self.pending_resource_preloads
+            .push(PendingResourceFetch { batch, by_request });
         Ok(())
     }
 
@@ -120,7 +126,7 @@ impl DocumentRuntime {
         let Some(changes) = self.finish_ready_resource_preloads(connection)? else {
             return Ok(None);
         };
-        if !changes.render {
+        if !changes.render && !self.async_scripts.has_ready() {
             return Ok(None);
         }
         // A network burst commonly completes several images at once. Rendering from this
@@ -128,7 +134,7 @@ impl DocumentRuntime {
         // prevents the renderer from reading the remaining response messages. Schedule an
         // immediate rendering checkpoint instead; messages already in the pipe are then handled
         // first and all completed resources share one layout.
-        self.resource_render_pending = true;
+        self.resource_render_pending |= changes.render;
         self.resource_style_refresh_pending |= changes.style;
         Ok(Some(crate::renderer_protocol::RendererRuntimeUpdate {
             document: self.id,
@@ -147,29 +153,34 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<Option<ResourceChanges>, String> {
-        let Some(mut pending) = self.pending_resource_preloads.take() else {
-            return Ok(None);
-        };
-        let responses = connection.take_ready_fetch_batch(&mut pending.batch)?;
-        if responses.is_empty() {
-            self.pending_resource_preloads = Some(pending);
-            return Ok(None);
+        let mut changed = None;
+        for mut pending in std::mem::take(&mut self.pending_resource_preloads) {
+            let responses = connection.take_ready_fetch_batch(&mut pending.batch)?;
+            if !responses.is_empty() {
+                let style = responses.iter().any(|response| {
+                    pending
+                        .by_request
+                        .get(&response.head.request_id)
+                        .is_some_and(|resource| matches!(resource, PageResource::Stylesheet { .. }))
+                });
+                let render = self.install_resource_responses(
+                    connection,
+                    responses,
+                    &mut pending.by_request,
+                    true,
+                )?;
+                let changes = changed.get_or_insert(ResourceChanges {
+                    render: false,
+                    style: false,
+                });
+                changes.render |= render;
+                changes.style |= render && style;
+            }
+            if !pending.batch.is_empty() {
+                self.pending_resource_preloads.push(pending);
+            }
         }
-        let style = responses.iter().any(|response| {
-            pending
-                .by_request
-                .get(&response.head.request_id)
-                .is_some_and(|resource| matches!(resource, PageResource::Stylesheet { .. }))
-        });
-        let render =
-            self.install_resource_responses(connection, responses, &mut pending.by_request, true)?;
-        if !pending.batch.is_empty() {
-            self.pending_resource_preloads = Some(pending);
-        }
-        Ok(Some(ResourceChanges {
-            render,
-            style: render && style,
-        }))
+        Ok(changed)
     }
 
     pub(super) fn finish_resource_preloads(
@@ -195,7 +206,10 @@ impl DocumentRuntime {
                 return Err("browser returned an unknown resource request".into());
             };
             let label = resource_label(&resource);
-            if require_authoritative_match && !self.page.resources.contains(&resource) {
+            if require_authoritative_match
+                && !self.page.resources.contains(&resource)
+                && !self.async_scripts.contains(&resource)
+            {
                 continue;
             }
             self.loaded_resources.insert(resource.clone());
@@ -258,16 +272,21 @@ impl DocumentRuntime {
                     url,
                     kind,
                     fetch_options,
-                } => self
-                    .page
-                    .add_script(
-                        &url,
-                        kind,
-                        fetch_options,
-                        crate::winhttp::decode_text(&bytes, content_type.as_deref()),
-                    )
-                    .then_some(())
-                    .ok_or_else(|| "script was not installed".to_string()),
+                } => {
+                    let code = crate::winhttp::decode_text(&bytes, content_type.as_deref());
+                    if code.len() > crate::limits::MAX_SCRIPT_BYTES {
+                        self.record_resource_diagnostic(format!(
+                            "{label}: script exceeds the per-script byte limit"
+                        ));
+                        retained |= self.dispatch_resource_event(&event_resource, "error")?;
+                        continue;
+                    }
+                    let prepared = self.async_scripts.contains(&event_resource);
+                    self.async_scripts.complete(&event_resource, Some(&code));
+                    (self.page.add_script(&url, kind, fetch_options, code) || prepared)
+                        .then_some(())
+                        .ok_or_else(|| "script was not installed".to_string())
+                }
                 PageResource::Font {
                     url,
                     family,
@@ -299,101 +318,6 @@ impl DocumentRuntime {
                 .0
                 .to_string(),
         );
-    }
-
-    pub(super) fn execute_pending_async_scripts(
-        &mut self,
-        connection: &mut ChildConnection,
-        outcome: &mut ScriptOutcome,
-        script_fetch_time: &mut std::time::Duration,
-    ) -> Result<(), String> {
-        let pending = self
-            .page
-            .scripts
-            .iter()
-            .filter(|script| !script.blocks_first_paint)
-            .filter(|script| !self.executed_async_scripts.contains(&script.source_url))
-            .map(|script| (script.source_url.clone(), script.kind, script.fetch_options))
-            .next();
-        let Some((url, kind, fetch_options)) = pending else {
-            return Ok(());
-        };
-        if self.page.scripts.iter().any(|script| {
-            script.source_url == url
-                && script.kind == kind
-                && script.fetch_options == fetch_options
-                && script.code.is_none()
-        }) {
-            let resource = PageResource::Script {
-                url: url.clone(),
-                kind,
-                fetch_options,
-            };
-            // The parser preload and the retained event loop share this resource record. Wait for
-            // the in-flight preload rather than issuing a duplicate blocking request on every
-            // renderer wakeup.
-            if self
-                .pending_resource_preloads
-                .as_ref()
-                .is_some_and(|pending| pending.contains(&resource))
-            {
-                return Ok(());
-            }
-            let result = if self.loaded_resources.contains(&resource) {
-                Err("script could not be loaded".to_string())
-            } else {
-                let started = std::time::Instant::now();
-                let result = fetch_script_source(connection, self.id, &url, kind, fetch_options);
-                *script_fetch_time += started.elapsed();
-                result
-            };
-            match result {
-                Ok(code) => {
-                    self.page.add_script(&url, kind, fetch_options, code);
-                }
-                Err(error) => outcome.errors.push(format!("{url}: {error}")),
-            }
-        }
-        let inputs = self
-            .page
-            .scripts
-            .iter()
-            .filter(|script| !script.blocks_first_paint)
-            .filter(|script| !self.executed_async_scripts.contains(&script.source_url))
-            .filter_map(|script| {
-                script.code.as_ref().map(|code| ScriptInput {
-                    node: script.node.clone(),
-                    source_url: script.source_url.clone(),
-                    code: code.clone(),
-                    kind: script.kind,
-                    fetch_options: script.fetch_options,
-                    finish_lifecycle: true,
-                })
-            })
-            .take(1)
-            .collect::<Vec<_>>();
-        if self.script_runtime.is_some() {
-            connection.report_renderer_task_stage(format!("executing async script {url}"))?;
-        }
-        self.executed_async_scripts.insert(url);
-        if let Some(runtime) = self.script_runtime.as_mut() {
-            // A dynamically inserted external script is a later event-loop task. Keep it queued
-            // so the renderer can accept input between that task and this async script.
-            let result = if inputs.iter().any(|input| input.kind == ScriptKind::Module) {
-                let document = self.id;
-                let mut loader = |url: &str, kind, options| {
-                    let started = std::time::Instant::now();
-                    let result = fetch_script_source(connection, document, url, kind, options);
-                    *script_fetch_time += started.elapsed();
-                    result
-                };
-                runtime.execute_additional_with_loader(&inputs, Some(&mut loader))
-            } else {
-                runtime.execute_additional_with_loader(&inputs, None)
-            };
-            merge_outcome(outcome, result, self.page.dom.document.id());
-        }
-        Ok(())
     }
 }
 

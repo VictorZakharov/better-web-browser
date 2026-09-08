@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+fn classic_script_exception_still_fires_trusted_load_after_clearing_current_script() {
+    let dom = dom::parse_with_scripting(
+        "<body><script id=external src=/script.js></script></body>",
+        true,
+    );
+    let node = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/");
+    let setup = input(
+        &node,
+        "setup.js",
+        r#"
+        const element = document.getElementById('external');
+        element.onload = event => document.body.setAttribute('data-load', event.isTrusted + '|' + (document.currentScript === null));
+        element.onerror = () => document.body.setAttribute('data-error', 'unexpected');
+    "#,
+        true,
+    );
+    assert!(runtime.execute_initial(&[setup]).errors.is_empty());
+    let thrown = input(
+        &node,
+        "script.js",
+        "Promise.resolve().then(() => document.body.setAttribute('data-microtask', String(document.currentScript === null))); throw new Error('evaluation failure');",
+        false,
+    );
+    let outcome = runtime.execute_additional_with_loader(&[thrown], None);
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.contains("evaluation failure"))
+    );
+    let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-load").as_deref(), Some("true|true"));
+    assert_eq!(body.attr("data-microtask").as_deref(), Some("false"));
+    assert_eq!(body.attr("data-error"), None);
+}
+
+#[test]
 fn live_initial_task_does_not_fast_forward_timers_before_first_presentation() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
