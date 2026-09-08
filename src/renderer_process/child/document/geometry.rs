@@ -2,11 +2,23 @@
 
 use super::*;
 
-struct GeometryTextMeasurer<'a, M>(&'a mut M);
+struct GeometryTextMeasurer<'a, M> {
+    inner: &'a mut M,
+    profile: bool,
+    elapsed: Duration,
+}
+
+#[cfg(test)]
+mod tests;
 
 impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTextMeasurer<'_, M> {
     fn measure(&mut self, text: &str, font: &crate::engine::FontSpec) -> (f32, f32) {
-        self.0.measure(text, font)
+        let started = self.profile.then(std::time::Instant::now);
+        let result = self.inner.measure(text, font);
+        if let Some(started) = started {
+            self.elapsed += started.elapsed();
+        }
+        result
     }
 }
 
@@ -48,6 +60,7 @@ impl DocumentRuntime {
             metrics.rebuilt_rules = style_refresh.full_rebuild;
             metrics.elements = style_refresh.element_style_time;
             metrics.pseudos = style_refresh.pseudo_style_time;
+            metrics.layout_style_changed = style_refresh.layout_changed;
             // Attribute invalidation is conservative because arbitrary attributes can participate
             // in selectors. Recompute styles first, then retain the current geometry when neither
             // computed box styles nor content/intrinsic sizing changed. This is the same
@@ -61,15 +74,19 @@ impl DocumentRuntime {
             }
             let mut text = text.borrow_mut();
             let started = std::time::Instant::now();
-            let mut geometry_text = GeometryTextMeasurer(&mut *text);
-            let geometry = layout_page_with_style_viewport(
+            let mut geometry_text = GeometryTextMeasurer {
+                inner: &mut *text,
+                profile: metrics.profile,
+                elapsed: Duration::ZERO,
+            };
+            let geometry = crate::engine::layout_geometry_with_style_viewport(
                 &page,
                 viewport.width,
                 viewport.height,
                 viewport.style_width,
                 &mut geometry_text,
-            )
-            .node_bounds;
+            );
+            metrics.text_measure = geometry_text.elapsed;
             metrics.layout = started.elapsed();
             geometry_ready = true;
             Some(geometry)

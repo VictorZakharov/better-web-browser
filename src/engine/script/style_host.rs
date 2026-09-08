@@ -8,6 +8,29 @@ pub(super) fn style_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "clientRect" {
+        state.flush_layout_if_needed();
+        let node = state.node(argument_id(args, 1));
+        let rect = node
+            .as_ref()
+            .filter(|node| state.is_connected(node))
+            .and_then(|node| state.layout_geometry.get(&node.id()).copied());
+        let value = rect.map_or_else(JsValue::null, |rect| {
+            let scrolled = args.get(2).is_some_and(JsValue::to_boolean);
+            let viewport_fixed = scrolled
+                && node
+                    .as_ref()
+                    .is_some_and(|node| state.is_viewport_fixed(node));
+            JsValue::Array(vec![
+                JsValue::from(rect.x as f64),
+                JsValue::from(rect.y as f64),
+                JsValue::from(rect.width as f64),
+                JsValue::from(rect.height as f64),
+                JsValue::from(viewport_fixed),
+            ])
+        });
+        return Ok(Some(value));
+    }
     if operation == "cssSupports" {
         let condition = argument_string(args, 1)?;
         return Ok(Some(JsValue::from(

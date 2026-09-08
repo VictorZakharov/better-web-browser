@@ -65,7 +65,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
                 for item in ordered {
                     if let Some(node) = item.node.as_ref() {
-                        for descendant in Node::shadow_including_descendants(node) {
+                        // Slotted content moves with its containing flex item even though its
+                        // light-DOM parent lies outside the item's shadow subtree.
+                        for descendant in Node::composed_descendants(node) {
                             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                                 rect.y += offset_y;
                             }

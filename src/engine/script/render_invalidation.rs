@@ -55,6 +55,13 @@ impl PendingInvalidation {
             .extend(Node::shadow_including_descendants(root).map(|node| node.id()));
     }
 
+    pub(super) fn acknowledge_published_geometry(&mut self) {
+        // The renderer has already laid out all content changes through this checkpoint.
+        // Its geometry does not refresh the script snapshot's independent style cache:
+        // retain dirty roots, removed styles, and rule-rebuild obligations for that cache.
+        self.impact = self.impact.without_intrinsic_size();
+    }
+
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
         RenderInvalidation {
             roots: self.roots.iter().map(|root| root.id()).collect(),
@@ -94,6 +101,30 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
 mod tests {
     use super::*;
     use crate::engine::dom;
+
+    #[test]
+    fn published_geometry_preserves_pending_style_and_removal_obligations() {
+        let dom = dom::parse("<style>p{color:red}</style><main><p>text</p></main>");
+        let sheet = dom.elements_named("style").next().unwrap();
+        let paragraph = dom.elements_named("p").next().unwrap();
+        let mut pending = PendingInvalidation::default();
+        pending.record(&dom.document, Some(&sheet), MutationKind::Stylesheet);
+        pending.record_removed_subtree(&paragraph);
+        let before = pending.snapshot(2);
+
+        pending.acknowledge_published_geometry();
+        let after = pending.snapshot(2);
+        assert!(before.impact.affects_intrinsic_size());
+        assert!(!after.impact.affects_intrinsic_size());
+        assert!(after.impact.affects_style() && after.impact.affects_layout());
+        assert!(after.impact.affects_paint() && after.rebuild_style_rules);
+        assert_eq!(after.roots, before.roots);
+        assert_eq!(after.removed_nodes, before.removed_nodes);
+        assert_eq!(after.mutation_count, before.mutation_count);
+
+        pending.record(&dom.document, Some(&paragraph), MutationKind::CharacterData);
+        assert!(pending.snapshot(3).impact.affects_intrinsic_size());
+    }
 
     #[test]
     fn coalesces_sibling_mutations_at_their_parent() {

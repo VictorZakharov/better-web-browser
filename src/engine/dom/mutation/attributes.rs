@@ -52,6 +52,11 @@ impl Node {
             .iter_mut()
             .find(|attribute| attribute_qualified_name(attribute) == qualified_name)
         {
+            // The host still queues mutation records/reactions. Only the internal rendering
+            // version stays unchanged when the attribute's actual value is unchanged.
+            if attribute.value.as_ref() == value {
+                return true;
+            }
             attribute.value = StrTendril::from(value);
         } else {
             attributes.push(Attribute {
@@ -79,6 +84,9 @@ impl Node {
             .iter_mut()
             .find(|attribute| attribute_matches(attribute, namespace, local_name))
         {
+            if attribute.value.as_ref() == value {
+                return true;
+            }
             attribute.value = StrTendril::from(value);
         } else {
             attributes.push(new_attribute(namespace, prefix, local_name, value));
@@ -104,6 +112,11 @@ impl Node {
             .iter()
             .position(|attribute| attribute_matches(attribute, namespace, local_name))
         {
+            if attributes[index].name == replacement.name
+                && attributes[index].value == replacement.value
+            {
+                return true;
+            }
             attributes[index] = replacement;
         } else {
             attributes.push(replacement);

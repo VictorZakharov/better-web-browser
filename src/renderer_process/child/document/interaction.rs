@@ -1,6 +1,7 @@
 //! Renderer-owned hit testing, DOM event dispatch, default actions, and input sequencing.
 
 mod default_actions;
+mod viewport;
 
 use super::*;
 use crate::engine::dom::{NodeId, NodeRef};
@@ -231,19 +232,6 @@ impl DocumentRuntime {
             navigation,
             cursor,
         })
-    }
-
-    pub(super) fn dispatch_user_input(
-        &mut self,
-        event: UserInputEvent,
-    ) -> Result<crate::engine::UserInputResult, String> {
-        let Some(runtime) = self.script_runtime.as_mut() else {
-            return Ok(crate::engine::UserInputResult {
-                default_allowed: true,
-                ..Default::default()
-            });
-        };
-        Ok(runtime.dispatch_user_input(event))
     }
 
     pub(super) fn admit_user_input_outcome(

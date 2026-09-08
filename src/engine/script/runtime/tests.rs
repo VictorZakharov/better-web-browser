@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 mod scheduling;
+mod timeouts;
 
 #[test]
 fn preserves_the_network_cookie_jars_order_and_duplicate_names() {

@@ -12,7 +12,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         padding: ResolvedEdges,
         authored_content: bool,
     ) {
-        if let Some((kind, value)) = block_control {
+        if self.emit_paint
+            && let Some((kind, value)) = block_control
+        {
             let icon = self.control_background_icon(style, rect.width, rect.height);
             let mut label = input_control_label(node, kind, &value);
             if icon.is_some() && value.is_empty() {

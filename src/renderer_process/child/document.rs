@@ -414,6 +414,7 @@ impl DocumentRuntime {
         style: StyleRefreshStats,
         load: PageLoadReport,
     ) -> Result<RendererPresentation, String> {
+        self.page.title = self.page.dom.title();
         if !self.diagnostic_selectors.is_empty()
             && outcome.diagnostics.len() < MAX_RUNTIME_REPORT_ENTRIES
         {

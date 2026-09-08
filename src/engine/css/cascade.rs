@@ -1,5 +1,6 @@
 //! Style-set construction and cascade ordering.
 
+mod layout;
 mod presentational;
 mod pseudo;
 mod refresh;
@@ -9,7 +10,6 @@ mod sheets;
 mod tests;
 
 use super::media::MediaEnvironment;
-use super::rule_index::RuleIndex;
 use super::selector_match::selector_matches;
 use super::*;
 use presentational::apply_presentational_hints;
@@ -34,8 +34,9 @@ pub struct StyleSet {
     pseudo_styles: HashMap<(NodeId, PseudoElement), ComputedStyle>,
     generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
     generated_styles: HashMap<NodeId, ComputedStyle>,
-    rules: Vec<Rule>,
-    rule_index: RuleIndex,
+    compiled: std::rc::Rc<sheets::CompiledRules>,
+    defer_nonrendered_descendants: bool,
+    deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
     viewport_width: f32,
     viewport_height: f32,
@@ -130,6 +131,7 @@ impl StyleSet {
             environment,
         );
         set.compute_subtree(document, None);
+        set.compute_independent_fullscreen_roots(document);
         set
     }
 
@@ -139,20 +141,20 @@ impl StyleSet {
         external_stylesheets: &[(String, String)],
         environment: MediaEnvironment,
     ) -> Self {
-        let rules = sheets::collect(
+        let compiled = sheets::collect(
             document,
             document_base_url,
             external_stylesheets,
             environment,
         );
-        let rule_index = RuleIndex::new(&rules);
         Self {
             styles: HashMap::new(),
             pseudo_styles: HashMap::new(),
             generated_nodes: HashMap::new(),
             generated_styles: HashMap::new(),
-            rules,
-            rule_index,
+            compiled,
+            defer_nonrendered_descendants: false,
+            deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
             viewport_width: environment.viewport_width,
             viewport_height: environment.viewport_height,
@@ -262,14 +264,25 @@ impl StyleSet {
         }
         let tree_root = Node::tree_root(node);
         let mut matching = self
-            .rule_index
+            .compiled
+            .index
             .candidates(node)
             .into_iter()
-            .filter_map(|index| self.rules.get(index))
+            .filter_map(|index| self.compiled.rules.get(index))
             .filter(|rule| rule.pseudo == pseudo)
             .filter(|rule| rule_applies_to(rule, node, &tree_root))
-            .filter(|rule| selector_matches(&rule.selector, node))
             .collect::<Vec<_>>();
+        let ancestors = std::cell::OnceCell::new();
+        matching.retain(|rule| {
+            if !super::selector_match::AncestorFilter::needed(&rule.selector) {
+                return selector_matches(&rule.selector, node);
+            }
+            super::selector_match::compound_matches(rule.selector.compounds.last().unwrap(), node)
+                && ancestors
+                    .get_or_init(|| super::selector_match::AncestorFilter::new(node))
+                    .may_match(&rule.selector)
+                && selector_matches(&rule.selector, node)
+        });
         matching.sort_by(|left, right| {
             left.selector
                 .specificity

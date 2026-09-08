@@ -1,6 +1,19 @@
 use super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    fn rendered_control_descendants(&self, node: &NodeRef) -> Vec<NodeRef> {
+        let mut result = Vec::new();
+        let mut pending = vec![node.clone()];
+        while let Some(node) = pending.pop() {
+            if self.styles.get(&node).display == Display::None {
+                continue;
+            }
+            pending.extend(Node::composed_children(&node).into_iter().rev());
+            result.push(node);
+        }
+        result
+    }
+
     pub(in crate::engine::layout) fn collect_button(
         &self,
         node: &NodeRef,
@@ -9,7 +22,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_block: InlineContainingBlock,
     ) {
         let label = self.visible_control_label(node);
-        let mut icon = Node::composed_descendants(node)
+        let mut icon = self
+            .rendered_control_descendants(node)
+            .into_iter()
             .skip(1)
             .find(|descendant| descendant.tag_name() == Some("svg"))
             .and_then(|svg| {
@@ -163,7 +178,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 
     fn control_mask_icon(&self, node: &NodeRef) -> Option<(String, f32, f32)> {
-        Node::composed_descendants(node)
+        self.rendered_control_descendants(node)
+            .into_iter()
             .skip(1)
             .find_map(|descendant| {
                 let style = self.styles.get(&descendant);

@@ -26,6 +26,8 @@ mod streaming_fetch;
 mod support;
 #[path = "renderer_process/termination.rs"]
 mod termination;
+#[path = "renderer_process/viewport_observers.rs"]
+mod viewport_observers;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{

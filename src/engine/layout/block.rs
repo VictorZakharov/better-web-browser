@@ -47,8 +47,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
-        self.positioned_flow_scopes.push(Vec::new());
-        if !node.is_generated_pseudo() {
+        if self.emit_paint {
+            self.positioned_flow_scopes.push(Vec::new());
+        }
+        if self.emit_paint && !node.is_generated_pseudo() {
             self.output.node_paint_order.push(node_id(node));
         }
         let block_control = input_control_data(node);
@@ -140,53 +142,62 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let block_image_height = block_image.as_ref().map(|image| {
             image.content_height(node, &style, content_width, percentage_height_basis)
         });
-        let background_index = if style.background_color.alpha > 0 && style.mask_image.is_none() {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::SolidRect {
-                rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                color: self.effective_background_color(node),
-                radius: 0.0,
+        let background_index =
+            if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none() {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::SolidRect {
+                    rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    color: self.effective_background_color(node),
+                    radius: 0.0,
+                });
+                Some(index)
+            } else {
+                None
+            };
+        let background_image_index = style
+            .background_image
+            .as_ref()
+            .filter(|_| self.emit_paint)
+            .map(|url| {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::BackgroundImage {
+                    clip_rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    tile_rect: RectF::default(),
+                    url: url.clone(),
+                    repeat_x: style.background_repeat_x,
+                    repeat_y: style.background_repeat_y,
+                });
+                index
             });
-            Some(index)
-        } else {
-            None
-        };
-        let background_image_index = style.background_image.as_ref().map(|url| {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::BackgroundImage {
-                clip_rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                tile_rect: RectF::default(),
-                url: url.clone(),
-                repeat_x: style.background_repeat_x,
-                repeat_y: style.background_repeat_y,
+        let mask_image_index = style
+            .mask_image
+            .as_ref()
+            .filter(|_| self.emit_paint)
+            .map(|url| {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::Image {
+                    rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    url: url.clone(),
+                    alt: String::new(),
+                    tint: Some(style.background_color),
+                });
+                index
             });
-            index
-        });
-        let mask_image_index = style.mask_image.as_ref().map(|url| {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::Image {
-                rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                url: url.clone(),
-                alt: String::new(),
-                tint: Some(style.background_color),
-            });
-            index
-        });
         let overflow_clip = self.begin_overflow_clip(&style);
         // Negative positioned levels paint after this background and before in-flow descendants.
         let in_flow_paint_start = self.output.items.len();
@@ -332,7 +343,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         {
             *target = rect;
         }
-        if let Some(image) = block_image {
+        if self.emit_paint
+            && let Some(image) = block_image
+        {
             image.paint(
                 node,
                 &mut self.output,
@@ -344,7 +357,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 },
             );
         }
-        if style.border_color.alpha > 0 && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
+        if self.emit_paint
+            && style.border_color.alpha > 0
+            && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
         {
             self.output.items.push(DisplayItem::BorderRect {
                 rect,

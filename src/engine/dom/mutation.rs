@@ -148,6 +148,9 @@ impl Node {
             .iter_mut()
             .find(|attribute| attribute.name.local.as_ref().eq_ignore_ascii_case(name))
         {
+            if attribute.value.as_ref() == value {
+                return true;
+            }
             attribute.value = StrTendril::from(value);
         } else {
             attrs.push(Attribute {

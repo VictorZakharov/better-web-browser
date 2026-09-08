@@ -10,6 +10,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         item_start: usize,
         node_start: usize,
     ) {
+        if !self.emit_paint {
+            return;
+        }
         self.positioned_flow_scopes.pop();
         if style.position == Position::Relative
             && let Some(parent) = self.positioned_flow_scopes.last_mut()
@@ -70,13 +73,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     Some(containing_block.height),
                     None,
                 );
-                groups.push(PositionedPaintGroup {
-                    level: child_style.z_index.unwrap_or(0),
-                    source_order,
-                    items: self.output.items.split_off(item_start),
-                    nodes: self.output.node_paint_order.split_off(node_start),
-                });
+                if self.emit_paint {
+                    groups.push(PositionedPaintGroup {
+                        level: child_style.z_index.unwrap_or(0),
+                        source_order,
+                        items: self.output.items.split_off(item_start),
+                        nodes: self.output.node_paint_order.split_off(node_start),
+                    });
+                }
             }
+        }
+
+        if !self.emit_paint {
+            return;
         }
 
         // CSS 2.1 section 9.9 and Appendix E: integer levels sort numerically, while `auto`

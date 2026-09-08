@@ -2,6 +2,11 @@
 
 use super::*;
 
+mod viewport;
+
+#[cfg(test)]
+mod source_order;
+
 impl HostState {
     pub(super) fn invalidate_style_rules_for_mutation(
         &mut self,
@@ -17,9 +22,11 @@ impl HostState {
     }
 
     pub(super) fn replace_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
-        let sources = stylesheets.iter().cloned().collect();
-        if self.stylesheet_sources != sources {
-            self.stylesheet_sources = sources;
+        // Source order breaks otherwise equal cascade ties, including repeated source URLs.
+        // Preserve the owning Page's sequence for layout, computed style, and offsetParent.
+        // https://www.w3.org/TR/css-cascade-3/#cascade-order
+        if self.stylesheet_sources.as_slice() != stylesheets {
+            self.stylesheet_sources = stylesheets.to_vec();
             // Resource completion can change the cascade without a DOM mutation.
             self.computed_styles = None;
             self.offset_parent_styles = None;
@@ -33,15 +40,10 @@ impl HostState {
     }
 
     fn document_style_set(&self) -> StyleSet {
-        let sources = self
-            .stylesheet_sources
-            .iter()
-            .map(|(url, source)| (url.clone(), source.clone()))
-            .collect::<Vec<_>>();
         StyleSet::for_computed_style_for_media_environment(
             &self.document,
             &self.document_url,
-            &sources,
+            &self.stylesheet_sources,
             self.media_environment,
         )
     }
@@ -199,10 +201,10 @@ mod tests {
             "UTF-8",
             Rc::new(module_loader::WebModuleLoader::new()),
         );
-        state.stylesheet_sources.insert(
+        state.replace_document_stylesheets(&[(
             "https://example.com/app.css".into(),
             "#target { position: absolute; color: #123456 }".into(),
-        );
+        )]);
         assert_eq!(
             state
                 .computed_style_property(&target, "position")
@@ -275,10 +277,10 @@ mod tests {
             "UTF-8",
             Rc::new(module_loader::WebModuleLoader::new()),
         );
-        state.stylesheet_sources.insert(
+        state.replace_document_stylesheets(&[(
             "https://example.com/app.css".into(),
             ".positioned { position: relative }".into(),
-        );
+        )]);
 
         assert_eq!(
             state.offset_parent(&children[0]).map(|node| node.id()),

@@ -1,4 +1,6 @@
 //! Selector matching against DOM nodes.
+mod ancestor_filter;
+pub(super) use ancestor_filter::AncestorFilter;
 
 use super::*;
 
@@ -87,7 +89,7 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     if selector
         .id
         .as_deref()
-        .is_some_and(|id| node.attr("id").as_deref() != Some(id))
+        .is_some_and(|id| node.attr_ref("id").as_deref() != Some(id))
     {
         return false;
     }
@@ -191,12 +193,12 @@ fn is_disableable(node: &NodeRef) -> bool {
 }
 
 fn is_disabled(node: &NodeRef) -> bool {
-    if node.attr("disabled").is_some() {
+    if node.attr_ref("disabled").is_some() {
         return true;
     }
     let mut ancestor = node.parent();
     while let Some(candidate) = ancestor {
-        if candidate.tag_name() == Some("fieldset") && candidate.attr("disabled").is_some() {
+        if candidate.tag_name() == Some("fieldset") && candidate.attr_ref("disabled").is_some() {
             return true;
         }
         ancestor = candidate.parent();
@@ -207,14 +209,14 @@ fn is_disabled(node: &NodeRef) -> bool {
 pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -> bool {
     match simple {
         SimpleSelector::Tag(tag) => node.tag_name() == Some(tag),
-        SimpleSelector::Id(id) => node.attr("id").as_deref() == Some(id),
+        SimpleSelector::Id(id) => node.attr_ref("id").as_deref() == Some(id),
         SimpleSelector::Class(class) => node.has_class(class),
         SimpleSelector::Attribute(attribute) => attribute_matches(attribute, node),
     }
 }
 
 pub(super) fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) -> bool {
-    let Some(actual) = node.attr(&selector.name) else {
+    let Some(actual) = node.attr_ref(&selector.name) else {
         return false;
     };
     if matches!(selector.operator, AttributeOperator::Exists) {
@@ -236,7 +238,7 @@ pub(super) fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) ->
         normalized_expected = expected.to_ascii_lowercase();
         (normalized_actual.as_str(), normalized_expected.as_str())
     } else {
-        (actual.as_str(), expected)
+        (&*actual, expected)
     };
 
     match selector.operator {

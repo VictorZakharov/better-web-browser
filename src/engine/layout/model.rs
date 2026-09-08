@@ -62,8 +62,12 @@ pub struct ShapedText {
 }
 
 pub trait TextMeasurer {
+    /// Returns the same layout width and height as `shape` for this text and font.
+    /// Geometry-only callers may use this method to avoid allocating painted glyph payloads;
+    /// implementations must retain contextual shaping, fallback, and spacing in these metrics.
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32);
 
+    /// Adds paintable glyph information without changing the metrics returned by `measure`.
     fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {
         let (width, height) = self.measure(text, font);
         ShapedText {

@@ -12,6 +12,10 @@ impl StyleSet {
         let roots = normalized_roots(document, requested_roots);
         let mut stats = StyleRefreshStats::default();
         for root in roots {
+            if self.has_deferred_ancestor(&root) {
+                stats.removed_styles += self.forget_deferred_styles(&root, true);
+                continue;
+            }
             let parent_style = Node::composed_parent(&root)
                 .and_then(|parent| self.styles.get(&node_id(&parent)).cloned());
             self.recompute_subtree(&root, parent_style.as_ref(), &mut stats);
@@ -20,10 +24,16 @@ impl StyleSet {
         // A node may be removed and reinserted before the rendering checkpoint. Its identifier
         // remains in the removal log, but its newly recomputed style must remain available. Sweep
         // connectivity once for the entire root set rather than once per component.
+        let mut fullscreen = Vec::new();
         let connected_nodes = Node::shadow_including_descendants(document)
-            .map(|node| node_id(&node))
+            .map(|node| {
+                if node.is_fullscreen() {
+                    fullscreen.push(node.clone());
+                }
+                node_id(&node)
+            })
             .collect::<HashSet<_>>();
-        stats.removed_styles = removed_nodes
+        stats.removed_styles += removed_nodes
             .iter()
             .filter(|node| !connected_nodes.contains(node))
             .filter(|node| self.styles.remove(node).is_some())
@@ -34,6 +44,7 @@ impl StyleSet {
             .copied()
             .collect::<HashSet<_>>();
         self.remove_generated_pseudos(&removed_origins);
+        self.refresh_deferred_fullscreen_roots(&fullscreen, &mut stats);
         stats.total_styles = self.styles.len();
         stats
     }
@@ -55,11 +66,13 @@ impl StyleSet {
             };
             self.styles.insert(node_id(&node), style.clone());
             self.sync_generated_pseudos(&node, &style);
-            pending.extend(Node::composed_children(&node).into_iter().rev());
+            if !self.defer_nonrendered_descendants || style.display != Display::None {
+                pending.extend(Node::composed_children(&node).into_iter().rev());
+            }
         }
     }
 
-    fn recompute_subtree(
+    pub(super) fn recompute_subtree(
         &mut self,
         node: &NodeRef,
         parent: Option<&ComputedStyle>,
@@ -102,7 +115,11 @@ impl StyleSet {
                 stats.layout_changed = true;
             }
             stats.pseudo_style_time += pseudo_started.elapsed();
-            pending.extend(Node::composed_children(&node).into_iter().rev());
+            if !self.defer_nonrendered_descendants || style.display != Display::None {
+                pending.extend(Node::composed_children(&node).into_iter().rev());
+            } else {
+                stats.removed_styles += self.forget_deferred_styles(&node, false);
+            }
         }
     }
 }

@@ -70,6 +70,36 @@ impl Page {
 mod tests {
     use super::*;
 
+    struct FixedMeasurer;
+    impl crate::engine::TextMeasurer for FixedMeasurer {
+        fn measure(&mut self, text: &str, font: &crate::engine::FontSpec) -> (f32, f32) {
+            (text.chars().count() as f32 * font.size * 0.5, font.size)
+        }
+    }
+
+    #[test]
+    fn sparse_layout_snapshots_preserve_visible_geometry_and_hidden_subtrees() {
+        for markup in [
+            "<body><div style='display:none'><section><span>hidden</span></section></div><p>visible</p>",
+            "<html style='display:none'><body><p>hidden document</p>",
+            "<body style='display:none'><main><p>hidden body</p></main>",
+            "<body><button>Play<span style='display:none'><svg width=100 height=100></svg><i>hidden label</i></span></button>",
+            "<body><div style='display:contents'><p>visible contents</p></div>",
+        ] {
+            let page = Page::parse(markup, "https://example.com/");
+            let mut snapshot = page.layout_snapshot();
+            snapshot.refresh_layout_styles_after_invalidation_for_viewport(
+                800.0,
+                600.0,
+                &crate::engine::invalidation::RenderInvalidation::full(page.dom.document.id()),
+            );
+            let full = crate::engine::layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+            let sparse = crate::engine::layout_page(&snapshot, 800.0, 600.0, &mut FixedMeasurer);
+            assert_eq!(sparse.node_bounds, full.node_bounds, "{markup}");
+            assert_eq!(sparse.content_height, full.content_height, "{markup}");
+        }
+    }
+
     #[test]
     fn layout_snapshots_retain_image_dimensions_without_copying_pixels() {
         let mut page = Page::parse("<img src='hero.png'>", "https://example.com/");

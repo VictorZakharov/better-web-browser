@@ -2,6 +2,9 @@
     // synchronously flush style and layout. The host owns that flush and caches its geometry until
     // the DOM mutation version changes.
     // https://drafts.csswg.org/cssom-view/#extensions-to-the-element-interface
+    let viewportScrollX = 0;
+    let viewportScrollY = 0;
+
     function layoutRect(element) {
         const value = host('layoutRect', element.__id);
         const [x = 0, y = 0, width = 0, height = 0] = Array.isArray(value) ? value : [];
@@ -77,7 +80,16 @@
         getBoundingClientRect: {
             configurable: true,
             value() {
-                const { x, y, width, height } = layoutRect(this);
+                const scrolled = viewportScrollX !== 0 || viewportScrollY !== 0;
+                const rect = host('clientRect', this.__id, scrolled);
+                let [x = 0, y = 0, width = 0, height = 0, viewportFixed = false] =
+                    Array.isArray(rect) ? rect : [];
+                // Empty client-rect lists return an all-zero rectangle, even after scrolling.
+                // Offset geometry continues to read the unmodified document-layout snapshot.
+                if (Array.isArray(rect) && scrolled && !viewportFixed) {
+                    x -= viewportScrollX;
+                    y -= viewportScrollY;
+                }
                 const value = { x, y, top: y, left: x, right: x + width, bottom: y + height,
                     width, height };
                 return { ...value, toJSON() { return { ...value }; } };

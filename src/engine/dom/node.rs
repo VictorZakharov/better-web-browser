@@ -1,4 +1,5 @@
 //! DOM node identity, data model, read access, and traversal.
+mod attributes;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
@@ -315,25 +316,6 @@ impl Node {
 
     pub fn namespace_uri(&self) -> Option<&str> {
         self.element().map(|element| element.name.ns.as_ref())
-    }
-
-    pub fn attr(&self, wanted: &str) -> Option<String> {
-        self.element().and_then(|element| {
-            element
-                .attrs
-                .borrow()
-                .iter()
-                .find(|attribute| attribute.name.local.as_ref().eq_ignore_ascii_case(wanted))
-                .map(|attribute| attribute.value.to_string())
-        })
-    }
-
-    pub fn has_class(&self, wanted: &str) -> bool {
-        self.attr("class").is_some_and(|classes| {
-            classes
-                .split_ascii_whitespace()
-                .any(|class| class == wanted)
-        })
     }
 
     pub fn parent(&self) -> Option<NodeRef> {

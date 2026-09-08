@@ -3,8 +3,11 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) profile: bool,
     pub(crate) style: Duration,
     pub(crate) layout: Duration,
+    pub(crate) text_measure: Duration,
+    pub(crate) layout_style_changed: bool,
     pub(crate) rebuilt_rules: bool,
     pub(crate) elements: Duration,
     pub(crate) pseudos: Duration,
@@ -23,7 +26,10 @@ impl HostState {
             return;
         };
         let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
-        let mut metrics = LayoutFlushMetrics::default();
+        let mut metrics = LayoutFlushMetrics {
+            profile: self.host_call_profile.is_enabled(),
+            ..LayoutFlushMetrics::default()
+        };
         if let Some(geometry) = flush(&invalidation, &mut metrics) {
             self.layout_geometry = geometry;
         }
@@ -39,6 +45,16 @@ impl HostState {
         );
         self.host_call_profile
             .record_elapsed("layoutFlush::layout", metrics.layout);
+        self.host_call_profile
+            .record_elapsed("layoutFlush::text-measure", metrics.text_measure);
+        self.host_call_profile.record_elapsed(
+            if metrics.layout_style_changed {
+                "layoutFlush::layout-style-change"
+            } else {
+                "layoutFlush::layout-intrinsic-or-initial"
+            },
+            metrics.layout,
+        );
         self.host_call_profile
             .record_elapsed("layoutFlush::elements", metrics.elements);
         self.host_call_profile

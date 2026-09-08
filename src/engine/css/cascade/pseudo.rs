@@ -59,14 +59,10 @@ impl StyleSet {
     }
 
     pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) {
-        let keys = self
-            .pseudo_styles
-            .keys()
-            .filter(|(origin, _)| origins.contains(origin))
-            .copied()
-            .collect::<Vec<_>>();
-        for (origin, pseudo) in keys {
-            self.remove_pseudo(origin, pseudo);
+        for &origin in origins {
+            for pseudo in [PseudoElement::Before, PseudoElement::After] {
+                self.remove_pseudo(origin, pseudo);
+            }
         }
     }
 

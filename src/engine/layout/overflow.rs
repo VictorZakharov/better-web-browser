@@ -8,7 +8,7 @@ mod tests;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn begin_overflow_clip(&mut self, style: &ComputedStyle) -> Option<usize> {
-        style.overflow_hidden.then(|| {
+        (self.emit_paint && style.overflow_hidden).then(|| {
             let index = self.output.items.len();
             self.output.items.push(DisplayItem::BeginClip {
                 bounds: RectF::default(),

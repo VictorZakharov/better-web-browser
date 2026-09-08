@@ -6,19 +6,34 @@ use crate::limits::{
     MAX_CSS_DECLARATIONS_PER_RULE, MAX_CSS_NESTING_DEPTH, MAX_CSS_RULES_PER_STYLESHEET,
     MAX_CSS_SOURCE_BYTES, MAX_PAGE_CSS_RULES, bounded_utf8_prefix,
 };
+use std::rc::Rc;
+
+#[derive(Clone, Debug)]
+pub(super) struct Rule {
+    // The same parsed payload can occur at different positions in independent cascades.
+    data: Rc<RuleData>,
+    pub(super) order: u32,
+}
 
 #[derive(Debug)]
-pub(super) struct Rule {
+pub(super) struct RuleData {
     pub(super) selector: Selector,
     pub(super) pseudo: Option<PseudoElement>,
     pub(super) host_condition: Option<Selector>,
     pub(super) declarations: Vec<Declaration>,
-    pub(super) order: u32,
     pub(super) base_url: String,
     pub(super) scope: RuleScope,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl std::ops::Deref for Rule {
+    type Target = RuleData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum RuleScope {
     Document,
     Shadow(NodeId),
@@ -33,6 +48,7 @@ pub(super) struct Declaration {
     pub(super) important: bool,
 }
 
+#[cfg(test)]
 pub(super) fn parse_stylesheet(
     css: &str,
     base_url: &str,
@@ -41,14 +57,37 @@ pub(super) fn parse_stylesheet(
     output: &mut Vec<Rule>,
     scope: RuleScope,
 ) {
-    if output.len() >= MAX_PAGE_CSS_RULES {
+    parse_stylesheet_with_rule_budget(
+        css,
+        base_url,
+        media_environment,
+        next_order,
+        output,
+        scope,
+        MAX_PAGE_CSS_RULES,
+    );
+}
+
+/// Parse only the prefix that can participate in the requesting cascade. The normal source,
+/// nesting, per-sheet, declaration and total-page limits remain in force.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn parse_stylesheet_with_rule_budget(
+    css: &str,
+    base_url: &str,
+    media_environment: MediaEnvironment,
+    next_order: &mut u32,
+    output: &mut Vec<Rule>,
+    scope: RuleScope,
+    rule_budget: usize,
+) {
+    if output.len() >= MAX_PAGE_CSS_RULES || rule_budget == 0 {
         return;
     }
     let (css, _) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
     let css = strip_comments(css);
     let rule_limit = output
         .len()
-        .saturating_add(MAX_CSS_RULES_PER_STYLESHEET)
+        .saturating_add(MAX_CSS_RULES_PER_STYLESHEET.min(rule_budget))
         .min(MAX_PAGE_CSS_RULES);
     parse_rule_list(
         &css,
@@ -162,13 +201,15 @@ fn parse_rule_list(
                             .saturating_add(condition.specificity.tags);
                     }
                     output.push(Rule {
-                        selector,
-                        pseudo,
-                        host_condition,
-                        declarations: declarations.clone(),
                         order: *next_order,
-                        base_url: base_url.to_string(),
-                        scope: rule_scope,
+                        data: Rc::new(RuleData {
+                            selector,
+                            pseudo,
+                            host_condition,
+                            declarations: declarations.clone(),
+                            base_url: base_url.to_string(),
+                            scope: rule_scope,
+                        }),
                     });
                     *next_order = next_order.wrapping_add(1);
                 }

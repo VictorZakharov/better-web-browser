@@ -6,6 +6,8 @@ impl ScriptRuntime {
         let mut host = self.host.borrow_mut();
         host.layout_geometry.clone_from(geometry);
         host.layout_geometry_version = host.document.subtree_mutation_version();
+        host.pending_layout_invalidation
+            .acknowledge_published_geometry();
         host.layout_geometry_initialized = true;
     }
 

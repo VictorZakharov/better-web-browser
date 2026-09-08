@@ -29,6 +29,10 @@ impl InvalidationImpact {
         self.0 & Self::INTRINSIC_SIZE.0 != 0
     }
 
+    pub(crate) const fn without_intrinsic_size(self) -> Self {
+        Self(self.0 & !Self::INTRINSIC_SIZE.0)
+    }
+
     pub const fn affects_paint(self) -> bool {
         self.0 & Self::PAINT.0 != 0
     }

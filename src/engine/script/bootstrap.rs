@@ -1,4 +1,5 @@
-// These responsibility-based chunks share one IIFE and are concatenated before V8 compiles them.
+// core.js through tasks.js share one root IIFE, with nested private helpers. The DOMException
+// prefix and subsequent network/worker extensions own independent IIFEs. V8 compiles the result.
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/core.js"),
@@ -9,6 +10,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/nodes.js"),
     include_str!("bootstrap/attributes.js"),
     include_str!("bootstrap/elements.js"),
+    include_str!("bootstrap/metadata.js"),
     include_str!("bootstrap/cssom_view.js"),
     include_str!("bootstrap/hyperlinks.js"),
     include_str!("bootstrap/embedded_elements.js"),
@@ -33,8 +35,10 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/pointer_boundary.js"),
     include_str!("bootstrap/custom_elements.js"),
     include_str!("bootstrap/url.js"),
-    include_str!("bootstrap/tasks.js"),
+    // Observer closures capture the private task exception reporter before
+    // tasks.js closes the shared root IIFE; delivery begins only after bootstrap completes.
     include_str!("bootstrap/intersection_observer.js"),
+    include_str!("bootstrap/tasks.js"),
     include_str!("bootstrap/streams.js"),
     include_str!("bootstrap/network_data.js"),
     include_str!("bootstrap/network_body.js"),

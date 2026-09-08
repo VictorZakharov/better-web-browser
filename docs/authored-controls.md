@@ -162,6 +162,13 @@ measure ordinary computed-style construction and generated pseudo-element update
 They are included in style time; the remainder includes invalidation traversal,
 style comparisons, and cache maintenance.
 
+`layoutFlush::text-measure` is the text-measurement sub-phase of synchronous box
+layout; per-call timing is enabled only with host-call profiling. The
+`layout-style-change` and `layout-intrinsic-or-initial` categories partition
+`layoutFlush::layout` by its trigger. These nested values are not additional time
+to add to the layout total. An intrinsic-only trigger is not necessarily wasted
+work: visible text and child-list changes can require layout with equal styles.
+
 Incremental refresh preserves the storage of an exactly equal custom-property map
 from the preceding computed style. This avoids repeated deep comparisons in
 descendants without reusing values when a custom property actually changes.
@@ -175,3 +182,114 @@ the generated style. Regression tests cover each of those transitions.
 These are bounded reductions in redundant work, not a claim that YouTube's
 navigation timeout or playback cadence is resolved. Live recommendation switches
 still need end-to-end validation of the new URL, metadata, and visible playback.
+
+### Retained-realm navigation: reducing redundant style work
+
+The navigation investigation found expensive synchronous geometry reads inside a
+site callback, not just a stale text-paint cache. A changed URL or a playing media
+backend alone is therefore not evidence that a navigation finished successfully.
+
+- Selector candidate indexing includes necessary attribute names and chooses a
+  selective positive key. Child/descendant chains can reject missing ancestor
+  keys before the complete matcher runs. Alternatives and sibling chains remain
+  conservative, and no ancestor-key cache survives a matching pass or mutation.
+- Read-only selector attribute checks borrow DOM strings instead of allocating
+  copies. This does not change namespace or selector matching semantics.
+- Independent style consumers share immutable compiled rules only when the
+  document, ordered CSS sources, source URLs, shadow scopes, and media environment
+  are identical. Computed values remain separately owned. The bounded thread-local
+  lookup holds weak references and cannot retain a closed document's CSS.
+  Discovery is bounded to four live candidates per document and 64 document keys;
+  a discarded temporary cascade cannot hide another consumer's still-live parse.
+  When the source set changes, unchanged individual sheets also retain immutable
+  parsed payloads. Each occurrence receives fresh cascade order numbers, so sheet
+  insertion, removal, reordering, and repetition preserve tie-breaking. A cached
+  truncated sheet is reparsed if its available rule budget grows; all existing
+  source, nesting, declaration, per-sheet, and page-rule limits remain in force.
+- Script computed style and `offsetParent` preserve the same ordered external
+  stylesheet occurrences as layout. A URL-keyed map must not collapse repeated
+  occurrences or reorder otherwise equal cascade ties. CSSOM resource lookup
+  remains separate from cascade order.
+- Full rule rebuilds recompute all matches but reconcile against previous computed
+  values and generated boxes. Exactly equal custom-property maps retain their
+  storage; actual rule, value, content, and geometry changes still take effect.
+- Setting an attribute to its existing value still produces MutationObserver
+  records and custom-element reactions, as required by the
+  [DOM attribute-change algorithm](https://dom.spec.whatwg.org/#concept-element-attributes-change).
+  It no longer changes the internal rendering version or expands a subsequent
+  real mutation's dirty subtree. Resource side effects are not suppressed.
+- Each renderer presentation refreshes the document title from the retained DOM,
+  rather than repeatedly sending the title captured during initial script loading.
+
+The two-second script execution guard is unchanged. Verification uses fresh,
+hidden, silent sessions with native recommendation clicks and half-second
+screenshots; repeated switches, updated metadata, and visible frames must be
+checked together. These changes do not by themselves establish complete YouTube
+fidelity, comments support, or smooth playback.
+
+Hidden reports include a bounded `titles` object: the last accepted renderer
+document title and the actual browser tab title, each limited to 512 UTF-8 bytes
+with an independent truncation flag. A missing renderer presentation reports
+`null`, not an inferred title. This separates stale document metadata from a
+browser-title propagation failure; it is not a site-specific title replacement.
+
+Synchronous layout snapshots now defer styles below `display:none` boundaries,
+whose descendants generate no boxes under
+[CSS Display's box-generation rules](https://www.w3.org/TR/css-display-3/#box-generation).
+This is exclusive to the geometry snapshot: owning-page diagnostics and script
+computed-style caches keep their existing full/on-demand contracts. A hidden
+mutation evicts stale deferred entries; reveal recomputes the subtree, including
+inherited properties and generated content. `display:contents` is not skipped.
+Table row groups, rows, cells, captions, and native-button icon traversal respect
+the same boundary. Hidden root elements and hidden fullscreen ancestors suppress
+layout rather than causing a missing-style lookup or showing their descendants.
+Fullscreen top-layer eligibility follows shadow-including ancestry, not slot
+assignment. Eligible fullscreen subtrees under hidden slots or outside the normal
+composed traversal are hydrated separately in both dense and deferred snapshots;
+their mutations and fullscreen exit still invalidate geometry.
+
+CSSOM View geometry uses the same sizing and placement algorithms as normal
+rendering, but does not construct discarded paint items, clipping/opacity layers,
+paint ordering, form-action records, or final scroll-height output. Inline
+recursion, replaced/control boxes, flex/grid/table placement, and transforms still
+populate the complete node-bounds map. Parity fixtures compare those maps with
+normal retained rendering; this is not a separate simplified layout algorithm.
+
+Publishing fresh renderer geometry acknowledges only the intrinsic-size work
+already included in that snapshot. Pending style roots, removals, and rule rebuild
+obligations are retained. A later ARIA-only change no longer inherits an old text
+mutation's intrinsic trigger; a new text mutation restores that trigger normally.
+
+IntersectionObserver registrations can now be reused after `disconnect()` or
+after the final `unobserve()`. Rendering updates iterate a snapshot of active
+observers so callback reconnection cannot cause repeated delivery in one update.
+Callback exceptions dispatch the existing trusted global error event, with one
+console report unless the event is canceled; later observers still receive their
+entries, as required by the
+[observer notification algorithm](https://www.w3.org/TR/intersection-observer/#notify-intersection-observers-algo).
+This is a generic lifecycle fix, not a claim that YouTube comments are complete.
+
+Native viewport scrolling now translates `getBoundingClientRect()` snapshots into
+viewport coordinates while preserving document-coordinate `offset*` measurements.
+Missing and disconnected boxes retain the all-zero rectangle; positioned boxes
+with zero width and height still retain their translated position. Previously
+returned rectangles remain snapshots, as required by
+[CSSOM View](https://www.w3.org/TR/cssom-view/#dom-element-getboundingclientrect).
+Zero-scroll reads skip fixed-position style classification; scrolled reads reuse
+the existing computed-style cache. Viewport-fixed subtrees remain viewport-relative,
+whereas fixed boxes contained by transforms or other fixed-position containing
+blocks move with that ancestor, following
+[CSS Position](https://www.w3.org/TR/css-position-3/#fixed-cb).
+This corrects the geometry API, not the separate native fixed-content painting gap.
+
+Native scroll and resize also schedule the existing dedicated renderer geometry-
+observer task after the input task's microtask checkpoint, independent of public
+event propagation. Author `stopPropagation()` or
+`stopImmediatePropagation()` cannot suppress these updates, and synthetic scroll
+events do not manufacture a UA observer task or published layout snapshot. Quiet
+scroll inputs request an immediate clock update without generating a visual
+revision, and repeated inputs coalesce with pending geometry work. Fixtures cover
+threshold crossings, stable explicit-root intersections, no duplicate unchanged
+delivery, and reuse of valid geometry without a forced layout. Nested scroll
+containers and complete ancestor clipping remain separate work; these tests do
+not establish that live YouTube comments load correctly.

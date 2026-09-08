@@ -92,10 +92,10 @@
         }, delay, false, [], 'requestIdleCallback: ' + describeTimerCallback(callback), 'idleSchedule');
     };
     windowObject.cancelIdleCallback = windowObject.clearTimeout;
-    const reportGlobalException = error => {
+    const reportGlobalException = (error, source = 'microtask') => {
         const message = error?.message === undefined ? String(error) : String(error.message);
         const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
-        if (windowObject.dispatchEvent(event)) host('console', 'error', 'Uncaught microtask exception: ' + message);
+        if (windowObject.dispatchEvent(event)) host('console', 'error', `Uncaught ${source} exception: ` + message);
     };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');

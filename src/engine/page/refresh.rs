@@ -134,7 +134,7 @@ impl Page {
             }
         }
         let (mut styles, style_stats) =
-            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation, false);
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
         let mut known_images = self
@@ -210,7 +210,7 @@ impl Page {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
         let (styles, stats) =
-            self.refresh_style_cache(viewport_width, viewport_height, invalidation);
+            self.refresh_style_cache(viewport_width, viewport_height, invalidation, true);
         self.cached_styles = Some((viewport_width, viewport_height, styles));
         stats
     }
@@ -220,6 +220,7 @@ impl Page {
         viewport_width: f32,
         viewport_height: f32,
         invalidation: &RenderInvalidation,
+        layout_only: bool,
     ) -> (StyleSet, StyleRefreshStats) {
         let viewport_width = viewport_width.max(1.0);
         let viewport_height = viewport_height.max(1.0);
@@ -259,8 +260,24 @@ impl Page {
                 };
                 (styles, stats)
             }
-            _ => {
-                let styles = StyleSet::from_sources_for_media_environment(
+            Some((_, _, mut styles)) => {
+                let stats = styles.rebuild_rules_for_media_environment(
+                    &self.dom,
+                    &self.base_url,
+                    &self.stylesheet_sources,
+                    self.media_environment
+                        .with_viewport(viewport_width, viewport_height),
+                    &invalidation.removed_nodes,
+                );
+                (styles, stats)
+            }
+            None => {
+                let build = if layout_only {
+                    StyleSet::from_sources_for_layout
+                } else {
+                    StyleSet::from_sources_for_media_environment
+                };
+                let styles = build(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,

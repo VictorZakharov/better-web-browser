@@ -42,7 +42,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 ..
             } => {
                 let text = measured.text.unwrap_or_default();
-                if !text.is_empty() {
+                if self.emit_paint && !text.is_empty() {
                     // CSS 2.2 10.8.1: split extra line leading above and below the font.
                     let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
@@ -102,7 +102,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 rect.x += offset_x;
                 rect.y += offset_y;
                 self.output.node_bounds.insert(*node_id, rect);
-                if *visible {
+                if self.emit_paint && *visible {
                     self.output.items.push(DisplayItem::Image {
                         rect,
                         url: url.clone(),
@@ -122,14 +122,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 ..
             } => {
                 let item_start = self.output.items.len();
-                let mut spec = spec.as_ref().clone();
-                spec.rect = RectF {
+                let rect = RectF {
                     x: x + inset_x,
                     y: atom_y + inset_y,
                     width: *control_width,
                     height: *control_height,
                 };
-                self.output.node_bounds.insert(spec.node_id, spec.rect);
+                self.output.node_bounds.insert(spec.node_id, rect);
+                if !self.emit_paint {
+                    return;
+                }
+                let mut spec = spec.as_ref().clone();
+                spec.rect = rect;
                 if spec.background_color.alpha > 0 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: spec.rect,
@@ -187,7 +191,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
-                if style.background_color.alpha > 0 && style.mask_image.is_none() {
+                if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none()
+                {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
                         color: style
@@ -196,7 +201,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         radius,
                     });
                 }
-                if let Some(tile_rect) = self.background_tile_rect(style, border_rect)
+                if self.emit_paint
+                    && let Some(tile_rect) = self.background_tile_rect(style, border_rect)
                     && let Some(url) = style.background_image.as_ref()
                 {
                     self.output.items.push(DisplayItem::BackgroundImage {
@@ -207,7 +213,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         repeat_y: style.background_repeat_y,
                     });
                 }
-                if let Some(url) = style.mask_image.as_ref() {
+                if self.emit_paint
+                    && let Some(url) = style.mask_image.as_ref()
+                {
                     self.output.items.push(DisplayItem::Image {
                         rect: border_rect,
                         url: url.clone(),
@@ -215,7 +223,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         tint: Some(style.background_color),
                     });
                 }
-                if style.border_color.alpha > 0
+                if self.emit_paint
+                    && style.border_color.alpha > 0
                     && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {

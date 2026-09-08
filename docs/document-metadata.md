@@ -1,0 +1,7 @@
+# Document title metadata
+
+HTML `title` elements expose `HTMLTitleElement.text` through parsed nodes, `createElement`, and HTML-namespace `createElementNS`. Its getter concatenates direct Text children; its setter replaces the child list through the normal DOM mutation path, including observer records and custom-element disconnection reactions. SVG and other-namespace `title` elements do not acquire the HTML interface. Direct construction remains illegal; customized built-in custom elements are not supported by Breeze's existing custom-element registry.
+
+`Document.title` and native title extraction select HTML title elements in tree order, or a direct SVG title child for an SVG document root, and strip/collapse only ASCII whitespace. Setting an HTML document title creates an HTML title under the real head when available, otherwise leaves a headless document without a title unchanged. The browser keeps its existing “Untitled page” display fallback for an empty extracted title; the DOM API returns the empty string.
+
+This implements the [HTML title element](https://html.spec.whatwg.org/multipage/semantics.html#the-title-element) and [document title accessor](https://html.spec.whatwg.org/multipage/dom.html#document.title) contracts. It does not replace document metadata with page headings, and does not by itself establish that a particular site's stale title used this missing interface.

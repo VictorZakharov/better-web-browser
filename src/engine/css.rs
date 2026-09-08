@@ -39,7 +39,7 @@ use selector_parser::{parse_selector, parse_style_rule_selector};
 use shorthands::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use stylesheet::{Declaration, Rule, RuleScope, parse_declarations, parse_stylesheet};
+use stylesheet::{Declaration, Rule, RuleScope, parse_declarations};
 use syntax::*;
 use user_agent::apply_user_agent_defaults;
 pub(crate) use user_agent::is_hidden_by_html_rendering;

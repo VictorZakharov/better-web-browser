@@ -13,6 +13,7 @@
     ).split(/\s+/));
     const htmlElementConstructor = localName => {
         if (localName === 'div') return HTMLDivElement;
+        if (localName === 'title') return HTMLTitleElement;
         if (localName === 'style') return HTMLStyleElement;
         if (localName === 'link') return HTMLLinkElement;
         if (localName === 'time') return HTMLTimeElement;
@@ -138,12 +139,8 @@
         get doctype() { return wrap(host('doctype', this.__id)); }
         get head() { return this.querySelector('head'); }
         get body() { return this.querySelector('body'); }
-        get title() { return this.querySelector('title')?.textContent || ''; }
-        set title(value) {
-            let title = this.querySelector('title');
-            if (!title) { title = this.createElement('title'); (this.head || this.documentElement).appendChild(title); }
-            title.textContent = String(value);
-        }
+        get title() { return documentTitleValue(this); }
+        set title(value) { setDocumentTitleValue(this, value); }
         get URL() { return host('documentUrl'); }
         get documentURI() { return this.URL; }
         get baseURI() { return this.querySelector('base')?.href || this.URL; }
@@ -194,11 +191,13 @@
         else if (type === 1) {
             const namespace = metadata[3] || null;
             const Constructor = namespace === htmlNamespace
-                ? htmlElementConstructor(metadata[2].toLowerCase())
+                ? htmlElementConstructor(metadata[2])
                 : namespace === svgNamespace
                     ? metadata[2] === 'svg' ? SVGSVGElement : SVGElement
                     : Element;
-            node = new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
+            node = Constructor === HTMLTitleElement
+                ? new HTMLTitleElement(id, type, metadata[1], metadata[2], namespace, htmlTitleConstructionToken)
+                : new Constructor(id, type, metadata[1], metadata[2] || null, namespace);
         }
         else if (type === 10) node = new DocumentType(id, type, metadata[1], null, null);
         else if (type === 11) node = metadata[4] === 'shadow'
@@ -239,6 +238,7 @@
     windowObject.TreeWalker = TreeWalker;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
+    windowObject.HTMLTitleElement = HTMLTitleElement;
     windowObject.HTMLStyleElement = HTMLStyleElement;
     windowObject.HTMLLinkElement = HTMLLinkElement;
     windowObject.HTMLUnknownElement = HTMLUnknownElement;

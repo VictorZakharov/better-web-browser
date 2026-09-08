@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(test)]
+mod hidden;
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_table(
         &mut self,
@@ -13,17 +16,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let captions = table_captions(node);
         let (top_captions, bottom_captions): (Vec<_>, Vec<_>) = captions
             .into_iter()
+            .filter(|caption| self.styles.get(caption).display != Display::None)
             .partition(|caption| !self.styles.get(caption).caption_side_bottom);
         y = self.layout_captions(&top_captions, x, y, width, containing_height);
         let grid_top = y;
-        let rows = table_rows(node);
+        let rows = table_rows(node, self.styles);
         for row in rows {
-            let cells = row
-                .children
-                .borrow()
-                .iter()
+            let cells = Node::composed_children(&row)
+                .into_iter()
                 .filter(|child| matches!(child.tag_name(), Some("td" | "th")))
-                .cloned()
+                .filter(|child| self.styles.get(child).display != Display::None)
                 .collect::<Vec<_>>();
             if cells.is_empty() {
                 continue;
@@ -129,13 +131,19 @@ fn table_captions(node: &NodeRef) -> Vec<NodeRef> {
         .collect()
 }
 
-pub(super) fn table_rows(node: &NodeRef) -> Vec<NodeRef> {
+fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
     let mut rows = Vec::new();
     let mut stack = Node::composed_children(node)
         .into_iter()
         .rev()
         .collect::<Vec<_>>();
     while let Some(candidate) = stack.pop() {
+        // A display:none row group removes its entire subtree from the box tree. Do not
+        // inspect descendants: layout-only snapshots may defer their computed styles.
+        // https://www.w3.org/TR/css-display-3/#valdef-display-none
+        if styles.get(&candidate).display == Display::None {
+            continue;
+        }
         if candidate.tag_name() == Some("tr") {
             rows.push(candidate);
         } else if matches!(candidate.tag_name(), Some("thead" | "tbody" | "tfoot")) {

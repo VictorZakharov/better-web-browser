@@ -11,6 +11,34 @@ use std::io::Cursor;
 use std::time::Duration;
 
 #[test]
+fn script_title_changes_reach_the_next_presentation() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let initial = load_html_document(
+        &session,
+        96,
+        "<!doctype html><title>First video</title><p>content</p><script>setTimeout(() => { document.title = 'Second video'; }, 10000);</script>",
+    );
+    assert_eq!(initial.title, "First video");
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: initial.document,
+            revision: initial.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+    session
+        .advance_time(initial.document, Duration::from_secs(11), 1)
+        .unwrap();
+    let updated = wait_for_document_presentation(&session, initial.document);
+    assert_eq!(updated.title, "Second video");
+    session.shutdown().expect("shutdown renderer");
+}
+
+#[test]
 fn presentation_bursts_keep_the_newest_revision_without_killing_the_renderer() {
     let _serial = SERIAL
         .lock()

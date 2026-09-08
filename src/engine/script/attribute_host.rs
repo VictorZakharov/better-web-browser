@@ -57,7 +57,10 @@ pub(super) fn set_attribute(args: &[JsValue], state: &mut HostState) -> JsResult
     let changed = node
         .as_ref()
         .is_some_and(|node| node.set_attr_qualified(&name, &value));
-    record_attribute_mutation(state, node.as_ref(), &name, changed, true);
+    let contents_changed = previous
+        .as_ref()
+        .is_none_or(|attribute| attribute.value.as_ref() != value);
+    record_attribute_mutation(state, node.as_ref(), &name, changed, true, contents_changed);
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -89,6 +92,11 @@ pub(super) fn set_attribute_ns(
         &local_name,
         changed,
         namespace.is_empty(),
+        previous.as_ref().is_none_or(|attribute| {
+            attribute.value.as_ref() != value
+                || (replace
+                    && attribute.name.prefix.as_ref().map(|p| p.as_ref()) != optional(&prefix))
+        }),
     );
     Ok(previous
         .as_ref()
@@ -104,7 +112,7 @@ pub(super) fn remove_attribute(args: &[JsValue], state: &mut HostState) -> JsRes
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_qualified(&name));
-    record_attribute_mutation(state, node.as_ref(), &name, changed, false);
+    record_attribute_mutation(state, node.as_ref(), &name, changed, false, changed);
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -120,7 +128,7 @@ pub(super) fn remove_attribute_ns(args: &[JsValue], state: &mut HostState) -> Js
     let changed = node
         .as_ref()
         .is_some_and(|node| node.remove_attr_ns(optional(&namespace), &local_name));
-    record_attribute_mutation(state, node.as_ref(), &local_name, changed, false);
+    record_attribute_mutation(state, node.as_ref(), &local_name, changed, false, changed);
     Ok(previous
         .as_ref()
         .map_or_else(JsValue::null, attribute_record))
@@ -188,12 +196,17 @@ fn record_attribute_mutation(
     name: &str,
     changed: bool,
     queue_dynamic_script: bool,
+    contents_changed: bool,
 ) {
     if !changed {
         return;
     }
     state.host_call_profile.record_attribute_write(name);
-    state.record_mutation(node, MutationKind::Attribute(name));
+    // Identical writes still notify script observers/reactions and retain resource side effects,
+    // but cannot change selector matching or geometry. Do not widen a later real dirty root.
+    let requires_render =
+        contents_changed && node.is_some_and(|node| state.mutation_requires_render(node));
+    state.record_mutation_with_render(node, MutationKind::Attribute(name), requires_render);
     if let Some(node) = node {
         state.diagnose(format!("mutate {name} on {}", node_label(node)));
         if queue_dynamic_script && name.eq_ignore_ascii_case("src") {

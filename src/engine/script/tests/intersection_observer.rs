@@ -1,5 +1,7 @@
 use super::*;
 
+mod lifecycle;
+
 #[test]
 fn intersection_observer_is_exposed_on_the_window_global() {
     let (dom, outcome) = execute_html(

@@ -30,7 +30,7 @@ fn union(left: RectF, right: RectF) -> RectF {
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn wrap_opacity(&mut self, item_start: usize, opacity: f32) {
-        if opacity >= 1.0 || item_start >= self.output.items.len() {
+        if !self.emit_paint || opacity >= 1.0 || item_start >= self.output.items.len() {
             return;
         }
         let Some(bounds) = self.output.items[item_start..]

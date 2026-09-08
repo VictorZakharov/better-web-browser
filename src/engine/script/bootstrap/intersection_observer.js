@@ -106,7 +106,6 @@
             this._previous = new Map();
             this._records = [];
             this._scheduled = false;
-            observers.add(this);
         }
         _deliver() {
             this._scheduled = false;
@@ -136,7 +135,12 @@
                 }));
             }
             const records = this.takeRecords();
-            if (records.length) this.callback(records, this);
+            if (records.length) {
+                // A failed author callback is reported without abandoning the remaining observers.
+                // https://www.w3.org/TR/intersection-observer/#notify-intersection-observers-algo
+                try { this.callback(records, this); }
+                catch (error) { reportGlobalException(error, 'IntersectionObserver'); }
+            }
         }
         _queue() {
             if (this._scheduled || !this._targets.size) return;
@@ -147,13 +151,21 @@
             if (!(target instanceof Element)) throw new TypeError('IntersectionObserver target must be an Element');
             if (this._targets.has(target)) return;
             this._targets.add(target);
+            // disconnect() removes targets, not the ability to reuse this observer.
+            // Retain observers for rendering updates only while they have active targets.
+            // https://www.w3.org/TR/intersection-observer/#observe-target-element
+            observers.add(this);
             // Intersection observations belong to the rendering update. Initial scripts run
             // before Breeze has a layout snapshot, so delivering here would expose a synthetic
             // zero rectangle and can permanently suppress lazy content. The renderer notifies
             // us after its first layout; observers registered after that point may queue now.
             if (hasLayoutSnapshot) this._queue();
         }
-        unobserve(target) { this._targets.delete(target); this._previous.delete(target); }
+        unobserve(target) {
+            this._targets.delete(target);
+            this._previous.delete(target);
+            if (!this._targets.size) observers.delete(this);
+        }
         disconnect() {
             this._targets.clear();
             this._previous.clear();
@@ -167,10 +179,10 @@
         // The embedding invokes this as a dedicated rendering-observer task after publishing a
         // fresh layout snapshot. Do not enqueue through the page timer queue: a timer backlog may
         // not delay rendering-observer notifications.
-        for (const observer of observers) observer._deliver();
+        // A callback may disconnect and observe again. Snapshot the active observers so
+        // re-registration does not revisit that observer in the same rendering update.
+        for (const observer of Array.from(observers)) observer._deliver();
     };
-    globalThis.addEventListener('resize', updateObservers);
-    globalThis.addEventListener('scroll', updateObservers);
     Object.assign(globalThis, {
         IntersectionObserver,
         IntersectionObserverEntry,

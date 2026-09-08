@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(test)]
+mod tests;
+
 pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
     for item in items {
         let rect = match item {
@@ -61,7 +64,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let Some(node) = node else {
             return;
         };
-        for descendant in Node::shadow_including_descendants(node) {
+        // Assigned nodes belong to the composed box subtree, not necessarily this DOM subtree.
+        // Translate their CSSOM bounds with the paint range while excluding unassigned/fallback
+        // content that does not participate in these boxes.
+        for descendant in Node::composed_descendants(node) {
             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                 rect.x += offset_x;
                 rect.y += offset_y;
