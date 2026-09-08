@@ -250,7 +250,8 @@ their mutations and fullscreen exit still invalidate geometry.
 
 CSSOM View geometry uses the same sizing and placement algorithms as normal
 rendering, but does not construct discarded paint items, clipping/opacity layers,
-paint ordering, form-action records, or final scroll-height output. Inline
+paint ordering, or form-action records. It retains the same scrollable overflow
+extent for script-requested viewport scrolling. Inline
 recursion, replaced/control boxes, flex/grid/table placement, and transforms still
 populate the complete node-bounds map. Parity fixtures compare those maps with
 normal retained rendering; this is not a separate simplified layout algorithm.

@@ -74,12 +74,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "padding-left" => serialize_length(style.padding.left),
         "padding-right" => serialize_length(style.padding.right),
         "padding-top" => serialize_length(style.padding.top),
-        "overflow" | "overflow-x" | "overflow-y" => if style.overflow_hidden {
-            "hidden"
-        } else {
-            "visible"
-        }
-        .to_string(),
+        "overflow" | "overflow-x" | "overflow-y" => style.serialize_overflow(property),
         "position" => match style.position {
             Position::Static => "static",
             Position::Relative => "relative",

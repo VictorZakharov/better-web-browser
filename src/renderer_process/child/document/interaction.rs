@@ -259,6 +259,7 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            || outcome.viewport_scroll_y.is_some()
             || !outcome.history_actions.is_empty()
             || !outcome.cookie_updates.is_empty();
         if !needs_present {

@@ -40,14 +40,15 @@ pub fn layout_page_with_style_viewport<M: TextMeasurer>(
 }
 
 /// Resolves the same element boxes as retained layout without constructing paint or form output.
-/// CSSOM View needs sizing, inline placement, and transformed descendants, not a display list.
+/// CSSOM View needs sizing, inline placement, transformed descendants, and scrollable extent.
+/// The returned paint, form, and paint-order collections remain empty.
 pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
     page: &Page,
     viewport_width: f32,
     viewport_height: f32,
     style_viewport_width: f32,
     measurer: &mut M,
-) -> HashMap<NodeId, RectF> {
+) -> LayoutOutput {
     // Preserve font metrics without requesting positioned/rasterized glyph payloads that the
     // geometry caller cannot consume. TextMeasurer::shape defaults to these same measurements.
     struct MetricsOnly<'a, M>(&'a mut M);
@@ -64,7 +65,6 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
         &mut MetricsOnly(measurer),
         false,
     )
-    .node_bounds
 }
 
 fn layout_page_for_output<M: TextMeasurer>(
@@ -162,12 +162,10 @@ fn layout_page_for_output<M: TextMeasurer>(
         Some(viewport_height.max(1.0)),
         None,
     );
-    if emit_paint {
-        engine.output.content_height = metrics
-            .bottom
-            .max(engine.scrollable_overflow_bottom(&root))
-            .max(viewport_height);
-    }
+    engine.output.content_height = metrics
+        .bottom
+        .max(engine.scrollable_overflow_bottom(&root))
+        .max(viewport_height);
     engine.output
 }
 

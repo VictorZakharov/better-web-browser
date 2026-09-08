@@ -88,8 +88,9 @@ impl DocumentRuntime {
             );
             metrics.text_measure = geometry_text.elapsed;
             metrics.layout = started.elapsed();
+            metrics.content_height = Some(geometry.content_height);
             geometry_ready = true;
-            Some(geometry)
+            Some(geometry.node_bounds)
         })
     }
 
@@ -107,6 +108,7 @@ impl DocumentRuntime {
         drop(text);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
+            runtime.set_layout_content_height(self.layout.content_height);
             self.geometry_observers_pending = true;
         }
     }

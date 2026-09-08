@@ -205,7 +205,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "transform-style" => style.transform_style_preserve_3d = source.transform_style_preserve_3d,
         "contain" => style.contain_layout_or_paint = source.contain_layout_or_paint,
         "will-change" => style.will_change_containing_block = source.will_change_containing_block,
-        "overflow" | "overflow-x" | "overflow-y" => style.overflow_hidden = source.overflow_hidden,
+        "overflow" | "overflow-x" | "overflow-y" => style.copy_overflow(property, source),
         "justify-content" | "-webkit-justify-content" | "-webkit-box-pack" => {
             style.justify_content_end = source.justify_content_end;
             style.justify_content = source.justify_content;

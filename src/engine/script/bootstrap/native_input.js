@@ -113,8 +113,8 @@
                 case 'simple': return dispatchNativeSimple(input);
                 case 'imageResource': return dispatchNativeImageResource(input);
                 case 'scroll': {
-                    windowObject.scrollX = windowObject.pageXOffset = viewportScrollX = Number(input.x) || 0;
-                    windowObject.scrollY = windowObject.pageYOffset = viewportScrollY = Number(input.y) || 0;
+                    if (!setViewportScrollOffsets(Number(input.x) || 0, Number(input.y) || 0)) return true;
+                    if (viewportScrollEventPending) return true;
                     // CSSOM View viewport scroll events target Document and bubble to Window.
                     const allowed = document.dispatchEvent(markTrusted(new Event('scroll', { bubbles: true })));
                     return allowed;

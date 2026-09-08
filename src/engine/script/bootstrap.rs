@@ -29,6 +29,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/cssom_document.js"),
     include_str!("bootstrap/cssom_adoption.js"),
     include_str!("bootstrap/platform.js"),
+    include_str!("bootstrap/viewport_scrolling.js"),
     include_str!("bootstrap/performance.js"),
     include_str!("bootstrap/media_queries.js"),
     include_str!("bootstrap/native_input.js"),

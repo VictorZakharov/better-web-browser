@@ -22,6 +22,9 @@ pub(super) fn merge_outcome(
     if source.navigation_url.is_some() {
         target.navigation_url = source.navigation_url;
     }
+    if source.viewport_scroll_y.is_some() {
+        target.viewport_scroll_y = source.viewport_scroll_y;
+    }
     target.history_actions.append(&mut source.history_actions);
     target.cookie_updates.append(&mut source.cookie_updates);
     target.storage_updates.append(&mut source.storage_updates);
@@ -47,6 +50,7 @@ pub(super) fn runtime_report(
         console: std::mem::take(&mut outcome.console),
         diagnostics: std::mem::take(&mut outcome.diagnostics),
         navigation_url: outcome.navigation_url,
+        viewport_scroll_y: outcome.viewport_scroll_y,
         history_updates: outcome
             .history_actions
             .into_iter()

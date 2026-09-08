@@ -50,6 +50,9 @@ impl RuntimeReport {
         if next.navigation_url.is_none() {
             next.navigation_url = self.navigation_url;
         }
+        if next.viewport_scroll_y.is_none() {
+            next.viewport_scroll_y = self.viewport_scroll_y;
+        }
         self.history_updates.append(&mut next.history_updates);
         next.history_updates = self.history_updates;
         self.cookie_updates.append(&mut next.cookie_updates);
@@ -150,6 +153,21 @@ mod tests {
     use crate::renderer_protocol::HistoryUpdate;
     use crate::renderer_protocol::PresentedImage;
     use crate::renderer_protocol::presentation::tests::sample;
+
+    #[test]
+    fn coalesced_scroll_requests_keep_the_latest_offset_including_zero() {
+        let first = RuntimeReport {
+            viewport_scroll_y: Some(500.0),
+            ..RuntimeReport::default()
+        };
+        let retained = first.coalesce(RuntimeReport::default());
+        assert_eq!(retained.viewport_scroll_y, Some(500.0));
+        let final_report = retained.coalesce(RuntimeReport {
+            viewport_scroll_y: Some(0.0),
+            ..RuntimeReport::default()
+        });
+        assert_eq!(final_report.viewport_scroll_y, Some(0.0));
+    }
 
     #[test]
     fn preserves_ordered_deltas_and_one_shot_resources() {

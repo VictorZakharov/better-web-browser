@@ -33,7 +33,8 @@ fn assert_parity(page: &Page) -> LayoutOutput {
         &RenderInvalidation::full(page.dom.document.id()),
     );
     assert_eq!(
-        layout_geometry_with_style_viewport(&sparse, 800.0, 600.0, 815.0, &mut FixedMeasurer),
+        layout_geometry_with_style_viewport(&sparse, 800.0, 600.0, 815.0, &mut FixedMeasurer)
+            .node_bounds,
         retained.node_bounds,
         "sparse synchronous styles preserve every retained element box"
     );
@@ -244,5 +245,6 @@ fn geometry_uses_metrics_without_requesting_painted_glyphs() {
     assert_eq!(measurer.shapes, 0);
     let retained = layout_page(&page, 800.0, 600.0, &mut measurer);
     assert!(measurer.shapes > 0);
-    assert_eq!(geometry, retained.node_bounds);
+    assert_eq!(geometry.node_bounds, retained.node_bounds);
+    assert_eq!(geometry.content_height, retained.content_height);
 }

@@ -1,6 +1,10 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_layout_content_height(&mut self, height: f32) {
+        self.host.borrow_mut().layout_content_height = height;
+    }
+
     /// Publishes the renderer's latest layout snapshot to CSSOM View APIs in this realm.
     pub(crate) fn set_layout_geometry(&mut self, geometry: &HashMap<NodeId, RectF>) {
         let mut host = self.host.borrow_mut();

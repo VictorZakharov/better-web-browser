@@ -117,9 +117,6 @@
     windowObject.innerWidth = exposedViewportWidth;
     windowObject.innerHeight = exposedViewportHeight;
     windowObject.devicePixelRatio = initialDeviceScale;
-    windowObject.scrollX = windowObject.pageXOffset = 0;
-    windowObject.scrollY = windowObject.pageYOffset = 0;
-    windowObject.scrollTo = windowObject.scrollBy = () => {};
 
     const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     windowObject.atob = value => {

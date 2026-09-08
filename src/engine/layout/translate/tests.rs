@@ -71,7 +71,8 @@ fn assert_boxes_match_paint(page: &Page, x: f32, y: f32, outside_y: f32) {
         );
     }
     assert_eq!(
-        layout_geometry_with_style_viewport(page, 800.0, 600.0, 800.0, &mut FixedMeasurer),
+        layout_geometry_with_style_viewport(page, 800.0, 600.0, 800.0, &mut FixedMeasurer)
+            .node_bounds,
         retained.node_bounds
     );
     let mut sparse = page.layout_snapshot();
@@ -81,7 +82,8 @@ fn assert_boxes_match_paint(page: &Page, x: f32, y: f32, outside_y: f32) {
         &RenderInvalidation::full(page.dom.document.id()),
     );
     assert_eq!(
-        layout_geometry_with_style_viewport(&sparse, 800.0, 600.0, 800.0, &mut FixedMeasurer),
+        layout_geometry_with_style_viewport(&sparse, 800.0, 600.0, 800.0, &mut FixedMeasurer)
+            .node_bounds,
         retained.node_bounds
     );
 }

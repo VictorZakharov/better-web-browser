@@ -2,6 +2,7 @@ use super::*;
 use std::cell::Cell;
 
 mod pointer_coordinates;
+mod properties;
 mod timing;
 
 fn initialize(

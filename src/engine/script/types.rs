@@ -106,6 +106,8 @@ pub struct ScriptOutcome {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    /// Latest script-requested vertical viewport offset, in CSS pixels.
+    pub viewport_scroll_y: Option<f32>,
     pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
     pub storage_updates: Vec<StorageMutation>,

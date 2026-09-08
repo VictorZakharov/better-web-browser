@@ -3,6 +3,7 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) content_height: Option<f32>,
     pub(crate) profile: bool,
     pub(crate) style: Duration,
     pub(crate) layout: Duration,
@@ -32,6 +33,9 @@ impl HostState {
         };
         if let Some(geometry) = flush(&invalidation, &mut metrics) {
             self.layout_geometry = geometry;
+        }
+        if let Some(height) = metrics.content_height {
+            self.layout_content_height = height;
         }
         self.host_call_profile
             .record_elapsed("layoutFlush::style", metrics.style);

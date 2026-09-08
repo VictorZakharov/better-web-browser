@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn script_scroll_request_moves_native_pixels_and_uses_absolute_overflow_extent() {
+    const HTML: &str = r#"<!doctype html><title>script scroll fixture</title>
+        <style>html,body{margin:0}main{position:absolute;top:1000px;width:600px;
+        height:1000px;background:rgb(17,170,34)}</style><main>Script-scrolled content</main>
+        <script>setTimeout(() => {
+            document.scrollingElement.scrollTop = 1000;
+            console.log('script requested scroll:' + scrollY);
+        }, 1700);</script>"#;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/script-scroll", listener.local_addr().unwrap());
+    let server = thread::spawn(move || serve_fixtures(listener, 1, |_| HTML));
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark(&url, &artifacts, 2500);
+    assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
+    server.join().unwrap().unwrap();
+    let report = fs::read_to_string(&artifacts.json).unwrap();
+    assert!(report.contains("script requested scroll:1000"), "{report}");
+    assert!(report.contains("\"javascript_errors\": []"), "{report}");
+    let capture = image::open(&artifacts.screenshot).unwrap().to_rgba8();
+    let green = capture
+        .pixels()
+        .filter(|p| p[0] < 40 && p[1] > 130 && p[1] < 200 && p[2] < 70)
+        .count();
+    assert!(
+        green > 40_000,
+        "scroll changed script state but not native painting: {green} green pixels"
+    );
+}
+
+#[test]
 fn delayed_hidden_scroll_actions_use_native_offsets_and_deliver_ordered_scroll_events() {
     const HTML: &str = r#"<!doctype html><title>delayed scroll fixture</title>
         <style>html,body{margin:0}main{height:3000px}</style><main>Scrollable document</main>

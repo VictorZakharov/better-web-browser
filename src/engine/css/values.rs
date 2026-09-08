@@ -2,6 +2,7 @@
 
 mod edges;
 mod length;
+mod overflow;
 mod viewport;
 
 use super::*;
@@ -283,6 +284,7 @@ pub struct ComputedStyle {
     pub(crate) contain_layout_or_paint: bool,
     pub(crate) will_change_containing_block: bool,
     pub overflow_hidden: bool,
+    pub(crate) overflow: overflow::OverflowAxes,
     pub justify_content_end: bool,
     pub align_items_center: bool,
     pub flex_direction: FlexDirection,
@@ -362,6 +364,7 @@ impl ComputedStyle {
             contain_layout_or_paint: false,
             will_change_containing_block: false,
             overflow_hidden: false,
+            overflow: overflow::OverflowAxes::default(),
             justify_content_end: false,
             align_items_center: false,
             flex_direction: FlexDirection::Row,
