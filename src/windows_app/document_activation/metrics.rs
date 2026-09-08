@@ -167,6 +167,7 @@ impl BrowserState {
         let Some(benchmark) = self.benchmark.as_mut() else {
             return false;
         };
+        benchmark.titles.record_document_title(&presentation.title);
         if !first && presentation.runtime.render_requested {
             benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
             benchmark.render_mutations = benchmark

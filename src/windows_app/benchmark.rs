@@ -56,6 +56,7 @@ pub(super) struct BenchmarkRun {
     pub(super) status: u32,
     pub(super) bytes: u64,
     pub(super) final_url: String,
+    pub(super) titles: diagnostics::PageTitles,
     pub(super) error: Option<String>,
     pub(super) script_executed: usize,
     pub(super) script_executed_at_page_ready: usize,
@@ -319,6 +320,7 @@ impl BrowserState {
                 "  \"device_scale_factor\": {:.3},\n",
                 "  \"requested_url\": {},\n",
                 "  \"final_url\": {},\n",
+                "  \"titles\": {},\n",
                 "  \"error\": {},\n",
                 "  \"http_status\": {},\n",
                 "  \"viewport_width_css_px\": {:.3},\n",
@@ -397,6 +399,7 @@ impl BrowserState {
             self.page_scale(),
             json_string(&benchmark.requested_url),
             json_string(&benchmark.final_url),
+            benchmark.titles.json(&self.title),
             effective_error
                 .as_deref()
                 .map(json_string)

@@ -160,6 +160,14 @@ callbacks after a 100 ms quiet period. Runtime-only progress crosses IPC without
 installing an immutable presentation; DOM/style/resource invalidation is required before the
 renderer emits new visual output.
 
+For a delayed native document scroll, pass `-ScrollTarget @('800', '0') -NavigationDelayMs 1500`
+to `run-hidden-benchmark.ps1`. Targets are integer CSS-pixel y offsets
+from 0 to 2147483647, converted to native pixels and clamped to the document's scroll range.
+They run in array order after the other action groups, with the navigation delay before each
+action, then the usual settle/capture period. The underlying repeatable `--scroll-after-ready`
+option preserves command-line ordering with other actions and delivers the ordinary scroll
+events; it does not bypass native scrolling or directly mutate the page's JavaScript state.
+
 ### Web-platform regression suite
 
 A pinned, curated 80-file Web Platform Test suite covers 570 upstream harness subtests across HTML

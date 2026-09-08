@@ -1,5 +1,7 @@
 //! Hidden in-process navigation sequences for lifecycle regression coverage.
 
+mod scroll;
+
 use super::super::*;
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentNodeId, InputModifiers, KeyPhase, KeyboardInput, PointerButton,
@@ -13,6 +15,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     ActivateSelector(String),
     ClickPoint { x: i32, y: i32 },
     MovePoint { x: i32, y: i32 },
+    ScrollTo { y: i32 },
     Key { key: String, code: String },
 }
 
@@ -66,6 +69,13 @@ impl BrowserState {
                 }
                 BenchmarkNavigation::Key { key, code } => {
                     let result = self.press_benchmark_key(key, code);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::ScrollTo { y } => {
+                    let result = self.scroll_benchmark_page(y);
                     if result.is_ok() {
                         self.continue_or_finish_benchmark_actions();
                     }

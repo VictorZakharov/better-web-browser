@@ -3,7 +3,7 @@
 use super::super::*;
 use super::{BenchmarkRun, diagnostics, navigation::BenchmarkNavigation};
 mod input;
-use input::{key_input, point_input};
+use input::{key_input, point_input, scroll_input};
 
 pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
@@ -126,6 +126,9 @@ impl LaunchOptions {
                 }
                 "--key-after-ready" => {
                     navigation_targets.push(key_input(&required(&mut arguments, &argument)?)?);
+                }
+                "--scroll-after-ready" => {
+                    navigation_targets.push(scroll_input(&required(&mut arguments, &argument)?)?);
                 }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
@@ -333,8 +336,12 @@ mod tests {
                 "320,180",
                 "--click-after-ready",
                 "320,180",
+                "--scroll-after-ready",
+                "800",
                 "--key-after-ready",
                 "k,KeyK",
+                "--scroll-after-ready",
+                "0",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -352,10 +359,12 @@ mod tests {
                 BenchmarkNavigation::ActivateSelector("button.play".to_string()),
                 BenchmarkNavigation::MovePoint { x: 320, y: 180 },
                 BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
+                BenchmarkNavigation::ScrollTo { y: 800 },
                 BenchmarkNavigation::Key {
                     key: "k".to_string(),
                     code: "KeyK".to_string(),
                 },
+                BenchmarkNavigation::ScrollTo { y: 0 },
             ]
         );
         assert_eq!(benchmark.diagnostic_selectors, ["button.play"]);

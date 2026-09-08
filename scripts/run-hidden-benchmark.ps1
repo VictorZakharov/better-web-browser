@@ -33,6 +33,7 @@ param(
     [string[]] $ClickTarget = @(),
     [string[]] $PointerMoveTarget = @(),
     [string[]] $KeyTarget = @(),
+    [string[]] $ScrollTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -180,12 +181,22 @@ foreach ($target in $KeyTarget) {
     $arguments.Add('--key-after-ready')
     $arguments.Add($target)
 }
+foreach ($target in $ScrollTarget) {
+    $scrollOffset = 0
+    $target = ([string] $target).Trim()
+    if ($target -notmatch '^[0-9]+$' -or -not [int]::TryParse($target, [ref] $scrollOffset)) {
+        throw '-ScrollTarget values must be integer CSS y offsets from 0 to 2147483647.'
+    }
+    $arguments.Add('--scroll-after-ready')
+    $arguments.Add($scrollOffset.ToString([System.Globalization.CultureInfo]::InvariantCulture))
+}
 if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
-    $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0) {
+    $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or
+    $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one navigation, link, selector, or click target.'
+    throw '-NavigationDelayMs requires at least one navigation, link, selector, pointer, key, or scroll target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

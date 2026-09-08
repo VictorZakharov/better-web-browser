@@ -66,6 +66,7 @@ impl BenchmarkRun {
             status: 0,
             bytes: 0,
             final_url: String::new(),
+            titles: diagnostics::PageTitles::default(),
             error: None,
             script_executed: 0,
             script_executed_at_page_ready: 0,

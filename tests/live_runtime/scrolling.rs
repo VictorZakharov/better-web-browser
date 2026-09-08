@@ -1,6 +1,73 @@
 use super::*;
 
 #[test]
+fn delayed_hidden_scroll_actions_use_native_offsets_and_deliver_ordered_scroll_events() {
+    const HTML: &str = r#"<!doctype html><title>delayed scroll fixture</title>
+        <style>html,body{margin:0}main{height:3000px}</style><main>Scrollable document</main>
+        <script>
+          const positions = [];
+          addEventListener('scroll', () => {
+            positions.push(scrollY);
+            console.log('native scroll sequence:' + positions.join(','));
+          });
+        </script>"#;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/delayed-scroll", listener.local_addr().unwrap());
+    let server = thread::spawn(move || serve_fixtures(listener, 1, |_| HTML));
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        500,
+        &[
+            "--scroll-after-ready",
+            "800",
+            "--scroll-after-ready",
+            "0",
+            "--scroll-after-ready",
+            "2147483647",
+            "--navigation-delay-ms",
+            "500",
+        ],
+    );
+    let status = wait_for_child(&mut child, Duration::from_secs(20));
+    server.join().unwrap().unwrap();
+    assert!(status.success(), "hidden browser failed: {status}");
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&artifacts.json).unwrap()).unwrap();
+    assert!(report["error"].is_null(), "hidden scroll failed: {report}");
+    assert_eq!(report["javascript_errors"], serde_json::json!([]));
+    let positions = report["javascript_console"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|line| {
+            line.split_once("native scroll sequence:")
+                .map(|(_, value)| value)
+        })
+        .next_back()
+        .expect("native scroll events were not delivered")
+        .split(',')
+        .map(|value| value.parse::<f64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        positions.len(),
+        3,
+        "scroll actions lost their order: {positions:?}"
+    );
+    assert!(
+        (positions[0] - 800.0).abs() <= 1.0,
+        "CSS/native scale mismatch: {positions:?}"
+    );
+    assert_eq!(positions[1], 0.0);
+    assert!(
+        (2000.0..3000.0).contains(&positions[2]),
+        "scroll was not clamped to the document: {positions:?}"
+    );
+}
+
+#[test]
 fn native_wheel_reaches_absolute_document_overflow_and_delivers_scroll_event() {
     const HTML: &str = r#"<!doctype html><title>absolute scroll fixture</title>
         <style>body{margin:0} main{position:absolute;top:0;width:600px;height:1800px;
