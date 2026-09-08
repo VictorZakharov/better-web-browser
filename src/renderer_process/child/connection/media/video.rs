@@ -159,9 +159,9 @@ fn tick(
     };
     let retired = retired.swap(0, Ordering::AcqRel);
     if retired != 0 {
-        // A replacement decode may already have retired this source. A stale-source rejection
-        // is harmless; the worker never pauses a different source on this command.
-        let _ = client.set_playback(retired, false, 0);
+        // The client checks the installed source while holding the decode/command lock.
+        // A retirement that lost the race to replacement must never reach the worker.
+        let _ = client.pause_retired_source(retired);
     }
     let (epoch, document, node, source, mut end) = {
         let registration = slot.lock().unwrap();

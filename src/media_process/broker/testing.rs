@@ -1,6 +1,5 @@
 use super::{
-    DecodedMediaFrame, MEDIA_EXIT_DECODE, MEDIA_EXIT_PROTOCOL, MEDIA_EXIT_TIMEOUT, MediaSession,
-    OwnedMediaDecode,
+    DecodedMediaFrame, MEDIA_EXIT_DECODE, MEDIA_EXIT_PROTOCOL, MediaSession, OwnedMediaDecode,
 };
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
 use crate::media_frame_protocol::{MediaFrameReader as DecodedFrameReader, nv12_to_bgra};
@@ -8,8 +7,7 @@ use crate::media_protocol::{
     BrowserMediaMessage, MediaDecodeReport, MediaPlaybackState, MediaRestrictionReport,
     MediaSessionId, MediaTestCommand, WorkerMediaMessage,
 };
-use std::sync::mpsc;
-
+mod failure;
 mod playback;
 
 impl MediaSession {
@@ -335,54 +333,6 @@ impl MediaSession {
         match self.receive("restriction probe", self.command_timeout)? {
             WorkerMediaMessage::Restrictions(report) => Ok(report),
             _ => self.protocol_failure("media worker returned the wrong restriction response"),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn inject_failure(&mut self, command: MediaTestCommand) -> Result<(), String> {
-        self.require_test_mode()?;
-        if matches!(
-            command,
-            MediaTestCommand::ProbeRestrictions { .. }
-                | MediaTestCommand::WriteMalformedDecodedFrame
-                | MediaTestCommand::WriteTruncatedDecodedFrame
-                | MediaTestCommand::WriteOversizedDecodedFrame
-        ) {
-            return Err("use the specialized media test method for this command".into());
-        }
-        self.send(BrowserMediaMessage::Test(command), "failure injection")?;
-        match self.incoming.recv_timeout(self.command_timeout) {
-            Ok(Ok(message)) => self.protocol_failure(&format!(
-                "failure injection unexpectedly returned {message:?}"
-            )),
-            Ok(Err(error)) => {
-                self.mark_exited(
-                    format!("media IPC failed after injected fault: {error}"),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                self.mark_exited(
-                    "media worker exited after injected fault".into(),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) if command == MediaTestCommand::Hang => {
-                self.mark_exited(
-                    "media worker exceeded its command timeout".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                self.mark_exited(
-                    "media worker did not surface its injected failure".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Err(self.exit_reason.clone().unwrap_or_default())
-            }
         }
     }
 

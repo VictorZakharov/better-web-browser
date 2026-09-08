@@ -16,7 +16,10 @@ pub(super) fn handle(
     frame_writer: &mut DecodedFrameWriter<File>,
 ) -> Result<(), String> {
     match command {
-        MediaTestCommand::Crash => std::process::abort(),
+        MediaTestCommand::Crash => {
+            crate::renderer_process::windows::suppress_injected_fault_reporting();
+            std::process::abort()
+        }
         MediaTestCommand::Hang => loop {
             std::thread::sleep(Duration::from_secs(60));
         },

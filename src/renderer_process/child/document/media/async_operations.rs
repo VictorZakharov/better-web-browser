@@ -37,6 +37,9 @@ impl DocumentRuntime {
             return Ok(());
         };
         let Some(pending) = self.pending_media_action.take() else {
+            if discard_replaced_media(&mut self.media, &completion) {
+                connection.clear_video();
+            }
             self.pending_async_outcome
                 .diagnostics
                 .push("discarded a retired asynchronous media completion".into());
@@ -45,6 +48,9 @@ impl DocumentRuntime {
         let node = pending.node();
         let request_id = pending.request_id();
         if self.page.dom.find_node(node).is_none() {
+            if discard_replaced_media(&mut self.media, &completion) {
+                connection.clear_video();
+            }
             return Ok(());
         }
         let disposition = match (pending, completion) {
@@ -119,3 +125,22 @@ impl DocumentRuntime {
         Ok(())
     }
 }
+
+fn discard_replaced_media(
+    playback: &mut Option<MediaPlayback>,
+    completion: &MediaOperationCompletion,
+) -> bool {
+    // A successful decode replaces the worker source even when its DOM owner was removed
+    // before completion. Its new source starts paused. Forget the old document-side source
+    // without sending it a pause: it no longer exists in the worker. Failed decodes and
+    // appends do not replace source identity, so their prior playback state remains valid.
+    if matches!(completion, MediaOperationCompletion::Decoded(Ok(_))) {
+        playback.take();
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests;

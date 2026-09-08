@@ -1,5 +1,6 @@
 //! Renderer-side client for a browser-launched contained media worker.
 mod append;
+mod retirement;
 
 use super::broker::DecodedMediaFrame;
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
@@ -51,6 +52,7 @@ pub(crate) struct MediaClient {
     next_request: u64,
     next_source: u64,
     next_frame: u64,
+    active_source: Option<u64>,
 }
 
 impl MediaClient {
@@ -97,6 +99,7 @@ impl MediaClient {
             next_request: 1,
             next_source: 1,
             next_frame: 1,
+            active_source: None,
         })
     }
 
@@ -142,7 +145,12 @@ impl MediaClient {
                 request_id: actual,
                 report,
                 frame,
-            } if actual == request_id => (report, frame),
+            } if actual == request_id
+                && frame.source_id == source_id
+                && frame.frame_id == frame_id =>
+            {
+                (report, frame)
+            }
             WorkerMediaMessage::DecodeFailed {
                 request_id: actual,
                 error,
@@ -156,6 +164,7 @@ impl MediaClient {
             .map_err(|error| format!("invalid media decode report: {error}"))?;
         let frame = self.receive_frame(metadata)?;
         self.acknowledge(metadata.source_id, metadata.frame_id)?;
+        self.active_source = Some(metadata.source_id);
         Ok(RendererMediaDecode { report, frame })
     }
 
@@ -217,7 +226,12 @@ impl MediaClient {
                 request_id: actual,
                 report,
                 frame,
-            } if actual == request_id => (report, frame),
+            } if actual == request_id
+                && frame.source_id == video_source_id
+                && frame.frame_id == frame_id =>
+            {
+                (report, frame)
+            }
             WorkerMediaMessage::DecodeFailed {
                 request_id: actual,
                 error,
@@ -231,6 +245,7 @@ impl MediaClient {
             .map_err(|error| format!("invalid adaptive media decode report: {error}"))?;
         let frame = self.receive_frame(metadata)?;
         self.acknowledge(metadata.source_id, metadata.frame_id)?;
+        self.active_source = Some(metadata.source_id);
         Ok(RendererMediaDecode { report, frame })
     }
 

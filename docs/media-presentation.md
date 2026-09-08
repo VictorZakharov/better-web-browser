@@ -24,6 +24,27 @@ The document retains a shared copy of the latest pixels for later scene snapshot
 changes do not require a complete display-list transfer. A changed intrinsic size still requires
 document layout before the browser accepts the new dimensions.
 
+### Retirement and replacement ordering
+
+Deferred retirement uses the same exclusive client lock as decoding. The client records the
+source identity only after a validated decode response and frame acknowledgment. If a newer
+source was installed before the old source's queued pause acquires that lock, the pause is
+discarded locally. It must not cross IPC: the worker treats a stale source as a protocol
+violation, which would otherwise terminate the replacement as well. Active-source retirement
+still pauses that source, and a rejected replacement does not replace the installed identity.
+Protocol-level regressions cover both lock orderings and rejected replacement decoding.
+
+A successful asynchronous decode can outlive its target element. In that case the document
+discards its obsolete playback identity and video registration without sending a command to
+the replaced source; the newly decoded source starts paused. Failed decoding or append does
+not replace the identity. Successfully read append transfer IDs are consumed even if native
+media decoding rejects the payload, so a handled append failure cannot make the next valid
+transfer appear stale. Stale IDs and invalid protocol nonces remain rejected.
+
+Hidden captures use silent output throughout replacement as well as initial playback. Their
+software clock does not exercise physical audio-device queue backpressure; reported video
+paints and screenshots must not be presented as a measurement of audible output quality.
+
 ## Window presentation scheduling
 
 Accepted video frames keep renderer polling at the active 16 ms interval, even when the document

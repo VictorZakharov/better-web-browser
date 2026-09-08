@@ -2,14 +2,14 @@ use super::*;
 
 impl Playback {
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::media_process::child) fn append_tracks(
+    pub(in crate::media_process::child) fn append_tracks<R: std::io::Read>(
         &mut self,
         source_id: u64,
         video_source_id: u64,
         audio_source_id: u64,
         video_length: u64,
         audio_length: u64,
-        data_reader: &mut MediaDataReader<File>,
+        data_reader: &mut MediaDataReader<R>,
         limits: MediaLimits,
     ) -> Result<(u64, u64, crate::media_protocol::MediaBufferedExtent), String> {
         if self.pending.is_some() {
@@ -64,6 +64,10 @@ impl Playback {
                 .read_source(audio_source, audio_length)
                 .map_err(|error| format!("read appended audio source: {error}"))?
         };
+        // Successfully read transfer identities are consumed even if their media payload is
+        // rejected. Match decode_source/decode_tracks and the client's monotonic allocation;
+        // otherwise a recoverable append error makes every later replacement look stale.
+        self.last_source_id = audio_source_id;
         let decoded = backend::decode_append(&video_bytes, &audio_bytes, limits)?;
         let Some((_, active_video)) = self.active.as_mut() else {
             return Err("active video retired during adaptive append".into());
@@ -77,8 +81,10 @@ impl Playback {
         if let Some(audio) = decoded.audio {
             active_audio.append(audio_bytes, audio)?;
         }
-        self.last_source_id = audio_source_id;
         self.encoded_bytes = total_bytes;
         Ok((total_bytes, decoded.buffered.end_100ns(), decoded.buffered))
     }
 }
+
+#[cfg(test)]
+mod tests;
