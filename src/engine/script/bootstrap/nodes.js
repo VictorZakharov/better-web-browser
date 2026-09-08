@@ -38,7 +38,8 @@
             if (oldDocument !== node.ownerDocument)
                 adoptCustomElementTree(node, oldDocument, node.ownerDocument);
             if (node.isConnected) connectCustomElementTree(node);
-            else upgradeCustomElementTree(node);
+            // DOM insertion steps only try upgrading nodes that are connected. Inert template
+            // fragments may be adopted into a detached cache without running constructors.
         }
     });
     const convertNodes = items => {
@@ -137,8 +138,8 @@
         for (const child of addedChildren) {
             if (wasConnected) connectCustomElementTree(child);
             // Template contents use an inert template-contents owner document and do not share
-            // the host document's custom-element registry. Importing/adopting into a document
-            // performs the upgrade against that destination registry.
+            // the host document's custom-element registry. Importing or connecting to the live
+            // document performs the upgrade against that destination registry.
             else if (!isTemplateContents) upgradeCustomElementTree(child);
         }
         if (wasConnected) refreshWindowNamedProperties(removedChildren.concat(addedChildren));

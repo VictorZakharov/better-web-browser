@@ -304,3 +304,14 @@ same CSSOM View contract and ignores nonstandard page-coordinate initializer key
 This does not implement target-padding-relative `offsetX`/`offsetY`, drag movement
 metrics, or complete overlay hit-testing semantics, nor prove that live player
 hover controls are fixed.
+
+Template-backed controls now preserve [inert content ownership](template-inertness.md)
+when moving cached fragments. Previously, premature custom-element constructors
+changed cached child indices before cloning and caused later stamping exceptions.
+
+Absolute and fixed descendants no longer contribute inline atoms to normal-flow
+intrinsic sizing, following [CSS absolute positioning](https://www.w3.org/TR/CSS22/visuren.html#absolute-positioning).
+Their independent positioned layout still produces boxes. A comment-style flex
+fixture previously expanded a 36-pixel avatar column to 537 pixels because a
+percentage-sized decoration was counted as content; it now retains 36 pixels.
+This corrects sizing, not all comment-avatar rendering or control styling.

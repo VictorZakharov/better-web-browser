@@ -5,6 +5,7 @@ use crate::engine::MediaEnvironment;
 
 mod cookies;
 pub(crate) mod geometry;
+mod ownership;
 mod storage;
 
 use crate::storage::{StorageAreaState, StorageMutation};
@@ -42,6 +43,7 @@ pub(super) struct HostState {
     pub(super) owner_documents: HashMap<NodeId, u64>,
     pub(super) document_roots: HashMap<u64, NodeRef>,
     pub(super) html_documents: HashSet<u64>,
+    pub(super) template_contents_documents: HashMap<u64, u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
     pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
@@ -97,7 +99,6 @@ impl HostState {
         character_set: &str,
         module_loader: Rc<module_loader::WebModuleLoader>,
     ) -> Self {
-        let document_identity = document.id().document();
         let mut state = Self {
             document,
             document_url: document_url.to_string(),
@@ -110,6 +111,7 @@ impl HostState {
             owner_documents: HashMap::new(),
             document_roots: HashMap::new(),
             html_documents: HashSet::new(),
+            template_contents_documents: HashMap::new(),
             next_node_id: 1,
             mutation_count: 0,
             task_mutations: task_mutation_profile::TaskMutationProfile::default(),
@@ -157,11 +159,7 @@ impl HostState {
             pending_layout_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
-        state
-            .document_roots
-            .insert(document_identity, document.clone());
-        state.html_documents.insert(document_identity);
-        state.register_subtree(&document);
+        state.register_document(document, true);
         state
     }
 
@@ -197,70 +195,6 @@ impl HostState {
                 ))
                 .into())
         }
-    }
-
-    pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
-        self.document_roots
-            .get(&self.owner_document_identity(node))
-            .cloned()
-    }
-
-    pub(super) fn is_html_document_for(&self, node: &NodeRef) -> bool {
-        self.html_documents
-            .contains(&self.owner_document_identity(node))
-    }
-
-    pub(super) fn register_document(&mut self, document: NodeRef, html: bool) -> u32 {
-        let identity = document.id().document();
-        self.document_roots.insert(identity, document.clone());
-        if html {
-            self.html_documents.insert(identity);
-        }
-        self.register_subtree(&document);
-        self.id_for(&document)
-    }
-
-    pub(super) fn adopt_subtree(&mut self, parent: &NodeRef, child: &NodeRef) {
-        let owner_identity = self.owner_document_identity(parent);
-        let mut stack = vec![child.clone()];
-        while let Some(node) = stack.pop() {
-            self.owner_documents.insert(node.id(), owner_identity);
-            stack.extend(node.children.borrow().iter().rev().cloned());
-            stack.extend(node.shadow_root());
-            if let Some(contents) = node
-                .element()
-                .and_then(|element| element.template_contents.borrow().clone())
-            {
-                stack.push(contents);
-            }
-        }
-    }
-
-    pub(super) fn register_subtree(&mut self, root: &NodeRef) {
-        let owner_identity = root
-            .parent()
-            .map(|parent| self.owner_document_identity(&parent))
-            .unwrap_or_else(|| self.owner_document_identity(root));
-        let mut stack = vec![root.clone()];
-        while let Some(node) = stack.pop() {
-            self.owner_documents.insert(node.id(), owner_identity);
-            self.id_for(&node);
-            stack.extend(node.children.borrow().iter().rev().cloned());
-            stack.extend(node.shadow_root());
-            if let Some(contents) = node
-                .element()
-                .and_then(|element| element.template_contents.borrow().clone())
-            {
-                stack.push(contents);
-            }
-        }
-    }
-
-    fn owner_document_identity(&self, node: &NodeRef) -> u64 {
-        self.owner_documents
-            .get(&node.id())
-            .copied()
-            .unwrap_or_else(|| node.id().document())
     }
 
     pub(super) fn resolved_url(&self, reference: &str) -> String {

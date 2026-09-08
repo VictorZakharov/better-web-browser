@@ -311,7 +311,9 @@ fn exposes_template_contents_as_a_document_fragment() {
                 parsed.firstChild === null &&
                 parsed.content instanceof DocumentFragment &&
                 parsed.content.nodeType === 11 &&
-                parsed.content.ownerDocument === document &&
+                parsed.content.ownerDocument !== document &&
+                parsed.content.ownerDocument.defaultView === null &&
+                parsed.content.ownerDocument === created.content.ownerDocument &&
                 parsed.content.firstChild.textContent === 'parsed' &&
                 document.getElementById('inside') === null &&
                 paragraph.textContent === 'created' &&

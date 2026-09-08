@@ -2,6 +2,8 @@
 
 use super::binding_helpers::{argument_id, argument_string, join_node_ids, js_string};
 use super::*;
+mod construction;
+use construction::{create_document, create_html_document, subtree_size};
 
 const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 
@@ -80,8 +82,17 @@ pub(super) fn dom_host_call(
                 .ensure_node_capacity(1 + usize::from(tag_name.eq_ignore_ascii_case("template")))?;
             JsValue::from(
                 owner
-                    .map(|owner| Node::create_element_for(&owner, &tag_name))
-                    .map(|node| state.id_for(&node))
+                    .map(|owner| {
+                        Node::create_element_in_document(
+                            &owner,
+                            &tag_name,
+                            state.is_html_document_for(&owner),
+                        )
+                    })
+                    .map(|node| {
+                        state.register_subtree(&node);
+                        state.id_for(&node)
+                    })
                     .unwrap_or_default(),
             )
         }
@@ -95,7 +106,10 @@ pub(super) fn dom_host_call(
             JsValue::from(
                 owner
                     .map(|owner| Node::create_element_ns_for(&owner, &namespace, &qualified_name))
-                    .map(|node| state.id_for(&node))
+                    .map(|node| {
+                        state.register_subtree(&node);
+                        state.id_for(&node)
+                    })
                     .unwrap_or_default(),
             )
         }
@@ -130,7 +144,12 @@ pub(super) fn dom_host_call(
             let source = state.node(argument_id(args, 1));
             let deep = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
             if let Some(source) = source.as_ref() {
-                state.ensure_node_capacity(if deep { subtree_size(source) } else { 1 })?;
+                let is_document = state
+                    .document_for(source)
+                    .is_some_and(|owner| owner.id() == source.id());
+                state.ensure_node_capacity(
+                    (if deep { subtree_size(source) } else { 1 }) + usize::from(is_document),
+                )?;
             }
             let clone = source.map(|source| {
                 let owner = state.document_for(&source);
@@ -246,54 +265,6 @@ pub(super) fn dom_host_call(
         _ => return Ok(None),
     };
     Ok(Some(value))
-}
-
-fn create_document(state: &mut HostState, namespace: &str, qualified_name: &str) -> JsResult<u32> {
-    state.ensure_node_capacity(1 + usize::from(!qualified_name.is_empty()))?;
-    let document = Node::create_document();
-    if !qualified_name.is_empty() {
-        let root = Node::create_element_ns_for(&document, namespace, qualified_name);
-        Node::append_child(&document, root);
-    }
-    Ok(state.register_document(document, false))
-}
-
-fn create_html_document(state: &mut HostState, title: &str) -> JsResult<u32> {
-    state.ensure_node_capacity(if title.is_empty() { 5 } else { 7 })?;
-    let document = Node::create_document();
-    let doctype = Node::create_doctype_for(&document, "html", "", "");
-    let html = Node::create_element_ns_for(&document, HTML_NAMESPACE, "html");
-    let head = Node::create_element_ns_for(&document, HTML_NAMESPACE, "head");
-    if !title.is_empty() {
-        let title_element = Node::create_element_ns_for(&document, HTML_NAMESPACE, "title");
-        Node::append_child(&title_element, Node::create_text_for(&document, title));
-        Node::append_child(&head, title_element);
-    }
-    let body = Node::create_element_ns_for(&document, HTML_NAMESPACE, "body");
-    Node::append_child(&html, head);
-    Node::append_child(&html, body);
-    Node::append_child(&document, doctype);
-    Node::append_child(&document, html);
-    Ok(state.register_document(document, true))
-}
-
-fn subtree_size(root: &NodeRef) -> usize {
-    let mut count = 0_usize;
-    let mut stack = vec![root.clone()];
-    while let Some(node) = stack.pop() {
-        count = count.saturating_add(1);
-        if count > MAX_DOM_NODES {
-            return count;
-        }
-        stack.extend(node.children.borrow().iter().rev().cloned());
-        if let Some(template) = node
-            .element()
-            .and_then(|element| element.template_contents.borrow().clone())
-        {
-            stack.push(template);
-        }
-    }
-    count
 }
 
 fn node_type(state: &HostState, node: Option<&NodeRef>) -> u8 {

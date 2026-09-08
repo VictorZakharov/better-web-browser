@@ -17,11 +17,17 @@ use std::rc::Rc;
 
 impl Node {
     pub fn create_element(tag_name: &str) -> NodeRef {
-        Self::create_element_in(NodeIdAllocator::new(), tag_name)
+        Self::create_element_in(NodeIdAllocator::new(), tag_name, true)
     }
 
     pub fn create_element_for(owner: &NodeRef, tag_name: &str) -> NodeRef {
-        Self::create_element_in(Rc::clone(&owner.identity), tag_name)
+        Self::create_element_in(Rc::clone(&owner.identity), tag_name, true)
+    }
+
+    /// Document.createElement uses the HTML namespace/case folding only in HTML documents.
+    /// In XML, even a colon is part of the local name; it does not declare a namespace prefix.
+    pub fn create_element_in_document(owner: &NodeRef, tag_name: &str, html: bool) -> NodeRef {
+        Self::create_element_in(Rc::clone(&owner.identity), tag_name, html)
     }
 
     pub fn create_element_ns_for(
@@ -52,14 +58,22 @@ impl Node {
         )
     }
 
-    fn create_element_in(identity: Rc<NodeIdAllocator>, tag_name: &str) -> NodeRef {
-        let local_name = tag_name.to_ascii_lowercase();
-        let template_contents = (local_name == "template")
+    fn create_element_in(identity: Rc<NodeIdAllocator>, tag_name: &str, html: bool) -> NodeRef {
+        let local_name = if html {
+            tag_name.to_ascii_lowercase()
+        } else {
+            tag_name.to_string()
+        };
+        let template_contents = (html && local_name == "template")
             .then(|| Node::new_in(Rc::clone(&identity), NodeData::Document));
         Node::new_in(
             identity,
             NodeData::Element(ElementData {
-                name: QualName::new(None, ns!(html), LocalName::from(local_name.clone())),
+                name: QualName::new(
+                    None,
+                    if html { ns!(html) } else { ns!() },
+                    LocalName::from(local_name.clone()),
+                ),
                 attrs: RefCell::new(Vec::new()),
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),

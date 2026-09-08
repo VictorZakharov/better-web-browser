@@ -2,6 +2,41 @@ use super::test_support::FixedMeasurer;
 use super::*;
 
 #[test]
+fn out_of_flow_decorations_do_not_inflate_a_flex_items_intrinsic_width() {
+    for position in ["absolute", "fixed"] {
+        let page = Page::parse(
+            &format!(
+                r#"<style>
+            body {{ margin: 0 }} main {{ display:flex; width:1000px }}
+            #avatar {{ position:relative; flex:none; margin-right:16px }}
+            button {{ width:36px; height:36px; padding:0; border:0 }}
+            #decoration {{ position:{position}; width:100%; height:100% }}
+            #decoration span {{ display:inline-block; width:50%; border-left:1px solid }}
+            #text {{ flex:1; min-width:0 }}
+        </style><main><div id=avatar><button></button><div id=decoration><span></span></div></div>
+        <div id=text>Comment</div></main>"#
+            ),
+            "https://example.com/",
+        );
+        let output = layout_page(&page, 1000.0, 600.0, &mut FixedMeasurer);
+        let rect = |id| {
+            let node = page
+                .dom
+                .elements_named("div")
+                .find(|node| node.attr("id").as_deref() == Some(id))
+                .unwrap();
+            output.node_bounds[&node.id()]
+        };
+        assert_eq!(rect("avatar").width, 36.0, "{position}");
+        assert_eq!(rect("text").x, 52.0, "{position}");
+        assert!(
+            rect("decoration").width > 0.0,
+            "out-of-flow decoration still gets its own box"
+        );
+    }
+}
+
+#[test]
 fn text_paint_centers_font_metrics_in_extra_line_leading() {
     let page = Page::parse(
         "<div style='font-size:20px;line-height:40px'>Label</div>",

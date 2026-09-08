@@ -80,6 +80,8 @@
     let defaultCustomElementRegistry = null;
     const definitionForElement = (registry, element) => {
         if (!registry || element.namespaceURI !== htmlNamespace) return null;
+        // Inert template/DOMImplementation documents have no default custom-element registry.
+        if (registry === defaultCustomElementRegistry && element.ownerDocument !== document) return null;
         return registryStates.get(registry)?.definitionsByName.get(element.localName) || null;
     };
     const upgradeElement = (element, definition, synchronous) => {

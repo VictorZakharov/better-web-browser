@@ -50,7 +50,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_block: InlineContainingBlock,
     ) {
         let style = self.styles.get(node);
-        if style.display == Display::None || style_collapses_overflow(style, self.viewport) {
+        // Positioned descendants have their own layout pass; they never contribute inline
+        // atoms or intrinsic widths to normal flow (CSS 2.2, absolute positioning model).
+        if style.display == Display::None
+            || matches!(style.position, Position::Absolute | Position::Fixed)
+            || style_collapses_overflow(style, self.viewport)
+        {
             return;
         }
         if !style.visibility {
