@@ -1,6 +1,6 @@
 use super::{
-    ComApartment, MediaFoundation, output_type, source_reader, stream::copy_sample,
-    verify_native_type,
+    ComApartment, MediaFoundation, fragmented_mp4::VideoTrack, h264::TransformVideoDecoder,
+    output_type, seek_source_reader, select_stream, source_reader, verify_native_type,
 };
 use crate::limits::{MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS};
 use crate::media_protocol::MediaLimits;
@@ -10,25 +10,33 @@ use windows::Win32::Media::MediaFoundation::{
     MFMediaType_Video, MFVideoFormat_H264, MFVideoFormat_NV12,
 };
 
+#[cfg(test)]
+mod tests;
+
 pub(in crate::media_process) struct DecodedVideoSample {
     pub(in crate::media_process) bytes: Vec<u8>,
     pub(in crate::media_process) stride: u32,
+    pub(in crate::media_process) width: u32,
+    pub(in crate::media_process) height: u32,
     pub(in crate::media_process) timestamp_100ns: i64,
     pub(in crate::media_process) duration_100ns: u64,
 }
 
-/// Pull-driven video decode. A frame acknowledgement is the queue bound: the worker never
-/// advances this decoder while an earlier decoded frame is outstanding.
 pub(in crate::media_process) struct VideoDecoder {
-    reader: IMFSourceReader,
-    width: u32,
-    height: u32,
-    stride: u32,
-    maximum_frame_bytes: u64,
-    remaining_samples: u32,
-    last_timestamp: Option<i64>,
-    _foundation: MediaFoundation,
-    _apartment: ComApartment,
+    inner: Decoder,
+}
+
+enum Decoder {
+    SourceReader(SourceReaderVideoDecoder),
+    Transform(FragmentedVideoPlayback),
+}
+
+struct FragmentedVideoPlayback {
+    segments: Vec<VideoTrack>,
+    active: Option<TransformVideoDecoder>,
+    limits: MediaLimits,
+    current: usize,
+    samples: usize,
 }
 
 impl VideoDecoder {
@@ -37,6 +45,114 @@ impl VideoDecoder {
         limits: MediaLimits,
         expected_samples: u32,
     ) -> Result<Self, String> {
+        Ok(Self {
+            inner: Decoder::SourceReader(SourceReaderVideoDecoder::open(
+                bytes,
+                limits,
+                expected_samples,
+            )?),
+        })
+    }
+
+    pub(super) fn open_fragmented(track: VideoTrack, limits: MediaLimits) -> Result<Self, String> {
+        let samples = track.samples.len();
+        Ok(Self {
+            inner: Decoder::Transform(FragmentedVideoPlayback {
+                segments: vec![track],
+                active: None,
+                limits,
+                current: 0,
+                samples,
+            }),
+        })
+    }
+
+    pub(in crate::media_process) fn append(&mut self, next: Self) -> Result<(), String> {
+        let Decoder::Transform(current) = &mut self.inner else {
+            return Err("incremental append requires fragmented H.264 playback".into());
+        };
+        let Decoder::Transform(mut next) = next.inner else {
+            return Err("incremental append changed the H.264 playback backend".into());
+        };
+        current.samples = current
+            .samples
+            .checked_add(next.samples)
+            .filter(|samples| *samples <= MAX_MEDIA_DECODED_SAMPLES)
+            .ok_or_else(|| "incremental H.264 sample count exceeds worker limits".to_string())?;
+        current.segments.append(&mut next.segments);
+        Ok(())
+    }
+
+    pub(in crate::media_process) fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        match &mut self.inner {
+            Decoder::SourceReader(decoder) => decoder.seek(position_100ns),
+            Decoder::Transform(decoder) => decoder.seek(position_100ns),
+        }
+    }
+
+    pub(in crate::media_process) fn next_frame(
+        &mut self,
+    ) -> Result<Option<DecodedVideoSample>, String> {
+        match &mut self.inner {
+            Decoder::SourceReader(decoder) => decoder.next_frame(),
+            Decoder::Transform(decoder) => decoder.next_frame(),
+        }
+    }
+}
+
+impl FragmentedVideoPlayback {
+    fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        let index = self
+            .segments
+            .iter()
+            .position(|segment| segment.duration_100ns() > position_100ns)
+            .unwrap_or_else(|| self.segments.len().saturating_sub(1));
+        self.current = index;
+        self.active = None;
+        self.open_current()?.seek(position_100ns)
+    }
+
+    fn open_current(&mut self) -> Result<&mut TransformVideoDecoder, String> {
+        if self.active.is_none() {
+            self.active = Some(TransformVideoDecoder::open(
+                self.segments[self.current].clone(),
+                self.limits,
+            )?);
+        }
+        Ok(self.active.as_mut().expect("opened current H.264 segment"))
+    }
+
+    fn next_frame(&mut self) -> Result<Option<DecodedVideoSample>, String> {
+        while self.current < self.segments.len() {
+            if let Some(frame) = self.open_current()?.next_frame()? {
+                return Ok(Some(frame));
+            }
+            // Retain bounded encoded data for backward seeking, not a native decoder and its
+            // reference-frame pool for every segment ever appended.
+            self.active = None;
+            self.current += 1;
+        }
+        Ok(None)
+    }
+}
+
+/// Pull-driven video decode. A frame acknowledgement is the queue bound: the worker never
+/// advances this decoder while an earlier decoded frame is outstanding.
+struct SourceReaderVideoDecoder {
+    reader: IMFSourceReader,
+    width: u32,
+    height: u32,
+    stride: u32,
+    maximum_frame_bytes: u64,
+    remaining_samples: u32,
+    total_samples: u32,
+    last_timestamp: Option<i64>,
+    _foundation: MediaFoundation,
+    _apartment: ComApartment,
+}
+
+impl SourceReaderVideoDecoder {
+    fn open(bytes: &[u8], limits: MediaLimits, expected_samples: u32) -> Result<Self, String> {
         if expected_samples == 0 || expected_samples as usize > MAX_MEDIA_DECODED_SAMPLES {
             return Err("decoded video sample count exceeds worker limit".into());
         }
@@ -45,6 +161,11 @@ impl VideoDecoder {
         let foundation = MediaFoundation::start()
             .map_err(|status| format!("start playback Media Foundation: HRESULT {status:#x}"))?;
         let reader = source_reader(bytes)?;
+        select_stream(
+            &reader,
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+            "playback video",
+        )?;
         verify_native_type(
             &reader,
             MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
@@ -85,6 +206,7 @@ impl VideoDecoder {
             .map_err(|error| format!("read playback NV12 stride: {error}"))?;
         let stride =
             u32::try_from(stride).map_err(|_| "playback NV12 stride is negative".to_string())?;
+        let stride = super::video_buffer::default_stride(&current, stride);
         Ok(Self {
             reader,
             width,
@@ -92,19 +214,21 @@ impl VideoDecoder {
             stride,
             maximum_frame_bytes: limits.max_decoded_frame_bytes,
             remaining_samples: expected_samples,
+            total_samples: expected_samples,
             last_timestamp: None,
             _foundation: foundation,
             _apartment: apartment,
         })
     }
 
-    pub(in crate::media_process) fn dimensions(&self) -> (u32, u32) {
-        (self.width, self.height)
+    fn seek(&mut self, position_100ns: u64) -> Result<(), String> {
+        seek_source_reader(&self.reader, position_100ns)?;
+        self.remaining_samples = self.total_samples;
+        self.last_timestamp = None;
+        Ok(())
     }
 
-    pub(in crate::media_process) fn next_frame(
-        &mut self,
-    ) -> Result<Option<DecodedVideoSample>, String> {
+    fn next_frame(&mut self) -> Result<Option<DecodedVideoSample>, String> {
         if self.remaining_samples == 0 {
             return Ok(None);
         }
@@ -139,9 +263,13 @@ impl VideoDecoder {
                 }
                 self.last_timestamp = Some(timestamp);
                 self.remaining_samples -= 1;
+                let (bytes, stride) =
+                    super::video_buffer::copy(&sample, self.stride, self.maximum_frame_bytes)?;
                 return Ok(Some(DecodedVideoSample {
-                    bytes: copy_sample(&sample, "playback video", self.maximum_frame_bytes)?,
-                    stride: self.stride,
+                    bytes,
+                    stride,
+                    width: self.width,
+                    height: self.height,
                     timestamp_100ns: timestamp,
                     duration_100ns: duration,
                 }));

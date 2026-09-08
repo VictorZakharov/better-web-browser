@@ -7,6 +7,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         y: f32,
         width: f32,
+        containing_height: Option<f32>,
         style: &ComputedStyle,
     ) -> f32 {
         let template = parse_grid_template_areas(&style.grid_template_areas);
@@ -43,6 +44,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             let child_style = self.styles.get(child);
             if child_style.display == Display::None || !child_style.visibility {
+                continue;
+            }
+            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
+                // Positioned children are installed by layout_block after grid sizing.
                 continue;
             }
 
@@ -121,8 +126,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     .sum::<f32>()
                     + column_gap * placement.column_end.saturating_sub(placement.column + 1) as f32;
                 let child_style = self.styles.get(&placement.node);
-                let (item_x, item_width) = match child_style.justify_self {
-                    AlignItems::Stretch => (cell_x, cell_width),
+                let (item_x, item_width, used_inline_size) = match child_style.justify_self {
+                    AlignItems::Stretch => (cell_x, cell_width, None),
                     alignment => {
                         // A non-stretch grid item with an automatic inline size is fit-content.
                         // Reuse the flex intrinsic contribution calculation: it resolves an
@@ -138,10 +143,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             AlignItems::End => free_space,
                             AlignItems::Start | AlignItems::Stretch => 0.0,
                         };
-                        (cell_x + offset, item_width)
+                        (
+                            cell_x + offset,
+                            item_width,
+                            Some(UsedInlineSize {
+                                outer: item_width,
+                                percentage_basis: cell_width,
+                            }),
+                        )
                     }
                 };
-                let metrics = self.layout_block(&placement.node, item_x, cursor_y, item_width);
+                let metrics = self.layout_block(
+                    &placement.node,
+                    item_x,
+                    cursor_y,
+                    item_width,
+                    containing_height,
+                    used_inline_size,
+                );
                 if !matches!(child_style.position, Position::Absolute | Position::Fixed) {
                     let span = placement.row_end.saturating_sub(placement.row).max(1) as f32;
                     natural_height =

@@ -1,8 +1,14 @@
+mod children;
+mod control;
 mod positioned;
 mod replaced;
+mod sizing;
 
 use super::*;
 
+#[path = "overflow.rs"]
+mod overflow;
+use sizing::resolve_used_border_box_width;
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_block(
         &mut self,
@@ -10,177 +16,306 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_x: f32,
         y: f32,
         containing_width: f32,
+        containing_height: Option<f32>,
+        used_inline_size: Option<UsedInlineSize>,
+    ) -> BlockMetrics {
+        self.layout_block_with_content_height(
+            node,
+            containing_x,
+            y,
+            containing_width,
+            containing_height,
+            used_inline_size,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn layout_block_with_content_height(
+        &mut self,
+        node: &NodeRef,
+        containing_x: f32,
+        y: f32,
+        containing_width: f32,
+        containing_height: Option<f32>,
+        used_inline_size: Option<UsedInlineSize>,
+        used_content_height: Option<f32>,
     ) -> BlockMetrics {
         let style = self.styles.get(node).clone();
         if style.display == Display::None || !style.visibility {
             return BlockMetrics { bottom: y };
         }
+        let item_start = self.output.items.len();
+        let node_start = self.output.node_paint_order.len();
+        if self.emit_paint {
+            self.positioned_flow_scopes.push(Vec::new());
+        }
+        if self.emit_paint && !node.is_generated_pseudo() {
+            self.output.node_paint_order.push(node_id(node));
+        }
         let block_control = input_control_data(node);
+        let authored_button = node.tag_name() == Some("button")
+            && matches!(
+                style.display,
+                Display::Flex | Display::InlineFlex | Display::Grid
+            );
         let block_image = self.block_image(node);
 
-        let margins = style.margin.resolve(containing_width, style.font_size);
-        let borders = style
-            .border_width
-            .resolve(containing_width, style.font_size);
-        let padding = style.padding.resolve(containing_width, style.font_size);
+        let percentage_basis = used_inline_size
+            .map(|size| size.percentage_basis)
+            .unwrap_or(containing_width);
+        let margins = style.margin.resolve(percentage_basis, style.font_size);
+        let borders = table::resolved_table_borders(node, &style, percentage_basis);
+        let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
         let available_width = (containing_width - margins.horizontal()).max(0.0);
-        let mut border_box_width = resolve_outer_size(
-            style.width,
-            containing_width,
-            style.font_size,
-            horizontal_insets,
-            style.box_sizing,
-        )
-        .unwrap_or_else(|| {
-            block_image.as_ref().map_or(available_width, |image| {
-                image.outer_width(node, &style, horizontal_insets)
-            })
+        let caption_width = if style.display == Display::Table {
+            table::caption_outer_width(node, percentage_basis, self.styles)
+        } else {
+            0.0
+        };
+        let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
+            image.outer_width(node, &style, percentage_basis, horizontal_insets)
         });
-        if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+        let automatic_width = if caption_width > 0.0 {
+            caption_width
+        } else {
+            normal_automatic_width
+        };
+        let mut border_box_width = resolve_used_border_box_width(
+            &style,
             containing_width,
-            style.font_size,
             horizontal_insets,
-            style.box_sizing,
-        ) {
-            border_box_width = border_box_width.min(maximum);
+            margins,
+            automatic_width,
+            used_inline_size,
+        );
+        if style.display == Display::Table {
+            border_box_width = border_box_width.max(caption_width);
         }
-        if let Some(minimum) = resolve_outer_size(
-            style.min_width,
-            containing_width,
-            style.font_size,
-            horizontal_insets,
-            style.box_sizing,
-        ) {
-            border_box_width = border_box_width.max(minimum);
+        if style.width == Length::Auto
+            && matches!(style.position, Position::Absolute | Position::Fixed)
+        {
+            let positioning_width = if style.position == Position::Fixed {
+                self.viewport.width
+            } else {
+                containing_width
+            };
+            if let (Some(left), Some(right)) = (
+                style.left.resolve(positioning_width, style.font_size),
+                style.right.resolve(positioning_width, style.font_size),
+            ) {
+                border_box_width =
+                    (positioning_width - left - right - margins.horizontal()).max(0.0);
+            }
         }
         border_box_width = border_box_width.max(0.0);
 
-        let (x, border_y) = self.resolve_block_position(
+        let (x, mut border_y) = self.resolve_block_position(
             &style,
             containing_x,
             y,
             containing_width,
+            containing_height,
             margins,
             border_box_width,
         );
 
         let content_x = x + borders.left + padding.left;
-        let content_y = border_y + borders.top + padding.top;
+        let mut content_y = border_y + borders.top + padding.top;
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal()).max(0.0);
         let vertical_insets = borders.vertical() + padding.vertical();
-        let specified_height = resolve_content_height(
-            style.height,
-            self.viewport,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        );
-        let minimum_height = resolve_content_height(
-            style.min_height,
-            self.viewport,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        )
-        .unwrap_or(0.0);
-        let maximum_height = resolve_content_height(
-            style.max_height,
-            self.viewport,
-            style.font_size,
-            vertical_insets,
-            style.box_sizing,
-        );
-        let block_image_height = block_image
-            .as_ref()
-            .map(|image| image.content_height(node, &style, content_width));
-        let background_index = if style.background_color.alpha > 0 && style.mask_image.is_none() {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::SolidRect {
-                rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                color: self.effective_background_color(node),
-                radius: 0.0,
-            });
-            Some(index)
+        let percentage_height_basis = if style.position == Position::Fixed {
+            Some(self.viewport.height)
         } else {
-            None
+            containing_height
         };
-        let background_image_index = style.background_image.as_ref().map(|url| {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::BackgroundImage {
-                clip_rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                tile_rect: RectF::default(),
-                url: url.clone(),
-                repeat_x: style.background_repeat_x,
-                repeat_y: style.background_repeat_y,
-            });
-            index
+        let (specified_height, minimum_height, maximum_height) = sizing::resolve_height_constraints(
+            &style,
+            used_content_height,
+            percentage_height_basis,
+            self.viewport,
+            vertical_insets,
+            margins,
+        );
+        let block_image_height = block_image.as_ref().map(|image| {
+            image.content_height(node, &style, content_width, percentage_height_basis)
         });
-        let mask_image_index = style.mask_image.as_ref().map(|url| {
-            let index = self.output.items.len();
-            self.output.items.push(DisplayItem::Image {
-                rect: RectF {
-                    x,
-                    y: border_y,
-                    width: border_box_width,
-                    height: 0.0,
-                },
-                url: url.clone(),
-                alt: String::new(),
-                tint: Some(style.background_color),
+        let background_index =
+            if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none() {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::SolidRect {
+                    rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    color: self.effective_background_color(node),
+                    radius: 0.0,
+                });
+                Some(index)
+            } else {
+                None
+            };
+        let background_image_index = style
+            .background_image
+            .as_ref()
+            .filter(|_| self.emit_paint)
+            .map(|url| {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::BackgroundImage {
+                    clip_rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    tile_rect: RectF::default(),
+                    url: url.clone(),
+                    repeat_x: style.background_repeat_x,
+                    repeat_y: style.background_repeat_y,
+                });
+                index
             });
-            index
-        });
+        let mask_image_index = style
+            .mask_image
+            .as_ref()
+            .filter(|_| self.emit_paint)
+            .map(|url| {
+                let index = self.output.items.len();
+                self.output.items.push(DisplayItem::Image {
+                    rect: RectF {
+                        x,
+                        y: border_y,
+                        width: border_box_width,
+                        height: 0.0,
+                    },
+                    url: url.clone(),
+                    alt: String::new(),
+                    tint: Some(style.background_color),
+                });
+                index
+            });
+        let overflow_clip = self.begin_overflow_clip(&style);
+        // Negative positioned levels paint after this background and before in-flow descendants.
+        let in_flow_paint_start = self.output.items.len();
+        let in_flow_node_start = self.output.node_paint_order.len();
 
         let collapsed = style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
             content_y
-        } else if let Some((kind, _)) = block_control.as_ref() {
+        } else if let Some((kind, _)) = block_control.as_ref().filter(|_| !authored_button) {
             content_y + default_control_content_height(node, kind, &style)
         } else if let Some(height) = block_image_height {
             content_y + height
         } else {
             match style.display {
-                Display::Flex | Display::InlineFlex => {
-                    self.layout_flex(node, content_x, content_y, content_width, &style)
-                }
-                Display::Grid => {
-                    self.layout_grid(node, content_x, content_y, content_width, &style)
-                }
-                Display::Table => {
-                    self.layout_table(node, content_x, content_y, content_width, &style)
-                }
-                _ => self.layout_block_children(node, content_x, content_y, content_width, &style),
+                Display::Flex | Display::InlineFlex => self.layout_flex(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                Display::Grid => self.layout_grid(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                Display::Table => self.layout_table(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
+                _ => self.layout_block_children(
+                    node,
+                    content_x,
+                    content_y,
+                    content_width,
+                    specified_height,
+                    &style,
+                ),
             }
         };
         let natural_content_height = (content_bottom - content_y).max(0.0);
-        let mut content_height = specified_height
-            .unwrap_or(natural_content_height)
-            .max(minimum_height);
+        let used_content_height = if style.display == Display::Table {
+            natural_content_height
+        } else {
+            specified_height.unwrap_or(natural_content_height)
+        };
+        let mut content_height = used_content_height.max(minimum_height);
         if let Some(maximum_height) = maximum_height {
             content_height = content_height.min(maximum_height);
         }
         let border_box_height =
             borders.top + padding.top + content_height + padding.bottom + borders.bottom;
+        let bottom_shift = positioned::bottom_alignment_shift(
+            &style,
+            percentage_height_basis.unwrap_or(self.viewport.height),
+            border_box_height,
+            margins.bottom,
+        );
+        if bottom_shift != 0.0 {
+            self.translate_layout_subtree(
+                Some(node),
+                item_start,
+                self.output.items.len(),
+                0.0,
+                bottom_shift,
+            );
+            border_y += bottom_shift;
+            content_y += bottom_shift;
+        }
         let rect = RectF {
             x,
             y: border_y,
             width: border_box_width,
             height: border_box_height,
         };
-        self.output.node_bounds.insert(node_id(node), rect);
+        if !node.is_generated_pseudo() {
+            self.output.node_bounds.insert(node_id(node), rect);
+        }
+        let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
+            RectF {
+                x: x + borders.left,
+                y: border_y + borders.top,
+                width: (border_box_width - borders.horizontal()).max(0.0),
+                height: padding.top + content_height + padding.bottom,
+            }
+        } else {
+            // A static box does not establish an absolute-position containing block. Preserve
+            // the context selected by its nearest positioned ancestor (or the initial block).
+            RectF {
+                x: containing_x,
+                y,
+                width: containing_width,
+                height: containing_height.unwrap_or(self.viewport.height),
+            }
+        };
+        self.layout_positioned_children(
+            node,
+            positioning_box,
+            in_flow_paint_start,
+            in_flow_node_start,
+        );
+        self.finish_overflow_clip(
+            overflow_clip,
+            RectF {
+                x: x + borders.left,
+                y: border_y + borders.top,
+                width: (border_box_width - borders.horizontal()).max(0.0),
+                height: padding.top + content_height + padding.bottom,
+            },
+        );
         let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
         if let Some(index) = background_index
             && let DisplayItem::SolidRect {
@@ -208,7 +343,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         {
             *target = rect;
         }
-        if let Some(image) = block_image {
+        if self.emit_paint
+            && let Some(image) = block_image
+        {
             image.paint(
                 node,
                 &mut self.output,
@@ -220,7 +357,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 },
             );
         }
-        if style.border_color.alpha > 0 && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
+        if self.emit_paint
+            && style.border_color.alpha > 0
+            && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
         {
             self.output.items.push(DisplayItem::BorderRect {
                 rect,
@@ -231,42 +370,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 radius,
             });
         }
-        if let Some((kind, value)) = block_control {
-            let icon = self.control_background_icon(&style, rect.width, rect.height);
-            let mut label = input_control_label(node, kind, &value);
-            if icon.is_some() && value.is_empty() {
-                label.clear();
-            }
-            self.output
-                .items
-                .push(DisplayItem::Control(Box::new(ControlSpec {
-                    node_id: node_id(node),
-                    rect,
-                    kind,
-                    name: node.attr("name").unwrap_or_default(),
-                    value,
-                    label,
-                    options: Vec::new(),
-                    selected_index: 0,
-                    placeholder: node
-                        .attr("placeholder")
-                        .or_else(|| node.attr("title"))
-                        .unwrap_or_default(),
-                    form_id: nearest_form(node).map(|form| node_id(&form)),
-                    background_color: self.effective_background_color(node),
-                    text_color: style.color,
-                    border_color: style
-                        .border_color
-                        .composite_over(self.effective_background_color(node)),
-                    border_width: [borders.top, borders.right, borders.bottom, borders.left],
-                    border_radius: radius,
-                    padding: [padding.top, padding.right, padding.bottom, padding.left],
-                    font: FontSpec::from_style(&style),
-                    icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
-                    icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
-                    icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
-                })));
+        self.project_control(
+            node,
+            block_control,
+            &style,
+            rect,
+            borders,
+            padding,
+            authored_button,
+        );
+        if node.is_generated_pseudo() {
+            self.apply_generated_transform(&style, rect, item_start);
+        } else {
+            self.apply_transform(node.id(), &style, rect, item_start);
         }
+        self.wrap_opacity(item_start, style.opacity);
+        self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
         BlockMetrics {
@@ -276,99 +395,5 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 flow_bottom
             },
         }
-    }
-
-    pub(super) fn layout_block_children(
-        &mut self,
-        node: &NodeRef,
-        x: f32,
-        mut y: f32,
-        width: f32,
-        style: &ComputedStyle,
-    ) -> f32 {
-        let positioning_y = y;
-        let mut atoms = Vec::new();
-        let mut pending_space = false;
-        let mut left_float_width = 0.0_f32;
-        let mut right_float_width = 0.0_f32;
-        let mut float_bottom = y;
-        if node.tag_name() == Some("li") && style.list_style_type != ListStyleType::None {
-            atoms.push(InlineAtom::Text {
-                text: "• ".into(),
-                font: FontSpec::from_style(style),
-                color: style.color,
-                link: None,
-                node_id: None,
-                line_height: style.line_height,
-                no_wrap: false,
-            });
-        }
-        for child in self.block_formatting_children(node).iter() {
-            if y >= float_bottom {
-                left_float_width = 0.0;
-                right_float_width = 0.0;
-                float_bottom = y;
-            }
-            let child_style = self.styles.get(child);
-            if is_block_level(child_style.display)
-                && child_style.float != Float::None
-                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
-            {
-                let remaining_width = (width - left_float_width - right_float_width).max(0.0);
-                let float_width = self
-                    .flex_item_basis(child, child_style, remaining_width)
-                    .clamp(0.0, remaining_width);
-                let float_x = if child_style.float == Float::Right {
-                    x + width - right_float_width - float_width
-                } else {
-                    x + left_float_width
-                };
-                let metrics = self.layout_block(child, float_x, y, float_width);
-                float_bottom = float_bottom.max(metrics.bottom);
-                if child_style.float == Float::Right {
-                    right_float_width += float_width;
-                } else {
-                    left_float_width += float_width;
-                }
-            } else if is_block_level(child_style.display)
-                && !matches!(child_style.position, Position::Absolute | Position::Fixed)
-            {
-                if !atoms.is_empty() {
-                    y = self.layout_inline_atoms(
-                        &atoms,
-                        x + left_float_width,
-                        y,
-                        (width - left_float_width - right_float_width).max(0.0),
-                        style.text_align,
-                        style.line_height,
-                    );
-                    atoms.clear();
-                    pending_space = false;
-                }
-                if y >= float_bottom {
-                    left_float_width = 0.0;
-                    right_float_width = 0.0;
-                }
-                let child_width = (width - left_float_width - right_float_width).max(0.0);
-                y = self
-                    .layout_block(child, x + left_float_width, y, child_width)
-                    .bottom;
-            } else if is_block_level(child_style.display) {
-                self.layout_block(child, x, positioning_y, width);
-            } else {
-                self.collect_inline(child, None, &mut atoms, &mut pending_space, true);
-            }
-        }
-        if !atoms.is_empty() {
-            y = self.layout_inline_atoms(
-                &atoms,
-                x + left_float_width,
-                y,
-                (width - left_float_width - right_float_width).max(0.0),
-                style.text_align,
-                style.line_height,
-            );
-        }
-        y.max(float_bottom)
     }
 }

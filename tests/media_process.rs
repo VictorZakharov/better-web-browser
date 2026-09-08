@@ -359,8 +359,23 @@ fn malformed_crashed_and_hung_workers_fail_without_harming_a_sibling() {
         MediaTestCommand::Hang,
     ] {
         let mut victim = MediaSession::launch(options()).expect("launch media fault victim");
-        victim.inject_failure(fault).expect("contain media fault");
-        assert_eq!(victim.snapshot().state, MediaWorkerState::Exited);
+        victim
+            .inject_failure(fault)
+            .unwrap_or_else(|error| panic!("contain {fault:?}: {error}"));
+        let stopped = victim.snapshot();
+        assert_eq!(stopped.state, MediaWorkerState::Exited);
+        if fault == MediaTestCommand::Crash {
+            assert!(
+                stopped
+                    .exit_code
+                    .is_some_and(|code| { code != 0 && code != 0x4d02 && code != 0x4d03 }),
+                "crash must preserve its natural failure, not broker termination: {stopped:?}"
+            );
+            assert_eq!(
+                stopped.exit_reason.as_deref(),
+                Some("media worker crashed after injected fault")
+            );
+        }
         sibling.ping(7).expect("sibling remains responsive");
     }
 

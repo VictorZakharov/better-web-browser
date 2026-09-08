@@ -1,5 +1,8 @@
 //! Public HTTP client facade and one-hop bounded WinHTTP transport.
 
+#[cfg(test)]
+mod protocol_tests;
+
 use super::cookies::CookieStore;
 use super::ffi::*;
 use crate::branding::USER_AGENT;
@@ -122,6 +125,7 @@ impl HttpClient {
         let session = InternetHandle::new(unsafe {
             WinHttpOpen(agent.as_ptr(), access_type, null(), null(), 0)
         })?;
+        super::protocols::configure(session.0)?;
         unsafe {
             WinHttpSetTimeouts(session.0, 10_000, 10_000, 15_000, 30_000);
         }

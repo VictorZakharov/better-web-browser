@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn classic_script_top_level_this_is_the_window_global() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id="status"></div><script>
+            "use strict";
+            document.getElementById('status').textContent = String(
+                this === window && this === globalThis &&
+                'IntersectionObserver' in this
+            );
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "true"
+    );
+}
+
+#[test]
 fn loads_dynamically_inserted_external_scripts_in_the_same_realm() {
     let dom = dom::parse_with_scripting(
         r#"<html><head></head><body><div id="status">waiting</div><script>
@@ -93,14 +112,14 @@ fn moving_an_already_started_external_script_does_not_execute_it_again() {
 }
 
 #[test]
-fn image_constructor_reports_failed_load_asynchronously() {
+fn image_constructor_reports_invalid_urls_asynchronously() {
     let (dom, outcome) = execute_html(
         r#"<body><div id="status">waiting</div><script>
             const image = new Image();
-            image.src = 'data:image/unsupported;base64,AAAA';
             image.onerror = () => {
                 document.getElementById('status').textContent = 'unsupported';
             };
+            image.src = 'http://:invalid';
         </script></body>"#,
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
@@ -292,7 +311,9 @@ fn exposes_template_contents_as_a_document_fragment() {
                 parsed.firstChild === null &&
                 parsed.content instanceof DocumentFragment &&
                 parsed.content.nodeType === 11 &&
-                parsed.content.ownerDocument === document &&
+                parsed.content.ownerDocument !== document &&
+                parsed.content.ownerDocument.defaultView === null &&
+                parsed.content.ownerDocument === created.content.ownerDocument &&
                 parsed.content.firstChild.textContent === 'parsed' &&
                 document.getElementById('inside') === null &&
                 paragraph.textContent === 'created' &&

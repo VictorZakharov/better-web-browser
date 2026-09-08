@@ -118,7 +118,7 @@
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.disabled; }
+        get willValidate() { return !this.disabled && !hasDataListAncestor(this); }
         get validity() { return validityFor(this); }
         get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please select an item.'); }
         setCustomValidity(message) { this.__customValidity = String(message); }
@@ -128,6 +128,11 @@
     class HTMLButtonElement extends HTMLElement {
         get form() { return associatedForm(this); }
         get labels() { return labelsFor(this); }
+        get type() {
+            const value = (this.getAttribute('type') || '').toLowerCase();
+            return ['submit', 'reset', 'button'].includes(value) ? value : 'submit';
+        }
+        set type(value) { this.setAttribute('type', value); }
         get formAction() {
             const value = this.getAttribute('formaction');
             return value == null ? '' : host('resolveUrl', value);
@@ -163,8 +168,18 @@
         set disabled(value) { this.toggleAttribute('disabled', !!value); }
         get type() { return 'fieldset'; }
     }
+    class HTMLOptionElement extends HTMLElement {
+        get label() {
+            return this.hasAttribute('label') ? this.getAttribute('label') : optionText(this);
+        }
+        set label(value) { this.setAttribute('label', value); }
+        get value() {
+            return this.hasAttribute('value') ? this.getAttribute('value') : optionText(this);
+        }
+        set value(value) { this.setAttribute('value', value); }
+    }
     class HTMLDataListElement extends HTMLElement {
-        get options() { return this.querySelectorAll('option'); }
+        get options() { return this.__options ||= selectorCollection(this, 'option'); }
     }
     class HTMLOutputElement extends HTMLElement {
         get htmlFor() { return this.__htmlFor ||= new DOMTokenList(this, 'for'); }
@@ -247,6 +262,9 @@
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);
     }
+    function optionText(option) {
+        return option.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();
+    }
     function validValidityState() {
         return {
             valueMissing: false, typeMismatch: false, patternMismatch: false,
@@ -287,6 +305,12 @@
     function checkControlValidity(element) {
         if (!element.willValidate || element.validity.valid) return true;
         element.dispatchEvent(new Event('invalid', { cancelable: true }));
+        return false;
+    }
+    function hasDataListAncestor(element) {
+        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+            if (ancestor.localName === 'datalist') return true;
+        }
         return false;
     }
     function associatedForm(element) {

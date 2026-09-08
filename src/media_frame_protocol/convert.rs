@@ -21,7 +21,7 @@ pub(crate) fn nv12_to_bgra(
     }
     let mut bgra = vec![0_u8; bgra_length as usize];
     let stride = metadata.stride as usize;
-    let chroma_start = stride * metadata.height as usize;
+    let chroma_start = stride * metadata.storage_height()? as usize;
     for y in 0..metadata.height as usize {
         for x in 0..metadata.width as usize {
             let luma = i32::from(nv12[y * stride + x]);
@@ -41,7 +41,7 @@ pub(crate) fn nv12_to_bgra(
     Ok(DecodedImage {
         width: metadata.width,
         height: metadata.height,
-        bgra,
+        bgra: bgra.into(),
     })
 }
 

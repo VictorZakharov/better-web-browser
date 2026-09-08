@@ -23,7 +23,10 @@ impl ChildConnection {
             runtime.finish_completed_resource_preloads(self)
         }));
         match result {
-            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
+            Ok(Ok(Some(update))) => self
+                .writer
+                .send_renderer(&RendererMessage::RuntimeUpdate(Box::new(update)))
+                .map_err(|error| error.to_string())?,
             Ok(Ok(None)) => {}
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;
@@ -61,7 +64,7 @@ impl ChildConnection {
             }
             Ok(Ok(Some(AdvanceResult::Runtime(update)))) => self
                 .writer
-                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
+                .send_renderer(&RendererMessage::RuntimeUpdate(update))
                 .map_err(|error| error.to_string())?,
             Ok(Ok(None)) => {}
             Ok(Err(error)) => {
@@ -174,7 +177,7 @@ impl ChildConnection {
             }
             Ok(Ok(AdvanceResult::Runtime(update))) => self
                 .writer
-                .send_renderer(&RendererMessage::RuntimeUpdate(*update))
+                .send_renderer(&RendererMessage::RuntimeUpdate(update))
                 .map_err(|error| error.to_string())?,
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;
@@ -235,6 +238,12 @@ impl ChildConnection {
                 }
                 if let Some(presentation) = result.presentation {
                     self.send_presentation(&presentation)?;
+                } else if let Some(update) = runtime.pending_geometry_observer_update() {
+                    // A scroll-only input has no visual revision, but its observer task must
+                    // still wake an otherwise idle browser-owned document clock.
+                    self.writer
+                        .send_renderer(&RendererMessage::RuntimeUpdate(Box::new(update)))
+                        .map_err(|error| error.to_string())?;
                 }
                 if let Some((url, disposition)) = result.navigation {
                     self.writer

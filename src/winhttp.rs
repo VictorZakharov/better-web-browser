@@ -4,6 +4,7 @@ mod client;
 mod cookies;
 mod ffi;
 mod pipeline;
+mod protocols;
 mod text;
 
 pub use client::{HttpClient, HttpResponse, get};

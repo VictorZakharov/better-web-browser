@@ -10,7 +10,9 @@ use html5ever::{ParseOpts, parse_document};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-#[derive(Debug)]
+mod title;
+
+#[derive(Debug, Clone)]
 pub struct Dom {
     pub(super) identity: Rc<NodeIdAllocator>,
     pub document: NodeRef,
@@ -123,11 +125,12 @@ impl Dom {
     }
 
     pub fn title(&self) -> String {
-        Node::descendants(&self.document)
-            .find(|node| node.tag_name() == Some("title"))
-            .map(|node| node.text_content().trim().to_string())
-            .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| "Untitled page".to_string())
+        let title = title::document_title(&self.document);
+        if title.is_empty() {
+            "Untitled page".to_string()
+        } else {
+            title
+        }
     }
 
     pub fn elements_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = NodeRef> + 'a {

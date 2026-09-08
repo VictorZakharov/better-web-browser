@@ -62,8 +62,12 @@ pub struct ShapedText {
 }
 
 pub trait TextMeasurer {
+    /// Returns the same layout width and height as `shape` for this text and font.
+    /// Geometry-only callers may use this method to avoid allocating painted glyph payloads;
+    /// implementations must retain contextual shaping, fallback, and spacing in these metrics.
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32);
 
+    /// Adds paintable glyph information without changing the metrics returned by `measure`.
     fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {
         let (width, height) = self.measure(text, font);
         ShapedText {
@@ -95,6 +99,8 @@ pub struct SelectOption {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ControlSpec {
+    /// The retained descendants paint this control; no native child may cover them.
+    pub authored_content: bool,
     pub node_id: NodeId,
     pub rect: RectF,
     pub kind: ControlKind,
@@ -127,6 +133,19 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    BeginClip {
+        bounds: RectF,
+    },
+    EndClip {
+        bounds: RectF,
+    },
+    BeginOpacity {
+        bounds: RectF,
+        opacity: f32,
+    },
+    EndOpacity {
+        bounds: RectF,
+    },
     SolidRect {
         rect: RectF,
         color: Color,
@@ -173,6 +192,9 @@ pub struct LayoutOutput {
     pub forms: HashMap<NodeId, FormSpec>,
     /// Renderer-local element border boxes used only by opt-in page diagnostics.
     pub node_bounds: HashMap<NodeId, RectF>,
+    /// Renderer-local back-to-front element order used by fallback hit testing. This stays next
+    /// to layout rather than the wire presentation so input and paint use one stacking result.
+    pub node_paint_order: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,12 +212,17 @@ pub(super) enum InlineAtom {
         url: String,
         alt: String,
         tint: Option<Color>,
+        node_id: NodeId,
+        visible: bool,
         width: f32,
         height: f32,
         inset_x: f32,
         inset_y: f32,
         image_width: f32,
         image_height: f32,
+        transform: crate::engine::css::transform::TransformList,
+        transform_font_size: f32,
+        opacity: f32,
     },
     Control {
         spec: Box<ControlSpec>,
@@ -205,16 +232,25 @@ pub(super) enum InlineAtom {
         inset_y: f32,
         control_width: f32,
         control_height: f32,
+        opacity: f32,
     },
     InlineBox {
         children: Vec<InlineAtom>,
         style: Box<ComputedStyle>,
+        node_id: Option<NodeId>,
     },
     Placeholder {
         width: f32,
         height: f32,
+        node_id: Option<NodeId>,
     },
     Break,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct InlineContainingBlock {
+    pub(super) width: f32,
+    pub(super) height: Option<f32>,
 }
 
 pub(super) struct MeasuredAtom<'a> {
@@ -222,6 +258,7 @@ pub(super) struct MeasuredAtom<'a> {
     pub(super) text: Option<&'a str>,
     pub(super) width: f32,
     pub(super) height: f32,
+    pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
     pub(super) raster_run_id: u64,
@@ -233,6 +270,7 @@ pub(super) struct CachedAtomMeasurement {
     pub(super) text_start: Option<usize>,
     pub(super) width: f32,
     pub(super) height: f32,
+    pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
     pub(super) raster_run_id: u64,
@@ -250,6 +288,7 @@ impl CachedAtomMeasurement {
             text,
             width: self.width,
             height: self.height,
+            content_height: self.content_height,
             no_wrap: self.no_wrap,
             break_before: self.break_before,
             raster_run_id: self.raster_run_id,
@@ -269,6 +308,7 @@ impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
             }),
             width: measured.width,
             height: measured.height,
+            content_height: measured.content_height,
             no_wrap: measured.no_wrap,
             break_before: measured.break_before,
             raster_run_id: measured.raster_run_id,

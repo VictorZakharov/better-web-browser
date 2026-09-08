@@ -8,6 +8,70 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+#[path = "input/helpers.rs"]
+mod helpers;
+use helpers::*;
+
+#[test]
+fn pointer_hit_testing_targets_an_ordinary_element_border_box() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("launch renderer");
+    let initial = load_html_document(
+        &session,
+        100,
+        r#"<!doctype html><style>
+            html, body { margin: 0; }
+            #target { width: 200px; height: 100px; background: red; }
+        </style><div id="target">ready</div><p id="status">waiting</p><script>
+            document.addEventListener('click', event => {
+                document.querySelector('#status').textContent = 'clicked:' + event.target.id;
+            });
+        </script>"#,
+    );
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: initial.document,
+            revision: initial.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+    let target_rect = initial
+        .layout
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::SolidRect { rect, .. }
+                if rect.width >= 190.0 && rect.width <= 210.0 && rect.height >= 90.0 =>
+            {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .expect("ordinary element background geometry");
+
+    for (sequence, phase) in [(1, PointerPhase::Down), (2, PointerPhase::Up)] {
+        session
+            .send_input(DocumentInput::Pointer(PointerInput {
+                document: initial.document,
+                sequence,
+                phase,
+                button: PointerButton::Primary,
+                x: target_rect.x + target_rect.width - 5.0,
+                y: target_rect.y + target_rect.height - 5.0,
+                modifiers: InputModifiers::default(),
+                target: None,
+            }))
+            .unwrap();
+    }
+
+    let clicked = wait_for_text(&session, initial.document, "clicked:");
+    let clicked_text = presentation_text(&clicked);
+    assert!(clicked_text.contains("clicked:target"), "{clicked_text}");
+}
+
 #[test]
 fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     let _serial = SERIAL
@@ -126,6 +190,8 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         changed_control.map(|control| control.value.as_str()),
         Some("changed")
     );
+    assert_eq!(updated.next_timer_micros, Some(0));
+    finish_geometry_checkpoint(&session, initial.document);
 
     session
         .send_input(DocumentInput::Keyboard(KeyboardInput {
@@ -241,10 +307,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     }
     let context_menu = wait_for_text(&session, initial.document, "link:contextmenu");
     assert!(presentation_text(&context_menu).contains("link:contextmenu"));
-    assert!(
-        session.wait_for_event(Duration::from_millis(150)).is_err(),
-        "secondary link activation unexpectedly requested navigation"
-    );
+    assert_no_navigation(&session, initial.document, Duration::from_millis(150));
 
     let submit = updated
         .layout
@@ -343,75 +406,4 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         .ping(Duration::from_secs(1))
         .expect("renderer remains responsive");
     session.shutdown().expect("shutdown renderer");
-}
-
-fn wait_for_cursor(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-    sequence: u64,
-) -> PointerCursor {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::PointerCursor(result)
-                if result.document == document && result.sequence == sequence =>
-            {
-                return result.cursor;
-            }
-            RendererEvent::Presentation(_)
-            | RendererEvent::Diagnostic { .. }
-            | RendererEvent::RuntimeUpdate(_) => {}
-            event => panic!("unexpected renderer cursor event: {event:?}"),
-        }
-    }
-}
-
-fn wait_for_text(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-    expected: &str,
-) -> better_web_browser::renderer_protocol::RendererPresentation {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::Presentation(presentation) if presentation.document == document => {
-                if presentation_text(&presentation).contains(expected) {
-                    return *presentation;
-                }
-            }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
-            event => panic!("unexpected renderer input event: {event:?}"),
-        }
-    }
-}
-
-fn wait_for_navigation(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-) -> (String, NavigationDisposition, NavigationCause) {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::NavigationRequested {
-                document: event_document,
-                url,
-                disposition,
-                cause,
-            } if event_document == document => return (url, disposition, cause),
-            RendererEvent::Presentation(_) | RendererEvent::Diagnostic { .. } => {}
-            event => panic!("unexpected renderer navigation event: {event:?}"),
-        }
-    }
-}
-
-fn presentation_text(
-    presentation: &better_web_browser::renderer_protocol::RendererPresentation,
-) -> String {
-    presentation
-        .layout
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }

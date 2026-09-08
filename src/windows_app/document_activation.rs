@@ -1,6 +1,7 @@
 //! Commits browser-fetched bytes to the page-owning renderer and installs validated output.
 
 mod metrics;
+mod video;
 
 use super::browser_navigation::HistoryMode;
 use super::paint_primitives::screen_rect;
@@ -221,7 +222,7 @@ impl BrowserState {
                 false,
                 false,
             );
-            self.begin_navigation(url.to_string(), HistoryMode::Script);
+            self.begin_document_navigation(url.to_string(), HistoryMode::Script);
             return;
         }
 
@@ -320,7 +321,9 @@ impl BrowserState {
                 set_window_text(self.controls.reader, "Reader");
             }
         }
+        self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
+        self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
         if layout_changed {
             self.update_scrollbar();
         }

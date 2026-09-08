@@ -17,8 +17,10 @@ pub(super) fn cssom_host_call(
             return Ok(Some(
                 state
                     .stylesheet_sources
-                    .get(&url)
-                    .map_or_else(JsValue::null, |source| js_string(source.clone())),
+                    .iter()
+                    .rev()
+                    .find(|(source_url, _)| source_url == &url)
+                    .map_or_else(JsValue::null, |(_, source)| js_string(source.clone())),
             ));
         }
         "stylesheetSameOrigin" => {

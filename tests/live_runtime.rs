@@ -8,20 +8,34 @@ use std::time::Duration;
 #[path = "live_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "live_runtime/authored_controls.rs"]
+mod authored_controls;
 #[path = "live_runtime/dynamic_scripts.rs"]
 mod dynamic_scripts;
+#[path = "live_runtime/flex_axes.rs"]
+mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/media_controls.rs"]
+mod media_controls;
 #[path = "live_runtime/navigation.rs"]
 mod navigation;
 #[path = "live_runtime/network.rs"]
 mod network;
 #[path = "live_runtime/reload.rs"]
 mod reload;
+#[path = "live_runtime/scrolling.rs"]
+mod scrolling;
+#[path = "live_runtime/stacking.rs"]
+mod stacking;
 #[path = "live_runtime/streaming_network.rs"]
 mod streaming_network;
+#[path = "live_runtime/stylesheets.rs"]
+mod stylesheets;
 #[path = "live_runtime/window.rs"]
 mod window;
+#[path = "live_runtime/youtube.rs"]
+mod youtube;
 const FIXTURE_HTML: &str = r#"<!doctype html>
 <title>runtime pending</title>
 <style>
@@ -104,7 +118,8 @@ fn hidden_browser_repaints_after_a_post_load_timer() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/live-runtime");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 800);
+    // Observe the 1750 ms timer using real elapsed time, not pre-paint clock settling.
+    let mut child = hidden_benchmark(&url, &artifacts, 2300);
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -189,7 +204,7 @@ fn navigation_cancels_the_previous_documents_pending_timer() {
     let artifacts = TestArtifacts::new();
     let url = format!("http://{address}/navigating");
 
-    let mut child = hidden_benchmark(&url, &artifacts, 900);
+    let mut child = hidden_benchmark(&url, &artifacts, 2400);
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()
@@ -263,7 +278,7 @@ fn navigation_discards_a_stale_async_script_completion() {
     let server = thread::spawn(move || {
         serve_parallel_fixtures(listener, 3, |request| {
             if request.contains("GET /stale.js ") {
-                FixtureResponse::script(STALE_ASYNC_SCRIPT, Duration::from_millis(900))
+                FixtureResponse::script(STALE_ASYNC_SCRIPT, Duration::from_millis(2400))
             } else if request.contains("GET /replacement ") {
                 FixtureResponse::html(REPLACEMENT_HTML)
             } else {
@@ -276,7 +291,7 @@ fn navigation_discards_a_stale_async_script_completion() {
 
     // The navigation timer is scheduled for 1,600 ms of renderer event-loop time. Keep the
     // observation window beyond that contract instead of relying on incidental startup delay.
-    let mut child = hidden_benchmark(&url, &artifacts, 1900);
+    let mut child = hidden_benchmark(&url, &artifacts, 3500);
     let status = wait_for_child(&mut child, Duration::from_secs(20));
     server
         .join()

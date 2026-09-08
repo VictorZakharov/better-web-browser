@@ -98,6 +98,8 @@
         static parse(value, base = currentUrl) {
             try { return new URL(value, base); } catch (_) { return null; }
         }
+        static createObjectURL(value) { return createObjectUrl(value); }
+        static revokeObjectURL(value) { revokeObjectUrl(value); }
         _parts() { return parseUrl(this._href); }
         _set(component, value, updateParams = false) {
             try { this._href = host('setWebUrlComponent', this._href, component, String(value)); }

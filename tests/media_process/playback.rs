@@ -2,6 +2,25 @@ use super::{MediaSession, SERIAL, decode_base64, options};
 use std::time::Duration;
 
 #[test]
+fn end_of_buffer_consumes_frame_identity_and_allows_a_new_source() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixture = decode_base64(include_str!("../fixtures/media/test-1s.mp4.base64"));
+    let mut session = MediaSession::launch(options()).expect("launch silent worker");
+    let decoded = session
+        .decode_owned_fixture_frames(&fixture, 100)
+        .expect("decode all frames");
+    let source = decoded.frames[0].metadata.source_id;
+    session
+        .verify_owned_fixture_exhaustion(source)
+        .expect("repeat end-of-buffer");
+    session
+        .decode_owned_fixture_frame(&fixture)
+        .expect("replace exhausted source");
+}
+
+#[test]
 fn contained_worker_owns_the_play_pause_clock_without_emitting_test_audio() {
     let _serial = SERIAL
         .lock()

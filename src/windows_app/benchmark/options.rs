@@ -2,6 +2,8 @@
 
 use super::super::*;
 use super::{BenchmarkRun, diagnostics, navigation::BenchmarkNavigation};
+mod input;
+use input::{key_input, point_input, scroll_input};
 
 pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
@@ -63,7 +65,8 @@ impl LaunchOptions {
                         Some(number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000));
                 }
                 "--settle-ms" => {
-                    settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 60_000);
+                    // Playback endurance checks must outlive a short initial buffer.
+                    settle_ms = number::<u64>(&mut arguments, &argument)?.clamp(100, 600_000);
                 }
                 "--completion-marker" => {
                     let marker = required(&mut arguments, &argument)?;
@@ -103,6 +106,29 @@ impl LaunchOptions {
                         &mut arguments,
                         &argument,
                     )?));
+                }
+                "--activate-selector-after-ready" => {
+                    let selector = required(&mut arguments, &argument)?;
+                    if selector.trim().is_empty() {
+                        return Err("--activate-selector-after-ready cannot be empty".to_string());
+                    }
+                    if !diagnostic_selectors.contains(&selector) {
+                        diagnostic_selectors.push(selector.clone());
+                        diagnostics::validate_selector_count(&diagnostic_selectors)?;
+                    }
+                    navigation_targets.push(BenchmarkNavigation::ActivateSelector(selector));
+                }
+                "--click-after-ready" | "--move-after-ready" => {
+                    navigation_targets.push(point_input(
+                        &required(&mut arguments, &argument)?,
+                        &argument,
+                    )?);
+                }
+                "--key-after-ready" => {
+                    navigation_targets.push(key_input(&required(&mut arguments, &argument)?)?);
+                }
+                "--scroll-after-ready" => {
+                    navigation_targets.push(scroll_input(&required(&mut arguments, &argument)?)?);
                 }
                 "--navigation-delay-ms" => {
                     navigation_delay_ms =
@@ -209,6 +235,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn endurance_settle_is_bounded_but_can_outlive_a_short_video() {
+        for (requested, expected) in [(245_000_u64, 245_000_u64), (900_000, 600_000)] {
+            let options = LaunchOptions::parse_from(
+                Instant::now(),
+                [
+                    "--benchmark".to_string(),
+                    "https://example.test".to_string(),
+                    "--output".to_string(),
+                    "report.json".to_string(),
+                    "--settle-ms".to_string(),
+                    requested.to_string(),
+                ],
+            )
+            .unwrap();
+            assert_eq!(
+                options.benchmark.unwrap().settle,
+                Duration::from_millis(expected)
+            );
+        }
+    }
+
+    #[test]
     fn parses_reproducible_hidden_viewport_and_diagnostics() {
         let options = LaunchOptions::parse_from(
             Instant::now(),
@@ -282,6 +330,18 @@ mod tests {
                 "https://example.test/final",
                 "--activate-link-after-ready",
                 "https://example.test/clicked",
+                "--activate-selector-after-ready",
+                "button.play",
+                "--move-after-ready",
+                "320,180",
+                "--click-after-ready",
+                "320,180",
+                "--scroll-after-ready",
+                "800",
+                "--key-after-ready",
+                "k,KeyK",
+                "--scroll-after-ready",
+                "0",
                 "--navigation-delay-ms",
                 "750",
             ]
@@ -296,8 +356,18 @@ mod tests {
                 BenchmarkNavigation::Address("https://example.test/second".to_string()),
                 BenchmarkNavigation::Address("https://example.test/final".to_string()),
                 BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
+                BenchmarkNavigation::ActivateSelector("button.play".to_string()),
+                BenchmarkNavigation::MovePoint { x: 320, y: 180 },
+                BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
+                BenchmarkNavigation::ScrollTo { y: 800 },
+                BenchmarkNavigation::Key {
+                    key: "k".to_string(),
+                    code: "KeyK".to_string(),
+                },
+                BenchmarkNavigation::ScrollTo { y: 0 },
             ]
         );
+        assert_eq!(benchmark.diagnostic_selectors, ["button.play"]);
         assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));
     }
 

@@ -13,8 +13,11 @@ impl DocumentRuntime {
             viewport.prefers_dark_color_scheme,
         );
         self.page.set_media_environment(environment);
+        self.page
+            .set_layout_viewport(viewport.width, viewport.height);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_media_environment(environment);
+            runtime.set_layout_viewport(viewport.width, viewport.height);
         }
     }
 }

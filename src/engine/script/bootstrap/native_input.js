@@ -27,12 +27,16 @@
         }[input.phase] || [];
         const init = {
             bubbles: true, cancelable: true, composed: true,
-            clientX: input.x, clientY: input.y,
+            // The renderer hit-tests document coordinates; DOM client coordinates use viewport space.
+            clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,
+            view: windowObject,
             button: input.button, buttons: input.buttons,
             pointerId: 1, pointerType: 'mouse', isPrimary: true,
             pressure: input.buttons ? 0.5 : 0,
             ...nativeModifiers(input)
         };
+        dispatchPointerBoundary(input.boundary, init);
+        if (input.phase === 'leave') return true;
         if (input.phase === 'activate') {
             dispatchPair('down', { ...init, buttons: 1, pressure: 0.5 });
             dispatchPair('up', { ...init, buttons: 0, pressure: 0 });
@@ -92,6 +96,11 @@
     const dispatchNativeSimple = input => nativeTarget(input.target).dispatchEvent(markTrusted(new Event(
         String(input.type), { bubbles: !!input.bubbles, cancelable: !!input.cancelable }
     )));
+    const dispatchNativeImageResource = input => {
+        const target = nativeTarget(input.target);
+        updateImageElementState(target, true, input.naturalWidth, input.naturalHeight);
+        return target.dispatchEvent(markTrusted(new Event(String(input.type))));
+    };
 
     Object.defineProperty(document, '__dispatchNativeInput', {
         configurable: false,
@@ -102,13 +111,19 @@
                 case 'text': return dispatchNativeText(input);
                 case 'focus': return dispatchNativeFocus(input);
                 case 'simple': return dispatchNativeSimple(input);
-                case 'scroll':
-                    windowObject.scrollX = windowObject.pageXOffset = Number(input.x) || 0;
-                    windowObject.scrollY = windowObject.pageYOffset = Number(input.y) || 0;
-                    return document.dispatchEvent(markTrusted(new Event('scroll')));
+                case 'imageResource': return dispatchNativeImageResource(input);
+                case 'scroll': {
+                    if (!setViewportScrollOffsets(Number(input.x) || 0, Number(input.y) || 0)) return true;
+                    if (viewportScrollEventPending) return true;
+                    // CSSOM View viewport scroll events target Document and bubble to Window.
+                    const allowed = document.dispatchEvent(markTrusted(new Event('scroll', { bubbles: true })));
+                    return allowed;
+                }
                 case 'viewport':
-                    windowObject.innerWidth = Number(input.width) || 1;
-                    windowObject.innerHeight = Number(input.height) || 1;
+                    windowObject.innerWidth = Math.round(Number(input.width) || 1);
+                    windowObject.innerHeight = Math.round(Number(input.height) || 1);
+                    layoutViewportWidth = Number(input.layoutWidth) || 1;
+                    layoutViewportHeight = Number(input.layoutHeight) || 1;
                     windowObject.devicePixelRatio = Number(input.scale) || 1;
                     const mediaChanges = prepareMediaQueryChanges();
                     const resizeAllowed =

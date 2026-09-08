@@ -163,7 +163,14 @@ try {
             if ([bool] $case.early_scroll) { $chromiumArguments += '--early-scroll' }
             if (-not $Live) { $chromiumArguments += '--require-fixture-ready' }
             & dotnet @chromiumArguments | Write-Host
-            if ($LASTEXITCODE -ne 0) { throw "$($case.id) Chromium run failed." }
+            if ($LASTEXITCODE -ne 0) {
+                $failureDetail = 'No Chromium report was produced.'
+                if (Test-Path -LiteralPath $chromiumJson) {
+                    $failedChromium = Get-Content -LiteralPath $chromiumJson -Raw | ConvertFrom-Json
+                    $failureDetail = "Page: $($failedChromium.error); cleanup: $($failedChromium.cleanup_error)"
+                }
+                throw "$($case.id) Chromium run failed. $failureDetail"
+            }
             $chromium = Get-Content -LiteralPath $chromiumJson -Raw | ConvertFrom-Json
 
             if (-not $chromium.headless -or -not $chromium.unified_headless -or

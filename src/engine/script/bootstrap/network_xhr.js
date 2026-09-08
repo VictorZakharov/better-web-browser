@@ -63,6 +63,7 @@
         return standardMethods.has(upper) ? upper : method;
     };
     const responseUrl = value => String(value).split('#', 1)[0];
+    let failureDiagnostics = 0;
 
     class XMLHttpRequestUpload extends EventTarget {}
 
@@ -334,6 +335,8 @@
         }
         __requestError(type) {
             if (!this.__send) return;
+            if (type !== 'abort' && failureDiagnostics++ < 32)
+                __hostCall('console', 'warn', 'XHR failed: ' + type + ' origin=' + new URL(this.__url).origin);
             this.__clear(); this.__finishUpload(type);
             this.__resetResponse();
             this.__changeState(XMLHttpRequest.DONE);

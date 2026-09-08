@@ -2,18 +2,21 @@ use super::super::wire::{WireReader, WireWriter};
 use super::diagnostics::{decode_diagnostics, encode_diagnostics};
 use super::layout::{decode_layout, encode_layout};
 use super::reader::{decode_reader, encode_reader};
+pub(in crate::renderer_protocol) use super::runtime_codec::{decode_runtime, encode_runtime};
 use super::*;
 use crate::limits::{
     MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
-    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PAGE_IMAGES, MAX_PRESENTED_GLYPH_BYTES, MAX_RENDERED_TEXT_BYTES,
-    MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
-    MAX_URL_BYTES,
+    MAX_PAGE_DIAGNOSTIC_BYTES, MAX_PRESENTED_GLYPH_BYTES, MAX_PRESENTED_IMAGES,
+    MAX_RENDERED_TEXT_BYTES, MAX_RENDERER_PRESENTATION_BYTES, MAX_URL_BYTES,
 };
 use std::collections::HashSet;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
+    if value.images.len() > MAX_PRESENTED_IMAGES {
+        return Err(ProtocolError::InvalidPayload("presented image count"));
+    }
     let mut writer = WireWriter::new();
     writer.u64(value.document.get());
     writer.u64(value.revision);
@@ -121,7 +124,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
     let next_timer_micros = reader.bool()?.then(|| reader.u64()).transpose()?;
     let layout = decode_layout(&mut reader)?;
     let image_count = reader.u32()? as usize;
-    if image_count > MAX_PAGE_IMAGES {
+    if image_count > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));
     }
     let mut images = Vec::with_capacity(image_count);
@@ -156,7 +159,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             image: DecodedImage {
                 width,
                 height,
-                bgra,
+                bgra: bgra.into(),
             },
         });
     }
@@ -205,7 +208,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             image: DecodedImage {
                 width,
                 height,
-                bgra,
+                bgra: bgra.into(),
             },
             color,
         });
@@ -231,77 +234,6 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         accessibility,
         next_timer_micros,
     })
-}
-
-pub(in crate::renderer_protocol) fn encode_runtime(
-    writer: &mut WireWriter,
-    report: &RuntimeReport,
-) -> Result<(), ProtocolError> {
-    writer.u64(report.scripts_executed);
-    writer.u64(report.dom_mutations);
-    encode_strings(writer, &report.errors)?;
-    encode_strings(writer, &report.console)?;
-    encode_strings(writer, &report.diagnostics)?;
-    writer.bool(report.navigation_url.is_some());
-    if let Some(url) = &report.navigation_url {
-        writer.string(url)?;
-    }
-    encode_strings(writer, &report.cookie_updates)?;
-    writer.bool(report.runtime_active);
-    writer.bool(report.runtime_stopped);
-    writer.bool(report.render_requested);
-    Ok(())
-}
-
-pub(in crate::renderer_protocol) fn decode_runtime(
-    reader: &mut WireReader<'_>,
-) -> Result<RuntimeReport, ProtocolError> {
-    let scripts_executed = reader.u64()?;
-    let dom_mutations = reader.u64()?;
-    let errors = decode_strings(reader)?;
-    let console = decode_strings(reader)?;
-    let diagnostics = decode_strings(reader)?;
-    let navigation_url = reader
-        .bool()?
-        .then(|| reader.string(MAX_URL_BYTES))
-        .transpose()?;
-    let cookie_updates = decode_strings(reader)?;
-    Ok(RuntimeReport {
-        scripts_executed,
-        dom_mutations,
-        errors,
-        console,
-        diagnostics,
-        navigation_url,
-        cookie_updates,
-        runtime_active: reader.bool()?,
-        runtime_stopped: reader.bool()?,
-        render_requested: reader.bool()?,
-    })
-}
-
-fn encode_strings(writer: &mut WireWriter, values: &[String]) -> Result<(), ProtocolError> {
-    if values.len() > MAX_RUNTIME_REPORT_ENTRIES {
-        return Err(ProtocolError::InvalidPayload("runtime report count"));
-    }
-    writer.u32(values.len() as u32);
-    for value in values {
-        if value.len() > MAX_RUNTIME_REPORT_TEXT_BYTES {
-            return Err(ProtocolError::InvalidPayload("runtime report text"));
-        }
-        writer.string(value)?;
-    }
-    Ok(())
-}
-
-fn decode_strings(reader: &mut WireReader<'_>) -> Result<Vec<String>, ProtocolError> {
-    let count = reader.u32()? as usize;
-    if count > MAX_RUNTIME_REPORT_ENTRIES {
-        return Err(ProtocolError::InvalidPayload("runtime report count"));
-    }
-    (0..count)
-        .map(|_| reader.string(MAX_RUNTIME_REPORT_TEXT_BYTES))
-        .collect()
 }
 
 fn encode_style(writer: &mut WireWriter, report: StyleReport) {

@@ -5,7 +5,7 @@ use super::*;
 /// Evaluates the declaration-query subset of `@supports` against capabilities this engine
 /// actually implements. General-enclosed and selector queries stay false until supported.
 /// https://www.w3.org/TR/css-conditional-3/#at-supports
-pub(super) fn supports_matches(prelude: &str) -> bool {
+pub(crate) fn supports_matches(prelude: &str) -> bool {
     let condition = prelude
         .trim()
         .strip_prefix("@supports")
@@ -44,37 +44,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
     }
     let property = property.to_ascii_lowercase();
     let value = value.to_ascii_lowercase();
-    if value == "inherit" {
-        return matches!(
-            property.as_str(),
-            "background"
-                | "background-color"
-                | "background-image"
-                | "mask"
-                | "-webkit-mask"
-                | "mask-image"
-                | "-webkit-mask-image"
-                | "background-repeat"
-                | "background-position"
-                | "background-size"
-                | "box-sizing"
-                | "color"
-                | "font-family"
-                | "font-size"
-                | "letter-spacing"
-                | "word-spacing"
-                | "line-height"
-                | "max-width"
-                | "width"
-        );
-    }
-    if matches!(
-        value.as_str(),
-        "initial" | "unset" | "revert" | "revert-layer"
-    ) {
-        return false;
+    if super::css_wide::supports_css_wide_keyword(&property, &value) {
+        return true;
     }
     match property.as_str() {
+        "content" => GeneratedContent::parse(&value).is_some(),
         "display" => matches!(
             value.as_str(),
             "none"
@@ -94,10 +68,13 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 | "table-cell"
         ),
         "position" => matches!(value.as_str(), "static" | "relative" | "absolute" | "fixed"),
+        "z-index" => value == "auto" || value.parse::<i32>().is_ok(),
         "float" => matches!(value.as_str(), "none" | "left" | "right"),
         "box-sizing" | "-webkit-box-sizing" => {
             matches!(value.as_str(), "content-box" | "border-box")
         }
+        "border-collapse" => matches!(value.as_str(), "separate" | "collapse"),
+        "caption-side" => matches!(value.as_str(), "top" | "bottom"),
         "visibility" => matches!(value.as_str(), "visible" | "hidden" | "collapse"),
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
@@ -113,6 +90,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "right"
         | "bottom"
         | "left"
+        | "inset"
         | "margin-top"
         | "margin-right"
         | "margin-bottom"
@@ -132,7 +110,9 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "flex-basis"
         | "-webkit-flex-basis"
         | "-moz-flex-basis" => parse_length(&value).is_some(),
-        "opacity" => value.parse::<f32>().is_ok_and(f32::is_finite),
+        "opacity" => parse_opacity(&value).is_some(),
+        "transform" => super::transform::parse_transform(&value).is_some(),
+        "transform-style" => matches!(value.as_str(), "flat" | "preserve-3d"),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             value == "none" || value.starts_with("url(")
         }
@@ -190,7 +170,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             "stretch" | "start" | "flex-start" | "left" | "end" | "flex-end" | "right" | "center"
         ),
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
-            matches!(value.as_str(), "row" | "column")
+            matches!(
+                value.as_str(),
+                "row" | "row-reverse" | "column" | "column-reverse"
+            )
         }
         "flex-wrap" | "-webkit-flex-wrap" | "-moz-flex-wrap" => {
             matches!(value.as_str(), "nowrap" | "wrap")
@@ -216,7 +199,7 @@ fn flex_flow_supported(value: &str) -> bool {
     for token in value.split_ascii_whitespace() {
         count += 1;
         match token {
-            "row" | "column" if !direction => direction = true,
+            "row" | "row-reverse" | "column" | "column-reverse" if !direction => direction = true,
             "nowrap" | "wrap" if !wrap => wrap = true,
             _ => return false,
         }
@@ -300,5 +283,9 @@ mod tests {
             "@supports (grid-template-columns: subgrid)"
         ));
         assert!(supports_matches("@supports (justify-self: center)"));
+        assert!(supports_matches("@supports (opacity: 25%)"));
+        assert!(supports_matches("@supports (z-index: -12)"));
+        assert!(supports_matches("@supports (z-index: auto)"));
+        assert!(!supports_matches("@supports (z-index: 1.5)"));
     }
 }

@@ -1,3 +1,4 @@
+mod append;
 use super::super::backend;
 use super::audio::AudioPlayback;
 use crate::media_data_protocol::{MediaDataReader, MediaSourceId};
@@ -13,18 +14,20 @@ pub(super) struct Playback {
     pending: Option<(MediaVideoFrameMetadata, Vec<u8>)>,
     active: Option<(u64, backend::VideoDecoder)>,
     audio: Option<(u64, AudioPlayback)>,
-    test_mode: bool,
+    encoded_bytes: u64,
+    silent_audio: bool,
 }
 
 impl Playback {
-    pub(super) fn new(test_mode: bool) -> Self {
+    pub(super) fn new(silent_audio: bool) -> Self {
         Self {
             last_source_id: 0,
             last_frame_id: 0,
             pending: None,
             active: None,
             audio: None,
-            test_mode,
+            encoded_bytes: 0,
+            silent_audio,
         }
     }
 
@@ -70,31 +73,118 @@ impl Playback {
         let bytes = data_reader
             .read_source(source, encoded_length)
             .map_err(|error| format!("read encoded media source: {error}"))?;
+        self.last_source_id = source_id;
+        self.last_frame_id = frame_id;
+        let decoded = backend::decode(&bytes, limits)?;
+        self.install_decoded(
+            request_id,
+            source_id,
+            source_id,
+            frame_id,
+            bytes,
+            decoded,
+            frame_writer,
+            writer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn decode_tracks(
+        &mut self,
+        request_id: u64,
+        video_source_id: u64,
+        audio_source_id: u64,
+        frame_id: u64,
+        video_length: u64,
+        audio_length: u64,
+        data_reader: &mut MediaDataReader<File>,
+        frame_writer: &mut DecodedFrameWriter<File>,
+        writer: &mut MediaFrameWriter<File>,
+        limits: MediaLimits,
+    ) -> Result<(), String> {
+        if self.pending.is_some() {
+            return Err("media worker received a decode before acknowledging its frame".into());
+        }
+        let expected_video_id = self
+            .last_source_id
+            .checked_add(1)
+            .ok_or_else(|| "media source generation exhausted".to_string())?;
+        let expected_audio_id = expected_video_id
+            .checked_add(1)
+            .ok_or_else(|| "media source generation exhausted".to_string())?;
+        if video_source_id != expected_video_id || audio_source_id != expected_audio_id {
+            return Err(format!(
+                "stale adaptive source generation {video_source_id}/{audio_source_id}; expected {expected_video_id}/{expected_audio_id}"
+            ));
+        }
+        let expected_frame_id = self
+            .last_frame_id
+            .checked_add(1)
+            .ok_or_else(|| "media frame generation exhausted".to_string())?;
+        if frame_id != expected_frame_id {
+            return Err(format!(
+                "stale media frame generation {frame_id}; expected {expected_frame_id}"
+            ));
+        }
+        let encoded_length = video_length
+            .checked_add(audio_length)
+            .ok_or_else(|| "adaptive media length overflowed".to_string())?;
+        if encoded_length > limits.max_encoded_queue_bytes {
+            return Err("declared adaptive source exceeds resident worker limits".into());
+        }
+        let video_source =
+            MediaSourceId::new(video_source_id).map_err(|error| error.to_string())?;
+        let audio_source =
+            MediaSourceId::new(audio_source_id).map_err(|error| error.to_string())?;
+        let video_bytes = data_reader
+            .read_source(video_source, video_length)
+            .map_err(|error| format!("read encoded video source: {error}"))?;
+        let audio_bytes = data_reader
+            .read_source(audio_source, audio_length)
+            .map_err(|error| format!("read encoded audio source: {error}"))?;
+        self.last_source_id = audio_source_id;
+        self.last_frame_id = frame_id;
+        let decoded = backend::decode_tracks(&video_bytes, &audio_bytes, limits)?;
+        self.install_decoded(
+            request_id,
+            video_source_id,
+            audio_source_id,
+            frame_id,
+            audio_bytes,
+            decoded,
+            frame_writer,
+            writer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn install_decoded(
+        &mut self,
+        request_id: u64,
+        source_id: u64,
+        last_transfer_source_id: u64,
+        frame_id: u64,
+        audio_bytes: Vec<u8>,
+        decoded: backend::DecodedMedia,
+        frame_writer: &mut DecodedFrameWriter<File>,
+        writer: &mut MediaFrameWriter<File>,
+    ) -> Result<(), String> {
         let backend::DecodedMedia {
             report,
             mut playback,
-        } = backend::decode(&bytes, limits)?;
-        let audio = AudioPlayback::spawn(source_id, bytes, report, self.test_mode)?;
+        } = decoded;
+        let audio = AudioPlayback::spawn(source_id, audio_bytes, report.into(), self.silent_audio)?;
         let video = playback
             .next_frame()?
             .ok_or_else(|| "decoded video stream did not produce a frame".to_string())?;
-        let frame = MediaVideoFrameMetadata {
-            source_id,
-            frame_id,
-            timestamp_100ns: video.timestamp_100ns,
-            duration_100ns: video.duration_100ns,
-            width: report.video_width,
-            height: report.video_height,
-            stride: video.stride,
-            format: MediaPixelFormat::Nv12,
-            data_length: video.bytes.len() as u64,
-        };
+        let frame = video_frame_metadata(source_id, frame_id, &video);
         validate_and_write(frame_writer, frame, &video.bytes)?;
-        self.last_source_id = source_id;
+        self.last_source_id = last_transfer_source_id;
         self.last_frame_id = frame_id;
         self.pending = Some((frame, video.bytes));
         self.active = Some((source_id, playback));
         self.audio = Some((source_id, audio));
+        self.encoded_bytes = report.encoded_bytes;
         writer
             .send_worker(&WorkerMediaMessage::Decoded {
                 request_id,
@@ -160,23 +250,14 @@ impl Playback {
             ));
         }
         let Some(video) = playback.next_frame()? else {
-            self.active.take();
+            // End-of-buffer still answers this request. The client has consumed its identity
+            // and may poll again or append more media before another frame is available.
+            self.last_frame_id = frame_id;
             return writer
                 .send_worker(&WorkerMediaMessage::EndOfStream { source_id })
                 .map_err(|error| error.to_string());
         };
-        let (width, height) = playback.dimensions();
-        let frame = MediaVideoFrameMetadata {
-            source_id,
-            frame_id,
-            timestamp_100ns: video.timestamp_100ns,
-            duration_100ns: video.duration_100ns,
-            width,
-            height,
-            stride: video.stride,
-            format: MediaPixelFormat::Nv12,
-            data_length: video.bytes.len() as u64,
-        };
+        let frame = video_frame_metadata(source_id, frame_id, &video);
         validate_and_write(frame_writer, frame, &video.bytes)?;
         self.last_frame_id = frame_id;
         self.pending = Some((frame, video.bytes));
@@ -216,6 +297,50 @@ impl Playback {
         }
         audio.state()
     }
+
+    pub(super) fn seek(
+        &mut self,
+        source_id: u64,
+        position_100ns: u64,
+    ) -> Result<crate::media_protocol::MediaPlaybackState, String> {
+        if self.pending.is_some() {
+            return Err("media worker received a seek before acknowledging its frame".into());
+        }
+        let Some((active_source_id, video)) = self.active.as_mut() else {
+            return Err("media worker received a seek with no active source".into());
+        };
+        if source_id != *active_source_id {
+            return Err(format!(
+                "stale playback seek for source {source_id}; expected {active_source_id}"
+            ));
+        }
+        video.seek(position_100ns)?;
+        let Some((audio_source_id, audio)) = self.audio.as_ref() else {
+            return Err("media worker received a seek with no audio clock".into());
+        };
+        if source_id != *audio_source_id {
+            return Err("media worker audio/video source identity disagreed".into());
+        }
+        audio.seek(position_100ns)
+    }
+}
+
+fn video_frame_metadata(
+    source_id: u64,
+    frame_id: u64,
+    video: &backend::DecodedVideoSample,
+) -> MediaVideoFrameMetadata {
+    MediaVideoFrameMetadata {
+        source_id,
+        frame_id,
+        timestamp_100ns: video.timestamp_100ns,
+        duration_100ns: video.duration_100ns,
+        width: video.width,
+        height: video.height,
+        stride: video.stride,
+        format: MediaPixelFormat::Nv12,
+        data_length: video.bytes.len() as u64,
+    }
 }
 
 fn validate_and_write(
@@ -229,4 +354,35 @@ fn validate_and_write(
     writer
         .send_frame(frame, bytes)
         .map_err(|error| format!("write decoded video frame: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_metadata_uses_each_adaptive_segments_dimensions() {
+        let video = backend::DecodedVideoSample {
+            bytes: vec![0; 24],
+            stride: 4,
+            width: 4,
+            height: 4,
+            timestamp_100ns: 10,
+            duration_100ns: 20,
+        };
+        assert_eq!(
+            (video_frame_metadata(7, 8, &video).width, video.height),
+            (4, 4)
+        );
+
+        let next = backend::DecodedVideoSample {
+            width: 2,
+            height: 2,
+            stride: 2,
+            bytes: vec![0; 6],
+            ..video
+        };
+        let metadata = video_frame_metadata(7, 9, &next);
+        assert_eq!((metadata.width, metadata.height), (2, 2));
+    }
 }

@@ -73,6 +73,13 @@ impl EventSender {
         }
 
         event = match event {
+            RendererEvent::VideoFrame(next) => {
+                // One retained video frame per session, not an unbounded playback backlog.
+                state
+                    .events
+                    .retain(|queued| !matches!(queued, RendererEvent::VideoFrame(_)));
+                RendererEvent::VideoFrame(next)
+            }
             RendererEvent::Presentation(next) => {
                 let previous = state
                     .events
@@ -194,6 +201,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         })
         | RendererEvent::NavigationRequested { document, .. } => Some(*document),
         RendererEvent::Presentation(presentation) => Some(presentation.document),
+        RendererEvent::VideoFrame(update) => Some(update.identity.document),
         RendererEvent::RuntimeUpdate(update) => Some(update.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
@@ -311,3 +319,5 @@ mod teardown_tests;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod video_tests;

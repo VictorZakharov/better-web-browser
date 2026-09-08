@@ -7,9 +7,8 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
         "html" | "body" | "address" | "article" | "aside" | "blockquote" | "center" | "details"
         | "dialog" | "div" | "dl" | "fieldset" | "figcaption" | "figure" | "footer" | "form"
         | "dd" | "dt" | "header" | "hgroup" | "hr" | "li" | "main" | "menu" | "nav" | "ol"
-        | "p" | "pre" | "section" | "summary" | "ul" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-            Display::Block
-        }
+        | "p" | "pre" | "section" | "summary" | "ul" | "caption" | "h1" | "h2" | "h3" | "h4"
+        | "h5" | "h6" => Display::Block,
         "table" => Display::Table,
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,
@@ -89,6 +88,7 @@ pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyl
             style.border_width = uniform_edges(Length::Px(2.0));
             style.border_color = Color::rgb(118, 118, 118);
         }
+        "table" => style.box_sizing = BoxSizing::BorderBox,
         "center" => style.text_align = TextAlign::Center,
         "th" => {
             style.font_weight = 700;

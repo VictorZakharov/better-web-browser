@@ -2,6 +2,7 @@
     // preserves Web IDL's indexed-before-prototype-before-named property lookup order.
     const attributeConstructionToken = {};
     const attributeCollections = new WeakMap();
+    const htmlAttributeNameModes = new WeakMap();
     const namedNodeMapElements = new WeakMap();
     const xmlNamespace = 'http://www.w3.org/XML/1998/namespace';
     const xmlnsNamespace = 'http://www.w3.org/2000/xmlns/';
@@ -41,8 +42,24 @@
     };
     const qualifiedAttributeName = (prefix, localName) => prefix === null ? localName : prefix + ':' + localName;
     const attributeKey = (namespace, localName) => (namespace || '') + '\u001f' + localName;
-    const usesHtmlAttributeNames = element =>
-        element.namespaceURI === htmlNamespace && host('isHtmlDocument', element.__id);
+    const usesHtmlAttributeNames = element => {
+        let mode = htmlAttributeNameModes.get(element);
+        if (mode === undefined) {
+            mode = element.namespaceURI === htmlNamespace && host('isHtmlDocument', element.__id);
+            htmlAttributeNameModes.set(element, mode);
+        }
+        return mode;
+    };
+    resetAttributeNameMode = root => {
+        const pending = [root];
+        while (pending.length) {
+            const node = pending.pop();
+            if (node instanceof Element) htmlAttributeNameModes.delete(node);
+            pending.push(...node.childNodes);
+            const shadowRoot = shadowRootForTraversal(node);
+            if (shadowRoot) pending.push(shadowRoot);
+        }
+    };
     const normalizedQualifiedName = (element, name) => {
         name = String(name);
         return usesHtmlAttributeNames(element) ? name.toLowerCase() : name;
@@ -164,20 +181,28 @@
             record.namespace === namespace && record.localName === localName) || null;
     };
     const maybeRefreshNamedProperties = (element, namespace, localName, oldValue, newValue) => {
-        if (element.isConnected && namespace === null && (localName === 'id' || localName === 'name'))
+        if (namespace === null && (localName === 'id' || localName === 'name') && element.isConnected)
             refreshWindowNamedPropertyValues([oldValue, newValue]);
     };
-    const queueAttributeMutation = (element, record, oldValue) => {
+    const queueAttributeMutation = (element, record, oldValue, newValue) => {
         queueMutationRecord(element, 'attributes', {
             attributeName: record.localName,
             attributeNamespace: record.namespace,
             oldValue
         });
-        const current = recordByNamespace(element, record.namespace, record.localName);
-        customElementAttributeChanged(element, record.localName, oldValue, current?.value ?? null, record.namespace);
+        customElementAttributeChanged(element, record.localName, oldValue, newValue, record.namespace);
     };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));
+        attribute.__detach(record.value);
+    };
+    const detachCachedAttribute = (element, record) => {
+        const state = attributeCollections.get(element);
+        if (!state) return;
+        const key = attributeKey(record.namespace, record.localName);
+        const attribute = state.attributes.get(key);
+        if (!attribute || attribute.ownerElement !== element) return;
+        state.attributes.delete(key);
         attribute.__detach(record.value);
     };
     const setAttachedAttributeValue = (attribute, value) => {
@@ -187,7 +212,7 @@
         attribute.__value = value;
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
-        }, oldValue);
+        }, oldValue, value);
         maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
             oldValue, attribute.value);
     };
@@ -309,7 +334,7 @@
         cacheForAttributes(element).attributes.set(attributeKey(attribute.namespaceURI, attribute.localName), attribute);
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
-        }, oldValue);
+        }, oldValue, attribute.value);
         maybeRefreshNamedProperties(element, attribute.namespaceURI, attribute.localName,
             oldValue, attribute.value);
         return oldAttribute;
@@ -327,7 +352,7 @@
         };
         host('attrRemoveNs', element.__id, record.namespace || '', record.localName);
         detachAttribute(element, record, attribute);
-        queueAttributeMutation(element, record, record.value);
+        queueAttributeMutation(element, record, record.value, null);
         maybeRefreshNamedProperties(element, record.namespace, record.localName, record.value, null);
         return attribute;
     };

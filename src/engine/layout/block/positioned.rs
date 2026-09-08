@@ -3,12 +3,123 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn finish_positioned_flow_scope(
+        &mut self,
+        node: NodeId,
+        style: &ComputedStyle,
+        item_start: usize,
+        node_start: usize,
+    ) {
+        if !self.emit_paint {
+            return;
+        }
+        self.positioned_flow_scopes.pop();
+        if style.position == Position::Relative
+            && let Some(parent) = self.positioned_flow_scopes.last_mut()
+        {
+            parent.push(engine::InFlowPaintRange {
+                node,
+                level: style.z_index.unwrap_or(0),
+                items: item_start..self.output.items.len(),
+                nodes: node_start..self.output.node_paint_order.len(),
+            });
+        }
+    }
+
+    pub(in crate::engine::layout) fn layout_positioned_children(
+        &mut self,
+        node: &NodeRef,
+        containing_block: RectF,
+        in_flow_paint_start: usize,
+        in_flow_node_start: usize,
+    ) {
+        let children = self.box_children(node);
+        let mut groups = Vec::new();
+        // In-flow geometry is already complete (including flex/grid alignment). Extract
+        // positioned paint ranges only now so deferring paint cannot change sizing.
+        let mut in_flow = self
+            .positioned_flow_scopes
+            .last_mut()
+            .map(std::mem::take)
+            .unwrap_or_default();
+        in_flow.sort_by_key(|group| group.items.start);
+        for group in in_flow.into_iter().rev() {
+            groups.push(PositionedPaintGroup {
+                level: group.level,
+                source_order: children
+                    .iter()
+                    .position(|child| child.id() == group.node)
+                    .unwrap_or(usize::MAX),
+                items: self.output.items.drain(group.items).collect(),
+                nodes: self.output.node_paint_order.drain(group.nodes).collect(),
+            });
+        }
+        for (source_order, child) in children.into_iter().enumerate() {
+            let child_style = self.styles.get(&child);
+            if matches!(child_style.position, Position::Absolute | Position::Fixed)
+                && child_style.display != Display::None
+                && child_style.visibility
+            {
+                // CSS 2.1 section 10.1: a positioned block establishes its padding box as the
+                // containing block for absolutely positioned descendants. Fixed boxes still
+                // select the initial containing block in resolve_block_position.
+                let item_start = self.output.items.len();
+                let node_start = self.output.node_paint_order.len();
+                self.layout_block(
+                    &child,
+                    containing_block.x,
+                    containing_block.y,
+                    containing_block.width,
+                    Some(containing_block.height),
+                    None,
+                );
+                if self.emit_paint {
+                    groups.push(PositionedPaintGroup {
+                        level: child_style.z_index.unwrap_or(0),
+                        source_order,
+                        items: self.output.items.split_off(item_start),
+                        nodes: self.output.node_paint_order.split_off(node_start),
+                    });
+                }
+            }
+        }
+
+        if !self.emit_paint {
+            return;
+        }
+
+        // CSS 2.1 section 9.9 and Appendix E: integer levels sort numerically, while `auto`
+        // participates at level zero. Stable source order resolves equal levels. Keeping a
+        // descendant's complete item sequence together preserves nested opacity and transform
+        // groups as an atomic stacking unit.
+        groups.sort_by_key(|group| (group.level, group.source_order));
+        let first_non_negative = groups.partition_point(|group| group.level < 0);
+        let mut negative_items = Vec::new();
+        let mut negative_nodes = Vec::new();
+        for group in groups.drain(..first_non_negative) {
+            negative_items.extend(group.items);
+            negative_nodes.extend(group.nodes);
+        }
+        self.output
+            .items
+            .splice(in_flow_paint_start..in_flow_paint_start, negative_items);
+        self.output
+            .node_paint_order
+            .splice(in_flow_node_start..in_flow_node_start, negative_nodes);
+        for group in groups {
+            self.output.items.extend(group.items);
+            self.output.node_paint_order.extend(group.nodes);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn resolve_block_position(
         &self,
         style: &ComputedStyle,
         containing_x: f32,
         y: f32,
         containing_width: f32,
+        containing_height: Option<f32>,
         margins: ResolvedEdges,
         border_box_width: f32,
     ) -> (f32, f32) {
@@ -32,12 +143,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         self.viewport.height,
                     )
                 } else {
-                    (containing_x, y, containing_width, self.viewport.height)
+                    (
+                        containing_x,
+                        y,
+                        containing_width,
+                        containing_height.unwrap_or(self.viewport.height),
+                    )
                 };
             let left = style.left.resolve(positioning_width, style.font_size);
             let right = style.right.resolve(positioning_width, style.font_size);
             if let Some(left) = left {
-                x = positioning_x + left;
+                x = positioning_x + left + margins.left;
                 if right.is_some()
                     && auto_left
                     && auto_right
@@ -46,10 +162,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     x = positioning_x + (positioning_width - border_box_width) / 2.0;
                 }
             } else if let Some(right) = right {
-                x = positioning_x + positioning_width - border_box_width - right;
+                x = positioning_x + positioning_width - border_box_width - right - margins.right;
             }
             if let Some(top) = style.top.resolve(positioning_height, style.font_size) {
-                border_y = positioning_y + top;
+                border_y = positioning_y + top + margins.top;
             } else if let Some(bottom) = style.bottom.resolve(positioning_height, style.font_size) {
                 border_y = positioning_y + positioning_height - bottom;
             }
@@ -67,5 +183,34 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
         (x, border_y)
+    }
+}
+
+struct PositionedPaintGroup {
+    level: i32,
+    source_order: usize,
+    items: Vec<DisplayItem>,
+    nodes: Vec<NodeId>,
+}
+
+pub(super) fn bottom_alignment_shift(
+    style: &ComputedStyle,
+    containing_height: f32,
+    border_box_height: f32,
+    margin_bottom: f32,
+) -> f32 {
+    // With an automatic top inset, bottom constrains the bottom margin edge. Resolve
+    // the used height first (including auto/min/max sizing), then solve for the top.
+    // https://www.w3.org/TR/CSS22/visudet.html#abs-non-replaced-height
+    if matches!(style.position, Position::Absolute | Position::Fixed)
+        && style.top == Length::Auto
+        && style
+            .bottom
+            .resolve(containing_height, style.font_size)
+            .is_some()
+    {
+        -border_box_height - margin_bottom
+    } else {
+        0.0
     }
 }

@@ -1,6 +1,7 @@
 //! Renderer-owned hit testing, DOM event dispatch, default actions, and input sequencing.
 
 mod default_actions;
+mod viewport;
 
 use super::*;
 use crate::engine::dom::{NodeId, NodeRef};
@@ -37,6 +38,7 @@ impl DocumentRuntime {
             });
         }
         self.last_input_sequence = input.sequence();
+        self.media_activation.observe(&input);
         let force_accessibility_update =
             matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
         let mut cursor = None;
@@ -155,10 +157,14 @@ impl DocumentRuntime {
     }
 
     fn pointer_input(&mut self, input: PointerInput) -> Result<PointerInteraction, String> {
-        let target = input
-            .target
-            .and_then(|target| self.explicit_target(target))
-            .or_else(|| self.hit_target(input.x, input.y));
+        let target = (input.phase != PointerPhase::Leave)
+            .then(|| {
+                input
+                    .target
+                    .and_then(|target| self.explicit_target(target))
+                    .or_else(|| self.hit_target(input.x, input.y))
+            })
+            .flatten();
         let cursor = (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
             document: self.id,
             sequence: input.sequence,
@@ -177,12 +183,13 @@ impl DocumentRuntime {
             PointerPhase::Activate => {
                 matches!(input.button, PointerButton::Primary | PointerButton::Middle)
             }
-            PointerPhase::Move => false,
+            PointerPhase::Move | PointerPhase::Leave => false,
         };
         let result = self.dispatch_user_input(UserInputEvent::Pointer {
             target: target.as_ref().map(|target| target.node.clone()),
             phase: match input.phase {
                 PointerPhase::Move => "move",
+                PointerPhase::Leave => "leave",
                 PointerPhase::Down => "down",
                 PointerPhase::Up => "up",
                 PointerPhase::Activate => "activate",
@@ -199,6 +206,22 @@ impl DocumentRuntime {
             modifiers: input.modifiers.into(),
         })?;
         let mut outcome = result.outcome;
+        if self.script_runtime.is_none() {
+            let boundary = crate::engine::dom::Node::update_hover_path(
+                &mut self.scriptless_pointer_path,
+                target.as_ref().map(|target| target.node.clone()),
+            );
+            if !boundary.entering.is_empty() || !boundary.leaving.is_empty() {
+                outcome.render_requested = true;
+                outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
+                    roots: vec![self.page.dom.document.id()],
+                    impact: crate::engine::invalidation::MutationKind::State.impact(),
+                    mutation_count: 0,
+                    rebuild_style_rules: false,
+                    removed_nodes: Vec::new(),
+                };
+            }
+        }
         let navigation = if activate && result.default_allowed {
             self.pointer_default_action(target.as_ref(), input, &mut outcome)?
         } else {
@@ -209,19 +232,6 @@ impl DocumentRuntime {
             navigation,
             cursor,
         })
-    }
-
-    pub(super) fn dispatch_user_input(
-        &mut self,
-        event: UserInputEvent,
-    ) -> Result<crate::engine::UserInputResult, String> {
-        let Some(runtime) = self.script_runtime.as_mut() else {
-            return Ok(crate::engine::UserInputResult {
-                default_allowed: true,
-                ..Default::default()
-            });
-        };
-        Ok(runtime.dispatch_user_input(event))
     }
 
     pub(super) fn admit_user_input_outcome(
@@ -249,6 +259,8 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            || outcome.viewport_scroll_y.is_some()
+            || !outcome.history_actions.is_empty()
             || !outcome.cookie_updates.is_empty();
         if !needs_present {
             return Ok(None);
@@ -267,7 +279,7 @@ impl DocumentRuntime {
         if outcome.render_requested {
             self.rebuild_layout();
         }
-        let load = self.text.finish_load_report(PageLoadReport {
+        let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
@@ -300,28 +312,53 @@ impl DocumentRuntime {
     }
 
     fn hit_target(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout.items.iter().rev().find_map(|item| match item {
-            DisplayItem::Text {
-                rect,
-                link: Some(link),
-                node_id: Some(node_id),
-                ..
-            } if contains(*rect, x, y) => self.page.dom.find_node(*node_id).map(|node| HitTarget {
+        self.layout
+            .items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                DisplayItem::Text {
+                    rect,
+                    link: Some(link),
+                    node_id: Some(node_id),
+                    ..
+                } if contains(*rect, x, y) => {
+                    self.page.dom.find_node(*node_id).map(|node| HitTarget {
+                        node,
+                        link: Some(link.clone()),
+                        control: None,
+                    })
+                }
+                DisplayItem::Control(control) if contains(control.rect, x, y) => self
+                    .page
+                    .dom
+                    .find_node(control.node_id)
+                    .map(|node| HitTarget {
+                        node,
+                        link: None,
+                        control: Some((**control).clone()),
+                    }),
+                _ => None,
+            })
+            .or_else(|| self.hit_element_bounds(x, y))
+    }
+
+    fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
+        self.layout
+            .node_paint_order
+            .iter()
+            .rev()
+            .find_map(|id| {
+                let rect = self.layout.node_bounds.get(id)?;
+                (rect.width > 0.0 && rect.height > 0.0 && contains(*rect, x, y))
+                    .then(|| self.page.dom.find_node(*id))
+                    .flatten()
+            })
+            .map(|node| HitTarget {
                 node,
-                link: Some(link.clone()),
+                link: None,
                 control: None,
-            }),
-            DisplayItem::Control(control) if contains(control.rect, x, y) => self
-                .page
-                .dom
-                .find_node(control.node_id)
-                .map(|node| HitTarget {
-                    node,
-                    link: None,
-                    control: Some((**control).clone()),
-                }),
-            _ => None,
-        })
+            })
     }
 }
 
@@ -390,11 +427,15 @@ fn key_code(key: &str) -> u32 {
         "Enter" => 13,
         "Escape" => 27,
         " " => 32,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
         _ => key
             .chars()
             .next()
             .filter(|_| key.chars().count() == 1)
-            .map_or(0, |c| c as u32),
+            .map_or(0, |c| c.to_ascii_uppercase() as u32),
     }
 }
 
@@ -406,5 +447,12 @@ mod tests {
     fn hit_target_cursor_distinguishes_links_from_ordinary_content() {
         assert_eq!(cursor_for_link(true), PointerCursor::Pointer);
         assert_eq!(cursor_for_link(false), PointerCursor::Default);
+    }
+
+    #[test]
+    fn keyboard_compatibility_codes_match_native_windows_input() {
+        assert_eq!(key_code("k"), 75);
+        assert_eq!(key_code("ArrowRight"), 39);
+        assert_eq!(key_code("Escape"), 27);
     }
 }

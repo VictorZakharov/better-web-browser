@@ -122,6 +122,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     text: Some(text),
                     width: shaped.width,
                     height: line_height.max(shaped.height),
+                    content_height: shaped.height,
                     no_wrap: *no_wrap,
                     break_before,
                     raster_run_id: shaped.raster_run_id,
@@ -130,23 +131,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             InlineAtom::Image { width, height, .. }
             | InlineAtom::Control { width, height, .. }
-            | InlineAtom::Placeholder { width, height } => MeasuredAtom {
+            | InlineAtom::Placeholder { width, height, .. } => MeasuredAtom {
                 atom,
                 text: None,
                 width: *width,
                 height: *height,
+                content_height: *height,
                 no_wrap: false,
                 break_before: false,
                 raster_run_id: 0,
                 glyphs: Vec::new(),
             },
-            InlineAtom::InlineBox { children, style } => {
+            InlineAtom::InlineBox {
+                children, style, ..
+            } => {
                 let metrics = self.measure_inline_box(atom, children, style, containing_width);
                 MeasuredAtom {
                     atom,
                     text: None,
                     width: metrics.total_width(),
                     height: metrics.total_height(),
+                    content_height: metrics.total_height(),
                     no_wrap: style.white_space == WhiteSpace::NoWrap,
                     break_before: false,
                     raster_run_id: 0,
@@ -226,6 +231,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let mut border_box_height = resolve_content_height(
             style.height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,
@@ -235,6 +241,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         .unwrap_or(children_height + vertical_insets);
         if let Some(minimum) = resolve_content_height(
             style.min_height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,
@@ -244,6 +251,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if let Some(maximum) = resolve_content_height(
             style.max_height,
+            None,
             self.viewport,
             style.font_size,
             vertical_insets,

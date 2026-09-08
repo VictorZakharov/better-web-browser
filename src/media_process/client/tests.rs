@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::mpsc;
 
 #[test]
 fn bounded_wait_reports_progress_until_the_worker_replies() {

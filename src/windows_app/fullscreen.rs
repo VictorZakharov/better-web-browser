@@ -20,6 +20,7 @@ struct SavedWindowState {
     extended_style: isize,
     placement: WindowPlacement,
     focused: Hwnd,
+    visible: bool,
 }
 
 #[derive(Default)]
@@ -171,6 +172,7 @@ impl BrowserState {
             extended_style,
             placement,
             focused: GetFocus(),
+            visible: IsWindowVisible(self.window) != 0,
         });
         self.fullscreen.owner = Some(owner);
         let fullscreen_style = ((style as u32 & !WS_OVERLAPPEDWINDOW) | WS_POPUP) as isize;
@@ -212,14 +214,20 @@ impl BrowserState {
             normal.height(),
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
-        SetWindowPlacement(self.window, &saved.placement);
-        self.set_chrome_controls_visible(true);
+        let placement = restored_placement(saved.placement, saved.visible);
+        SetWindowPlacement(self.window, &placement);
+        if !saved.visible {
+            ShowWindow(self.window, SW_HIDE);
+        }
+        self.set_chrome_controls_visible(saved.visible);
         self.finish_fullscreen_layout();
-        SetFocus(if saved.focused.is_null() {
-            self.window
-        } else {
-            saved.focused
-        });
+        if saved.visible {
+            SetFocus(if saved.focused.is_null() {
+                self.window
+            } else {
+                saved.focused
+            });
+        }
         if notify_page && let Some(FullscreenOwner::Page { tab, document }) = owner {
             self.respond_fullscreen(
                 tab,
@@ -241,6 +249,7 @@ impl BrowserState {
     }
 
     unsafe fn set_chrome_controls_visible(&self, visible: bool) {
+        let visible = visible && self.benchmark.is_none();
         let command = if visible { SW_SHOW } else { SW_HIDE };
         for control in [
             self.controls.back,
@@ -266,6 +275,13 @@ impl BrowserState {
     }
 }
 
+fn restored_placement(mut placement: WindowPlacement, visible: bool) -> WindowPlacement {
+    if !visible {
+        placement.show_command = SW_HIDE as u32;
+    }
+    placement
+}
+
 fn activation_authorizes(document: DocumentId, activation: (DocumentId, Instant)) -> bool {
     activation.0 == document && activation.1.elapsed() <= TRANSIENT_ACTIVATION_LIFETIME
 }
@@ -287,5 +303,21 @@ mod tests {
                 Instant::now() - TRANSIENT_ACTIVATION_LIFETIME - Duration::from_millis(1)
             )
         ));
+    }
+
+    #[test]
+    fn hidden_window_restoration_cannot_reveal_an_automation_window() {
+        let placement = WindowPlacement {
+            show_command: SW_SHOW as u32,
+            ..WindowPlacement::default()
+        };
+        assert_eq!(
+            restored_placement(placement, false).show_command,
+            SW_HIDE as u32
+        );
+        assert_eq!(
+            restored_placement(placement, true).show_command,
+            SW_SHOW as u32
+        );
     }
 }

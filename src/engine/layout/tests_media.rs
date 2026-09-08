@@ -22,7 +22,7 @@ fn video_is_a_replaced_element_and_installs_bounded_frames() {
             crate::engine::page::DecodedImage {
                 width: 2,
                 height: 2,
-                bgra: vec![0; 16],
+                bgra: vec![0; 16].into(),
             },
         )
         .unwrap();

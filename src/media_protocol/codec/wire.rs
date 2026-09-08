@@ -1,7 +1,31 @@
 use super::MediaProtocolError;
+use crate::limits::MAX_MEDIA_FAILURE_BYTES;
 use crate::media_protocol::{
     MediaLimits, MediaPixelFormat, MediaTestCommand, MediaVideoFrameMetadata,
 };
+
+pub(super) fn encode_buffered(
+    payload: &mut Vec<u8>,
+    extent: crate::media_protocol::MediaBufferedExtent,
+) {
+    vec_i64(payload, extent.video_start_100ns);
+    vec_u64(payload, extent.video_end_100ns);
+    vec_i64(payload, extent.audio_start_100ns);
+    vec_u64(payload, extent.audio_end_100ns);
+}
+
+pub(super) fn decode_buffered(
+    cursor: &mut Cursor<'_>,
+) -> Result<crate::media_protocol::MediaBufferedExtent, MediaProtocolError> {
+    let extent = crate::media_protocol::MediaBufferedExtent {
+        video_start_100ns: cursor.i64()?,
+        video_end_100ns: cursor.u64()?,
+        audio_start_100ns: cursor.i64()?,
+        audio_end_100ns: cursor.u64()?,
+    };
+    extent.validate()?;
+    Ok(extent)
+}
 
 pub(super) fn encode_limits(payload: &mut Vec<u8>, limits: MediaLimits) {
     vec_u32(payload, limits.max_control_payload);
@@ -157,6 +181,15 @@ impl<'a> Cursor<'a> {
 
     pub(super) fn array<const N: usize>(&mut self) -> Result<[u8; N], MediaProtocolError> {
         Ok(self.take(N)?.try_into().unwrap())
+    }
+
+    pub(super) fn failure_string(&mut self) -> Result<String, MediaProtocolError> {
+        let length = self.u16()? as usize;
+        if length == 0 || length > MAX_MEDIA_FAILURE_BYTES {
+            return Err(MediaProtocolError::InvalidPayload("media failure text"));
+        }
+        String::from_utf8(self.take(length)?.to_vec())
+            .map_err(|_| MediaProtocolError::InvalidPayload("media failure UTF-8"))
     }
 
     pub(super) fn finish(self) -> Result<(), MediaProtocolError> {

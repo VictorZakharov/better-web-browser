@@ -1,4 +1,5 @@
 //! DOM node identity, data model, read access, and traversal.
+mod attributes;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
@@ -164,6 +165,7 @@ pub struct ElementData {
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
+    pub hovered: Cell<bool>,
 }
 
 #[derive(Debug)]
@@ -260,6 +262,21 @@ impl Node {
             .is_some_and(|element| element.fullscreen.get())
     }
 
+    pub fn is_hovered(&self) -> bool {
+        self.element().is_some_and(|element| element.hovered.get())
+    }
+
+    pub fn set_hovered(&self, hovered: bool) -> bool {
+        let Some(element) = self.element() else {
+            return false;
+        };
+        if element.hovered.replace(hovered) == hovered {
+            return false;
+        }
+        self.mark_mutated();
+        true
+    }
+
     pub fn set_fullscreen(&self, fullscreen: bool) {
         let Some(element) = self.element() else {
             return;
@@ -273,6 +290,21 @@ impl Node {
         self.element().map(|element| element.name.local.as_ref())
     }
 
+    /// Generated pseudo-elements belong to the CSS box tree, not the document tree. Internal
+    /// nodes let the existing formatting algorithms share one box implementation while callers
+    /// can reliably exclude them from DOM hit testing and script-visible traversal.
+    pub(crate) fn is_generated_pseudo(&self) -> bool {
+        matches!(
+            self.tag_name(),
+            Some("breeze-pseudo-before" | "breeze-pseudo-after")
+        )
+    }
+
+    pub(crate) fn is_generated_pseudo_content(&self) -> bool {
+        self.parent()
+            .is_some_and(|parent| parent.is_generated_pseudo())
+    }
+
     pub fn qualified_name(&self) -> Option<String> {
         self.element().map(|element| {
             element.name.prefix.as_ref().map_or_else(
@@ -284,25 +316,6 @@ impl Node {
 
     pub fn namespace_uri(&self) -> Option<&str> {
         self.element().map(|element| element.name.ns.as_ref())
-    }
-
-    pub fn attr(&self, wanted: &str) -> Option<String> {
-        self.element().and_then(|element| {
-            element
-                .attrs
-                .borrow()
-                .iter()
-                .find(|attribute| attribute.name.local.as_ref().eq_ignore_ascii_case(wanted))
-                .map(|attribute| attribute.value.to_string())
-        })
-    }
-
-    pub fn has_class(&self, wanted: &str) -> bool {
-        self.attr("class").is_some_and(|classes| {
-            classes
-                .split_ascii_whitespace()
-                .any(|class| class == wanted)
-        })
     }
 
     pub fn parent(&self) -> Option<NodeRef> {

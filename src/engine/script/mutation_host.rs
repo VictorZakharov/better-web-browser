@@ -2,7 +2,7 @@
 
 use super::binding_helpers::{append_html_fragment, argument_id, argument_string, node_label};
 use super::*;
-use crate::limits::{MAX_DOCUMENT_WRITE_BYTES, MAX_DOM_MUTATIONS_PER_TASK};
+use crate::limits::{MAX_DOCUMENT_WRITE_BYTES, MAX_DOM_TREE_MUTATIONS_PER_TASK};
 use std::path::Path;
 
 pub(super) fn mutation_host_call(
@@ -10,11 +10,6 @@ pub(super) fn mutation_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
-    if state.task_mutation_count >= MAX_DOM_MUTATIONS_PER_TASK {
-        return Err(JsNativeError::range()
-            .with_message("DOM mutation task budget exceeded")
-            .into());
-    }
     let value = match operation {
         "appendChild" => append_child(args, state),
         "insertBefore" => insert_before(args, state),
@@ -33,6 +28,40 @@ pub(super) fn mutation_host_call(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+pub(super) fn enforce_tree_budget_for_operation(
+    operation: &str,
+    state: &HostState,
+) -> JsResult<()> {
+    if matches!(
+        operation,
+        "appendChild"
+            | "insertBefore"
+            | "removeChild"
+            | "remove"
+            | "adoptNode"
+            | "innerHtmlSet"
+            | "innerHtmlAppend"
+            | "documentWrite"
+            | "attachShadow"
+            | "adoptedStyleSheetsSet"
+    ) {
+        enforce_tree_budget(state)?;
+    }
+    Ok(())
+}
+
+fn enforce_tree_budget(state: &HostState) -> JsResult<()> {
+    if state.task_mutations.tree_total() >= MAX_DOM_TREE_MUTATIONS_PER_TASK {
+        return Err(JsNativeError::range()
+            .with_message(format!(
+                "DOM tree mutation task budget exceeded ({})",
+                state.task_mutations.summary()
+            ))
+            .into());
+    }
+    Ok(())
 }
 
 pub(super) fn flush_document_write(state: &mut HostState) -> bool {
@@ -276,6 +305,9 @@ fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
         .unwrap_or_default();
     if removed.iter().any(subtree_contains_style) {
         kind = MutationKind::Stylesheet;
+    }
+    if matches!(kind, MutationKind::ChildList | MutationKind::Stylesheet) {
+        enforce_tree_budget(state)?;
     }
     if !contents.is_empty()
         && node

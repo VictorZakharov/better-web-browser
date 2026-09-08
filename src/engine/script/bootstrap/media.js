@@ -36,6 +36,24 @@
     const mediaStates = new WeakMap();
     let nextMediaRequest = 1;
     const pendingMediaRequests = new Map();
+    const effectiveVolumeMillis = state => state.muted ? 0 : Math.round(state.volume * 1000);
+    const mediaCommand = (element, requestId, command, ...args) => {
+        traceMediaLifecycle(element, 'request:' + command);
+        return host('mediaRequest', element.__id, requestId, command, ...args);
+    };
+    const supportedMediaType = type => {
+        const source = String(type).trim().toLowerCase();
+        if (!source) return '';
+        const [essence, ...parameters] = source.split(';').map(part => part.trim());
+        if (essence !== 'video/mp4' && essence !== 'audio/mp4' && essence !== 'application/mp4')
+            return '';
+        const codecsParameter = parameters.find(parameter => parameter.startsWith('codecs='));
+        if (!codecsParameter) return 'maybe';
+        const codecs = codecsParameter.slice(codecsParameter.indexOf('=') + 1)
+            .replace(/^['\"]|['\"]$/g, '').split(',').map(codec => codec.trim());
+        if (!codecs.length || codecs.some(codec => !/^(avc1\.|mp4a\.40\.2$)/.test(codec))) return '';
+        return 'probably';
+    };
     const mediaStateFor = element => {
         let state = mediaStates.get(element);
         if (!state) {
@@ -99,7 +117,16 @@
         set currentTime(value) {
             value = Number(value);
             if (!Number.isFinite(value)) throw new TypeError('currentTime must be finite');
-            mediaStateFor(this).currentTime = Math.max(0, value);
+            const state = mediaStateFor(this);
+            value = Math.max(0, Number.isFinite(state.duration) ? Math.min(value, state.duration) : value);
+            if (state.readyState === HTMLMediaElement.HAVE_NOTHING) {
+                state.currentTime = value;
+                return;
+            }
+            state.seeking = true;
+            state.currentTime = value;
+            this.dispatchEvent(new Event('seeking'));
+            mediaCommand(this, 0, 'seek', value);
         }
         get defaultPlaybackRate() { return mediaStateFor(this).defaultPlaybackRate; }
         set defaultPlaybackRate(value) {
@@ -126,6 +153,7 @@
             if (state.volume === value) return;
             state.volume = value;
             this.dispatchEvent(new Event('volumechange'));
+            mediaCommand(this, 0, 'configure', effectiveVolumeMillis(state));
         }
         get muted() { return mediaStateFor(this).muted; }
         set muted(value) {
@@ -134,15 +162,24 @@
             if (state.muted === value) return;
             state.muted = value;
             this.dispatchEvent(new Event('volumechange'));
+            mediaCommand(this, 0, 'configure', effectiveVolumeMillis(state));
         }
         get preservesPitch() { return mediaStateFor(this).preservesPitch; }
         set preservesPitch(value) { mediaStateFor(this).preservesPitch = !!value; }
+        get mediaKeys() { return null; }
+        setMediaKeys() {
+            return Promise.reject(new DOMException(
+                'Encrypted media playback is not supported',
+                'NotSupportedError'
+            ));
+        }
         get srcObject() { return mediaStateFor(this).srcObject; }
         set srcObject(value) {
             if (value !== null) throw new TypeError('MediaStream playback is not supported');
             mediaStateFor(this).srcObject = null;
         }
         load() {
+            traceMediaCallsite(this);
             const state = mediaStateFor(this);
             const hadResource = state.networkState !== HTMLMediaElement.NETWORK_EMPTY;
             state.networkState = HTMLMediaElement.NETWORK_EMPTY;
@@ -157,6 +194,7 @@
             state.buffered = emptyTimeRanges();
             state.seekable = emptyTimeRanges();
             state.played = emptyTimeRanges();
+            mediaCommand(this, 0, 'reset');
             if (hadResource) this.dispatchEvent(new Event('emptied'));
         }
         play() {
@@ -164,17 +202,21 @@
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {
                 pendingMediaRequests.set(requestId, { element: this, resolve, reject });
-                host('mediaRequest', this.__id, requestId, true,
-                    Math.round(state.volume * 1000), state.muted);
+                const volumeMillis = effectiveVolumeMillis(state);
+                if (!prepareMediaSourcePlayback(this, requestId, volumeMillis))
+                    mediaCommand(this, requestId, 'playback', true, volumeMillis);
             });
         }
         pause() {
             const state = mediaStateFor(this);
-            host('mediaRequest', this.__id, 0, false,
-                Math.round(state.volume * 1000), state.muted);
+            if (!state.paused) {
+                state.paused = true;
+                queueMediaEvent(this, 'pause');
+            }
+            mediaCommand(this, 0, 'playback', false, effectiveVolumeMillis(state));
         }
         fastSeek(time) { this.currentTime = time; }
-        canPlayType(_type) { return ''; }
+        canPlayType(type) { return supportedMediaType(type); }
         getStartDate() { return new Date(NaN); }
     }
     installEventHandlerAttributes(HTMLMediaElement.prototype);
@@ -218,15 +260,43 @@
 
     reflectString(HTMLSourceElement.prototype, 'type');
 
+    const updateMediaCanPlay = element => {
+        const state = mediaStateFor(element);
+        if (state.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+        let next = HTMLMediaElement.HAVE_CURRENT_DATA;
+        for (let index = 0; index < state.buffered.length; index++) {
+            if (state.buffered.start(index) <= state.currentTime
+                && state.buffered.end(index) > state.currentTime) {
+                // MSE SourceBuffer Monitoring permits a UA buffering threshold. Use three
+                // seconds of contiguous active-track data, or the complete remaining resource.
+                // https://www.w3.org/TR/media-source-2/#sourcebuffer-monitoring
+                const end = state.buffered.end(index);
+                next = end - state.currentTime >= 3 || end >= state.duration
+                    ? HTMLMediaElement.HAVE_ENOUGH_DATA : HTMLMediaElement.HAVE_FUTURE_DATA;
+                break;
+            }
+        }
+        const previous = state.readyState;
+        state.readyState = next;
+        if (previous < HTMLMediaElement.HAVE_FUTURE_DATA && next >= HTMLMediaElement.HAVE_FUTURE_DATA)
+            queueMediaEvent(element, 'canplay');
+        if (previous < HTMLMediaElement.HAVE_ENOUGH_DATA && next === HTMLMediaElement.HAVE_ENOUGH_DATA)
+            queueMediaEvent(element, 'canplaythrough');
+    };
+
     const applyMediaResponse = input => {
         const element = wrap(Number(input.target) || 0);
         if (!(element instanceof HTMLMediaElement)) return false;
         const state = mediaStateFor(element);
+        if (input.disposition !== 'time')
+            traceMediaLifecycle(element, 'response:' + input.disposition,
+                input.currentTime, input.duration);
         const requestId = Number(input.requestId) || 0;
         const pending = requestId ? pendingMediaRequests.get(requestId) : null;
         if (requestId) pendingMediaRequests.delete(requestId);
         switch (input.disposition) {
             case 'loaded':
+                state.currentTime = Math.max(0, Number(input.currentTime) || 0);
                 state.networkState = HTMLMediaElement.NETWORK_IDLE;
                 state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
                 state.currentSrc = element.src;
@@ -235,17 +305,20 @@
                 state.videoHeight = Number(input.height) || 0;
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
-                element.dispatchEvent(markTrusted(new Event('durationchange')));
+                notifyMediaSourceLoaded(element, state.duration, input.buffered);
+                if (!mediaSourceForElement.has(element))
+                    element.dispatchEvent(markTrusted(new Event('durationchange')));
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
-                element.dispatchEvent(markTrusted(new Event('canplay')));
+                updateMediaCanPlay(element);
                 if (element.autoplay) element.play().catch(() => {});
                 return true;
             case 'playing':
+                const wasPaused = state.paused;
                 state.paused = false;
                 state.ended = false;
                 pending?.resolve();
-                element.dispatchEvent(markTrusted(new Event('play')));
+                if (wasPaused) element.dispatchEvent(markTrusted(new Event('play')));
                 element.dispatchEvent(markTrusted(new Event('playing')));
                 return true;
             case 'paused':
@@ -255,10 +328,38 @@
                 }
                 return true;
             case 'time':
+                traceMediaClock(element, input);
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                updateMediaCanPlay(element);
+                state.played = new TimeRanges(timeRangesConstructionToken, [[0, state.currentTime]]);
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));
                 return true;
+            case 'seeked':
+                state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                state.seeking = false;
+                element.dispatchEvent(markTrusted(new Event('timeupdate')));
+                element.dispatchEvent(markTrusted(new Event('seeked')));
+                return true;
+            case 'configured':
+            case 'reset':
+            case 'committed':
+                return true;
+            case 'appended':
+                state.duration = Math.max(Number(state.duration) || 0, Number(input.duration) || 0);
+                state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
+                notifyMediaSourceAppended(element, Number(input.duration), input.buffered);
+                updateMediaCanPlay(element);
+                element.dispatchEvent(markTrusted(new Event('progress')));
+                return true;
+            case 'media-error':
+                notifyMediaSourceError(element);
+                return false;
+            case 'not-allowed':
+                pending?.reject(new DOMException('Audible playback requires user activation', 'NotAllowedError'));
+                return false;
             case 'ended':
+                if (waitForMediaSourceData(element, input.currentTime)) return true;
                 state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;
                 state.paused = true;
                 state.ended = true;

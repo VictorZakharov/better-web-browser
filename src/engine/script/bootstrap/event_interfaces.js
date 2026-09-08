@@ -12,6 +12,7 @@
             this.relatedTarget = init?.relatedTarget === undefined ? null : init.relatedTarget;
         }
     }
+    const mouseEventDispatchPositions = new WeakMap();
     class MouseEvent extends UIEvent {
         constructor(type, init = {}) {
             super(type, init);
@@ -28,6 +29,13 @@
             this.buttons = Number(init.buttons) || 0;
             this.relatedTarget = init.relatedTarget === undefined ? null : init.relatedTarget;
         }
+        // CSSOM View: dispatch uses the event's document position; outside dispatch the
+        // current native scroll offset is added to the viewport position.
+        // https://www.w3.org/TR/cssom-view/#extensions-to-the-mouseevent-interface
+        get pageX() { return mouseEventDispatchPositions.get(this)?.[0] ?? viewportScrollX + this.clientX; }
+        get pageY() { return mouseEventDispatchPositions.get(this)?.[1] ?? viewportScrollY + this.clientY; }
+        get x() { return this.clientX; }
+        get y() { return this.clientY; }
     }
     class PointerEvent extends MouseEvent {
         constructor(type, init = {}) {
@@ -39,6 +47,22 @@
             this.pointerType = init?.pointerType === undefined ? '' : String(init.pointerType);
             this.isPrimary = init?.isPrimary === undefined ? false : !!init.isPrimary;
         }
+    }
+    class WheelEvent extends MouseEvent {
+        constructor(type, init = {}) {
+            super(type, init);
+            init = init == null ? {} : Object(init);
+            this.deltaX = Number(init.deltaX) || 0;
+            this.deltaY = Number(init.deltaY) || 0;
+            this.deltaZ = Number(init.deltaZ) || 0;
+            this.deltaMode = Number(init.deltaMode) >>> 0;
+        }
+    }
+    for (const [name, value] of Object.entries({
+        DOM_DELTA_PIXEL: 0, DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2
+    })) {
+        Object.defineProperty(WheelEvent, name, { value, enumerable: true });
+        Object.defineProperty(WheelEvent.prototype, name, { value, enumerable: true });
     }
     class KeyboardEvent extends UIEvent {
         constructor(type, init = {}) {

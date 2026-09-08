@@ -25,7 +25,7 @@ Normal launches store cookies and `localStorage` under `%LOCALAPPDATA%\Breeze`. 
 
 - Windows 10/11 x64 only; there is no MSI in this release.
 - The binary is unsigned and may trigger Windows reputation warnings.
-- Platform coverage is incomplete. Media-element and contained decode foundations exist, but user-visible audio/video playback, canvas, downloads, extensions, and cross-site frame isolation are not implemented; many broader WPT areas fail.
+- Platform coverage is incomplete. A bounded Canvas 2D pixel slice and user-visible non-DRM H.264/AAC MP4 playback, Media Source input, synchronized audio, controls, and fullscreen are implemented. Other Canvas drawing operations, codecs and containers, encrypted media, captions, track selection, picture-in-picture, downloads, extensions, and cross-site frame isolation remain incomplete; many broader WPT areas fail.
 - Windows UI Automation exposes browser chrome and a bounded active-document semantic tree, but accessible-name/ARIA coverage, rich text patterns, live regions, Reader semantics, and non-Windows adapters remain incomplete. See [Accessibility architecture](accessibility.md).
 - Each tab has a capability-free AppContainer renderer and browser-owned recovery surfaces, but Breeze has not received an independent security audit and does not provide complete site isolation.
 - Do not use this alpha for banking, password-manager access, sensitive authenticated browsing, or other high-value sessions. Expect rendering defects, crashes, data loss, and incompatible profile changes.

@@ -28,6 +28,12 @@ impl ScrollAnimation {
 }
 
 impl BrowserState {
+    pub(super) unsafe fn apply_script_viewport_scroll(&mut self, css_y: Option<f32>) {
+        if let Some(y) = css_y.filter(|y| y.is_finite() && *y >= 0.0) {
+            self.scroll_to((y * self.page_scale()).round() as i32);
+        }
+    }
+
     pub(super) unsafe fn queue_wheel_scroll(&mut self, delta: i32) {
         if delta == 0 {
             return;

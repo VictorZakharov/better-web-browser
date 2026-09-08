@@ -1,5 +1,8 @@
 mod app_container;
+mod fault_testing;
 mod metrics;
+
+pub(crate) use fault_testing::suppress_injected_fault_reporting;
 
 pub(crate) use app_container::AppContainerSid;
 pub(crate) use metrics::{

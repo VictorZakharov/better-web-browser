@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 #[derive(Default)]
 pub(super) struct PendingInvalidation {
-    root: Option<NodeRef>,
+    roots: Vec<NodeRef>,
     impact: InvalidationImpact,
     rebuild_style_rules: bool,
     removed_nodes: BTreeSet<NodeId>,
@@ -18,9 +18,7 @@ impl PendingInvalidation {
         target: Option<&NodeRef>,
         mut kind: MutationKind<'_>,
     ) {
-        if target.is_some_and(is_in_style_element)
-            && matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
-        {
+        if rebuilds_style_rules(target, kind) {
             kind = MutationKind::Stylesheet;
         }
         self.impact = self.impact.union(kind.impact());
@@ -29,21 +27,27 @@ impl PendingInvalidation {
             return;
         };
         let root = match kind {
-            MutationKind::Attribute(_) | MutationKind::CharacterData => target
-                .shadow_including_parent()
-                .unwrap_or_else(|| target.clone()),
+            MutationKind::Attribute(_) | MutationKind::CharacterData | MutationKind::State => {
+                target
+                    .shadow_including_parent()
+                    .unwrap_or_else(|| target.clone())
+            }
             MutationKind::ChildList => target.clone(),
             MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
         };
-        self.extend(&root);
+        self.extend(document, &root);
     }
 
-    pub(super) fn extend(&mut self, target: &NodeRef) {
-        self.root = Some(
-            self.root
-                .as_ref()
-                .map_or_else(|| target.clone(), |root| common_ancestor(root, target)),
-        );
+    pub(super) fn extend(&mut self, document: &NodeRef, target: &NodeRef) {
+        if self.roots.iter().any(|root| is_descendant_of(target, root)) {
+            return;
+        }
+        self.roots.retain(|root| !is_descendant_of(root, target));
+        self.roots.push(target.clone());
+        if self.roots.len() > crate::engine::invalidation::MAX_INVALIDATION_ROOTS {
+            self.roots.clear();
+            self.roots.push(document.clone());
+        }
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
@@ -51,9 +55,16 @@ impl PendingInvalidation {
             .extend(Node::shadow_including_descendants(root).map(|node| node.id()));
     }
 
+    pub(super) fn acknowledge_published_geometry(&mut self) {
+        // The renderer has already laid out all content changes through this checkpoint.
+        // Its geometry does not refresh the script snapshot's independent style cache:
+        // retain dirty roots, removed styles, and rule-rebuild obligations for that cache.
+        self.impact = self.impact.without_intrinsic_size();
+    }
+
     pub(super) fn snapshot(&self, mutation_count: usize) -> RenderInvalidation {
         RenderInvalidation {
-            root: self.root.as_ref().map(|root| root.id()),
+            roots: self.roots.iter().map(|root| root.id()).collect(),
             impact: self.impact,
             mutation_count,
             rebuild_style_rules: self.rebuild_style_rules,
@@ -68,6 +79,12 @@ impl PendingInvalidation {
     }
 }
 
+pub(super) fn rebuilds_style_rules(target: Option<&NodeRef>, kind: MutationKind<'_>) -> bool {
+    matches!(kind, MutationKind::Stylesheet)
+        || (matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
+            && target.is_some_and(is_in_style_element))
+}
+
 fn is_in_style_element(node: &NodeRef) -> bool {
     std::iter::successors(Some(node.clone()), |current| {
         current.shadow_including_parent()
@@ -75,20 +92,39 @@ fn is_in_style_element(node: &NodeRef) -> bool {
     .any(|current| current.tag_name() == Some("style"))
 }
 
-fn common_ancestor(left: &NodeRef, right: &NodeRef) -> NodeRef {
-    let left_ancestors =
-        std::iter::successors(Some(left.clone()), |node| node.shadow_including_parent())
-            .map(|node| (node.id(), node))
-            .collect::<HashMap<_, _>>();
-    std::iter::successors(Some(right.clone()), |node| node.shadow_including_parent())
-        .find_map(|node| left_ancestors.get(&node.id()).cloned())
-        .unwrap_or_else(|| left.clone())
+fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
+    std::iter::successors(Some(node.clone()), |node| node.shadow_including_parent())
+        .any(|node| node.id() == ancestor.id())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::dom;
+
+    #[test]
+    fn published_geometry_preserves_pending_style_and_removal_obligations() {
+        let dom = dom::parse("<style>p{color:red}</style><main><p>text</p></main>");
+        let sheet = dom.elements_named("style").next().unwrap();
+        let paragraph = dom.elements_named("p").next().unwrap();
+        let mut pending = PendingInvalidation::default();
+        pending.record(&dom.document, Some(&sheet), MutationKind::Stylesheet);
+        pending.record_removed_subtree(&paragraph);
+        let before = pending.snapshot(2);
+
+        pending.acknowledge_published_geometry();
+        let after = pending.snapshot(2);
+        assert!(before.impact.affects_intrinsic_size());
+        assert!(!after.impact.affects_intrinsic_size());
+        assert!(after.impact.affects_style() && after.impact.affects_layout());
+        assert!(after.impact.affects_paint() && after.rebuild_style_rules);
+        assert_eq!(after.roots, before.roots);
+        assert_eq!(after.removed_nodes, before.removed_nodes);
+        assert_eq!(after.mutation_count, before.mutation_count);
+
+        pending.record(&dom.document, Some(&paragraph), MutationKind::CharacterData);
+        assert!(pending.snapshot(3).impact.affects_intrinsic_size());
+    }
 
     #[test]
     fn coalesces_sibling_mutations_at_their_parent() {
@@ -108,7 +144,33 @@ mod tests {
         );
 
         let invalidation = pending.snapshot(2);
-        assert_eq!(invalidation.root, Some(main.id()));
+        assert_eq!(invalidation.roots, vec![main.id()]);
         assert_eq!(invalidation.mutation_count, 2);
+    }
+
+    #[test]
+    fn retains_disjoint_component_roots() {
+        let document = dom::parse("<main><section><p></p></section><aside><p></p></aside></main>");
+        let section = document.elements_named("section").next().unwrap();
+        let aside = document.elements_named("aside").next().unwrap();
+        let left = section.children.borrow()[0].clone();
+        let right = aside.children.borrow()[0].clone();
+        let mut pending = PendingInvalidation::default();
+        pending.record(
+            &document.document,
+            Some(&left),
+            MutationKind::Attribute("class"),
+        );
+        pending.record(
+            &document.document,
+            Some(&right),
+            MutationKind::Attribute("class"),
+        );
+
+        let mut roots = pending.snapshot(2).roots;
+        roots.sort_unstable();
+        let mut expected = vec![section.id(), aside.id()];
+        expected.sort_unstable();
+        assert_eq!(roots, expected);
     }
 }

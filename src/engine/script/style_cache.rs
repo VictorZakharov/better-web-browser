@@ -2,38 +2,155 @@
 
 use super::*;
 
+mod viewport;
+
+#[cfg(test)]
+mod source_order;
+
 impl HostState {
+    pub(super) fn invalidate_style_rules_for_mutation(
+        &mut self,
+        target: Option<&NodeRef>,
+        kind: MutationKind<'_>,
+    ) {
+        // Invalidate at the mutation, not from the renderer's accumulated dirty flag:
+        // that flag can remain set after a script query has already rebuilt its rules.
+        if render_invalidation::rebuilds_style_rules(target, kind) {
+            self.computed_styles = None;
+            self.offset_parent_styles = None;
+        }
+    }
+
+    pub(super) fn replace_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
+        // Source order breaks otherwise equal cascade ties, including repeated source URLs.
+        // Preserve the owning Page's sequence for layout, computed style, and offsetParent.
+        // https://www.w3.org/TR/css-cascade-3/#cascade-order
+        if self.stylesheet_sources.as_slice() != stylesheets {
+            self.stylesheet_sources = stylesheets.to_vec();
+            // Resource completion can change the cascade without a DOM mutation.
+            self.computed_styles = None;
+            self.offset_parent_styles = None;
+            self.layout_geometry_initialized = false;
+            self.pending_layout_invalidation.record(
+                &self.document,
+                Some(&self.document),
+                MutationKind::Stylesheet,
+            );
+        }
+    }
+
+    fn document_style_set(&self) -> StyleSet {
+        StyleSet::for_computed_style_for_media_environment(
+            &self.document,
+            &self.document_url,
+            &self.stylesheet_sources,
+            self.media_environment,
+        )
+    }
+    pub(super) fn offset_parent(&mut self, node: &NodeRef) -> Option<NodeRef> {
+        if !self.is_connected(node) || node.element().is_none() || node.tag_name() == Some("body") {
+            return None;
+        }
+        let (version, mut styles) = self.take_offset_parent_styles();
+        let parent = (|| {
+            let target = styles.computed_style_for_node(node)?.clone();
+            if target.display == crate::engine::css::Display::None {
+                return None;
+            }
+            let mut ancestor = node.parent();
+            while let Some(candidate) = ancestor {
+                ancestor = candidate.parent();
+                if candidate.element().is_none() {
+                    continue;
+                }
+                let style = styles.computed_style_for_node(&candidate)?.clone();
+                if style.display == crate::engine::css::Display::None {
+                    return None;
+                }
+                let fixed_containing_block = style.establishes_fixed_position_containing_block();
+                if target.position == crate::engine::css::Position::Fixed {
+                    if fixed_containing_block {
+                        return Some(candidate);
+                    }
+                    continue;
+                }
+                if style.position != crate::engine::css::Position::Static || fixed_containing_block
+                {
+                    return Some(candidate);
+                }
+                if candidate.tag_name() == Some("body")
+                    || (target.position == crate::engine::css::Position::Static
+                        && matches!(candidate.tag_name(), Some("td" | "th" | "table")))
+                {
+                    return Some(candidate);
+                }
+            }
+            None
+        })();
+        self.offset_parent_styles = Some((version, styles));
+        parent
+    }
+
     pub(super) fn computed_style_property(
         &mut self,
         node: &NodeRef,
         property: &str,
     ) -> Option<String> {
+        self.computed_style_property_for(node, property, None)
+    }
+
+    pub(super) fn computed_pseudo_style_property(
+        &mut self,
+        node: &NodeRef,
+        property: &str,
+        pseudo: crate::engine::css::PseudoElement,
+    ) -> Option<String> {
+        self.computed_style_property_for(node, property, Some(pseudo))
+    }
+
+    fn computed_style_property_for(
+        &mut self,
+        node: &NodeRef,
+        property: &str,
+        pseudo: Option<crate::engine::css::PseudoElement>,
+    ) -> Option<String> {
+        let (version, mut styles) = self.take_computed_styles();
+        let value = match pseudo {
+            Some(pseudo) => styles
+                .computed_style_for_pseudo(node, pseudo)
+                .and_then(|style| resolved_property_value(style, property)),
+            None => styles
+                .computed_style_for_node(node)
+                .and_then(|style| resolved_property_value(style, property)),
+        };
+        self.computed_styles = Some((version, styles));
+        value
+    }
+
+    fn take_computed_styles(&mut self) -> (u64, StyleSet) {
         let version = self.document.document_mutation_version();
-        let invalidation = self.pending_invalidation.snapshot(self.mutation_count);
-        let mut styles = match self.computed_styles.take() {
+        let styles = match self.computed_styles.take() {
             Some((cached_version, styles)) if cached_version == version => styles,
-            Some((_, mut styles)) if !invalidation.rebuild_style_rules => {
+            Some((_, mut styles)) => {
                 styles.clear_computed_styles();
                 styles
             }
-            _ => {
-                // Script execution currently owns inline style sources. External sheets remain in
-                // the page resource layer until those lifetimes are unified. Compute only the
-                // requested node's ancestor chain; getComputedStyle must not cascade every node in
-                // a large document merely to inspect one feature-test element.
-                StyleSet::for_computed_style_for_media_environment(
-                    &self.document,
-                    &self.document_url,
-                    &[],
-                    self.media_environment,
-                )
-            }
+            _ => self.document_style_set(),
         };
-        let value = styles
-            .computed_style_for_node(node)
-            .and_then(|style| resolved_property_value(style, property));
-        self.computed_styles = Some((version, styles));
-        value
+        (version, styles)
+    }
+
+    fn take_offset_parent_styles(&mut self) -> (u64, StyleSet) {
+        let version = self.document.document_mutation_version();
+        let styles = match self.offset_parent_styles.take() {
+            Some((cached_version, styles)) if cached_version == version => styles,
+            Some((_, mut styles)) => {
+                styles.clear_computed_styles();
+                styles
+            }
+            _ => self.document_style_set(),
+        };
+        (version, styles)
     }
 }
 
@@ -41,6 +158,80 @@ impl HostState {
 mod tests {
     use super::*;
     use crate::engine::dom;
+
+    #[test]
+    fn stylesheet_invalidation_is_consumed_by_each_style_cache() {
+        let dom = dom::parse("<style>.a {color:red}.b {color:blue}</style><div class=a></div>");
+        let target = dom.elements_named("div").next().unwrap();
+        let sheet = dom.elements_named("style").next().unwrap();
+        let mut state = HostState::new(
+            dom.document.clone(),
+            "https://example.com/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        state.record_mutation(Some(&sheet), MutationKind::Stylesheet);
+        assert_eq!(
+            state.computed_style_property(&target, "color").as_deref(),
+            Some("rgb(255, 0, 0)")
+        );
+        state.offset_parent(&target);
+        target.set_attr("class", "b");
+        state.record_mutation(Some(&target), MutationKind::Attribute("class"));
+        // Rendering still owes a rule refresh, but script caches have already consumed it.
+        assert!(state.pending_invalidation.snapshot(0).rebuild_style_rules);
+        assert!(state.computed_styles.is_some());
+        assert!(state.offset_parent_styles.is_some());
+        assert_eq!(
+            state.computed_style_property(&target, "color").as_deref(),
+            Some("rgb(0, 0, 255)")
+        );
+        state.record_mutation(Some(&sheet), MutationKind::CharacterData);
+        assert!(state.computed_styles.is_none());
+        assert!(state.offset_parent_styles.is_none());
+    }
+
+    #[test]
+    fn computed_style_includes_downloaded_stylesheet_rules() {
+        let dom = dom::parse("<link rel='stylesheet' href='app.css'><div id='target'></div>");
+        let target = dom.elements_named("div").next().unwrap();
+        let mut state = HostState::new(
+            dom.document.clone(),
+            "https://example.com/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        state.replace_document_stylesheets(&[(
+            "https://example.com/app.css".into(),
+            "#target { position: absolute; color: #123456 }".into(),
+        )]);
+        assert_eq!(
+            state
+                .computed_style_property(&target, "position")
+                .as_deref(),
+            Some("absolute")
+        );
+        assert_eq!(
+            state.computed_style_property(&target, "color").as_deref(),
+            Some("rgb(18, 52, 86)")
+        );
+        let version = state.document.document_mutation_version();
+        state.replace_document_stylesheets(&[(
+            "https://example.com/app.css".into(),
+            "#target { position: relative; color: #654321 }".into(),
+        )]);
+        assert_eq!(state.document.document_mutation_version(), version);
+        assert_eq!(
+            state
+                .computed_style_property(&target, "position")
+                .as_deref(),
+            Some("relative")
+        );
+        assert_eq!(
+            state.computed_style_property(&target, "color").as_deref(),
+            Some("rgb(101, 67, 33)")
+        );
+    }
 
     #[test]
     fn computed_style_cascades_only_the_requested_ancestor_chain() {
@@ -71,5 +262,36 @@ mod tests {
         );
         let computed = &state.computed_styles.as_ref().unwrap().1.styles;
         assert!(computed.len() < 10, "computed {} styles", computed.len());
+    }
+
+    #[test]
+    fn offset_parent_reuses_parsed_styles_after_dynamic_class_changes() {
+        let dom = dom::parse(
+            "<main class='positioned'><span id='first'></span><span id='second'></span></main>",
+        );
+        let main = dom.elements_named("main").next().unwrap();
+        let children = dom.elements_named("span").collect::<Vec<_>>();
+        let mut state = HostState::new(
+            dom.document.clone(),
+            "https://example.com/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        state.replace_document_stylesheets(&[(
+            "https://example.com/app.css".into(),
+            ".positioned { position: relative }".into(),
+        )]);
+
+        assert_eq!(
+            state.offset_parent(&children[0]).map(|node| node.id()),
+            Some(main.id())
+        );
+        children[1].set_attr("class", "updated");
+        state.record_mutation(Some(&children[1]), MutationKind::Attribute("class"));
+        assert_eq!(
+            state.offset_parent(&children[1]).map(|node| node.id()),
+            Some(main.id())
+        );
+        assert!(state.offset_parent_styles.is_some());
     }
 }

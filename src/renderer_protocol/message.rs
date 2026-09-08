@@ -178,6 +178,7 @@ pub enum TestCommand {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RendererMessage {
+    VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,
         context: BrowsingContextId,
@@ -213,7 +214,7 @@ pub enum RendererMessage {
         document: DocumentId,
         revision: u64,
     },
-    RuntimeUpdate(RendererRuntimeUpdate),
+    RuntimeUpdate(Box<RendererRuntimeUpdate>),
     DocumentFailed {
         document: DocumentId,
         detail: String,

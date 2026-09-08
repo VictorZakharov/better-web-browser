@@ -11,7 +11,7 @@ param(
     [int] $FilmstripIntervalMs = 500,
     [ValidateRange(100, 60000)]
     [int] $FilmstripDurationMs = 10000,
-    [ValidateRange(100, 60000)]
+    [ValidateRange(100, 600000)]
     [int] $SettleMs = 2000,
     [ValidateRange(5, 600)]
     [int] $TimeoutSeconds = 120,
@@ -29,6 +29,11 @@ param(
     [string[]] $DiagnosticSelector = @(),
     [string[]] $NavigationTarget = @(),
     [string[]] $LinkActivationTarget = @(),
+    [string[]] $SelectorActivationTarget = @(),
+    [string[]] $ClickTarget = @(),
+    [string[]] $PointerMoveTarget = @(),
+    [string[]] $KeyTarget = @(),
+    [string[]] $ScrollTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -150,11 +155,48 @@ foreach ($target in $LinkActivationTarget) {
     $arguments.Add('--activate-link-after-ready')
     $arguments.Add($target)
 }
-if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0) {
+foreach ($target in $SelectorActivationTarget) {
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        throw '-SelectorActivationTarget values cannot be empty.'
+    }
+    $arguments.Add('--activate-selector-after-ready')
+    $arguments.Add($target)
+}
+foreach ($target in $PointerMoveTarget) {
+    if ($target -notmatch '^\d+\s*,\s*\d+$') {
+        throw '-PointerMoveTarget values must use non-negative x,y document coordinates.'
+    }
+    $arguments.Add('--move-after-ready')
+    $arguments.Add($target)
+}
+foreach ($target in $ClickTarget) {
+    if ($target -notmatch '^\d+\s*,\s*\d+$') {
+        throw '-ClickTarget values must use non-negative x,y coordinates.'
+    }
+    $arguments.Add('--click-after-ready')
+    $arguments.Add($target)
+}
+foreach ($target in $KeyTarget) {
+    if ($target -notmatch '^[^,]+,[^,]+$') { throw '-KeyTarget must use key,code pairs.' }
+    $arguments.Add('--key-after-ready')
+    $arguments.Add($target)
+}
+foreach ($target in $ScrollTarget) {
+    $scrollOffset = 0
+    $target = ([string] $target).Trim()
+    if ($target -notmatch '^[0-9]+$' -or -not [int]::TryParse($target, [ref] $scrollOffset)) {
+        throw '-ScrollTarget values must be integer CSS y offsets from 0 to 2147483647.'
+    }
+    $arguments.Add('--scroll-after-ready')
+    $arguments.Add($scrollOffset.ToString([System.Globalization.CultureInfo]::InvariantCulture))
+}
+if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
+    $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or
+    $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {
-    throw '-NavigationDelayMs requires at least one navigation or link-activation target.'
+    throw '-NavigationDelayMs requires at least one navigation, link, selector, pointer, key, or scroll target.'
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

@@ -12,24 +12,34 @@ impl Node {
     }
 
     pub fn attr_qualified(&self, qualified_name: &str) -> Option<String> {
+        self.attribute_qualified(qualified_name)
+            .map(|attribute| attribute.value.to_string())
+    }
+
+    pub fn attr_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<String> {
+        self.attribute_ns(namespace, local_name)
+            .map(|attribute| attribute.value.to_string())
+    }
+
+    pub fn attribute_qualified(&self, qualified_name: &str) -> Option<Attribute> {
         self.element().and_then(|element| {
             element
                 .attrs
                 .borrow()
                 .iter()
                 .find(|attribute| attribute_qualified_name(attribute) == qualified_name)
-                .map(|attribute| attribute.value.to_string())
+                .cloned()
         })
     }
 
-    pub fn attr_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<String> {
+    pub fn attribute_ns(&self, namespace: Option<&str>, local_name: &str) -> Option<Attribute> {
         self.element().and_then(|element| {
             element
                 .attrs
                 .borrow()
                 .iter()
                 .find(|attribute| attribute_matches(attribute, namespace, local_name))
-                .map(|attribute| attribute.value.to_string())
+                .cloned()
         })
     }
 
@@ -42,6 +52,11 @@ impl Node {
             .iter_mut()
             .find(|attribute| attribute_qualified_name(attribute) == qualified_name)
         {
+            // The host still queues mutation records/reactions. Only the internal rendering
+            // version stays unchanged when the attribute's actual value is unchanged.
+            if attribute.value.as_ref() == value {
+                return true;
+            }
             attribute.value = StrTendril::from(value);
         } else {
             attributes.push(Attribute {
@@ -69,6 +84,9 @@ impl Node {
             .iter_mut()
             .find(|attribute| attribute_matches(attribute, namespace, local_name))
         {
+            if attribute.value.as_ref() == value {
+                return true;
+            }
             attribute.value = StrTendril::from(value);
         } else {
             attributes.push(new_attribute(namespace, prefix, local_name, value));
@@ -94,6 +112,11 @@ impl Node {
             .iter()
             .position(|attribute| attribute_matches(attribute, namespace, local_name))
         {
+            if attributes[index].name == replacement.name
+                && attributes[index].value == replacement.value
+            {
+                return true;
+            }
             attributes[index] = replacement;
         } else {
             attributes.push(replacement);

@@ -8,6 +8,8 @@ mod backpressure;
 mod clock_backpressure;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
+#[path = "renderer_process/hover.rs"]
+mod hover;
 #[path = "renderer_process/input.rs"]
 mod input;
 #[path = "renderer_process/media.rs"]
@@ -24,6 +26,10 @@ mod streaming_fetch;
 mod support;
 #[path = "renderer_process/termination.rs"]
 mod termination;
+#[path = "renderer_process/title_navigation.rs"]
+mod title_navigation;
+#[path = "renderer_process/viewport_observers.rs"]
+mod viewport_observers;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{

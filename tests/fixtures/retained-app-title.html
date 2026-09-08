@@ -1,0 +1,61 @@
+<!doctype html>
+<title>Initial item</title>
+<x-title-app id="app"></x-title-app>
+<output id="result">initial</output>
+<script>
+const check = (name, value) => { if (!value) throw new Error(name); };
+let received = 0;
+customElements.define('x-title-app', class extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({mode:'open'}).innerHTML = '<section id="first"></section><section id="second"></section>';
+        this.addEventListener('page-title-ready', event => {
+            check('event crosses open shadow roots', event.bubbles && event.composed && event.composedPath().includes(page));
+            received++;
+            document.title = event.detail + ' - Retained app';
+        });
+    }
+});
+customElements.define('x-title-page', class extends HTMLElement {
+    constructor() {
+        super();
+        this.connections = 0;
+        this.disconnections = 0;
+        this.attachShadow({mode:'open'}).innerHTML = '<span></span>';
+    }
+    connectedCallback() { this.connections++; }
+    disconnectedCallback() { this.disconnections++; }
+    publish(title) {
+        return Promise.resolve(title).then(value => {
+            this.shadowRoot.firstChild.dispatchEvent(new CustomEvent('page-title-ready', {
+                bubbles:true, composed:true, detail:value
+            }));
+        });
+    }
+});
+const app = document.getElementById('app');
+const page = document.createElement('x-title-page');
+const publisher = page.shadowRoot.firstChild;
+app.shadowRoot.querySelector('#first').appendChild(page);
+const navigate = (step, title, mount) => {
+    history.pushState({step}, '', '/item/' + step);
+    page.remove();
+    check('removed before response', !page.isConnected && page.disconnections === step);
+    Promise.resolve().then(() => {
+        app.shadowRoot.querySelector(mount).appendChild(page);
+        check('retained page and publisher', page.shadowRoot.firstChild === publisher && document.getElementById('app') === app);
+        return page.publish(title);
+    }).then(() => {
+        check('one retained listener per response', received === step);
+        check('title updated synchronously by listener', document.title === title + ' - Retained app');
+        check('same document navigation', location.pathname === '/item/' + step);
+        check('reconnected lifecycle', page.connections === step + 1 && page.disconnections === step);
+        document.getElementById('result').textContent = [step, document.title, location.pathname, page.connections, page.disconnections].join('|');
+    }).catch(error => {
+        document.getElementById('result').textContent = 'FAIL: ' + error.message;
+        throw error;
+    });
+};
+setTimeout(() => navigate(1, 'First item', '#second'), 10000);
+setTimeout(() => navigate(2, 'Second item', '#first'), 20000);
+</script>

@@ -4,6 +4,8 @@ use super::*;
 use crate::engine::MediaEnvironment;
 
 mod cookies;
+pub(crate) mod geometry;
+mod ownership;
 mod storage;
 
 use crate::storage::{StorageAreaState, StorageMutation};
@@ -32,19 +34,23 @@ pub(super) struct CompletedModuleEvaluation {
 pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) document_url: String,
+    pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
-    pub(super) stylesheet_sources: HashMap<String, String>,
+    pub(super) stylesheet_sources: Vec<(String, String)>,
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
     pub(super) owner_documents: HashMap<NodeId, u64>,
     pub(super) document_roots: HashMap<u64, NodeRef>,
     pub(super) html_documents: HashSet<u64>,
+    pub(super) template_contents_documents: HashMap<u64, u64>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
-    pub(super) task_mutation_count: usize,
+    pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
+    pub(super) viewport_scroll_y: Option<f32>,
+    pub(super) history_actions: Vec<ScriptHistoryAction>,
     pub(super) cookie_header: String,
     pub(super) cookie_version: u64,
     pub(super) cookie_updates: Vec<String>,
@@ -71,8 +77,19 @@ pub(super) struct HostState {
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
+    pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
+    /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
+    pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) layout_geometry_version: u64,
+    pub(super) layout_geometry_initialized: bool,
+    pub(super) layout_flush: Option<LayoutFlushCallback>,
     pub(super) media_environment: MediaEnvironment,
+    pub(super) layout_viewport_width: f32,
+    pub(super) layout_viewport_height: f32,
+    pub(super) layout_content_height: f32,
+    pub(super) quirks_mode: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
+    pub(super) pending_layout_invalidation: render_invalidation::PendingInvalidation,
 }
 
 impl HostState {
@@ -82,23 +99,26 @@ impl HostState {
         character_set: &str,
         module_loader: Rc<module_loader::WebModuleLoader>,
     ) -> Self {
-        let document_identity = document.id().document();
         let mut state = Self {
             document,
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
-            stylesheet_sources: HashMap::new(),
+            stylesheet_sources: Vec::new(),
+            pointer_path: Vec::new(),
             module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
             owner_documents: HashMap::new(),
             document_roots: HashMap::new(),
             html_documents: HashSet::new(),
+            template_contents_documents: HashMap::new(),
             next_node_id: 1,
             mutation_count: 0,
-            task_mutation_count: 0,
+            task_mutations: task_mutation_profile::TaskMutationProfile::default(),
             console: Vec::new(),
             navigation_url: None,
+            viewport_scroll_y: None,
+            history_actions: Vec::new(),
             cookie_header: String::new(),
             cookie_version: 1,
             cookie_updates: Vec::new(),
@@ -125,15 +145,21 @@ impl HostState {
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
+            offset_parent_styles: None,
+            layout_geometry: HashMap::new(),
+            layout_geometry_version: 0,
+            layout_geometry_initialized: false,
+            layout_flush: None,
             media_environment: MediaEnvironment::new(1280.0, 720.0, 1.0, false),
+            layout_viewport_width: 1280.0,
+            layout_viewport_height: 720.0,
+            layout_content_height: 720.0,
+            quirks_mode: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
+            pending_layout_invalidation: render_invalidation::PendingInvalidation::default(),
         };
         let document = state.document.clone();
-        state
-            .document_roots
-            .insert(document_identity, document.clone());
-        state.html_documents.insert(document_identity);
-        state.register_subtree(&document);
+        state.register_document(document, true);
         state
     }
 
@@ -171,70 +197,6 @@ impl HostState {
         }
     }
 
-    pub(super) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
-        self.document_roots
-            .get(&self.owner_document_identity(node))
-            .cloned()
-    }
-
-    pub(super) fn is_html_document_for(&self, node: &NodeRef) -> bool {
-        self.html_documents
-            .contains(&self.owner_document_identity(node))
-    }
-
-    pub(super) fn register_document(&mut self, document: NodeRef, html: bool) -> u32 {
-        let identity = document.id().document();
-        self.document_roots.insert(identity, document.clone());
-        if html {
-            self.html_documents.insert(identity);
-        }
-        self.register_subtree(&document);
-        self.id_for(&document)
-    }
-
-    pub(super) fn adopt_subtree(&mut self, parent: &NodeRef, child: &NodeRef) {
-        let owner_identity = self.owner_document_identity(parent);
-        let mut stack = vec![child.clone()];
-        while let Some(node) = stack.pop() {
-            self.owner_documents.insert(node.id(), owner_identity);
-            stack.extend(node.children.borrow().iter().rev().cloned());
-            stack.extend(node.shadow_root());
-            if let Some(contents) = node
-                .element()
-                .and_then(|element| element.template_contents.borrow().clone())
-            {
-                stack.push(contents);
-            }
-        }
-    }
-
-    pub(super) fn register_subtree(&mut self, root: &NodeRef) {
-        let owner_identity = root
-            .parent()
-            .map(|parent| self.owner_document_identity(&parent))
-            .unwrap_or_else(|| self.owner_document_identity(root));
-        let mut stack = vec![root.clone()];
-        while let Some(node) = stack.pop() {
-            self.owner_documents.insert(node.id(), owner_identity);
-            self.id_for(&node);
-            stack.extend(node.children.borrow().iter().rev().cloned());
-            stack.extend(node.shadow_root());
-            if let Some(contents) = node
-                .element()
-                .and_then(|element| element.template_contents.borrow().clone())
-            {
-                stack.push(contents);
-            }
-        }
-    }
-
-    fn owner_document_identity(&self, node: &NodeRef) -> u64 {
-        self.owner_documents
-            .get(&node.id())
-            .copied()
-            .unwrap_or_else(|| node.id().document())
-    }
-
     pub(super) fn resolved_url(&self, reference: &str) -> String {
         resolve_url(&self.document_url, reference).unwrap_or_else(|| reference.to_string())
     }
@@ -261,24 +223,31 @@ impl HostState {
         requires_render: bool,
     ) {
         self.mutation_count += 1;
-        self.task_mutation_count += 1;
+        self.task_mutations.record(kind);
+        self.invalidate_style_rules_for_mutation(target, kind);
         if requires_render {
             self.pending_invalidation
+                .record(&self.document, target, kind);
+            self.pending_layout_invalidation
                 .record(&self.document, target, kind);
             self.timers.request_render();
         }
     }
 
     pub(super) fn begin_task(&mut self) {
-        self.task_mutation_count = 0;
+        self.task_mutations.reset();
     }
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
-        self.pending_invalidation.extend(target);
+        self.pending_invalidation.extend(&self.document, target);
+        self.pending_layout_invalidation
+            .extend(&self.document, target);
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
         self.pending_invalidation.record_removed_subtree(root);
+        self.pending_layout_invalidation
+            .record_removed_subtree(root);
     }
 
     pub(super) fn mutation_requires_render(&self, target: &NodeRef) -> bool {

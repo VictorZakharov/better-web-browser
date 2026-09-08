@@ -20,6 +20,7 @@ internal sealed class BenchmarkResult
     public string RequestedUrl { get; init; } = string.Empty;
     public string FinalUrl { get; set; } = string.Empty;
     public string? Error { get; set; }
+    public string? CleanupError { get; set; }
     public int HttpStatus { get; set; }
     public int RequestedViewportWidthCssPx { get; init; }
     public int RequestedViewportHeightCssPx { get; init; }
@@ -58,10 +59,23 @@ internal sealed class BenchmarkResult
     public int ScreenshotDistinctColors { get; set; }
     public double PaintedPixelRatio { get; set; }
     public bool BrowserErrorSurface { get; set; }
+    public MediaProbe? Media { get; set; }
     public double CompatibilityCaptureMs { get; set; }
     public int DocumentHeightCssPx { get; set; }
     public bool FixtureReady { get; set; }
     public string? Screenshot { get; set; }
+    public JsonElement? Diagnostics { get; set; }
+}
+
+internal sealed class MediaProbe
+{
+    public double CurrentTimeSeconds { get; init; }
+    public double DurationSeconds { get; init; }
+    public bool Paused { get; init; }
+    public bool Ended { get; init; }
+    public int ReadyState { get; init; }
+    public int VideoWidth { get; init; }
+    public int VideoHeight { get; init; }
 }
 
 internal sealed class ScrollMetrics

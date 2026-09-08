@@ -23,7 +23,8 @@ fn exposes_closed_truthful_html_media_bindings() {
                 Number.isNaN(video.duration),
                 video.currentSrc === '',
                 video.buffered instanceof TimeRanges && video.buffered.length === 0,
-                video.canPlayType(source.type) === '',
+                video.canPlayType(source.type) === 'probably',
+                video.canPlayType('video/webm; codecs="vp9"') === '',
                 MediaError.MEDIA_ERR_DECODE === 3,
                 'onloadedmetadata' in video && 'ontimeupdate' in video
             ];
@@ -71,10 +72,14 @@ fn media_methods_fail_closed_and_validate_ranges() {
     let outcome = runtime.execute_initial(&[input]);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.media_actions.len(), 1);
-    let action = outcome.media_actions[0];
-    assert!(action.play);
+    let action = &outcome.media_actions[0];
+    assert!(matches!(
+        action.command,
+        ScriptMediaCommand::SetPlayback { playing: true, .. }
+    ));
     let video = dom.elements_named("video").next().unwrap();
     let response = runtime.dispatch_user_input(UserInputEvent::Media {
+        buffered: None,
         target: video,
         request_id: action.request_id,
         disposition: "denied",
@@ -91,5 +96,94 @@ fn media_methods_fail_closed_and_validate_ranges() {
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "NotSupportedError,IndexSizeError,IndexSizeError,true"
+    );
+}
+
+#[test]
+fn unsupported_codecs_and_encrypted_media_fail_closed() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output id="status">waiting</output><video id="movie"></video><script>
+            const movie = document.getElementById('movie');
+            const results = [];
+            const source = new MediaSource();
+            const objectUrl = URL.createObjectURL(source);
+            const unsupportedCodec = new Promise(resolve => {
+                source.addEventListener('sourceopen', () => {
+                    try {
+                        source.addSourceBuffer('video/webm; codecs="vp09.00.10.08"');
+                    } catch (error) {
+                        results.push('codec:' + error.name);
+                    }
+                    URL.revokeObjectURL(objectUrl);
+                    resolve();
+                }, { once: true });
+            });
+            movie.src = objectUrl;
+            Promise.all([
+                unsupportedCodec,
+                navigator.requestMediaKeySystemAccess('com.widevine.alpha', []).then(
+                    () => results.push('navigator:accepted'),
+                    error => results.push('navigator:' + error.name)
+                ),
+                movie.setMediaKeys(null).then(
+                    () => results.push('element:accepted'),
+                    error => results.push('element:' + error.name)
+                )
+            ]).then(() => {
+                results.push('mediaKeys:' + (movie.mediaKeys === null));
+                results.push('handler:' + ('onencrypted' in movie));
+                document.getElementById('status').textContent = results.join(',');
+            });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        concat!(
+            "codec:NotSupportedError,navigator:NotSupportedError,",
+            "element:NotSupportedError,mediaKeys:true,handler:true"
+        )
+    );
+}
+
+#[test]
+fn media_capabilities_reports_only_the_owned_decode_path() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output id="status">waiting</output><script>
+        const video = {
+            contentType: 'video/mp4; codecs="avc1.42E01E"',
+            width: 320, height: 240, bitrate: 500000, framerate: 30
+        };
+        const audio = {
+            contentType: 'audio/mp4; codecs="mp4a.40.2"',
+            channels: '2', bitrate: 128000, samplerate: 48000
+        };
+        Promise.all([
+            navigator.mediaCapabilities.decodingInfo({ type: 'file', video, audio }),
+            navigator.mediaCapabilities.decodingInfo({
+                type: 'media-source',
+                video: { ...video, contentType: 'video/webm; codecs="vp09.00.10.08"' }
+            }),
+            navigator.mediaCapabilities.decodingInfo({
+                type: 'media-source', video, keySystemConfiguration: { keySystem: 'widevine' }
+            }),
+            navigator.mediaCapabilities.decodingInfo({ type: 'file' }).then(
+                () => 'accepted', error => error.name
+            )
+        ]).then(([owned, unsupported, encrypted, invalid]) => {
+            document.getElementById('status').textContent = [
+                owned.supported, owned.smooth, owned.powerEfficient,
+                owned.keySystemAccess === null, owned.configuration.video.width,
+                unsupported.supported, unsupported.smooth,
+                encrypted.supported, encrypted.keySystemAccess === null,
+                invalid
+            ].join(':');
+        });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:true:false:true:320:false:false:false:true:TypeError"
     );
 }

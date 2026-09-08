@@ -1,8 +1,32 @@
+    const imageElementStates = new WeakMap();
+    const resetImageElementState = element => imageElementStates.delete(element);
+    const updateImageElementState = (element, complete, naturalWidth, naturalHeight) => {
+        imageElementStates.set(element, {
+            source: element.src,
+            complete: !!complete,
+            naturalWidth: Math.max(0, Number(naturalWidth) || 0),
+            naturalHeight: Math.max(0, Number(naturalHeight) || 0),
+        });
+    };
+    const imageElementState = element => {
+        const source = element.src;
+        const state = imageElementStates.get(element);
+        if (state?.source === source) return state;
+        return {
+            source,
+            complete: !element.hasAttribute('src') && !element.srcset,
+            naturalWidth: 0,
+            naturalHeight: 0,
+        };
+    };
+
     class Element extends Node {
         get tagName() { return this.__nodeName; }
         get localName() { return this.__localName; }
         get namespaceURI() { return this.__namespaceURI; }
         get prefix() { return host('prefix', this.__id); }
+        get previousElementSibling() { return elementSibling(this, false); }
+        get nextElementSibling() { return elementSibling(this, true); }
         get id() { return this.getAttribute('id') || ''; }
         set id(value) { this.setAttribute('id', value); }
         get slot() { return this.getAttribute('slot') || ''; }
@@ -11,6 +35,9 @@
         set className(value) { this.setAttribute('class', value); }
         get classList() { return this.__classList ||= new DOMTokenList(this, 'class'); }
         get style() { return this.__style ||= styleProxy(this); }
+        // ElementCSSInlineStyle declares [PutForwards=cssText]. Assigning `element.style`
+        // therefore updates the existing declaration instead of replacing the same-object value.
+        set style(value) { this.style.cssText = value; }
         attachShadow(init) {
             if (init == null) throw new TypeError('attachShadow requires an options dictionary');
             init = Object(init);
@@ -36,19 +63,7 @@
         }
         get shadowRoot() { return wrap(host('shadowRoot', this.__id)); }
         get innerHTML() { return host('innerHtmlGet', this.__id); }
-        set innerHTML(value) {
-            const wasConnected = this.isConnected;
-            const removedChildren = wasConnected ? [...this.childNodes] : [];
-            host('innerHtmlSet', this.__id, value == null ? '' : String(value));
-            markChildCollectionsChanged(this);
-            for (const child of removedChildren) disconnectCustomElementTree(child);
-            for (const child of this.childNodes) {
-                if (wasConnected) connectCustomElementTree(child);
-                else upgradeCustomElementTree(child);
-            }
-            if (wasConnected) refreshWindowNamedProperties(removedChildren.concat(this.childNodes));
-            scheduleSlotChangeCheck();
-        }
+        set innerHTML(value) { replaceElementInnerHtml(this, value); }
         get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
         set outerHTML(value) {
             const parent = this.parentNode;
@@ -68,43 +83,56 @@
         }
         setAttribute(name, value) {
             name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
-            const record = recordByQualifiedName(this, name);
+            value = String(value);
+            const record = host('attrSet', this.__id, name, value);
             const oldValue = record?.value ?? null;
-            host('attrSet', this.__id, name, String(value));
-            const current = recordByQualifiedName(this, name);
-            queueAttributeMutation(this, current, oldValue);
-            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, current.value);
+            const current = record ? { ...record, value } : {
+                namespace: null, prefix: null, localName: name, qualifiedName: name, value
+            };
+            if (this.localName === 'img' &&
+                (current.localName === 'src' || current.localName === 'srcset')) {
+                resetImageElementState(this);
+            }
+            queueAttributeMutation(this, current, oldValue, value);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
             scheduleSlotChangeCheck();
         }
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
-            const record = recordByNamespace(this, extracted.namespace, extracted.localName);
+            value = String(value);
+            const record = host('attrSetNs', this.__id, extracted.namespace || '',
+                extracted.prefix || '', extracted.localName, value);
             const oldValue = record?.value ?? null;
-            host('attrSetNs', this.__id, extracted.namespace || '', extracted.prefix || '',
-                extracted.localName, String(value));
-            const current = recordByNamespace(this, extracted.namespace, extracted.localName);
-            queueAttributeMutation(this, current, oldValue);
-            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, current.value);
+            const current = record ? { ...record, value } : { ...extracted, value };
+            if (this.localName === 'img' && current.namespace === null &&
+                (current.localName === 'src' || current.localName === 'srcset'))
+                resetImageElementState(this);
+            queueAttributeMutation(this, current, oldValue, value);
+            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
             scheduleSlotChangeCheck();
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
-            const record = recordByQualifiedName(this, name);
+            const record = host('attrRemove', this.__id, name);
             if (!record) return;
-            const attribute = attrForRecord(this, record);
-            host('attrRemove', this.__id, name);
-            detachAttribute(this, record, attribute);
-            queueAttributeMutation(this, record, record.value);
+            if (this.localName === 'img' &&
+                (record.localName === 'src' || record.localName === 'srcset'))
+                resetImageElementState(this);
+            detachCachedAttribute(this, record);
+            queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             scheduleSlotChangeCheck();
         }
         removeAttributeNS(namespace, localName) {
-            const record = recordByNamespace(this, namespace, localName);
+            namespace = normalizedNamespace(namespace);
+            localName = String(localName);
+            const record = host('attrRemoveNs', this.__id, namespace || '', localName);
             if (!record) return;
-            const attribute = attrForRecord(this, record);
-            host('attrRemoveNs', this.__id, record.namespace || '', record.localName);
-            detachAttribute(this, record, attribute);
-            queueAttributeMutation(this, record, record.value);
+            if (this.localName === 'img' && record.namespace === null &&
+                (record.localName === 'src' || record.localName === 'srcset'))
+                resetImageElementState(this);
+            detachCachedAttribute(this, record);
+            queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             scheduleSlotChangeCheck();
         }
@@ -183,25 +211,53 @@
                 set(_, property, value) { element.setAttribute('data-' + String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()), value); return true; }
             });
         }
-        get contentWindow() { return this.localName === 'iframe' ? iframeWindow : null; }
-        get contentDocument() { return this.localName === 'iframe' ? iframeDocument : null; }
+        get contentWindow() {
+            return this.localName === 'iframe' && iframeDocumentFor(this) ? iframeWindow : null;
+        }
+        get contentDocument() {
+            return this.localName === 'iframe' ? iframeDocumentFor(this) : null;
+        }
         click() {
             const allowed = this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
             if (allowed && this.localName === 'summary') {
                 const details = this.parentElement;
-                const firstSummary = details?.children.find(child => child.localName === 'summary');
+                const firstSummary = Array.from(details?.children || [])
+                    .find(child => child.localName === 'summary');
                 if (details instanceof HTMLDetailsElement && firstSummary === this) details.open = !details.open;
             }
         }
         focus() { document.activeElement = this; this.dispatchEvent(new Event('focus')); }
         blur() { if (document.activeElement === this) document.activeElement = document.body; this.dispatchEvent(new Event('blur')); }
-        get clientWidth() { return 0; }
-        get clientHeight() { return 0; }
-        get offsetWidth() { return 0; }
-        get offsetHeight() { return 0; }
-        getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON() { return this; } }; }
     }
+    installParentNodeMembers(Element.prototype);
+    installChildNodeMembers(Element.prototype);
     installEventHandlerAttributes(Element.prototype);
+
+    class SVGAnimatedString {
+        constructor(element, attribute) {
+            this.__element = element;
+            this.__attribute = attribute;
+        }
+        get baseVal() { return this.__element.getAttribute(this.__attribute) || ''; }
+        set baseVal(value) { this.__element.setAttribute(this.__attribute, String(value)); }
+        get animVal() { return this.baseVal; }
+    }
+    class SVGElement extends Element {
+        get className() {
+            return this.__className ||= new SVGAnimatedString(this, 'class');
+        }
+        set className(value) { this.__classNameValue.baseVal = value; }
+        get __classNameValue() {
+            return this.__className ||= new SVGAnimatedString(this, 'class');
+        }
+        get ownerSVGElement() {
+            let ancestor = this.parentElement;
+            while (ancestor && !(ancestor instanceof SVGSVGElement)) ancestor = ancestor.parentElement;
+            return ancestor;
+        }
+        get viewportElement() { return this.ownerSVGElement; }
+    }
+    class SVGSVGElement extends SVGElement {}
 
     const dataPropertyName = attribute => attribute.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
     const dataAttributeName = property => {
@@ -244,6 +300,12 @@
             super(id, ...metadata);
         }
         get dataset() { return this.__dataset ||= datasetFor(this); }
+        // HTML defines innerText on HTMLElement, not Node. The complete getter is
+        // layout-aware; until whitespace and generated-line handling cross the host
+        // boundary, preserve the required DOMString contract with the subtree text.
+        // This is also the specified fallback when an element is not being rendered.
+        get innerText() { return this.textContent || ''; }
+        set innerText(value) { this.textContent = value == null ? '' : String(value); }
     }
     class HTMLDivElement extends HTMLElement {}
     class HTMLStyleElement extends HTMLElement {
@@ -378,6 +440,10 @@
         set text(value) { this.textContent = String(value); }
     }
     class HTMLImageElement extends HTMLElement {
+        get complete() { return imageElementState(this).complete; }
+        get currentSrc() { return imageElementState(this).source; }
+        get naturalWidth() { return imageElementState(this).naturalWidth; }
+        get naturalHeight() { return imageElementState(this).naturalHeight; }
         get srcset() { return this.getAttribute('srcset') || ''; }
         set srcset(value) { this.setAttribute('srcset', value); }
         get sizes() { return this.getAttribute('sizes') || ''; }

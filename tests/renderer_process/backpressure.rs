@@ -4,8 +4,8 @@ use better_web_browser::renderer_process::{RendererEvent, RendererSession, Rende
 use better_web_browser::renderer_protocol::{
     DocumentId, DocumentInput, DocumentNodeId, FetchResponseHead, FetchResponseResult,
     FetchResponseType, InputModifiers, NavigationCause, NavigationDisposition, PointerButton,
-    PointerInput, PointerPhase, PresentationAcknowledgement, RendererFetchRequest, TestCommand,
-    TextInput,
+    PointerInput, PointerPhase, PresentationAcknowledgement, PresentedViewport,
+    RendererFetchRequest, TestCommand, TextInput,
 };
 use std::time::{Duration, Instant};
 
@@ -295,6 +295,70 @@ fn presentation_acknowledgement_survives_saturation_and_followup_navigation() {
     session.shutdown().expect("shutdown navigation renderer");
 }
 
+#[test]
+fn newest_viewport_survives_a_saturated_ordinary_command_queue() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("launch renderer");
+    let initial = load_html_document(
+        &session,
+        157,
+        "<!doctype html><style>#viewport{width:100vw;height:20px;background:#123456}</style><div id=viewport></div>",
+    );
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: initial.document,
+            revision: initial.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+    saturate_command_queue(&session);
+
+    for width in [640.0, 720.0, 777.0] {
+        session
+            .update_viewport(
+                initial.document,
+                PresentedViewport {
+                    width,
+                    height: 500.0,
+                    style_width: width,
+                    dpi: 96,
+                    prefers_dark_color_scheme: false,
+                },
+            )
+            .expect("retain the newest viewport while ordinary commands are full");
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while Instant::now() < deadline {
+        match session.wait_for_event(Duration::from_millis(500)) {
+            Ok(RendererEvent::Presentation(presentation))
+                if presentation.document == initial.document =>
+            {
+                let retained_width = presentation
+                    .layout
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        DisplayItem::SolidRect { rect, .. } if rect.height == 20.0 => {
+                            Some(rect.width)
+                        }
+                        _ => None,
+                    });
+                if retained_width.is_some_and(|width| (width - 777.0).abs() < 0.5) {
+                    session.shutdown().expect("shutdown viewport renderer");
+                    return;
+                }
+            }
+            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_)) | Err(_) => {}
+            Ok(event) => panic!("unexpected viewport backpressure event: {event:?}"),
+        }
+    }
+    panic!("newest retained viewport was not presented after command pressure cleared");
+}
+
 fn saturate_command_queue(session: &RendererSession) {
     session
         .send_test_command(TestCommand::DelayCommandRead { millis: 1_200 })
@@ -328,6 +392,19 @@ fn wait_for_navigation(
                 disposition,
                 cause,
             } if event_document == document => return (url, disposition, cause),
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                // Pointer entry may repaint hover styles before the click navigates.
+                session
+                    .acknowledge_presentation(
+                        better_web_browser::renderer_protocol::PresentationAcknowledgement {
+                            document,
+                            revision: presentation.revision,
+                            presented: true,
+                            controls_applied: true,
+                        },
+                    )
+                    .unwrap();
+            }
             RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected navigation event: {event:?}"),
         }

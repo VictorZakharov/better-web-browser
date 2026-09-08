@@ -8,6 +8,7 @@ pub(super) fn dispatch_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;
     if operation == "documentModuleComplete" {
         let id = argument_id(args, 1);
         let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
@@ -55,10 +56,16 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::style_host::style_host_call(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::viewport_host::viewport_host_call(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::mutation_host::mutation_host_call(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::history_host::history_host_call(operation, args, state)? {
         return Ok(value);
     }
 
@@ -95,6 +102,15 @@ pub(super) fn dispatch_host_call(
                 .map(|node| node.children.borrow().clone())
                 .unwrap_or_default();
             Ok(js_string(join_node_ids(state, &children, false)))
+        }
+        "inclusiveAncestors" => {
+            let mut nodes = Vec::new();
+            let mut current = state.node(argument_id(args, 1));
+            while let Some(node) = current {
+                current = node.parent();
+                nodes.push(node);
+            }
+            Ok(js_string(join_node_ids(state, &nodes, false)))
         }
         "elementChildren" => {
             let children = state
@@ -151,18 +167,20 @@ pub(super) fn dispatch_host_call(
             ))
         }
         "documentUrl" => Ok(js_string(state.document_url.clone())),
-        "mediaMatches" => {
-            let query = argument_string(args, 1)?;
-            Ok(JsValue::from(
-                crate::engine::css::media::media_matches_for_environment(
-                    &query,
-                    state.media_environment,
-                ),
-            ))
+        "layoutRect" => {
+            state.flush_layout_if_needed();
+            let rect = state
+                .node(argument_id(args, 1))
+                .and_then(|node| state.layout_geometry.get(&node.id()).copied());
+            Ok(rect.map_or_else(JsValue::null, |rect| {
+                JsValue::Array(vec![
+                    JsValue::from(rect.x as f64),
+                    JsValue::from(rect.y as f64),
+                    JsValue::from(rect.width as f64),
+                    JsValue::from(rect.height as f64),
+                ])
+            }))
         }
-        "mediaSerialize" => Ok(js_string(
-            crate::engine::css::media::serialize_media_query_list(&argument_string(args, 1)?),
-        )),
         "cookieGet" => Ok(js_string(state.cookie_header())),
         "cookieSet" => {
             state.set_cookie(argument_string(args, 1)?);

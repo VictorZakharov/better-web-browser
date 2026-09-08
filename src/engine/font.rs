@@ -11,7 +11,7 @@ pub struct WebFontFace {
     pub url: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WebFont {
     pub family: String,
     pub weight: u16,

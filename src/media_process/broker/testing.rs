@@ -1,5 +1,5 @@
 use super::{
-    DecodedMediaFrame, MEDIA_EXIT_PROTOCOL, MEDIA_EXIT_TIMEOUT, MediaSession, OwnedMediaDecode,
+    DecodedMediaFrame, MEDIA_EXIT_DECODE, MEDIA_EXIT_PROTOCOL, MediaSession, OwnedMediaDecode,
 };
 use crate::media_data_protocol::{MediaDataWriter, MediaSourceId};
 use crate::media_frame_protocol::{MediaFrameReader as DecodedFrameReader, nv12_to_bgra};
@@ -7,8 +7,7 @@ use crate::media_protocol::{
     BrowserMediaMessage, MediaDecodeReport, MediaPlaybackState, MediaRestrictionReport,
     MediaSessionId, MediaTestCommand, WorkerMediaMessage,
 };
-use std::sync::mpsc;
-
+mod failure;
 mod playback;
 
 impl MediaSession {
@@ -112,6 +111,19 @@ impl MediaSession {
                 DecodedFrameReader::new(frame_input, session, nonce).read_frame(source_id, frame_id)
             });
             let response = self.receive("decode", self.command_timeout);
+            let failure = match &response {
+                Ok(WorkerMediaMessage::Decoded { .. }) => None,
+                Ok(WorkerMediaMessage::DecodeFailed { error, .. }) => {
+                    Some(format!("media worker rejected decode: {error}"))
+                }
+                Ok(_) => Some("media worker returned the wrong decode response".into()),
+                Err(_) => None,
+            };
+            if let Some(reason) = failure {
+                // A failed decode has no frame packet. Close the contained worker before joining
+                // the concurrent frame reader so the pipe reaches EOF instead of waiting forever.
+                self.mark_exited(reason, MEDIA_EXIT_DECODE);
+            }
             let sent = sender
                 .join()
                 .map_err(|_| "media data writer panicked".to_string())
@@ -129,6 +141,22 @@ impl MediaSession {
             );
             return Err(self.exit_reason.clone().unwrap_or_default());
         }
+        let (report, metadata) = match response {
+            Err(error) => return Err(error),
+            Ok(WorkerMediaMessage::Decoded {
+                request_id: actual,
+                report,
+                frame,
+            }) if actual == request_id => {
+                if let Err(error) = report.validate(self.limits) {
+                    return self.protocol_failure(&format!("invalid media decode report: {error}"));
+                }
+                (report, frame)
+            }
+            Ok(WorkerMediaMessage::DecodeFailed { .. }) | Ok(_) => {
+                return Err(self.exit_reason.clone().unwrap_or_default());
+            }
+        };
         let packet = match received_frame {
             Ok(frame) => frame,
             Err(error) => {
@@ -138,19 +166,6 @@ impl MediaSession {
                 );
                 return Err(self.exit_reason.clone().unwrap_or_default());
             }
-        };
-        let (report, metadata) = match response? {
-            WorkerMediaMessage::Decoded {
-                request_id: actual,
-                report,
-                frame,
-            } if actual == request_id => {
-                if let Err(error) = report.validate(self.limits) {
-                    return self.protocol_failure(&format!("invalid media decode report: {error}"));
-                }
-                (report, frame)
-            }
-            _ => return self.protocol_failure("media worker returned the wrong decode response"),
         };
         if packet.metadata != metadata {
             return self.protocol_failure("media frame metadata disagreed with control response");
@@ -219,10 +234,22 @@ impl MediaSession {
         MediaDataWriter::new(output, session, self.nonce)
             .send_oversized_chunk_for_test(source)
             .map_err(|error| format!("send oversized media test: {error}"))?;
-        if let Ok(message) = self.receive("oversized data test", self.command_timeout) {
-            return self.protocol_failure(&format!(
-                "oversized media data unexpectedly returned {message:?}"
-            ));
+        match self.receive("oversized data test", self.command_timeout) {
+            Ok(WorkerMediaMessage::DecodeFailed {
+                request_id: actual,
+                error,
+            }) if actual == request_id => {
+                self.mark_exited(
+                    format!("media worker rejected oversized data framing: {error}"),
+                    MEDIA_EXIT_PROTOCOL,
+                );
+            }
+            Ok(message) => {
+                return self.protocol_failure(&format!(
+                    "oversized media data unexpectedly returned {message:?}"
+                ));
+            }
+            Err(_) => {}
         }
         Ok(())
     }
@@ -306,54 +333,6 @@ impl MediaSession {
         match self.receive("restriction probe", self.command_timeout)? {
             WorkerMediaMessage::Restrictions(report) => Ok(report),
             _ => self.protocol_failure("media worker returned the wrong restriction response"),
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn inject_failure(&mut self, command: MediaTestCommand) -> Result<(), String> {
-        self.require_test_mode()?;
-        if matches!(
-            command,
-            MediaTestCommand::ProbeRestrictions { .. }
-                | MediaTestCommand::WriteMalformedDecodedFrame
-                | MediaTestCommand::WriteTruncatedDecodedFrame
-                | MediaTestCommand::WriteOversizedDecodedFrame
-        ) {
-            return Err("use the specialized media test method for this command".into());
-        }
-        self.send(BrowserMediaMessage::Test(command), "failure injection")?;
-        match self.incoming.recv_timeout(self.command_timeout) {
-            Ok(Ok(message)) => self.protocol_failure(&format!(
-                "failure injection unexpectedly returned {message:?}"
-            )),
-            Ok(Err(error)) => {
-                self.mark_exited(
-                    format!("media IPC failed after injected fault: {error}"),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                self.mark_exited(
-                    "media worker exited after injected fault".into(),
-                    MEDIA_EXIT_PROTOCOL,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) if command == MediaTestCommand::Hang => {
-                self.mark_exited(
-                    "media worker exceeded its command timeout".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Ok(())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                self.mark_exited(
-                    "media worker did not surface its injected failure".into(),
-                    MEDIA_EXIT_TIMEOUT,
-                );
-                Err(self.exit_reason.clone().unwrap_or_default())
-            }
         }
     }
 

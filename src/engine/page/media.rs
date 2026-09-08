@@ -1,6 +1,7 @@
 use super::Page;
 use crate::engine::DecodedImage;
 use crate::engine::dom::{Dom, NodeId, NodeRef};
+use crate::limits::{MAX_PAGE_DECODED_IMAGE_BYTES, MAX_PRESENTED_IMAGES};
 use std::collections::HashMap;
 
 const MEDIA_FRAME_KEY_PREFIX: &str = "breeze-internal:media-frame:";
@@ -8,15 +9,48 @@ pub(crate) const MEDIA_VIDEO_PLACEHOLDER: &str = "breeze-internal:media-placehol
 
 pub(super) fn install_placeholder(dom: &Dom, images: &mut HashMap<String, DecodedImage>) {
     if dom.elements_named("video").next().is_some() {
-        images.insert(
+        let _ = install_initial_decoded_image(
+            images,
             MEDIA_VIDEO_PLACEHOLDER.into(),
             DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![0, 0, 0, 255],
+                bgra: vec![0, 0, 0, 255].into(),
             },
         );
     }
+}
+
+pub(super) fn install_initial_decoded_image(
+    images: &mut HashMap<String, DecodedImage>,
+    key: String,
+    image: DecodedImage,
+) -> Result<(), String> {
+    if !images.contains_key(&key) && images.len() >= MAX_PRESENTED_IMAGES {
+        return Err(format!(
+            "decoded image count exceeds the {MAX_PRESENTED_IMAGES}-image document limit"
+        ));
+    }
+    let retained_bytes = images
+        .iter()
+        .filter(|(existing, _)| *existing != &key)
+        .try_fold(0_usize, |total, (_, image)| {
+            total.checked_add(image.bgra.len())
+        })
+        .ok_or_else(|| "decoded image byte count overflow".to_string())?;
+    if !fits_decoded_image_budget(retained_bytes, image.bgra.len()) {
+        return Err(format!(
+            "decoded images exceed the {MAX_PAGE_DECODED_IMAGE_BYTES}-byte document limit"
+        ));
+    }
+    images.insert(key, image);
+    Ok(())
+}
+
+fn fits_decoded_image_budget(retained_bytes: usize, incoming_bytes: usize) -> bool {
+    retained_bytes
+        .checked_add(incoming_bytes)
+        .is_some_and(|total| total <= MAX_PAGE_DECODED_IMAGE_BYTES)
 }
 
 pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
@@ -31,6 +65,14 @@ pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
 }
 
 impl Page {
+    pub(super) fn install_decoded_image(
+        &mut self,
+        url: String,
+        image: DecodedImage,
+    ) -> Result<(), String> {
+        install_initial_decoded_image(&mut self.images, url, image)
+    }
+
     /// Replaces the current decoded frame for one video element after validating engine limits.
     pub fn install_media_frame(
         &mut self,
@@ -62,11 +104,49 @@ impl Page {
         {
             return Err("media frame session budget exhausted".into());
         }
-        self.images.insert(key.clone(), image);
+        self.install_decoded_image(key.clone(), image)?;
         Ok(key)
     }
 }
 
 fn frame_key(node: NodeId) -> String {
     format!("{MEDIA_FRAME_KEY_PREFIX}{:032x}", node.to_wire())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn image(bytes: usize) -> DecodedImage {
+        DecodedImage {
+            width: 1,
+            height: 1,
+            bgra: vec![0; bytes].into(),
+        }
+    }
+
+    #[test]
+    fn decoded_image_admission_counts_replacements_against_the_aggregate_budget() {
+        let mut images = HashMap::from([("icon".to_string(), image(4))]);
+        install_initial_decoded_image(&mut images, "icon".into(), image(8)).unwrap();
+        assert_eq!(images["icon"].bgra.len(), 8);
+
+        assert!(fits_decoded_image_budget(
+            MAX_PAGE_DECODED_IMAGE_BYTES - 8,
+            8
+        ));
+        assert!(!fits_decoded_image_budget(
+            MAX_PAGE_DECODED_IMAGE_BYTES - 8,
+            9
+        ));
+        assert!(!fits_decoded_image_budget(usize::MAX, 1));
+    }
+
+    #[test]
+    fn decoded_image_clones_share_immutable_pixels() {
+        let image = image(4);
+        let clone = image.clone();
+        assert!(Arc::ptr_eq(&image.bgra, &clone.bgra));
+    }
 }

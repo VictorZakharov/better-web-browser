@@ -15,17 +15,31 @@ use windows::Win32::Media::MediaFoundation::{
     MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+use windows::Win32::System::Com::StructuredStorage::{
+    PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+};
 use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize, STREAM_SEEK_SET,
 };
+use windows::Win32::System::Variant::VT_I8;
 use windows::core::GUID;
 
+mod adaptive;
+mod adaptive_audio;
+mod append;
+mod source;
+use source::*;
 mod audio;
+mod fragmented_mp4;
+mod h264;
 mod playback;
 mod stream;
+mod video_buffer;
 
+pub(in crate::media_process) use adaptive_audio::AudioTrackReport;
+pub(super) use append::decode_append;
 pub(in crate::media_process) use audio::AudioDecoder;
-pub(in crate::media_process) use playback::VideoDecoder;
+pub(in crate::media_process) use playback::{DecodedVideoSample, VideoDecoder};
 use stream::read_stream;
 
 pub(super) struct DecodedMedia {
@@ -66,8 +80,34 @@ pub(super) fn probe(limits: MediaLimits) -> MediaCapabilityReport {
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
+    decode_sources(bytes, bytes, bytes.len() as u64, limits)
+}
+
+pub(super) fn decode_tracks(
+    video_bytes: &[u8],
+    audio_bytes: &[u8],
+    limits: MediaLimits,
+) -> Result<DecodedMedia, String> {
+    let encoded_bytes = video_bytes
+        .len()
+        .checked_add(audio_bytes.len())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| "adaptive media length overflowed".to_string())?;
+    adaptive::decode(video_bytes, audio_bytes, encoded_bytes, limits)
+}
+
+fn decode_sources(
+    video_bytes: &[u8],
+    audio_bytes: &[u8],
+    encoded_bytes: u64,
+    limits: MediaLimits,
+) -> Result<DecodedMedia, String> {
     let started = Instant::now();
-    if bytes.is_empty() || bytes.len() as u64 > limits.max_encoded_bytes {
+    if video_bytes.is_empty()
+        || audio_bytes.is_empty()
+        || encoded_bytes == 0
+        || encoded_bytes > limits.max_encoded_bytes
+    {
         return Err("encoded media length exceeds worker limits".into());
     }
     let _apartment = ComApartment::initialize()
@@ -75,7 +115,12 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     let _foundation = MediaFoundation::start()
         .map_err(|status| format!("start Media Foundation: HRESULT {status:#x}"))?;
 
-    let video_reader = source_reader(bytes)?;
+    let video_reader = source_reader(video_bytes)?;
+    select_stream(
+        &video_reader,
+        MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+        "video",
+    )?;
     verify_native_type(
         &video_reader,
         MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
@@ -114,7 +159,12 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
         limits.max_decoded_frame_bytes,
     )?;
 
-    let audio_reader = source_reader(bytes)?;
+    let audio_reader = source_reader(audio_bytes)?;
+    select_stream(
+        &audio_reader,
+        MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
+        "audio",
+    )?;
     verify_native_type(
         &audio_reader,
         MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
@@ -153,9 +203,38 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
         "audio",
         limits.max_decoded_frame_bytes,
     )?;
+    if video.samples == 0
+        || audio.samples == 0
+        || video.samples as usize > crate::limits::MAX_MEDIA_DECODED_SAMPLES
+        || audio.samples as usize > crate::limits::MAX_MEDIA_DECODED_SAMPLES
+    {
+        let native_video_samples = native_stream_summary(
+            video_bytes,
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+            "native video",
+            limits,
+        )
+        .map(|summary| summary.samples.to_string())
+        .unwrap_or_else(|error| format!("error:{error}"));
+        return Err(format!(
+            "decoded adaptive sample counts are invalid: video={} (native={native_video_samples}) from {} bytes [{}], audio={} from {} bytes [{}]",
+            video.samples,
+            video_bytes.len(),
+            fragmented_mp4::summary(video_bytes),
+            audio.samples,
+            audio_bytes.len(),
+            fragmented_mp4::summary(audio_bytes),
+        ));
+    }
 
     let report = MediaDecodeReport {
-        encoded_bytes: bytes.len() as u64,
+        buffered: crate::media_protocol::MediaBufferedExtent {
+            video_start_100ns: video.first_timestamp.unwrap_or(0).max(0),
+            video_end_100ns: video.end_100ns,
+            audio_start_100ns: audio.first_timestamp.unwrap_or(0).max(0),
+            audio_end_100ns: audio.end_100ns,
+        },
+        encoded_bytes,
         video_codec: MediaCodecFamily::H264,
         audio_codec: MediaCodecFamily::AacLc,
         source_reader_hresult: 0,
@@ -180,72 +259,19 @@ pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, 
     report
         .validate(limits)
         .map_err(|error| format!("validate decoded media: {error}"))?;
-    let playback = VideoDecoder::open(bytes, limits, report.video_samples)?;
+    let playback = VideoDecoder::open(video_bytes, limits, report.video_samples)?;
     Ok(DecodedMedia { report, playback })
 }
 
-fn source_reader(bytes: &[u8]) -> Result<IMFSourceReader, String> {
-    let stream = unsafe { CreateStreamOnHGlobal(HGLOBAL::default(), true) }
-        .map_err(|error| format!("create in-memory media stream: {error}"))?;
-    let mut written = 0_u32;
-    unsafe {
-        stream
-            .Write(
-                bytes.as_ptr().cast(),
-                bytes.len() as u32,
-                Some(&mut written),
-            )
-            .ok()
-            .map_err(|error| format!("copy encoded media into memory stream: {error}"))?;
-    }
-    if written as usize != bytes.len() {
-        return Err("in-memory media stream accepted a partial write".into());
-    }
-    unsafe {
-        stream
-            .Seek(0, STREAM_SEEK_SET, None)
-            .map_err(|error| format!("rewind in-memory media stream: {error}"))?;
-    }
-    let byte_stream = unsafe { MFCreateMFByteStreamOnStream(&stream) }
-        .map_err(|error| format!("adapt memory stream for Media Foundation: {error}"))?;
-    unsafe { MFCreateSourceReaderFromByteStream(&byte_stream, None) }
-        .map_err(|error| format!("create Media Foundation Source Reader: {error}"))
-}
-
-fn verify_native_type(
-    reader: &IMFSourceReader,
+fn native_stream_summary(
+    bytes: &[u8],
     stream: u32,
-    expected_major: GUID,
-    expected_subtype: GUID,
     name: &str,
-) -> Result<(), String> {
-    let native = unsafe { reader.GetNativeMediaType(stream, 0) }
-        .map_err(|error| format!("read native {name} type: {error}"))?;
-    let major = unsafe { native.GetGUID(&MF_MT_MAJOR_TYPE) }
-        .map_err(|error| format!("read native {name} major type: {error}"))?;
-    let subtype = unsafe { native.GetGUID(&MF_MT_SUBTYPE) }
-        .map_err(|error| format!("read native {name} subtype: {error}"))?;
-    if major != expected_major || subtype != expected_subtype {
-        return Err(format!(
-            "owned fixture did not expose expected {name} track"
-        ));
-    }
-    Ok(())
-}
-
-fn output_type(
-    major: GUID,
-    subtype: GUID,
-) -> Result<windows::Win32::Media::MediaFoundation::IMFMediaType, String> {
-    let media_type = unsafe { MFCreateMediaType() }
-        .map_err(|error| format!("create decoded output type: {error}"))?;
-    unsafe {
-        media_type
-            .SetGUID(&MF_MT_MAJOR_TYPE, &major)
-            .and_then(|_| media_type.SetGUID(&MF_MT_SUBTYPE, &subtype))
-            .map_err(|error| format!("configure decoded output type: {error}"))?;
-    }
-    Ok(media_type)
+    limits: MediaLimits,
+) -> Result<stream::StreamSummary, String> {
+    let reader = source_reader(bytes)?;
+    select_stream(&reader, stream, name)?;
+    read_stream(&reader, stream, name, limits.max_decoded_frame_bytes)
 }
 
 fn failed_report(status: i32, started: Instant) -> MediaCapabilityReport {

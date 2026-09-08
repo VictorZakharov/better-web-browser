@@ -3,6 +3,30 @@ use crate::media_frame_protocol::{MediaFrameReader as DecodedFrameReader, nv12_t
 use crate::media_protocol::{BrowserMediaMessage, MediaSessionId, WorkerMediaMessage};
 
 impl MediaSession {
+    /// Verifies repeated empty-buffer replies use the production frame sequence.
+    #[doc(hidden)]
+    pub fn verify_owned_fixture_exhaustion(&mut self, source_id: u64) -> Result<(), String> {
+        self.require_test_mode()?;
+        for _ in 0..2 {
+            let frame_id = self.next_frame;
+            self.next_frame = frame_id
+                .checked_add(1)
+                .ok_or("media frame identity exhausted")?;
+            self.send(
+                BrowserMediaMessage::RequestFrame {
+                    source_id,
+                    frame_id,
+                },
+                "poll exhausted fixture",
+            )?;
+            match self.receive("exhausted fixture", self.command_timeout)? {
+                WorkerMediaMessage::EndOfStream { source_id: actual } if actual == source_id => {}
+                _ => return Err("exhausted fixture did not return end-of-stream".into()),
+            }
+        }
+        Ok(())
+    }
+
     /// Pulls a bounded sequence through the production acknowledgement path. Remote bytes remain
     /// unavailable here: this adapter accepts only browser-owned fixtures in explicit test mode.
     #[doc(hidden)]

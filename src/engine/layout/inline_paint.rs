@@ -42,13 +42,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 ..
             } => {
                 let text = measured.text.unwrap_or_default();
-                if !text.is_empty() {
+                if self.emit_paint && !text.is_empty() {
+                    // CSS 2.2 10.8.1: split extra line leading above and below the font.
+                    let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
                         rect: RectF {
                             x,
-                            y: atom_y,
+                            y: text_y,
                             width: measured.width,
-                            height: measured.height,
+                            height: measured.content_height,
                         },
                         text: text.to_string(),
                         font: font.clone(),
@@ -63,7 +65,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         self.output.items.push(DisplayItem::SolidRect {
                             rect: RectF {
                                 x,
-                                y: atom_y + measured.height - thickness,
+                                y: text_y + measured.content_height - thickness,
                                 width: measured.width,
                                 height: thickness,
                             },
@@ -76,38 +78,62 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             InlineAtom::Image {
                 url,
                 alt,
+                node_id,
+                visible,
                 inset_x,
                 inset_y,
                 image_width,
                 image_height,
+                transform,
+                transform_font_size,
+                opacity,
                 tint,
                 ..
-            } => self.output.items.push(DisplayItem::Image {
-                rect: RectF {
+            } => {
+                let item_start = self.output.items.len();
+                let mut rect = RectF {
                     x: x + inset_x,
                     y: atom_y + inset_y,
                     width: *image_width,
                     height: *image_height,
-                },
-                url: url.clone(),
-                alt: alt.clone(),
-                tint: *tint,
-            }),
+                };
+                let (offset_x, offset_y) =
+                    transform.resolve(rect.width, rect.height, *transform_font_size);
+                rect.x += offset_x;
+                rect.y += offset_y;
+                self.output.node_bounds.insert(*node_id, rect);
+                if self.emit_paint && *visible {
+                    self.output.items.push(DisplayItem::Image {
+                        rect,
+                        url: url.clone(),
+                        alt: alt.clone(),
+                        tint: *tint,
+                    });
+                }
+                self.wrap_opacity(item_start, *opacity);
+            }
             InlineAtom::Control {
                 spec,
                 inset_x,
                 inset_y,
                 control_width,
                 control_height,
+                opacity,
                 ..
             } => {
-                let mut spec = spec.as_ref().clone();
-                spec.rect = RectF {
+                let item_start = self.output.items.len();
+                let rect = RectF {
                     x: x + inset_x,
                     y: atom_y + inset_y,
                     width: *control_width,
                     height: *control_height,
                 };
+                self.output.node_bounds.insert(spec.node_id, rect);
+                if !self.emit_paint {
+                    return;
+                }
+                let mut spec = spec.as_ref().clone();
+                spec.rect = rect;
                 if spec.background_color.alpha > 0 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: spec.rect,
@@ -138,21 +164,35 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 self.output.items.push(DisplayItem::Control(Box::new(spec)));
+                self.wrap_opacity(item_start, *opacity);
             }
-            InlineAtom::InlineBox { children, style } => {
+            InlineAtom::InlineBox {
+                children,
+                style,
+                node_id,
+            } => {
+                let item_start = self.output.items.len();
                 let metrics =
                     self.measure_inline_box(measured.atom, children, style, containing_width);
                 let border_x = x + metrics.margin.left;
-                let border_y = atom_y + metrics.margin.top;
+                let border_y = if metrics.border_box_height == 0.0 && children.is_empty() {
+                    y + metrics.margin.top
+                } else {
+                    atom_y + metrics.margin.top
+                };
                 let border_rect = RectF {
                     x: border_x,
                     y: border_y,
                     width: metrics.border_box_width,
                     height: metrics.border_box_height,
                 };
+                if let Some(node_id) = node_id {
+                    self.output.node_bounds.insert(*node_id, border_rect);
+                }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
-                if style.background_color.alpha > 0 && style.mask_image.is_none() {
+                if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none()
+                {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
                         color: style
@@ -161,7 +201,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         radius,
                     });
                 }
-                if let Some(tile_rect) = self.background_tile_rect(style, border_rect)
+                if self.emit_paint
+                    && let Some(tile_rect) = self.background_tile_rect(style, border_rect)
                     && let Some(url) = style.background_image.as_ref()
                 {
                     self.output.items.push(DisplayItem::BackgroundImage {
@@ -172,7 +213,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         repeat_y: style.background_repeat_y,
                     });
                 }
-                if let Some(url) = style.mask_image.as_ref() {
+                if self.emit_paint
+                    && let Some(url) = style.mask_image.as_ref()
+                {
                     self.output.items.push(DisplayItem::Image {
                         rect: border_rect,
                         url: url.clone(),
@@ -180,7 +223,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         tint: Some(style.background_color),
                     });
                 }
-                if style.border_color.alpha > 0
+                if self.emit_paint
+                    && style.border_color.alpha > 0
                     && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {
@@ -230,8 +274,27 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     );
                     child_x += child.width;
                 }
+                if let Some(node_id) = node_id {
+                    self.apply_transform(*node_id, style, border_rect, item_start);
+                } else {
+                    self.apply_generated_transform(style, border_rect, item_start);
+                }
+                self.wrap_opacity(item_start, style.opacity);
             }
-            InlineAtom::Placeholder { .. } | InlineAtom::Break => {}
+            InlineAtom::Placeholder { node_id, .. } => {
+                if let Some(node_id) = node_id {
+                    self.output.node_bounds.insert(
+                        *node_id,
+                        RectF {
+                            x,
+                            y: atom_y,
+                            width: measured.width,
+                            height: measured.height,
+                        },
+                    );
+                }
+            }
+            InlineAtom::Break => {}
         }
     }
 }

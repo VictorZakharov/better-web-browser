@@ -27,6 +27,9 @@ pub struct NodeDiagnostics {
     pub tag: Option<String>,
     pub id: Option<String>,
     pub class: Option<String>,
+    pub attribute_count: u64,
+    pub attributes_truncated: bool,
+    pub attributes: Vec<AttributeDiagnostics>,
     pub parent: Option<NodeIdentityDiagnostics>,
     pub composed_parent: Option<NodeIdentityDiagnostics>,
     pub child_count: u64,
@@ -36,6 +39,12 @@ pub struct NodeDiagnostics {
     pub style: StyleDiagnostics,
     pub layout_rect: Option<RectF>,
     pub control_rect: Option<RectF>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AttributeDiagnostics {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -77,6 +86,15 @@ pub struct StyleDiagnostics {
     pub background_color: String,
     pub background_image: Option<ResourceDiagnostics>,
     pub mask_image: Option<ResourceDiagnostics>,
+    pub custom_property_count: u64,
+    pub custom_properties_truncated: bool,
+    pub custom_properties: Vec<CustomPropertyDiagnostics>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CustomPropertyDiagnostics {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -89,6 +107,7 @@ pub struct ResourceDiagnostics {
     pub height: Option<u32>,
     pub nontransparent_pixels: Option<u64>,
     pub paint_rects: Vec<RectF>,
+    pub clipped_paint_rects: Vec<RectF>,
     pub control_rects: Vec<RectF>,
 }
 
@@ -127,6 +146,9 @@ impl NodeDiagnostics {
             "tag": self.tag,
             "id": self.id,
             "class": self.class,
+            "attribute_count": self.attribute_count,
+            "attributes_truncated": self.attributes_truncated,
+            "attributes": self.attributes.iter().map(AttributeDiagnostics::to_json).collect::<Vec<_>>(),
             "parent": self.parent.as_ref().map(NodeIdentityDiagnostics::to_json),
             "composed_parent": self.composed_parent.as_ref().map(NodeIdentityDiagnostics::to_json),
             "child_count": self.child_count,
@@ -137,6 +159,12 @@ impl NodeDiagnostics {
             "layout_rect": self.layout_rect.map(rect_value),
             "control_rect": self.control_rect.map(rect_value),
         })
+    }
+}
+
+impl AttributeDiagnostics {
+    fn to_json(&self) -> Value {
+        json!({ "name": self.name, "value": self.value })
     }
 }
 
@@ -182,6 +210,12 @@ impl StyleDiagnostics {
             "background_color": self.background_color,
             "background_image": self.background_image.as_ref().map(ResourceDiagnostics::to_json),
             "mask_image": self.mask_image.as_ref().map(ResourceDiagnostics::to_json),
+            "custom_property_count": self.custom_property_count,
+            "custom_properties_truncated": self.custom_properties_truncated,
+            "custom_properties": self.custom_properties.iter().map(|property| json!({
+                "name": property.name,
+                "value": property.value,
+            })).collect::<Vec<_>>(),
         })
     }
 }
@@ -197,6 +231,7 @@ impl ResourceDiagnostics {
             "height": self.height,
             "nontransparent_pixels": self.nontransparent_pixels,
             "paint_rects": self.paint_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
+            "clipped_paint_rects": self.clipped_paint_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
             "control_rects": self.control_rects.iter().copied().map(rect_value).collect::<Vec<_>>(),
         })
     }

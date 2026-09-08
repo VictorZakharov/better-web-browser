@@ -48,7 +48,7 @@ pub(super) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImag
     Ok(DecodedImage {
         width,
         height,
-        bgra,
+        bgra: bgra.into(),
     })
 }
 

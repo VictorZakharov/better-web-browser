@@ -40,6 +40,7 @@ mod tab_search;
 mod tab_state;
 mod tabs;
 mod task_manager;
+mod video_presentation;
 mod viewport;
 mod win32_helpers;
 mod window_dispatch;
@@ -135,13 +136,16 @@ pub fn run() -> Result<(), String> {
             if result < 0 {
                 return Err(last_error("read window message"));
             }
-            if let Some((browser_window, state_pointer)) = app.browser_for_message(message.hwnd)
-                && dispatch_browser_input(&message, browser_window, &mut *state_pointer)
-            {
-                continue;
+            let handled = app
+                .browser_for_message(message.hwnd)
+                .is_some_and(|(window, state)| {
+                    dispatch_browser_input(&message, window, &mut *state)
+                });
+            if !handled {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
             }
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
+            video_presentation::flush_for_message(&app, message.hwnd);
         }
         Ok(())
     }

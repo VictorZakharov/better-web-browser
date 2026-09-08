@@ -63,6 +63,8 @@ pub(crate) struct Manifest {
     pub(crate) suite: String,
     pub(crate) upstream: Upstream,
     pub(crate) policy: Policy,
+    #[serde(default)]
+    pub(crate) support: Vec<String>,
     pub(crate) tests: Vec<TestCase>,
 }
 
@@ -113,6 +115,7 @@ impl Manifest {
         }
 
         let mut required = vec!["resources/testharness.js".to_string()];
+        required.extend(self.support.iter().cloned());
         required.extend(tests.iter().map(|test| test.path.clone()));
         required.sort();
         required.dedup();
@@ -166,6 +169,12 @@ impl Manifest {
         }
 
         let mut paths = HashSet::new();
+        for support in &self.support {
+            validate_fixture_path(support)?;
+            if !paths.insert(support) {
+                return Err(format!("duplicate WPT path: {support}"));
+            }
+        }
         for test in &self.tests {
             validate_test(test)?;
             if self.policy.expectations == ExpectationsPolicy::Forbidden
@@ -292,6 +301,7 @@ mod tests {
                 minimum_subtests: 1,
                 expectations: ExpectationsPolicy::Forbidden,
             },
+            support: Vec::new(),
             tests: vec![case(
                 "dom/test.html",
                 ExpectedStatus::Fail,

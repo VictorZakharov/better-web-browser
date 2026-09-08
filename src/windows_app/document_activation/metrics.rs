@@ -132,6 +132,10 @@ impl BrowserState {
         benchmark
             .script_diagnostics
             .extend(runtime.diagnostics.iter().cloned());
+        benchmark.media = runtime.media.clone();
+        benchmark
+            .video_cadence
+            .observe(benchmark.process_started.elapsed(), runtime.media.as_ref());
         benchmark.script_runtime_stopped |= runtime.runtime_stopped;
         benchmark_completed
     }
@@ -163,6 +167,7 @@ impl BrowserState {
         let Some(benchmark) = self.benchmark.as_mut() else {
             return false;
         };
+        benchmark.titles.record_document_title(&presentation.title);
         if !first && presentation.runtime.render_requested {
             benchmark.render_checkpoints = benchmark.render_checkpoints.saturating_add(1);
             benchmark.render_mutations = benchmark

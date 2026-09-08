@@ -6,6 +6,7 @@ mod navigation;
 mod options;
 mod renderer_diagnostics;
 mod runtime_timeline;
+mod video;
 
 use super::benchmark_capture::ScrollPaintMetrics;
 use super::*;
@@ -55,6 +56,7 @@ pub(super) struct BenchmarkRun {
     pub(super) status: u32,
     pub(super) bytes: u64,
     pub(super) final_url: String,
+    pub(super) titles: diagnostics::PageTitles,
     pub(super) error: Option<String>,
     pub(super) script_executed: usize,
     pub(super) script_executed_at_page_ready: usize,
@@ -71,6 +73,8 @@ pub(super) struct BenchmarkRun {
     pub(super) script_errors: Vec<String>,
     pub(super) script_console: Vec<String>,
     pub(super) script_diagnostics: Vec<String>,
+    pub(super) media: Option<better_web_browser::renderer_protocol::MediaRuntimeReport>,
+    pub(super) video_cadence: video::VideoCadence,
     pub(super) script_runtime_stopped: bool,
     pub(super) runtime_timeline: runtime_timeline::RuntimeTimeline,
     pub(super) completion_marker: Option<String>,
@@ -131,11 +135,7 @@ impl BrowserState {
             let delay = benchmark
                 .filmstrip
                 .as_ref()
-                .and_then(|filmstrip| {
-                    benchmark
-                        .navigation_started
-                        .map(|started| filmstrip.remaining(started))
-                })
+                .and_then(|filmstrip| filmstrip.remaining())
                 .map(|remaining| remaining.max(benchmark.settle))
                 .unwrap_or(benchmark.settle);
             initialization::post_benchmark_finish(self.window, delay);
@@ -160,6 +160,8 @@ impl BrowserState {
                 return;
             }
         }
+
+        self.flush_benchmark_filmstrip();
 
         let initial_scroll_y = self
             .benchmark
@@ -304,6 +306,7 @@ impl BrowserState {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
+        let media = diagnostics::media_runtime_json(benchmark.media.as_ref());
         let early_scroll = benchmark
             .early_scroll
             .as_ref()
@@ -317,6 +320,7 @@ impl BrowserState {
                 "  \"device_scale_factor\": {:.3},\n",
                 "  \"requested_url\": {},\n",
                 "  \"final_url\": {},\n",
+                "  \"titles\": {},\n",
                 "  \"error\": {},\n",
                 "  \"http_status\": {},\n",
                 "  \"viewport_width_css_px\": {:.3},\n",
@@ -383,6 +387,8 @@ impl BrowserState {
                 "  \"javascript_errors\": {},\n",
                 "  \"javascript_console\": {},\n",
                 "  \"javascript_diagnostics\": {},\n",
+                "  \"media\": {},\n",
+                "  \"video_paint_cadence\": {},\n",
                 "  \"javascript_runtime_stopped\": {},\n",
                 "  \"renderer_runtime_timeline\": {},\n",
                 "  \"diagnostics\": {},\n",
@@ -393,6 +399,7 @@ impl BrowserState {
             self.page_scale(),
             json_string(&benchmark.requested_url),
             json_string(&benchmark.final_url),
+            benchmark.titles.json(&self.title),
             effective_error
                 .as_deref()
                 .map(json_string)
@@ -464,6 +471,8 @@ impl BrowserState {
             script_errors,
             script_console,
             script_diagnostics,
+            media,
+            benchmark.video_cadence.json(),
             benchmark.script_runtime_stopped,
             benchmark.runtime_timeline.to_json(),
             diagnostics,

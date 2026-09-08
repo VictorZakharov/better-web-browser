@@ -50,6 +50,11 @@ impl RuntimeReport {
         if next.navigation_url.is_none() {
             next.navigation_url = self.navigation_url;
         }
+        if next.viewport_scroll_y.is_none() {
+            next.viewport_scroll_y = self.viewport_scroll_y;
+        }
+        self.history_updates.append(&mut next.history_updates);
+        next.history_updates = self.history_updates;
         self.cookie_updates.append(&mut next.cookie_updates);
         next.cookie_updates = self.cookie_updates;
         next.runtime_stopped |= self.runtime_stopped;
@@ -145,8 +150,24 @@ impl RendererRuntimeUpdate {
 mod tests {
     use super::*;
     use crate::engine::DecodedImage;
+    use crate::renderer_protocol::HistoryUpdate;
     use crate::renderer_protocol::PresentedImage;
     use crate::renderer_protocol::presentation::tests::sample;
+
+    #[test]
+    fn coalesced_scroll_requests_keep_the_latest_offset_including_zero() {
+        let first = RuntimeReport {
+            viewport_scroll_y: Some(500.0),
+            ..RuntimeReport::default()
+        };
+        let retained = first.coalesce(RuntimeReport::default());
+        assert_eq!(retained.viewport_scroll_y, Some(500.0));
+        let final_report = retained.coalesce(RuntimeReport {
+            viewport_scroll_y: Some(0.0),
+            ..RuntimeReport::default()
+        });
+        assert_eq!(final_report.viewport_scroll_y, Some(0.0));
+    }
 
     #[test]
     fn preserves_ordered_deltas_and_one_shot_resources() {
@@ -159,6 +180,10 @@ mod tests {
             console: vec!["first console".into()],
             diagnostics: vec!["first diagnostic".into()],
             navigation_url: Some("https://example.test/redirect".into()),
+            history_updates: vec![HistoryUpdate {
+                url: "https://example.test/first-state".into(),
+                replace: false,
+            }],
             cookie_updates: vec!["first=1".into()],
             runtime_active: true,
             render_requested: true,
@@ -174,7 +199,7 @@ mod tests {
             image: DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![1; 4],
+                bgra: vec![1; 4].into(),
             },
         });
 
@@ -187,6 +212,10 @@ mod tests {
             errors: vec!["next error".into()],
             console: vec!["next console".into()],
             diagnostics: vec!["next diagnostic".into()],
+            history_updates: vec![HistoryUpdate {
+                url: "https://example.test/next-state".into(),
+                replace: true,
+            }],
             cookie_updates: vec!["next=2".into()],
             runtime_stopped: true,
             ..RuntimeReport::default()
@@ -201,7 +230,7 @@ mod tests {
             image: DecodedImage {
                 width: 1,
                 height: 1,
-                bgra: vec![2; 4],
+                bgra: vec![2; 4].into(),
             },
         });
         next.glyphs[0].id = 2;
@@ -222,6 +251,19 @@ mod tests {
         assert_eq!(
             combined.runtime.navigation_url.as_deref(),
             Some("https://example.test/redirect")
+        );
+        assert_eq!(
+            combined.runtime.history_updates,
+            [
+                HistoryUpdate {
+                    url: "https://example.test/first-state".into(),
+                    replace: false,
+                },
+                HistoryUpdate {
+                    url: "https://example.test/next-state".into(),
+                    replace: true,
+                }
+            ]
         );
         assert!(!combined.runtime.runtime_active);
         assert!(combined.runtime.runtime_stopped);

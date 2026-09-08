@@ -118,6 +118,12 @@ pub(super) fn handle_test(
     command: TestCommand,
     writer: &mut FrameWriter<File>,
 ) -> Result<(), String> {
+    if matches!(
+        command,
+        TestCommand::Crash | TestCommand::AccessViolation | TestCommand::StackOverflow
+    ) {
+        super::windows::suppress_injected_fault_reporting();
+    }
     match command {
         TestCommand::InternalError => Err("injected renderer internal error".into()),
         TestCommand::DocumentError => {

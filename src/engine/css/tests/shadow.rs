@@ -69,7 +69,7 @@ fn adopted_host_rules_resolve_component_size_custom_properties() {
         Some("300px")
     );
     assert_eq!(
-        substitute_variables(
+        variables::substitute_variables(
             "var(--override-card-width, var(--width-card-1u))",
             &style.custom_properties,
         )

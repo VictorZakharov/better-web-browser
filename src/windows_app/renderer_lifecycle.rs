@@ -141,12 +141,14 @@ impl BrowserState {
         });
 
         let tab_router = self.app.tab_router.clone();
+        let silent_audio = self.benchmark.is_some();
         let (sender, receiver) = mpsc::channel();
         let spawn = std::thread::Builder::new()
             .name(format!("breeze-renderer-launch-{}", id.get()))
             .spawn(move || {
                 let result = RendererLaunchOptions::current_executable().and_then(|mut options| {
                     options.enable_media = true;
+                    options.silent_audio = silent_audio;
                     options.browsing_context = BrowsingContextId::new(id.get())
                         .map_err(|error| format!("allocate browsing context: {error}"))?;
                     RendererSession::launch(options)
@@ -296,15 +298,15 @@ impl BrowserState {
     }
 
     fn renderer_monitor_interval(&self) -> u32 {
-        if self.benchmark.is_some()
-            || self.tabs.iter().any(|tab| {
-                tab.navigation.is_loading()
-                    || tab.renderer_work_pending
-                    || tab.renderer_input_poll_budget > 0
-                    || !tab.pending_renderer_inputs.is_empty()
-                    || tab.renderer_next_timer.is_some()
-            })
-        {
+        let now = Instant::now();
+        if self.tabs.iter().any(|tab| {
+            tab.navigation.is_loading()
+                || tab.video_presentation.polling_active(now)
+                || tab.renderer_work_pending
+                || tab.renderer_input_poll_budget > 0
+                || !tab.pending_renderer_inputs.is_empty()
+                || tab.renderer_next_timer.is_some()
+        }) {
             ACTIVE_RENDERER_MONITOR_INTERVAL_MS
         } else {
             RENDERER_MONITOR_INTERVAL_MS

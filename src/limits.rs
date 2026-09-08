@@ -12,8 +12,11 @@ pub const MAX_DOM_DEPTH: usize = 512;
 pub const MAX_HTML_PARSE_ERRORS: usize = 256;
 pub const MAX_RENDERED_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
-pub const MAX_CSS_SOURCE_BYTES: usize = 2 * 1024 * 1024;
-pub const MAX_CSS_RULES: usize = 20_000;
+pub const MAX_CSS_SOURCE_BYTES: usize = 4 * 1024 * 1024;
+/// A single stylesheet cannot monopolize renderer memory, while later sheets must still be able
+/// to participate in the cascade. Large production bundles routinely exceed 20,000 rules.
+pub const MAX_CSS_RULES_PER_STYLESHEET: usize = 30_000;
+pub const MAX_PAGE_CSS_RULES: usize = 100_000;
 pub const MAX_CSS_NESTING_DEPTH: usize = 64;
 pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 256;
 pub const MAX_ADOPTED_STYLESHEETS: usize = 256;
@@ -38,13 +41,13 @@ pub const MAX_STORAGE_VALUE_BYTES: usize = 192 * 1024;
 pub const MAX_STORAGE_BYTES_PER_ORIGIN: usize = 5 * 1024 * 1024;
 pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
 
-pub const MAX_SCRIPT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
 /// Aggregate source admitted by one window realm. Individual scripts retain the smaller boundary
 /// above while component-heavy applications can load multiple independently bounded bundles.
-pub const MAX_PAGE_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PAGE_SCRIPT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_DOCUMENT_WRITE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DYNAMIC_SCRIPTS: usize = 32;
-pub const MAX_DOM_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
+pub const MAX_DOM_TREE_MUTATIONS_PER_TASK: usize = if cfg!(test) { 256 } else { 10_000 };
 pub const MAX_POST_LOAD_TIMER_CALLBACKS: usize = 128;
 pub const MAX_SCRIPT_LOOP_ITERATIONS: u64 = if cfg!(test) { 25_000 } else { 5_000_000 };
 
@@ -56,7 +59,15 @@ pub const MAX_SVG_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_EMBEDDED_IMAGE_URL_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PAGE_IMAGES: usize = 64;
 pub const MAX_STYLE_IMAGES: usize = 64;
-pub const MAX_INLINE_SVGS: usize = 64;
+/// Component-heavy pages routinely use more icon SVGs than raster image resources. The identity
+/// limit remains finite while the aggregate decoded-byte budget below is the memory boundary.
+pub const MAX_INLINE_SVGS: usize = 256;
+pub const MAX_PAGE_DECODED_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+/// Aggregate decoded image identities retained by a document and accepted in one presentation.
+/// HTML images, CSS images, inline SVGs, the video placeholder, and bounded media sessions are
+/// admitted independently, so the presentation protocol must cover their combined maximum.
+pub const MAX_PRESENTED_IMAGES: usize =
+    MAX_PAGE_IMAGES + MAX_STYLE_IMAGES + MAX_INLINE_SVGS + MAX_MEDIA_SESSIONS_PER_TAB + 1;
 pub const MAX_WEB_FONTS: usize = 16;
 pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_FONT_TABLES: usize = 256;
@@ -144,6 +155,7 @@ pub const RENDERER_FIRST_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(25
 // slice may reduce these further after measuring real H.264/AAC queues; raising one requires a
 // hostile-media review and an update to ADR 0007.
 pub const MAX_MEDIA_CONTROL_PAYLOAD: usize = 4 * 1024;
+pub const MAX_MEDIA_FAILURE_BYTES: usize = 512;
 pub const MAX_MEDIA_DATA_CHUNK_BYTES: usize = 256 * 1024;
 pub const MAX_MEDIA_SESSIONS_PER_TAB: usize = 4;
 /// The first playback slice owns one decoder and one document clock. Raise this only when the
@@ -197,6 +209,16 @@ mod tests {
         const {
             assert!(MAX_SCRIPT_BYTES < MAX_PAGE_SCRIPT_BYTES);
             assert!(MAX_PAGE_SCRIPT_BYTES <= PAGE_RESOURCE_BUDGET as usize);
+            assert!(MAX_CSS_SOURCE_BYTES <= PAGE_RESOURCE_BUDGET as usize);
+            assert!(MAX_SCRIPT_BYTES <= MAX_RESPONSE_BODY_BYTES);
+        }
+    }
+
+    #[test]
+    fn presented_image_limit_covers_every_decoded_image_category() {
+        const {
+            assert!(MAX_PRESENTED_IMAGES > MAX_PAGE_IMAGES);
+            assert!(MAX_PRESENTED_IMAGES <= u32::MAX as usize);
         }
     }
 }

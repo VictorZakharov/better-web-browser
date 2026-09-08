@@ -1,8 +1,9 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_DECODE_SOURCE, BROWSER_HELLO, BROWSER_PING,
-    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME, BROWSER_SET_PLAYBACK,
-    BROWSER_SHUTDOWN, BROWSER_TEST, MediaProtocolError, WORKER_CAPABILITY, WORKER_DECODED,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS,
+    BROWSER_HELLO, BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
+    MediaProtocolError, WORKER_APPENDED, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
     WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
@@ -42,6 +43,55 @@ pub(super) fn browser(
                 encoded_length,
             }
         }
+        BROWSER_DECODE_TRACKS => {
+            let request_id = cursor.nonzero_u64("decode request")?;
+            let video_source_id = cursor.nonzero_u64("video source")?;
+            let audio_source_id = cursor.nonzero_u64("audio source")?;
+            let frame_id = cursor.nonzero_u64("frame generation")?;
+            let video_length = cursor.nonzero_u64("video length")?;
+            let audio_length = cursor.nonzero_u64("audio length")?;
+            let encoded_length = video_length
+                .checked_add(audio_length)
+                .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
+            if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length > MediaLimits::default().max_encoded_queue_bytes
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive source"));
+            }
+            BrowserMediaMessage::DecodeTracks {
+                request_id,
+                video_source_id,
+                audio_source_id,
+                frame_id,
+                video_length,
+                audio_length,
+            }
+        }
+        BROWSER_APPEND_TRACKS => {
+            let request_id = cursor.nonzero_u64("append request")?;
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let video_source_id = cursor.nonzero_u64("video source")?;
+            let audio_source_id = cursor.nonzero_u64("audio source")?;
+            let video_length = cursor.u64()?;
+            let audio_length = cursor.u64()?;
+            let encoded_length = video_length
+                .checked_add(audio_length)
+                .ok_or(MediaProtocolError::InvalidPayload("encoded length"))?;
+            if audio_source_id != video_source_id.checked_add(1).unwrap_or_default()
+                || encoded_length == 0
+                || encoded_length > MediaLimits::default().max_encoded_queue_bytes
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive append"));
+            }
+            BrowserMediaMessage::AppendTracks {
+                request_id,
+                source_id,
+                video_source_id,
+                audio_source_id,
+                video_length,
+                audio_length,
+            }
+        }
         BROWSER_ACKNOWLEDGE_FRAME => BrowserMediaMessage::AcknowledgeFrame {
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,
@@ -66,6 +116,17 @@ pub(super) fn browser(
         BROWSER_PLAYBACK_STATE => BrowserMediaMessage::PlaybackState {
             source_id: cursor.nonzero_u64("playback source")?,
         },
+        BROWSER_SEEK_PLAYBACK => {
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let position_100ns = cursor.u64()?;
+            if position_100ns > crate::limits::MAX_MEDIA_DURATION_100NS {
+                return Err(MediaProtocolError::InvalidPayload("playback seek position"));
+            }
+            BrowserMediaMessage::SeekPlayback {
+                source_id,
+                position_100ns,
+            }
+        }
         BROWSER_TEST => BrowserMediaMessage::Test(decode_test(&mut cursor)?),
         _ => return Err(MediaProtocolError::UnexpectedMessage(kind)),
     };
@@ -123,6 +184,7 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 audio_last_timestamp_100ns: cursor.i64()?,
                 duration_100ns: cursor.u64()?,
                 decode_micros: cursor.u64()?,
+                buffered: super::wire::decode_buffered(&mut cursor)?,
             };
             let frame = decode_frame_metadata(&mut cursor)?;
             WorkerMediaMessage::Decoded {
@@ -131,6 +193,30 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 frame,
             }
         }
+        WORKER_APPENDED => {
+            let request_id = cursor.nonzero_u64("append request")?;
+            let source_id = cursor.nonzero_u64("playback source")?;
+            let encoded_bytes = cursor.nonzero_u64("encoded length")?;
+            let duration_100ns = cursor.nonzero_u64("media duration")?;
+            let buffered = super::wire::decode_buffered(&mut cursor)?;
+            if encoded_bytes > MediaLimits::default().max_encoded_bytes
+                || duration_100ns > crate::limits::MAX_MEDIA_DURATION_100NS
+                || buffered.end_100ns() > duration_100ns
+            {
+                return Err(MediaProtocolError::InvalidPayload("adaptive append report"));
+            }
+            WorkerMediaMessage::Appended {
+                buffered,
+                request_id,
+                source_id,
+                encoded_bytes,
+                duration_100ns,
+            }
+        }
+        WORKER_DECODE_FAILED => WorkerMediaMessage::DecodeFailed {
+            request_id: cursor.nonzero_u64("decode request")?,
+            error: cursor.failure_string()?,
+        },
         WORKER_FRAME_ACKNOWLEDGED => WorkerMediaMessage::FrameAcknowledged {
             source_id: cursor.nonzero_u64("frame source")?,
             frame_id: cursor.nonzero_u64("frame generation")?,

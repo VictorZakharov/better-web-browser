@@ -59,6 +59,29 @@ fn match_media_exposes_cssom_view_objects_and_serialization() {
 }
 
 #[test]
+fn initial_window_metrics_use_the_document_media_environment() {
+    let (dom, _runtime) = media_runtime(
+        r#"<body><script>
+            document.body.setAttribute('data-metrics',
+                [innerWidth, innerHeight, devicePixelRatio, screen.width, screen.height].join(','));
+        </script></body>"#,
+        1000.0,
+        700.0,
+        2.0,
+        true,
+    );
+
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-metrics")
+            .as_deref(),
+        Some("1000,700,2,1000,700")
+    );
+}
+
+#[test]
 fn viewport_changes_update_all_lists_before_firing_ordered_change_events() {
     let (dom, mut runtime) = media_runtime(
         r#"<body><script>
@@ -86,6 +109,8 @@ fn viewport_changes_update_all_lists_before_firing_ordered_change_events() {
     let first_resize = runtime.dispatch_user_input(UserInputEvent::Viewport {
         width: 1000.0,
         height: 700.0,
+        layout_width: 985.0,
+        layout_height: 700.0,
         scale: 2.0,
     });
     assert!(
@@ -105,6 +130,8 @@ fn viewport_changes_update_all_lists_before_firing_ordered_change_events() {
     runtime.dispatch_user_input(UserInputEvent::Viewport {
         width: 1000.0,
         height: 700.0,
+        layout_width: 985.0,
+        layout_height: 700.0,
         scale: 2.0,
     });
     assert_eq!(

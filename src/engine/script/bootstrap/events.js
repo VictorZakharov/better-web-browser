@@ -129,9 +129,11 @@
     const eventHandlerTypes = (
         'abort auxclick beforeinput beforematch beforetoggle blur cancel canplay canplaythrough change ' +
         'click close command contextlost contextmenu contextrestored copy cuechange cut dblclick drag ' +
-        'dragend dragenter dragleave dragover dragstart drop durationchange emptied ended error focus freeze ' +
+        'dragend dragenter dragleave dragover dragstart drop durationchange emptied encrypted ended error focus freeze ' +
         'formdata input invalid keydown keypress keyup load loadeddata loadedmetadata loadstart mousedown ' +
-        'mouseenter mouseleave mousemove mouseout mouseover mouseup paste pause play playing progress ratechange ' +
+        'mouseenter mouseleave mousemove mouseout mouseover mouseup pointerover pointerenter pointerdown ' +
+        'pointermove pointerup pointercancel pointerout pointerleave gotpointercapture lostpointercapture ' +
+        'paste pause play playing progress ratechange ' +
         'readystatechange reset resize resume scroll scrollend securitypolicyviolation seeked seeking select slotchange stalled submit ' +
         'suspend timeupdate toggle unload visibilitychange volumechange waiting wheel message'
     ).split(/\s+/);
@@ -318,28 +320,40 @@
             if (event.__dispatching || !event.__initialized)
                 throw new DOMException('The event is already being dispatched or is not initialized', 'InvalidStateError');
             const target = receiverFor(storageFor(this));
+            if (event instanceof MouseEvent) mouseEventDispatchPositions.set(event,
+                [viewportScrollX + event.clientX, viewportScrollY + event.clientY]);
             event.__dispatching = true;
             event.__originalTarget = target;
             event.__target = target;
+            const hasRelatedTarget = 'relatedTarget' in event;
+            const relatedTarget = hasRelatedTarget ? event.relatedTarget : null;
+            const adjust = current => {
+                event.__target = retarget(target, current);
+                if (hasRelatedTarget) event.relatedTarget = retarget(relatedTarget, current);
+                return !hasRelatedTarget || event.__target !== event.relatedTarget;
+            };
             try {
                 const path = eventPath(target, event);
                 event.__path = [...path];
                 for (let index = path.length - 1; index > 0; index--) {
-                    event.__target = retarget(target, path[index]);
+                    if (!adjust(path[index])) continue;
                     invokeListeners(path[index], event, Event.CAPTURING_PHASE, true);
                 }
                 // The target participates in both listener passes even when the event does not
                 // bubble; both passes expose AT_TARGET.
-                event.__target = target;
-                invokeListeners(target, event, Event.AT_TARGET, true);
-                invokeListeners(target, event, Event.AT_TARGET, false);
+                if (adjust(target)) {
+                    invokeListeners(target, event, Event.AT_TARGET, true);
+                    invokeListeners(target, event, Event.AT_TARGET, false);
+                }
                 if (event.bubbles) {
                     for (let index = 1; index < path.length; index++) {
-                        event.__target = retarget(target, path[index]);
+                        if (!adjust(path[index])) continue;
                         invokeListeners(path[index], event, Event.BUBBLING_PHASE, false);
                     }
                 }
             } finally {
+                if (event instanceof MouseEvent) mouseEventDispatchPositions.delete(event);
+                if (hasRelatedTarget) event.relatedTarget = relatedTarget;
                 event.__target = target;
                 event.__phase = Event.NONE;
                 event.__currentTarget = null;
