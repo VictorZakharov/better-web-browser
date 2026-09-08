@@ -52,6 +52,7 @@ impl DocumentRuntime {
         let text = Rc::new(RefCell::new(text));
         let script_layout_page = Rc::new(RefCell::new(page.layout_snapshot()));
         let script_layout_viewport = Rc::new(Cell::new(start.viewport));
+        let async_scripts = async_scripts::AsyncScripts::new(&page.scripts);
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -70,9 +71,9 @@ impl DocumentRuntime {
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
-            executed_async_scripts: HashSet::new(),
+            async_scripts,
             pending_dynamic_script_fetch: None,
-            pending_resource_preloads: pending_deferred,
+            pending_resource_preloads: pending_deferred.into_iter().collect(),
             resource_render_pending: false,
             resource_style_refresh_pending: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
@@ -104,6 +105,7 @@ impl DocumentRuntime {
         runtime.fetch_resources(connection, |page, resource| {
             page.resource_blocks_first_paint(resource)
         })?;
+        runtime.start_presentational_preloads(connection)?;
         runtime.sync_script_layout_page();
         let resource_processing_time = resource_started.elapsed();
 

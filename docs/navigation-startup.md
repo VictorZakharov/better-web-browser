@@ -58,3 +58,8 @@ Breeze run showed a sparse loading shell at 2.5 seconds and the signed-out page 
 1.5 seconds. Earlier Breeze presentation is not equivalent to a usable page, and these results
 do not meet the requested Chromium-level startup target. The remaining initial-document
 fetch/resource barrier and script work require further profiling and incremental presentation.
+
+The follow-up is now organized as [standards-based loading slices](loading-standards.md),
+starting with async script readiness and independently progressing resource batches.
+The earlier live-site timings above remain historical observations, not measurements
+of those subsequent changes.

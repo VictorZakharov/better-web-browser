@@ -10,6 +10,9 @@ impl DocumentRuntime {
         resource: &PageResource,
         event_type: &'static str,
     ) -> Result<bool, String> {
+        if event_type == "error" {
+            self.async_scripts.complete(resource, None);
+        }
         self.resource_events.complete(resource, event_type);
         self.dispatch_cached_resource_events()
     }

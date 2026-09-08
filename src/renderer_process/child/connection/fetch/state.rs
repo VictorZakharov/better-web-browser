@@ -70,6 +70,7 @@ pub(in crate::renderer_process::child) struct FetchState {
     buffered: HashMap<u64, BufferedResponse>,
     streaming: HashMap<u64, StreamingResponse>,
     completed: HashMap<u64, BrowserFetchResponse>,
+    completed_order: VecDeque<u64>,
     batch_bytes: HashMap<u64, usize>,
 }
 
@@ -239,6 +240,7 @@ impl FetchState {
                 {
                     return Err("duplicate browser Fetch response".into());
                 }
+                self.completed_order.push_back(end.request_id);
                 Ok(None)
             }
             Delivery::Streaming => {
@@ -288,6 +290,7 @@ impl FetchState {
                 {
                     return Err("unexpected browser Fetch abort".into());
                 }
+                self.completed_order.push_back(abort.request_id);
                 Ok(None)
             }
             Delivery::Streaming => {
@@ -323,10 +326,10 @@ impl FetchState {
         &mut self,
         pending: &mut PendingFetchBatch,
     ) -> Result<Vec<BrowserFetchResponse>, String> {
-        let ready = pending
-            .expected
+        let ready = self
+            .completed_order
             .iter()
-            .filter(|request_id| self.completed.contains_key(request_id))
+            .filter(|request_id| pending.expected.contains(request_id))
             .copied()
             .collect::<Vec<_>>();
         let mut responses = Vec::with_capacity(ready.len());
@@ -348,6 +351,8 @@ impl FetchState {
             );
             pending.expected.remove(&request_id);
         }
+        self.completed_order
+            .retain(|id| self.completed.contains_key(id));
         self.cleanup_batch(pending.batch_id);
         Ok(responses)
     }
@@ -366,6 +371,8 @@ impl FetchState {
             self.streaming.remove(&request_id);
             self.completed.remove(&request_id);
         }
+        self.completed_order
+            .retain(|id| self.completed.contains_key(id));
     }
 
     fn cleanup_batch(&mut self, batch_id: u64) {

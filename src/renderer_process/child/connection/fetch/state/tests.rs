@@ -1,6 +1,43 @@
 use super::*;
 use crate::renderer_protocol::{FetchResponseResult, FetchResponseType, TransferChunk};
 
+#[test]
+fn buffered_responses_preserve_completion_order_across_a_shared_batch() {
+    let document = DocumentId::new(1).unwrap();
+    let mut state = FetchState::default();
+    state
+        .register(document, 1, &[(10, false), (11, false), (12, false)])
+        .unwrap();
+    for id in [12, 10, 11] {
+        state
+            .handle(BrowserMessage::FetchResponseStart(success_head(id)))
+            .unwrap();
+        state
+            .handle(BrowserMessage::FetchResponseEnd(
+                crate::renderer_protocol::FetchResponseEnd {
+                    request_id: id,
+                    total_length: 0,
+                },
+            ))
+            .unwrap();
+    }
+    let mut pending = PendingFetchBatch {
+        document,
+        batch_id: 1,
+        expected: HashSet::from([10, 11, 12]),
+    };
+    let responses = state.take_completed(&mut pending).unwrap();
+    assert_eq!(
+        responses
+            .iter()
+            .map(|response| response.head.request_id)
+            .collect::<Vec<_>>(),
+        [12, 10, 11]
+    );
+    assert!(state.completed_order.is_empty());
+    assert!(pending.is_empty());
+}
+
 fn success_head(request_id: u64) -> FetchResponseHead {
     FetchResponseHead {
         request_id,

@@ -281,13 +281,19 @@ pub(super) fn evaluate_script(
         );
     }
     let node_id = host.borrow_mut().id_for(&script.node);
-    let current_script = format!("document.__setCurrentScript({node_id});");
-    if let Err(error) = context.eval(Source::from_bytes(&current_script)) {
-        outcome.errors.push(format!(
-            "{}: set document.currentScript: {error}",
-            script.source_url
-        ));
-    }
+    let current_script = format!(
+        "(() => {{ const old = document.currentScript; document.__setCurrentScript({node_id}); if (document.currentScript.getRootNode() instanceof ShadowRoot) document.__setCurrentScript(0); return old ? old.__id : 0; }})()"
+    );
+    let previous_script = match context.eval(Source::from_bytes(&current_script)) {
+        Ok(value) => value.as_number().unwrap_or_default() as u32,
+        Err(error) => {
+            outcome.errors.push(format!(
+                "{}: set document.currentScript: {error}",
+                script.source_url
+            ));
+            0
+        }
+    };
 
     let script_started = Instant::now();
     let succeeded =
@@ -295,11 +301,6 @@ pub(super) fn evaluate_script(
             Ok(_) => {
                 outcome.executed += 1;
                 host.borrow_mut().executed += 1;
-                if let Err(error) = context.run_jobs() {
-                    outcome
-                        .errors
-                        .push(format!("{}: promise job: {error}", script.source_url));
-                }
                 true
             }
             Err(error) => {
@@ -309,6 +310,14 @@ pub(super) fn evaluate_script(
                 false
             }
         };
+    // Running a classic script ends with a microtask checkpoint, before the outer
+    // execute-script-element algorithm restores currentScript and fires load.
+    // https://html.spec.whatwg.org/multipage/webappapis.html#clean-up-after-running-script
+    if let Err(error) = context.run_jobs() {
+        outcome
+            .errors
+            .push(format!("{}: promise job: {error}", script.source_url));
+    }
     let script_time = script_started.elapsed();
     if script_time.as_millis() >= 1 {
         outcome.diagnostics.push(format!(
@@ -318,17 +327,24 @@ pub(super) fn evaluate_script(
         ));
     }
 
+    let restore = format!("document.__setCurrentScript({previous_script});");
+    if let Err(error) = context.eval(Source::from_bytes(&restore)) {
+        outcome.errors.push(format!(
+            "{}: clear current script: {error}",
+            script.source_url
+        ));
+    }
     if dispatch_load {
-        let event_type = if succeeded { "load" } else { "error" };
-        let dispatch = format!(
-            "if (document.currentScript) document.currentScript.dispatchEvent(new Event('{event_type}'));"
+        // Fetch success, not successful evaluation, determines the element's load event.
+        // Runtime exceptions are reported separately; handlers observe restored currentScript.
+        // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-element
+        super::module_lifecycle::dispatch_script_event(
+            context,
+            outcome,
+            node_id,
+            "load",
+            &script.source_url,
         );
-        if let Err(error) = context.eval(Source::from_bytes(&dispatch)) {
-            outcome.errors.push(format!(
-                "{}: dispatch {event_type} event: {error}",
-                script.source_url
-            ));
-        }
     }
     succeeded
 }

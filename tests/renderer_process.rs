@@ -2,6 +2,8 @@
 
 #[path = "renderer_process/accessibility.rs"]
 mod accessibility;
+#[path = "renderer_process/async_scripts.rs"]
+mod async_scripts;
 #[path = "renderer_process/backpressure.rs"]
 mod backpressure;
 #[path = "renderer_process/clock_backpressure.rs"]

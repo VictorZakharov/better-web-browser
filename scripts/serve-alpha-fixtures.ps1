@@ -80,28 +80,28 @@ try {
     [IO.File]::WriteAllText($readyPath, $prefix, [Text.UTF8Encoding]::new($false))
     Write-Output "Alpha fixture server: $prefix"
 
-    while ($listener.IsListening) {
-        $context = $listener.GetContext()
+    function Send-Fixture {
+        param($context)
         try {
             if ($context.Request.HttpMethod -notin @('GET', 'HEAD')) {
                 Write-Response -Context $context -Status 405
-                continue
+                return
             }
 
             if ($context.Request.Url.AbsolutePath -eq '/system-font.ttf') {
                 $font = Join-Path $env:WINDIR 'Fonts\arial.ttf'
                 if (-not (Test-Path -LiteralPath $font -PathType Leaf)) {
                     Write-Response -Context $context -Status 404
-                    continue
+                    return
                 }
                 Write-Response -Context $context -Status 200 -Body ([IO.File]::ReadAllBytes($font)) -ContentType $mimeTypes['.ttf']
-                continue
+                return
             }
 
             $path = Resolve-FixturePath -RequestPath $context.Request.Url.AbsolutePath
             if ($null -eq $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
                 Write-Response -Context $context -Status 404
-                continue
+                return
             }
             $extension = [IO.Path]::GetExtension($path).ToLowerInvariant()
             $contentType = if ($mimeTypes.ContainsKey($extension)) { $mimeTypes[$extension] } else { 'application/octet-stream' }
@@ -113,6 +113,33 @@ try {
             }
             Write-Error $_
         }
+    }
+    # Delay responses, not acceptance: owned loading fixtures must be able to finish a
+    # later request while an earlier request is stalled. No worker/browser UI is launched.
+    $pendingResponses = [Collections.Generic.List[object]]::new()
+    $accept = $listener.GetContextAsync()
+    while ($listener.IsListening) {
+        if ($accept.IsCompleted) {
+            $context = $accept.GetAwaiter().GetResult()
+            $accept = $listener.GetContextAsync()
+            $delayText = $context.Request.QueryString['delay_ms']
+            $delay = 0
+            if ($null -ne $delayText -and
+                (-not [int]::TryParse($delayText, [ref]$delay) -or $delay -lt 0 -or $delay -gt 10000)) {
+                Write-Response -Context $context -Status 400
+            } elseif ($pendingResponses.Count -ge 256) {
+                Write-Response -Context $context -Status 503
+            } else {
+                $pendingResponses.Add(@{ Context = $context; Due = [DateTime]::UtcNow.AddMilliseconds($delay) })
+            }
+        }
+        for ($index = $pendingResponses.Count - 1; $index -ge 0; $index--) {
+            if ($pendingResponses[$index].Due -le [DateTime]::UtcNow) {
+                Send-Fixture -context $pendingResponses[$index].Context
+                $pendingResponses.RemoveAt($index)
+            }
+        }
+        if (-not $accept.IsCompleted) { [void]$accept.Wait(10) }
     }
 } finally {
     if ($listener.IsListening) { $listener.Stop() }
