@@ -8,6 +8,10 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+#[path = "input/helpers.rs"]
+mod helpers;
+use helpers::*;
+
 #[test]
 fn pointer_hit_testing_targets_an_ordinary_element_border_box() {
     let _serial = SERIAL
@@ -186,6 +190,8 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         changed_control.map(|control| control.value.as_str()),
         Some("changed")
     );
+    assert_eq!(updated.next_timer_micros, Some(0));
+    finish_geometry_checkpoint(&session, initial.document);
 
     session
         .send_input(DocumentInput::Keyboard(KeyboardInput {
@@ -301,10 +307,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
     }
     let context_menu = wait_for_text(&session, initial.document, "link:contextmenu");
     assert!(presentation_text(&context_menu).contains("link:contextmenu"));
-    assert!(
-        session.wait_for_event(Duration::from_millis(150)).is_err(),
-        "secondary link activation unexpectedly requested navigation"
-    );
+    assert_no_navigation(&session, initial.document, Duration::from_millis(150));
 
     let submit = updated
         .layout
@@ -403,75 +406,4 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         .ping(Duration::from_secs(1))
         .expect("renderer remains responsive");
     session.shutdown().expect("shutdown renderer");
-}
-
-fn wait_for_cursor(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-    sequence: u64,
-) -> PointerCursor {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::PointerCursor(result)
-                if result.document == document && result.sequence == sequence =>
-            {
-                return result.cursor;
-            }
-            RendererEvent::Presentation(_)
-            | RendererEvent::Diagnostic { .. }
-            | RendererEvent::RuntimeUpdate(_) => {}
-            event => panic!("unexpected renderer cursor event: {event:?}"),
-        }
-    }
-}
-
-fn wait_for_text(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-    expected: &str,
-) -> better_web_browser::renderer_protocol::RendererPresentation {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::Presentation(presentation) if presentation.document == document => {
-                if presentation_text(&presentation).contains(expected) {
-                    return *presentation;
-                }
-            }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
-            event => panic!("unexpected renderer input event: {event:?}"),
-        }
-    }
-}
-
-fn wait_for_navigation(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-) -> (String, NavigationDisposition, NavigationCause) {
-    loop {
-        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
-            RendererEvent::NavigationRequested {
-                document: event_document,
-                url,
-                disposition,
-                cause,
-            } if event_document == document => return (url, disposition, cause),
-            RendererEvent::Presentation(_) | RendererEvent::Diagnostic { .. } => {}
-            event => panic!("unexpected renderer navigation event: {event:?}"),
-        }
-    }
-}
-
-fn presentation_text(
-    presentation: &better_web_browser::renderer_protocol::RendererPresentation,
-) -> String {
-    presentation
-        .layout
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            DisplayItem::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }

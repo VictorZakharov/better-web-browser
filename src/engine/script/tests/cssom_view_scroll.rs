@@ -1,6 +1,7 @@
 use super::*;
 use std::cell::Cell;
 
+mod pointer_coordinates;
 mod timing;
 
 fn initialize(

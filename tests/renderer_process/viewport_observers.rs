@@ -1,7 +1,8 @@
 use super::support::*;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
-    DocumentId, DocumentInput, PresentationAcknowledgement, RuntimeReport, ScrollInput,
+    DocumentId, DocumentInput, InputModifiers, PointerButton, PointerInput, PointerPhase,
+    PresentationAcknowledgement, RuntimeReport, ScrollInput,
 };
 use std::time::Duration;
 
@@ -48,7 +49,7 @@ fn next_report(
                     presentation.runtime,
                 );
             }
-            RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::Diagnostic { .. } | RendererEvent::PointerCursor(_) => {}
             event => panic!("unexpected observer event: {event:?}"),
         }
     }
@@ -175,6 +176,57 @@ fn native_scroll_observer_task_uses_geometry_after_nested_promise_mutations() {
     assert!(
         advance(&session, initial.document).1.console.is_empty(),
         "duplicate unchanged entry"
+    );
+    session.shutdown().unwrap();
+}
+
+#[test]
+fn native_pointer_hit_testing_keeps_document_coordinates_but_events_use_viewport_coordinates() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).expect("hidden renderer");
+    let initial = load_html_document(
+        &session,
+        121,
+        r#"<!doctype html>
+        <style>body{margin:0} #target{position:absolute;left:100px;top:1000px;
+            width:100px;height:100px;background:red}</style><div id=target></div><script>
+            document.addEventListener('mousemove', e => {
+                const r = e.target.getBoundingClientRect();
+                console.log([e.target.id,e.clientX,e.clientY,e.pageX,e.pageY,
+                    e.clientX-r.left,e.clientY-r.top,e.view===window].join(':'));
+            });
+        </script>"#,
+    );
+    assert!(advance(&session, initial.document).1.console.is_empty());
+    session
+        .send_input(DocumentInput::Scroll(ScrollInput {
+            document: initial.document,
+            sequence: 1,
+            x: 0.0,
+            y: 600.0,
+        }))
+        .unwrap();
+    let (_, advanced, next, _) = next_report(&session, initial.document);
+    assert!(!advanced);
+    assert_eq!(next, Some(0));
+    assert!(advance(&session, initial.document).1.console.is_empty());
+    session
+        .send_input(DocumentInput::Pointer(PointerInput {
+            document: initial.document,
+            sequence: 2,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            x: 125.0,
+            y: 1020.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
+        .unwrap();
+    assert_eq!(
+        next_report(&session, initial.document).3.console,
+        ["log: target:125:420:125:1020:25:20:true"]
     );
     session.shutdown().unwrap();
 }

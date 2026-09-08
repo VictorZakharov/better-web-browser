@@ -26,6 +26,8 @@ mod streaming_fetch;
 mod support;
 #[path = "renderer_process/termination.rs"]
 mod termination;
+#[path = "renderer_process/title_navigation.rs"]
+mod title_navigation;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
 

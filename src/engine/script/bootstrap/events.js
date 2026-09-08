@@ -320,6 +320,8 @@
             if (event.__dispatching || !event.__initialized)
                 throw new DOMException('The event is already being dispatched or is not initialized', 'InvalidStateError');
             const target = receiverFor(storageFor(this));
+            if (event instanceof MouseEvent) mouseEventDispatchPositions.set(event,
+                [viewportScrollX + event.clientX, viewportScrollY + event.clientY]);
             event.__dispatching = true;
             event.__originalTarget = target;
             event.__target = target;
@@ -350,6 +352,7 @@
                     }
                 }
             } finally {
+                if (event instanceof MouseEvent) mouseEventDispatchPositions.delete(event);
                 if (hasRelatedTarget) event.relatedTarget = relatedTarget;
                 event.__target = target;
                 event.__phase = Event.NONE;

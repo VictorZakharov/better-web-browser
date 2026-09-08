@@ -27,7 +27,9 @@
         }[input.phase] || [];
         const init = {
             bubbles: true, cancelable: true, composed: true,
-            clientX: input.x, clientY: input.y,
+            // The renderer hit-tests document coordinates; DOM client coordinates use viewport space.
+            clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,
+            view: windowObject,
             button: input.button, buttons: input.buttons,
             pointerId: 1, pointerType: 'mouse', isPrimary: true,
             pressure: input.buttons ? 0.5 : 0,

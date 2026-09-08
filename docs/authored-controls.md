@@ -293,3 +293,13 @@ threshold crossings, stable explicit-root intersections, no duplicate unchanged
 delivery, and reuse of valid geometry without a forced layout. Nested scroll
 containers and complete ancestor clipping remain separate work; these tests do
 not establish that live YouTube comments load correctly.
+
+Native pointer hit testing retains document coordinates, but authored mouse and
+pointer events now expose viewport-relative `clientX`/`clientY` consistent with
+client rectangles after scrolling. `pageX`/`pageY` expose document coordinates
+during dispatch and current native scroll plus client coordinates outside dispatch;
+`x`/`y` alias client coordinates. Synthetic coordinate initialization follows the
+same CSSOM View contract and ignores nonstandard page-coordinate initializer keys.
+This does not implement target-padding-relative `offsetX`/`offsetY`, drag movement
+metrics, or complete overlay hit-testing semantics, nor prove that live player
+hover controls are fixed.

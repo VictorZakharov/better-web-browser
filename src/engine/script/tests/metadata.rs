@@ -1,6 +1,8 @@
 //! HTML title metadata follows DOM mutation paths, not paint text or application headings.
 use super::*;
 
+mod navigation;
+
 #[test]
 fn title_elements_keep_html_branding_and_direct_child_text_semantics() {
     let (dom, outcome) = execute_html(

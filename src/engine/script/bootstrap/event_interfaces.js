@@ -12,6 +12,7 @@
             this.relatedTarget = init?.relatedTarget === undefined ? null : init.relatedTarget;
         }
     }
+    const mouseEventDispatchPositions = new WeakMap();
     class MouseEvent extends UIEvent {
         constructor(type, init = {}) {
             super(type, init);
@@ -28,6 +29,13 @@
             this.buttons = Number(init.buttons) || 0;
             this.relatedTarget = init.relatedTarget === undefined ? null : init.relatedTarget;
         }
+        // CSSOM View: dispatch uses the event's document position; outside dispatch the
+        // current native scroll offset is added to the viewport position.
+        // https://www.w3.org/TR/cssom-view/#extensions-to-the-mouseevent-interface
+        get pageX() { return mouseEventDispatchPositions.get(this)?.[0] ?? viewportScrollX + this.clientX; }
+        get pageY() { return mouseEventDispatchPositions.get(this)?.[1] ?? viewportScrollY + this.clientY; }
+        get x() { return this.clientX; }
+        get y() { return this.clientY; }
     }
     class PointerEvent extends MouseEvent {
         constructor(type, init = {}) {
