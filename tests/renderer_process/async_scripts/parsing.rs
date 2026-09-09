@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn parser_mutations_invalidate_cssom_and_synchronous_layout_before_the_next_script() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><div id=box style='width:10px;height:10px;color:rgb(1,2,3)'></div><script>
+        window.box=document.querySelector('#box');
+        window.initialColor=getComputedStyle(box).color;
+        window.initialWidth=box.getBoundingClientRect().width;
+        </script><style>#box {height:20px !important;color:rgb(4,5,6) !important}</style>
+        <div id=fresh style='width:33px;height:14px'></div><p id=status>waiting</p><script>
+        const fresh=document.querySelector('#fresh');
+        document.querySelector('#status').textContent='geometry:'+JSON.stringify([
+          initialColor,initialWidth,getComputedStyle(box).color,box.getBoundingClientRect().height,
+          fresh.getBoundingClientRect().width,fresh.offsetHeight]);
+        </script>"#,
+    );
+    let result = painted_text(&driver.until_text("geometry:"));
+    assert!(
+        result.contains(r#"geometry:["rgb(1, 2, 3)",10,"rgb(4, 5, 6)",20,33,14]"#),
+        "{result}"
+    );
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn newly_parsed_elements_update_cached_children_and_upgrade_before_the_following_script() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(

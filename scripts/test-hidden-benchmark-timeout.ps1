@@ -55,9 +55,11 @@ try {
     $url = $safeUrl + '?token=must-not-survive'
     $failure = $null
     try {
+        # Parser checkpoints can now present between guarded scripts. Keep the requested
+        # observation window longer than the outer deadline even after that first presentation.
         & (Join-Path $repoRoot 'scripts\run-hidden-benchmark.ps1') `
             -Url $url -Output $reportPath -Browser $browserPath -Screenshot $screenshotPath `
-            -SettleMs 100 -TimeoutSeconds 5 -FreshProfile
+            -SettleMs 20000 -TimeoutSeconds 5 -FreshProfile
     } catch { $failure = $_ }
     if ($null -eq $failure) { throw 'The deliberately blocked renderer unexpectedly completed.' }
     if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {

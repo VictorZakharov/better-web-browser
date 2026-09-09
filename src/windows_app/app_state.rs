@@ -145,7 +145,18 @@ impl BrowserState {
     pub(super) unsafe fn reset_media_viewport_width(&mut self) {
         let mut client: Rect = std::mem::zeroed();
         if GetClientRect(self.window, &mut client) != 0 {
-            self.media_viewport_width = client.right.max(1) as f32 / self.page_scale();
+            // CSSOM innerWidth/media queries include a classic scrollbar. The initial Win32
+            // window has WS_VSCROLL; seeding from its client width alone permanently loses
+            // that gutter when the first partial parser presentation hides the scrollbar.
+            // https://drafts.csswg.org/cssom-view/#dom-window-innerwidth
+            const SM_CXVSCROLL: i32 = 2;
+            let scrollbar = if GetWindowLongPtrW(self.window, GWL_STYLE) as u32 & WS_VSCROLL != 0 {
+                GetSystemMetricsForDpi(SM_CXVSCROLL, self.dpi)
+            } else {
+                0
+            };
+            self.media_viewport_width =
+                media_width_from_client(client.right, scrollbar, self.page_scale());
         }
         let mut outer: Rect = std::mem::zeroed();
         if GetWindowRect(self.window, &mut outer) != 0 {

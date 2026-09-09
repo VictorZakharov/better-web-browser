@@ -16,6 +16,17 @@ impl ScriptRuntime {
         let ids = {
             let mut host = self.host.borrow_mut();
             host.begin_task();
+            // Parser mutations bypass JS mutation recording. Invalidate the independent CSSOM
+            // and synchronous-layout caches before constructors or the next script can query
+            // newly inserted nodes/sheets; presentation invalidation alone arrives too late.
+            host.computed_styles = None;
+            host.offset_parent_styles = None;
+            host.layout_geometry_initialized = false;
+            host.pending_layout_invalidation.record(
+                &document,
+                Some(&document),
+                MutationKind::Stylesheet,
+            );
             let new_elements = Node::descendants(&document)
                 .filter(|node| node.element().is_some() && !host.node_ids.contains_key(&node.id()))
                 .collect::<Vec<_>>();
