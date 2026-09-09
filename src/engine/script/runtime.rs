@@ -13,6 +13,7 @@ mod completions;
 pub(super) mod document_lifecycle;
 mod geometry;
 mod memory;
+mod module_preparation;
 
 /// Owns one document's JavaScript realm and all native state that must remain on the realm's
 /// creating thread. Embedders must keep this runtime and its document together on that owner

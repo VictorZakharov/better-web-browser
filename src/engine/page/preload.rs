@@ -120,7 +120,9 @@ impl PreloadState {
             kind,
             fetch_options,
         };
-        let blocks_first_paint = attribute(tag, "async").is_none();
+        let blocks_first_paint = kind == ScriptKind::Classic
+            && attribute(tag, "async").is_none()
+            && attribute(tag, "defer").is_none();
         if let Some(index) = self.seen.get(&resource).copied() {
             self.resources[index].blocks_first_paint |= blocks_first_paint;
         } else {
@@ -182,25 +184,25 @@ mod tests {
                        referrerpolicy=no-referrer src=m.js></script>"#,
             "https://example.com/app/index.html",
         );
-        assert_eq!(
-            resources.first_paint,
-            vec![PageResource::Script {
-                url: "https://example.com/app/a.js".into(),
-                kind: ScriptKind::Classic,
-                fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
-            }]
-        );
+        assert!(resources.first_paint.is_empty());
         assert_eq!(
             resources.deferred,
-            vec![PageResource::Script {
-                url: "https://example.com/app/m.js".into(),
-                kind: ScriptKind::Module,
-                fetch_options: ScriptFetchOptions::for_element(
-                    ScriptKind::Module,
-                    Some("use-credentials"),
-                    Some("no-referrer"),
-                ),
-            }]
+            vec![
+                PageResource::Script {
+                    url: "https://example.com/app/a.js".into(),
+                    kind: ScriptKind::Classic,
+                    fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+                },
+                PageResource::Script {
+                    url: "https://example.com/app/m.js".into(),
+                    kind: ScriptKind::Module,
+                    fetch_options: ScriptFetchOptions::for_element(
+                        ScriptKind::Module,
+                        Some("use-credentials"),
+                        Some("no-referrer"),
+                    ),
+                }
+            ]
         );
     }
 

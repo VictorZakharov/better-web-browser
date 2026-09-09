@@ -36,7 +36,7 @@ impl DocumentRuntime {
                 .script_runtime
                 .as_ref()
                 .is_some_and(ScriptRuntime::has_runnable_dynamic_scripts)
-            || self.async_scripts.has_ready()
+            || self.parser_scripts.has_ready()
     }
 
     pub(in crate::renderer_process::child) fn advance(
@@ -68,7 +68,6 @@ impl DocumentRuntime {
                 self.page.dom.document.id(),
             );
         }
-        let mut script_fetch_time = Duration::ZERO;
         let mut resources_changed = std::mem::take(&mut self.resource_render_pending);
         let mut resource_style_changed = std::mem::take(&mut self.resource_style_refresh_pending);
         if let Some(changes) = self.finish_ready_resource_preloads(connection)? {
@@ -90,7 +89,7 @@ impl DocumentRuntime {
             "checking deferred scripts for {}",
             self.page.source_url
         ))?;
-        self.execute_pending_async_scripts(connection, &mut outcome, &mut script_fetch_time)?;
+        self.execute_pending_parser_script(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
         self.start_pending_fetches(connection)?;
         let document_url = self.page.source_url.clone();
@@ -199,7 +198,6 @@ impl DocumentRuntime {
         }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
-            script_fetch_micros: micros(script_fetch_time),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
         });

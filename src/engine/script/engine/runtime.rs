@@ -5,6 +5,7 @@ use super::watchdog::ExecutionWatchdog;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
+mod module_preparation;
 
 static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();
@@ -202,9 +203,10 @@ impl Context {
     ) -> JsResult<ModuleEvaluation> {
         let context = self.context.clone();
         let evaluation = self.watchdog.run(&mut self.isolate, |isolate| {
-            super::modules::evaluate(isolate, &context, root_url, root_source, sources)
+            super::modules::evaluate(isolate, &context, root_url, root_source, sources, false)
         })?;
         match evaluation {
+            EngineModuleEvaluation::Ready => unreachable!("evaluation requested"),
             EngineModuleEvaluation::Missing(urls) => Ok(ModuleEvaluation::Missing(urls)),
             EngineModuleEvaluation::Fulfilled => Ok(ModuleEvaluation::Fulfilled),
             EngineModuleEvaluation::Rejected(error) => Ok(ModuleEvaluation::Rejected(error)),

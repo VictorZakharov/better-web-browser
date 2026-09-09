@@ -52,7 +52,7 @@ impl DocumentRuntime {
         let text = Rc::new(RefCell::new(text));
         let script_layout_page = Rc::new(RefCell::new(page.layout_snapshot()));
         let script_layout_viewport = Rc::new(Cell::new(start.viewport));
-        let async_scripts = async_scripts::AsyncScripts::new(&page.scripts);
+        let parser_scripts = parser_scripts::ParserScripts::new(&page.scripts);
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -71,7 +71,7 @@ impl DocumentRuntime {
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
-            async_scripts,
+            parser_scripts,
             pending_dynamic_script_fetch: Vec::new(),
             pending_resource_preloads: pending_deferred.into_iter().collect(),
             resource_render_pending: false,
@@ -132,6 +132,10 @@ impl DocumentRuntime {
             )
             .map_err(|error| error.to_string())?;
         runtime.script_runtime = script_runtime;
+        if let Some(script_runtime) = runtime.script_runtime.as_mut() {
+            script_runtime.set_deferred_scripts_pending(runtime.parser_scripts.deferred_pending());
+            runtime.parser_scripts.prepare_modules(script_runtime);
+        }
         runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;
         merge_outcome(

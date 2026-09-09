@@ -110,12 +110,20 @@ impl Page {
         let inputs = self
             .scripts
             .iter()
-            .filter(|script| !first_paint_only || script.blocks_first_paint)
+            .filter(|script| {
+                !first_paint_only
+                    || script.blocks_first_paint
+                    || (!defer_document_completion && script.executes_after_parsing)
+            })
             .filter(|script| !script.executes_after_parsing)
             .chain(
                 self.scripts
                     .iter()
-                    .filter(|script| !first_paint_only || script.blocks_first_paint)
+                    .filter(|script| {
+                        !first_paint_only
+                            || script.blocks_first_paint
+                            || (!defer_document_completion && script.executes_after_parsing)
+                    })
                     .filter(|script| script.executes_after_parsing),
             )
             .filter_map(|script| {

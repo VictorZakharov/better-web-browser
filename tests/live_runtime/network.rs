@@ -65,15 +65,6 @@ const SLOW_WORKER_HTML: &str = r#"<!doctype html>
     worker.terminate();
   };
 </script>"#;
-const ORDERING_HTML: &str = r#"<!doctype html>
-<title>ordering pending</title>
-<style>html, body { margin: 0; background: rgb(220, 20, 20); }</style>
-<script>window.executionOrder = [];</script>
-<script src="/classic.js"></script>
-<script defer src="/defer.js"></script>
-<script type="module" src="/module.js"></script>
-<script>window.executionOrder.push('inline-tail');</script>
-<script async src="/async.js"></script>"#;
 
 #[test]
 fn fetch_and_xhr_complete_asynchronously_in_the_retained_realm() {
@@ -357,56 +348,4 @@ fn cross_origin_module_use_credentials_reaches_the_cors_broker() {
         "credential module reported JavaScript errors:\n{report}"
     );
     assert_green_capture(&artifacts, "credentialed CORS module did not execute");
-}
-
-#[test]
-fn external_scripts_execute_deterministically_when_fetches_finish_out_of_order() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
-    let address = listener.local_addr().expect("read fixture address");
-    let server = thread::spawn(move || {
-        serve_parallel_fixtures(listener, 5, |request| {
-            if request.contains("GET /classic.js ") {
-                FixtureResponse::script(
-                    "window.executionOrder.push('classic');",
-                    Duration::from_millis(300),
-                )
-            } else if request.contains("GET /defer.js ") {
-                FixtureResponse::script(
-                    "window.executionOrder.push('defer');",
-                    Duration::from_millis(20),
-                )
-            } else if request.contains("GET /module.js ") {
-                FixtureResponse::script(
-                    "window.executionOrder.push('module');",
-                    Duration::from_millis(150),
-                )
-            } else if request.contains("GET /async.js ") {
-                FixtureResponse::script(
-                    r#"if (window.executionOrder.join(',') !== 'classic,inline-tail,defer,module')
-                       throw new Error('script order: ' + window.executionOrder.join(','));
-                       document.body.style.backgroundColor = 'rgb(17, 170, 34)';
-                       document.title = 'ordering complete';"#,
-                    Duration::from_millis(10),
-                )
-            } else {
-                FixtureResponse::html(ORDERING_HTML)
-            }
-        })
-    });
-    let artifacts = TestArtifacts::new();
-    let url = format!("http://{address}/script-ordering");
-
-    let mut child = hidden_benchmark(&url, &artifacts, 800);
-    let status = wait_for_child(&mut child, Duration::from_secs(20));
-    server
-        .join()
-        .expect("fixture server panicked")
-        .expect("fixture server failed");
-    assert!(status.success(), "hidden Breeze run failed: {status}");
-    let report = fs::read_to_string(&artifacts.json).expect("read benchmark report");
-    assert!(
-        report.contains("\"javascript_errors\": []"),
-        "out-of-order Fetch completion changed script order:\n{report}"
-    );
-    assert_green_capture(&artifacts, "scripts did not execute in deterministic order");
 }

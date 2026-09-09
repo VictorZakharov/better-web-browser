@@ -22,6 +22,7 @@ pub(super) fn evaluate_module(
     let loader = Rc::clone(&host.borrow().module_loader);
     let mut result = Err("module graph could not be loaded".to_string());
     let mut pending_promise = None;
+    let mut resource_failed = false;
     for _ in 0..MAX_DYNAMIC_SCRIPTS {
         let missing =
             match context.evaluate_module(&script.source_url, &script.code, &loader.sources()) {
@@ -45,6 +46,7 @@ pub(super) fn evaluate_module(
                 }
             };
         let Some(load) = source_loader.as_mut() else {
+            resource_failed = true;
             result = Err(format!("module dependency is unavailable: {}", missing[0]));
             break;
         };
@@ -53,6 +55,7 @@ pub(super) fn evaluate_module(
             let source = match load(&url, ScriptKind::Module, script.fetch_options) {
                 Ok(source) => source,
                 Err(error) => {
+                    resource_failed = true;
                     result = Err(format!("{url}: module could not be loaded: {error}"));
                     continue;
                 }
@@ -110,8 +113,8 @@ pub(super) fn evaluate_module(
     // HTML executes a module without awaiting its evaluation promise. Top-level await neither
     // holds the element's load event nor delays DOMContentLoaded/window load.
     // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-element
-    if dispatch_load {
-        let event_type = if error.is_none() { "load" } else { "error" };
+    if dispatch_load && (resource_failed || host.borrow().script_is_external(&script.node)) {
+        let event_type = if resource_failed { "error" } else { "load" };
         let node_id = host.borrow_mut().id_for(&script.node);
         super::module_lifecycle::dispatch_script_event(
             context,

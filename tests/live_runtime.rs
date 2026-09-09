@@ -10,6 +10,8 @@ mod support;
 use support::*;
 #[path = "live_runtime/authored_controls.rs"]
 mod authored_controls;
+#[path = "live_runtime/deferred_scripts.rs"]
+mod deferred_scripts;
 #[path = "live_runtime/document_lifecycle.rs"]
 mod document_lifecycle;
 #[path = "live_runtime/dynamic_scripts.rs"]

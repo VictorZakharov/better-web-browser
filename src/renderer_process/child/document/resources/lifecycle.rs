@@ -33,11 +33,12 @@ impl DocumentRuntime {
         if runtime.document_load_finished() {
             return;
         }
+        runtime.set_deferred_scripts_pending(self.parser_scripts.deferred_pending());
         // fetch()/XHR, workers, and MSE traffic are intentionally not document-load blockers.
         // Removing a node does not erase an already admitted resource obligation. Completed
         // requests leave by_request, including unsuccessful responses and obsolete owners.
         let pending = discovery_pending
-            || self.async_scripts.is_pending()
+            || self.parser_scripts.is_pending()
             || self.pending_resource_preloads.iter().any(|pending| {
                 pending
                     .by_request

@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 const HTML: &str = include_str!("../../benchmarks/alpha/fixtures/async-script-readiness.html");
 const FAST: &str = include_str!("../../benchmarks/alpha/fixtures/async-fast.js");
 const SLOW: &str = include_str!("../../benchmarks/alpha/fixtures/async-slow.js");
+#[path = "async_scripts/deferred.rs"]
+mod deferred;
 #[path = "async_scripts/document_lifecycle.rs"]
 mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
