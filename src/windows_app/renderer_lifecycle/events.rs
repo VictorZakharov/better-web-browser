@@ -1,3 +1,4 @@
+use super::notifications::EVENTS_PER_TURN;
 use super::*;
 use crate::windows_app::navigation_transaction::PresentationDeadline;
 use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
@@ -36,19 +37,29 @@ impl BrowserState {
             tab.renderer_session.as_ref().map(|session| {
                 let snapshot = session.snapshot();
                 let mut events = Vec::new();
-                while let Ok(Some(event)) = session.try_event() {
-                    events.push(event);
+                for _ in 0..EVENTS_PER_TURN {
+                    match session.try_event() {
+                        Ok(Some(event)) => events.push(event),
+                        _ => break,
+                    }
                 }
-                (tab.title.clone(), snapshot, events)
+                (
+                    tab.title.clone(),
+                    snapshot,
+                    events,
+                    session.pending_events() > 0,
+                )
             })
         });
-        let Some((title, snapshot, events)) = snapshot_and_events else {
+        let Some((title, snapshot, events, remaining)) = snapshot_and_events else {
             return;
         };
         if let Some(tab) = self.tabs.get_mut(id) {
             tab.last_renderer_snapshot = Some(snapshot.clone());
         }
-        let mut exit = snapshot.exit.clone();
+        let session_id = snapshot.session_id;
+        // Preserve FIFO delivery before acting on a terminal diagnostic snapshot.
+        let mut exit = snapshot.exit.clone().filter(|_| !remaining);
         self.update_renderer_status(id, &title, |status| {
             status.phase = match snapshot.state {
                 RendererState::Running => RendererLifecyclePhase::Running,
@@ -204,6 +215,18 @@ impl BrowserState {
                 }
             }
         }
+
+        let Some(session) = self
+            .tabs
+            .get_mut(id)
+            .and_then(|tab| tab.renderer_session.as_ref())
+            .filter(|session| session.snapshot().session_id == session_id)
+        else {
+            // Navigation or error handling may have replaced the session while
+            // consuming this batch. Neither re-arm nor apply its exit to the new one.
+            return;
+        };
+        session.finish_event_drain();
 
         if let Some(exit) = exit {
             let crash_surface = exit.crash_surface();

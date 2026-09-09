@@ -163,12 +163,16 @@ impl AccessibilityUpdate {
             }
         }
         for node in next.nodes {
-            if removed.contains(&node.id) {
+            let reintroduced = next_added.contains(&node.id);
+            if removed.contains(&node.id) && !reintroduced {
                 return Err(ProtocolError::InvalidPayload(
                     "accessibility coalescing identity",
                 ));
             }
-            if next_added.contains(&node.id) {
+            // A stable DOM node can leave the semantic tree (hidden, detached or
+            // outside a fullscreen subtree) and return before either delta is
+            // delivered. Relative to the consumer it is an update, not a new ID.
+            if !removed.remove(&node.id) && reintroduced {
                 added.insert(node.id);
             }
             nodes.insert(node.id, node);
@@ -230,6 +234,108 @@ mod tests {
             read_only: false,
             actions: SemanticActions::default(),
             selection: None,
+        }
+    }
+
+    #[test]
+    fn coalescing_restored_semantics_updates_an_existing_consumer_identity() {
+        let hidden = visibility_delta(1, 0);
+        let shown = visibility_delta(0, 1);
+        let combined = hidden.coalesce(shown).unwrap();
+        assert!(combined.added.is_empty());
+        assert!(combined.removed.is_empty());
+        assert_eq!(
+            combined.nodes,
+            vec![node(1, vec![id(2)]), node(2, Vec::new())]
+        );
+    }
+
+    #[test]
+    fn coalescing_does_not_accept_an_undeclared_restored_identity() {
+        let hidden = visibility_delta(1, 0);
+        let mut invalid = visibility_delta(0, 1);
+        invalid.added.clear();
+        assert!(hidden.coalesce(invalid).is_err());
+    }
+
+    #[test]
+    fn coalesced_visibility_sequences_match_their_net_tree_membership() {
+        // Exhaust all initial states and four updates of two independent nodes:
+        // 1,024 sequences, including newly added/removed/restored nodes and IDs
+        // that already existed when the consumer last saw the tree.
+        for encoded in 0..1024_u32 {
+            let states = (0..5)
+                .map(|i| ((encoded >> (i * 2)) & 3) as u8)
+                .collect::<Vec<_>>();
+            let mut combined = visibility_delta(states[0], states[1]);
+            for pair in states[1..].windows(2) {
+                combined = combined
+                    .coalesce(visibility_delta(pair[0], pair[1]))
+                    .unwrap();
+            }
+            let original = visible_ids(states[0]);
+            let final_ids = visible_ids(states[4]);
+            assert_eq!(
+                combined.added,
+                final_ids
+                    .iter()
+                    .filter(|id| !original.contains(id))
+                    .copied()
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                combined.removed,
+                original
+                    .iter()
+                    .filter(|id| !final_ids.contains(id))
+                    .copied()
+                    .collect::<Vec<_>>()
+            );
+            let mut actual = std::collections::HashMap::from([(id(1), node(1, original.clone()))]);
+            for id in &original {
+                actual.insert(*id, node(id.get() as u64, Vec::new()));
+            }
+            for id in &combined.removed {
+                assert!(actual.remove(id).is_some());
+            }
+            for item in combined.nodes {
+                actual.insert(item.id, item);
+            }
+            assert_eq!(actual.len(), final_ids.len() + 1);
+            assert_eq!(actual[&id(1)].children, final_ids);
+            for id in &final_ids {
+                assert!(actual.contains_key(id));
+            }
+        }
+    }
+
+    fn visible_ids(mask: u8) -> Vec<DocumentNodeId> {
+        (0..2)
+            .filter(|bit| mask & (1 << bit) != 0)
+            .map(|bit| id(2 + bit))
+            .collect()
+    }
+
+    fn visibility_delta(before: u8, after: u8) -> AccessibilityUpdate {
+        let previous = visible_ids(before);
+        let next = visible_ids(after);
+        let mut nodes = vec![node(1, next.clone())];
+        nodes.extend(next.iter().map(|id| node(id.get() as u64, Vec::new())));
+        AccessibilityUpdate {
+            full: false,
+            root: id(1),
+            focus: id(1),
+            nodes,
+            added: next
+                .iter()
+                .filter(|id| !previous.contains(id))
+                .copied()
+                .collect(),
+            removed: previous
+                .iter()
+                .filter(|id| !next.contains(id))
+                .copied()
+                .collect(),
         }
     }
 

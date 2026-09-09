@@ -55,13 +55,13 @@ unsupported APIs into an unreviewable rewrite or advertise a feature based on it
 existing. First presentation, DOMContentLoaded, window load, and visibly usable content
 are different milestones.
 
-### Native task delivery follow-up
+### Native task delivery
 
-The browser shell currently polls idle renderer events every 250 ms
-(`windows_app/renderer_lifecycle.rs`), then schedules runtime work through a Win32 timer.
-This can add latency after a resource becomes ready even when the renderer scheduler
-is correct. Replace polling-based delivery with bounded, coalesced event notification;
-do not solve it by continuously spinning or shortening idle polling indiscriminately.
+The shell now receives coalesced renderer-ready notifications instead of waiting for
+its 250 ms idle monitor to discover queued events. Drains are bounded, and remaining
+batches continue at low timer priority. Health/deadline polling remains as a fallback;
+idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
+The next standards slice remains dynamic script readiness and explicit ordered scripts.
 
 ## Reproducing the owned comparison
 
@@ -78,8 +78,8 @@ Three fresh-profile runs per browser, same machine/server, release Breeze baseli
 | Inspected first filmstrip sample with fast content | 2.5 s | 1.0 s | 0.5 s |
 
 The controlled fast-script delay fell approximately 85%; this is not a whole-page
-or YouTube speedup. The new build is still about 2.75 times Chromium on that script
-milestone and does not meet the requested 10% startup margin. The filmstrip interval
+or YouTube speedup. At this revision, Breeze was still about 2.75 times Chromium on that
+script milestone and did not meet the requested 10% startup margin. The filmstrip interval
 is 500 ms, so its values are observation bounds, not exact paint timestamps. The
 baseline never reaches the fixture's successful final state because it skips one
 script element and fails to dispatch the two element errors. No CPU/memory improvement
@@ -96,7 +96,8 @@ Run Breeze only through `scripts/run-hidden-benchmark.ps1` with `-FreshProfile`,
 `-SettleMs 2800`, `-FilmstripIntervalMs 500`, `-FilmstripDurationMs 3500`,
 `-WindowWidth 1520`, and `-WindowHeight 1000`. Use `-Browser` for the saved baseline.
 Run the existing Chromium harness with its verified `--headless`/`--mute-audio`
-launcher, viewport 1489 x 828, device scale 1.25, the same settling and filmstrip
+launcher, device scale 1.25 and the viewport reported by Breeze (rounded to CSS pixels),
+the same settling and filmstrip
 parameters, and `--diagnostic-selector '#fast' --diagnostic-selector '#result'`.
 
 `ASYNC_FAST_MS` in Breeze's console and `data-first-script-ms` in Chromium's `#fast`
