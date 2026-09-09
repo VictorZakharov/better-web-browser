@@ -71,6 +71,7 @@ const FULLSCREEN_ESCAPE_FIXTURE: &str = r##"<!doctype html>
 const FULLSCREEN_NO_ACTIVATION_FIXTURE: &str = r#"<!doctype html>
 <title>fullscreen activation policy fixture</title>
 <style>html, body { margin: 0; background-color: rgb(220, 20, 20); }</style>
+<body>
 <script>
   document.body.requestFullscreen().then(
     () => console.error('fullscreen unexpectedly entered'),

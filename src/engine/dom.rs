@@ -2,10 +2,10 @@
 mod budget;
 mod cloning;
 mod document;
+pub(crate) mod incremental;
 mod mutation;
 mod node;
 mod shadow;
-mod tree_sink;
 pub use document::{Dom, parse, parse_with_scripting};
 pub use node::{Descendants, ElementData, Node, NodeData, NodeId, NodeRef, ShadowRootMode};
 #[cfg(test)]

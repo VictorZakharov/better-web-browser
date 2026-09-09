@@ -26,6 +26,8 @@ mod media_controls;
 mod navigation;
 #[path = "live_runtime/network.rs"]
 mod network;
+#[path = "live_runtime/parsing.rs"]
+mod parsing;
 #[path = "live_runtime/reload.rs"]
 mod reload;
 #[path = "live_runtime/scrolling.rs"]

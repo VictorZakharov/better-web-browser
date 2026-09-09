@@ -17,6 +17,8 @@ mod deferred;
 mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
 mod dynamic;
+#[path = "async_scripts/parsing.rs"]
+mod parsing;
 
 #[test]
 fn async_scripts_execute_ready_elements_and_fail_each_owner_without_waiting_for_slow_fetch() {

@@ -36,7 +36,10 @@ impl DocumentRuntime {
                 .script_runtime
                 .as_ref()
                 .is_some_and(ScriptRuntime::has_runnable_dynamic_scripts)
-            || self.parser_scripts.has_ready()
+            || self
+                .parser_scripts
+                .has_ready_with_styles(!self.parser_stylesheets_pending())
+            || self.parser_runnable()
     }
 
     pub(in crate::renderer_process::child) fn advance(
@@ -89,6 +92,7 @@ impl DocumentRuntime {
             "checking deferred scripts for {}",
             self.page.source_url
         ))?;
+        self.advance_parser(connection, &mut outcome)?;
         self.execute_pending_parser_script(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
         self.start_pending_fetches(connection)?;

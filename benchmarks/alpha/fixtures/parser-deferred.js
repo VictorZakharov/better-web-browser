@@ -1,0 +1,1 @@
+parserMark('defer-' + document.readyState);

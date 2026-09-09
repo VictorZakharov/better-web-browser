@@ -21,6 +21,35 @@ pub(super) fn discover_resources(
     base_url: &str,
     environment: MediaEnvironment,
 ) -> (Vec<PageResource>, Vec<PageScript>) {
+    let mut resources = discover_non_script_resources(dom, base_url, environment);
+    let mut scripts = Vec::new();
+    let mut seen_script_resources = HashSet::new();
+    for node in Node::descendants(&dom.document) {
+        if node.tag_name() != Some("script") || scripts.len() >= MAX_SCRIPTS {
+            continue;
+        }
+        if let Some(script) = prepare_script(node, base_url, scripts.len() + 1) {
+            if script.node.attr("src").is_some() {
+                let resource = PageResource::Script {
+                    url: script.source_url.clone(),
+                    kind: script.kind,
+                    fetch_options: script.fetch_options,
+                };
+                if seen_script_resources.insert(resource.clone()) {
+                    resources.push(resource);
+                }
+            }
+            scripts.push(script);
+        }
+    }
+    (resources, scripts)
+}
+
+pub(super) fn discover_non_script_resources(
+    dom: &Dom,
+    base_url: &str,
+    environment: MediaEnvironment,
+) -> Vec<PageResource> {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
     for link in Node::shadow_including_descendants(&dom.document)
@@ -90,72 +119,53 @@ pub(super) fn discover_resources(
         }
     }
 
-    let mut scripts = Vec::new();
-    let mut seen_script_resources = HashSet::new();
-    for node in Node::descendants(&dom.document) {
-        if node.tag_name() != Some("script") || scripts.len() >= MAX_SCRIPTS {
-            continue;
-        }
-        let script_type = node.attr("type").unwrap_or_default();
-        let kind = if script_type.trim().eq_ignore_ascii_case("module") {
-            script::ScriptKind::Module
-        } else if script::is_classic_javascript_type(&script_type) {
-            script::ScriptKind::Classic
-        } else {
-            continue;
-        };
-        if kind == script::ScriptKind::Classic && node.attr("nomodule").is_some() {
-            continue;
-        }
-        let fetch_options = script::ScriptFetchOptions::for_element(
-            kind,
-            node.attr("crossorigin").as_deref(),
-            node.attr("referrerpolicy").as_deref(),
-        );
-        if let Some(url) = node
-            .attr("src")
-            .and_then(|source| resolve_url(base_url, &source))
-        {
-            let is_async = node.attr("async").is_some();
-            let executes_after_parsing =
-                !is_async && (kind == script::ScriptKind::Module || node.attr("defer").is_some());
-            let blocks_first_paint = !is_async && !executes_after_parsing;
-            let resource = PageResource::Script {
-                url: url.clone(),
-                kind,
-                fetch_options,
-            };
-            if seen_script_resources.insert(resource.clone()) {
-                resources.push(resource);
-            }
-            scripts.push(PageScript {
-                node,
-                source_url: url,
-                code: None,
-                kind,
-                fetch_options,
-                blocks_first_paint,
-                executes_after_parsing,
-            });
-        } else {
-            let source_url = format!("{}#inline-script-{}", base_url, scripts.len() + 1);
-            let code = node.text_content();
-            let executes_after_parsing =
-                kind == script::ScriptKind::Module && node.attr("async").is_none();
-            scripts.push(PageScript {
-                node,
-                source_url,
-                code: Some(code),
-                kind,
-                fetch_options,
-                blocks_first_paint: kind == script::ScriptKind::Classic,
-                executes_after_parsing,
-            });
-        }
-    }
-    (resources, scripts)
+    resources
 }
 
+pub(super) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> Option<PageScript> {
+    if node.namespace_uri() != Some("http://www.w3.org/1999/xhtml") {
+        return None;
+    }
+    let script_type = node.attr("type").unwrap_or_default();
+    let kind = if script_type.trim().eq_ignore_ascii_case("module") {
+        script::ScriptKind::Module
+    } else if script::is_classic_javascript_type(&script_type) {
+        script::ScriptKind::Classic
+    } else {
+        return None;
+    };
+    if kind == script::ScriptKind::Classic && node.attr("nomodule").is_some() {
+        return None;
+    }
+    let fetch_options = script::ScriptFetchOptions::for_element(
+        kind,
+        node.attr("crossorigin").as_deref(),
+        node.attr("referrerpolicy").as_deref(),
+    );
+    let external = node.attr("src");
+    let is_external = external.is_some();
+    let (source_url, code) = if let Some(source) = external {
+        (resolve_url(base_url, &source).unwrap_or_default(), None)
+    } else {
+        (
+            format!("{base_url}#inline-script-{ordinal}"),
+            Some(node.text_content()),
+        )
+    };
+    let executes_after_parsing = node.attr("async").is_none()
+        && (kind == script::ScriptKind::Module || (is_external && node.attr("defer").is_some()));
+    let blocks_first_paint = kind == script::ScriptKind::Classic
+        && (!is_external || (!executes_after_parsing && node.attr("async").is_none()));
+    Some(PageScript {
+        node,
+        source_url,
+        code,
+        kind,
+        fetch_options,
+        blocks_first_paint,
+        executes_after_parsing,
+    })
+}
 pub(super) fn resolve_image_url(
     node: &NodeRef,
     base_url: &str,

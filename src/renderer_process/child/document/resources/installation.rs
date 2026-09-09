@@ -17,10 +17,12 @@ impl DocumentRuntime {
                 return Err("browser returned an unknown resource request".into());
             };
             let label = resource_label(&resource);
-            if require_authoritative_match
-                && !self.page.resources.contains(&resource)
-                && !self.parser_scripts.contains(&resource)
-            {
+            // A speculative source may finish before its element has been parsed. Retain the
+            // validated, budgeted bytes; only enqueueing the actual element permits execution.
+            let admitted = self.page.resources.contains(&resource)
+                || self.parser_scripts.contains(&resource)
+                || (self.parser.is_some() && matches!(resource, PageResource::Script { .. }));
+            if require_authoritative_match && !admitted {
                 continue;
             }
             self.loaded_resources.insert(resource.clone());
@@ -92,7 +94,8 @@ impl DocumentRuntime {
                         retained |= self.dispatch_resource_event(&event_resource, "error")?;
                         continue;
                     }
-                    let prepared = self.parser_scripts.contains(&event_resource);
+                    let prepared =
+                        self.parser.is_some() || self.parser_scripts.contains(&event_resource);
                     self.parser_scripts.complete(&event_resource, Some(&code));
                     (self.page.add_script(&url, kind, fetch_options, code) || prepared)
                         .then_some(())
