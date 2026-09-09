@@ -36,7 +36,8 @@ discovered while the original batch is still pending.
 
 This does **not** finish all script loading. In particular, async scripts still start
 after the current whole-document parse/startup phase, rather than interrupting an
-incremental parser. Module dependency loading is still blocking and needs its own slice.
+incremental parser. Parser-prepared module dependency loading is now nonblocking;
+see [deferred scripts and module readiness](deferred-script-readiness.md).
 
 ## Remaining standards slices
 
@@ -44,11 +45,12 @@ Dynamic external classic readiness and the explicit ordered list are now impleme
 see the [contract, scope, and verification](dynamic-script-readiness.md). Document
 lifecycle tasks now have separate readiness and resource gates; see the
 [contract, measured evidence, and explicit limits](document-load-lifecycle.md).
-These slices do not establish whole-page parity.
+Parser-prepared defer/module readiness and rendering opportunities are implemented
+in the [next slice](deferred-script-readiness.md), including import failures, shared
+cycles, and top-level await. These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 3 | Defer/module script queues and rendering opportunities. `blocks_first_paint = !is_async` currently makes deferred scripts part of a first-presentation barrier. Module dependency fetching is synchronous. | `page/resources.rs`, `page/scripts.rs`, `script/module_evaluation.rs` | Slow deferred scripts do not turn into parser-blocking scripts; ordered execution, DCL gates, import failures, cycles and top-level await have explicit tests. |
 | 4 | Incremental HTML parsing and parser-blocking scripts. The complete DOM is built before initial scripts run. | `document/load.rs`, `engine/dom/tree_sink.rs`, `script/mutation_host.rs` | Scripts see only preceding parsed nodes; parsing pauses/resumes correctly; `document.write` uses the parser insertion point; speculative requests cannot introduce execution. |
 | 5 | Stylesheet script-blocking versus render-blocking state. Every discovered stylesheet currently blocks first paint, regardless of its media applicability. | `page/refresh.rs`, `page/resources.rs`, renderer resource loader | Delayed matching/nonmatching sheets, media changes, errors and imported sheets have separate fetch, cascade, script and render assertions. |
 | 6 | HTML event-handler content attributes. JavaScript-assigned handlers work; `onload="..."` in the fixture did not. | `bootstrap/events.js`, DOM attributes/construction | Parse, set, replace, remove, scope, listener ordering and exception behavior for content attributes; not a special-case script `onload` implementation. |
@@ -65,8 +67,8 @@ The shell now receives coalesced renderer-ready notifications instead of waiting
 its 250 ms idle monitor to discover queued events. Drains are bounded, and remaining
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
-The next loading slice is defer/module readiness and rendering opportunities, followed by
-incremental parser ownership. Document lifecycle separation is implemented for the currently
+The next loading slice is incremental parser ownership. Deferred/module readiness and
+document lifecycle separation are implemented for the currently
 admitted resource paths; it is not a complete HTML navigation implementation.
 
 ## Reproducing the owned comparison
