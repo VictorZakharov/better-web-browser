@@ -18,6 +18,8 @@ pub type DynamicScriptLoader<'a> =
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DynamicScriptRequest {
+    /// Preparation-time element identity, independent of its shared resource URL.
+    pub node: crate::engine::dom::NodeId,
     pub source_url: String,
     pub kind: ScriptKind,
     pub fetch_options: ScriptFetchOptions,

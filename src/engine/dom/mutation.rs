@@ -54,6 +54,8 @@ impl Node {
                 mathml_annotation_xml_integration_point: false,
                 fullscreen: std::cell::Cell::new(false),
                 hovered: std::cell::Cell::new(false),
+                script_force_async: std::cell::Cell::new(true),
+                script_started: std::cell::Cell::new(false),
             }),
         )
     }
@@ -80,6 +82,8 @@ impl Node {
                 mathml_annotation_xml_integration_point: false,
                 fullscreen: std::cell::Cell::new(false),
                 hovered: std::cell::Cell::new(false),
+                script_force_async: std::cell::Cell::new(true),
+                script_started: std::cell::Cell::new(false),
             }),
         )
     }

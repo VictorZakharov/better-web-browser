@@ -152,7 +152,7 @@ fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
                 node_label(child),
                 node_label(parent)
             ));
-            state.queue_dynamic_script(child);
+            state.queue_connected_scripts(child);
         }
     }
     JsValue::from(if changed {
@@ -197,7 +197,7 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
         }
         state.diagnose("insert node before sibling".into());
         if let Some(child) = child.as_ref() {
-            state.queue_dynamic_script(child);
+            state.queue_connected_scripts(child);
         }
     }
     JsValue::from(if changed {

@@ -6,16 +6,10 @@ use crate::engine::MediaEnvironment;
 mod cookies;
 pub(crate) mod geometry;
 mod ownership;
+mod scripts;
 mod storage;
 
 use crate::storage::{StorageAreaState, StorageMutation};
-
-#[derive(Debug, Clone)]
-pub(super) struct PendingDynamicScript {
-    pub(super) node: NodeRef,
-    pub(super) source_url: String,
-    pub(super) fetch_options: ScriptFetchOptions,
-}
 
 #[derive(Debug)]
 pub(super) struct PendingModuleEvaluation {
@@ -61,7 +55,7 @@ pub(super) struct HostState {
     pub(super) diagnostics: Vec<String>,
     pub(super) host_call_profile: super::host_profiling::HostCallProfile,
     pub(super) pending_document_write: String,
-    pub(super) pending_dynamic_scripts: Vec<PendingDynamicScript>,
+    pub(super) pending_dynamic_scripts: super::dynamic_scripts::queue::ScriptQueue,
     pub(super) next_module_evaluation_id: u32,
     pub(super) pending_module_evaluations: HashMap<u32, PendingModuleEvaluation>,
     pub(super) completed_module_evaluations: Vec<CompletedModuleEvaluation>,
@@ -73,7 +67,6 @@ pub(super) struct HostState {
     pub(super) pending_worker_actions: Vec<ScriptWorkerAction>,
     pub(super) pending_fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub(super) pending_media_actions: Vec<ScriptMediaAction>,
-    pub(super) started_dynamic_scripts: HashSet<NodeId>,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
@@ -129,7 +122,7 @@ impl HostState {
             diagnostics: Vec::new(),
             host_call_profile: super::host_profiling::HostCallProfile::default(),
             pending_document_write: String::new(),
-            pending_dynamic_scripts: Vec::new(),
+            pending_dynamic_scripts: Default::default(),
             next_module_evaluation_id: 1,
             pending_module_evaluations: HashMap::new(),
             completed_module_evaluations: Vec::new(),
@@ -141,7 +134,6 @@ impl HostState {
             pending_worker_actions: Vec::new(),
             pending_fullscreen_actions: Vec::new(),
             pending_media_actions: Vec::new(),
-            started_dynamic_scripts: HashSet::new(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
             computed_styles: None,
@@ -343,35 +335,5 @@ impl HostState {
             current = node.shadow_including_parent();
         }
         false
-    }
-
-    pub(super) fn queue_dynamic_script(&mut self, node: &NodeRef) {
-        if node.tag_name() != Some("script") || !self.is_connected(node) {
-            return;
-        }
-        let script_type = node.attr("type").unwrap_or_default();
-        if !is_classic_javascript_type(&script_type) {
-            return;
-        }
-        let Some(source) = node.attr("src").filter(|source| !source.trim().is_empty()) else {
-            return;
-        };
-        if !self.started_dynamic_scripts.insert(node.id()) {
-            return;
-        }
-        self.pending_dynamic_scripts.push(PendingDynamicScript {
-            node: node.clone(),
-            source_url: self.resolved_url(source.trim()),
-            fetch_options: ScriptFetchOptions::for_element(
-                ScriptKind::Classic,
-                node.attr("crossorigin").as_deref(),
-                node.attr("referrerpolicy").as_deref(),
-            ),
-        });
-        self.diagnose("queued dynamically inserted external script".into());
-    }
-
-    pub(super) fn mark_script_started(&mut self, node: &NodeRef) {
-        self.started_dynamic_scripts.insert(node.id());
     }
 }

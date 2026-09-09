@@ -72,7 +72,7 @@ impl DocumentRuntime {
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
             async_scripts,
-            pending_dynamic_script_fetch: None,
+            pending_dynamic_script_fetch: Vec::new(),
             pending_resource_preloads: pending_deferred.into_iter().collect(),
             resource_render_pending: false,
             resource_style_refresh_pending: false,
@@ -132,6 +132,7 @@ impl DocumentRuntime {
             )
             .map_err(|error| error.to_string())?;
         runtime.script_runtime = script_runtime;
+        runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;
         merge_outcome(
             &mut outcome,

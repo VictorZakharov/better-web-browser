@@ -1,6 +1,6 @@
 # Loading standards: implementation sequence
 
-Audited 2026-09-08. This is a code-backed loading-pipeline inventory, not a claim
+Updated 2026-09-09. This is a code-backed loading-pipeline inventory, not a claim
 that HTML loading is conformant or a percentage of the web platform implemented.
 YouTube is a supplementary compatibility check, not the definition of correctness.
 
@@ -40,9 +40,12 @@ incremental parser. Module dependency loading is still blocking and needs its ow
 
 ## Remaining standards slices
 
+Dynamic external classic readiness and the explicit ordered list are now implemented;
+see the [contract, scope, and verification](dynamic-script-readiness.md). Document
+lifecycle separation is next; neither slice alone establishes whole-page parity.
+
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 1 | Dynamic script readiness and the ordered `async = false` list: source completion is currently consumed through a blocking loader. | `script/dynamic_scripts.rs`, renderer `document/dynamic_scripts.rs` | Withhold the first response; force-async scripts progress, explicitly ordered scripts preserve insertion order; errors, removal, and navigation are covered. |
 | 2 | Separate parsing completion from document load completion. The current `__finishDocument` emits interactive/DCL/complete/load together, without a complete resource-delay model. | `script/module_lifecycle.rs`, `bootstrap/tasks.js`, `document/load.rs` | Delay images and async scripts independently; DCL is not held by them, load is; lifecycle transitions and event order match Chromium. |
 | 3 | Defer/module script queues and rendering opportunities. `blocks_first_paint = !is_async` currently makes deferred scripts part of a first-presentation barrier. Module dependency fetching is synchronous. | `page/resources.rs`, `page/scripts.rs`, `script/module_evaluation.rs` | Slow deferred scripts do not turn into parser-blocking scripts; ordered execution, DCL gates, import failures, cycles and top-level await have explicit tests. |
 | 4 | Incremental HTML parsing and parser-blocking scripts. The complete DOM is built before initial scripts run. | `document/load.rs`, `engine/dom/tree_sink.rs`, `script/mutation_host.rs` | Scripts see only preceding parsed nodes; parsing pauses/resumes correctly; `document.write` uses the parser insertion point; speculative requests cannot introduce execution. |
@@ -61,7 +64,7 @@ The shell now receives coalesced renderer-ready notifications instead of waiting
 its 250 ms idle monitor to discover queued events. Drains are bounded, and remaining
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
-The next standards slice remains dynamic script readiness and explicit ordered scripts.
+The next standards slice is separate parsing completion and resource-delayed window load.
 
 ## Reproducing the owned comparison
 

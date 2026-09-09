@@ -63,6 +63,8 @@ impl TreeSink for Dom {
                     .mathml_annotation_xml_integration_point,
                 fullscreen: std::cell::Cell::new(false),
                 hovered: std::cell::Cell::new(false),
+                script_force_async: std::cell::Cell::new(false),
+                script_started: std::cell::Cell::new(false),
             }),
         )
     }
@@ -72,6 +74,12 @@ impl TreeSink for Dom {
             Rc::clone(&self.identity),
             NodeData::Comment(text.to_string()),
         )
+    }
+
+    fn mark_script_already_started(&self, node: &Self::Handle) {
+        if let Some(element) = node.element() {
+            element.script_started.set(true);
+        }
     }
 
     fn create_pi(&self, target: StrTendril, data: StrTendril) -> Self::Handle {

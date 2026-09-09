@@ -2,8 +2,10 @@ using ChromiumBaseline;
 
 internal static class Program
 {
-    private static async Task<int> Main()
+    private static async Task<int> Main(string[] arguments)
     {
+        ProcessTreeTests.Run();
+        if (arguments.SequenceEqual(new[] { "--process-tree-only" })) return 0;
         var chrome = Options.FindChrome();
         var root = Path.Combine(Path.GetTempPath(), $"breeze-chromium-tests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);

@@ -121,8 +121,10 @@ fn escape_exits_page_fullscreen_before_page_keyboard_dispatch() {
     );
     if let Err(error) = super::window::escape_when_title_contains(
         &child,
-        "fullscreen escape fixture",
-        Duration::from_secs(1),
+        // The initial title is transient and may already be gone before the first poll.
+        // The fullscreenchange handler publishes this state only after successful entry.
+        "fullscreen entered",
+        Duration::ZERO,
         Duration::from_secs(8),
     ) {
         child.kill().expect("terminate failed hidden browser");

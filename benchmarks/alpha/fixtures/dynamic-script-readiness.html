@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dynamic scripts pending</title>
+<style>
+  body { margin: 32px; background: #f4f6fa; color: #142334; font: 20px sans-serif; }
+  #fast, #slow, #ordered { padding: 24px; background: #ddd; margin: 8px 0; }
+</style>
+<h1>Dynamic script readiness and ordering</h1>
+<p>Ready async content must not wait for the slow download. Ordered scripts must wait.</p>
+<div id="fast">Fast content pending</div>
+<div id="slow">Slow content pending</div>
+<div id="ordered">Ordered content pending</div>
+<p id="result">Checking execution and trusted element events.</p>
+<script>
+  window.trace = []; window.fastRuns = 0; window.orderedRuns = [];
+  window.scriptLoads = 0; window.scriptErrors = 0;
+  window.fixtureStart = performance.now();
+  window.record = value => { trace.push(value); };
+  window.updateResult = () => {
+    document.getElementById('result').textContent = trace.join(' | ');
+    if (scriptLoads === 5 && scriptErrors === 2) {
+      document.title = fastRuns === 2 && orderedRuns.join(',') === 'ordered-first,ordered-second'
+        ? 'Dynamic scripts complete' : 'Dynamic scripts FAILED';
+      console.log('DYNAMIC_TRACE ' + trace.join('|'));
+    }
+  };
+  window.addScript = (id, src, ordered = false) => {
+    const element = document.createElement('script'); element.id = id;
+    if (ordered) element.async = false;
+    element.src = src;
+    element.onload = event => {
+      record('load:' + id + ':' + event.isTrusted + ':' + (document.currentScript === null));
+      scriptLoads++; updateResult();
+    };
+    element.onerror = event => {
+      record('error:' + id + ':' + event.isTrusted); scriptErrors++; updateResult();
+    };
+    document.head.appendChild(element);
+  };
+  addScript('slow-script', 'async-slow.js?delay_ms=2000');
+  addScript('fast-a', 'async-fast.js?delay_ms=100');
+  addScript('fast-b', 'async-fast.js?delay_ms=100');
+  addScript('missing-a', 'async-missing.js?delay_ms=200');
+  addScript('missing-b', 'async-missing.js?delay_ms=200');
+  addScript('ordered-first', 'dynamic-ordered.js?delay_ms=2000', true);
+  addScript('ordered-second', 'dynamic-ordered.js?delay_ms=100', true);
+</script>

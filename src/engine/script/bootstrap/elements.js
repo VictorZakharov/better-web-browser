@@ -431,14 +431,6 @@
             if (this.dispatchEvent(new Event('cancel', { cancelable: true }))) this.close(returnValue);
         }
     }
-    class HTMLScriptElement extends HTMLElement {
-        get async() { return this.hasAttribute('async'); }
-        set async(value) { this.toggleAttribute('async', !!value); }
-        get defer() { return this.hasAttribute('defer'); }
-        set defer(value) { this.toggleAttribute('defer', !!value); }
-        get text() { return this.textContent; }
-        set text(value) { this.textContent = String(value); }
-    }
     class HTMLImageElement extends HTMLElement {
         get complete() { return imageElementState(this).complete; }
         get currentSrc() { return imageElementState(this).source; }
