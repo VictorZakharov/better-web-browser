@@ -35,7 +35,11 @@ The existing dependency is reused; no parser fork, dependency or site-specific
 branch is introduced.
 
 Parser checkpoints refresh cached DOM child lists, named properties and upgrades
-for newly parsed custom elements. Resource discovery does not repeatedly clone
+for newly parsed custom elements. Parser-originated changes invalidate both the
+JavaScript CSSOM cache and its independent synchronous-layout cache before those
+upgrades or the next script run. Relying on later presentation invalidation left
+new nodes without computed styles during a geometry read and could abort the renderer.
+Resource discovery does not repeatedly clone
 previously parsed script bodies. Existing node/input limits remain enforced;
 depth truncation now stops parsing at a bounded chunk checkpoint instead of letting
 an adversarial open-element chain grow until EOF. The retained scheduler yields
@@ -62,11 +66,22 @@ installs its listener before the blocking stylesheet; a following inline script
 cannot retroactively observe its load. Renderer helpers pump readiness events
 instead of treating the first partial presentation as a completed document.
 
+The first CI run exposed missing parser-originated geometry invalidation in 13
+curated WPT cases. The cache fix and an owned geometry/cascade regression address
+the cause; no upstream tests or WPT expectations were changed. Once those tests ran,
+one viewport assertion exposed the shell seeding media width from a Win32 client
+rectangle that excluded the startup scrollbar. Seeding the full DPI-aware width
+keeps `innerWidth` stable when a partial presentation hides that gutter, as required
+by [CSSOM View](https://drafts.csswg.org/cssom-view/#dom-window-innerwidth).
+A hidden startup test covers that transition. The timeout harness now requests a
+20-second observation window against its five-second outer deadline, so first
+presentation between guarded scripts cannot make the timeout test finish early.
+
 ## Before / after / Chromium evidence
 
 Three fresh-profile runs per browser on the same Windows machine and local server,
 using the saved release from merged PR #140 (production revision `e4ec32a`), the
-new release at `e0cf80a`, and headless Chromium `152.0.7977.83`. Runs were serial,
+new release at `8a90c69`, and headless Chromium `152.0.7977.83`. Runs were serial,
 without simultaneous build/test workloads; screenshots were sampled every 500 ms.
 
 | Observable milestone / contract | Before: PR #140 | Retained parser | Chromium |
@@ -83,9 +98,9 @@ showed all three success panels; the old build reported the failed contract.
 All 63 sampled images were also checked for the fixture's colored stage panels.
 The layouts are not pixel-identical; these observations test stage visibility.
 
-The new release's async execution was 106 ms median (105–116 ms) after the first
-inline bootstrap, versus Chromium's 111 ms (108–114 ms). Window load was 2,026 ms
-(2,024–2,030 ms), versus Chromium's 2,016 ms (2,015–2,017 ms). The old build's
+The new release's async execution was 108 ms median (104–117 ms) after the first
+inline bootstrap, versus Chromium's 111 ms (108–114 ms). Window load was 2,025 ms
+(2,021–2,033 ms), versus Chromium's 2,016 ms (2,015–2,017 ms). The old build's
 bootstrap clock started only after its two-second blocking fetch barrier; comparing
 its bootstrap-relative timings as navigation speed would hide that delay.
 
@@ -105,13 +120,16 @@ establish whole-page loading within 10% of Chromium.
 Release SHA-256 identifiers:
 
 - Before: `0D7D69744BC5367023EB7A8EC800AB2831AFC2D548FC65968BA74BC01054C1BE`.
-- Retained parser: `9211EFF636C133345D199C0EFDE91601E6972D03A0B1E2341DE240EB1F1AA55D`.
+- Retained parser: `4DB7B9F85E3BF8FD6774FDAF2E0BB1676C57850DD2EC00A1214C04435D6ABE25`.
 
-Local validation passed: 759 library tests (one existing ignored test), 95 binary
-tests, 68 isolated-renderer tests, and 36 hidden live-runtime tests (three existing
+Local validation passed: 759 library tests (one existing ignored test), 96 binary
+tests, 69 isolated-renderer tests, and 37 hidden live-runtime tests (three existing
 ignored tests), including the new hidden parser fixture. Formatting, source-size
 limits and all-target Clippy with warnings denied passed. The adversarial depth
 regression completed within the 40 ms focused parser test run.
+The complete pinned curated WPT suite passed: 115 cases and 713 subtests, with no
+expected failures or expectation changes. The hidden timeout self-test passed
+and verified cleanup of all three captured browser/renderer processes.
 
 ### Reproduce
 
