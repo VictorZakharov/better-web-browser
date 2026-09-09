@@ -40,6 +40,15 @@ renderer test waits on notifications for successive documents and process failur
 without periodically polling to discover events. Existing hidden browser reload,
 navigation, input, streaming Fetch, media and fullscreen tests exercise the adapter.
 
+Faster delivery exposed a semantic-delta coalescing defect during immediate fullscreen
+entry/exit: a stable DOM node removed from the accessibility tree and explicitly added
+back before delivery was rejected as an identity violation. Coalescing now cancels the
+temporary removal and treats that node as an update relative to the consumer's tree.
+An undeclared reintroduction is still rejected. Regression tests check the positive and
+negative cases and exhaust 1,024 visibility sequences for two independent nodes.
+The previously failing hidden fullscreen-exit test passed 15 consecutive local runs
+after this correction; the timeout and assertions were not relaxed.
+
 For performance, use the [owned async-script fixture](loading-standards.md#reproducing-the-owned-comparison).
 It withholds an early script for two seconds while a later shared source responds
 after 100 ms. The script-relative first-fast milestone and the navigation-relative
