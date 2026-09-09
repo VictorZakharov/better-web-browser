@@ -16,15 +16,18 @@ impl DocumentRuntime {
             return Ok(Some("not-allowed"));
         }
         if matches!(&action.command, ScriptMediaCommand::Reset) {
-            connection.retire_video();
             if self
                 .media
                 .as_ref()
                 .is_some_and(|media| media.node == action.node)
             {
+                // load() resets this element, not another element's active decoder.
+                connection.retire_video();
                 self.media.take();
             }
-            self.media_failure = None;
+            if self.media.is_none() {
+                self.media_failure = None;
+            }
             return Ok(Some("reset"));
         }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {

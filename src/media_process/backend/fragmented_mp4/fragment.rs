@@ -47,10 +47,18 @@ pub(super) fn parse(
                     return Err("H.264 sample points outside fragmented MP4".into());
                 }
                 let presentation = add_signed(decode_time, sample.composition_offset)?;
+                let timestamp_100ns = scale_signed(presentation, metadata.timescale)?;
+                let presentation_end = presentation
+                    .checked_add(u64::from(sample.duration))
+                    .ok_or_else(|| "H.264 presentation end overflowed".to_string())?;
+                // Round shared boundaries once. Separately truncating start and duration
+                // invents 100 ns gaps in contiguous tracks (for example, 30 fps video).
+                let duration_100ns =
+                    scale(presentation_end, metadata.timescale)? - timestamp_100ns as u64;
                 output.push(VideoSample {
                     bytes: source[start..end_index].to_vec(),
-                    timestamp_100ns: scale_signed(presentation, metadata.timescale)?,
-                    duration_100ns: scale(sample.duration as u64, metadata.timescale)?,
+                    timestamp_100ns,
+                    duration_100ns,
                     key_frame: sample.flags & 0x0001_0000 == 0,
                 });
                 decode_time = decode_time

@@ -10,6 +10,8 @@ use std::time::Duration;
 mod cadence;
 #[path = "media/failure.rs"]
 mod failure;
+#[path = "media/seeking.rs"]
+mod seeking;
 
 fn run_scheduled_renderer_timer(
     session: &RendererSession,

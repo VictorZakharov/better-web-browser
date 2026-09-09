@@ -232,6 +232,7 @@
             this.__committing = false;
             this.__updateExtent(duration, buffered);
             this.__finishCommit();
+            continueMediaSourceSeek(this.__element);
             if (this.__waiting && this.__element) {
                 const state = mediaStateFor(this.__element);
                 if (Number(duration) > state.currentTime) {
@@ -256,6 +257,7 @@
             }
         }
         __requestPlayback(requestId, volumeMillis) {
+            if (deferSeekingPlayback(this.__element, requestId)) return;
             if (this.__loadedState) {
                 mediaCommand(this.__element, requestId, 'playback', true, volumeMillis);
                 return;

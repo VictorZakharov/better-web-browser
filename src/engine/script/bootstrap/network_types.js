@@ -113,20 +113,23 @@
             const replacementBody = Object.prototype.hasOwnProperty.call(init, 'body') && init.body != null;
             if (source && !replacementBody && bodyUnusable(source))
                 throw new TypeError('Cannot construct from an unusable Request');
-            const url = new URL(source ? source.url : String(input)).href;
+            // Fetch copies the associated request, not author-overridable Web IDL getters.
+            // Reading source.url/method here can turn a local data request into an unrelated POST.
+            // https://fetch.spec.whatwg.org/#dom-request
+            const url = new URL(source ? source.__url : String(input)).href;
             if (hasCredentials(url)) throw new TypeError('Request URL cannot include credentials');
             this.__url = url;
-            this.__method = normalizedMethod(optionValue(init, 'method', source?.method ?? 'GET'));
-            this.__mode = enumValue(optionValue(init, 'mode', source?.mode ?? 'cors'), modes, 'mode');
+            this.__method = normalizedMethod(optionValue(init, 'method', source?.__method ?? 'GET'));
+            this.__mode = enumValue(optionValue(init, 'mode', source?.__mode ?? 'cors'), modes, 'mode');
             if (this.__mode === 'no-cors' && !['GET', 'HEAD', 'POST'].includes(this.__method))
                 throw new TypeError('no-cors requests require a CORS-safelisted method');
-            this.__credentials = enumValue(optionValue(init, 'credentials', source?.credentials ?? 'same-origin'), credentialsModes, 'credentials');
-            this.__redirect = enumValue(optionValue(init, 'redirect', source?.redirect ?? 'follow'), redirectModes, 'redirect');
-            this.__cache = enumValue(optionValue(init, 'cache', source?.cache ?? 'default'), cacheModes, 'cache');
+            this.__credentials = enumValue(optionValue(init, 'credentials', source?.__credentials ?? 'same-origin'), credentialsModes, 'credentials');
+            this.__redirect = enumValue(optionValue(init, 'redirect', source?.__redirect ?? 'follow'), redirectModes, 'redirect');
+            this.__cache = enumValue(optionValue(init, 'cache', source?.__cache ?? 'default'), cacheModes, 'cache');
             if (this.__cache === 'only-if-cached' && this.__mode !== 'same-origin')
                 throw new TypeError('only-if-cached requires same-origin mode');
-            const fallbackPolicy = source && !initNotEmpty ? source.referrerPolicy : '';
-            const fallbackReferrer = source && !initNotEmpty ? source.referrer : 'about:client';
+            const fallbackPolicy = source && !initNotEmpty ? source.__referrerPolicy : '';
+            const fallbackReferrer = source && !initNotEmpty ? source.__referrer : 'about:client';
             this.__referrerPolicy = enumValue(optionValue(init, 'referrerPolicy', fallbackPolicy), referrerPolicies, 'referrerPolicy');
             this.__referrer = String(optionValue(init, 'referrer', fallbackReferrer));
             if (this.__referrer !== '' && this.__referrer !== 'about:client') {
@@ -134,12 +137,12 @@
                 if (new URL(this.__referrer).origin !== new URL(location.href).origin)
                     this.__referrer = 'about:client';
             }
-            this.__integrity = String(optionValue(init, 'integrity', source?.integrity ?? ''));
-            this.__keepalive = !!optionValue(init, 'keepalive', source?.keepalive ?? false);
-            this.__signal = AbortSignal.__follow(optionValue(init, 'signal', source?.signal ?? createAbortSignal()) || createAbortSignal());
+            this.__integrity = String(optionValue(init, 'integrity', source?.__integrity ?? ''));
+            this.__keepalive = !!optionValue(init, 'keepalive', source?.__keepalive ?? false);
+            this.__signal = AbortSignal.__follow(optionValue(init, 'signal', source?.__signal ?? createAbortSignal()) || createAbortSignal());
             this.__headers = new Headers();
             this.__headers.__setGuard(this.__mode === 'no-cors' ? 'request-no-cors' : 'request');
-            this.__headers.__fill(optionValue(init, 'headers', source?.headers ?? {}));
+            this.__headers.__fill(optionValue(init, 'headers', source?.__headers.__entries ?? {}));
 
             let extracted = replacementBody ? data.extractBody(init.body) : source
                 ? source.__bodyBytes !== null
@@ -181,8 +184,8 @@
             for (const name of ['url', 'method', 'mode', 'credentials', 'redirect', 'cache',
                 'referrerPolicy', 'referrer', 'integrity', 'keepalive'])
                 clone['__' + name] = this['__' + name];
-            clone.__signal = AbortSignal.__follow(this.signal);
-            clone.__headers = new Headers(this.headers)
+            clone.__signal = AbortSignal.__follow(this.__signal);
+            clone.__headers = new Headers(this.__headers.__entries)
                 .__setGuard(this.__mode === 'no-cors' ? 'request-no-cors' : 'request');
             initializeBody(clone, cloneBody(this));
             return clone;
@@ -191,11 +194,11 @@
             return readBodyBytes(this).then(bytes => {
                 if (bytes.length > MAX_REQUEST_BYTES) throw new TypeError('Request body exceeds the browser limit');
                 return {
-                    url: this.url, method: this.method, headers: [...this.headers],
-                    bodyBase64: this.body === null ? null : data.bytesToBase64(bytes),
-                    mode: this.mode, credentials: this.credentials, redirect: this.redirect,
-                    cache: this.cache, referrer: this.referrer, referrerPolicy: this.referrerPolicy,
-                    integrity: this.integrity, keepalive: this.keepalive
+                    url: this.__url, method: this.__method, headers: this.__headers.__sortedAndCombined(),
+                    bodyBase64: this.__bodyStream === null ? null : data.bytesToBase64(bytes),
+                    mode: this.__mode, credentials: this.__credentials, redirect: this.__redirect,
+                    cache: this.__cache, referrer: this.__referrer, referrerPolicy: this.__referrerPolicy,
+                    integrity: this.__integrity, keepalive: this.__keepalive
                 };
             });
         }

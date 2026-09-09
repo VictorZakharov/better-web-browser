@@ -29,6 +29,7 @@
             this.__ranges = [];
             this.__operation = 0;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             this.updating = false;
             this.mode = 'segments';
             this.timestampOffset = 0;
@@ -59,14 +60,33 @@
         }
         abort() {
             this.__requireOpen();
-            if (!this.updating) return;
+            if (this.updating && !this.__updatingAppend)
+                throw new DOMException('A range removal is in progress', 'InvalidStateError');
+            const wasUpdating = this.updating;
+            if (this.__parent.__element) traceMediaLifecycle(this.__parent.__element, 'buffer:abort');
+            // MSE reset parser state runs even between appendBuffer calls. Preserve
+            // accepted frames/configuration, but never splice a canceled partial mdat
+            // into the next segment after a seek.
+            // https://www.w3.org/TR/media-source-2/#sourcebuffer-reset-parser-state
+            if (this.__initializationLength > 0)
+                this.__initializationBytes = this.__materialize().slice(0, this.__initializationLength);
             this.__operation++;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             this.updating = false;
-            this.__parent.__release(this.__reservedBytes);
+            this.__parent.__release(this.__reservedBytes + this.__bytes);
             this.__reservedBytes = 0;
-            queueMediaEvent(this, 'abort');
-            queueMediaEvent(this, 'updateend');
+            this.__chunks = [];
+            this.__bytes = 0;
+            this.__completeBytes = 0;
+            this.__initializationLength = 0;
+            this.__hasMediaData = false;
+            this.appendWindowStart = 0;
+            this.appendWindowEnd = Infinity;
+            if (wasUpdating) {
+                queueMediaEvent(this, 'abort');
+                queueMediaEvent(this, 'updateend');
+            }
         }
         remove(start, end) {
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
@@ -103,10 +123,12 @@
         }
         __beginUpdate(apply, append = false) {
             this.updating = true;
+            this.__updatingAppend = append;
             const operation = ++this.__operation;
             queueMicrotask(() => {
                 if (operation !== this.__operation || !this.updating) return;
                 this.dispatchEvent(markTrusted(new Event('updatestart')));
+                if (operation !== this.__operation || !this.updating) return;
                 try {
                     apply();
                     if (append && this.__hasMediaData) {
@@ -130,6 +152,7 @@
             if (operation !== this.__operation || !this.updating) return;
             this.updating = false;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             queueMediaEvent(this, event);
             queueMediaEvent(this, 'updateend');
         }

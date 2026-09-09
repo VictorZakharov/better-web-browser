@@ -20,6 +20,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/media.js"),
     include_str!("bootstrap/media_source_buffers.js"),
     include_str!("bootstrap/media_source.js"),
+    include_str!("bootstrap/media_seeking.js"),
     include_str!("bootstrap/media_diagnostics.js"),
     include_str!("bootstrap/canvas.js"),
     include_str!("bootstrap/traversal.js"),

@@ -125,8 +125,8 @@
             }
             state.seeking = true;
             state.currentTime = value;
-            this.dispatchEvent(new Event('seeking'));
-            mediaCommand(this, 0, 'seek', value);
+            queueMediaEvent(this, 'seeking');
+            if (!beginMediaSourceSeek(this)) mediaCommand(this, 0, 'seek', value);
         }
         get defaultPlaybackRate() { return mediaStateFor(this).defaultPlaybackRate; }
         set defaultPlaybackRate(value) {
@@ -180,6 +180,7 @@
         }
         load() {
             traceMediaCallsite(this);
+            cancelMediaSourceSeek(this);
             const state = mediaStateFor(this);
             const hadResource = state.networkState !== HTMLMediaElement.NETWORK_EMPTY;
             state.networkState = HTMLMediaElement.NETWORK_EMPTY;
@@ -209,6 +210,7 @@
         }
         pause() {
             const state = mediaStateFor(this);
+            rejectSeekingPlayback(this);
             if (!state.paused) {
                 state.paused = true;
                 queueMediaEvent(this, 'pause');
@@ -294,6 +296,7 @@
         const requestId = Number(input.requestId) || 0;
         const pending = requestId ? pendingMediaRequests.get(requestId) : null;
         if (requestId) pendingMediaRequests.delete(requestId);
+        if (applyMediaSeekResponse(element, input, pending)) return true;
         switch (input.disposition) {
             case 'loaded':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);

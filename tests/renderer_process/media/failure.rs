@@ -27,6 +27,16 @@ fn late_decode_failure(seek: bool) {
         const movie = document.getElementById('movie');
         const source = new MediaSource();
         const bytes = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+        const shift = data => {{
+            const tag = name => {{
+                for (let i = 0; i < data.length - 4; i++)
+                    if ([...name].every((c,n) => data[i+n] === c.charCodeAt(0))) return i;
+                throw new Error('fixture box missing');
+            }};
+            const view = new DataView(data.buffer);
+            view.setBigUint64(tag('tfdt') + 8, BigInt(view.getUint32(tag('mdhd') + 16)) * 2n);
+            return data;
+        }};
         movie.addEventListener('error', () => {{
             console.log('decode-error:' + movie.error.code + ':' + movie.networkState);
             setTimeout(() => {{
@@ -49,14 +59,16 @@ fn late_decode_failure(seek: bool) {
             video.addEventListener('updateend', () => {{
                 if (++phase === 1) {{
                     const bad = bytes('{video}');
+                    if ({seek}) shift(bad);
                     for (let i = 0; i + 4 < bad.length; i++) {{
                         if (bad[i] === 109 && bad[i+1] === 100 && bad[i+2] === 97 && bad[i+3] === 116) {{
                             bad.fill(0, i+4); break;
                         }}
                     }}
                     video.appendBuffer(bad);
+                    if ({seek}) audio.appendBuffer(shift(bytes('{audio}')));
                 }} else if (phase === 2) {{
-                    if ({seek}) movie.currentTime = 3;
+                    if ({seek}) movie.currentTime = 2.5;
                     else movie.play();
                 }}
             }});
