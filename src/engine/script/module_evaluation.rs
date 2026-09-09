@@ -78,13 +78,9 @@ pub(super) fn evaluate_module(
     let mut error = result.err();
     let pending = if error.is_none() {
         pending_promise.is_some_and(|promise| {
-            if let Err(track_error) = super::module_lifecycle::track_pending(
-                promise,
-                context,
-                host,
-                script,
-                dispatch_load,
-            ) {
+            if let Err(track_error) =
+                super::module_lifecycle::track_pending(promise, context, host, script)
+            {
                 error = Some(track_error);
                 false
             } else {
@@ -111,8 +107,11 @@ pub(super) fn evaluate_module(
             script.source_url
         ));
     }
-    if dispatch_load && !pending {
-        let event_type = if succeeded { "load" } else { "error" };
+    // HTML executes a module without awaiting its evaluation promise. Top-level await neither
+    // holds the element's load event nor delays DOMContentLoaded/window load.
+    // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-element
+    if dispatch_load {
+        let event_type = if error.is_none() { "load" } else { "error" };
         let node_id = host.borrow_mut().id_for(&script.node);
         super::module_lifecycle::dispatch_script_event(
             context,

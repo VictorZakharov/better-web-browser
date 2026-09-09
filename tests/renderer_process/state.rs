@@ -99,7 +99,10 @@ fn typed_state_snapshots_and_mutations_cross_the_renderer_boundary() {
             {
                 break *presentation;
             }
-            RendererEvent::RuntimeUpdate(_) | RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::RuntimeUpdate(update) => {
+                pump_ready_task(&session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected renderer correction event: {event:?}"),
         }
     };

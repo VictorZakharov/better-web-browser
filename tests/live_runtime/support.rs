@@ -106,6 +106,17 @@ pub(super) struct FixtureResponse {
 }
 
 impl FixtureResponse {
+    pub(super) fn resource(
+        body: impl Into<String>,
+        content_type: &'static str,
+        delay: Duration,
+    ) -> Self {
+        Self {
+            content_type,
+            ..Self::script(body, delay)
+        }
+    }
+
     pub(super) fn html(body: impl Into<String>) -> Self {
         Self {
             status: 200,

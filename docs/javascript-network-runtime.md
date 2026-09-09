@@ -34,8 +34,11 @@ operation immediately and cancels further browser-side work at the next safe tra
 Classic scripts and ECMAScript modules use distinct fetch modes. Module graphs resolve relative and
 absolute URL specifiers, cache each module by URL, enforce CORS and JavaScript MIME types, expose
 `import.meta.url`, report graph failures on the owning script element, and support top-level await.
-Document lifecycle completion and script `load`/`error` events wait for asynchronous module
-evaluation to settle.
+Document completion does not wait for a pending top-level-await evaluation promise. Deferred
+module invocation precedes DOMContentLoaded; asynchronous evaluation continues independently.
+The existing additional-module element-event path reports successful invocation without waiting
+for that promise, and later rejection remains a JavaScript diagnostic. See the
+[document readiness contract and remaining loading gaps](document-load-lifecycle.md).
 
 `Worker` creates an isolated V8 realm on a background thread. Classic and module dedicated workers
 support structured-clone messaging and transfers, timers, Fetch/XHR, relative static imports,

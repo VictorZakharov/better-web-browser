@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 const HTML: &str = include_str!("../../benchmarks/alpha/fixtures/async-script-readiness.html");
 const FAST: &str = include_str!("../../benchmarks/alpha/fixtures/async-fast.js");
 const SLOW: &str = include_str!("../../benchmarks/alpha/fixtures/async-slow.js");
+#[path = "async_scripts/document_lifecycle.rs"]
+mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
 mod dynamic;
 
@@ -226,6 +228,10 @@ impl Driver {
     }
 
     fn respond(&self, suffix: &str, source: &str, status: u16) {
+        self.respond_bytes(suffix, source.as_bytes(), "text/javascript", status);
+    }
+
+    fn respond_bytes(&self, suffix: &str, source: &[u8], content_type: &str, status: u16) {
         let request = self
             .requests
             .iter()
@@ -240,14 +246,14 @@ impl Driver {
                 response_type: FetchResponseType::Basic,
                 urls: vec![request.head.url.clone()],
                 status,
-                headers: vec![("content-type".into(), "text/javascript".into())],
+                headers: vec![("content-type".into(), content_type.into())],
             },
         })
         .unwrap();
         sink.chunk(TransferChunk {
             transfer_id: id,
             offset: 0,
-            bytes: source.as_bytes().to_vec(),
+            bytes: source.to_vec(),
         })
         .unwrap();
         sink.end(id, source.len() as u32).unwrap();

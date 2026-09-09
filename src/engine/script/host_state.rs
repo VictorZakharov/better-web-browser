@@ -14,9 +14,6 @@ use crate::storage::{StorageAreaState, StorageMutation};
 #[derive(Debug)]
 pub(super) struct PendingModuleEvaluation {
     pub(super) source_url: String,
-    pub(super) node_id: u32,
-    pub(super) dispatch_load: bool,
-    pub(super) blocks_lifecycle: bool,
 }
 
 #[derive(Debug)]
@@ -59,8 +56,7 @@ pub(super) struct HostState {
     pub(super) next_module_evaluation_id: u32,
     pub(super) pending_module_evaluations: HashMap<u32, PendingModuleEvaluation>,
     pub(super) completed_module_evaluations: Vec<CompletedModuleEvaluation>,
-    pub(super) lifecycle_requested: bool,
-    pub(super) lifecycle_finished: bool,
+    pub(super) document_load: super::runtime::document_lifecycle::DocumentLoad,
     pub(super) next_fetch_id: u32,
     pub(super) pending_fetch_actions: Vec<ScriptFetchAction>,
     pub(super) next_worker_id: u32,
@@ -126,8 +122,7 @@ impl HostState {
             next_module_evaluation_id: 1,
             pending_module_evaluations: HashMap::new(),
             completed_module_evaluations: Vec::new(),
-            lifecycle_requested: false,
-            lifecycle_finished: false,
+            document_load: Default::default(),
             next_fetch_id: 1,
             pending_fetch_actions: Vec::new(),
             next_worker_id: 1,

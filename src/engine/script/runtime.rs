@@ -10,7 +10,7 @@ use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod completions;
-mod document_lifecycle;
+pub(super) mod document_lifecycle;
 mod geometry;
 mod memory;
 
@@ -140,6 +140,9 @@ impl ScriptRuntime {
 
     /// Returns the delay until the next timer should wake this runtime.
     pub fn next_timer_delay(&mut self) -> Option<Duration> {
+        if self.has_ready_document_task() {
+            return Some(Duration::ZERO);
+        }
         let mut host = self.host.borrow_mut();
         let now = host.timers.now();
         host.timers
@@ -265,6 +268,9 @@ impl ScriptRuntime {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
+        if max_callbacks > 0 && self.has_ready_document_task() {
+            return self.advance_document_task(advance);
+        }
         let Some(context) = self.context.as_deref_mut() else {
             return inactive_runtime_outcome();
         };
@@ -354,23 +360,6 @@ impl ScriptRuntime {
                 default_allowed: false,
             },
         }
-    }
-
-    /// Cancels queued work and tears down the document's healthy JavaScript context.
-    pub fn cancel_document(&mut self) {
-        self.context.take();
-        let mut host = self.host.borrow_mut();
-        host.timers.clear();
-        host.timer_handles.clear();
-        host.pending_document_write.clear();
-        host.pending_dynamic_scripts.clear();
-        host.pending_module_evaluations.clear();
-        host.completed_module_evaluations.clear();
-        host.pending_fetch_actions.clear();
-        host.pending_worker_actions.clear();
-        host.pending_fullscreen_actions.clear();
-        host.pending_media_actions.clear();
-        host.module_loader.clear();
     }
 
     fn finish_guarded_run(

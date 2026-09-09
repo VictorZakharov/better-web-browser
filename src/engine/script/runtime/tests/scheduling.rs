@@ -62,7 +62,11 @@ fn live_initial_task_does_not_fast_forward_timers_before_first_presentation() {
     );
     let complete = runtime.finish_document_lifecycle();
     assert!(complete.errors.is_empty(), "{:?}", complete.errors);
+    assert_eq!(body.attr("data-loaded"), None);
+    assert_eq!(runtime.next_timer_delay(), Some(Duration::ZERO));
+    assert!(runtime.advance_time(Duration::ZERO, 1).errors.is_empty());
     assert_eq!(body.attr("data-loaded").as_deref(), Some("ran"));
+    assert!(runtime.advance_time(Duration::ZERO, 1).errors.is_empty());
     assert_eq!(
         runtime.next_timer_delay(),
         Some(Duration::from_millis(2000))

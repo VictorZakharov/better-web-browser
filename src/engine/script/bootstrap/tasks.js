@@ -391,10 +391,4 @@
 
     windowObject.__wrap = wrap;
     refreshWindowNamedProperties();
-    windowObject.__finishDocument = () => {
-        document.readyState = 'interactive';
-        document.dispatchEvent(markTrusted(new Event('DOMContentLoaded')));
-        document.readyState = 'complete';
-        windowObject.dispatchEvent(markTrusted(new Event('load')));
-    };
 })();

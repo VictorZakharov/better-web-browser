@@ -99,7 +99,7 @@ fn bare_module_specifiers_fail_without_running_the_module_body() {
 }
 
 #[test]
-fn top_level_await_delays_document_lifecycle_until_the_module_settles() {
+fn top_level_await_does_not_delay_document_lifecycle() {
     let dom = crate::engine::dom::parse_with_scripting(
         "<body><div>pending</div><script type=module></script></body>",
         true,
@@ -111,7 +111,7 @@ fn top_level_await_delays_document_lifecycle_until_the_module_settles() {
             const output = document.querySelector('div');
             document.addEventListener('DOMContentLoaded', () => output.textContent += '|ready');
             await new Promise(resolve => setTimeout(resolve, 2000));
-            output.textContent = 'module';
+            output.textContent += '|module';
         "#
         .into(),
         kind: ScriptKind::Module,
@@ -125,7 +125,7 @@ fn top_level_await_delays_document_lifecycle_until_the_module_settles() {
     assert_eq!(initial.executed, 0);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "pending"
+        "pending|ready"
     );
 
     let settled = runtime.advance_time(Duration::from_millis(500), 8);
@@ -133,21 +133,21 @@ fn top_level_await_delays_document_lifecycle_until_the_module_settles() {
     assert_eq!(settled.executed, 1);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "module|ready"
+        "pending|ready|module"
     );
 }
 
 #[test]
-fn pending_additional_module_dispatches_load_only_after_evaluation() {
+fn pending_additional_module_load_is_not_replayed_as_error_on_late_rejection() {
     let dom = crate::engine::dom::parse_with_scripting(
-        "<body><script id=module type=module></script><div>pending</div></body>",
+        "<body><script id=module type=module src=/additional.js></script><div>pending</div></body>",
         true,
     );
     let node = dom.elements_named("script").next().unwrap();
     let setup = ScriptInput {
         node: node.clone(),
         source_url: "https://example.com/#setup".into(),
-        code: "document.getElementById('module').addEventListener('load', () => document.querySelector('div').textContent = 'loaded');".into(),
+        code: "window.loads = 0; const element = document.getElementById('module'); element.onload = () => document.querySelector('div').textContent = 'loaded-' + (++loads); element.onerror = () => document.querySelector('div').textContent = 'wrong resource error';".into(),
         kind: ScriptKind::Classic,
         fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
         finish_lifecycle: true,
@@ -159,7 +159,7 @@ fn pending_additional_module_dispatches_load_only_after_evaluation() {
     let module = ScriptInput {
         node,
         source_url: "https://example.com/additional.js".into(),
-        code: "await new Promise(resolve => setTimeout(resolve, 250));".into(),
+        code: "await new Promise(resolve => setTimeout(resolve, 250)); throw new Error('late evaluation rejection');".into(),
         kind: ScriptKind::Module,
         fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
         finish_lifecycle: false,
@@ -169,14 +169,15 @@ fn pending_additional_module_dispatches_load_only_after_evaluation() {
     assert_eq!(started.executed, 0);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "pending"
+        "loaded-1"
     );
 
     let settled = runtime.advance_time(Duration::from_millis(250), 8);
-    assert!(settled.errors.is_empty(), "{:?}", settled.errors);
-    assert_eq!(settled.executed, 1);
+    assert_eq!(settled.errors.len(), 1, "{:?}", settled.errors);
+    assert!(settled.errors[0].contains("late evaluation rejection"));
+    assert_eq!(settled.executed, 0);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "loaded"
+        "loaded-1"
     );
 }

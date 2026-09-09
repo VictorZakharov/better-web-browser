@@ -7,7 +7,7 @@ pub(super) fn finish_geometry_checkpoint(
     // The real browser clock consumes the scroll's immediate observer checkpoint before
     // becoming idle. This fixture has no observers, so it must finish without repainting.
     session.advance_time(document, Duration::ZERO, 1).unwrap();
-    loop {
+    for _ in 0..8 {
         match session.wait_for_event(Duration::from_secs(3)).unwrap() {
             RendererEvent::RuntimeUpdate(update) if update.document == document => {
                 assert!(
@@ -19,8 +19,11 @@ pub(super) fn finish_geometry_checkpoint(
                 assert!(!update.runtime.render_requested);
                 assert!(update.runtime.navigation_url.is_none());
                 if update.clock_advanced {
-                    assert_eq!(update.next_timer_micros, None);
-                    break;
+                    if update.next_timer_micros.is_none() {
+                        return;
+                    }
+                    assert_eq!(update.next_timer_micros, Some(0));
+                    pump_ready_task(session, document, update.next_timer_micros);
                 }
                 assert_eq!(update.next_timer_micros, Some(0));
             }
@@ -28,6 +31,7 @@ pub(super) fn finish_geometry_checkpoint(
             event => panic!("unexpected geometry-checkpoint event: {event:?}"),
         }
     }
+    panic!("geometry and document lifecycle checkpoints did not become idle");
 }
 
 pub(super) fn wait_for_cursor(

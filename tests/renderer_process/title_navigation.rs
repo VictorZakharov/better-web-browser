@@ -36,7 +36,10 @@ fn retained_app_title_events_reach_each_navigation_presentation() {
                 {
                     break presentation;
                 }
-                RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+                RendererEvent::RuntimeUpdate(update) => {
+                    pump_ready_task(&session, initial.document, update.next_timer_micros);
+                }
+                RendererEvent::Diagnostic { .. } => {}
                 event => panic!("unexpected title-navigation event: {event:?}"),
             }
         };

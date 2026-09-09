@@ -101,7 +101,10 @@ fn wait_for_text(
                     return;
                 }
             }
-            Ok(RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_)) | Err(_) => {}
+            Ok(RendererEvent::RuntimeUpdate(update)) => {
+                pump_ready_task(session, document, update.next_timer_micros);
+            }
+            Ok(RendererEvent::Diagnostic { .. }) | Err(_) => {}
             Ok(event) => panic!("unexpected storage backpressure event: {event:?}"),
         }
     }
