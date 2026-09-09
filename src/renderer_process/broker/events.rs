@@ -1,5 +1,7 @@
 //! Bounded renderer-to-browser event delivery.
 
+mod notification;
+
 use super::RendererEvent;
 use crate::limits::{MAX_QUEUED_RENDERER_EVENTS, MAX_QUEUED_RENDERER_FETCH_BATCHES};
 use crate::renderer_protocol::ProtocolError;
@@ -13,6 +15,7 @@ pub(super) fn bounded() -> (EventSender, EventReceiver) {
             events: VecDeque::new(),
             sender_open: true,
             receiver_open: true,
+            notification: notification::Notification::default(),
         }),
         changed: Condvar::new(),
     });
@@ -33,6 +36,7 @@ struct QueueState {
     events: VecDeque<RendererEvent>,
     sender_open: bool,
     receiver_open: bool,
+    notification: notification::Notification,
 }
 
 pub(super) struct EventSender {
@@ -106,8 +110,10 @@ impl EventSender {
                     && previous.document == next.document
                 {
                     **previous = (**previous).clone().coalesce(*next)?;
+                    let notify = state.notification.request();
                     drop(state);
                     self.queue.changed.notify_one();
+                    notification::deliver(notify);
                     return Ok(());
                 }
                 RendererEvent::RuntimeUpdate(next)
@@ -136,8 +142,10 @@ impl EventSender {
             ));
         }
         state.events.push_back(event);
+        let notify = state.notification.request();
         drop(state);
         self.queue.changed.notify_one();
+        notification::deliver(notify);
         Ok(())
     }
 
@@ -164,8 +172,10 @@ impl EventSender {
             return Ok(());
         }
         state.events.push_back(event);
+        let notify = state.notification.request();
         drop(state);
         self.queue.changed.notify_one();
+        notification::deliver(notify);
         Ok(())
     }
 
@@ -303,6 +313,7 @@ impl EventReceiver {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.receiver_open = false;
         state.events.clear();
+        state.notification = notification::Notification::default();
         drop(state);
         self.queue.changed.notify_all();
     }

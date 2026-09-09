@@ -67,6 +67,24 @@ impl RendererSession {
         }
     }
 
+    /// Installs a nonblocking, non-panicking event-loop wake callback. Already queued
+    /// events wake immediately. The callback runs outside the queue lock and must
+    /// not consume events itself. Register once before starting document work.
+    pub fn set_event_notifier(&self, notify: impl Fn() + Send + Sync + 'static) {
+        self.events.set_notifier(notify);
+    }
+
+    /// Re-arms notifications after a bounded drain. If work remains, the caller
+    /// must continue draining at low priority: no further wake is posted meanwhile.
+    /// Keep a fallback poll for failed native message delivery and teardown races.
+    pub fn finish_event_drain(&self) -> bool {
+        self.events.finish_drain()
+    }
+
+    pub fn pending_events(&self) -> usize {
+        self.events.pending()
+    }
+
     pub fn wait_for_exit(&self, timeout: Duration) -> Result<RendererExit, String> {
         let deadline = Instant::now() + timeout;
         loop {

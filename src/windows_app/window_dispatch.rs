@@ -1,5 +1,6 @@
 //! Win32 subclass and browser-window message dispatch.
 
+mod completions;
 mod input;
 
 use super::tabs::{KeyModifiers, TabId, TabStripHit};
@@ -41,10 +42,7 @@ pub(super) unsafe extern "system" fn main_window_proc(
     })) {
         Ok(result) => result,
         Err(payload) => {
-            let id = if matches!(
-                message,
-                WM_APP_PAGE_LOADED | WM_APP_RENDERER_LAUNCHED | WM_APP_RENDERER_FETCH_COMPLETE
-            ) {
+            let id = if completions::is_tab_completion(message) {
                 TabId::from_message(wparam).unwrap_or_else(|| state.tabs.active_id())
             } else {
                 state.tabs.active_id()
@@ -211,47 +209,8 @@ unsafe fn dispatch_window_message(
             }
             0
         }
-        WM_APP_PAGE_LOADED => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                let message = Box::from_raw(lparam as *mut LoadMessage);
-                if state.tabs.contains(id) {
-                    state.route_navigation_message(id, *message);
-                }
-            } else {
-                drop(Box::from_raw(lparam as *mut LoadMessage));
-            }
-            0
-        }
-        WM_APP_RENDERER_FETCH_COMPLETE => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                let completion =
-                    Box::from_raw(lparam as *mut renderer_fetch::RendererFetchCompletion);
-                if state.tabs.contains(id) {
-                    state.route_renderer_fetch_completion(id, *completion);
-                }
-            } else {
-                drop(Box::from_raw(
-                    lparam as *mut renderer_fetch::RendererFetchCompletion,
-                ));
-            }
-            0
-        }
-        WM_APP_RENDERER_LAUNCHED => {
-            if let Some(id) = TabId::from_message(wparam) {
-                if reroute_tab_message(state, id, message, wparam, lparam) {
-                    return 0;
-                }
-                if state.tabs.contains(id) {
-                    state.finish_renderer_launch(id);
-                }
-            }
-            0
+        message if completions::is_tab_completion(message) => {
+            completions::dispatch(state, message, wparam, lparam)
         }
         WM_APP_TASK_CLOSED => {
             state.task_window = null_mut();

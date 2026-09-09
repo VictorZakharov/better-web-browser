@@ -1,6 +1,7 @@
 //! Nonblocking ownership of one sandboxed renderer lifecycle per browser tab.
 
 mod events;
+pub(super) mod notifications;
 
 use super::tabs::{IdentifiedTab, TabId};
 use super::*;
@@ -209,6 +210,7 @@ impl BrowserState {
             }
         };
         let snapshot = session.snapshot();
+        self.watch_renderer_events(id, &session);
         let (title, restarted) = {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;
@@ -306,6 +308,10 @@ impl BrowserState {
                 || tab.renderer_input_poll_budget > 0
                 || !tab.pending_renderer_inputs.is_empty()
                 || tab.renderer_next_timer.is_some()
+                || tab
+                    .renderer_session
+                    .as_ref()
+                    .is_some_and(|s| s.pending_events() > 0)
         }) {
             ACTIVE_RENDERER_MONITOR_INTERVAL_MS
         } else {
