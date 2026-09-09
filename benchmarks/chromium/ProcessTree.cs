@@ -60,6 +60,29 @@ internal static class ProcessTree
     private static HashSet<int> Descendants(int rootProcessId)
     {
         var parents = SnapshotParentMap();
+        var started = new Dictionary<int, long?>();
+        long? CreationTime(int id)
+        {
+            if (started.TryGetValue(id, out var cached)) return cached;
+            try
+            {
+                using var process = Process.GetProcessById(id);
+                return started[id] = process.StartTime.ToUniversalTime().Ticks;
+            }
+            catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                return started[id] = null;
+            }
+        }
+        return SelectDescendants(rootProcessId, parents, CreationTime);
+    }
+
+    // Windows parent IDs outlive their parent and can point to a recycled, unrelated PID.
+    // Never attribute an older process (or its descendants) to a new benchmark process.
+    // https://devblogs.microsoft.com/oldnewthing/20200122-00/?p=103355
+    internal static HashSet<int> SelectDescendants(
+        int rootProcessId, IReadOnlyDictionary<int, int> parents, Func<int, long?> creationTime)
+    {
         var result = new HashSet<int> { rootProcessId };
         var changed = true;
         while (changed)
@@ -67,7 +90,10 @@ internal static class ProcessTree
             changed = false;
             foreach (var (processId, parentId) in parents)
             {
-                if (!result.Contains(processId) && result.Contains(parentId))
+                if (!result.Contains(processId) && result.Contains(parentId)
+                    && creationTime(parentId) is { } parentStarted
+                    && creationTime(processId) is { } childStarted
+                    && childStarted >= parentStarted)
                 {
                     result.Add(processId);
                     changed = true;
