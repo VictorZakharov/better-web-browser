@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 pub(super) enum EngineModuleEvaluation {
+    Ready,
     Missing(Vec<String>),
     Fulfilled,
     Rejected(String),
@@ -23,6 +24,7 @@ pub(super) fn evaluate(
     root_url: &str,
     root_source: &str,
     loaded_sources: &HashMap<String, String>,
+    prepare_only: bool,
 ) -> JsResult<EngineModuleEvaluation> {
     let context = persistent_context.clone();
     v8::scope!(let scope, isolate);
@@ -30,19 +32,31 @@ pub(super) fn evaluate(
     let scope = &mut v8::ContextScope::new(scope, context);
     v8::tc_scope!(let tc, scope);
 
-    let mut sources = loaded_sources.clone();
-    sources.insert(root_url.to_string(), root_source.to_string());
-    let registry = Rc::new(ModuleRegistry::default());
+    // A realm owns its module map. Retain compiled records across fetch completions and roots;
+    // re-creating this map would recompile graphs and evaluate shared dependencies twice.
+    let registry = context.get_slot::<ModuleRegistry>().unwrap_or_else(|| {
+        let registry = Rc::new(ModuleRegistry::default());
+        context.set_slot(Rc::clone(&registry));
+        registry
+    });
     let mut queue = VecDeque::from([root_url.to_string()]);
     let mut queued = HashSet::from([root_url.to_string()]);
     let mut missing = Vec::new();
 
     while let Some(url) = queue.pop_front() {
-        if registry.by_url.borrow().contains_key(&url) {
-            continue;
-        }
-        let source = sources.get(&url).expect("queued module source is present");
-        let module = compile_module(tc, &url, source)?;
+        let cached = registry.by_url.borrow().get(&url).cloned();
+        let module = if let Some(cached) = cached {
+            v8::Local::new(tc, cached)
+        } else {
+            let source = if url == root_url {
+                root_source
+            } else {
+                loaded_sources
+                    .get(&url)
+                    .expect("queued module source is present")
+            };
+            compile_module(tc, &url, source)?
+        };
         let script_id = module
             .script_id()
             .ok_or_else(|| type_error("compiled source-text module has no script ID"))?;
@@ -66,7 +80,10 @@ pub(super) fn evaluate(
             }
             let specifier = request.get_specifier().to_rust_string_lossy(tc);
             let dependency = resolve_specifier(&url, &specifier).map_err(type_error)?;
-            if !sources.contains_key(&dependency) {
+            if dependency != root_url
+                && !loaded_sources.contains_key(&dependency)
+                && !registry.by_url.borrow().contains_key(&dependency)
+            {
                 if !missing.contains(&dependency) {
                     missing.push(dependency);
                 }
@@ -79,7 +96,9 @@ pub(super) fn evaluate(
     if !missing.is_empty() {
         return Ok(EngineModuleEvaluation::Missing(missing));
     }
-    context.set_slot(Rc::clone(&registry));
+    if prepare_only {
+        return Ok(EngineModuleEvaluation::Ready);
+    }
     let root = registry
         .by_url
         .borrow()
@@ -87,9 +106,11 @@ pub(super) fn evaluate(
         .cloned()
         .ok_or_else(|| type_error("root module was not compiled"))?;
     let root = v8::Local::new(tc, root);
-    root.instantiate_module(tc, resolve_module)
-        .filter(|instantiated| *instantiated)
-        .ok_or_else(|| caught_error(tc, "instantiate module graph"))?;
+    if root.get_status() == v8::ModuleStatus::Uninstantiated {
+        root.instantiate_module(tc, resolve_module)
+            .filter(|instantiated| *instantiated)
+            .ok_or_else(|| caught_error(tc, "instantiate module graph"))?;
+    }
     let promise = root
         .evaluate(tc)
         .and_then(|value| v8::Local::<v8::Promise>::try_from(value).ok())

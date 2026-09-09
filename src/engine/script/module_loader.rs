@@ -15,7 +15,18 @@ impl WebModuleLoader {
     }
 
     pub(super) fn add_source(&self, url: String, source: String) -> bool {
-        self.sources.borrow_mut().insert(url, source).is_none()
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.sources.borrow_mut().entry(url)
+        {
+            entry.insert(source);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn contains(&self, url: &str) -> bool {
+        self.sources.borrow().contains_key(url)
     }
 
     pub(super) fn sources(&self) -> HashMap<String, String> {

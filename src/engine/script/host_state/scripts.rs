@@ -56,8 +56,18 @@ impl HostState {
     }
 
     pub(in crate::engine::script) fn mark_script_started(&mut self, node: &NodeRef) {
+        self.prepared_script_external
+            .entry(node.id())
+            .or_insert_with(|| node.attr("src").is_some());
         if let Some(element) = node.element() {
             element.script_started.set(true);
         }
+    }
+
+    pub(in crate::engine::script) fn script_is_external(&self, node: &NodeRef) -> bool {
+        self.prepared_script_external
+            .get(&node.id())
+            .copied()
+            .unwrap_or_else(|| node.attr("src").is_some())
     }
 }

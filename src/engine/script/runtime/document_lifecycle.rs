@@ -19,13 +19,16 @@ enum DocumentTask {
 pub(in crate::engine::script) struct DocumentLoad {
     readiness: Readiness,
     parsing_finished: bool,
+    deferred_scripts_pending: bool,
     external_resources_pending: bool,
 }
 
 impl DocumentLoad {
     fn task(&self, scripts_pending: bool) -> Option<DocumentTask> {
         match self.readiness {
-            Readiness::Interactive if self.parsing_finished => Some(DocumentTask::DomContentLoaded),
+            Readiness::Interactive if self.parsing_finished && !self.deferred_scripts_pending => {
+                Some(DocumentTask::DomContentLoaded)
+            }
             Readiness::DomContentLoaded if !self.external_resources_pending && !scripts_pending => {
                 Some(DocumentTask::WindowLoad)
             }
@@ -114,6 +117,7 @@ impl ScriptRuntime {
         host.pending_document_write.clear();
         host.pending_dynamic_scripts.clear();
         host.pending_module_evaluations.clear();
+        host.prepared_script_external.clear();
         host.completed_module_evaluations.clear();
         host.pending_fetch_actions.clear();
         host.pending_worker_actions.clear();
@@ -132,6 +136,10 @@ impl ScriptRuntime {
             .is_some_and(|document| document.id() == host.document.id())
     }
 
+    pub(crate) fn prepared_script_is_external(&self, node: &NodeRef) -> bool {
+        self.host.borrow().script_is_external(node)
+    }
+
     pub(crate) fn execute_initial_before_document_completion(
         &mut self,
         scripts: &[ScriptInput],
@@ -140,7 +148,7 @@ impl ScriptRuntime {
         self.execute_initial_impl(scripts, module_loader, true, false)
     }
 
-    /// Signals EOF and completed deferred-script invocation; DCL/load run in later tasks.
+    /// Signals EOF; the embedder's deferred-script gate still precedes the DCL task.
     pub(crate) fn finish_document_lifecycle(&mut self) -> ScriptOutcome {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
@@ -163,6 +171,13 @@ impl ScriptRuntime {
             .borrow_mut()
             .document_load
             .external_resources_pending = pending;
+    }
+
+    pub(crate) fn set_deferred_scripts_pending(&mut self, pending: bool) {
+        self.host
+            .borrow_mut()
+            .document_load
+            .deferred_scripts_pending = pending;
     }
 
     pub(crate) fn document_load_finished(&self) -> bool {

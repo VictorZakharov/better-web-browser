@@ -75,7 +75,14 @@ pub(super) fn execute_inner(
         {
             runtime::document_lifecycle::enter_interactive(context, host, &mut outcome);
         }
-        if total_bytes.saturating_add(script.code.len()) > MAX_PAGE_SCRIPT_BYTES {
+        let added_bytes = if script.kind == ScriptKind::Module
+            && host.borrow().module_loader.contains(&script.source_url)
+        {
+            0
+        } else {
+            script.code.len()
+        };
+        if total_bytes.saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
@@ -83,7 +90,7 @@ pub(super) fn execute_inner(
             ));
             break;
         }
-        *total_bytes += script.code.len();
+        *total_bytes += added_bytes;
         evaluate_script(
             context,
             host,
@@ -222,7 +229,14 @@ pub(super) fn execute_additional_inner(
         state.begin_task();
     }
     for script in scripts {
-        if total_bytes.saturating_add(script.code.len()) > MAX_PAGE_SCRIPT_BYTES {
+        let added_bytes = if script.kind == ScriptKind::Module
+            && host.borrow().module_loader.contains(&script.source_url)
+        {
+            0
+        } else {
+            script.code.len()
+        };
+        if total_bytes.saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
@@ -230,7 +244,7 @@ pub(super) fn execute_additional_inner(
             ));
             continue;
         }
-        *total_bytes += script.code.len();
+        *total_bytes += added_bytes;
         evaluate_script(
             context,
             host,

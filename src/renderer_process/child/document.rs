@@ -1,7 +1,6 @@
 //! Renderer-owned document, DOM, JavaScript realm, decoded resources, and layout state.
 
 mod accessibility;
-mod async_scripts;
 mod diagnostics;
 mod dynamic_scripts;
 mod fetch;
@@ -11,6 +10,7 @@ mod interaction;
 mod load;
 mod media;
 mod media_environment;
+mod parser_scripts;
 mod reporting;
 mod resources;
 mod scheduling;
@@ -70,7 +70,7 @@ pub(super) struct DocumentRuntime {
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,
     workers: RendererWorkers,
-    async_scripts: async_scripts::AsyncScripts,
+    parser_scripts: parser_scripts::ParserScripts,
     pending_dynamic_script_fetch: Vec<PendingDynamicScriptFetch>,
     pending_resource_preloads: Vec<PendingResourceFetch>,
     resource_render_pending: bool,

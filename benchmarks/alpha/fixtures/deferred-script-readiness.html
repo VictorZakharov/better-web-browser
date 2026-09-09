@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Deferred scripts pending</title>
+<style>
+body { margin: 32px; color: #142334; background: #f4f6fa; font: 20px sans-serif; }
+.stage { padding: 24px; margin: 12px 0; background: #ddd; }
+#content { background: #b8e6c1; }
+</style>
+<h1>Rendering can proceed while deferred scripts download</h1>
+<div class="stage" id="content">Initial document content is available</div>
+<div class="stage" id="fast">Async content pending</div>
+<div class="stage" id="complete">Ordered deferred scripts pending</div>
+<p id="trace">Waiting for scripts.</p>
+<script>
+window.started = performance.now(); window.trace = []; window.times = {};
+window.record = name => {
+  trace.push(name); times[name] = Math.round(performance.now() - started);
+  document.getElementById('trace').textContent = trace.join(' | ');
+};
+document.addEventListener('DOMContentLoaded', () => record('DCL'));
+window.addEventListener('load', () => {
+  record('LOAD');
+  const expected = 'async|first-interactive|first-micro|first-load|dependency|module|module-load|tail|DCL|LOAD';
+  const passed = trace.join('|') === expected;
+  const panel = document.getElementById('complete');
+  panel.textContent = passed ? 'Deferred order and lifecycle verified' : 'Deferred contract FAILED';
+  panel.style.background = passed ? '#b8e6c1' : '#f5bbbb';
+  panel.setAttribute('data-contract', passed ? 'pass' : 'fail');
+  panel.setAttribute('data-times', JSON.stringify(times));
+  document.title = passed ? 'Deferred scripts complete' : 'Deferred scripts FAILED';
+  console.log('DEFERRED_READINESS ' + JSON.stringify(times));
+});
+</script>
+<script id="first" defer src="deferred-first.js?delay_ms=2000"></script>
+<script id="module" type="module" src="deferred-module.js"></script>
+<script type="module">record('tail');</script>
+<script async src="deferred-fast.js?delay_ms=100"></script>
+<script>
+document.getElementById('first').onload = () => record('first-load');
+document.getElementById('module').onload = () => record('module-load');
+</script>

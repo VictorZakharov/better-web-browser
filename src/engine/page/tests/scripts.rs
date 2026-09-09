@@ -46,7 +46,7 @@ fn discovers_module_script_fetch_policy() {
     assert_eq!(page.scripts.len(), 1);
     assert_eq!(page.scripts[0].kind, ScriptKind::Module);
     assert_eq!(page.scripts[0].fetch_options, options);
-    assert!(page.scripts[0].blocks_first_paint);
+    assert!(!page.scripts[0].blocks_first_paint);
     assert!(page.scripts[0].executes_after_parsing);
     assert!(page.resources.contains(&PageResource::Script {
         url: "https://example.com/app.js".into(),

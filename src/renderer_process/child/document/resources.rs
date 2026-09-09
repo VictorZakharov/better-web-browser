@@ -95,6 +95,9 @@ impl DocumentRuntime {
         if self.dispatch_cached_resource_events()? {
             self.resource_render_pending = true;
         }
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            self.parser_scripts.prepare_modules(runtime);
+        }
         let mut seen = HashSet::new();
         let resources = self
             .page
@@ -102,7 +105,7 @@ impl DocumentRuntime {
             .iter()
             .filter(|resource| is_presentational_resource(resource))
             .cloned()
-            .chain(self.async_scripts.resources())
+            .chain(self.parser_scripts.resources())
             .filter(|resource| !self.loaded_resources.contains(resource))
             .filter(|resource| {
                 !self
@@ -130,6 +133,7 @@ impl DocumentRuntime {
     ) -> Result<Option<crate::renderer_protocol::RendererRuntimeUpdate>, String> {
         self.finish_ready_dynamic_scripts(connection)?;
         let changes = self.finish_ready_resource_preloads(connection)?;
+        self.start_presentational_preloads(connection)?;
         let render = changes.as_ref().is_some_and(|changes| changes.render);
         let style = changes.as_ref().is_some_and(|changes| changes.style);
         let dynamic_ready = self
@@ -141,7 +145,7 @@ impl DocumentRuntime {
             .script_runtime
             .as_ref()
             .is_some_and(ScriptRuntime::has_ready_document_task);
-        if !render && !self.async_scripts.has_ready() && !dynamic_ready && !document_ready {
+        if !render && !self.parser_scripts.has_ready() && !dynamic_ready && !document_ready {
             return Ok(None);
         }
         // A network burst commonly completes several images at once. Rendering from this

@@ -19,7 +19,7 @@ impl DocumentRuntime {
             let label = resource_label(&resource);
             if require_authoritative_match
                 && !self.page.resources.contains(&resource)
-                && !self.async_scripts.contains(&resource)
+                && !self.parser_scripts.contains(&resource)
             {
                 continue;
             }
@@ -92,8 +92,8 @@ impl DocumentRuntime {
                         retained |= self.dispatch_resource_event(&event_resource, "error")?;
                         continue;
                     }
-                    let prepared = self.async_scripts.contains(&event_resource);
-                    self.async_scripts.complete(&event_resource, Some(&code));
+                    let prepared = self.parser_scripts.contains(&event_resource);
+                    self.parser_scripts.complete(&event_resource, Some(&code));
                     (self.page.add_script(&url, kind, fetch_options, code) || prepared)
                         .then_some(())
                         .ok_or_else(|| "script was not installed".to_string())

@@ -117,9 +117,9 @@ pub(super) fn discover_resources(
             .and_then(|source| resolve_url(base_url, &source))
         {
             let is_async = node.attr("async").is_some();
-            let blocks_first_paint = !is_async;
             let executes_after_parsing =
                 !is_async && (kind == script::ScriptKind::Module || node.attr("defer").is_some());
+            let blocks_first_paint = !is_async && !executes_after_parsing;
             let resource = PageResource::Script {
                 url: url.clone(),
                 kind,
@@ -140,14 +140,16 @@ pub(super) fn discover_resources(
         } else {
             let source_url = format!("{}#inline-script-{}", base_url, scripts.len() + 1);
             let code = node.text_content();
+            let executes_after_parsing =
+                kind == script::ScriptKind::Module && node.attr("async").is_none();
             scripts.push(PageScript {
                 node,
                 source_url,
                 code: Some(code),
                 kind,
                 fetch_options,
-                blocks_first_paint: true,
-                executes_after_parsing: kind == script::ScriptKind::Module,
+                blocks_first_paint: kind == script::ScriptKind::Classic,
+                executes_after_parsing,
             });
         }
     }
