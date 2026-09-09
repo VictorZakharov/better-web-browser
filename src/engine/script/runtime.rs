@@ -9,6 +9,7 @@ use super::timer_execution::{TimerSlice, settle_timer_slice};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+mod completions;
 mod document_lifecycle;
 mod geometry;
 mod memory;
@@ -151,16 +152,34 @@ impl ScriptRuntime {
     }
 
     pub fn pending_dynamic_script_requests(&self) -> Vec<DynamicScriptRequest> {
+        self.host.borrow().pending_dynamic_scripts.requests()
+    }
+
+    pub fn take_dynamic_script_requests(&mut self) -> Vec<DynamicScriptRequest> {
         self.host
-            .borrow()
+            .borrow_mut()
             .pending_dynamic_scripts
-            .iter()
-            .map(|script| DynamicScriptRequest {
-                source_url: script.source_url.clone(),
-                kind: ScriptKind::Classic,
-                fetch_options: script.fetch_options,
-            })
-            .collect()
+            .take_requests()
+    }
+
+    /// Network completion publishes readiness; it never executes JavaScript reentrantly.
+    pub fn complete_dynamic_script(&mut self, node: NodeId, result: Result<String, String>) {
+        if self.is_active() {
+            self.host.borrow_mut().pending_dynamic_scripts.complete(
+                node,
+                result,
+                self.total_script_bytes,
+            );
+        }
+    }
+
+    pub fn has_runnable_dynamic_scripts(&self) -> bool {
+        let host = self.host.borrow();
+        host.pending_dynamic_scripts.has_ready() || host.pending_dynamic_scripts.has_unrequested()
+    }
+
+    pub fn has_ready_dynamic_scripts(&self) -> bool {
+        self.host.borrow().pending_dynamic_scripts.has_ready()
     }
 
     /// Advances the realm clock without selecting a timer task for execution.
@@ -256,7 +275,10 @@ impl ScriptRuntime {
             let state = host.borrow();
             state.timers.now().saturating_add(advance)
         };
-        let has_dynamic_script = !host.borrow().pending_dynamic_scripts.is_empty();
+        let has_dynamic_script = max_callbacks > 0
+            && (host.borrow().pending_dynamic_scripts.has_ready()
+                || (dynamic_script_loader.is_some()
+                    && !host.borrow().pending_dynamic_scripts.is_empty()));
         let has_ready_timer = {
             let mut state = host.borrow_mut();
             state
@@ -289,6 +311,7 @@ impl ScriptRuntime {
             } else {
                 let mut state = host.borrow_mut();
                 state.timers.advance_to(horizon);
+                state.begin_task();
                 drop(state);
                 drain_one_dynamic_script(
                     context,
@@ -331,117 +354,6 @@ impl ScriptRuntime {
                 default_allowed: false,
             },
         }
-    }
-
-    /// Delivers one asynchronous Fetch result into this document's retained realm.
-    pub fn complete_fetch_with_loader(
-        &mut self,
-        id: u32,
-        result: Result<crate::fetch::FetchResponse, crate::fetch::FetchError>,
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> ScriptOutcome {
-        if !self.initialized {
-            return lifecycle_error("the document's initial scripts have not executed");
-        }
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut dynamic_script_loader = dynamic_script_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let mut outcome = ScriptOutcome::default();
-            let callback_started = Instant::now();
-            if let Err(error) = super::network::deliver_completion(context, id, result) {
-                outcome
-                    .errors
-                    .push(format!("Fetch completion callback: {error}"));
-            }
-            super::module_lifecycle::drain(context, &host, &mut outcome);
-            outcome.record_timing("JavaScript Fetch completion", callback_started.elapsed());
-            drain_one_dynamic_script(
-                context,
-                &host,
-                &mut outcome,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-            );
-            outcome
-        }));
-        self.finish_guarded_run(result)
-    }
-
-    /// Delivers one response-head, body-chunk, or terminal Fetch event into this realm.
-    pub fn deliver_fetch_event_with_loader(
-        &mut self,
-        id: u32,
-        event: super::ScriptFetchEvent,
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> ScriptOutcome {
-        if !self.initialized {
-            return lifecycle_error("the document's initial scripts have not executed");
-        }
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut dynamic_script_loader = dynamic_script_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let mut outcome = ScriptOutcome::default();
-            let callback_started = Instant::now();
-            if let Err(error) = super::network::deliver_event(context, id, event) {
-                outcome
-                    .errors
-                    .push(format!("Fetch stream callback: {error}"));
-            }
-            super::module_lifecycle::drain(context, &host, &mut outcome);
-            outcome.record_timing("JavaScript Fetch event", callback_started.elapsed());
-            drain_one_dynamic_script(
-                context,
-                &host,
-                &mut outcome,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-            );
-            outcome
-        }));
-        self.finish_guarded_run(result)
-    }
-
-    /// Delivers a dedicated-worker message or error into this document's retained realm.
-    pub fn complete_worker_event_with_loader(
-        &mut self,
-        id: u32,
-        event: Result<String, String>,
-        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
-    ) -> ScriptOutcome {
-        if !self.initialized {
-            return lifecycle_error("the document's initial scripts have not executed");
-        }
-        let Some(context) = self.context.as_deref_mut() else {
-            return inactive_runtime_outcome();
-        };
-        let host = Rc::clone(&self.host);
-        let mut dynamic_script_loader = dynamic_script_loader;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let mut outcome = ScriptOutcome::default();
-            let callback_started = Instant::now();
-            if let Err(error) = super::workers::deliver_worker_event(context, id, event) {
-                outcome
-                    .errors
-                    .push(format!("Worker event callback: {error}"));
-            }
-            super::module_lifecycle::drain(context, &host, &mut outcome);
-            outcome.record_timing("JavaScript Worker event", callback_started.elapsed());
-            drain_one_dynamic_script(
-                context,
-                &host,
-                &mut outcome,
-                &mut dynamic_script_loader,
-                &mut self.total_script_bytes,
-            );
-            outcome
-        }));
-        self.finish_guarded_run(result)
     }
 
     /// Cancels queued work and tears down the document's healthy JavaScript context.

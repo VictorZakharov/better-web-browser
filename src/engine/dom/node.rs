@@ -166,6 +166,9 @@ pub struct ElementData {
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
     pub hovered: Cell<bool>,
+    /// HTML script flags belong to the element, including across adoption and cloning.
+    pub(crate) script_force_async: Cell<bool>,
+    pub(crate) script_started: Cell<bool>,
 }
 
 #[derive(Debug)]

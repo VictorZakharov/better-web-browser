@@ -1,114 +1,108 @@
-//! Concurrent fetch ownership for scripts inserted by the retained document runtime.
+//! Nonblocking Fetch ownership for dynamically prepared external classic scripts.
 
 use super::fetch::page_resource_request;
-use super::reporting::merge_outcome;
-use super::resources::{decode_script_response, fetch_script_source};
-use crate::engine::{
-    DynamicScriptRequest, PageResource, ScriptFetchOptions, ScriptKind, ScriptOutcome,
-    ScriptRuntime,
-};
-use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
-use crate::renderer_protocol::DocumentId;
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use super::resources::decode_script_response;
+use super::*;
+use crate::engine::dom::NodeId;
+use crate::renderer_process::child::connection::PendingFetchBatch;
 
-const DYNAMIC_TASK_WALL_SLICE: Duration = Duration::from_millis(25);
+struct Owners {
+    resource: PageResource,
+    nodes: Vec<NodeId>,
+}
 
 pub(super) struct PendingDynamicScriptFetch {
     batch: PendingFetchBatch,
-    by_request: HashMap<u64, DynamicScriptRequest>,
+    by_request: HashMap<u64, Owners>,
 }
 
-pub(super) fn start_dynamic_script_preloads(
-    connection: &mut ChildConnection,
-    document: DocumentId,
-    scripts: Vec<DynamicScriptRequest>,
-) -> Result<Option<PendingDynamicScriptFetch>, String> {
-    let mut by_request = HashMap::with_capacity(scripts.len());
-    let requests = scripts
-        .into_iter()
-        .map(|script| {
-            let request_id = connection.allocate_request_id();
+impl DocumentRuntime {
+    pub(super) fn start_dynamic_script_fetches(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        let Some(runtime) = self.script_runtime.as_mut() else {
+            return Ok(());
+        };
+        let mut requests = Vec::new();
+        let mut by_request: HashMap<u64, Owners> = HashMap::new();
+        for script in runtime.take_dynamic_script_requests() {
             let resource = PageResource::Script {
-                url: script.source_url.clone(),
+                url: script.source_url,
                 kind: script.kind,
                 fetch_options: script.fetch_options,
             };
-            by_request.insert(request_id, script);
-            page_resource_request(request_id, document, &resource)
-        })
-        .collect();
-    let Some(batch) = connection.start_fetch_batch(document, requests)? else {
-        return Ok(None);
-    };
-    Ok(Some(PendingDynamicScriptFetch { batch, by_request }))
-}
-
-pub(super) fn finish_dynamic_script_source(
-    pending: &mut Option<PendingDynamicScriptFetch>,
-    connection: &mut ChildConnection,
-    document: DocumentId,
-    url: &str,
-    kind: ScriptKind,
-    fetch_options: ScriptFetchOptions,
-) -> Result<String, String> {
-    let Some(mut active) = pending.take() else {
-        return fetch_script_source(connection, document, url, kind, fetch_options);
-    };
-    let request_id = active.by_request.iter().find_map(|(request_id, script)| {
-        (script.source_url == url && script.kind == kind && script.fetch_options == fetch_options)
-            .then_some(*request_id)
-    });
-    let Some(request_id) = request_id else {
-        *pending = Some(active);
-        return fetch_script_source(connection, document, url, kind, fetch_options);
-    };
-
-    active.by_request.remove(&request_id);
-    let (selected, remaining) = active.batch.split(HashSet::from([request_id]))?;
-    if let Some(batch) = remaining {
-        *pending = Some(PendingDynamicScriptFetch {
-            batch,
-            by_request: active.by_request,
-        });
+            // Share in-flight bytes without conflating each element's execution or events.
+            let owners = self
+                .pending_dynamic_script_fetch
+                .iter_mut()
+                .flat_map(|pending| pending.by_request.values_mut())
+                .chain(by_request.values_mut())
+                .find(|owners| owners.resource == resource);
+            if let Some(owners) = owners {
+                owners.nodes.push(script.node);
+                continue;
+            }
+            let id = connection.allocate_request_id();
+            requests.push(page_resource_request(id, self.id, &resource));
+            by_request.insert(
+                id,
+                Owners {
+                    resource,
+                    nodes: vec![script.node],
+                },
+            );
+        }
+        if let Some(batch) = connection.start_fetch_batch(self.id, requests)? {
+            self.pending_dynamic_script_fetch
+                .push(PendingDynamicScriptFetch { batch, by_request });
+        }
+        Ok(())
     }
-    let response = connection
-        .finish_fetch_batch(selected.expect("a selected dynamic script request exists"))?
-        .pop()
-        .ok_or_else(|| "browser omitted a dynamic script response".to_string())?;
-    decode_script_response(response, kind)
+
+    pub(super) fn finish_ready_dynamic_scripts(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        for mut pending in std::mem::take(&mut self.pending_dynamic_script_fetch) {
+            for response in connection.take_ready_fetch_batch(&mut pending.batch)? {
+                let owners = pending
+                    .by_request
+                    .remove(&response.head.request_id)
+                    .ok_or_else(|| "dynamic script response has no prepared owner".to_string())?;
+                let result = decode_script_response(response, ScriptKind::Classic);
+                if let Some(runtime) = self.script_runtime.as_mut() {
+                    for node in owners.nodes {
+                        runtime.complete_dynamic_script(node, result.clone());
+                    }
+                }
+            }
+            if !pending.batch.is_empty() {
+                self.pending_dynamic_script_fetch.push(pending);
+            }
+        }
+        Ok(())
+    }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn advance_dynamic_script_slice(
     runtime: &mut ScriptRuntime,
-    pending: &mut Option<PendingDynamicScriptFetch>,
-    connection: &mut ChildConnection,
-    document: DocumentId,
-    document_root: crate::engine::dom::NodeId,
+    document_root: NodeId,
     elapsed: Duration,
     max_tasks: usize,
-    script_fetch_time: &mut Duration,
 ) -> ScriptOutcome {
-    let slice_started = Instant::now();
+    let started = Instant::now();
     let mut aggregate = ScriptOutcome::default();
-    let mut task_advance = elapsed;
+    let mut advance = elapsed;
     for _ in 0..max_tasks {
-        if !runtime.has_pending_dynamic_scripts() {
-            break;
-        }
-        let mut loader = |url: &str, kind, options| {
-            let started = Instant::now();
-            let result =
-                finish_dynamic_script_source(pending, connection, document, url, kind, options);
-            *script_fetch_time += started.elapsed();
-            result
-        };
-        let outcome = runtime.advance_time_with_loader(task_advance, 1, Some(&mut loader));
-        task_advance = Duration::ZERO;
-        let should_stop = outcome.runtime_stopped || outcome.navigation_url.is_some();
+        let outcome = runtime.advance_time(advance, 1);
+        advance = Duration::ZERO;
+        let stopped = outcome.runtime_stopped || outcome.navigation_url.is_some();
         merge_outcome(&mut aggregate, outcome, document_root);
-        if should_stop || slice_started.elapsed() >= DYNAMIC_TASK_WALL_SLICE {
+        if stopped
+            || !runtime.has_ready_dynamic_scripts()
+            || started.elapsed() >= Duration::from_millis(25)
+        {
             break;
         }
     }

@@ -9,6 +9,23 @@ pub(super) fn attribute_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "scriptForceAsync" => JsValue::from(
+            state
+                .node(argument_id(args, 1))
+                .and_then(|node| {
+                    node.element()
+                        .map(|element| element.script_force_async.get())
+                })
+                .unwrap_or(false),
+        ),
+        "scriptClearForceAsync" => {
+            if let Some(node) = state.node(argument_id(args, 1))
+                && let Some(element) = node.element()
+            {
+                element.script_force_async.set(false);
+            }
+            JsValue::undefined()
+        }
         "attrGet" => {
             let name = argument_string(args, 2)?;
             state
@@ -209,6 +226,12 @@ fn record_attribute_mutation(
     state.record_mutation_with_render(node, MutationKind::Attribute(name), requires_render);
     if let Some(node) = node {
         state.diagnose(format!("mutate {name} on {}", node_label(node)));
+        if queue_dynamic_script
+            && name == "async"
+            && let Some(element) = node.element()
+        {
+            element.script_force_async.set(false);
+        }
         if queue_dynamic_script && name.eq_ignore_ascii_case("src") {
             state.queue_dynamic_script(node);
         }

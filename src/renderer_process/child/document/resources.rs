@@ -123,10 +123,15 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<Option<crate::renderer_protocol::RendererRuntimeUpdate>, String> {
-        let Some(changes) = self.finish_ready_resource_preloads(connection)? else {
-            return Ok(None);
-        };
-        if !changes.render && !self.async_scripts.has_ready() {
+        self.finish_ready_dynamic_scripts(connection)?;
+        let changes = self.finish_ready_resource_preloads(connection)?;
+        let render = changes.as_ref().is_some_and(|changes| changes.render);
+        let style = changes.as_ref().is_some_and(|changes| changes.style);
+        let dynamic_ready = self
+            .script_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.has_ready_dynamic_scripts());
+        if !render && !self.async_scripts.has_ready() && !dynamic_ready {
             return Ok(None);
         }
         // A network burst commonly completes several images at once. Rendering from this
@@ -134,8 +139,8 @@ impl DocumentRuntime {
         // prevents the renderer from reading the remaining response messages. Schedule an
         // immediate rendering checkpoint instead; messages already in the pipe are then handled
         // first and all completed resources share one layout.
-        self.resource_render_pending |= changes.render;
-        self.resource_style_refresh_pending |= changes.style;
+        self.resource_render_pending |= render;
+        self.resource_style_refresh_pending |= style;
         Ok(Some(crate::renderer_protocol::RendererRuntimeUpdate {
             document: self.id,
             clock_advanced: false,

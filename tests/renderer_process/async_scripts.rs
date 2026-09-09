@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 const HTML: &str = include_str!("../../benchmarks/alpha/fixtures/async-script-readiness.html");
 const FAST: &str = include_str!("../../benchmarks/alpha/fixtures/async-fast.js");
 const SLOW: &str = include_str!("../../benchmarks/alpha/fixtures/async-slow.js");
+#[path = "async_scripts/dynamic.rs"]
+mod dynamic;
 
 #[test]
 fn async_scripts_execute_ready_elements_and_fail_each_owner_without_waiting_for_slow_fetch() {
@@ -207,6 +209,12 @@ impl Driver {
                 RendererEvent::RuntimeUpdate(update) => update.next_timer_micros,
                 RendererEvent::Presentation(presentation) => presentation.next_timer_micros,
                 RendererEvent::Diagnostic { .. } => continue,
+                RendererEvent::FetchBatch { requests, .. } => {
+                    for request in requests {
+                        self.requests.insert(request.head.url.clone(), request);
+                    }
+                    continue;
+                }
                 event => panic!("unexpected event while waiting for idle: {event:?}"),
             };
             if next.is_none() {

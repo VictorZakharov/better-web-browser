@@ -10,6 +10,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/nodes.js"),
     include_str!("bootstrap/attributes.js"),
     include_str!("bootstrap/elements.js"),
+    include_str!("bootstrap/script_element.js"),
     include_str!("bootstrap/metadata.js"),
     include_str!("bootstrap/cssom_view.js"),
     include_str!("bootstrap/hyperlinks.js"),
