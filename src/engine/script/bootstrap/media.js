@@ -353,7 +353,13 @@
                 element.dispatchEvent(markTrusted(new Event('progress')));
                 return true;
             case 'media-error':
+                pending?.reject(new DOMException('Media decode failed', 'NotSupportedError'));
                 notifyMediaSourceError(element);
+                if (!state.error) {
+                    state.error = new MediaError(MediaError.MEDIA_ERR_DECODE, 'Media decode failed');
+                    state.networkState = HTMLMediaElement.NETWORK_IDLE;
+                    queueMediaEvent(element, 'error');
+                }
                 return false;
             case 'not-allowed':
                 pending?.reject(new DOMException('Audible playback requires user activation', 'NotAllowedError'));

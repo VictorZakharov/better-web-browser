@@ -138,6 +138,8 @@
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
         }
         __prepareUpdate() {
+            if (this.__parent.__element && mediaStateFor(this.__parent.__element).error)
+                throw new DOMException('The media element has an error', 'InvalidStateError');
             if (this.__parent.readyState === 'closed')
                 throw new DOMException('The MediaSource is closed', 'InvalidStateError');
             if (this.__parent.readyState === 'ended') this.__parent.__reopen();
@@ -147,7 +149,9 @@
             const materialized = this.__materialize();
             const ready = materialized.slice(0, this.__completeBytes);
             const pending = materialized.slice(this.__completeBytes);
-            if (!this.__initializationBytes && this.__initializationLength > 0)
+            // MSE initialization-segment receipt replaces the track description, including
+            // AVC SPS/PPS. Later media-only appends must use the newest configuration.
+            if (this.__initializationLength > 0)
                 this.__initializationBytes = ready.slice(0, this.__initializationLength);
             const transfer = this.__initializationBytes && this.__initializationLength === 0
                 ? concatMediaBytes([this.__initializationBytes, ready])

@@ -224,8 +224,8 @@ impl Playback {
         &mut self,
         source_id: u64,
         frame_id: u64,
-        frame_writer: &mut DecodedFrameWriter<File>,
-        writer: &mut MediaFrameWriter<File>,
+        frame_writer: &mut DecodedFrameWriter<impl std::io::Write>,
+        writer: &mut MediaFrameWriter<impl std::io::Write>,
     ) -> Result<(), String> {
         if self.pending.is_some() {
             return Err(
@@ -249,17 +249,32 @@ impl Playback {
                 "stale media frame generation {frame_id}; expected {expected_frame_id}"
             ));
         }
-        let Some(video) = playback.next_frame()? else {
+        let decoded = playback.next_frame();
+        self.last_frame_id = frame_id;
+        let video = match decoded {
+            Ok(video) => video,
+            Err(error) => {
+                // Codec rejection is scoped to this source, not the control protocol.
+                // Retire its audio as well and allow a later source to replace it.
+                self.active = None;
+                self.audio = None;
+                return writer
+                    .send_worker(&WorkerMediaMessage::DecodeFailed {
+                        request_id: frame_id,
+                        error: super::bounded_media_failure(error),
+                    })
+                    .map_err(|error| error.to_string());
+            }
+        };
+        let Some(video) = video else {
             // End-of-buffer still answers this request. The client has consumed its identity
             // and may poll again or append more media before another frame is available.
-            self.last_frame_id = frame_id;
             return writer
                 .send_worker(&WorkerMediaMessage::EndOfStream { source_id })
                 .map_err(|error| error.to_string());
         };
         let frame = video_frame_metadata(source_id, frame_id, &video);
         validate_and_write(frame_writer, frame, &video.bytes)?;
-        self.last_frame_id = frame_id;
         self.pending = Some((frame, video.bytes));
         writer
             .send_worker(&WorkerMediaMessage::FrameReady { frame })
@@ -344,7 +359,7 @@ fn video_frame_metadata(
 }
 
 fn validate_and_write(
-    writer: &mut DecodedFrameWriter<File>,
+    writer: &mut DecodedFrameWriter<impl std::io::Write>,
     frame: MediaVideoFrameMetadata,
     bytes: &[u8],
 ) -> Result<(), String> {
@@ -357,32 +372,4 @@ fn validate_and_write(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn frame_metadata_uses_each_adaptive_segments_dimensions() {
-        let video = backend::DecodedVideoSample {
-            bytes: vec![0; 24],
-            stride: 4,
-            width: 4,
-            height: 4,
-            timestamp_100ns: 10,
-            duration_100ns: 20,
-        };
-        assert_eq!(
-            (video_frame_metadata(7, 8, &video).width, video.height),
-            (4, 4)
-        );
-
-        let next = backend::DecodedVideoSample {
-            width: 2,
-            height: 2,
-            stride: 2,
-            bytes: vec![0; 6],
-            ..video
-        };
-        let metadata = video_frame_metadata(7, 9, &next);
-        assert_eq!((metadata.width, metadata.height), (2, 2));
-    }
-}
+mod tests;

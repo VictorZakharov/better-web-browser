@@ -97,6 +97,22 @@ impl Fixture {
 }
 
 #[test]
+fn retirement_after_decode_failure_does_not_send_a_stale_pause() {
+    let mut fixture = Fixture::new();
+    let source = fixture.decode(true);
+    fixture
+        .controls
+        .send(Ok(WorkerMediaMessage::DecodeFailed {
+            request_id: fixture.client.next_frame,
+            error: "invalid coded frame".into(),
+        }))
+        .unwrap();
+    assert!(fixture.client.next_frame(source).is_err());
+    assert!(!fixture.client.pause_retired_source(source).unwrap());
+    fixture.decode(true);
+}
+
+#[test]
 fn retirement_after_replacement_does_not_send_a_stale_playback_command() {
     let mut fixture = Fixture::new();
     let retired = fixture.decode(false);

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "media_source_reconfiguration.rs"]
+mod reconfiguration;
 
 #[test]
 fn media_source_declared_duration_survives_partial_decode_and_append() {

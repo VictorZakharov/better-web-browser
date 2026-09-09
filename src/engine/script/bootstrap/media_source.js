@@ -329,6 +329,7 @@
                 new TimeRanges(timeRangesConstructionToken, ranges || []);
         }
         __fail(kind) {
+            if (this.__element && mediaStateFor(this.__element).error) return;
             this.__finishCommit('error');
             host('console', 'error', 'MediaSource failed: ' + String(kind));
             this.readyState = 'ended';
@@ -339,7 +340,8 @@
                     kind === 'network' ? MediaError.MEDIA_ERR_NETWORK : MediaError.MEDIA_ERR_DECODE,
                     'MediaSource ' + kind + ' failure'
                 );
-                element.dispatchEvent(new Event('error'));
+                state.networkState = HTMLMediaElement.NETWORK_IDLE;
+                queueMediaEvent(element, 'error');
             }
             for (const pending of this.__pendingPlayback.splice(0)) {
                 const request = pendingMediaRequests.get(pending.requestId);

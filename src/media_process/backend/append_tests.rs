@@ -37,6 +37,30 @@ fn owned_fragmented_tracks_decode_independently_without_fabricating_the_other_ex
     assert!(!decoder.next_sample().unwrap().unwrap().is_empty());
 }
 
+#[test]
+fn seeking_beyond_buffered_video_is_exhaustion_not_a_decode_failure() {
+    let video = fixture(include_str!(
+        "../../../tests/fixtures/media/test-1s-video-fragmented.mp4.base64"
+    ));
+    let decoded = decode_append(&video, &[], MediaLimits::default()).unwrap();
+    let end = decoded.buffered.video_end_100ns;
+    let mut decoder = decoded.video.unwrap();
+    decoder.seek(end + 1_000_000).unwrap();
+    assert!(
+        decoder
+            .next_frame()
+            .expect("valid preroll is not corrupt")
+            .is_none()
+    );
+    decoder.seek(0).unwrap();
+    assert!(
+        decoder
+            .next_frame()
+            .expect("seek back after exhaustion")
+            .is_some()
+    );
+}
+
 fn fixture(encoded: &str) -> Vec<u8> {
     let mut output = Vec::new();
     let (mut accumulator, mut bits) = (0_u32, 0_u32);
