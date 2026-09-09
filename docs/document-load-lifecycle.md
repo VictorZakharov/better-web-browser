@@ -92,7 +92,7 @@ Keep reports, profiles and captures in ignored output directories, not commits.
 ## Explicit remaining boundaries
 
 This gate consumes the renderer's existing admitted stylesheet/image/font/media fetches;
-it does not implement the missing fetch algorithms behind them. Whole-document parsing,
+it does not implement the missing fetch algorithms behind them. Main-response streaming,
 stylesheet
 applicability/import rules, detached `new Image()` fetching, viewport-driven lazy fetching,
 nested browsing-context load propagation, detailed media load-delay release, and `pageshow`
@@ -106,3 +106,6 @@ from this change. Continue with the [loading standards sequence](loading-standar
 Follow-up: the [deferred/module readiness slice](deferred-script-readiness.md) removes
 the parser-prepared defer/module first-presentation barrier and synchronous graph
 dependency fetches. The measurements above remain historical evidence for this lifecycle slice.
+
+The [parser suspension/resumption slice](incremental-html-parsing.md) subsequently
+moves the retained renderer's EOF transition to the actual tree-builder boundary.

@@ -34,10 +34,11 @@ Tests cover the queue, Fetch completion order, isolated renderer execution, a wi
 slow response, shared successes/failures, preparation-time identity, and resources
 discovered while the original batch is still pending.
 
-This does **not** finish all script loading. In particular, async scripts still start
-after the current whole-document parse/startup phase, rather than interrupting an
-incremental parser. Parser-prepared module dependency loading is now nonblocking;
-see [deferred scripts and module readiness](deferred-script-readiness.md).
+This does **not** finish all script loading. Parser-prepared module dependency
+loading is now nonblocking; see [deferred scripts and module readiness](deferred-script-readiness.md).
+The isolated renderer now retains the tokenizer/tree builder at script boundaries:
+prepared async elements can execute while an external classic script pauses parsing.
+See [parser suspension, measured evidence, and remaining limits](incremental-html-parsing.md).
 
 ## Remaining standards slices
 
@@ -51,8 +52,8 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 4 | Incremental HTML parsing and parser-blocking scripts. The complete DOM is built before initial scripts run. | `document/load.rs`, `engine/dom/tree_sink.rs`, `script/mutation_host.rs` | Scripts see only preceding parsed nodes; parsing pauses/resumes correctly; `document.write` uses the parser insertion point; speculative requests cannot introduce execution. |
-| 5 | Stylesheet script-blocking versus render-blocking state. Every discovered stylesheet currently blocks first paint, regardless of its media applicability. | `page/refresh.rs`, `page/resources.rs`, renderer resource loader | Delayed matching/nonmatching sheets, media changes, errors and imported sheets have separate fetch, cascade, script and render assertions. |
+| 4 | Remaining parser work: streaming main-response decoding and synchronous, re-entrant insertion. Script-boundary pause/resume is implemented; the response body is still complete at parser startup, and buffered writes enter the tokenizer after the caller returns. | `document/parsing.rs`, `dom/incremental.rs`, `mutation_host/document_write.rs` | A withheld response tail cannot delay prefix/script progress; encoding restart is correct; same-script reads and nested written-script execution match the insertion-point algorithm. |
+| 5 | Stylesheet script-blocking versus render-blocking state. Parser scripts currently wait on the conservative admitted stylesheet set; partial presentation has no distinct standards-based render-blocking gate. | `page/refresh.rs`, `page/resources.rs`, renderer resource loader | Delayed matching/nonmatching sheets, media changes, errors and imported sheets have separate fetch, cascade, script and render assertions. |
 | 6 | HTML event-handler content attributes. JavaScript-assigned handlers work; `onload="..."` in the fixture did not. | `bootstrap/events.js`, DOM attributes/construction | Parse, set, replace, remove, scope, listener ordering and exception behavior for content attributes; not a special-case script `onload` implementation. |
 
 These should be cohesive changes with owned positive and negative fixtures, relevant
@@ -67,9 +68,11 @@ The shell now receives coalesced renderer-ready notifications instead of waiting
 its 250 ms idle monitor to discover queued events. Drains are bounded, and remaining
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
-The next loading slice is incremental parser ownership. Deferred/module readiness and
-document lifecycle separation are implemented for the currently
-admitted resource paths; it is not a complete HTML navigation implementation.
+Retained parser ownership now removes the whole-DOM-before-script startup barrier.
+Streaming response parsing, re-entrant writes and precise stylesheet blocking remain
+the next boundaries. Deferred/module readiness and document lifecycle separation are
+implemented for the currently admitted resource paths; this is not a complete HTML
+navigation implementation.
 
 ## Reproducing the owned comparison
 
