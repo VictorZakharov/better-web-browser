@@ -126,6 +126,7 @@
     const eventHandlerStore = new WeakMap();
     const proxyStorage = new WeakMap();
     const storageProxy = new WeakMap();
+    const legacyEventTargets = new WeakMap();
     const eventHandlerTypes = (
         'abort auxclick beforeinput beforematch beforetoggle blur cancel canplay canplaythrough change ' +
         'click close command contextlost contextmenu contextrestored copy cuechange cut dblclick drag ' +
@@ -320,15 +321,16 @@
             if (event.__dispatching || !event.__initialized)
                 throw new DOMException('The event is already being dispatched or is not initialized', 'InvalidStateError');
             const target = receiverFor(storageFor(this));
+            const targetOverride = legacyEventTargets.get(event) || target;
             if (event instanceof MouseEvent) mouseEventDispatchPositions.set(event,
                 [viewportScrollX + event.clientX, viewportScrollY + event.clientY]);
             event.__dispatching = true;
             event.__originalTarget = target;
-            event.__target = target;
+            event.__target = targetOverride;
             const hasRelatedTarget = 'relatedTarget' in event;
             const relatedTarget = hasRelatedTarget ? event.relatedTarget : null;
             const adjust = current => {
-                event.__target = retarget(target, current);
+                event.__target = retarget(targetOverride, current);
                 if (hasRelatedTarget) event.relatedTarget = retarget(relatedTarget, current);
                 return !hasRelatedTarget || event.__target !== event.relatedTarget;
             };
@@ -354,7 +356,8 @@
             } finally {
                 if (event instanceof MouseEvent) mouseEventDispatchPositions.delete(event);
                 if (hasRelatedTarget) event.relatedTarget = relatedTarget;
-                event.__target = target;
+                event.__target = targetOverride;
+                legacyEventTargets.delete(event);
                 event.__phase = Event.NONE;
                 event.__currentTarget = null;
                 event.__path = [];

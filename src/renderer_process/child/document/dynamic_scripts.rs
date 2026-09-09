@@ -100,6 +100,7 @@ pub(super) fn advance_dynamic_script_slice(
         let stopped = outcome.runtime_stopped || outcome.navigation_url.is_some();
         merge_outcome(&mut aggregate, outcome, document_root);
         if stopped
+            || runtime.has_ready_document_task()
             || !runtime.has_ready_dynamic_scripts()
             || started.elapsed() >= Duration::from_millis(25)
         {

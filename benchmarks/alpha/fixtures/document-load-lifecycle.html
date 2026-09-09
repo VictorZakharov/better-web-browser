@@ -1,0 +1,59 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Document lifecycle pending</title>
+<style>
+  body { margin: 32px; color: #142334; background: #f4f6fa; font: 20px sans-serif; }
+  .stage { padding: 24px; margin: 12px 0; background: #ddd; }
+  img { width: 60px; height: 40px; }
+</style>
+<h1>Document readiness is not network idle</h1>
+<p>DOMContentLoaded may proceed while eager resources are pending. Window load must wait.</p>
+<div class="stage" id="dcl">DOMContentLoaded pending</div>
+<div class="stage" id="load">Window load pending</div>
+<p id="timings">Waiting for lifecycle events.</p>
+<p id="trace">Waiting for resource events.</p>
+<img id="eager" src="assets/landscape.svg?delay_ms=500" alt="Eager resource">
+<img loading="lazy" src="assets/landscape.svg?delay_ms=5000&amp;lazy=1" alt="Nonblocking lazy resource">
+<script>
+  window.fixtureStart = performance.now(); window.trace = []; window.milestones = {};
+  window.record = name => {
+    trace.push(name); milestones[name] = Math.round(performance.now() - fixtureStart);
+    document.getElementById('trace').textContent = trace.join(' | ');
+  };
+  document.onreadystatechange = () => record(document.readyState);
+  document.getElementById('eager').onload = () => record('eager');
+  document.addEventListener('DOMContentLoaded', event => {
+    record('DCL');
+    window.dclValid = document.readyState === 'interactive' && event.isTrusted && event.bubbles
+      && !event.cancelable && milestones.async === undefined && milestones.awaited === undefined;
+    const panel = document.getElementById('dcl');
+    panel.textContent = dclValid ? 'DOMContentLoaded ready without waiting for resources' : 'DOMContentLoaded FAILED';
+    panel.style.background = dclValid ? '#b8e6c1' : '#f5bbbb';
+    Promise.resolve().then(() => record('DCL-microtask'));
+  });
+  window.addEventListener('load', event => {
+    record('LOAD');
+    const passed = dclValid && milestones.eager !== undefined && milestones.late !== undefined
+      && milestones['async-load'] !== undefined && milestones.awaited === undefined
+      && milestones.interactive !== undefined && milestones.complete !== undefined
+      && event.target === document && event.currentTarget === window && event.isTrusted
+      && !event.bubbles && !event.cancelable && document.readyState === 'complete';
+    const panel = document.getElementById('load');
+    panel.textContent = passed ? 'Window load ready after required resources' : 'Window load FAILED';
+    panel.style.background = passed ? '#b8e6c1' : '#f5bbbb';
+    panel.setAttribute('data-contract', passed ? 'pass' : 'fail');
+    panel.setAttribute('data-dcl-ms', String(milestones.DCL));
+    panel.setAttribute('data-load-ms', String(milestones.LOAD));
+    panel.setAttribute('data-trace', trace.join('|'));
+    document.title = passed ? 'Document lifecycle complete' : 'Document lifecycle FAILED';
+    document.getElementById('timings').textContent = 'DCL ' + milestones.DCL + ' ms; load ' + milestones.LOAD + ' ms';
+    console.log('DOCUMENT_LIFECYCLE ' + JSON.stringify(milestones));
+  });
+  // This download and the evaluation promise below must not become load blockers.
+  fetch('assets/landscape.svg?delay_ms=5000&fetch=1');
+</script>
+<script id="async-source" async src="document-load-async.js?delay_ms=1000"></script>
+<script>
+  document.getElementById('async-source').onload = () => record('async-load');
+</script>
+<script type="module" src="document-load-await.js"></script>

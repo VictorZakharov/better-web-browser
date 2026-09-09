@@ -6,6 +6,9 @@ impl DocumentRuntime {
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
             return None;
         }
+        self.publish_document_load_readiness(
+            self.resource_render_pending || self.pending_async_outcome.render_requested,
+        );
         if self.geometry_observers_pending || self.resource_render_pending {
             return Some(0);
         }
@@ -110,6 +113,9 @@ impl DocumentRuntime {
         self.start_dynamic_script_fetches(connection)?;
         self.finish_ready_dynamic_scripts(connection)?;
 
+        // Earlier script/resource callbacks may have introduced new load-delaying resources.
+        // Discover them at this checkpoint before permitting the later window-load task.
+        self.publish_document_load_readiness(resources_changed || outcome.render_requested);
         if let Some(runtime) = self.script_runtime.as_mut() {
             connection.report_renderer_task_stage(format!(
                 "settling timers and promise jobs for {}",
@@ -117,7 +123,8 @@ impl DocumentRuntime {
             ))?;
             let timer_started = Instant::now();
             let callback_limit = max_callbacks.min(MAX_POST_LOAD_TIMER_CALLBACKS as u32) as usize;
-            let timed = if runtime.has_ready_dynamic_scripts() {
+            let timed = if runtime.has_ready_dynamic_scripts() && !runtime.has_ready_document_task()
+            {
                 advance_dynamic_script_slice(runtime, document_root, elapsed, callback_limit)
             } else {
                 let document_url = self.page.source_url.clone();

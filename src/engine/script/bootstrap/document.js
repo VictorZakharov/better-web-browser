@@ -58,6 +58,7 @@
 
     let documentWriteRefreshQueued = false;
     const documentDefaultViews = new WeakMap();
+    const documentReadiness = new WeakMap();
     const documentCollections = new WeakMap();
     const documentCollection = (document, name, selector) => {
         let collections = documentCollections.get(document);
@@ -72,7 +73,7 @@
         constructor(id = 0, ...metadata) {
             super(Number(id) || host('createDocument', '', ''), ...metadata);
             cache.set(this.__id, this);
-            this.readyState = 'loading';
+            documentReadiness.set(this, host('isPrimaryDocument', this.__id) ? 'loading' : 'complete');
             this.activeElement = null;
             this._currentScript = null;
         }
@@ -379,7 +380,6 @@
             // that document as their root even if the embedding element is later disconnected.
             // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
             iframeDocument = wrap(host('createHtmlDocument', ''));
-            iframeDocument.readyState = 'complete';
             documentDefaultViews.set(iframeDocument, iframeWindow);
             iframeDocuments.set(frame, iframeDocument);
         }

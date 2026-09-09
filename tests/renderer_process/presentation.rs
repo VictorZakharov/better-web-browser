@@ -193,9 +193,10 @@ fn script_inserted_stylesheets_and_images_load_after_first_paint() {
             RendererEvent::FetchBatch { document, requests } if document == initial.document => {
                 break requests;
             }
-            RendererEvent::Diagnostic { .. }
-            | RendererEvent::RuntimeUpdate(_)
-            | RendererEvent::Presentation(_) => {}
+            RendererEvent::RuntimeUpdate(update) => {
+                pump_ready_task(&session, initial.document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } | RendererEvent::Presentation(_) => {}
             event => panic!("unexpected event while waiting for resources: {event:?}"),
         }
     };
@@ -360,6 +361,14 @@ fn blocking_stylesheet_load_precedes_window_load() {
     .unwrap();
     sink.end(request_id, bytes.len() as u32).unwrap();
 
+    let initial = wait_for_document_presentation(&session, document);
+    assert!(
+        !initial.layout.items.iter().any(|item| {
+            matches!(item, DisplayItem::Text { text, .. } if text.contains("style,window"))
+        }),
+        "window load is not part of the initial parse task"
+    );
+    pump_ready_task(&session, document, initial.next_timer_micros);
     let rendered = wait_for_document_presentation(&session, document);
     assert!(rendered.layout.items.iter().any(|item| {
         matches!(item, DisplayItem::Text { text, .. } if text.contains("style,window"))
@@ -376,7 +385,10 @@ fn wait_for_document_presentation(
             RendererEvent::Presentation(presentation) if presentation.document == document => {
                 return presentation;
             }
-            RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
+            RendererEvent::RuntimeUpdate(update) => {
+                pump_ready_task(session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected event while waiting for presentation: {event:?}"),
         }
     }

@@ -37,6 +37,10 @@ impl AsyncScripts {
         !self.ready.is_empty()
     }
 
+    pub(super) fn is_pending(&self) -> bool {
+        !self.waiting.is_empty() || !self.ready.is_empty()
+    }
+
     pub(super) fn complete(&mut self, resource: &PageResource, code: Option<&str>) {
         // The HTML "execute as soon as possible" set contains elements, not URLs.
         // Remove only the owners of this completed fetch, preserving completion order.

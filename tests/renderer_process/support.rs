@@ -94,3 +94,11 @@ pub(super) fn empty_document_state() -> DocumentState {
         session_storage: StorageAreaSnapshot::empty(),
     }
 }
+
+// Match the shell's immediate-work scheduling without fast-forwarding future timers. A clock
+// command executes one task, so DCL/load may precede the timer a test is waiting to observe.
+pub(super) fn pump_ready_task(session: &RendererSession, document: DocumentId, next: Option<u64>) {
+    if next == Some(0) {
+        session.advance_time(document, Duration::ZERO, 1).unwrap();
+    }
+}

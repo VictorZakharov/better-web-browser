@@ -68,6 +68,13 @@ pub(super) fn execute_inner(
         state.begin_task();
     }
     for script in scripts {
+        if script.kind == ScriptKind::Module
+            || (script.node.attr("src").is_some()
+                && script.node.attr("defer").is_some()
+                && script.node.attr("async").is_none())
+        {
+            runtime::document_lifecycle::enter_interactive(context, host, &mut outcome);
+        }
         if total_bytes.saturating_add(script.code.len()) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
@@ -124,7 +131,7 @@ pub(super) fn execute_inner(
             .push(format!("clear current script: {error}"));
     }
     if request_document_lifecycle && finish_lifecycle {
-        super::module_lifecycle::request_document_lifecycle(host);
+        runtime::document_lifecycle::parsing_finished(context, host, &mut outcome);
     }
     if let Err(error) = context.run_jobs() {
         outcome.errors.push(format!("finish promise jobs: {error}"));
@@ -145,6 +152,11 @@ pub(super) fn execute_inner(
     if !request_document_lifecycle {
         append_timer_summary(host, &mut outcome);
         return outcome;
+    }
+    // Standalone execution helpers settle the two document tasks; live renderers select each
+    // through advance_time so resource discovery and rendering can run between them.
+    for _ in 0..2 {
+        runtime::document_lifecycle::run_one(context, host, &mut outcome);
     }
     for _ in 0..STARTUP_TIMER_PASSES {
         if defer_dynamic_scripts {

@@ -42,11 +42,12 @@ incremental parser. Module dependency loading is still blocking and needs its ow
 
 Dynamic external classic readiness and the explicit ordered list are now implemented;
 see the [contract, scope, and verification](dynamic-script-readiness.md). Document
-lifecycle separation is next; neither slice alone establishes whole-page parity.
+lifecycle tasks now have separate readiness and resource gates; see the
+[contract, measured evidence, and explicit limits](document-load-lifecycle.md).
+These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 2 | Separate parsing completion from document load completion. The current `__finishDocument` emits interactive/DCL/complete/load together, without a complete resource-delay model. | `script/module_lifecycle.rs`, `bootstrap/tasks.js`, `document/load.rs` | Delay images and async scripts independently; DCL is not held by them, load is; lifecycle transitions and event order match Chromium. |
 | 3 | Defer/module script queues and rendering opportunities. `blocks_first_paint = !is_async` currently makes deferred scripts part of a first-presentation barrier. Module dependency fetching is synchronous. | `page/resources.rs`, `page/scripts.rs`, `script/module_evaluation.rs` | Slow deferred scripts do not turn into parser-blocking scripts; ordered execution, DCL gates, import failures, cycles and top-level await have explicit tests. |
 | 4 | Incremental HTML parsing and parser-blocking scripts. The complete DOM is built before initial scripts run. | `document/load.rs`, `engine/dom/tree_sink.rs`, `script/mutation_host.rs` | Scripts see only preceding parsed nodes; parsing pauses/resumes correctly; `document.write` uses the parser insertion point; speculative requests cannot introduce execution. |
 | 5 | Stylesheet script-blocking versus render-blocking state. Every discovered stylesheet currently blocks first paint, regardless of its media applicability. | `page/refresh.rs`, `page/resources.rs`, renderer resource loader | Delayed matching/nonmatching sheets, media changes, errors and imported sheets have separate fetch, cascade, script and render assertions. |
@@ -64,7 +65,9 @@ The shell now receives coalesced renderer-ready notifications instead of waiting
 its 250 ms idle monitor to discover queued events. Drains are bounded, and remaining
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
-The next standards slice is separate parsing completion and resource-delayed window load.
+The next loading slice is defer/module readiness and rendering opportunities, followed by
+incremental parser ownership. Document lifecycle separation is implemented for the currently
+admitted resource paths; it is not a complete HTML navigation implementation.
 
 ## Reproducing the owned comparison
 
