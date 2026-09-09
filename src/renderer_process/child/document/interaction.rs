@@ -239,10 +239,12 @@ impl DocumentRuntime {
         outcome: &mut ScriptOutcome,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        // Media acknowledgements can run callbacks that produce more side effects.
+        // Collect those after the bounded media-action drain, not before it.
+        self.apply_media_actions(outcome, connection)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
-        self.apply_media_actions(outcome, connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 

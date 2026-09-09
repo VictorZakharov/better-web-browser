@@ -20,15 +20,15 @@
         pendingMediaRequests.set(requestId, { seek });
         mediaCommand(element, requestId, 'seek', seek.target);
     };
-    const beginMediaSourceSeek = element => {
+    const beginMediaSourceSeek = (element, buffering = false) => {
         const source = mediaSourceForElement.get(element);
         if (!source) return false;
         const state = mediaStateFor(element);
         const previous = pendingMediaSeeks.get(element);
-        const seek = { target: state.currentTime, sent: false, playback: previous?.playback || [] };
+        const seek = { target: state.currentTime, sent: false, buffering,
+            playback: previous?.playback || [] };
         pendingMediaSeeks.set(element, seek);
         state.ended = false;
-        source.__waiting = false;
         // Suspend the native clock without changing the author's paused state or
         // exposing an artificial pause event. Generation-tag the acknowledgement.
         const requestId = nextMediaRequest++;
@@ -36,8 +36,8 @@
         mediaCommand(element, requestId, 'playback', false, effectiveVolumeMillis(state));
         if (!mediaSeekHasData(element, seek.target)) {
             const wasPlaying = !state.paused && state.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
-            state.readyState = HTMLMediaElement.HAVE_METADATA;
-            traceMediaLifecycle(element, 'seek:waiting');
+            state.readyState = buffering ? HTMLMediaElement.HAVE_CURRENT_DATA : HTMLMediaElement.HAVE_METADATA;
+            traceMediaLifecycle(element, buffering ? 'buffer:waiting' : 'seek:waiting');
             if (wasPlaying) {
                 queueMediaEvent(element, 'timeupdate');
                 queueMediaEvent(element, 'waiting');
@@ -45,6 +45,27 @@
         }
         continueMediaSourceSeek(element);
         return true;
+    };
+    // MSE SourceBuffer Monitoring: exhausting either active track blocks the
+    // shared playback clock. Audio buffered farther ahead must not run alone.
+    // Reuse generation-tagged seek recovery to discard stale clock replies and
+    // restore the held position once data arrives, without exposing seek events.
+    // https://www.w3.org/TR/media-source-2/#sourcebuffer-monitoring
+    const monitorMediaSourcePlayback = (element, position) => {
+        const source = mediaSourceForElement.get(element);
+        const state = mediaStateFor(element);
+        if (!source || state.paused || state.error || pendingMediaSeeks.has(element)) return false;
+        position = Math.max(0, Number(position) || 0);
+        for (let i = 0; i < state.buffered.length; i++) {
+            const start = state.buffered.start(i), end = state.buffered.end(i);
+            if (start <= state.currentTime && state.currentTime <= end
+                && position >= end && end < state.duration) {
+                state.currentTime = end;
+                beginMediaSourceSeek(element, true);
+                return true;
+            }
+        }
+        return false;
     };
     const deferSeekingPlayback = (element, requestId) => {
         const seek = pendingMediaSeeks.get(element);
@@ -87,10 +108,10 @@
             pendingMediaSeeks.delete(element);
             state.currentTime = Math.max(0, Number(input.currentTime) || 0);
             state.seeking = false;
-            state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
+            if (!seek.buffering) state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
             updateMediaCanPlay(element);
             queueMediaEvent(element, 'timeupdate');
-            queueMediaEvent(element, 'seeked');
+            if (!seek.buffering) queueMediaEvent(element, 'seeked');
             const requests = seek.playback.length ? seek.playback : [0];
             if (!state.paused) {
                 for (const requestId of requests)

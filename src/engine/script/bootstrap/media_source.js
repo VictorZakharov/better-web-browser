@@ -124,7 +124,6 @@
             this.__committing = false;
             this.__commitBuffers = [];
             this.__loadedState = false;
-            this.__waiting = false;
             this.__pendingPlayback = [];
         }
         static isTypeSupported(type) { return mediaSourceTypeSupported(type); }
@@ -199,6 +198,7 @@
             this.readyState = 'ended';
             this.__setDuration(Math.max(0, ...[...this.sourceBuffers].flatMap(buffer =>
                 buffer.__ranges.map(range => range[1]))));
+            this.__bufferedChanged();
             queueMediaEvent(this, 'sourceended');
         }
         setLiveSeekableRange() {
@@ -216,6 +216,7 @@
         __reopen() {
             if (this.readyState !== 'ended') return;
             this.readyState = 'open';
+            this.__bufferedChanged();
             queueMediaEvent(this, 'sourceopen');
         }
         __loaded(duration, buffered) {
@@ -233,14 +234,6 @@
             this.__updateExtent(duration, buffered);
             this.__finishCommit();
             continueMediaSourceSeek(this.__element);
-            if (this.__waiting && this.__element) {
-                const state = mediaStateFor(this.__element);
-                if (Number(duration) > state.currentTime) {
-                    this.__waiting = false;
-                    if (!state.paused)
-                        mediaCommand(this.__element, 0, 'playback', true, effectiveVolumeMillis(state));
-                }
-            }
             this.__maybeCommit();
         }
         __updateExtent(duration, buffered) {
@@ -319,8 +312,13 @@
             if (!this.__element) return;
             // MSE exposes the intersection of active track buffers, never their union/max end.
             let ranges = null;
+            const highestEnd = Math.max(0, ...[...this.activeSourceBuffers].flatMap(buffer =>
+                buffer.__ranges.map(range => range[1])));
             for (const buffer of this.activeSourceBuffers) {
-                const next = buffer.__ranges;
+                const next = buffer.__ranges.map(range => [...range]);
+                // MSE buffered extends the last range of ended tracks to the highest
+                // track end, so a final partial audio/video sample is not starvation.
+                if (this.readyState === 'ended' && next.length) next[next.length - 1][1] = highestEnd;
                 ranges = ranges === null ? next.map(range => [...range])
                     : ranges.flatMap(([start, end]) => next.flatMap(([otherStart, otherEnd]) => {
                         const low = Math.max(start, otherStart), high = Math.min(end, otherEnd);
@@ -366,9 +364,7 @@
         if (!source || source.readyState === 'ended') return false;
         const state = mediaStateFor(element);
         state.currentTime = Math.max(0, Number(position) || 0);
-        state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
-        if (!source.__waiting) queueMediaEvent(element, 'waiting');
-        source.__waiting = true;
+        beginMediaSourceSeek(element, true);
         return true;
     };
     const prepareMediaSourcePlayback = (element, requestId, volumeMillis) => {

@@ -17,10 +17,10 @@
         traceMediaLifecycle(element, 'clock', input.currentTime, input.duration);
     };
     const traceMediaLifecycle = (element, event, position = '', duration = '') => {
-        const count = event === 'seek:waiting' || event === 'seek:ready'
+        const count = event === 'seek:waiting' || event === 'seek:ready' || event === 'buffer:waiting'
             ? 0 : mediaDiagnosticCounts.get(element) || 0;
         const critical = event === 'seek:waiting' || event === 'seek:ready'
-            || event === 'buffer:abort' || event === 'request:seek'
+            || event === 'buffer:abort' || event === 'buffer:waiting' || event === 'request:seek'
             || event === 'response:seeked' || event === 'response:media-error'
             || event === 'request:reset' || event.startsWith('load caller=');
         // Keep late seek/error evidence after repetitive append messages reach their

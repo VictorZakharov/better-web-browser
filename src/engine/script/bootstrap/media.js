@@ -297,6 +297,8 @@
         const pending = requestId ? pendingMediaRequests.get(requestId) : null;
         if (requestId) pendingMediaRequests.delete(requestId);
         if (applyMediaSeekResponse(element, input, pending)) return true;
+        if ((input.disposition === 'time' || input.disposition === 'ended')
+            && monitorMediaSourcePlayback(element, input.currentTime)) return true;
         switch (input.disposition) {
             case 'loaded':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);

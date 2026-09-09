@@ -5,6 +5,8 @@ mod abort;
 mod reconfiguration;
 #[path = "media_source_seeking.rs"]
 mod seeking;
+#[path = "media_source_starvation.rs"]
+mod starvation;
 
 #[test]
 fn media_source_declared_duration_survives_partial_decode_and_append() {
@@ -143,13 +145,31 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
                 result.outcome.errors
             );
             if disposition == "appended" {
-                let resumes = result.outcome.media_actions.iter().any(|action| {
-                    matches!(
-                        action.command,
-                        ScriptMediaCommand::SetPlayback { playing: true, .. }
-                    )
-                });
-                assert_eq!(resumes, !pause_while_waiting && duration == 20.0);
+                let seek = result
+                    .outcome
+                    .media_actions
+                    .iter()
+                    .find(|action| matches!(action.command, ScriptMediaCommand::Seek { .. }));
+                assert_eq!(seek.is_some(), duration == 20.0);
+                if let Some(seek) = seek {
+                    let resumed = runtime.dispatch_user_input(UserInputEvent::Media {
+                        buffered: None,
+                        target: dom.elements_named("video").next().unwrap(),
+                        request_id: seek.request_id,
+                        disposition: "seeked",
+                        current_time,
+                        duration,
+                        width: 1280,
+                        height: 720,
+                    });
+                    assert_eq!(
+                        resumed.outcome.media_actions.iter().any(|action| matches!(
+                            action.command,
+                            ScriptMediaCommand::SetPlayback { playing: true, .. }
+                        )),
+                        !pause_while_waiting
+                    );
+                }
             }
         }
         assert_eq!(

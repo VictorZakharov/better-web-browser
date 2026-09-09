@@ -12,6 +12,8 @@ mod cadence;
 mod failure;
 #[path = "media/seeking.rs"]
 mod seeking;
+#[path = "media/starvation.rs"]
+mod starvation;
 
 fn run_scheduled_renderer_timer(
     session: &RendererSession,

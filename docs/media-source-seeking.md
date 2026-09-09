@@ -71,6 +71,35 @@ clean live retest.
 
 ## Live evidence and remaining failure
 
+### Unequal track starvation and media callback side effects
+
+The follow-up audio-keeps-playing report exposed two additional engine defects:
+
+- Media-clock event callbacks ran after the renderer had drained side effects. Their
+  fetch, worker, storage, and media commands could be discarded when creating the runtime
+  report. The checkpoint now admits those effects through the normal input-outcome path.
+  Media acknowledgement callbacks are drained before collecting their resulting effects.
+- Reaching the video-buffer end only lowered `readyState`; audio could continue through
+  its longer buffer. [MSE SourceBuffer Monitoring](https://www.w3.org/TR/media-source-2/#sourcebuffer-monitoring)
+  now holds the timeline at the active-track intersection and stops native playback.
+  Further audio-only appends cannot resume it. Once both tracks cover the held time,
+  generation-tagged recovery restores that position and resumes unless the author paused.
+  Buffering does not manufacture `pause`, `seeking`, `seeked`, or `ended` events.
+
+The existing coded-frame fixtures provide a deterministic test around 4:30: one video
+segment and over twenty seconds of audio. It observes `waiting`, a stopped native clock,
+unchanged author-facing position after an audio-only append, and resumed video pixels after
+video arrives. Fetch requests from both the `playing` acknowledgement and `waiting` callback
+must also reach the broker. The test failed with the discarded-callback path and passes with
+normal side-effect admission. Script regressions separately cover author pause, stale clock
+replies, and ended-track range extension without filling internal gaps.
+
+This fixes synchronization when buffered input runs out; it does not repair an HTTP 403,
+provide a missing codec, or establish uninterrupted live playback. Clock suspension occurs
+at a renderer media checkpoint, not on the audio device's real-time callback.
+
+### Live observations
+
 Hidden, silent release tests on 2026-09-09 used the reported video. Starting directly at
 420 seconds reached **444.953 seconds**, with **864 painted frames over 24.724 seconds**,
 active playback, and no native media failure. This is real frame advancement, but it is not
