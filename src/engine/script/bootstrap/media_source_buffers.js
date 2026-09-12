@@ -36,7 +36,10 @@
             this.appendWindowStart = 0;
             this.appendWindowEnd = Infinity;
         }
-        get buffered() { return new TimeRanges(timeRangesConstructionToken, this.__ranges); }
+        get buffered() {
+            this.__requireAttached();
+            return new TimeRanges(timeRangesConstructionToken, this.__ranges);
+        }
         appendBuffer(value) {
             this.__prepareUpdate();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
@@ -89,6 +92,7 @@
             }
         }
         remove(start, end) {
+            this.__requireAttached();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
             start = Number(start);
             end = Number(end);
@@ -156,10 +160,12 @@
             queueMediaEvent(this, 'updateend');
         }
         __requireOpen() {
+            this.__requireAttached();
             if (this.__parent.readyState !== 'open')
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
         }
         __prepareUpdate() {
+            this.__requireAttached();
             if (this.__parent.__element && mediaStateFor(this.__parent.__element).error)
                 throw new DOMException('The media element has an error', 'InvalidStateError');
             if (this.__parent.readyState === 'closed')
@@ -167,6 +173,25 @@
             if (this.__parent.readyState === 'ended') this.__parent.__reopen();
         }
         __materialize() { return concatMediaBytes(this.__chunks); }
+        __requireAttached() {
+            if (![...this.__parent.sourceBuffers].includes(this))
+                throw new DOMException('The SourceBuffer has been removed', 'InvalidStateError');
+        }
+        __detach() {
+            const updating = this.updating;
+            this.__operation++;
+            this.updating = this.__awaitingCommit = this.__updatingAppend = false;
+            this.__parent.__release(this.__bytes + this.__reservedBytes);
+            this.__bytes = this.__reservedBytes = this.__completeBytes = this.__initializationLength = 0;
+            this.__chunks = [];
+            this.__ranges = [];
+            this.__initializationBytes = null;
+            this.__hasMediaData = false;
+            if (updating) {
+                queueMediaEvent(this, 'abort');
+                queueMediaEvent(this, 'updateend');
+            }
+        }
         __takeBytes() {
             const materialized = this.__materialize();
             const ready = materialized.slice(0, this.__completeBytes);

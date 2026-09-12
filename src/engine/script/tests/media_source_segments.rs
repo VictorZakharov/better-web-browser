@@ -1,6 +1,8 @@
 use super::*;
 #[path = "media_source_abort.rs"]
 mod abort;
+#[path = "media_source_lifecycle.rs"]
+mod lifecycle;
 #[path = "media_source_reconfiguration.rs"]
 mod reconfiguration;
 #[path = "media_source_seeking.rs"]

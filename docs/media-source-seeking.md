@@ -97,6 +97,34 @@ Contracts: [MSE appendBuffer](https://www.w3.org/TR/media-source-2/#dom-sourcebu
 [MSE range removal](https://www.w3.org/TR/media-source-2/#sourcebuffer-range-removal),
 and [HTML media tasks](https://html.spec.whatwg.org/multipage/media.html#queue-a-media-element-task).
 
+### MediaSource reset and replacement ownership
+
+The September 12 failed-seek trace exposed a separate recovery defect: after `load()`,
+the element reported no resource, but its old MediaSource remained open with its old
+audio/video buffers. Reset now detaches that source, clears both SourceBuffer lists and
+its duration, invalidates pending buffer work, and releases retained parser data.
+Old buffers cannot append again even if the same object URL is subsequently reattached.
+
+Pending play promises are rejected with `AbortError`. Resource-specific queued element
+events and late acknowledgements for old native commands cannot change a replacement.
+Old clock updates are ignored while the replacement has no metadata. Source assignment
+through the property, `setAttribute`, or the null-namespace attribute APIs shares the
+same lifecycle path; resetting one element does not detach another element's source.
+
+Three regressions failed before the change: load left the old source usable, replacement
+left its play promise unresolved, and an in-flight append remained active after detachment.
+Additional cases cover queued events, same-URL reattachment, another element's ownership,
+and an old native load acknowledgement arriving after replacement.
+
+The hidden, silent Chrome comparison observed `closed`, empty source/active lists,
+`NaN` duration, `updating === false`, and `InvalidStateError` on another append. Its
+event sequence was `updatestart`, active-list removal, `abort`, `updateend`, source-list
+removal, `sourceclose`; the browser run and profile cleanup completed without errors.
+This corrects reset/recovery ownership, **not** the cause of the tiny live refill response.
+
+Contracts: [HTML load](https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm)
+and [MSE detachment](https://www.w3.org/TR/media-source-2/#mediasource-detach).
+
 ### Unequal track starvation and media callback side effects
 
 The follow-up audio-keeps-playing report exposed two additional engine defects:

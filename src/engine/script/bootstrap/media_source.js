@@ -110,8 +110,13 @@
     const revokeObjectUrl = url => { objectUrlEntries.delete(String(url)); };
     // HTML/MSE media events are tasks, with a microtask checkpoint between callbacks.
     // https://html.spec.whatwg.org/multipage/media.html#queue-a-media-element-task
-    const queueMediaEvent = (target, name) => queueMediaTask(() =>
-        target.dispatchEvent(markTrusted(new Event(name))));
+    const queueMediaEvent = (target, name) => {
+        const generation = mediaLoadGeneration.get(target);
+        queueMediaTask(() => {
+            if (mediaLoadGeneration.get(target) === generation)
+                target.dispatchEvent(markTrusted(new Event(name)));
+        });
+    };
 
 
     class MediaSource extends EventTarget {
@@ -177,13 +182,15 @@
             const items = [...this.sourceBuffers];
             const index = items.indexOf(buffer);
             if (index < 0) throw new DOMException('SourceBuffer was not found', 'NotFoundError');
-            if (buffer.updating) buffer.abort();
-            this.__release(buffer.__bytes);
-            buffer.__chunks = [];
-            buffer.__bytes = 0;
+            buffer.__detach();
             items.splice(index, 1);
             this.sourceBuffers.__replace(items);
-            this.activeSourceBuffers.__replace(items);
+            const active = [...this.activeSourceBuffers];
+            if (active.includes(buffer)) {
+                this.activeSourceBuffers.__replace(active.filter(item => item !== buffer));
+                queueMediaEvent(this.activeSourceBuffers, 'removesourcebuffer');
+            }
+            this.__bufferedChanged();
             queueMediaEvent(this.sourceBuffers, 'removesourcebuffer');
         }
         endOfStream(error = undefined) {
@@ -375,24 +382,3 @@
         source.__requestPlayback(requestId, volumeMillis);
         return true;
     };
-
-    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
-        configurable: true,
-        get() {
-            const value = this.getAttribute('src');
-            if (value == null) return '';
-            return objectUrlEntries.has(value) ? value : host('resolveUrl', value);
-        },
-        set(value) {
-            value = String(value);
-            this.setAttribute('src', value);
-            const object = objectUrlValue(value);
-            if (object instanceof MediaSource) {
-                const state = mediaStateFor(this);
-                state.networkState = HTMLMediaElement.NETWORK_LOADING;
-                state.currentSrc = value;
-                this.dispatchEvent(new Event('loadstart'));
-                object.__attach(this);
-            }
-        }
-    });
