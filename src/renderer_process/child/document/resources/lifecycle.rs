@@ -38,6 +38,7 @@ impl DocumentRuntime {
         // Removing a node does not erase an already admitted resource obligation. Completed
         // requests leave by_request, including unsuccessful responses and obsolete owners.
         let pending = discovery_pending
+            || self.parser.is_some()
             || self.parser_scripts.is_pending()
             || self.pending_resource_preloads.iter().any(|pending| {
                 pending

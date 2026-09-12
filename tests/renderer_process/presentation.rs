@@ -306,10 +306,13 @@ fn blocking_stylesheet_load_precedes_window_load() {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut session = RendererSession::launch(options()).expect("launch renderer");
     let document = better_web_browser::renderer_protocol::DocumentId::new(96).unwrap();
-    let html = r#"<!doctype html><head><link rel="stylesheet" href="/blocking.css"></head>
+    let html = r#"<!doctype html><head><script>
+        window.order = [];
+        document.addEventListener('load', event => {
+            if (event.target.localName === 'link') order.push('style');
+        }, true);
+        </script><link rel="stylesheet" href="/blocking.css"></head>
         <body><div id="status">pending</div><script>
-            const order = [];
-            document.querySelector('link').addEventListener('load', () => order.push('style'));
             window.addEventListener('load', () => {
                 order.push('window');
                 document.querySelector('#status').textContent = order.join(',');
@@ -369,10 +372,20 @@ fn blocking_stylesheet_load_precedes_window_load() {
         "window load is not part of the initial parse task"
     );
     pump_ready_task(&session, document, initial.next_timer_micros);
-    let rendered = wait_for_document_presentation(&session, document);
-    assert!(rendered.layout.items.iter().any(|item| {
-        matches!(item, DisplayItem::Text { text, .. } if text.contains("style,window"))
-    }));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "stylesheet/window ordering never completed"
+        );
+        let rendered = wait_for_document_presentation(&session, document);
+        if rendered.layout.items.iter().any(
+            |item| matches!(item, DisplayItem::Text { text, .. } if text.contains("style,window")),
+        ) {
+            break;
+        }
+        pump_ready_task(&session, document, rendered.next_timer_micros);
+    }
     session.shutdown().expect("shutdown renderer");
 }
 

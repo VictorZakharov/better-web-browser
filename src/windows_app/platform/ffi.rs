@@ -169,6 +169,7 @@ unsafe extern "system" {
     pub(in crate::windows_app) fn SetProcessDpiAwarenessContext(context: Handle) -> i32;
     pub(in crate::windows_app) fn GetDpiForSystem() -> u32;
     pub(in crate::windows_app) fn GetDpiForWindow(window: Hwnd) -> u32;
+    pub(in crate::windows_app) fn GetSystemMetricsForDpi(index: i32, dpi: u32) -> i32;
 }
 
 #[link(name = "gdi32")]

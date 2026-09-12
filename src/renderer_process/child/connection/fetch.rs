@@ -43,17 +43,6 @@ impl PendingFetchBatch {
 }
 
 impl ChildConnection {
-    pub(in crate::renderer_process::child) fn fetch_batch(
-        &mut self,
-        document: DocumentId,
-        requests: Vec<RendererFetchRequest>,
-    ) -> Result<Vec<BrowserFetchResponse>, String> {
-        let Some(pending) = self.start_fetch_batch(document, requests)? else {
-            return Ok(Vec::new());
-        };
-        self.finish_fetch_batch(pending)
-    }
-
     pub(in crate::renderer_process::child) fn start_streaming_fetch_batch(
         &mut self,
         document: DocumentId,

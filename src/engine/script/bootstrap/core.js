@@ -42,6 +42,7 @@
         return result;
     };
     const childCollectionCache = new WeakMap();
+    let parserCollectionEpoch = 0;
     const childCollectionVersions = new WeakMap();
     const markChildCollectionsChanged = (...nodes) => {
         for (const node of nodes.flat()) {
@@ -60,17 +61,18 @@
             if (!record) {
                 const value = liveHtmlCollection(() =>
                     list(host('elementChildren', node.__id)));
-                records[key] = record = { version, value };
+                records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
             }
             return record.value;
         }
         if (!record) {
             const value = list(host('children', node.__id));
-            records[key] = record = { version, value };
-        } else if (record.version !== version) {
+            records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
+        } else if (record.version !== version || record.parserEpoch !== parserCollectionEpoch) {
             const next = list(host('children', node.__id));
             record.value.splice(0, record.value.length, ...next);
             record.version = version;
+            record.parserEpoch = parserCollectionEpoch;
         }
         return record.value;
     };

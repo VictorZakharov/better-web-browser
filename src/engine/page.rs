@@ -1,5 +1,6 @@
 mod embedded;
 mod media;
+mod parsing;
 mod preload;
 mod refresh;
 mod resource_events;
@@ -115,6 +116,10 @@ impl Page {
                 node.set_attr("style", "display: none");
             }
         }
+        Self::from_dom(dom, source_url)
+    }
+
+    pub(crate) fn from_dom(dom: Dom, source_url: &str) -> Self {
         let title = dom.title();
         let diagnostics = dom
             .errors

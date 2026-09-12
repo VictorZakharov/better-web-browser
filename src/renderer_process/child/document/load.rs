@@ -16,8 +16,8 @@ impl DocumentRuntime {
             (!start.content_type.is_empty()).then_some(start.content_type.as_str()),
         );
         // The HTML Standard permits speculative parsing to start eligible fetches while the
-        // authoritative parser continues. Results are reconciled with the completed page below,
-        // so this optimization cannot introduce scripts the real parse did not discover:
+        // authoritative parser continues. Bytes are cached, but execution is admitted only when
+        // that parser reaches the actual element. A speculative response cannot prepare a script:
         // https://html.spec.whatwg.org/multipage/parsing.html#speculative-html-parsing
         let preloads = crate::engine::page::discover_script_preloads(&decoded.text, &start.url);
         let (pending_first_paint, pending_deferred) = start_resource_preloads(
@@ -28,7 +28,15 @@ impl DocumentRuntime {
         )?;
         let html_parse_started = Instant::now();
         let reader = crate::document::parse_html(&decoded.text, &start.url);
-        let mut page = Page::parse_scripted(&decoded.text, &start.url);
+        let mut parser = crate::engine::dom::incremental::HtmlParser::new(&decoded.text);
+        let first_step = parser.advance();
+        let parser_active = matches!(
+            first_step,
+            crate::engine::dom::incremental::ParserStep::Script(_)
+        );
+        let mut page = Page::from_dom(parser.dom().clone(), &start.url);
+        page.scripts.clear();
+        page.hide_scripted_noscript();
         page.character_set = decoded.encoding.to_string();
         page.set_media_environment(MediaEnvironment::new(
             start.viewport.style_width,
@@ -52,7 +60,8 @@ impl DocumentRuntime {
         let text = Rc::new(RefCell::new(text));
         let script_layout_page = Rc::new(RefCell::new(page.layout_snapshot()));
         let script_layout_viewport = Rc::new(Cell::new(start.viewport));
-        let parser_scripts = parser_scripts::ParserScripts::new(&page.scripts);
+        let mut parser_scripts = parser_scripts::ParserScripts::default();
+        parser_scripts.set_parsing(parser_active);
         let mut runtime = Self {
             id: start.document,
             status: start.status,
@@ -72,6 +81,10 @@ impl DocumentRuntime {
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
             parser_scripts,
+            parser: parser_active.then_some(parsing::DocumentParser {
+                parser,
+                next: Some(first_step),
+            }),
             pending_dynamic_script_fetch: Vec::new(),
             pending_resource_preloads: pending_deferred.into_iter().collect(),
             resource_render_pending: false,
@@ -100,41 +113,31 @@ impl DocumentRuntime {
 
         let resource_started = Instant::now();
         if let Some(pending) = pending_first_paint {
-            runtime.finish_resource_preloads(connection, pending)?;
+            runtime.pending_resource_preloads.push(pending);
         }
-        runtime.fetch_resources(connection, |page, resource| {
-            page.resource_blocks_first_paint(resource)
-        })?;
         runtime.start_presentational_preloads(connection)?;
         runtime.sync_script_layout_page();
         let resource_processing_time = resource_started.elapsed();
 
         let script_started = Instant::now();
-        let mut script_fetch_time = Duration::ZERO;
+        let script_fetch_time = Duration::ZERO;
         let document = runtime.id;
-        let mut loader = |url: &str, kind: ScriptKind, options| {
-            let started = Instant::now();
-            let result = fetch_script_source(connection, document, url, kind, options);
-            script_fetch_time += started.elapsed();
-            result
-        };
-        let layout_flush = runtime.script_layout_flush_callback();
-        let (script_runtime, mut outcome) = runtime
-            .page
-            .start_first_paint_script_runtime_with_document_state(
-                &mut loader,
-                state.cookie_version,
-                &state.cookie_header,
-                state.local_storage,
-                state.session_storage,
-                !runtime.diagnostic_selectors.is_empty(),
-                Some(layout_flush),
-            )
-            .map_err(|error| error.to_string())?;
-        runtime.script_runtime = script_runtime;
-        if let Some(script_runtime) = runtime.script_runtime.as_mut() {
-            script_runtime.set_deferred_scripts_pending(runtime.parser_scripts.deferred_pending());
-            runtime.parser_scripts.prepare_modules(script_runtime);
+        let mut outcome = ScriptOutcome::default();
+        if runtime.parser.is_some() {
+            let (script_runtime, initial) = runtime
+                .page
+                .start_parser_runtime(
+                    state.cookie_version,
+                    &state.cookie_header,
+                    state.local_storage,
+                    state.session_storage,
+                    !runtime.diagnostic_selectors.is_empty(),
+                    runtime.script_layout_flush_callback(),
+                )
+                .map_err(|error| error.to_string())?;
+            runtime.script_runtime = Some(script_runtime);
+            outcome = initial;
+            runtime.advance_parser(connection, &mut outcome)?;
         }
         runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;
@@ -143,13 +146,6 @@ impl DocumentRuntime {
             std::mem::take(&mut runtime.pending_async_outcome),
             runtime.page.dom.document.id(),
         );
-        if let Some(script_runtime) = runtime.script_runtime.as_mut() {
-            merge_outcome(
-                &mut outcome,
-                script_runtime.finish_document_lifecycle(),
-                runtime.page.dom.document.id(),
-            );
-        }
         runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);

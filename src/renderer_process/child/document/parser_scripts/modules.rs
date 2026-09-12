@@ -26,6 +26,10 @@ impl Default for ModuleGraphs {
 }
 
 impl ModuleGraphs {
+    pub(super) fn invalidate(&mut self) {
+        self.dirty = true;
+    }
+
     pub(super) fn contains(&self, resource: &PageResource) -> bool {
         self.requested.contains(resource)
     }

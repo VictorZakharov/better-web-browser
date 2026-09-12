@@ -11,6 +11,7 @@ mod load;
 mod media;
 mod media_environment;
 mod parser_scripts;
+mod parsing;
 mod reporting;
 mod resources;
 mod scheduling;
@@ -20,9 +21,7 @@ mod workers;
 use self::accessibility::RendererAccessibility;
 use self::dynamic_scripts::{PendingDynamicScriptFetch, advance_dynamic_script_slice};
 use self::reporting::{merge_outcome, micros, runtime_report, style_report};
-use self::resources::{
-    PendingResourceFetch, discard_resource_preloads, fetch_script_source, start_resource_preloads,
-};
+use self::resources::{PendingResourceFetch, discard_resource_preloads, start_resource_preloads};
 pub(super) use self::text::RendererTextSystem;
 use self::workers::RendererWorkers;
 use super::connection::ChildConnection;
@@ -71,6 +70,7 @@ pub(super) struct DocumentRuntime {
     deferred_network_load: PageLoadReport,
     workers: RendererWorkers,
     parser_scripts: parser_scripts::ParserScripts,
+    parser: Option<parsing::DocumentParser>,
     pending_dynamic_script_fetch: Vec<PendingDynamicScriptFetch>,
     pending_resource_preloads: Vec<PendingResourceFetch>,
     resource_render_pending: bool,

@@ -121,9 +121,10 @@ baseline SHA-256 is `B2D268BDFD6F41E7FD27BE9C1EDF7068E17191AEBCBEAC178209F0810B1
 
 ## Explicit remaining gaps
 
-The HTML parser still builds the whole DOM before initial classic scripts run;
-incremental tokenization, parser insertion points and `document.write` are the next
-slice. Stylesheet applicability and precise script-blocking sheet state remain a
+The follow-up [parser suspension/resumption slice](incremental-html-parsing.md)
+replaces whole-DOM startup in the retained renderer. Streaming main-response input
+and synchronous `document.write()` re-entry remain incomplete. Stylesheet
+applicability and precise script-blocking sheet state remain a
 separate gap; this change does not claim those rules are complete. Explicit
 `blocking=render` is not implemented here.
 

@@ -11,11 +11,55 @@ pub(super) struct ParserScripts {
     waiting: Vec<PageScript>,
     ready: VecDeque<PageScript>,
     deferred: VecDeque<PageScript>,
-    completed: HashSet<PageResource>,
+    blocking: Option<PageScript>,
+    parsing: bool,
+    completed: HashMap<PageResource, Option<String>>,
     modules: modules::ModuleGraphs,
 }
 
 impl ParserScripts {
+    pub(super) fn set_parsing(&mut self, parsing: bool) {
+        self.parsing = parsing;
+    }
+
+    pub(super) fn blocked(&self) -> bool {
+        self.blocking.is_some()
+    }
+
+    pub(super) fn blocking_ready(&self) -> bool {
+        self.blocking
+            .as_ref()
+            .is_some_and(|script| self.can_execute(script))
+    }
+
+    pub(super) fn enqueue(&mut self, mut script: PageScript) {
+        let resource = script_resource(&script);
+        if script.node.attr("src").is_some() {
+            if let Some(code) = self.completed.get(&resource) {
+                script.code = code.clone();
+            }
+            if script
+                .node
+                .attr("src")
+                .is_some_and(|src| src.trim().is_empty())
+                || script.source_url.is_empty()
+            {
+                self.completed.insert(resource, None);
+            }
+        }
+        self.modules.invalidate();
+        if script.blocks_first_paint {
+            self.blocking = Some(script);
+        } else if script.executes_after_parsing {
+            self.deferred.push_back(script);
+        } else if script.code.is_some() || self.completed.contains_key(&script_resource(&script)) {
+            self.ready.push_back(script);
+        } else {
+            self.waiting.push(script);
+        }
+    }
+
+    #[cfg(test)]
     pub(super) fn new(scripts: &[PageScript]) -> Self {
         Self {
             waiting: scripts
@@ -49,6 +93,7 @@ impl ParserScripts {
         self.waiting
             .iter()
             .chain(self.deferred.iter())
+            .chain(self.blocking.iter())
             .any(|script| script_resource(script) == *resource)
             || self.modules.contains(resource)
     }
@@ -57,22 +102,32 @@ impl ParserScripts {
         self.waiting
             .iter()
             .chain(self.deferred.iter())
+            .chain(self.blocking.iter())
             .filter(|script| script.code.is_none())
             .map(script_resource)
-            .filter(|resource| !self.completed.contains(resource))
+            .filter(|resource| !self.completed.contains_key(resource))
             .chain(self.modules.resources())
     }
 
+    #[cfg(test)]
     pub(super) fn has_ready(&self) -> bool {
-        self.ready.iter().any(|script| self.can_execute(script))
+        self.has_ready_with_styles(true)
+    }
+
+    pub(super) fn has_ready_with_styles(&self, styles_ready: bool) -> bool {
+        (styles_ready && self.blocking_ready())
+            || self.ready.iter().any(|script| self.can_execute(script))
             || self
                 .deferred
                 .front()
-                .is_some_and(|script| self.can_execute(script))
+                .is_some_and(|script| styles_ready && !self.parsing && self.can_execute(script))
     }
 
     pub(super) fn is_pending(&self) -> bool {
-        !self.waiting.is_empty() || !self.ready.is_empty() || self.deferred_pending()
+        self.blocking.is_some()
+            || !self.waiting.is_empty()
+            || !self.ready.is_empty()
+            || self.deferred_pending()
     }
 
     pub(super) fn deferred_pending(&self) -> bool {
@@ -81,12 +136,19 @@ impl ParserScripts {
 
     fn can_execute(&self, script: &PageScript) -> bool {
         if script.code.is_none() {
-            return self.completed.contains(&script_resource(script));
+            return self.completed.contains_key(&script_resource(script));
         }
         script.kind == ScriptKind::Classic || self.modules.is_ready(script)
     }
 
     fn pop_ready(&mut self) -> Option<PageScript> {
+        if self.blocking_ready() {
+            return self.blocking.take();
+        }
+        self.pop_nonblocking_ready(true)
+    }
+
+    fn pop_nonblocking_ready(&mut self, styles_ready: bool) -> Option<PageScript> {
         if let Some(index) = self
             .ready
             .iter()
@@ -97,7 +159,7 @@ impl ParserScripts {
         if self
             .deferred
             .front()
-            .is_some_and(|script| self.can_execute(script))
+            .is_some_and(|script| styles_ready && !self.parsing && self.can_execute(script))
         {
             return self.deferred.pop_front();
         }
@@ -110,11 +172,13 @@ impl ParserScripts {
     }
 
     pub(super) fn complete(&mut self, resource: &PageResource, code: Option<&str>) {
-        if !self.completed.insert(resource.clone()) {
+        if self.completed.contains_key(resource) {
             return;
         }
+        self.completed
+            .insert(resource.clone(), code.map(str::to_owned));
         self.modules.complete(resource, code);
-        for script in &mut self.deferred {
+        for script in self.deferred.iter_mut().chain(self.blocking.iter_mut()) {
             if script_resource(script) == *resource {
                 script.code = code.map(str::to_owned);
             }
@@ -149,7 +213,12 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
         outcome: &mut ScriptOutcome,
     ) -> Result<(), String> {
-        let Some(script) = self.parser_scripts.pop_ready() else {
+        let script = if self.parser_stylesheets_pending() {
+            self.parser_scripts.pop_nonblocking_ready(false)
+        } else {
+            self.parser_scripts.pop_ready()
+        };
+        let Some(script) = script else {
             return Ok(());
         };
         if !self
@@ -195,6 +264,7 @@ impl DocumentRuntime {
             merge_outcome(outcome, response.outcome, self.page.dom.document.id());
             return Ok(());
         };
+        let parser_blocking = script.blocks_first_paint;
         let input = ScriptInput {
             node: script.node,
             source_url: script.source_url,
@@ -208,9 +278,14 @@ impl DocumentRuntime {
                 "executing prepared script {}",
                 input.source_url
             ))?;
-            // Exactly one element task per checkpoint; promise jobs are drained by the runtime.
+            // One element per invocation; promise jobs are drained before parser resumption.
             // Dependencies are ready before invocation. Never perform network I/O in this task.
+            runtime.set_parser_write_capture(parser_blocking && self.parser.is_some());
             let result = runtime.execute_additional_with_loader(&[input], None);
+            let writes = runtime.take_parser_writes();
+            if let Some(parser) = self.parser.as_mut() {
+                parser.parser.insert(writes);
+            }
             merge_outcome(outcome, result, self.page.dom.document.id());
         }
         Ok(())

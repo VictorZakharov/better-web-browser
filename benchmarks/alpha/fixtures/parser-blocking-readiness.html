@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Parser loading</title>
+<style>
+body { font: 24px Arial, sans-serif; margin: 36px; color: #17253d; background: white; }
+.panel { padding: 24px; margin: 16px 0; background: #eee; }
+#prefix, .pass { background: #b8e6c1; }
+.fail { background: #f4b6b6; }
+#trace { font-size: 16px; overflow-wrap: anywhere; }
+</style></head><body>
+<h1>Parser-blocking script readiness</h1>
+<div id="prefix" class="panel">Parsed prefix is visible</div>
+<div id="fast" class="panel">Async script pending</div>
+<div id="complete" class="panel">Parser is waiting for the blocking script</div>
+<p id="trace"></p>
+<script>
+window.parserStart = performance.now(); window.parserTrace = []; window.parserTimes = {};
+window.parserMark = label => {
+  parserTrace.push(label); parserTimes[label] = Math.round(performance.now() - parserStart);
+  document.querySelector('#trace').textContent = parserTrace.join(' | ');
+};
+parserMark('initial-' + (document.querySelector('#tail') === null));
+document.addEventListener('DOMContentLoaded', () => parserMark('DCL'));
+window.addEventListener('load', () => {
+  parserMark('LOAD');
+  const expected = 'initial-true|async-true|block-true-loading|micro|block-load|tail|defer-interactive|DCL|LOAD';
+  const pass = parserTrace.join('|') === expected;
+  const result = document.querySelector('#complete');
+  result.className = 'panel ' + (pass ? 'pass' : 'fail');
+  result.textContent = pass ? 'Parser contract passed' : 'Parser contract failed';
+  result.setAttribute('data-contract', pass ? 'pass' : 'fail');
+  result.setAttribute('data-times', JSON.stringify(parserTimes));
+  document.title = pass ? 'Parser complete' : 'Parser contract failed';
+  console.log('PARSER_READINESS ' + JSON.stringify(parserTimes));
+});
+</script>
+<script async src="parser-fast.js?delay_ms=100"></script>
+<script id="blocking" src="parser-block.js?delay_ms=2000"></script>
+<div id="tail">This tail must not exist while the blocking script is pending.</div>
+<script>parserMark('tail');</script>
+<script defer src="parser-deferred.js?delay_ms=100"></script>
+</body></html>

@@ -7,7 +7,7 @@ mod streaming;
 
 use super::DocumentRuntime;
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
-use crate::engine::{Page, PageResource, ScriptKind, ScriptOutcome, ScriptRuntime};
+use crate::engine::{PageResource, ScriptKind, ScriptOutcome, ScriptRuntime};
 use crate::limits::bounded_utf8_prefix;
 use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
 use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
@@ -67,27 +67,6 @@ pub(super) fn discard_resource_preloads(
 }
 
 impl DocumentRuntime {
-    pub(super) fn fetch_resources(
-        &mut self,
-        connection: &mut ChildConnection,
-        include: impl Fn(&Page, &PageResource) -> bool,
-    ) -> Result<bool, String> {
-        let resources = self
-            .page
-            .resources
-            .iter()
-            .filter(|resource| !self.loaded_resources.contains(*resource))
-            .filter(|resource| include(&self.page, resource))
-            .cloned()
-            .collect::<Vec<_>>();
-        if resources.is_empty() {
-            return Ok(false);
-        }
-        let (requests, mut by_request) = resource_requests(connection, self.id, resources);
-        let responses = connection.fetch_batch(self.id, requests)?;
-        self.install_resource_responses(connection, responses, &mut by_request, false)
-    }
-
     pub(super) fn start_presentational_preloads(
         &mut self,
         connection: &mut ChildConnection,
@@ -145,7 +124,14 @@ impl DocumentRuntime {
             .script_runtime
             .as_ref()
             .is_some_and(ScriptRuntime::has_ready_document_task);
-        if !render && !self.parser_scripts.has_ready() && !dynamic_ready && !document_ready {
+        if !render
+            && !self
+                .parser_scripts
+                .has_ready_with_styles(!self.parser_stylesheets_pending())
+            && !self.parser_runnable()
+            && !dynamic_ready
+            && !document_ready
+        {
             return Ok(None);
         }
         // A network burst commonly completes several images at once. Rendering from this
@@ -201,16 +187,6 @@ impl DocumentRuntime {
         }
         Ok(changed)
     }
-
-    pub(super) fn finish_resource_preloads(
-        &mut self,
-        connection: &mut ChildConnection,
-        pending: PendingResourceFetch,
-    ) -> Result<bool, String> {
-        let responses = connection.finish_fetch_batch(pending.batch)?;
-        let mut by_request = pending.by_request;
-        self.install_resource_responses(connection, responses, &mut by_request, true)
-    }
 }
 
 fn is_presentational_resource(resource: &PageResource) -> bool {
@@ -254,26 +230,6 @@ fn resource_requests(
         })
         .collect();
     (requests, by_request)
-}
-
-pub(super) fn fetch_script_source(
-    connection: &mut ChildConnection,
-    document: DocumentId,
-    url: &str,
-    kind: ScriptKind,
-    fetch_options: crate::engine::ScriptFetchOptions,
-) -> Result<String, String> {
-    let resource = PageResource::Script {
-        url: url.to_string(),
-        kind,
-        fetch_options,
-    };
-    let request = page_resource_request(connection.allocate_request_id(), document, &resource);
-    let response = connection
-        .fetch_batch(document, vec![request])?
-        .pop()
-        .ok_or_else(|| "browser omitted a script response".to_string())?;
-    decode_script_response(response, kind)
 }
 
 pub(super) fn decode_script_response(

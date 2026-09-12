@@ -11,6 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 mod title;
+#[path = "tree_sink.rs"]
+mod tree_sink;
 
 #[derive(Debug, Clone)]
 pub struct Dom {

@@ -432,6 +432,10 @@ fn wait_for_text(
                 if text.contains(expected) {
                     return *presentation;
                 }
+                pump_ready_task(session, document, presentation.next_timer_micros);
+            }
+            Ok(RendererEvent::RuntimeUpdate(update)) if update.document == document => {
+                pump_ready_task(session, document, update.next_timer_micros);
             }
             Ok(RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_)) | Err(_) => {}
             Ok(event) => panic!("unexpected backpressure event: {event:?}"),

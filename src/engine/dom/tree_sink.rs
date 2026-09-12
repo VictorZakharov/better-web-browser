@@ -1,8 +1,10 @@
 //! html5ever tree-construction adapter for the owned DOM model.
 
-use super::document::Dom;
-use super::mutation::{append_node, append_to_existing_text, parent_and_index, remove_from_parent};
-use super::node::{ElementData, Node, NodeData, NodeRef};
+use super::super::mutation::{
+    append_node, append_to_existing_text, parent_and_index, remove_from_parent,
+};
+use super::super::node::{ElementData, Node, NodeData, NodeRef};
+use super::Dom;
 use crate::limits::MAX_HTML_PARSE_ERRORS;
 use html5ever::interface::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
 use html5ever::tendril::StrTendril;

@@ -30,6 +30,10 @@ pub(super) fn resized_media_viewport_width(current: f32, physical_delta: i32, sc
     (current + physical_delta as f32 / scale.max(f32::EPSILON)).max(1.0)
 }
 
+pub(super) fn media_width_from_client(client: i32, scrollbar: i32, scale: f32) -> f32 {
+    client.saturating_add(scrollbar.max(0)).max(1) as f32 / scale.max(f32::EPSILON)
+}
+
 pub(super) fn scale_dip(value: i32, dpi: u32) -> i32 {
     ((value as i64 * dpi.max(1) as i64 + (DEFAULT_DPI as i64 / 2)) / DEFAULT_DPI as i64)
         .clamp(i32::MIN as i64, i32::MAX as i64) as i32
@@ -153,5 +157,13 @@ mod tests {
     fn tracks_media_viewport_across_physical_resizes() {
         assert_eq!(resized_media_viewport_width(1100.0, 125, 1.25), 1200.0);
         assert_eq!(resized_media_viewport_width(10.0, -100, 1.0), 1.0);
+    }
+
+    #[test]
+    fn media_viewport_includes_the_initial_scrollbar_at_the_window_dpi() {
+        assert_eq!(media_width_from_client(1089, 17, 1.0), 1106.0);
+        assert_eq!(media_width_from_client(1106, 0, 1.0), 1106.0);
+        assert_eq!(media_width_from_client(1354, 21, 1.25), 1100.0);
+        assert_eq!(media_width_from_client(1375, 0, 1.25), 1100.0);
     }
 }
