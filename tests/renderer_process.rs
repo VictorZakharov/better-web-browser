@@ -18,6 +18,8 @@ mod hover;
 mod input;
 #[path = "renderer_process/media.rs"]
 mod media;
+#[path = "renderer_process/pointer_buttons.rs"]
+mod pointer_buttons;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
 #[path = "renderer_process/state.rs"]

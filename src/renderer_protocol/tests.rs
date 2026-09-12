@@ -370,12 +370,14 @@ fn rejects_non_monotonic_sequence() {
 
 #[test]
 fn rejects_incompatible_version_and_reserved_flags() {
-    let mut version = encoded_browser(&BrowserMessage::Shutdown);
-    version[4..6].copy_from_slice(&(PROTOCOL_MAJOR + 1).to_le_bytes());
-    assert!(matches!(
-        FrameReader::new(Cursor::new(version), session()).read_browser(),
-        Err(ProtocolError::IncompatibleVersion { .. })
-    ));
+    for major in [PROTOCOL_MAJOR - 1, PROTOCOL_MAJOR + 1] {
+        let mut version = encoded_browser(&BrowserMessage::Shutdown);
+        version[4..6].copy_from_slice(&major.to_le_bytes());
+        assert!(matches!(
+            FrameReader::new(Cursor::new(version), session()).read_browser(),
+            Err(ProtocolError::IncompatibleVersion { .. })
+        ));
+    }
 
     let mut flags = encoded_browser(&BrowserMessage::Shutdown);
     flags[10..12].copy_from_slice(&1_u16.to_le_bytes());

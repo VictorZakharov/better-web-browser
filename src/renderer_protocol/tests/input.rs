@@ -17,6 +17,7 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             sequence: 1,
             phase: PointerPhase::Up,
             button: PointerButton::Primary,
+            buttons: 0,
             x: 24.5,
             y: 30.0,
             modifiers,
@@ -72,6 +73,39 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
     let mut reader = FrameReader::new(Cursor::new(bytes), session());
     for expected in messages {
         assert_eq!(reader.read_browser().unwrap(), expected);
+    }
+}
+
+#[test]
+fn pointer_button_masks_round_trip_and_reject_unsupported_bits() {
+    for buttons in 0..=8 {
+        let message = BrowserMessage::Input(DocumentInput::Pointer(PointerInput {
+            document: DocumentId::new(3).unwrap(),
+            sequence: 1,
+            phase: PointerPhase::Move,
+            button: PointerButton::None,
+            buttons,
+            x: 20.0,
+            y: 20.0,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }));
+        let mut bytes = Vec::new();
+        let encoded = FrameWriter::new(&mut bytes, session()).send_browser(&message);
+        if buttons == 8 {
+            assert!(matches!(
+                encoded,
+                Err(ProtocolError::InvalidPayload("pointer buttons"))
+            ));
+        } else {
+            encoded.unwrap();
+            assert_eq!(
+                FrameReader::new(Cursor::new(bytes), session())
+                    .read_browser()
+                    .unwrap(),
+                message
+            );
+        }
     }
 }
 

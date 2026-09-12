@@ -97,6 +97,7 @@ impl BrowserState {
             sequence,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
+            buttons: 0,
             x: (bounds.x + bounds.width / 2.0).max(0.0),
             y: (bounds.y + bounds.height / 2.0).max(0.0),
             modifiers: InputModifiers::default(),

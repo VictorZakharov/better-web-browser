@@ -80,10 +80,7 @@ pub(super) struct DocumentRuntime {
     accessibility_selection: Option<(crate::engine::dom::NodeId, u32, u32)>,
     accessibility_values: HashMap<crate::engine::dom::NodeId, String>,
     focused_node: Option<crate::engine::dom::NodeId>,
-    pointer_down: Option<(
-        crate::engine::dom::NodeId,
-        crate::renderer_protocol::PointerButton,
-    )>,
+    pointer_down: [Option<crate::engine::dom::NodeId>; 3],
     scriptless_pointer_path: Vec<crate::engine::dom::NodeRef>,
     last_input_sequence: u64,
     last_acknowledged_revision: u64,

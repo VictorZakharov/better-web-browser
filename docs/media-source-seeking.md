@@ -239,9 +239,39 @@ the player error surface. No user browser session or authenticated profile was u
 
 This prevents attributing this reproducible failure solely to Breeze's decoder or lack
 of HTTP/3. It does **not** identify the response semantics, establish a YouTube outage,
-explain a difference from regular signed-in Chrome, or prove Breeze's implementation
-correct. A successful equivalent reference seek is still needed to isolate the next
-Breeze-specific divergence. Starting a URL with a timestamp is not that reference.
+explain the reference-session difference, or prove Breeze's implementation correct.
+The user subsequently confirmed that both regular signed-in Chrome and signed-out
+Incognito play this video and resume a manual seek to 10:01 in under one second.
+That is user-observed latency, not an automated measurement. Sign-in alone therefore
+does not explain the discrepancy. A successful equivalent automated reference remains
+needed to compare internal state; starting a timestamped URL is not a seek test.
+
+### Pressed-button state during scrubbing
+
+A separate isolated-renderer regression reproduced `mousedown.buttons=1`, followed by
+`mousemove.buttons=0` while the mouse was still pressed. The renderer previously derived
+the mask from the event phase, losing held state during movement and other-button releases.
+The shell now carries Win32's post-event mask through versioned IPC. Movement coalescing
+preserves button/modifier transitions, and each mouse button retains independent click
+ownership. A release observed outside content clears stale ownership on return; focus loss
+and document suspension also clear it. This does not deliver a lost release outside the
+window or implement pointer capture.
+
+The owned `tests/fixtures/pointer-buttons.html` fixture was compared with silent headless
+Chrome 152.0.7977.83 using actual press, move, and release input. Both completed without
+browser/profile-cleanup errors. Primary/secondary chords and middle-button movement match:
+`buttons` retains all held buttons, unchanged `pointermove.button` is -1, and additional
+button transitions use `pointermove` while legacy mouse events report each press/release.
+Legacy `mousemove.button` remains 0, as in Chrome and the current
+[mouse-event initialization algorithm](https://www.w3.org/TR/pointerevents4/#set-mouseevent-attributes-from-native).
+The [chorded-button contract](https://www.w3.org/TR/pointerevents3/#chorded-button-interactions)
+and [Win32 message state](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousemove)
+define the mapping. IPC major version 5 rejects older peers rather than misreading the
+added mask byte. This slice covers the shell's three routed mouse buttons, not complete
+Pointer Events conformance, touch/pen input, or compatibility-mouse suppression.
+
+This fixes a demonstrated generic drag-input defect. It is not evidence that the
+intermittent 168/170-byte media refill or the live YouTube seek failure is resolved.
 
 ### Earlier comparison and overall limits
 
