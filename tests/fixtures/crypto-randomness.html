@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Web Crypto randomness contract</title>
+<h1>Web Crypto randomness contract</h1>
+<pre id="result">Running</pre>
+<script src="crypto-randomness.js"></script>
+<script>
+const windowResult = checkCryptoRandomness();
+const worker = new Worker('crypto-randomness-worker.js');
+worker.onmessage = event => {
+    const result = { window: windowResult, worker: event.data };
+    document.querySelector('#result').textContent = JSON.stringify(result, null, 2);
+    document.documentElement.dataset.fixtureReady = String(
+        !windowResult.failures.length && !event.data.failures.length);
+    worker.terminate();
+};
+worker.onerror = event => {
+    document.querySelector('#result').textContent = 'Worker failed: ' + event.message;
+};
+</script>

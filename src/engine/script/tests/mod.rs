@@ -23,6 +23,7 @@ mod bindings;
 mod canvas;
 mod channel_messaging;
 mod compatibility;
+mod crypto;
 mod cssom;
 mod cssom_view;
 mod cssom_view_scroll;

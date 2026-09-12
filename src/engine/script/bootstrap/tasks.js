@@ -378,19 +378,6 @@
             resizeObservers.delete(this);
         }
     };
-    windowObject.crypto = {
-        getRandomValues(array) {
-            for (let index = 0; index < array.length; index++) array[index] = Math.floor(Math.random() * 256);
-            return array;
-        },
-        randomUUID() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
-                const value = Math.floor(Math.random() * 16);
-                return (character === 'x' ? value : (value & 3) | 8).toString(16);
-            });
-        }
-    };
-
     windowObject.__wrap = wrap;
     refreshWindowNamedProperties();
 })();

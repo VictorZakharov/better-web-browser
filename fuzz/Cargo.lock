@@ -85,6 +85,7 @@ dependencies = [
  "encoding_rs",
  "flate2",
  "fontique",
+ "getrandom",
  "harfrust",
  "html5ever",
  "image",
@@ -99,6 +100,7 @@ dependencies = [
  "unicode-segmentation",
  "url",
  "v8",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

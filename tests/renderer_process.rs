@@ -8,6 +8,8 @@ mod async_scripts;
 mod backpressure;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
+#[path = "renderer_process/crypto.rs"]
+mod crypto;
 #[path = "renderer_process/event_notifications.rs"]
 mod event_notifications;
 #[path = "renderer_process/fullscreen.rs"]

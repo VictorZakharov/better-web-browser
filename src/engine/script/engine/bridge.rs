@@ -16,6 +16,26 @@ impl HostBridge {
             .first()
             .map(JsValue::string_value)
             .unwrap_or_default();
+        if operation == "cryptoRandomBytes" {
+            return super::crypto::random_bytes(arguments);
+        }
+        if operation == "cryptoSecureContext" {
+            let url = match self {
+                Self::Document(host) => host
+                    .upgrade()
+                    .ok_or_else(inactive_host)?
+                    .borrow()
+                    .document_url
+                    .clone(),
+                Self::Worker(host) => host
+                    .upgrade()
+                    .ok_or_else(inactive_host)?
+                    .borrow()
+                    .source_url
+                    .clone(),
+            };
+            return Ok(JsValue::from(super::crypto::trustworthy_url(&url)));
+        }
         match self {
             Self::Document(host) => {
                 let host = host.upgrade().ok_or_else(inactive_host)?;

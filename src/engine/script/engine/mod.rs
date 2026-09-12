@@ -1,6 +1,7 @@
 //! V8 ownership and the engine-neutral values used by native Web API bindings.
 
 mod bridge;
+mod crypto;
 mod modules;
 mod runtime;
 mod value;

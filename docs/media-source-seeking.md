@@ -275,6 +275,12 @@ intermittent 168/170-byte media refill or the live YouTube seek failure is resol
 
 ### Earlier comparison and overall limits
 
+The related API audit found a separate [Web Crypto randomness defect](web-crypto-randomness.md):
+integer elements wider than a byte received only 8 random bits, randomness used `Math.random`,
+and workers had no crypto API. The OS-backed replacement has cross-engine and isolated-renderer
+regressions. This is a demonstrated standards/security correction, not proof that the live
+media refill failure is resolved.
+
 Headless Chrome advanced from 420 to about 440 seconds with both its usual identity and
 Breeze's user-agent string. Those captures reported a temporary-profile cleanup failure,
 so their playback observations are retained without counting the complete harness runs as
