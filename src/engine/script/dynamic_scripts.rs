@@ -54,6 +54,7 @@ pub(super) fn drain_one_dynamic_script(
     let Some(pending_script) = host.borrow_mut().pending_dynamic_scripts.pop_ready() else {
         return false;
     };
+    host.borrow_mut().idle_callbacks.interrupt();
     let ordered = pending_script.ordered;
     execute_prepared(context, host, outcome, pending_script, total_bytes);
     if ordered {

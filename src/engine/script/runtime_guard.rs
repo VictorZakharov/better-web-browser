@@ -64,6 +64,7 @@ pub(super) fn finish_host(
     host: &Rc<RefCell<HostState>>,
 ) -> ScriptOutcome {
     let mut state = host.borrow_mut();
+    state.task_started = None;
     outcome.mutation_count = std::mem::take(&mut state.mutation_count);
     outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
     outcome.console.append(&mut state.console);

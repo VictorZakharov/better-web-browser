@@ -170,10 +170,10 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 80-file Web Platform Test suite covers 570 upstream harness subtests across HTML
+A pinned, curated 127-file Web Platform Test suite covers 735 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 570 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 735 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -183,7 +183,7 @@ subtests pass at the pinned revision, with no expected-failure, skip, or timeout
 
 The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
 regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression
-gate, not Breeze's whole-platform pass rate. A separate discovery sample records 3 passes and 16
+gate, not Breeze's whole-platform pass rate. A separate discovery sample records
 known failures across nearby unsupported behavior. See
 [tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
 provenance, licensing, expectation policy, filtering, and exact execution contract.
@@ -232,6 +232,9 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.
+
+[Cooperative idle scheduling](docs/idle-callback-scheduling.md) covers scheduler-backed
+`requestIdleCallback`, bounded native deadlines, timeout races, cancellation, and task fairness.
 
 The [loading standards implementation sequence](docs/loading-standards.md) records the
 code-backed scheduling/lifecycle gaps and owned-fixture acceptance criteria. The first

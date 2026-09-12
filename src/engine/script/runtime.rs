@@ -147,9 +147,7 @@ impl ScriptRuntime {
         }
         let mut host = self.host.borrow_mut();
         let now = host.timers.now();
-        host.timers
-            .next_due_time()
-            .map(|due| due.saturating_sub(now))
+        host.next_callback_due().map(|due| due.saturating_sub(now))
     }
 
     pub fn has_pending_dynamic_scripts(&self) -> bool {
@@ -270,6 +268,11 @@ impl ScriptRuntime {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
+        // This is elapsed embedder time, not permission to simulate callbacks at past due
+        // dates. Apply it before selecting work so a busy event loop cannot run an expired
+        // idle timeout as though an earlier idle opportunity were still available.
+        self.elapse_time(advance);
+        let advance = Duration::ZERO;
         if max_callbacks > 0 && self.has_ready_document_task() {
             return self.advance_document_task(advance);
         }
@@ -289,10 +292,7 @@ impl ScriptRuntime {
                     && !host.borrow().pending_dynamic_scripts.is_empty()));
         let has_ready_timer = {
             let mut state = host.borrow_mut();
-            state
-                .timers
-                .next_due_time()
-                .is_some_and(|due| due <= horizon)
+            state.next_callback_due().is_some_and(|due| due <= horizon)
         };
         let run_timer =
             has_ready_timer && max_callbacks > 0 && (!has_dynamic_script || self.prefer_timer_task);

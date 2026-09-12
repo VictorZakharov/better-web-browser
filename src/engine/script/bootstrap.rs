@@ -44,6 +44,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     // Observer closures capture the private task exception reporter before
     // tasks.js closes the shared root IIFE; delivery begins only after bootstrap completes.
     include_str!("bootstrap/intersection_observer.js"),
+    include_str!("bootstrap/idle_callbacks.js"),
     include_str!("bootstrap/tasks.js"),
     include_str!("bootstrap/crypto.js"),
     include_str!("bootstrap/streams.js"),

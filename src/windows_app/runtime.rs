@@ -36,7 +36,8 @@ impl BrowserState {
         }
         self.renderer_next_timer = update.next_timer_micros.map(Duration::from_micros);
         if update.clock_advanced {
-            self.renderer_runtime_clock = Some(Instant::now());
+            // pump_script_runtime anchored the clock when it sent the advance. Resetting it
+            // here discards time spent executing callbacks (including expired idle timeouts).
             self.renderer_clock_pending = false;
             self.renderer_work_pending = false;
         }
@@ -79,7 +80,7 @@ impl BrowserState {
             return;
         };
         // Resource-only presentations do not advance the renderer's logical clock. Preserve wall
-        // time elapsed since the last acknowledged clock advance instead of restarting a pending
+        // time elapsed since the last submitted clock advance instead of restarting a pending
         // JavaScript timer at its original delay after every image or font arrives.
         let elapsed = self
             .renderer_runtime_clock

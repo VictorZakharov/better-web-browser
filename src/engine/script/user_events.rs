@@ -7,6 +7,7 @@ pub(super) fn dispatch(
     host: &Rc<RefCell<HostState>>,
     event: UserInputEvent,
 ) -> UserInputResult {
+    host.borrow_mut().begin_task();
     let payload = payload(host, event);
     let invocation = format!(
         "document.__dispatchNativeInput({});",
