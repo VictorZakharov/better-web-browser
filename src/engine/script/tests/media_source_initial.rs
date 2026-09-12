@@ -1,3 +1,4 @@
+use super::media_source_segments::MediaTaskTestRuntime;
 use super::*;
 #[test]
 fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
@@ -74,7 +75,7 @@ fn media_source_object_url_appends_bounded_muxed_bytes_and_ends() {
     assert!(commit.0.starts_with("video/mp4"));
     assert_eq!(commit.1, &[0, 0, 0, 8, 109, 100, 97, 116]);
     let video = dom.elements_named("video").next().unwrap();
-    let loaded = runtime.dispatch_user_input(UserInputEvent::Media {
+    let loaded = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
         buffered: None,
         target: video,
         request_id: 0,
@@ -172,7 +173,7 @@ fn media_source_admits_separate_h264_and_aac_tracks_and_defers_play_until_loaded
     );
     let video = dom.elements_named("video").next().unwrap();
     assert_eq!(video.id(), commit.0);
-    let loaded = runtime.dispatch_user_input(UserInputEvent::Media {
+    let loaded = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
         buffered: None,
         target: video.clone(),
         request_id: 0,
@@ -198,7 +199,7 @@ fn media_source_admits_separate_h264_and_aac_tracks_and_defers_play_until_loaded
             )
         })
         .expect("loaded adaptive source did not resume the deferred play request");
-    let playing = runtime.dispatch_user_input(UserInputEvent::Media {
+    let playing = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
         buffered: None,
         target: video,
         request_id: playback.request_id,

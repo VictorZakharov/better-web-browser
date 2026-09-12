@@ -45,7 +45,7 @@ fn later_media_only_appends_use_the_latest_initialization_segment() {
                 "transfer {index}, split initialization={split_init}"
             );
             outcome = runtime
-                .dispatch_user_input(UserInputEvent::Media {
+                .dispatch_media_and_tasks(UserInputEvent::Media {
                     target: dom.elements_named("video").next().unwrap(),
                     request_id: 0,
                     disposition: if index == 0 { "loaded" } else { "appended" },
@@ -76,7 +76,7 @@ fn decode_failure_reports_one_media_error_and_keeps_document_script_alive() {
         );
         let (dom, mut runtime, _) = execute_media_source(&html);
         for disposition in ["loaded", "media-error", "media-error"] {
-            let result = runtime.dispatch_user_input(UserInputEvent::Media {
+            let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
                 target: dom.elements_named("video").next().unwrap(),
                 request_id: 0,
                 disposition,

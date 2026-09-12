@@ -7,6 +7,9 @@ mod reconfiguration;
 mod seeking;
 #[path = "media_source_starvation.rs"]
 mod starvation;
+#[path = "media_source_tasks.rs"]
+mod tasks;
+pub(super) use tasks::MediaTaskTestRuntime;
 
 #[test]
 fn media_source_declared_duration_survives_partial_decode_and_append() {
@@ -31,7 +34,7 @@ fn media_source_declared_duration_survives_partial_decode_and_append() {
         ("appended", 40.0, "220:220:40:220"),
         ("appended", 230.0, "230:230:230:230"),
     ] {
-        let result = runtime.dispatch_user_input(UserInputEvent::Media {
+        let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
             buffered: None,
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
@@ -129,7 +132,7 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
             ("appended", 10.0, 20.0),
             ("appended", 10.0, 30.0),
         ] {
-            let result = runtime.dispatch_user_input(UserInputEvent::Media {
+            let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
                 buffered: None,
                 target: dom.elements_named("video").next().unwrap(),
                 request_id: 0,
@@ -152,7 +155,7 @@ fn open_media_source_waits_at_buffer_end_and_does_not_resume_a_user_pause() {
                     .find(|action| matches!(action.command, ScriptMediaCommand::Seek { .. }));
                 assert_eq!(seek.is_some(), duration == 20.0);
                 if let Some(seek) = seek {
-                    let resumed = runtime.dispatch_user_input(UserInputEvent::Media {
+                    let resumed = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
                         buffered: None,
                         target: dom.elements_named("video").next().unwrap(),
                         request_id: seek.request_id,
@@ -287,9 +290,9 @@ fn adaptive_media_source_sends_later_segments_as_bounded_appends() {
     assert_eq!(initial.1.last(), Some(&1));
 
     let video = dom.elements_named("video").next().unwrap();
-    let loaded = runtime.dispatch_user_input(UserInputEvent::Media {
+    let loaded = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
         buffered: None,
-        target: video,
+        target: video.clone(),
         request_id: 0,
         disposition: "loaded",
         current_time: 0.0,
@@ -319,5 +322,42 @@ fn adaptive_media_source_sends_later_segments_as_bounded_appends() {
         b'o', b'o', b'f', 0, 0, 0, 9, b'm', b'd', b'a', b't', 2,
     ];
     assert_eq!(appended.0, &expected);
-    assert_eq!(appended.1, &expected);
+    assert!(
+        appended.1.is_empty(),
+        "the other track's parser task is still queued"
+    );
+    let acknowledged = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
+        buffered: Some([[10.0, 20.0], [0.0, 0.0]]),
+        target: video,
+        request_id: 0,
+        disposition: "appended",
+        current_time: 0.0,
+        duration: 20.0,
+        width: 1280,
+        height: 720,
+    });
+    assert!(
+        acknowledged.outcome.errors.is_empty(),
+        "{:?}",
+        acknowledged.outcome.errors
+    );
+    let audio = acknowledged
+        .outcome
+        .media_actions
+        .iter()
+        .find_map(|action| match &action.command {
+            ScriptMediaCommand::AppendAdaptive {
+                video_bytes,
+                audio_bytes,
+            } => {
+                assert!(
+                    video_bytes.is_empty(),
+                    "accepted video must not be submitted twice"
+                );
+                Some(audio_bytes)
+            }
+            _ => None,
+        })
+        .expect("queued audio is submitted after the first track's acknowledgement");
+    assert_eq!(audio, &expected);
 }

@@ -28,7 +28,7 @@ fn ended_tracks_extend_the_last_range_but_never_fill_an_internal_gap() {
         ("appended", [[3.0, 4.0], [0.0, 0.0]]),
     ] {
         let outcome = runtime
-            .dispatch_user_input(UserInputEvent::Media {
+            .dispatch_media_and_tasks(UserInputEvent::Media {
                 target: target.clone(),
                 request_id: 0,
                 disposition,
@@ -75,7 +75,7 @@ fn shorter_video_buffer_stops_audio_and_waits_for_both_tracks() {
         let target = dom.elements_named("video").next().unwrap();
         let mut send = |disposition, request_id, current_time, buffered| {
             let outcome = runtime
-                .dispatch_user_input(UserInputEvent::Media {
+                .dispatch_media_and_tasks(UserInputEvent::Media {
                     target: target.clone(),
                     request_id,
                     disposition,

@@ -31,7 +31,7 @@ fn abort_discards_partial_input_even_between_appends_and_preserves_buffered_fram
     );
     assert!(initial.errors.is_empty());
     let result = runtime
-        .dispatch_user_input(UserInputEvent::Media {
+        .dispatch_media_and_tasks(UserInputEvent::Media {
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
             disposition: "loaded",

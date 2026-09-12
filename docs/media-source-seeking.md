@@ -71,6 +71,32 @@ clean live retest.
 
 ## Live evidence and remaining failure
 
+### MediaSource event tasks
+
+MediaSource lifecycle and SourceBuffer events previously used microtasks. That ran
+`sourceopen` before promises queued by the attaching script, and ran `update` and
+`updateend` without a microtask checkpoint between their listeners. They now use the
+renderer event loop's media task source. SourceBuffer `updatestart` and asynchronous
+parsing are separate tasks; an abort during the intervening microtask checkpoint
+invalidates the pending parser operation. Already queued events remain queued.
+
+The internal queue does not call author-replaceable `setTimeout` or `queueMicrotask`,
+and author timer cancellation cannot remove media tasks. The normal bounded task
+executor supplies microtask checkpoints and rendering opportunities. Native acceptance
+still controls `updateend`: dispatching an event is not proof that the decoder accepted
+bytes. Independently processed tracks may produce separate transfers; acknowledgements
+release the next transfer without resubmitting already accepted bytes.
+
+Four focused regressions cover attach/promise order, a checkpoint after each buffer
+event, abort from an `updatestart` promise, and internal task ownership. Existing
+fixtures now explicitly advance queued tasks after worker acknowledgements instead of
+assuming synchronous event delivery. This is an MSE event-scheduling correction, not
+complete HTML media-event or MSE conformance, and it did not resolve the live failure.
+
+Contracts: [MSE appendBuffer](https://www.w3.org/TR/media-source-2/#dom-sourcebuffer-appendbuffer),
+[MSE range removal](https://www.w3.org/TR/media-source-2/#sourcebuffer-range-removal),
+and [HTML media tasks](https://html.spec.whatwg.org/multipage/media.html#queue-a-media-element-task).
+
 ### Unequal track starvation and media callback side effects
 
 The follow-up audio-keeps-playing report exposed two additional engine defects:
@@ -106,13 +132,26 @@ active playback, and no native media failure. This is real frame advancement, bu
 the same operation as seeking after playback has started. The silent worker clock is not
 proof of physical audio output; the native fixture separately verifies decoded PCM.
 
-Seeking after initial playback still encountered HTTP 403 and, on some runs, DNS failures
-from media hosts, followed by the site's own player reset. That case remains unresolved.
+Some seek-after-playback runs recorded HTTP 403 or DNS failures as well as the site's own
+player reset. Those observations alone do not establish a causal relationship. On
+2026-09-12, redacted request timing showed that the six GET/itag-18 HTTP 403 responses
+occurred during startup, roughly twenty seconds before the seek. A successful seek
+also had those startup failures. The prior approved replay of one such GET in signed-out,
+headless Chrome also returned 403, but it did not test the failing post-seek POST.
+
+Two baseline keyboard-seek runs resumed at about 601.536 s and continued to 640.662 s
+and 635.730 s. Their post-seek POST responses delivered about 3.7 MB followed by further
+refills. With the event-task correction, another run failed: every post-seek POST returned
+HTTP 200, but delivered only 168 or 170 bytes. No post-seek frames were presented, and the
+site reset the player about twenty seconds later. The screenshot confirms the player's
+error screen. Byte counts do not identify the response semantics or prove that the
+outbound request was correct. The cause of this intermittent failure remains open.
+
 Headless Chrome advanced from 420 to about 440 seconds with both its usual identity and
 Breeze's user-agent string. Those captures reported a temporary-profile cleanup failure,
 so their playback observations are retained without counting the complete harness runs as
-passes. No request replay or changes to filtering, TLS validation, or access policy are
-included in this change.
+passes. Temporary timing/replay probes and signed request captures are not shipped.
+No changes to filtering, TLS validation, or access policy are included in this change.
 
 An HTTP 200 document or a successful benchmark process alone is not evidence that video
 playback succeeded. The complete seek-after-playback scenario must pass before this incident

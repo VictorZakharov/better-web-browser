@@ -140,8 +140,8 @@ fn unsupported_codecs_and_encrypted_media_fail_closed() {
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
         concat!(
-            "codec:NotSupportedError,navigator:NotSupportedError,",
-            "element:NotSupportedError,mediaKeys:true,handler:true"
+            "navigator:NotSupportedError,element:NotSupportedError,",
+            "codec:NotSupportedError,mediaKeys:true,handler:true"
         )
     );
 }

@@ -125,9 +125,8 @@
             this.updating = true;
             this.__updatingAppend = append;
             const operation = ++this.__operation;
-            queueMicrotask(() => {
-                if (operation !== this.__operation || !this.updating) return;
-                this.dispatchEvent(markTrusted(new Event('updatestart')));
+            queueMediaEvent(this, 'updatestart');
+            queueMediaTask(() => {
                 if (operation !== this.__operation || !this.updating) return;
                 try {
                     apply();

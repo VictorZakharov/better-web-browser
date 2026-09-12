@@ -108,7 +108,9 @@
         return url;
     };
     const revokeObjectUrl = url => { objectUrlEntries.delete(String(url)); };
-    const queueMediaEvent = (target, name) => queueMicrotask(() =>
+    // HTML/MSE media events are tasks, with a microtask checkpoint between callbacks.
+    // https://html.spec.whatwg.org/multipage/media.html#queue-a-media-element-task
+    const queueMediaEvent = (target, name) => queueMediaTask(() =>
         target.dispatchEvent(markTrusted(new Event(name))));
 
 

@@ -21,7 +21,7 @@ fn unbuffered_mse_seek_waits_for_both_tracks_without_rewinding_to_the_buffer_end
     let target = dom.elements_named("video").next().unwrap();
     let mut send = |disposition, request_id, time, buffered| {
         runtime
-            .dispatch_user_input(UserInputEvent::Media {
+            .dispatch_media_and_tasks(UserInputEvent::Media {
                 target: target.clone(),
                 request_id,
                 disposition,
@@ -97,7 +97,7 @@ fn newer_seek_ignores_older_completion_and_pause_does_not_resume_playback() {
     let target = dom.elements_named("video").next().unwrap();
     let mut send = |disposition, request_id, time| {
         runtime
-            .dispatch_user_input(UserInputEvent::Media {
+            .dispatch_media_and_tasks(UserInputEvent::Media {
                 target: target.clone(),
                 request_id,
                 disposition,
@@ -150,7 +150,7 @@ fn pause_cancels_a_play_promise_waiting_on_an_unbuffered_seek() {
     let target = dom.elements_named("video").next().unwrap();
     let mut send = |disposition, request_id, buffered| {
         runtime
-            .dispatch_user_input(UserInputEvent::Media {
+            .dispatch_media_and_tasks(UserInputEvent::Media {
                 target: target.clone(),
                 request_id,
                 disposition,

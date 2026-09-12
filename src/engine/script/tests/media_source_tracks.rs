@@ -1,4 +1,4 @@
-use super::media_source_segments::execute_media_source;
+use super::media_source_segments::{MediaTaskTestRuntime, execute_media_source};
 use super::*;
 
 #[test]
@@ -26,7 +26,7 @@ fn media_source_updateend_observes_worker_accepted_track_ranges() {
         dom.elements_named("output").next().unwrap().text_content(),
         "pending"
     );
-    let response = runtime.dispatch_user_input(UserInputEvent::Media {
+    let response = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
         target: dom.elements_named("video").next().unwrap(),
         request_id: 0,
         disposition: "loaded",
@@ -81,7 +81,7 @@ fn media_source_intersects_track_ranges_without_fabricating_or_filling_gaps() {
             "0-30,50-60|0-40,50-70|0-30,50-60",
         ),
     ] {
-        let result = runtime.dispatch_user_input(UserInputEvent::Media {
+        let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
             disposition,
@@ -121,7 +121,7 @@ fn media_source_can_append_one_track_without_waiting_for_the_other() {
         );
         let (dom, mut runtime, outcome) = execute_media_source(&script);
         assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-        let result = runtime.dispatch_user_input(UserInputEvent::Media {
+        let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
             disposition: "loaded",
