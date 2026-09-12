@@ -113,6 +113,7 @@ impl ScriptRuntime {
         self.context.take();
         let mut host = self.host.borrow_mut();
         host.timers.clear();
+        host.idle_callbacks.clear();
         host.timer_handles.clear();
         host.pending_document_write.clear();
         host.pending_dynamic_scripts.clear();

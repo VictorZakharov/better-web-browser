@@ -3,11 +3,16 @@
 use super::binding_helpers::*;
 use super::*;
 
+mod task_scheduling;
+
 pub(super) fn dispatch_host_call(
     operation: &str,
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = task_scheduling::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
     super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;
     if operation == "documentModuleComplete" {
         let id = argument_id(args, 1);
@@ -263,42 +268,6 @@ pub(super) fn dispatch_host_call(
             let resolved = state.resolved_url(&value);
             state.navigation_url = Some(resolved.clone());
             Ok(js_string(resolved))
-        }
-        "timerSchedule" => {
-            let id = argument_id(args, 1);
-            if id == 0 {
-                return Err(JsNativeError::range()
-                    .with_message("timer identifiers must be positive integers")
-                    .into());
-            }
-            let delay = argument_duration(args, 2);
-            let repeat = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
-            state.schedule_timer(id, delay, repeat);
-            Ok(JsValue::from(id))
-        }
-        "mediaTaskSchedule" => {
-            let id = argument_id(args, 1);
-            if id == 0 {
-                return Err(JsNativeError::range()
-                    .with_message("task identifiers must be positive integers")
-                    .into());
-            }
-            state.schedule_media_task(id);
-            Ok(JsValue::from(id))
-        }
-        "idleSchedule" => {
-            let id = argument_id(args, 1);
-            if id == 0 {
-                return Err(JsNativeError::range()
-                    .with_message("idle callback identifiers must be positive integers")
-                    .into());
-            }
-            state.schedule_idle_callback(id, argument_duration(args, 2));
-            Ok(JsValue::from(id))
-        }
-        "timerCancel" => {
-            let cancelled = state.cancel_timer(argument_id(args, 1));
-            Ok(JsValue::from(cancelled))
         }
         "console" => {
             let level = argument_string(args, 1)?;

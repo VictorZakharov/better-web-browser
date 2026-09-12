@@ -21,7 +21,7 @@ $fileCeilings = @{
     'src/engine/scheduler.rs'               = 354
     'src/engine/script.rs'                  = 80
     'src/engine/script/execution.rs'        = 453
-    'src/engine/script/host_call.rs'        = 330
+    'src/engine/script/host_call.rs'        = 298
     'src/windows_app.rs'                    = 191
     'src/winhttp.rs'                        = 19
 }

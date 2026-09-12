@@ -297,7 +297,7 @@ impl BrowserState {
         self.navigation.mark_presented(presentation.document);
         self.crashed = false;
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
-        if first_presentation || presentation.clock_advanced {
+        if first_presentation {
             self.renderer_runtime_clock = Some(Instant::now());
         }
         if presentation.clock_advanced {

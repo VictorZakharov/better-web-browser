@@ -11,9 +11,22 @@
     "expectations": "forbidden"
   },
   "support": [
-    "dom/nodes/pre-insertion-validation-hierarchy.js"
+    "dom/nodes/pre-insertion-validation-hierarchy.js",
+    "requestidlecallback/resources/ric-utils.js"
   ],
   "tests": [
+    { "path": "requestidlecallback/basic.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-invoked.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-multiple-calls.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-timeout.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-timeout-when-busy.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-idle-periods.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/cancel-invoked.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/deadline-max.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/deadline-max-rAF.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/deadline-max-timeout-dynamic.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/deadline-after-expired-timer.html", "area": "Idle callbacks", "expected": "pass" },
+    { "path": "requestidlecallback/callback-exception.html", "area": "Idle callbacks", "expected": "pass" },
     {
       "path": "html/syntax/parsing/empty-doctype-ids.html",
       "area": "HTML parsing",

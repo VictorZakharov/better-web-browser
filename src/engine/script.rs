@@ -29,6 +29,7 @@ mod history_host;
 mod host_call;
 mod host_profiling;
 mod host_state;
+mod idle_callbacks;
 mod media_environment;
 mod media_host;
 mod module_evaluation;

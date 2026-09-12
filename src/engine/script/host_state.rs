@@ -8,6 +8,7 @@ pub(crate) mod geometry;
 mod ownership;
 mod scripts;
 mod storage;
+mod task_scheduling;
 
 use crate::storage::{StorageAreaState, StorageMutation};
 
@@ -38,6 +39,7 @@ pub(super) struct HostState {
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
     pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
+    pub(super) task_started: Option<Instant>,
     pub(super) console: Vec<String>,
     pub(super) navigation_url: Option<String>,
     pub(super) viewport_scroll_y: Option<f32>,
@@ -67,6 +69,7 @@ pub(super) struct HostState {
     pub(super) pending_media_actions: Vec<ScriptMediaAction>,
     pub(super) timers: EventLoopScheduler<u32>,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
+    pub(super) idle_callbacks: super::idle_callbacks::IdleCallbacks,
     pub(super) computed_styles: Option<(u64, StyleSet)>,
     pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
     /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
@@ -106,6 +109,7 @@ impl HostState {
             next_node_id: 1,
             mutation_count: 0,
             task_mutations: task_mutation_profile::TaskMutationProfile::default(),
+            task_started: None,
             console: Vec::new(),
             navigation_url: None,
             viewport_scroll_y: None,
@@ -135,6 +139,7 @@ impl HostState {
             pending_media_actions: Vec::new(),
             timers: EventLoopScheduler::new(),
             timer_handles: HashMap::new(),
+            idle_callbacks: Default::default(),
             computed_styles: None,
             offset_parent_styles: None,
             layout_geometry: HashMap::new(),
@@ -226,7 +231,13 @@ impl HostState {
     }
 
     pub(super) fn begin_task(&mut self) {
+        self.idle_callbacks.interrupt();
+        self.begin_idle_task();
+    }
+
+    pub(super) fn begin_idle_task(&mut self) {
         self.task_mutations.reset();
+        self.task_started = Some(Instant::now());
     }
 
     pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
@@ -255,81 +266,6 @@ impl HostState {
             current = node.shadow_including_parent();
         }
         connected
-    }
-
-    pub(super) fn schedule_timer(&mut self, id: u32, delay: Duration, repeat: bool) {
-        if let Some(previous) = self.timer_handles.remove(&id) {
-            self.timers.cancel(previous);
-        }
-        let handle = if repeat {
-            self.timers.queue_repeating_task(
-                TaskSource::Timer,
-                delay,
-                delay.max(Duration::from_millis(1)),
-                id,
-            )
-        } else {
-            self.timers.queue_task(TaskSource::Timer, delay, id)
-        };
-        self.timer_handles.insert(id, handle);
-    }
-
-    pub(super) fn schedule_media_task(&mut self, id: u32) {
-        let handle = self
-            .timers
-            .queue_task(TaskSource::MediaElement, Duration::ZERO, id);
-        self.timer_handles.insert(id, handle);
-    }
-
-    pub(super) fn schedule_idle_callback(&mut self, id: u32, delay: Duration) {
-        if let Some(previous) = self.timer_handles.remove(&id) {
-            self.timers.cancel(previous);
-        }
-        let handle = self.timers.queue_task(TaskSource::IdleTask, delay, id);
-        self.timer_handles.insert(id, handle);
-    }
-
-    pub(super) fn cancel_timer(&mut self, id: u32) -> bool {
-        self.timer_handles
-            .remove(&id)
-            .is_some_and(|handle| self.timers.cancel(handle))
-    }
-
-    pub(super) fn take_ready_timer(&mut self) -> Option<u32> {
-        let mut ready = None;
-        self.timers.run_one_task(|_, work| {
-            if let ScheduledWork::Task(task) = work {
-                ready = Some((task.payload, task.repeating));
-            }
-        });
-        let (id, repeating) = ready?;
-        if !repeating {
-            self.timer_handles.remove(&id);
-        }
-        Some(id)
-    }
-
-    pub(super) fn timer_summary(&self) -> String {
-        let now = self.timers.now();
-        let mut timers = self
-            .timer_handles
-            .iter()
-            .filter_map(|(id, handle)| {
-                self.timers.scheduled_for(*handle).map(|due| {
-                    (
-                        due,
-                        *id,
-                        format!("{id}@{}", due.saturating_sub(now).as_millis()),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-        timers.sort_by_key(|(due, id, _)| (*due, *id));
-        timers
-            .into_iter()
-            .map(|(_, _, summary)| summary)
-            .collect::<Vec<_>>()
-            .join(",")
     }
 
     pub(super) fn is_connected(&self, node: &NodeRef) -> bool {

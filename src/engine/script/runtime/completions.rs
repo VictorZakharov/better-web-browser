@@ -18,6 +18,7 @@ impl ScriptRuntime {
         let host = Rc::clone(&self.host);
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
             let mut outcome = ScriptOutcome::default();
             let callback_started = Instant::now();
             if let Err(error) = super::network::deliver_completion(context, id, result) {
@@ -57,6 +58,7 @@ impl ScriptRuntime {
         let host = Rc::clone(&self.host);
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
             let mut outcome = ScriptOutcome::default();
             let callback_started = Instant::now();
             if let Err(error) = super::network::deliver_event(context, id, event) {
@@ -96,6 +98,7 @@ impl ScriptRuntime {
         let host = Rc::clone(&self.host);
         let mut dynamic_script_loader = dynamic_script_loader;
         let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
             let mut outcome = ScriptOutcome::default();
             let callback_started = Instant::now();
             if let Err(error) = super::workers::deliver_worker_event(context, id, event) {

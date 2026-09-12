@@ -57,22 +57,35 @@ pub(super) fn settle_timer_slice(
     let slice_started = Instant::now();
 
     for _ in 0..slice.max_callbacks {
-        let timer_id = {
+        let callback = {
             let mut host = host.borrow_mut();
-            let due = host.timers.next_due_time();
+            let due = host.next_callback_due();
             due.filter(|due| *due <= horizon).and_then(|due| {
                 host.timers.advance_to(due);
-                host.take_ready_timer()
+                host.take_ready_callback()
             })
         };
-        let Some(timer_id) = timer_id else {
+        let Some(callback) = callback else {
             break;
         };
+        let timer_id = callback.id();
+        let is_idle = callback.is_idle();
 
         let render_pending_before = host.borrow().timers.render_requested();
-        host.borrow_mut().begin_task();
+        if is_idle {
+            host.borrow_mut().begin_idle_task();
+        } else {
+            host.borrow_mut().begin_task();
+        }
         let label = context
-            .call_global("__timerLabel", &[timer_id.into()])
+            .call_global(
+                if is_idle {
+                    "__idleLabel"
+                } else {
+                    "__timerLabel"
+                },
+                &[timer_id.into()],
+            )
             .and_then(|value| value.to_string(context))
             .map(|value| value.to_std_string_escaped())
             .unwrap_or_else(|_| "unknown callback".to_string());
@@ -84,7 +97,15 @@ pub(super) fn settle_timer_slice(
         host.borrow_mut()
             .append_host_call_diagnostics(&mut outcome.diagnostics);
         let callback_started = Instant::now();
-        let callback_result = context.call_global("__runTimer", &[timer_id.into()]);
+        let callback_result = match callback {
+            super::idle_callbacks::Callback::Timer(id) => {
+                context.call_global("__runTimer", &[id.into()])
+            }
+            super::idle_callbacks::Callback::Idle(task) => context.call_global(
+                "__runIdleCallback",
+                &[task.id.into(), task.period.into(), task.timed_out.into()],
+            ),
+        };
         let callback_elapsed = callback_started.elapsed();
         if let Err(error) = &callback_result {
             let callback = if label.is_empty() {
@@ -130,7 +151,9 @@ pub(super) fn settle_timer_slice(
         if !render_pending_before && host.borrow().timers.render_requested() {
             break;
         }
-        if slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
+        // Return to the embedder after each background callback and its microtask checkpoint.
+        // Accepted input/network completions and rendering can then preempt the remaining batch.
+        if is_idle || slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
             break;
         }
     }

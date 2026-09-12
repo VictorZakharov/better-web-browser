@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cooperative idle workload</title>
+<style>
+  body { font: 18px Arial, sans-serif; margin: 24px; background: #f1f5f9; color: #172033; }
+  h1 { font-size: 28px; }
+  button { position: fixed; left: 24px; top: 80px; width: 240px; height: 48px; }
+  pre { margin-top: 96px; white-space: pre-wrap; }
+</style>
+<h1>Cooperative idle workload</h1>
+<button id="poke">Test input during background work</button>
+<pre id="result">Running...</pre>
+<script>
+  // Owned bounded stress fixture, not a throughput benchmark. Both engines run this same page.
+  const result = document.getElementById('result');
+  const state = {idle: 0, timers: 0, frames: 0, input: 0, fetch: false, failures: []};
+  const count = 20;
+  function render() {
+    const done = state.idle === count && state.timers === count && state.frames === count && state.fetch;
+    const status = state.failures.length ? 'FAIL' : done ? 'PASS' : 'RUNNING';
+    result.textContent = status + '\n' + JSON.stringify(state, null, 2);
+    if (done) document.documentElement.dataset.fixtureReady = 'true';
+  }
+  document.getElementById('poke').addEventListener('click', () => { state.input++; render(); });
+  const cancelled = requestIdleCallback(() => { state.failures.push('cancelled callback ran'); render(); });
+  cancelIdleCallback(cancelled);
+  fetch('idle-workload.html').then(response => response.text()).then(text => {
+    state.fetch = text.includes('Cooperative idle workload'); render();
+  }).catch(error => { state.failures.push('fetch: ' + error); render(); });
+  function idle(deadline) {
+    const remaining = deadline.timeRemaining();
+    if (remaining < 0 || remaining > 50 || !Number.isFinite(remaining)) state.failures.push('deadline');
+    state.idle++;
+    // Deliberately modest work: test repost fairness without freezing the event loop.
+    let sum = 0;
+    for (let i = 0; i < 1000; i++) sum += i;
+    if (sum !== 499500) state.failures.push('work');
+    if (state.idle < count) requestIdleCallback(idle);
+    render();
+  }
+  function timer() {
+    state.timers++;
+    if (state.timers < count) setTimeout(timer, 10);
+    render();
+  }
+  function frame() {
+    state.frames++;
+    if (state.frames < count) requestAnimationFrame(frame);
+    render();
+  }
+  requestIdleCallback(idle);
+  setTimeout(timer, 0);
+  requestAnimationFrame(frame);
+</script>

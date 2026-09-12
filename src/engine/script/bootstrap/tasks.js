@@ -65,35 +65,6 @@
             animationFrameTimer = null;
         }
     };
-    // Idle periods are user-agent defined and capped at 50 ms by the cooperative scheduling
-    // specification. Breeze opens one only after a quiet 50 ms task window; an earlier explicit
-    // timeout wins the race and receives a zero-length, timed-out deadline.
-    // https://w3c.github.io/requestidlecallback/#idle-periods
-    const idleCallbackDelay = 50;
-    const idleDeadlineToken = {};
-    windowObject.IdleDeadline = class IdleDeadline {
-        constructor(token, deadline, didTimeout) {
-            if (token !== idleDeadlineToken) throw new TypeError('Illegal constructor');
-            this.__deadline = deadline;
-            this.__didTimeout = didTimeout;
-        }
-        get didTimeout() { return this.__didTimeout; }
-        timeRemaining() { return Math.max(0, this.__deadline - performance.now()); }
-    };
-    Object.defineProperty(windowObject.IdleDeadline.prototype, Symbol.toStringTag,
-        { value: 'IdleDeadline', configurable: true });
-    windowObject.requestIdleCallback = (callback, options = {}) => {
-        if (typeof callback !== 'function') throw new TypeError('requestIdleCallback requires a callback');
-        options = Object(options);
-        const convertedTimeout = options.timeout === undefined ? null : Math.max(0, Number(options.timeout) || 0);
-        const didTimeout = convertedTimeout !== null && convertedTimeout > 0 && convertedTimeout <= idleCallbackDelay;
-        const delay = didTimeout ? convertedTimeout : idleCallbackDelay;
-        return queueTimer(() => {
-            const deadline = performance.now() + (didTimeout ? 0 : idleCallbackDelay);
-            callback(new IdleDeadline(idleDeadlineToken, deadline, didTimeout));
-        }, delay, false, [], 'requestIdleCallback: ' + describeTimerCallback(callback), 'idleSchedule');
-    };
-    windowObject.cancelIdleCallback = windowObject.clearTimeout;
     const reportGlobalException = (error, source = 'microtask') => {
         const message = error?.message === undefined ? String(error) : String(error.message);
         const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
