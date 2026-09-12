@@ -208,6 +208,41 @@ state, identify the meaning of the binary response, or establish full YouTube pl
 parity. The next investigation is the state/inputs that lead to the failed refill, not a
 speculative decoder timeout or an attribution to startup GET 403s.
 
+### Native Chrome seek controls
+
+Further hidden, silent comparisons on September 12 exercised the normal Chrome player,
+not a replay of a Breeze request. Each run used Chrome 152.0.7977.83 with a fresh,
+signed-out profile, started playback, waited ten seconds, then sought forward and
+observed another twenty-five seconds. The reported `972vfNAiz5M` video stalled at
+601.533 s and reset to the site's error screen in these reference runs too.
+
+| Reference condition | Observation |
+| --- | --- |
+| Media event/buffer trace | Playback before seek; no recovered seek, then player reset |
+| Repeat without wrapping media APIs | Same failure at 601.533 s; `seeking` and `waiting` reported readyState 1 |
+| Other reported video, `kdtdVTxvjD4` | Same failure at its 50% position, 240.680 s; this is not an exact 270 s scrub |
+| Normal Chrome user-agent string override | Same failure; user-agent text alone did not restore playback |
+| Normal caching, no injected page instrumentation | Same player reset |
+| Progress-bar midpoint pointer press/release, normal caching, no page instrumentation | Same player reset; this was a click, not a drag |
+
+Chrome itself generated the requests. Network observations recorded HTTP/3 and the same
+pattern of a 168-byte post-seek response followed by repeated 170-byte responses, each
+with HTTP 200 and `application/vnd.yt-ump`. Counts sum CDP `Network.dataReceived.dataLength`,
+not encoded transfer totals. The diagnostic retained only media state, byte counts,
+method/status/protocol, and host names: no signed queries, headers, or body contents.
+All temporary instrumentation and its compiled harness hooks were removed afterward.
+
+Every run above reported a temporary-profile cleanup failure (`Account Web Data` access
+denied), including attempts with graceful browser shutdown. Playback observations remain
+useful, but none of these complete harness runs is counted as a pass. Screenshots confirm
+the player error surface. No user browser session or authenticated profile was used.
+
+This prevents attributing this reproducible failure solely to Breeze's decoder or lack
+of HTTP/3. It does **not** identify the response semantics, establish a YouTube outage,
+explain a difference from regular signed-in Chrome, or prove Breeze's implementation
+correct. A successful equivalent reference seek is still needed to isolate the next
+Breeze-specific divergence. Starting a URL with a timestamp is not that reference.
+
 ### Earlier comparison and overall limits
 
 Headless Chrome advanced from 420 to about 440 seconds with both its usual identity and
