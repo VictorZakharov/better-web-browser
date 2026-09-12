@@ -178,6 +178,33 @@ fn module_worker_rejects_import_scripts() {
     assert!(runtime.is_some());
 }
 
+#[test]
+fn isolated_worker_xhr_reuse_ignores_the_old_abort() {
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.com/worker.js",
+        r#"const xhr = new XMLHttpRequest();
+        const errors = [];
+        xhr.onabort = () => errors.push('abort');
+        xhr.onerror = () => errors.push('error');
+        xhr.onload = () => postMessage(xhr.responseText + '|' + errors.join(','));
+        xhr.open('GET', '/old'); xhr.send();
+        xhr.open('GET', '/new'); xhr.send();"#,
+        "",
+        ScriptKind::Classic,
+        loader,
+    );
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.fetch_actions.len(), 1);
+    let ScriptFetchAction::Start { id, request } = &initial.fetch_actions[0] else {
+        panic!("expected replacement request");
+    };
+    assert_eq!(request.url.as_str(), "https://example.com/new");
+    let result = runtime.unwrap().complete_fetch(*id, test_response(b"new"));
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(result.messages, ["\"new|\""]);
+}
+
 fn test_response(body: &[u8]) -> Result<FetchResponse, crate::fetch::FetchError> {
     let mut headers = HeaderList::new();
     headers.append("content-type", "application/json").unwrap();

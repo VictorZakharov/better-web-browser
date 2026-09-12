@@ -38,6 +38,8 @@ mod termination;
 mod title_navigation;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
+#[path = "renderer_process/xhr_reuse.rs"]
+mod xhr_reuse;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{

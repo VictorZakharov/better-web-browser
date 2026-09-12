@@ -246,6 +246,30 @@ That is user-observed latency, not an automated measurement. Sign-in alone there
 does not explain the discrepancy. A successful equivalent automated reference remains
 needed to compare internal state; starting a timestamped URL is not a seek test.
 
+### Approved visible Chrome comparison
+
+On September 12 the user approved one visible, muted Chrome comparison in a fresh
+temporary profile. It used installed Chrome 152.0.7977.83 with `--mute-audio`, an isolated
+user-data directory, and a console-free launch. No personal profile was opened/copied.
+CDP observed native media state without wrapping player/media APIs and sent the normal
+`5` player key after ten seconds of playback. Browser visibility was the explicit exception
+to normal hidden-only tests, not a new default in the checked-in benchmark harness.
+
+First nonzero frame counts appeared at about 63.73 s after diagnostic launch. The seek
+was sent at 75.68 s; all subsequent seeking samples stayed at 601.533 s with 318 frames,
+and the site displayed its error screen at 84.26 s. The user independently captured that
+same visible error. Post-seek media POSTs returned HTTP 200 over HTTP/3 with only 190/192
+encoded transfer bytes; those CDP transfer totals are not the earlier decoded-body counts.
+The window viewport changed during the run, so this was not a controlled layout/timing
+benchmark. No raw signed URLs, request/response bodies, or authentication headers were saved.
+
+The owned browser closed, but deletion of its temporary profile again reported access
+denied for `Account Web Data`. This is a failed playback comparison with incomplete
+profile cleanup, not a passing harness result. The executing Windows identity was the
+normal, non-elevated user. Headless mode alone therefore does not explain the difference
+from the user's successful normal and Incognito Chrome seeks; the reference-environment
+difference and Breeze's live seek incident remain unresolved.
+
 ### Pressed-button state during scrubbing
 
 A separate isolated-renderer regression reproduced `mousedown.buttons=1`, followed by
@@ -280,6 +304,11 @@ integer elements wider than a byte received only 8 random bits, randomness used 
 and workers had no crypto API. The OS-backed replacement has cross-engine and isolated-renderer
 regressions. This is a demonstrated standards/security correction, not proof that the live
 media refill failure is resolved.
+
+A subsequent audit reproduced an independent [XHR cancellation/reuse defect](xhr-request-lifecycle.md):
+callbacks from a canceled request could reset a new request on the same object. Ownership
+is now checked across promise/reader continuations and reentrant events. Its isolated tests
+pass, but a connection to the live YouTube refill failure is not established.
 
 Headless Chrome advanced from 420 to about 440 seconds with both its usual identity and
 Breeze's user-agent string. Those captures reported a temporary-profile cleanup failure,

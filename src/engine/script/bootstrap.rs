@@ -51,6 +51,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/network_body.js"),
     include_str!("bootstrap/network_types.js"),
     include_str!("bootstrap/network_fetch.js"),
+    include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
     include_str!("bootstrap/structured_clone.js"),
     include_str!("bootstrap/channel_messaging.js"),

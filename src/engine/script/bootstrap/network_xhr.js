@@ -2,7 +2,8 @@
     'use strict';
     const windowObject = globalThis;
     const markTrusted = globalThis.__markTrustedEvent;
-    const blobFromOwnedBytes = Blob.__fromOwnedBytes;
+    const receiveResponse = globalThis.__receiveXhrResponse;
+    delete globalThis.__receiveXhrResponse;
     const forbiddenResponseHeaders = new Set(['set-cookie', 'set-cookie2']);
     const methodPattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
     const forbiddenMethods = new Set(['CONNECT', 'TRACE', 'TRACK']);
@@ -48,13 +49,6 @@
     const progress = (type, loaded = 0, total = 0) => markTrusted(new ProgressEvent(type, {
         lengthComputable: total > 0, loaded, total
     }));
-    const concatBytes = chunks => {
-        const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-        const bytes = new Uint8Array(length);
-        let offset = 0;
-        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-        return bytes;
-    };
     const normalizeMethod = value => {
         const method = String(value);
         if (!methodPattern.test(method)) throw new DOMException('Invalid HTTP method', 'SyntaxError');
@@ -62,7 +56,6 @@
         if (forbiddenMethods.has(upper)) throw new DOMException('Forbidden HTTP method', 'SecurityError');
         return standardMethods.has(upper) ? upper : method;
     };
-    const responseUrl = value => String(value).split('#', 1)[0];
     let failureDiagnostics = 0;
 
     class XMLHttpRequestUpload extends EventTarget {}
@@ -149,12 +142,14 @@
             return this.__responseText;
         }
         __cancelSilently() {
-            if (this.__timeoutHandle) clearTimeout(this.__timeoutHandle);
-            this.__timeoutHandle = 0;
-            this.__send = false;
-            this.__controller?.abort();
-            this.__controller = null;
+            const controller = this.__controller;
+            this.__clear();
+            controller?.abort();
         }
+        // open() terminates the previous fetch and its queued work. A reused object's
+        // send flag is not ownership: old promise/reader callbacks can run after send().
+        // https://xhr.spec.whatwg.org/#the-open()-method
+        __isCurrent(controller) { return this.__send && this.__controller === controller; }
 
         open(method, url, async = true, user = null, password = null) {
             method = normalizeMethod(method);
@@ -163,7 +158,7 @@
             user = user === null ? null : String(user);
             password = password === null ? null : String(password);
             if (!async) throw new DOMException('Synchronous XMLHttpRequest is not supported', 'NotSupportedError');
-            if (this.__send) this.__cancelSilently();
+            this.__cancelSilently();
             const wasOpened = this.__readyState === XMLHttpRequest.OPENED;
             this.__method = method; this.__url = parsed.href;
             this.__user = user; this.__password = password;
@@ -216,16 +211,18 @@
                 credentials: this.__withCredentials ? 'include' : 'same-origin'
             });
             this.__send = true;
-            this.__controller = new AbortController();
+            const controller = this.__controller = new AbortController();
             this.__uploadTotal = request.__bodyBytes?.length || 0;
             this.__uploadComplete = body === null;
             this.dispatchEvent(progress('loadstart'));
+            if (!this.__isCurrent(controller)) return;
             if (!this.__uploadComplete) this.__upload.dispatchEvent(progress('loadstart'));
+            if (!this.__isCurrent(controller)) return;
             this.__armTimeout();
-            fetch(request, { signal: this.__controller.signal }).then(
-                response => this.__receive(response),
+            fetch(request, { signal: controller.signal }).then(
+                response => receiveResponse(this, controller, response, progress, XMLHttpRequest),
                 error => {
-                    if (!this.__send) return;
+                    if (!this.__isCurrent(controller)) return;
                     this.__requestError(error?.name === 'AbortError' ? 'abort' : 'error');
                 }
             );
@@ -234,9 +231,10 @@
             if (this.__timeoutHandle) clearTimeout(this.__timeoutHandle);
             this.__timeoutHandle = 0;
             if (!this.__send || this.__timeout === 0) return;
+            const controller = this.__controller;
             this.__timeoutHandle = setTimeout(() => {
-                if (!this.__send) return;
-                this.__controller?.abort(new DOMException('The operation timed out', 'TimeoutError'));
+                if (!this.__isCurrent(controller)) return;
+                controller.abort(new DOMException('The operation timed out', 'TimeoutError'));
                 this.__requestError('timeout');
             }, this.__timeout);
         }
@@ -247,78 +245,15 @@
             this.__upload.dispatchEvent(progress(type, loaded, total));
             this.__upload.dispatchEvent(progress('loadend', loaded, total));
         }
-        async __receive(response) {
-            if (!this.__send) return;
-            this.__finishUpload('load', this.__uploadTotal, this.__uploadTotal);
-            this.__status = response.status; this.__statusText = response.statusText;
-            this.__responseURL = responseUrl(response.url); this.__responseHeaders = response.headers;
-            this.__changeState(XMLHttpRequest.HEADERS_RECEIVED);
-            this.__changeState(XMLHttpRequest.LOADING);
-            const chunks = [];
-            let loaded = 0;
-            let lastProgressLoaded = 0;
-            let lastProgressAt = -Infinity;
-            const total = Number(this.__responseHeaders.get('content-length')) || 0;
-            const reader = response.body?.getReader() || null;
-            const binaryResponse = this.__responseType === 'arraybuffer' || this.__responseType === 'blob';
-            const textResponse = !binaryResponse;
-            const decoder = new TextDecoder();
-            try {
-                if (reader) {
-                    while (this.__send) {
-                        const { value, done } = await reader.read();
-                        if (done) break;
-                        if (!(value instanceof Uint8Array)) throw new TypeError('XHR body chunks must be bytes');
-                        // Network stream chunks are private to this response. Retain the
-                        // owned view directly so binary downloads do not copy every byte.
-                        const chunk = value;
-                        if (binaryResponse) chunks.push(chunk);
-                        loaded += chunk.length;
-                        if (textResponse)
-                            this.__appendResponseText(decoder.decode(chunk, { stream: true }));
-                        const now = performance.now();
-                        if (now - lastProgressAt >= 50) {
-                            this.dispatchEvent(progress('progress', loaded, total));
-                            lastProgressLoaded = loaded; lastProgressAt = now;
-                        }
-                    }
-                }
-            } catch (error) {
-                if (this.__send) this.__requestError(error?.name === 'AbortError' ? 'abort' : 'error');
-                return;
-            }
-            if (!this.__send) return;
-            // XHR throttles progress to roughly 50 ms, but end-of-body must expose the final
-            // byte count even when the last chunks arrived within one notification interval.
-            if (loaded !== lastProgressLoaded)
-                this.dispatchEvent(progress('progress', loaded, total));
-            const contentType = this.__mime || this.__responseHeaders.get('content-type') || '';
-            if (textResponse) this.__appendResponseText(decoder.decode());
-            if (this.__responseType === 'arraybuffer') {
-                const bytes = concatBytes(chunks);
-                this.__response = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            } else if (this.__responseType === 'blob') {
-                this.__response = blobFromOwnedBytes(chunks, contentType);
-            }
-            else if (this.__responseType === 'json') {
-                const text = this.__materializeResponseText();
-                try { this.__response = JSON.parse(text); } catch (_) { this.__response = null; }
-            } else if (this.__responseType === 'document') {
-                const text = this.__materializeResponseText();
-                const parser = typeof DOMParser === 'function' ? new DOMParser() : null;
-                try { this.__response = this.__responseXML = parser?.parseFromString(text, contentType) || null; }
-                catch (_) { this.__response = this.__responseXML = null; }
-            }
-            this.__finishSuccess(loaded, total);
-        }
         abort() {
             const active = this.__send || this.__readyState === XMLHttpRequest.HEADERS_RECEIVED ||
                 this.__readyState === XMLHttpRequest.LOADING;
             this.__controller?.abort();
             if (active) {
                 this.__requestError('abort');
-                this.__readyState = XMLHttpRequest.UNSENT;
-            } else if (this.__readyState === XMLHttpRequest.DONE) {
+            }
+            // An abort listener may already have opened/sent the next request.
+            if (this.__readyState === XMLHttpRequest.DONE) {
                 this.__resetResponse();
                 this.__readyState = XMLHttpRequest.UNSENT;
             }
@@ -337,9 +272,16 @@
             if (!this.__send) return;
             if (type !== 'abort' && failureDiagnostics++ < 32)
                 __hostCall('console', 'warn', 'XHR failed: ' + type + ' origin=' + new URL(this.__url).origin);
-            this.__clear(); this.__finishUpload(type);
+            const uploadIncomplete = !this.__uploadComplete;
+            this.__uploadComplete = true;
+            this.__clear();
             this.__resetResponse();
             this.__changeState(XMLHttpRequest.DONE);
+            // Mutate all old-request state before exposing reentrant terminal events.
+            if (uploadIncomplete) {
+                this.__upload.dispatchEvent(progress(type));
+                this.__upload.dispatchEvent(progress('loadend'));
+            }
             this.dispatchEvent(progress(type));
             this.dispatchEvent(progress('loadend'));
         }

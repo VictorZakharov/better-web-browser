@@ -60,3 +60,4 @@ mod template_inertness;
 mod timer_diagnostics;
 mod traversal;
 mod workers;
+mod xhr_reuse;
