@@ -1,5 +1,9 @@
 # Seeking outside appended MediaSource data
 
+For the current unresolved live incident and the working Chrome comparison, see
+[YouTube seek investigation](youtube-seek-investigation.md). The experiments below
+are chronological evidence, not a claim that every later seek succeeds.
+
 A MediaSource presentation's duration is not the duration of the bytes currently owned by
 the native decoder. A forward seek must not be clamped to the end of those bytes.
 
@@ -243,8 +247,9 @@ explain the reference-session difference, or prove Breeze's implementation corre
 The user subsequently confirmed that both regular signed-in Chrome and signed-out
 Incognito play this video and resume a manual seek to 10:01 in under one second.
 That is user-observed latency, not an automated measurement. Sign-in alone therefore
-does not explain the discrepancy. A successful equivalent automated reference remains
-needed to compare internal state; starting a timestamped URL is not a seek test.
+does not explain the discrepancy. At that stage a successful captured reference was
+still needed; the later [Guest comparison](youtube-seek-investigation.md) supplies one.
+Starting a timestamped URL is not a seek test.
 
 ### Approved visible Chrome comparison
 
