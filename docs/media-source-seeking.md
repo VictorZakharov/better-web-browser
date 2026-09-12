@@ -147,6 +147,41 @@ site reset the player about twenty seconds later. The screenshot confirms the pl
 error screen. Byte counts do not identify the response semantics or prove that the
 outbound request was correct. The cause of this intermittent failure remains open.
 
+### Approved replay of the actual post-seek POST
+
+A subsequent hidden, silent run reproduced the failed 601.533-second seek (298 painted
+frames, all before the seek). With explicit user approval, a one-shot benchmark-only
+probe captured a post-seek media POST and its small response. Cookie, Cookie2,
+Authorization, and Proxy-Authorization headers were excluded before writing.
+
+The 3,560-byte request body and signed URL were replayed once from a fresh, signed-out
+Chrome 152.0.7977.83 page on the same document origin. Chrome generated its own browser-
+controlled headers; Fetch used `credentials: omit`, CORS mode, and no-store cache mode.
+The capture was about 25.7 seconds old at comparison time. CDP recorded the actual POST
+response, not merely a preflight:
+
+| Observation | Breeze original | Chrome replay |
+| --- | --- | --- |
+| Method / request-body bytes | POST / 3,560 | POST / 3,560 |
+| HTTP status | 200 | 200 |
+| Response-body bytes | 168 | 168 |
+| Response body comparison | Identical SHA-256 | Identical SHA-256 |
+
+The common response SHA-256 was
+`7147E9143A7F830615AB9A66B4AE133ECD4BA95368047FAC6B9CEC19CE0420C0`.
+Chrome reported `application/vnd.yt-ump`, HTTP/1.1, and a CORS response. No cookie or
+authorization header was replayed. Its hidden-browser run and profile cleanup completed
+without errors. The temporary signed request/response capture was deleted immediately
+afterward, and all capture/replay probes were removed from the browser and harness.
+
+For this request, Breeze was not truncating a larger server response: Chrome received the
+same bytes. This does **not** prove that Breeze constructed the correct request/session
+state, identify the meaning of the binary response, or establish full YouTube playback
+parity. The next investigation is the state/inputs that lead to the failed refill, not a
+speculative decoder timeout or an attribution to startup GET 403s.
+
+### Earlier comparison and overall limits
+
 Headless Chrome advanced from 420 to about 440 seconds with both its usual identity and
 Breeze's user-agent string. Those captures reported a temporary-profile cleanup failure,
 so their playback observations are retained without counting the complete harness runs as
