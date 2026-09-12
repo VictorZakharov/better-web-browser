@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `984cef5953bf10b787748c64890229d1e6dd37d282de949b9af2356ab08292d4`
-- Third-party packages: 192
+- Cargo.lock SHA-256: `e4667cb2441c95c07ed335ae3f4c2a6a86ff3864a06200f8346f68857a2df5d1`
+- Third-party packages: 193
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -51,6 +51,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `fslock` | 0.2.1 | MIT | [upstream](https://github.com/brunoczim/fslock) |
+| `getrandom` | 0.4.3 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/getrandom) |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-gif) |
 | `glob` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/glob) |
 | `gzip-header` | 1.1.0 | MIT/Apache-2.0 | [upstream](https://github.com/oyvindln/gzip-header) |

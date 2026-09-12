@@ -1,6 +1,9 @@
 //! Browser-to-renderer native input translation and document-scoped sequencing.
 
 mod keyboard;
+mod pointer;
+
+pub(super) use pointer::current_buttons;
 
 use super::renderer_input_queue::QueueResult;
 use super::tab_state::TabFocus;
@@ -104,6 +107,7 @@ impl BrowserState {
             sequence,
             phase,
             button,
+            buttons: pointer::buttons_from_wparam(wparam),
             x: document_x,
             y: document_y,
             modifiers: pointer_modifiers(wparam),
@@ -142,6 +146,7 @@ impl BrowserState {
             sequence,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
+            buttons: 0,
             x: (spec.rect.x + spec.rect.width / 2.0).max(0.0),
             y: (spec.rect.y + spec.rect.height / 2.0).max(0.0),
             modifiers: current_modifiers(),

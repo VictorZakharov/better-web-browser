@@ -56,15 +56,20 @@ impl DocumentRuntime {
         if !playback.playing || playback.ended {
             return Ok(false);
         }
-        let Some(snapshot) = connection.video_snapshot(
+        let snapshot = connection.video_snapshot(
             self.id,
             self.revision,
             playback.node.to_wire(),
             playback.source_id,
             playback.frame_end_100ns,
-        )?
-        else {
-            return Ok(false);
+        );
+        let snapshot = match snapshot {
+            Ok(Some(snapshot)) => snapshot,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                self.fail_media_playback(error, connection, outcome)?;
+                return Ok(false);
+            }
         };
         playback.clock_100ns = snapshot.state.position_100ns;
         playback.duration_100ns = snapshot.state.duration_100ns;

@@ -12,14 +12,16 @@
         scheduleOperation = 'timerSchedule') => {
         const id = nextTimer++;
         delay = Math.max(0, Number(delay) || 0);
-        timers.set(id, { callback, repeat, args, label });
+        timers.set(id, { callback, repeat, args, label, cancelable: scheduleOperation !== 'mediaTaskSchedule' });
         host(scheduleOperation, id, delay, repeat);
         return id;
     };
+    const queueMediaTask = callback => queueTimer(callback, 0, false, [], 'media element task', 'mediaTaskSchedule');
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
     windowObject.setInterval = (callback, delay, ...args) => queueTimer(callback, delay, true, args);
     windowObject.clearTimeout = windowObject.clearInterval = id => {
         id = Number(id);
+        if (timers.get(id)?.cancelable === false) return;
         timers.delete(id);
         host('timerCancel', id);
     };
@@ -376,19 +378,6 @@
             resizeObservers.delete(this);
         }
     };
-    windowObject.crypto = {
-        getRandomValues(array) {
-            for (let index = 0; index < array.length; index++) array[index] = Math.floor(Math.random() * 256);
-            return array;
-        },
-        randomUUID() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
-                const value = Math.floor(Math.random() * 16);
-                return (character === 'x' ? value : (value & 3) | 8).toString(16);
-            });
-        }
-    };
-
     windowObject.__wrap = wrap;
     refreshWindowNamedProperties();
 })();

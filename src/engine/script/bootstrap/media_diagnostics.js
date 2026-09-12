@@ -17,9 +17,16 @@
         traceMediaLifecycle(element, 'clock', input.currentTime, input.duration);
     };
     const traceMediaLifecycle = (element, event, position = '', duration = '') => {
-        const count = mediaDiagnosticCounts.get(element) || 0;
-        if (count >= 128) return;
-        mediaDiagnosticCounts.set(element, count + 1);
+        const count = event === 'seek:waiting' || event === 'seek:ready' || event === 'buffer:waiting'
+            ? 0 : mediaDiagnosticCounts.get(element) || 0;
+        const critical = event === 'seek:waiting' || event === 'seek:ready'
+            || event === 'buffer:abort' || event === 'buffer:waiting' || event === 'request:seek'
+            || event === 'response:seeked' || event === 'response:media-error'
+            || event === 'request:reset' || event.startsWith('load caller=');
+        // Keep late seek/error evidence after repetitive append messages reach their
+        // per-element quota. The host independently retains only a bounded tail.
+        if (count >= 128 && !critical) return;
+        mediaDiagnosticCounts.set(element, Math.min(128, count + 1));
         const state = mediaStateFor(element);
         const source = mediaSourceForElement.get(element);
         const ranges = value => Array.from({ length: Math.min(value.length, 4) },

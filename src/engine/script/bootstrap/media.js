@@ -38,8 +38,10 @@
     const pendingMediaRequests = new Map();
     const effectiveVolumeMillis = state => state.muted ? 0 : Math.round(state.volume * 1000);
     const mediaCommand = (element, requestId, command, ...args) => {
+        const pending = pendingMediaRequests.get(requestId);
+        if (pending) pending.element = element;
         traceMediaLifecycle(element, 'request:' + command);
-        return host('mediaRequest', element.__id, requestId, command, ...args);
+        return host('mediaRequest', element.__id, requestId || nextMediaRequest++, command, ...args);
     };
     const supportedMediaType = type => {
         const source = String(type).trim().toLowerCase();
@@ -125,8 +127,8 @@
             }
             state.seeking = true;
             state.currentTime = value;
-            this.dispatchEvent(new Event('seeking'));
-            mediaCommand(this, 0, 'seek', value);
+            queueMediaEvent(this, 'seeking');
+            if (!beginMediaSourceSeek(this)) mediaCommand(this, 0, 'seek', value);
         }
         get defaultPlaybackRate() { return mediaStateFor(this).defaultPlaybackRate; }
         set defaultPlaybackRate(value) {
@@ -180,22 +182,11 @@
         }
         load() {
             traceMediaCallsite(this);
-            const state = mediaStateFor(this);
-            const hadResource = state.networkState !== HTMLMediaElement.NETWORK_EMPTY;
-            state.networkState = HTMLMediaElement.NETWORK_EMPTY;
-            state.readyState = HTMLMediaElement.HAVE_NOTHING;
-            state.error = null;
-            state.currentSrc = '';
-            state.duration = NaN;
-            state.currentTime = 0;
-            state.paused = true;
-            state.ended = false;
-            state.seeking = false;
-            state.buffered = emptyTimeRanges();
-            state.seekable = emptyTimeRanges();
-            state.played = emptyTimeRanges();
-            mediaCommand(this, 0, 'reset');
-            if (hadResource) this.dispatchEvent(new Event('emptied'));
+            resetMediaElement(this);
+            const generation = mediaLoadGeneration.get(this);
+            queueMediaTask(() => {
+                if (mediaLoadGeneration.get(this) === generation) selectMediaSource(this);
+            });
         }
         play() {
             const state = mediaStateFor(this);
@@ -209,6 +200,7 @@
         }
         pause() {
             const state = mediaStateFor(this);
+            rejectSeekingPlayback(this);
             if (!state.paused) {
                 state.paused = true;
                 queueMediaEvent(this, 'pause');
@@ -292,8 +284,17 @@
             traceMediaLifecycle(element, 'response:' + input.disposition,
                 input.currentTime, input.duration);
         const requestId = Number(input.requestId) || 0;
+        if (requestId && requestId < (state.requestFloor || 0)) {
+            pendingMediaRequests.delete(requestId);
+            return true;
+        }
+        if (state.readyState === HTMLMediaElement.HAVE_NOTHING
+            && (input.disposition === 'time' || input.disposition === 'ended')) return true;
         const pending = requestId ? pendingMediaRequests.get(requestId) : null;
         if (requestId) pendingMediaRequests.delete(requestId);
+        if (applyMediaSeekResponse(element, input, pending)) return true;
+        if ((input.disposition === 'time' || input.disposition === 'ended')
+            && monitorMediaSourcePlayback(element, input.currentTime)) return true;
         switch (input.disposition) {
             case 'loaded':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
@@ -353,7 +354,13 @@
                 element.dispatchEvent(markTrusted(new Event('progress')));
                 return true;
             case 'media-error':
+                pending?.reject(new DOMException('Media decode failed', 'NotSupportedError'));
                 notifyMediaSourceError(element);
+                if (!state.error) {
+                    state.error = new MediaError(MediaError.MEDIA_ERR_DECODE, 'Media decode failed');
+                    state.networkState = HTMLMediaElement.NETWORK_IDLE;
+                    queueMediaEvent(element, 'error');
+                }
                 return false;
             case 'not-allowed':
                 pending?.reject(new DOMException('Audible playback requires user activation', 'NotAllowedError'));

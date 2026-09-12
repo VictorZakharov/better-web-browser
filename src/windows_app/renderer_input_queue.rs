@@ -34,6 +34,12 @@ impl PendingRendererInputs {
             if !is_continuous(pending) {
                 break;
             }
+            if let (DocumentInput::Pointer(newer), DocumentInput::Pointer(older)) =
+                (&input, pending)
+                && (newer.buttons != older.buttons || newer.modifiers != older.modifiers)
+            {
+                break;
+            }
             if can_compact_across(&input, pending) {
                 compact = Some(index);
                 break;
@@ -83,6 +89,8 @@ fn safely_supersedes(newer: &DocumentInput, pending: &DocumentInput) -> bool {
             newer.document == pending.document
                 && newer.phase == PointerPhase::Move
                 && pending.phase == PointerPhase::Move
+                && newer.buttons == pending.buttons
+                && newer.modifiers == pending.modifiers
         }
         (DocumentInput::Text(newer), DocumentInput::Text(pending)) => {
             newer.document == pending.document && newer.target == pending.target
@@ -108,6 +116,8 @@ fn can_compact_across(newer: &DocumentInput, pending: &DocumentInput) -> bool {
             newer.document == pending.document
                 && newer.phase == PointerPhase::Move
                 && pending.phase == PointerPhase::Move
+                && newer.buttons == pending.buttons
+                && newer.modifiers == pending.modifiers
         }
         _ => false,
     }
@@ -140,6 +150,7 @@ mod tests {
             sequence,
             phase: PointerPhase::Move,
             button: PointerButton::None,
+            buttons: 0,
             x: sequence as f32,
             y: sequence as f32,
             modifiers: InputModifiers::default(),
@@ -153,11 +164,33 @@ mod tests {
             sequence,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
+            buttons: 0,
             x: 10.0,
             y: 20.0,
             modifiers: InputModifiers::default(),
             target: None,
         })
+    }
+
+    #[test]
+    fn button_state_changes_are_coalescing_barriers_even_across_scrolls() {
+        let motion = |sequence, buttons| {
+            let DocumentInput::Pointer(mut input) = pointer_move(sequence) else {
+                unreachable!()
+            };
+            input.buttons = buttons;
+            DocumentInput::Pointer(input)
+        };
+        let mut pending = PendingRendererInputs::default();
+        assert_eq!(pending.enqueue(motion(1, 1)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(scroll(2, 20.0)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(motion(3, 0)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(motion(4, 1)), QueueResult::Queued);
+        assert_eq!(pending.enqueue(motion(5, 1)), QueueResult::Coalesced);
+        assert_eq!(pending.len(), 4);
+        for expected in [motion(1, 1), scroll(2, 20.0), motion(3, 0), motion(5, 1)] {
+            assert_eq!(pending.pop_front(), Some(expected));
+        }
     }
 
     #[test]

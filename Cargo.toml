@@ -10,6 +10,7 @@ cssparser = "0.37.0"
 data-url = "0.3.2"
 encoding_rs = "0.8.35"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
+getrandom = "0.4.3"
 html5ever = "0.39.0"
 image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
 psl2 = { version = "0.1.12", default-features = false, features = ["fast-lookup"] }

@@ -8,6 +8,12 @@ use better_web_browser::renderer_protocol::{
 use std::time::Duration;
 #[path = "media/cadence.rs"]
 mod cadence;
+#[path = "media/failure.rs"]
+mod failure;
+#[path = "media/seeking.rs"]
+mod seeking;
+#[path = "media/starvation.rs"]
+mod starvation;
 
 fn run_scheduled_renderer_timer(
     session: &RendererSession,

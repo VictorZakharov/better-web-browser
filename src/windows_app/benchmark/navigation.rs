@@ -156,6 +156,11 @@ impl BrowserState {
                 sequence,
                 phase,
                 button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down {
+                    PointerButton::Primary.mask()
+                } else {
+                    0
+                },
                 x,
                 y,
                 modifiers: InputModifiers::default(),
@@ -181,6 +186,11 @@ impl BrowserState {
                 sequence,
                 phase,
                 button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down {
+                    PointerButton::Primary.mask()
+                } else {
+                    0
+                },
                 x,
                 y,
                 modifiers: InputModifiers::default(),
@@ -205,6 +215,7 @@ impl BrowserState {
             sequence,
             phase: PointerPhase::Move,
             button: PointerButton::None,
+            buttons: 0,
             x,
             y,
             modifiers: InputModifiers::default(),

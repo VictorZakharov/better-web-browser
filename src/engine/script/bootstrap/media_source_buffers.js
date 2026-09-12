@@ -29,13 +29,17 @@
             this.__ranges = [];
             this.__operation = 0;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             this.updating = false;
             this.mode = 'segments';
             this.timestampOffset = 0;
             this.appendWindowStart = 0;
             this.appendWindowEnd = Infinity;
         }
-        get buffered() { return new TimeRanges(timeRangesConstructionToken, this.__ranges); }
+        get buffered() {
+            this.__requireAttached();
+            return new TimeRanges(timeRangesConstructionToken, this.__ranges);
+        }
         appendBuffer(value) {
             this.__prepareUpdate();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
@@ -59,16 +63,36 @@
         }
         abort() {
             this.__requireOpen();
-            if (!this.updating) return;
+            if (this.updating && !this.__updatingAppend)
+                throw new DOMException('A range removal is in progress', 'InvalidStateError');
+            const wasUpdating = this.updating;
+            if (this.__parent.__element) traceMediaLifecycle(this.__parent.__element, 'buffer:abort');
+            // MSE reset parser state runs even between appendBuffer calls. Preserve
+            // accepted frames/configuration, but never splice a canceled partial mdat
+            // into the next segment after a seek.
+            // https://www.w3.org/TR/media-source-2/#sourcebuffer-reset-parser-state
+            if (this.__initializationLength > 0)
+                this.__initializationBytes = this.__materialize().slice(0, this.__initializationLength);
             this.__operation++;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             this.updating = false;
-            this.__parent.__release(this.__reservedBytes);
+            this.__parent.__release(this.__reservedBytes + this.__bytes);
             this.__reservedBytes = 0;
-            queueMediaEvent(this, 'abort');
-            queueMediaEvent(this, 'updateend');
+            this.__chunks = [];
+            this.__bytes = 0;
+            this.__completeBytes = 0;
+            this.__initializationLength = 0;
+            this.__hasMediaData = false;
+            this.appendWindowStart = 0;
+            this.appendWindowEnd = Infinity;
+            if (wasUpdating) {
+                queueMediaEvent(this, 'abort');
+                queueMediaEvent(this, 'updateend');
+            }
         }
         remove(start, end) {
+            this.__requireAttached();
             if (this.updating) throw new DOMException('The SourceBuffer is updating', 'InvalidStateError');
             start = Number(start);
             end = Number(end);
@@ -103,10 +127,11 @@
         }
         __beginUpdate(apply, append = false) {
             this.updating = true;
+            this.__updatingAppend = append;
             const operation = ++this.__operation;
-            queueMicrotask(() => {
+            queueMediaEvent(this, 'updatestart');
+            queueMediaTask(() => {
                 if (operation !== this.__operation || !this.updating) return;
-                this.dispatchEvent(markTrusted(new Event('updatestart')));
                 try {
                     apply();
                     if (append && this.__hasMediaData) {
@@ -130,24 +155,50 @@
             if (operation !== this.__operation || !this.updating) return;
             this.updating = false;
             this.__awaitingCommit = false;
+            this.__updatingAppend = false;
             queueMediaEvent(this, event);
             queueMediaEvent(this, 'updateend');
         }
         __requireOpen() {
+            this.__requireAttached();
             if (this.__parent.readyState !== 'open')
                 throw new DOMException('The MediaSource is not open', 'InvalidStateError');
         }
         __prepareUpdate() {
+            this.__requireAttached();
+            if (this.__parent.__element && mediaStateFor(this.__parent.__element).error)
+                throw new DOMException('The media element has an error', 'InvalidStateError');
             if (this.__parent.readyState === 'closed')
                 throw new DOMException('The MediaSource is closed', 'InvalidStateError');
             if (this.__parent.readyState === 'ended') this.__parent.__reopen();
         }
         __materialize() { return concatMediaBytes(this.__chunks); }
+        __requireAttached() {
+            if (![...this.__parent.sourceBuffers].includes(this))
+                throw new DOMException('The SourceBuffer has been removed', 'InvalidStateError');
+        }
+        __detach() {
+            const updating = this.updating;
+            this.__operation++;
+            this.updating = this.__awaitingCommit = this.__updatingAppend = false;
+            this.__parent.__release(this.__bytes + this.__reservedBytes);
+            this.__bytes = this.__reservedBytes = this.__completeBytes = this.__initializationLength = 0;
+            this.__chunks = [];
+            this.__ranges = [];
+            this.__initializationBytes = null;
+            this.__hasMediaData = false;
+            if (updating) {
+                queueMediaEvent(this, 'abort');
+                queueMediaEvent(this, 'updateend');
+            }
+        }
         __takeBytes() {
             const materialized = this.__materialize();
             const ready = materialized.slice(0, this.__completeBytes);
             const pending = materialized.slice(this.__completeBytes);
-            if (!this.__initializationBytes && this.__initializationLength > 0)
+            // MSE initialization-segment receipt replaces the track description, including
+            // AVC SPS/PPS. Later media-only appends must use the newest configuration.
+            if (this.__initializationLength > 0)
                 this.__initializationBytes = ready.slice(0, this.__initializationLength);
             const transfer = this.__initializationBytes && this.__initializationLength === 0
                 ? concatMediaBytes([this.__initializationBytes, ready])

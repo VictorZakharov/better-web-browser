@@ -268,6 +268,7 @@ impl MediaClient {
                 return Ok(None);
             }
             WorkerMediaMessage::DecodeFailed { request_id, error } if request_id == frame_id => {
+                self.active_source = None;
                 return Err(format!("media worker failed to decode frame: {error}"));
             }
             _ => return Err("media worker returned the wrong frame response".into()),

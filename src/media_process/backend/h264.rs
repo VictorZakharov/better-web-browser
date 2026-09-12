@@ -31,7 +31,7 @@ pub(super) struct TransformVideoDecoder {
     maximum_frame_bytes: u64,
     draining: bool,
     seek_target: Option<u64>,
-    frames_emitted: usize,
+    frames_decoded: usize,
     _foundation: MediaFoundation,
     _apartment: ComApartment,
 }
@@ -70,7 +70,7 @@ impl TransformVideoDecoder {
             maximum_frame_bytes: limits.max_decoded_frame_bytes,
             draining: false,
             seek_target: None,
-            frames_emitted: 0,
+            frames_decoded: 0,
             _foundation: foundation,
             _apartment: apartment,
         })
@@ -97,6 +97,7 @@ impl TransformVideoDecoder {
         self.draining = false;
         self.header_pending = true;
         self.seek_target = Some(position_100ns);
+        self.frames_decoded = 0;
         Ok(())
     }
 
@@ -104,13 +105,15 @@ impl TransformVideoDecoder {
         loop {
             match self.pull()? {
                 Pull::Frame(frame) => {
+                    // Preroll is decoded output even when it precedes the seek target.
+                    // Exhausting a valid buffered segment must not become MEDIA_ERR_DECODE.
+                    self.frames_decoded += 1;
                     if self.seek_target.is_some_and(|target| {
                         frame.timestamp_100ns.max(0) as u64 + frame.duration_100ns < target
                     }) {
                         continue;
                     }
                     self.seek_target = None;
-                    self.frames_emitted += 1;
                     return Ok(Some(frame));
                 }
                 Pull::NeedInput if self.next_input < self.samples.len() => self.push_next()?,
@@ -125,7 +128,7 @@ impl TransformVideoDecoder {
                     .map_err(|error| format!("drain H.264 transform: {error}"))?;
                     self.draining = true;
                 }
-                Pull::NeedInput if self.frames_emitted == 0 => {
+                Pull::NeedInput if self.frames_decoded == 0 => {
                     return Err(format!(
                         "H.264 transform accepted {} access units but emitted no frame ({})",
                         self.next_input,

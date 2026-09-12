@@ -367,7 +367,7 @@ fn xhr_reports_upload_and_network_error_events() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
-        "0|false|readystatechange:1,loadstart:1,upload-loadstart,upload-error,upload-loadend,readystatechange:4,error:4,loadend:4"
+        "0|false|readystatechange:1,loadstart:1,upload-loadstart,readystatechange:4,upload-error,upload-loadend,error:4,loadend:4"
     );
 }
 

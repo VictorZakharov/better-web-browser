@@ -115,6 +115,7 @@ fn duckduckgo_link_navigation_replaces_a_document_under_command_backpressure() {
                 sequence,
                 phase,
                 button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down { 1 } else { 0 },
                 x: rect.x + rect.width / 2.0,
                 y: rect.y + rect.height / 2.0,
                 modifiers: InputModifiers::default(),

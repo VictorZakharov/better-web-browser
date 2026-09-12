@@ -165,8 +165,10 @@ impl DocumentRuntime {
         )?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.apply_media_actions(&mut outcome, connection)?;
-        connection.send_state_mutations(self.id, &mut outcome)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
+        // Media events execute author script too. Admit their fetch/worker/media
+        // commands before publishing the report, which only retains diagnostics.
+        self.admit_user_input_outcome(&mut outcome, connection)?;
 
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made

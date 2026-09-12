@@ -59,6 +59,11 @@ fn pointer_hit_testing_targets_an_ordinary_element_border_box() {
                 sequence,
                 phase,
                 button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down {
+                    PointerButton::Primary.mask()
+                } else {
+                    0
+                },
                 x: target_rect.x + target_rect.width - 5.0,
                 y: target_rect.y + target_rect.height - 5.0,
                 modifiers: InputModifiers::default(),
@@ -231,6 +236,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
             sequence: 7,
             phase: PointerPhase::Move,
             button: PointerButton::None,
+            buttons: 0,
             x,
             y,
             modifiers: InputModifiers::default(),
@@ -258,6 +264,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
             sequence: 8,
             phase: PointerPhase::Move,
             button: PointerButton::None,
+            buttons: 0,
             x: ordinary_text.x + ordinary_text.width / 2.0,
             y: ordinary_text.y + ordinary_text.height / 2.0,
             modifiers: InputModifiers::default(),
@@ -276,6 +283,11 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
                 sequence,
                 phase,
                 button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down {
+                    PointerButton::Primary.mask()
+                } else {
+                    0
+                },
                 x,
                 y,
                 modifiers: InputModifiers {
@@ -298,6 +310,11 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
                 sequence,
                 phase,
                 button: PointerButton::Secondary,
+                buttons: if phase == PointerPhase::Down {
+                    PointerButton::Secondary.mask()
+                } else {
+                    0
+                },
                 x,
                 y,
                 modifiers: InputModifiers::default(),
@@ -328,6 +345,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
             sequence: 13,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
+            buttons: 0,
             x: submit.1.x + submit.1.width / 2.0,
             y: submit.1.y + submit.1.height / 2.0,
             modifiers: InputModifiers::default(),

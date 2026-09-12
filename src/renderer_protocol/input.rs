@@ -48,12 +48,26 @@ pub enum PointerButton {
     Secondary,
 }
 
+impl PointerButton {
+    /// UI Events `buttons` bit for the three mouse buttons currently routed by the shell.
+    pub const fn mask(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Primary => 1,
+            Self::Secondary => 2,
+            Self::Middle => 4,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PointerInput {
     pub document: DocumentId,
     pub sequence: u64,
     pub phase: PointerPhase,
     pub button: PointerButton,
+    /// Complete post-event pressed-button state, not just the button that changed.
+    pub buttons: u8,
     pub x: f32,
     pub y: f32,
     pub modifiers: InputModifiers,
@@ -192,7 +206,12 @@ impl DocumentInput {
             return Err(ProtocolError::InvalidPayload("input sequence"));
         }
         match self {
-            Self::Pointer(input) => validate_coordinates(input.x, input.y),
+            Self::Pointer(input) => {
+                if input.buttons & !7 != 0 {
+                    return Err(ProtocolError::InvalidPayload("pointer buttons"));
+                }
+                validate_coordinates(input.x, input.y)
+            }
             Self::Keyboard(input) => {
                 if input.key.is_empty()
                     || input.key.len() > MAX_KEY_NAME_BYTES

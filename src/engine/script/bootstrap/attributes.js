@@ -191,6 +191,8 @@
             oldValue
         });
         customElementAttributeChanged(element, record.localName, oldValue, newValue, record.namespace);
+        if (record.namespace === null && record.localName === 'src' && newValue !== null
+            && element instanceof HTMLMediaElement) mediaSourceAttributeChanged(element);
     };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));

@@ -20,10 +20,14 @@
             let allowed = target.dispatchEvent(markTrusted(new PointerEvent(names[0], init)));
             return target.dispatchEvent(markTrusted(new MouseEvent(names[1], init))) && allowed;
         };
+        // A mouse chord changes PointerEvent.button via pointermove, not another
+        // pointerdown/up. Legacy mouse events still describe each changed button.
+        // https://www.w3.org/TR/pointerevents3/#chorded-button-interactions
+        const changedMask = [1, 4, 2][input.button] || 0;
         const names = {
             move: ['pointermove', 'mousemove'],
-            down: ['pointerdown', 'mousedown'],
-            up: ['pointerup', 'mouseup']
+            down: [input.buttons === changedMask ? 'pointerdown' : 'pointermove', 'mousedown'],
+            up: [input.buttons ? 'pointermove' : 'pointerup', 'mouseup']
         }[input.phase] || [];
         const init = {
             bubbles: true, cancelable: true, composed: true,
@@ -44,7 +48,9 @@
             return target.dispatchEvent(markTrusted(new MouseEvent(name, { ...init, buttons: 0 })));
         }
         let allowed = true;
-        if (names[0]) allowed = target.dispatchEvent(markTrusted(new PointerEvent(names[0], init))) && allowed;
+        if (names[0]) allowed = target.dispatchEvent(markTrusted(new PointerEvent(names[0], {
+            ...init, button: input.phase === 'move' ? -1 : init.button
+        }))) && allowed;
         if (names[1]) allowed = target.dispatchEvent(markTrusted(new MouseEvent(names[1], init))) && allowed;
         if (input.phase === 'up' && input.button === 2) {
             allowed = target.dispatchEvent(markTrusted(new MouseEvent('contextmenu', init))) && allowed;

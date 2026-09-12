@@ -41,6 +41,11 @@ fn hover_controls_repaint_on_native_entry_and_exit_with_and_without_script() {
                     sequence,
                     phase,
                     button: PointerButton::None,
+                    buttons: if phase == PointerPhase::Down {
+                        PointerButton::None.mask()
+                    } else {
+                        0
+                    },
                     x: 20.0,
                     y: 20.0,
                     modifiers: InputModifiers::default(),

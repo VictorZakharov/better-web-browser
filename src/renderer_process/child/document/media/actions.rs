@@ -16,15 +16,18 @@ impl DocumentRuntime {
             return Ok(Some("not-allowed"));
         }
         if matches!(&action.command, ScriptMediaCommand::Reset) {
-            connection.retire_video();
             if self
                 .media
                 .as_ref()
                 .is_some_and(|media| media.node == action.node)
             {
+                // load() resets this element, not another element's active decoder.
+                connection.retire_video();
                 self.media.take();
             }
-            self.media_failure = None;
+            if self.media.is_none() {
+                self.media_failure = None;
+            }
             return Ok(Some("reset"));
         }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
@@ -123,6 +126,9 @@ impl DocumentRuntime {
             return Ok(Some("denied"));
         };
         let source_id = playback.source_id;
+        if self.media_failure.is_some() {
+            return Ok(Some("media-error"));
+        }
         match &action.command {
             ScriptMediaCommand::SetPlayback {
                 playing,
@@ -150,8 +156,26 @@ impl DocumentRuntime {
                 Ok(Some("configured"))
             }
             ScriptMediaCommand::Seek { position_100ns } => {
-                let state = connection.seek_media_playback(source_id, *position_100ns)?;
-                let frame = connection.next_media_frame(source_id)?;
+                let decoded = connection
+                    .seek_media_playback(source_id, *position_100ns)
+                    .and_then(|state| {
+                        connection
+                            .next_media_frame(source_id)
+                            .map(|frame| (state, frame))
+                    });
+                let (state, frame) = match decoded {
+                    Ok(decoded) => decoded,
+                    Err(error) => {
+                        let mut outcome = crate::engine::ScriptOutcome::default();
+                        self.fail_media_playback(error, connection, &mut outcome)?;
+                        super::super::merge_outcome(
+                            &mut self.pending_async_outcome,
+                            outcome,
+                            self.page.dom.document.id(),
+                        );
+                        return Ok(Some("media-error"));
+                    }
+                };
                 self.apply_playback_state(state);
                 if let Some(frame) = frame {
                     let metadata = frame.metadata;

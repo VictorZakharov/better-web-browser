@@ -53,6 +53,7 @@ impl BrowserState {
             sequence,
             phase: PointerPhase::Leave,
             button: PointerButton::None,
+            buttons: renderer_input::current_buttons(),
             x: 0.0,
             y: 0.0,
             modifiers: InputModifiers::default(),

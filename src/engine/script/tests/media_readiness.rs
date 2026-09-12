@@ -1,4 +1,4 @@
-use super::media_source_segments::execute_media_source;
+use super::media_source_segments::{MediaTaskTestRuntime, execute_media_source};
 use super::*;
 
 #[test]
@@ -28,7 +28,7 @@ fn media_readiness_tracks_contiguous_buffer_and_queues_transition_events_once() 
         ("time", 10.0, 10.0, "2:1:1"),
         ("appended", 10.0, 20.0, "4:2:2"),
     ] {
-        let result = runtime.dispatch_user_input(UserInputEvent::Media {
+        let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
             target: dom.elements_named("video").next().unwrap(),
             request_id: 0,
             disposition,

@@ -1,6 +1,7 @@
 //! Renderer-owned hit testing, DOM event dispatch, default actions, and input sequencing.
 
 mod default_actions;
+mod pointer;
 mod viewport;
 
 use super::*;
@@ -99,6 +100,9 @@ impl DocumentRuntime {
                 (result.outcome, None)
             }
             DocumentInput::Focus(input) => {
+                if !input.focused {
+                    self.pointer_down = [None; 3];
+                }
                 let target = input.target.and_then(|target| self.resolve_target(target));
                 self.focused_node = input
                     .focused
@@ -118,6 +122,9 @@ impl DocumentRuntime {
                 (result.outcome, None)
             }
             DocumentInput::Lifecycle(input) => {
+                if input.state != DocumentLifecycle::Active {
+                    self.pointer_down = [None; 3];
+                }
                 let previous = lifecycle_name(self.lifecycle);
                 self.lifecycle = input.state;
                 let result = self.dispatch_user_input(UserInputEvent::Lifecycle {
@@ -156,93 +163,17 @@ impl DocumentRuntime {
         Ok(())
     }
 
-    fn pointer_input(&mut self, input: PointerInput) -> Result<PointerInteraction, String> {
-        let target = (input.phase != PointerPhase::Leave)
-            .then(|| {
-                input
-                    .target
-                    .and_then(|target| self.explicit_target(target))
-                    .or_else(|| self.hit_target(input.x, input.y))
-            })
-            .flatten();
-        let cursor = (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
-            document: self.id,
-            sequence: input.sequence,
-            cursor: cursor_for_target(target.as_ref()),
-        });
-        let target_id = target.as_ref().map(|target| target.node.id());
-        let activate = match input.phase {
-            PointerPhase::Down => {
-                self.pointer_down = target_id.map(|target| (target, input.button));
-                false
-            }
-            PointerPhase::Up => {
-                self.pointer_down.take() == target_id.map(|id| (id, input.button))
-                    && matches!(input.button, PointerButton::Primary | PointerButton::Middle)
-            }
-            PointerPhase::Activate => {
-                matches!(input.button, PointerButton::Primary | PointerButton::Middle)
-            }
-            PointerPhase::Move | PointerPhase::Leave => false,
-        };
-        let result = self.dispatch_user_input(UserInputEvent::Pointer {
-            target: target.as_ref().map(|target| target.node.clone()),
-            phase: match input.phase {
-                PointerPhase::Move => "move",
-                PointerPhase::Leave => "leave",
-                PointerPhase::Down => "down",
-                PointerPhase::Up => "up",
-                PointerPhase::Activate => "activate",
-            },
-            button: dom_button(input.button),
-            buttons: if matches!(input.phase, PointerPhase::Down) {
-                dom_buttons(input.button)
-            } else {
-                0
-            },
-            x: input.x,
-            y: input.y,
-            activate,
-            modifiers: input.modifiers.into(),
-        })?;
-        let mut outcome = result.outcome;
-        if self.script_runtime.is_none() {
-            let boundary = crate::engine::dom::Node::update_hover_path(
-                &mut self.scriptless_pointer_path,
-                target.as_ref().map(|target| target.node.clone()),
-            );
-            if !boundary.entering.is_empty() || !boundary.leaving.is_empty() {
-                outcome.render_requested = true;
-                outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
-                    roots: vec![self.page.dom.document.id()],
-                    impact: crate::engine::invalidation::MutationKind::State.impact(),
-                    mutation_count: 0,
-                    rebuild_style_rules: false,
-                    removed_nodes: Vec::new(),
-                };
-            }
-        }
-        let navigation = if activate && result.default_allowed {
-            self.pointer_default_action(target.as_ref(), input, &mut outcome)?
-        } else {
-            None
-        };
-        Ok(PointerInteraction {
-            outcome,
-            navigation,
-            cursor,
-        })
-    }
-
     pub(super) fn admit_user_input_outcome(
         &mut self,
         outcome: &mut ScriptOutcome,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        // Media acknowledgements can run callbacks that produce more side effects.
+        // Collect those after the bounded media-action drain, not before it.
+        self.apply_media_actions(outcome, connection)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
-        self.apply_media_actions(outcome, connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 
@@ -393,23 +324,6 @@ impl From<InputModifiers> for UserInputModifiers {
 
 fn contains(rect: crate::engine::RectF, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.right() && y >= rect.y && y <= rect.bottom()
-}
-
-fn dom_button(button: PointerButton) -> u8 {
-    match button {
-        PointerButton::Primary | PointerButton::None => 0,
-        PointerButton::Middle => 1,
-        PointerButton::Secondary => 2,
-    }
-}
-
-fn dom_buttons(button: PointerButton) -> u8 {
-    match button {
-        PointerButton::None => 0,
-        PointerButton::Primary => 1,
-        PointerButton::Secondary => 2,
-        PointerButton::Middle => 4,
-    }
 }
 
 fn lifecycle_name(state: DocumentLifecycle) -> &'static str {

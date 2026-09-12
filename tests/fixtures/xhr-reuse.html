@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>XHR request ownership</title>
+<h1>XHR request ownership</h1>
+<pre id="result">Running</pre>
+<script src="xhr-reuse.js"></script>
+<script>
+checkXhrReuse().then(result => {
+    document.querySelector('#result').textContent = JSON.stringify(result, null, 2);
+    document.querySelector('#result').setAttribute('data-results', JSON.stringify({
+        passed: result.results.filter(item => item.pass).length, failures: result.failures,
+        bodies: result.results.map(item => [item.mode, item.text ?? item.exception ?? ''])
+    }));
+    document.documentElement.dataset.fixtureReady = String(!result.failures.length);
+});
+</script>

@@ -218,6 +218,7 @@ fn native_pointer_hit_testing_keeps_document_coordinates_but_events_use_viewport
             sequence: 2,
             phase: PointerPhase::Move,
             button: PointerButton::None,
+            buttons: 0,
             x: 125.0,
             y: 1020.0,
             modifiers: InputModifiers::default(),

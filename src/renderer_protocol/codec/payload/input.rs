@@ -16,6 +16,7 @@ pub(super) fn encode_browser_input(
                 DocumentInput::Pointer(input) => {
                     writer.u8(pointer_phase_tag(input.phase));
                     writer.u8(pointer_button_tag(input.button));
+                    writer.u8(input.buttons);
                     writer.f32(input.x);
                     writer.f32(input.y);
                     encode_modifiers(&mut writer, input.modifiers);
@@ -107,6 +108,7 @@ pub(super) fn decode_browser_input(
                 sequence,
                 phase: decode_pointer_phase(reader.u8()?)?,
                 button: decode_pointer_button(reader.u8()?)?,
+                buttons: reader.u8()?,
                 x: reader.f32()?,
                 y: reader.f32()?,
                 modifiers: decode_modifiers(&mut reader)?,

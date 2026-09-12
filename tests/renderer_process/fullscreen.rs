@@ -61,6 +61,7 @@ fn fullscreen_request_and_browser_acknowledgement_cross_the_renderer_boundary() 
             sequence: 1,
             phase: PointerPhase::Activate,
             button: PointerButton::Primary,
+            buttons: 0,
             x: rect.x + rect.width / 2.0,
             y: rect.y + rect.height / 2.0,
             modifiers: InputModifiers::default(),

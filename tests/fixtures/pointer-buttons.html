@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pointer button state</title>
+<style>html,body{margin:0}#pad{width:300px;height:100px;background:#def}</style>
+<div id="pad">Drag surface</div><output id="result">ready</output>
+<script>
+  window.pointerTrace = [];
+  for (const type of ['pointerdown','pointermove','pointerup','mousedown','mousemove','mouseup','click']) {
+    document.addEventListener(type, event => {
+      pointerTrace.push(type + ':' + event.button + ':' + event.buttons);
+    });
+  }
+  document.addEventListener('contextmenu', event => event.preventDefault());
+  document.addEventListener('keydown', event => {
+    if (event.key === 'End') {
+      console.log('POINTER_TRACE ' + pointerTrace.join('|'));
+      result.textContent = 'done';
+    }
+  });
+</script>

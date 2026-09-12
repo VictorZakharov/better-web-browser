@@ -274,6 +274,13 @@ impl HostState {
         self.timer_handles.insert(id, handle);
     }
 
+    pub(super) fn schedule_media_task(&mut self, id: u32) {
+        let handle = self
+            .timers
+            .queue_task(TaskSource::MediaElement, Duration::ZERO, id);
+        self.timer_handles.insert(id, handle);
+    }
+
     pub(super) fn schedule_idle_callback(&mut self, id: u32, delay: Duration) {
         if let Some(previous) = self.timer_handles.remove(&id) {
             self.timers.cancel(previous);

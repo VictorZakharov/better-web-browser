@@ -2,6 +2,7 @@
 
 mod actions;
 mod async_operations;
+mod failure;
 mod frame_presentation;
 mod policy;
 pub(super) use policy::MediaActivation;
@@ -90,7 +91,9 @@ impl DocumentRuntime {
             return Ok(());
         };
         let source_id = playback.source_id;
-        connection.set_media_playback(source_id, false, 0)?;
+        if self.media_failure.is_none() {
+            connection.set_media_playback(source_id, false, 0)?;
+        }
         connection.clear_video();
         self.media.take();
         Ok(())

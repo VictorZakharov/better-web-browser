@@ -6,6 +6,72 @@ use std::io::Cursor;
 const INVALID_MEDIA: &[u8] = b"not an MP4 segment";
 
 #[test]
+fn frame_decode_failure_retires_only_the_source_and_consumes_the_request() {
+    let mut bytes = fixture(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/media/test-1s-video-fragmented.mp4.base64"
+    )));
+    let mdat = bytes.windows(4).position(|value| value == b"mdat").unwrap();
+    // Preserve container metadata so rejection occurs in the production frame decoder.
+    bytes[mdat + 4..].fill(0);
+    let decoder = backend::decode_append(&bytes, &[], MediaLimits::default())
+        .unwrap()
+        .video
+        .unwrap();
+    let mut playback = Playback {
+        active: Some((1, decoder)),
+        last_source_id: 1,
+        ..Playback::new(true)
+    };
+    let session = MediaSessionId::new(1).unwrap();
+    let nonce = Nonce::new([7; 32]);
+    let mut pixels = Vec::new();
+    let mut control = Vec::new();
+    playback
+        .request_frame(
+            1,
+            1,
+            &mut DecodedFrameWriter::new(&mut pixels, session, nonce),
+            &mut MediaFrameWriter::new(&mut control, session),
+        )
+        .expect("codec error is not a protocol exit");
+    assert!(pixels.is_empty());
+    assert!(playback.active.is_none());
+    assert!(playback.audio.is_none());
+    assert_eq!(playback.last_frame_id, 1);
+    let mut reader = crate::media_protocol::MediaFrameReader::new(Cursor::new(control), session);
+    assert!(matches!(
+        reader.read_worker().unwrap(),
+        WorkerMediaMessage::DecodeFailed { request_id: 1, .. }
+    ));
+
+    // A later valid source continues the same protocol session and frame sequence.
+    playback.active = self::playback().active.map(|(_, decoder)| (2, decoder));
+    let mut control = Vec::new();
+    playback
+        .request_frame(
+            2,
+            2,
+            &mut DecodedFrameWriter::new(&mut pixels, session, nonce),
+            &mut MediaFrameWriter::new(&mut control, session),
+        )
+        .unwrap();
+    assert!(!pixels.is_empty());
+    assert_eq!(playback.pending.as_ref().unwrap().0.frame_id, 2);
+    assert!(
+        playback
+            .request_frame(
+                2,
+                3,
+                &mut DecodedFrameWriter::new(Vec::new(), session, nonce),
+                &mut MediaFrameWriter::new(Vec::new(), session)
+            )
+            .unwrap_err()
+            .contains("before acknowledging")
+    );
+}
+
+#[test]
 fn rejected_append_payload_consumes_transfer_ids_without_replacing_playback() {
     let mut playback = playback();
     for video_source_id in [2, 4] {

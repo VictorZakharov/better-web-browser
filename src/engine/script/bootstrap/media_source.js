@@ -108,8 +108,15 @@
         return url;
     };
     const revokeObjectUrl = url => { objectUrlEntries.delete(String(url)); };
-    const queueMediaEvent = (target, name) => queueMicrotask(() =>
-        target.dispatchEvent(markTrusted(new Event(name))));
+    // HTML/MSE media events are tasks, with a microtask checkpoint between callbacks.
+    // https://html.spec.whatwg.org/multipage/media.html#queue-a-media-element-task
+    const queueMediaEvent = (target, name) => {
+        const generation = mediaLoadGeneration.get(target);
+        queueMediaTask(() => {
+            if (mediaLoadGeneration.get(target) === generation)
+                target.dispatchEvent(markTrusted(new Event(name)));
+        });
+    };
 
 
     class MediaSource extends EventTarget {
@@ -124,7 +131,6 @@
             this.__committing = false;
             this.__commitBuffers = [];
             this.__loadedState = false;
-            this.__waiting = false;
             this.__pendingPlayback = [];
         }
         static isTypeSupported(type) { return mediaSourceTypeSupported(type); }
@@ -176,13 +182,15 @@
             const items = [...this.sourceBuffers];
             const index = items.indexOf(buffer);
             if (index < 0) throw new DOMException('SourceBuffer was not found', 'NotFoundError');
-            if (buffer.updating) buffer.abort();
-            this.__release(buffer.__bytes);
-            buffer.__chunks = [];
-            buffer.__bytes = 0;
+            buffer.__detach();
             items.splice(index, 1);
             this.sourceBuffers.__replace(items);
-            this.activeSourceBuffers.__replace(items);
+            const active = [...this.activeSourceBuffers];
+            if (active.includes(buffer)) {
+                this.activeSourceBuffers.__replace(active.filter(item => item !== buffer));
+                queueMediaEvent(this.activeSourceBuffers, 'removesourcebuffer');
+            }
+            this.__bufferedChanged();
             queueMediaEvent(this.sourceBuffers, 'removesourcebuffer');
         }
         endOfStream(error = undefined) {
@@ -199,6 +207,7 @@
             this.readyState = 'ended';
             this.__setDuration(Math.max(0, ...[...this.sourceBuffers].flatMap(buffer =>
                 buffer.__ranges.map(range => range[1]))));
+            this.__bufferedChanged();
             queueMediaEvent(this, 'sourceended');
         }
         setLiveSeekableRange() {
@@ -216,6 +225,7 @@
         __reopen() {
             if (this.readyState !== 'ended') return;
             this.readyState = 'open';
+            this.__bufferedChanged();
             queueMediaEvent(this, 'sourceopen');
         }
         __loaded(duration, buffered) {
@@ -232,14 +242,7 @@
             this.__committing = false;
             this.__updateExtent(duration, buffered);
             this.__finishCommit();
-            if (this.__waiting && this.__element) {
-                const state = mediaStateFor(this.__element);
-                if (Number(duration) > state.currentTime) {
-                    this.__waiting = false;
-                    if (!state.paused)
-                        mediaCommand(this.__element, 0, 'playback', true, effectiveVolumeMillis(state));
-                }
-            }
+            continueMediaSourceSeek(this.__element);
             this.__maybeCommit();
         }
         __updateExtent(duration, buffered) {
@@ -256,6 +259,7 @@
             }
         }
         __requestPlayback(requestId, volumeMillis) {
+            if (deferSeekingPlayback(this.__element, requestId)) return;
             if (this.__loadedState) {
                 mediaCommand(this.__element, requestId, 'playback', true, volumeMillis);
                 return;
@@ -317,8 +321,13 @@
             if (!this.__element) return;
             // MSE exposes the intersection of active track buffers, never their union/max end.
             let ranges = null;
+            const highestEnd = Math.max(0, ...[...this.activeSourceBuffers].flatMap(buffer =>
+                buffer.__ranges.map(range => range[1])));
             for (const buffer of this.activeSourceBuffers) {
-                const next = buffer.__ranges;
+                const next = buffer.__ranges.map(range => [...range]);
+                // MSE buffered extends the last range of ended tracks to the highest
+                // track end, so a final partial audio/video sample is not starvation.
+                if (this.readyState === 'ended' && next.length) next[next.length - 1][1] = highestEnd;
                 ranges = ranges === null ? next.map(range => [...range])
                     : ranges.flatMap(([start, end]) => next.flatMap(([otherStart, otherEnd]) => {
                         const low = Math.max(start, otherStart), high = Math.min(end, otherEnd);
@@ -329,6 +338,7 @@
                 new TimeRanges(timeRangesConstructionToken, ranges || []);
         }
         __fail(kind) {
+            if (this.__element && mediaStateFor(this.__element).error) return;
             this.__finishCommit('error');
             host('console', 'error', 'MediaSource failed: ' + String(kind));
             this.readyState = 'ended';
@@ -339,7 +349,8 @@
                     kind === 'network' ? MediaError.MEDIA_ERR_NETWORK : MediaError.MEDIA_ERR_DECODE,
                     'MediaSource ' + kind + ' failure'
                 );
-                element.dispatchEvent(new Event('error'));
+                state.networkState = HTMLMediaElement.NETWORK_IDLE;
+                queueMediaEvent(element, 'error');
             }
             for (const pending of this.__pendingPlayback.splice(0)) {
                 const request = pendingMediaRequests.get(pending.requestId);
@@ -362,9 +373,7 @@
         if (!source || source.readyState === 'ended') return false;
         const state = mediaStateFor(element);
         state.currentTime = Math.max(0, Number(position) || 0);
-        state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
-        if (!source.__waiting) queueMediaEvent(element, 'waiting');
-        source.__waiting = true;
+        beginMediaSourceSeek(element, true);
         return true;
     };
     const prepareMediaSourcePlayback = (element, requestId, volumeMillis) => {
@@ -373,24 +382,3 @@
         source.__requestPlayback(requestId, volumeMillis);
         return true;
     };
-
-    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
-        configurable: true,
-        get() {
-            const value = this.getAttribute('src');
-            if (value == null) return '';
-            return objectUrlEntries.has(value) ? value : host('resolveUrl', value);
-        },
-        set(value) {
-            value = String(value);
-            this.setAttribute('src', value);
-            const object = objectUrlValue(value);
-            if (object instanceof MediaSource) {
-                const state = mediaStateFor(this);
-                state.networkState = HTMLMediaElement.NETWORK_LOADING;
-                state.currentSrc = value;
-                this.dispatchEvent(new Event('loadstart'));
-                object.__attach(this);
-            }
-        }
-    });

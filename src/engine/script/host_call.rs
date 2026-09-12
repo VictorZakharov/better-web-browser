@@ -276,6 +276,16 @@ pub(super) fn dispatch_host_call(
             state.schedule_timer(id, delay, repeat);
             Ok(JsValue::from(id))
         }
+        "mediaTaskSchedule" => {
+            let id = argument_id(args, 1);
+            if id == 0 {
+                return Err(JsNativeError::range()
+                    .with_message("task identifiers must be positive integers")
+                    .into());
+            }
+            state.schedule_media_task(id);
+            Ok(JsValue::from(id))
+        }
         "idleSchedule" => {
             let id = argument_id(args, 1);
             if id == 0 {

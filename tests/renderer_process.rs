@@ -8,6 +8,8 @@ mod async_scripts;
 mod backpressure;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
+#[path = "renderer_process/crypto.rs"]
+mod crypto;
 #[path = "renderer_process/event_notifications.rs"]
 mod event_notifications;
 #[path = "renderer_process/fullscreen.rs"]
@@ -18,6 +20,8 @@ mod hover;
 mod input;
 #[path = "renderer_process/media.rs"]
 mod media;
+#[path = "renderer_process/pointer_buttons.rs"]
+mod pointer_buttons;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
 #[path = "renderer_process/state.rs"]
@@ -34,6 +38,8 @@ mod termination;
 mod title_navigation;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
+#[path = "renderer_process/xhr_reuse.rs"]
+mod xhr_reuse;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{
