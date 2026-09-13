@@ -2,6 +2,8 @@ use super::*;
 
 #[cfg(test)]
 mod hidden;
+#[cfg(test)]
+mod sizing_tests;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_table(
@@ -30,35 +32,45 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if cells.is_empty() {
                 continue;
             }
-            let widths = table_cell_widths(&cells, width, self.styles);
+            let widths = self.table_cell_widths(&cells, width);
+            let row_height = cells
+                .iter()
+                .zip(&widths)
+                .map(|(cell, cell_width)| {
+                    self.intrinsic_block_height(
+                        cell,
+                        *cell_width,
+                        containing_height,
+                        Some(UsedInlineSize {
+                            outer: *cell_width,
+                            percentage_basis: width,
+                        }),
+                    )
+                })
+                .fold(0.0_f32, f32::max);
             let mut cell_x = x;
             let mut row_bottom = y;
             for (cell, cell_width) in cells.iter().zip(widths) {
-                let cell_style = self.styles.get(cell).clone();
-                let in_flow_paint_start = self.output.items.len();
-                let in_flow_node_start = self.output.node_paint_order.len();
-                let outer_floats = std::mem::take(&mut self.floats);
-                let bottom = self.layout_block_children(
-                    cell,
-                    cell_x,
-                    y,
-                    cell_width,
-                    containing_height,
-                    &cell_style,
-                );
-                let bottom = bottom.max(self.floats.bottom());
-                self.floats = outer_floats;
-                self.layout_positioned_children(
-                    cell,
-                    RectF {
-                        x: cell_x,
+                let style = self.styles.get(cell);
+                let insets = style.padding.resolve(width, style.font_size).vertical()
+                    + style
+                        .border_width
+                        .resolve(width, style.font_size)
+                        .vertical();
+                let bottom = self
+                    .layout_block_with_content_height(
+                        cell,
+                        cell_x,
                         y,
-                        width: cell_width,
-                        height: (bottom - y).max(0.0),
-                    },
-                    in_flow_paint_start,
-                    in_flow_node_start,
-                );
+                        cell_width,
+                        containing_height,
+                        Some(UsedInlineSize {
+                            outer: cell_width,
+                            percentage_basis: width,
+                        }),
+                        Some((row_height - insets).max(0.0)),
+                    )
+                    .bottom;
                 row_bottom = row_bottom.max(bottom);
                 cell_x += cell_width;
             }
@@ -156,31 +168,61 @@ fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
     rows
 }
 
-pub(super) fn table_cell_widths(cells: &[NodeRef], width: f32, styles: &StyleSet) -> Vec<f32> {
-    let mut widths = vec![None; cells.len()];
-    let mut assigned = 0.0;
-    for (index, cell) in cells.iter().enumerate() {
-        let length = cell
-            .attr("width")
-            .and_then(|value| {
-                if let Some(percent) = value.strip_suffix('%') {
-                    percent.parse::<f32>().ok().map(Length::Percent)
-                } else {
-                    value.parse::<f32>().ok().map(Length::Px)
-                }
+impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    fn table_cell_widths(&mut self, cells: &[NodeRef], width: f32) -> Vec<f32> {
+        let minimums = cells
+            .iter()
+            .map(|cell| {
+                let style = self.styles.get(cell).clone();
+                let insets = style.padding.resolve(width, style.font_size).horizontal()
+                    + style
+                        .border_width
+                        .resolve(width, style.font_size)
+                        .horizontal();
+                self.intrinsic_content_widths(cell, width).0 + insets
             })
-            .or_else(|| (styles.get(cell).width != Length::Auto).then_some(styles.get(cell).width));
-        if let Some(resolved) =
-            length.and_then(|length| length.resolve(width, styles.get(cell).font_size))
-        {
-            widths[index] = Some(resolved);
-            assigned += resolved;
+            .collect::<Vec<_>>();
+        let styles = self.styles;
+        let mut widths = vec![None; cells.len()];
+        let mut assigned = 0.0;
+        for (index, cell) in cells.iter().enumerate() {
+            let length = cell
+                .attr("width")
+                .and_then(|value| {
+                    if let Some(percent) = value.strip_suffix('%') {
+                        percent.parse::<f32>().ok().map(Length::Percent)
+                    } else {
+                        value.parse::<f32>().ok().map(Length::Px)
+                    }
+                })
+                .or_else(|| {
+                    (styles.get(cell).width != Length::Auto).then_some(styles.get(cell).width)
+                });
+            if let Some(resolved) =
+                length.and_then(|length| length.resolve(width, styles.get(cell).font_size))
+            {
+                let resolved = resolved.max(minimums[index]);
+                widths[index] = Some(resolved);
+                assigned += resolved;
+            }
         }
+        let auto_count = widths.iter().filter(|width| width.is_none()).count().max(1);
+        let automatic = ((width - assigned).max(0.0) / auto_count as f32).max(1.0);
+        let mut widths: Vec<f32> = widths
+            .into_iter()
+            .zip(&minimums)
+            .map(|(value, minimum)| value.unwrap_or(automatic).max(*minimum))
+            .collect();
+        // Percentage preferences cannot starve the intrinsic minimum of another cell.
+        // CSS 2.2 17.5.2.2: distribute surplus/deficit only above minimum cell widths.
+        let excess = (widths.iter().sum::<f32>() - width).max(0.0);
+        let shrinkable: f32 = widths.iter().zip(&minimums).map(|(w, min)| w - min).sum();
+        if shrinkable > 0.0 {
+            let fraction = (excess / shrinkable).min(1.0);
+            for (used, minimum) in widths.iter_mut().zip(minimums) {
+                *used -= (*used - minimum) * fraction;
+            }
+        }
+        widths
     }
-    let auto_count = widths.iter().filter(|width| width.is_none()).count().max(1);
-    let automatic = ((width - assigned).max(0.0) / auto_count as f32).max(1.0);
-    widths
-        .into_iter()
-        .map(|value| value.unwrap_or(automatic))
-        .collect()
 }
