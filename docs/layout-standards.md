@@ -46,10 +46,16 @@ Chrome gutter at 125% scaling. ResizeObserver preserves the resulting fractional
 size; integer CSSOM client sizes do not necessarily reconstruct that fraction. The owned
 `scrollbar-resize.html` probe records both APIs without rounding the observer result.
 At 125% scaling, upstream `resize-observer/scrollbars-2.html` fails in **both** browsers:
-Breeze reports 84.800003px versus the test's integer-derived 85px; Chrome reports
-84.796875px versus its integer-derived 86px. The pinned WPT run has 144 passing cases and
-this one failure (752 assertions pass, one fails). The test is retained unchanged; fractional
-observer geometry is not rounded to make the suite green.
+Breeze reports 84.800003px and Chrome 84.796875px versus the test's integer-derived 86px.
+After device-pixel border snapping, the pinned local WPT run at 125% has 141 passing cases
+and four failing cases (746 assertions pass, seven fail), with no timeouts or crashes.
+The other failures are `resize-observer/observe-018.html`,
+`css/cssom-view/table-client-props.html` and `css/cssom-view/table-offset-props.html`.
+Chrome reproduces those fractional-border assertion failures at the same scale: the
+observer width is 40.390625px (Breeze 40.400002px) instead of the asserted 40px; separated
+table/caption heights are 33/53px instead of 34/54px. These are observed comparison
+results, not blanket conformance claims. Upstream tests and observer geometry remain
+unchanged; the normal-DPI CI WPT gate also remains enabled.
 
 Normal block backgrounds and borders now paint before floating descendants, followed by
 inline content and nonnegative positioned groups, following
