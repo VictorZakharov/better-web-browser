@@ -1,4 +1,6 @@
+mod resize;
 use super::*;
+pub use resize::ResizeBox;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RectF {
@@ -192,6 +194,8 @@ pub struct LayoutOutput {
     pub forms: HashMap<NodeId, FormSpec>,
     /// Renderer-local element border boxes used only by opt-in page diagnostics.
     pub node_bounds: HashMap<NodeId, RectF>,
+    /// Untransformed used boxes, retained in the renderer for ResizeObserver (never sent over IPC).
+    pub resize_boxes: HashMap<NodeId, ResizeBox>,
     /// Renderer-local back-to-front element order used by fallback hit testing. This stays next
     /// to layout rather than the wire presentation so input and paint use one stacking result.
     pub node_paint_order: Vec<NodeId>,
@@ -209,6 +213,7 @@ pub(super) enum InlineAtom {
         no_wrap: bool,
     },
     Image {
+        resize_box: ResizeBox,
         url: String,
         alt: String,
         tint: Option<Color>,
@@ -240,6 +245,7 @@ pub(super) enum InlineAtom {
         node_id: Option<NodeId>,
     },
     Placeholder {
+        resize_box: ResizeBox,
         width: f32,
         height: f32,
         node_id: Option<NodeId>,

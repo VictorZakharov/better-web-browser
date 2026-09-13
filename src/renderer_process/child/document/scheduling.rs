@@ -9,7 +9,7 @@ impl DocumentRuntime {
         self.publish_document_load_readiness(
             self.resource_render_pending || self.pending_async_outcome.render_requested,
         );
-        if self.geometry_observers_pending || self.resource_render_pending {
+        if self.has_pending_geometry_observers() || self.resource_render_pending {
             return Some(0);
         }
         let runtime_timer = self
@@ -62,12 +62,13 @@ impl DocumentRuntime {
             })));
         }
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
+        // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
         if std::mem::take(&mut self.geometry_observers_pending)
             && let Some(runtime) = self.script_runtime.as_mut()
         {
             merge_outcome(
                 &mut outcome,
-                runtime.notify_layout_changed(),
+                runtime.notify_intersection_observers(),
                 self.page.dom.document.id(),
             );
         }
@@ -173,7 +174,7 @@ impl DocumentRuntime {
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
-        let needs_present = resources_changed || media_changed || outcome.render_requested;
+        let mut needs_present = resources_changed || media_changed || outcome.render_requested;
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
                 "refreshing styles for {}",
@@ -202,13 +203,14 @@ impl DocumentRuntime {
             ))?;
             self.rebuild_layout();
         }
+        needs_present |= self.deliver_geometry_observers(&mut outcome, connection)?;
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
         });
         if needs_present {
-            self.presentation(outcome, style, load)
+            self.presentation_after_observers(outcome, style, load)
                 .map(|mut presentation| {
                     presentation.clock_advanced = true;
                     AdvanceResult::Presentation(Box::new(presentation))

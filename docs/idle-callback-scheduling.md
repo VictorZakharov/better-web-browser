@@ -32,7 +32,7 @@ registration point, rather than at the callback's beginning.
 
 The curated gate adds 12 unchanged upstream files (22 assertions) from the existing pinned WPT
 checkout. They exercise deadlines, busy-loop timeouts, cancellation, exception reporting,
-ordering, and reposts during animation. The complete curated gate is now 127 files / 735
+ordering, and reposts during animation. The curated gate at this slice was 127 files / 735
 assertions, with no expected failures. No upstream test source is copied into this repository.
 
 Seventeen focused native/runtime tests additionally cover independent handle namespaces, private

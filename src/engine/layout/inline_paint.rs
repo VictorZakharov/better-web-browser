@@ -76,6 +76,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
             }
             InlineAtom::Image {
+                resize_box,
                 url,
                 alt,
                 node_id,
@@ -102,6 +103,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 rect.x += offset_x;
                 rect.y += offset_y;
                 self.output.node_bounds.insert(*node_id, rect);
+                self.output.resize_boxes.insert(*node_id, *resize_box);
                 if self.emit_paint && *visible {
                     self.output.items.push(DisplayItem::Image {
                         rect,
@@ -129,6 +131,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: *control_height,
                 };
                 self.output.node_bounds.insert(spec.node_id, rect);
+                let edges = |e: [f32; 4]| ResolvedEdges {
+                    top: e[0],
+                    right: e[1],
+                    bottom: e[2],
+                    left: e[3],
+                };
+                self.output.resize_boxes.insert(
+                    spec.node_id,
+                    ResizeBox::from_border(
+                        rect.width,
+                        rect.height,
+                        edges(spec.padding),
+                        edges(spec.border_width),
+                    ),
+                );
                 if !self.emit_paint {
                     return;
                 }
@@ -188,6 +205,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 };
                 if let Some(node_id) = node_id {
                     self.output.node_bounds.insert(*node_id, border_rect);
+                    // Non-replaced inline elements have an empty ResizeObserver content rect.
+                    if style.display != Display::Inline {
+                        self.output.resize_boxes.insert(
+                            *node_id,
+                            ResizeBox::from_border(
+                                border_rect.width,
+                                border_rect.height,
+                                metrics.padding,
+                                metrics.border,
+                            ),
+                        );
+                    }
                 }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
@@ -281,8 +310,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
                 self.wrap_opacity(item_start, style.opacity);
             }
-            InlineAtom::Placeholder { node_id, .. } => {
+            InlineAtom::Placeholder {
+                node_id,
+                resize_box,
+                ..
+            } => {
                 if let Some(node_id) = node_id {
+                    self.output.resize_boxes.insert(*node_id, *resize_box);
                     self.output.node_bounds.insert(
                         *node_id,
                         RectF {

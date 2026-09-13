@@ -52,6 +52,7 @@ mod pointer_hover;
 mod published_geometry;
 mod ranges;
 mod request_state;
+mod resize_observer;
 mod selectors;
 mod shadow_dom;
 mod svg;

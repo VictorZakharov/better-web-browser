@@ -170,10 +170,10 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 127-file Web Platform Test suite covers 735 upstream harness subtests across HTML
+A pinned, curated 145-file Web Platform Test suite covers 753 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 735 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 753 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -235,6 +235,10 @@ implemented contracts, ownership model, standards references, and narrower remai
 
 [Cooperative idle scheduling](docs/idle-callback-scheduling.md) covers scheduler-backed
 `requestIdleCallback`, bounded native deadlines, timeout races, cancellation, and task fairness.
+
+[ResizeObserver delivery](docs/resize-observer-delivery.md) covers native content/border box
+measurements, branded entries, depth-limited callbacks, and before-paint updates. Vertical-writing,
+SVG/iframe geometry, and broader rendering-loop compatibility remain incomplete.
 
 The [loading standards implementation sequence](docs/loading-standards.md) records the
 code-backed scheduling/lifecycle gaps and owned-fixture acceptance criteria. The first

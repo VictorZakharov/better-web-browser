@@ -74,6 +74,8 @@ pub(super) struct HostState {
     pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
     /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
     pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) resize_boxes: HashMap<NodeId, crate::engine::layout::ResizeBox>,
+    pub(super) resize_observers_pending: bool,
     pub(super) layout_geometry_version: u64,
     pub(super) layout_geometry_initialized: bool,
     pub(super) layout_flush: Option<LayoutFlushCallback>,
@@ -143,6 +145,8 @@ impl HostState {
             computed_styles: None,
             offset_parent_styles: None,
             layout_geometry: HashMap::new(),
+            resize_boxes: HashMap::new(),
+            resize_observers_pending: false,
             layout_geometry_version: 0,
             layout_geometry_initialized: false,
             layout_flush: None,

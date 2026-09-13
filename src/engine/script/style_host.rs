@@ -8,6 +8,31 @@ pub(super) fn style_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "resizeObservation" {
+        state.flush_layout_if_needed();
+        let node = state.node(argument_id(args, 1));
+        let mut depth = 0;
+        let mut current = node.clone();
+        while let Some(node) = current {
+            depth += 1;
+            current = Node::composed_parent(&node);
+        }
+        let boxes = node
+            .as_ref()
+            .filter(|node| state.is_connected(node))
+            .and_then(|node| state.resize_boxes.get(&node.id()).copied())
+            .unwrap_or_default();
+        return Ok(Some(JsValue::Array(vec![
+            JsValue::from(boxes.content.x as f64),
+            JsValue::from(boxes.content.y as f64),
+            JsValue::from(boxes.content.width as f64),
+            JsValue::from(boxes.content.height as f64),
+            JsValue::from(boxes.border_width as f64),
+            JsValue::from(boxes.border_height as f64),
+            JsValue::from(state.media_environment.resolution_dppx as f64),
+            JsValue::from(depth),
+        ])));
+    }
     if operation == "clientRect" {
         state.flush_layout_if_needed();
         let node = state.node(argument_id(args, 1));

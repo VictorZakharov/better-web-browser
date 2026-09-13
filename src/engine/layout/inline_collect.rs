@@ -247,6 +247,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(url) = url {
             output.push(InlineAtom::Image {
                 url,
+                resize_box: ResizeBox::from_content(width, height, padding, border),
                 alt: node.attr("alt").unwrap_or_default(),
                 tint: None,
                 node_id: node_id(node),
@@ -266,6 +267,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             // geometry APIs and for IntersectionObserver-driven lazy source assignment.
             output.push(InlineAtom::Placeholder {
                 width: outer_width,
+                resize_box: ResizeBox::from_content(width, height, padding, border),
                 height: outer_height,
                 node_id: Some(node_id(node)),
             });
@@ -305,6 +307,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 .resolve(containing_block.width, style.font_size);
             output.push(InlineAtom::Image {
                 url: key,
+                resize_box: ResizeBox::from_content(width, height, padding, border),
                 alt: node.attr("aria-label").unwrap_or_default(),
                 tint: svg_uses_current_color(node).then_some(style.color),
                 node_id: node_id(node),
@@ -322,6 +325,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             output.push(InlineAtom::Placeholder {
                 width,
+                resize_box: ResizeBox::from_content(
+                    width,
+                    height,
+                    style
+                        .padding
+                        .resolve(containing_block.width, style.font_size),
+                    style
+                        .border_width
+                        .resolve(containing_block.width, style.font_size),
+                ),
                 height,
                 node_id: Some(node_id(node)),
             });

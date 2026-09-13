@@ -109,6 +109,7 @@ impl DocumentRuntime {
             pending_async_outcome: ScriptOutcome::default(),
             resource_events: Default::default(),
             geometry_observers_pending: false,
+            resize_observers_pending: false,
         };
 
         let resource_started = Instant::now();
@@ -207,7 +208,7 @@ impl DocumentRuntime {
                 layout_micros: micros(layout_time),
                 ..PageLoadReport::default()
             });
-        let presentation = runtime.presentation(outcome, style, report)?;
+        let presentation = runtime.presentation(outcome, style, report, connection)?;
         Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
     }
 }

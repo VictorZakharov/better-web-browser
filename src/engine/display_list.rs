@@ -116,6 +116,7 @@ mod tests {
             background: Color::WHITE,
             forms: HashMap::new(),
             node_bounds: HashMap::new(),
+            resize_boxes: HashMap::new(),
             node_paint_order: Vec::new(),
         }
     }

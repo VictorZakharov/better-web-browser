@@ -214,7 +214,8 @@ impl DocumentRuntime {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
-        self.presentation(outcome, style, load).map(Some)
+        self.presentation(outcome, style, load, connection)
+            .map(Some)
     }
 
     fn resolve_target(&self, target: DocumentNodeId) -> Option<NodeRef> {

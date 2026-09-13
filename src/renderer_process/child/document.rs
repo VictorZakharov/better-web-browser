@@ -95,6 +95,7 @@ pub(super) struct DocumentRuntime {
     pending_async_outcome: ScriptOutcome,
     resource_events: resources::events::ResourceEvents,
     geometry_observers_pending: bool,
+    resize_observers_pending: bool,
 }
 
 impl DocumentRuntime {
@@ -164,10 +165,21 @@ impl DocumentRuntime {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
-        self.presentation(outcome, style, load)
+        self.presentation(outcome, style, load, connection)
     }
 
     fn presentation(
+        &mut self,
+        mut outcome: ScriptOutcome,
+        style: StyleRefreshStats,
+        load: PageLoadReport,
+        connection: &mut ChildConnection,
+    ) -> Result<RendererPresentation, String> {
+        self.deliver_geometry_observers(&mut outcome, connection)?;
+        self.presentation_after_observers(outcome, style, load)
+    }
+
+    fn presentation_after_observers(
         &mut self,
         mut outcome: ScriptOutcome,
         style: StyleRefreshStats,
