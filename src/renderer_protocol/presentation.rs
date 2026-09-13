@@ -30,6 +30,7 @@ pub struct RuntimeReport {
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
     pub viewport_scroll_y: Option<f32>,
+    pub viewport_wheel_delta_y: f32,
     pub history_updates: Vec<HistoryUpdate>,
     pub cookie_updates: Vec<String>,
     pub runtime_active: bool,

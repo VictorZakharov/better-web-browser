@@ -27,7 +27,6 @@ impl BrowserState {
         let scale = self.page_scale().max(f32::EPSILON);
         let distance = -(delta as f32) * 126.0 / 120.0;
         let modifiers = pointer_modifiers(wparam);
-        self.cancel_scroll_animation();
         self.submit_renderer_input(DocumentInput::Wheel(WheelInput {
             document,
             sequence,

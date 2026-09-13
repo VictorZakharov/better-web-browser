@@ -19,6 +19,64 @@ fn wheel(
 }
 
 #[test]
+fn queued_viewport_wheels_keep_relative_distance_despite_stale_viewport_coordinates() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("hidden renderer");
+    let initial = load_html_document(
+        &session,
+        163,
+        "<!doctype html><style>body{margin:0}main{height:3000px}</style><main>long document</main>",
+    );
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: initial.document,
+            revision: initial.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+    // Both arrived while the browser was at zero; no Scroll acknowledgement between them.
+    session
+        .send_input(wheel(initial.document, 1, 126.0))
+        .unwrap();
+    session
+        .send_input(wheel(initial.document, 2, 126.0))
+        .unwrap();
+    let mut distance = 0.0;
+    for _ in 0..20 {
+        match session.wait_for_event(Duration::from_secs(5)).unwrap() {
+            RendererEvent::Presentation(presentation) => {
+                assert_eq!(presentation.runtime.viewport_scroll_y, None);
+                distance += presentation.runtime.viewport_wheel_delta_y;
+                session
+                    .acknowledge_presentation(PresentationAcknowledgement {
+                        document: presentation.document,
+                        revision: presentation.revision,
+                        presented: true,
+                        controls_applied: true,
+                    })
+                    .unwrap();
+            }
+            RendererEvent::RuntimeUpdate(update) => {
+                assert_eq!(update.runtime.viewport_scroll_y, None);
+                distance += update.runtime.viewport_wheel_delta_y;
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            event => panic!("unexpected wheel event: {event:?}"),
+        }
+        if distance == 252.0 {
+            break;
+        }
+    }
+    assert_eq!(
+        distance, 252.0,
+        "neither wheel delta may be replaced by a stale absolute offset"
+    );
+}
+
+#[test]
 fn wheel_scrolls_inner_pane_and_clipped_content_receives_hits_at_its_visual_position() {
     let _serial = SERIAL
         .lock()

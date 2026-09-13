@@ -137,6 +137,7 @@ impl DocumentRuntime {
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
             || outcome.viewport_scroll_y.is_some()
+            || outcome.viewport_wheel_delta_y != 0.0
             || !outcome.history_actions.is_empty()
             || outcome.runtime_stopped
             || !outcome.invalidation.is_empty();

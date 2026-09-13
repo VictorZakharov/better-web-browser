@@ -23,6 +23,10 @@ pub(in crate::renderer_protocol) fn encode_runtime(
         }
         writer.f32(y);
     }
+    if !report.viewport_wheel_delta_y.is_finite() {
+        return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
+    }
+    writer.f32(report.viewport_wheel_delta_y);
     if report.history_updates.len() > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history update count"));
     }
@@ -58,6 +62,10 @@ pub(in crate::renderer_protocol) fn decode_runtime(
     if viewport_scroll_y.is_some_and(|y| !y.is_finite() || y < 0.0) {
         return Err(ProtocolError::InvalidPayload("viewport scroll offset"));
     }
+    let viewport_wheel_delta_y = reader.f32()?;
+    if !viewport_wheel_delta_y.is_finite() {
+        return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
+    }
     let history_update_count = reader.u32()? as usize;
     if history_update_count > MAX_RUNTIME_REPORT_ENTRIES {
         return Err(ProtocolError::InvalidPayload("history update count"));
@@ -85,6 +93,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         diagnostics,
         navigation_url,
         viewport_scroll_y,
+        viewport_wheel_delta_y,
         history_updates,
         cookie_updates,
         runtime_active,

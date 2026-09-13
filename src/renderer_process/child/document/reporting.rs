@@ -24,6 +24,11 @@ pub(super) fn merge_outcome(
     }
     if source.viewport_scroll_y.is_some() {
         target.viewport_scroll_y = source.viewport_scroll_y;
+        target.viewport_wheel_delta_y = source.viewport_wheel_delta_y;
+    } else {
+        target.viewport_wheel_delta_y =
+            (target.viewport_wheel_delta_y as f64 + source.viewport_wheel_delta_y as f64)
+                .clamp(-(f32::MAX as f64), f32::MAX as f64) as f32;
     }
     target.history_actions.append(&mut source.history_actions);
     target.cookie_updates.append(&mut source.cookie_updates);
@@ -51,6 +56,7 @@ pub(super) fn runtime_report(
         diagnostics: std::mem::take(&mut outcome.diagnostics),
         navigation_url: outcome.navigation_url,
         viewport_scroll_y: outcome.viewport_scroll_y,
+        viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
         history_updates: outcome
             .history_actions
             .into_iter()

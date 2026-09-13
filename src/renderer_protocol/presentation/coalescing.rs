@@ -52,6 +52,9 @@ impl RuntimeReport {
         }
         if next.viewport_scroll_y.is_none() {
             next.viewport_scroll_y = self.viewport_scroll_y;
+            next.viewport_wheel_delta_y =
+                (self.viewport_wheel_delta_y as f64 + next.viewport_wheel_delta_y as f64)
+                    .clamp(-(f32::MAX as f64), f32::MAX as f64) as f32;
         }
         self.history_updates.append(&mut next.history_updates);
         next.history_updates = self.history_updates;
@@ -167,6 +170,31 @@ mod tests {
             ..RuntimeReport::default()
         });
         assert_eq!(final_report.viewport_scroll_y, Some(0.0));
+    }
+
+    #[test]
+    fn wheel_deltas_accumulate_until_an_absolute_scroll_supersedes_them() {
+        let wheel = |delta| RuntimeReport {
+            viewport_wheel_delta_y: delta,
+            ..RuntimeReport::default()
+        };
+        let combined = wheel(126.0).coalesce(wheel(126.0)).coalesce(wheel(-40.0));
+        assert_eq!(combined.viewport_wheel_delta_y, 212.0);
+        let repositioned = combined.coalesce(RuntimeReport {
+            viewport_scroll_y: Some(30.0),
+            viewport_wheel_delta_y: 5.0,
+            ..RuntimeReport::default()
+        });
+        assert_eq!(repositioned.viewport_wheel_delta_y, 5.0);
+        let next = repositioned.coalesce(wheel(20.0));
+        assert_eq!(next.viewport_scroll_y, Some(30.0));
+        assert_eq!(next.viewport_wheel_delta_y, 25.0);
+        assert!(
+            wheel(f32::MAX)
+                .coalesce(wheel(f32::MAX))
+                .viewport_wheel_delta_y
+                .is_finite()
+        );
     }
 
     #[test]

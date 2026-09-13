@@ -191,11 +191,9 @@ impl DocumentRuntime {
             }
             current = Node::composed_parent(&node);
         }
-        let maximum = (self.layout.content_height - self.viewport.height).max(0.0);
-        outcome.viewport_scroll_y = Some(
-            (outcome.viewport_scroll_y.unwrap_or(input.viewport_y) + input.delta_y)
-                .clamp(0.0, maximum),
-        );
+        // The browser may still be animating earlier wheel inputs. An absolute position based
+        // on input.viewport_y loses distance when multiple events were queued at that position.
+        outcome.viewport_wheel_delta_y = input.delta_y;
         Ok(outcome)
     }
 }

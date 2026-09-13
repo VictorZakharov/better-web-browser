@@ -8,6 +8,7 @@ rendering or complete implementation of CSS Grid, tables, buttons, or legacy col
 
 | Contract | Implementation and regression evidence |
 | --- | --- |
+| [CSSOM stylesheet owner order](https://drafts.csswg.org/cssom/#document-css-style-sheets) | Linked and inline sheets are cascaded in owner tree order, independently of response arrival. Moving/removing owners and changing media, type, rel, or disabled attributes invalidates the rule set. Repeated link owners share loaded bytes but retain separate cascade positions. Adopted sheets follow tree-owned sheets. Library-injected sheets remain explicitly unowned. |
 | [CSS Overflow scroll containers](https://drafts.csswg.org/css-overflow-3/#scrollable) | Element-owned offsets, clipped descendants, classic scrollbar gutters, thumb/track input, cancelable wheel defaults and scroll chaining. Hidden overflow remains programmatically scrollable; clip overflow does not. Both axes can induce gutters, without changing the outer border box. |
 | [CSSOM View element scrolling](https://drafts.csswg.org/cssom-view/#dom-element-scrolltop) | Synchronous clamped `scrollTop`/`scrollLeft`, `scroll`/`scrollTo`/`scrollBy`, client/scroll extents and coalesced non-bubbling scroll events. Offset geometry stays unscrolled; client rectangles and hit testing use visual offsets. |
 | [Sticky positioning](https://drafts.csswg.org/css-position-3/#sticky-pos) | Block-path sticky boxes follow the nearest scrollport within their containing block. Native viewport scrolling updates retained paint offsets without relaying out the document; normal-flow and offset geometry remain unchanged. Tests cover direct and wrapped scroller children, hidden versus clip overflow, inset limits, repeated reversal, and renderer presentation without JavaScript. |
@@ -28,6 +29,15 @@ wrapped sticky boxes after a 150px element scroll. Headless Chrome reports top p
 assert these values. Renderer-process tests exercise wheel cancellation, clipping-aware
 clicks, scrollbar dragging and sticky viewport updates through the actual IPC path.
 Scrollbar artwork is Breeze-owned, not a reproduction of the platform theme.
+
+Viewport wheel defaults retain relative distance through IPC and output coalescing, then
+use the browser's smooth-scroll target. They do not reuse a stale input-time absolute
+offset. Tests cover queued events, fractional device-pixel accumulation, cancellation,
+and an intervening absolute script scroll superseding earlier relative movements.
+
+Stylesheet ownership is not a claim of complete CSSOM stylesheet support: imports,
+alternate/preferred stylesheet sets, and CSSStyleSheet mutation/disabled reflection still
+need separate standards slices.
 
 These slices are not a complete CSSOM View/Overflow/Position implementation. RTL scroll
 origins, viewport horizontal scrolling, inline sticky fragmentation, independent-axis

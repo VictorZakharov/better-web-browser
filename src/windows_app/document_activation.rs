@@ -327,6 +327,7 @@ impl BrowserState {
         self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
         self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
+        self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
         if layout_changed {
             self.update_scrollbar();
         }
