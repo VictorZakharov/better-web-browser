@@ -166,7 +166,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     atom,
                     text: Some(text),
                     width: shaped.width,
-                    height: line_height.max(shaped.height),
+                    height: *line_height,
                     content_height: shaped.height,
                     no_wrap: *no_wrap,
                     break_before,

@@ -111,7 +111,7 @@ impl StyleSet {
             style.float = Float::None;
         }
         style.blockify_float();
-        style.line_height = style.line_height.max(style.font_size);
+        style.resolve_line_height(self.viewport_width, self.viewport_height);
         (style, matched)
     }
 

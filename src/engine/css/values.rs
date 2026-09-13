@@ -4,6 +4,8 @@ mod content_alignment;
 mod edges;
 pub use content_alignment::ContentAlignment;
 mod length;
+mod line_height;
+pub(crate) use line_height::LineHeight;
 mod overflow;
 pub use overflow::Overflow;
 mod viewport;
@@ -201,6 +203,7 @@ pub struct ComputedStyle {
     pub letter_spacing: f32,
     pub word_spacing: f32,
     pub line_height: f32,
+    pub(crate) line_height_value: LineHeight,
     pub text_align: TextAlign,
     pub white_space: WhiteSpace,
     pub text_decoration_underline: bool,
@@ -283,6 +286,7 @@ impl ComputedStyle {
             letter_spacing: 0.0,
             word_spacing: 0.0,
             line_height: 19.2,
+            line_height_value: LineHeight::Normal,
             text_align: TextAlign::Start,
             white_space: WhiteSpace::Normal,
             text_decoration_underline: false,
@@ -352,6 +356,7 @@ impl ComputedStyle {
             style.letter_spacing = parent.letter_spacing;
             style.word_spacing = parent.word_spacing;
             style.line_height = parent.line_height;
+            style.line_height_value = parent.line_height_value;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
             style.border_collapse = parent.border_collapse;

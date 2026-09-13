@@ -6,6 +6,17 @@ rendering or complete implementation of CSS Grid, tables, buttons, or legacy col
 
 ## Implemented contracts
 
+Computed `line-height` retains its inheritance kind: unitless multipliers scale with a
+child's font size; lengths and percentages inherit absolute values. Font sizing resolves
+before the used line height, without reordering shorthand/longhand declarations. Short
+and zero line heights allow negative leading instead of expanding to glyph height.
+`normal` remains a 1.2em approximation, not font-specific typographic metrics.
+In the owned `line-heights.html` Chrome comparison, all six CSS-pixel rectangles match:
+inherited-number height 60px, inherited percentage and length heights 30px, two short
+lines totaling 16px, and shorthand/longhand cases of 30px and 40px. On the live article,
+the notice height changes from 67.6px to 88px versus Chrome's 90.8px, with matching top
+positions. The remaining difference is not represented as a pass.
+
 | Contract | Implementation and regression evidence |
 | --- | --- |
 | [CSSOM stylesheet owner order](https://drafts.csswg.org/cssom/#document-css-style-sheets) | Linked and inline sheets are cascaded in owner tree order, independently of response arrival. Moving/removing owners and changing media, type, rel, or disabled attributes invalidates the rule set. Repeated link owners share loaded bytes but retain separate cascade positions. Adopted sheets follow tree-owned sheets. Library-injected sheets remain explicitly unowned. |
@@ -109,6 +120,7 @@ remains approximate. The owned `button-alignment.html` fixture checks intrinsic 
 buttons, retained SVGs and positional block alignment independently of Wikipedia.
 At 125% scaling its inline text button is 30.6875px wide and its icon button is 40px wide
 in both engines, and all four block-alignment child rectangles match. Inline baselines do
-not yet match: Breeze centers neighboring atomic inline boxes and expands short authored
-line heights to font metrics. This is a separate inline-formatting gap, not passing evidence.
+not yet match: Breeze centers neighboring atomic inline boxes. This is a separate inline-
+formatting gap, not passing evidence. `line-heights.html` covers computed inheritance,
+shorthand/longhand order and negative leading independently of Wikipedia.
 Do not replace these gaps with site-specific CSS or claim full conformance from this fixture.

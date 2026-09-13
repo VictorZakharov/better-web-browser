@@ -1,5 +1,6 @@
 //! HTML user-agent defaults and rendering-state rules.
 
+use super::values::LineHeight;
 use super::*;
 
 pub(crate) fn user_agent_display(tag: &str) -> Display {
@@ -84,6 +85,9 @@ pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyl
             style.text_decoration_underline = true;
         }
         "input" | "button" | "select" | "textarea" => {
+            if node.tag_name() != Some("select") {
+                style.line_height_value = LineHeight::Normal;
+            }
             if node.tag_name() == Some("button") {
                 // HTML's default button styling measures authored sizes at the border box.
                 style.box_sizing = BoxSizing::BorderBox;
@@ -116,7 +120,6 @@ pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyl
 
 pub(super) fn heading_defaults(style: &mut ComputedStyle, scale: f32, margin: f32) {
     style.font_size *= scale;
-    style.line_height = style.font_size * 1.2;
     style.font_weight = 700;
     style.margin.top = Length::Em(margin);
     style.margin.bottom = Length::Em(margin);

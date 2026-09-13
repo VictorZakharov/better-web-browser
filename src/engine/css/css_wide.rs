@@ -130,6 +130,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.italic = source.italic;
             style.font_family.clone_from(&source.font_family);
             style.line_height = source.line_height;
+            style.line_height_value = source.line_height_value;
         }
         "font-size" => style.font_size = source.font_size,
         "font-weight" => style.font_weight = source.font_weight,
@@ -137,7 +138,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "font-family" => style.font_family.clone_from(&source.font_family),
         "letter-spacing" => style.letter_spacing = source.letter_spacing,
         "word-spacing" => style.word_spacing = source.word_spacing,
-        "line-height" => style.line_height = source.line_height,
+        "line-height" => {
+            style.line_height = source.line_height;
+            style.line_height_value = source.line_height_value;
+        }
         "text-align" => style.text_align = source.text_align,
         "white-space" => style.white_space = source.white_space,
         "text-decoration" | "text-decoration-line" => {

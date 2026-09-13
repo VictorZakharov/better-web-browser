@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Computed line-height inheritance</title>
+<style>
+  body { margin:20px; font-family:Arial,sans-serif }
+  .parent { font-size:20px; margin-bottom:20px; background:#edf3fa }
+  .child { font-size:40px }
+  #number { line-height:1.5 }
+  #percent { line-height:150% }
+  #length { line-height:30px }
+  #short { font-size:16px; line-height:8px; background:#d6f5e3 }
+  #late-font { line-height:40px; font:20px/1.5 Arial }
+  #late-line { font:20px/1.5 Arial; line-height:40px }
+</style>
+<div class=parent id=number><div class=child>Unitless multiplier</div></div>
+<div class=parent id=percent><div class=child>Computed percentage</div></div>
+<div class=parent id=length><div class=child>Fixed length</div></div>
+<div id=short>Short line one<br>Short line two</div>
+<div id=late-font>Later font shorthand</div>
+<div id=late-line>Later line-height longhand</div>

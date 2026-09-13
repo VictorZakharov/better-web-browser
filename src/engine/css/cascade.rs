@@ -251,7 +251,7 @@ impl StyleSet {
             style.float = Float::None;
         }
         style.blockify_float();
-        style.line_height = style.line_height.max(style.font_size);
+        style.resolve_line_height(self.viewport_width, self.viewport_height);
         // Preserve inherited-map identity across incremental recalculation. Otherwise an
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large
         // equivalent map again. Equality is exact; changed values never reuse stale storage.
@@ -331,20 +331,18 @@ impl StyleSet {
         for &(declaration, _) in &cascaded {
             apply_custom_properties(style, std::slice::from_ref(declaration), parent);
         }
-        for line_height in [false, true] {
-            for &(declaration, base_url) in &cascaded {
-                if (declaration.name == "line-height") == line_height {
-                    apply_resolved_declaration(
-                        style,
-                        declaration,
-                        parent,
-                        lower_origin,
-                        base_url,
-                        self.viewport_width,
-                        self.viewport_height,
-                    );
-                }
-            }
+        // Font-relative line height resolves after the cascade. Do not move its
+        // declarations past later font shorthands or change importance ordering.
+        for &(declaration, base_url) in &cascaded {
+            apply_resolved_declaration(
+                style,
+                declaration,
+                parent,
+                lower_origin,
+                base_url,
+                self.viewport_width,
+                self.viewport_height,
+            );
         }
     }
 }

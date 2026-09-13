@@ -1,5 +1,6 @@
 //! CSSOM serialization for values already computed by the cascade engine.
 
+use super::values::LineHeight;
 use super::*;
 
 const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
@@ -70,7 +71,13 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "font-weight" => style.font_weight.to_string(),
         "letter-spacing" => serialize_px(style.letter_spacing),
         "word-spacing" => serialize_px(style.word_spacing),
-        "line-height" => serialize_px(style.line_height),
+        "line-height" => {
+            if style.line_height_value == LineHeight::Normal {
+                "normal".to_string()
+            } else {
+                serialize_px(style.line_height)
+            }
+        }
         "opacity" => serialize_number(style.opacity),
         "padding-bottom" => serialize_length(style.padding.bottom),
         "padding-left" => serialize_length(style.padding.left),

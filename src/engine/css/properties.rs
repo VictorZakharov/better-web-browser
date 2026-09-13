@@ -1,5 +1,6 @@
 //! Longhand property application.
 
+use super::values::LineHeight;
 use super::*;
 mod helpers;
 use helpers::*;
@@ -130,7 +131,6 @@ pub(super) fn apply_declaration(
                 root_font_size,
             ) {
                 style.font_size = size;
-                style.line_height = size * 1.2;
             }
         }
         "font-weight" => {
@@ -177,14 +177,8 @@ pub(super) fn apply_declaration(
             }
         }
         "line-height" => {
-            if let Some(line_height) = parse_line_height_for_viewport(
-                value,
-                style.font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.line_height = line_height;
+            if let Some(line_height) = LineHeight::parse(value) {
+                style.line_height_value = line_height;
             }
         }
         "text-align" => {
