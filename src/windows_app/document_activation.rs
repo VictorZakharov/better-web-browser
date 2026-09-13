@@ -298,7 +298,10 @@ impl BrowserState {
         self.crashed = false;
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
         if first_presentation {
-            self.renderer_runtime_clock = Some(Instant::now());
+            super::runtime::initial_presentation_clock(
+                &mut self.renderer_runtime_clock,
+                Instant::now(),
+            );
         }
         if presentation.clock_advanced {
             self.renderer_clock_pending = false;

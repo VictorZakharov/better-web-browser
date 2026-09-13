@@ -46,6 +46,10 @@ batch, not on an intervening input/resource checkpoint. This prevents repeated l
 errors before a frame callback can repair the layout. Cancelling an author callback
 does not cancel the observer's internal frame wakeup.
 
+The shell retains its submitted renderer-clock anchor when the first presentation
+arrives. Scripts may already have consumed time while rendering was blocked;
+resetting the anchor at first paint would restart expired idle-callback timeouts.
+
 This implements a bounded part of the [HTML render-blocking mechanism](https://html.spec.whatwg.org/multipage/dom.html#render-blocking-mechanism)
 and [stylesheet processing](https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet).
 Recursive `@import` blocking, complete stylesheet-set selection, render-blocking
