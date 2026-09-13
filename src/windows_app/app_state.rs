@@ -145,9 +145,9 @@ impl BrowserState {
     pub(super) unsafe fn reset_media_viewport_width(&mut self) {
         let mut client: Rect = std::mem::zeroed();
         if GetClientRect(self.window, &mut client) != 0 {
-            // CSSOM innerWidth/media queries include a classic scrollbar. The initial Win32
-            // window has WS_VSCROLL; seeding from its client width alone permanently loses
-            // that gutter when the first partial parser presentation hides the scrollbar.
+            // CSSOM innerWidth/media queries include a classic scrollbar. When a presented
+            // page has a gutter, seeding from client width alone loses that space when the
+            // scrollbar later disappears. Empty windows now start without a gutter.
             // https://drafts.csswg.org/cssom-view/#dom-window-innerwidth
             const SM_CXVSCROLL: i32 = 2;
             let scrollbar = if GetWindowLongPtrW(self.window, GWL_STYLE) as u32 & WS_VSCROLL != 0 {

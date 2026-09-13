@@ -125,8 +125,9 @@ The follow-up [parser suspension/resumption slice](incremental-html-parsing.md)
 replaces whole-DOM startup in the retained renderer. Streaming main-response input
 and synchronous `document.write()` re-entry remain incomplete. Stylesheet
 applicability and precise script-blocking sheet state remain a
-separate gap; this change does not claim those rules are complete. Explicit
-`blocking=render` is not implemented here.
+separate gap; this change does not claim those rules are complete. The follow-up
+[first-paint gate](float-clear-and-first-paint.md) supports initial head stylesheet
+blocking, including explicit links admitted before body insertion, not render-blocking scripts.
 
 This is parser-prepared classic/module readiness, not complete module support.
 Dynamic `import()`, import maps/attributes, dynamically inserted module elements,

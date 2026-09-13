@@ -24,6 +24,9 @@ impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTex
 
 impl DocumentRuntime {
     pub(super) fn has_pending_geometry_observers(&self) -> bool {
+        if self.rendering_is_blocked() {
+            return false;
+        }
         self.geometry_observers_pending
             || self.resize_observers_pending
             || self
@@ -39,6 +42,9 @@ impl DocumentRuntime {
         outcome: &mut ScriptOutcome,
         connection: &mut ChildConnection,
     ) -> Result<bool, String> {
+        if self.rendering_is_blocked() {
+            return Ok(false);
+        }
         if !self.resize_observers_pending
             && !self
                 .script_runtime

@@ -110,7 +110,9 @@ impl DocumentRuntime {
             resource_events: Default::default(),
             geometry_observers_pending: false,
             resize_observers_pending: false,
+            rendering: Default::default(),
         };
+        runtime.record_parser_stylesheets(&[]);
 
         let resource_started = Instant::now();
         if let Some(pending) = pending_first_paint {
@@ -209,6 +211,6 @@ impl DocumentRuntime {
                 ..PageLoadReport::default()
             });
         let presentation = runtime.presentation(outcome, style, report, connection)?;
-        Ok(LoadResult::Ready(Box::new(runtime), Box::new(presentation)))
+        Ok(LoadResult::Ready(Box::new(runtime), presentation))
     }
 }

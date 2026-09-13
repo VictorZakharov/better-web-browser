@@ -2,6 +2,9 @@
 use super::*;
 
 impl Page {
+    pub(crate) fn resolve_resource_url(&self, href: &str) -> Option<String> {
+        resolve_url(&document_base_url(&self.dom, &self.source_url), href)
+    }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_parser_runtime(
         &self,

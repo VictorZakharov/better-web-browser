@@ -101,10 +101,10 @@ impl BrowserState {
             return;
         }
         match tab.surface {
-            Surface::Page => {
+            Surface::Page if tab.page_layout.background.alpha != 0 => {
                 fill_color_rect(dc, &content, tab.page_layout.background.to_colorref())
             }
-            Surface::Reader => {
+            _ => {
                 FillRect(dc, &content, content_brush);
             }
         }

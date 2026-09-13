@@ -9,7 +9,10 @@ impl DocumentRuntime {
         self.publish_document_load_readiness(
             self.resource_render_pending || self.pending_async_outcome.render_requested,
         );
-        if self.has_pending_geometry_observers() || self.resource_render_pending {
+        if self.has_pending_geometry_observers()
+            || self.resource_render_pending
+            || (self.rendering.dirty && !self.rendering_is_blocked())
+        {
             return Some(0);
         }
         let runtime_timer = self
@@ -22,10 +25,14 @@ impl DocumentRuntime {
         } else {
             runtime_timer
         };
-        match (runtime_timer, self.media_timer_micros()) {
-            (Some(runtime), Some(media)) => Some(runtime.min(media)),
-            (runtime, media) => runtime.or(media),
-        }
+        [
+            runtime_timer,
+            self.media_timer_micros(),
+            self.rendering_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn has_post_load_work(&self) -> bool {
@@ -63,7 +70,8 @@ impl DocumentRuntime {
         }
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
         // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
-        if std::mem::take(&mut self.geometry_observers_pending)
+        if !self.rendering_is_blocked()
+            && std::mem::take(&mut self.geometry_observers_pending)
             && let Some(runtime) = self.script_runtime.as_mut()
         {
             merge_outcome(
@@ -174,7 +182,10 @@ impl DocumentRuntime {
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
-        let mut needs_present = resources_changed || media_changed || outcome.render_requested;
+        let mut needs_present = resources_changed
+            || media_changed
+            || outcome.render_requested
+            || (self.rendering.dirty && !self.rendering_is_blocked());
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
                 "refreshing styles for {}",
@@ -212,8 +223,11 @@ impl DocumentRuntime {
         if needs_present {
             self.presentation_after_observers(outcome, style, load)
                 .map(|mut presentation| {
-                    presentation.clock_advanced = true;
-                    AdvanceResult::Presentation(Box::new(presentation))
+                    match &mut presentation {
+                        AdvanceResult::Presentation(value) => value.clock_advanced = true,
+                        AdvanceResult::Runtime(value) => value.clock_advanced = true,
+                    }
+                    presentation
                 })
         } else {
             let next_timer_micros = self.next_timer_micros();

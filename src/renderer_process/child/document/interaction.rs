@@ -14,7 +14,7 @@ use crate::renderer_protocol::{
 };
 
 pub(in crate::renderer_process::child) struct InteractionResult {
-    pub(in crate::renderer_process::child) presentation: Option<RendererPresentation>,
+    pub(in crate::renderer_process::child) presentation: Option<AdvanceResult>,
     pub(in crate::renderer_process::child) navigation: Option<(String, NavigationDisposition)>,
     pub(in crate::renderer_process::child) cursor: Option<PointerCursorResult>,
 }
@@ -182,7 +182,7 @@ impl DocumentRuntime {
         outcome: ScriptOutcome,
         force_accessibility_update: bool,
         connection: &mut ChildConnection,
-    ) -> Result<Option<RendererPresentation>, String> {
+    ) -> Result<Option<AdvanceResult>, String> {
         let needs_present = force_accessibility_update
             || outcome.render_requested
             || outcome.executed > 0
