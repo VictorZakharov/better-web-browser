@@ -32,6 +32,26 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
     let value = match property {
         "align-content" => style.align_content.css_text(),
         "background-color" => serialize_color(style.background_color),
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            serialize_color(style.resolved_border_colors()[values::borders::color_side(property)?])
+        }
+        "border-color" => {
+            let c = style.resolved_border_colors();
+            let count = if c[1] != c[3] {
+                4
+            } else if c[0] != c[2] {
+                3
+            } else if c[0] != c[1] {
+                2
+            } else {
+                1
+            };
+            c[..count]
+                .iter()
+                .map(|c| serialize_color(*c))
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
         "border-bottom-width" => serialize_length(style.border_width.bottom),
         "border-left-width" => serialize_length(style.border_width.left),
         "border-right-width" => serialize_length(style.border_width.right),

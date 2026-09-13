@@ -178,26 +178,30 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "border-right-width" => style.border_width.right = source.border_width.right,
         "border-bottom-width" => style.border_width.bottom = source.border_width.bottom,
         "border-left-width" => style.border_width.left = source.border_width.left,
-        "border-color" => style.border_color = source.border_color,
+        "border-color" => style.border_colors = source.border_colors,
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            let side = values::borders::color_side(property).unwrap();
+            style.border_colors[side] = source.border_colors[side];
+        }
         "border" => {
             style.border_width = source.border_width;
-            style.border_color = source.border_color;
+            style.border_colors = source.border_colors;
         }
         "border-top" => {
             style.border_width.top = source.border_width.top;
-            style.border_color = source.border_color;
+            style.border_colors[0] = source.border_colors[0];
         }
         "border-right" => {
             style.border_width.right = source.border_width.right;
-            style.border_color = source.border_color;
+            style.border_colors[1] = source.border_colors[1];
         }
         "border-bottom" => {
             style.border_width.bottom = source.border_width.bottom;
-            style.border_color = source.border_color;
+            style.border_colors[2] = source.border_colors[2];
         }
         "border-left" => {
             style.border_width.left = source.border_width.left;
-            style.border_color = source.border_color;
+            style.border_colors[3] = source.border_colors[3];
         }
         "border-radius" => style.border_radius = source.border_radius,
         "border-collapse" => style.border_collapse = source.border_collapse,

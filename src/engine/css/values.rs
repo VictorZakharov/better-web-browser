@@ -1,5 +1,6 @@
 //! Computed CSS value types and inherited/initial style state.
 
+pub(super) mod borders;
 mod content_alignment;
 mod edges;
 pub use content_alignment::ContentAlignment;
@@ -216,7 +217,8 @@ pub struct ComputedStyle {
     pub margin: Edges,
     pub padding: Edges,
     pub border_width: Edges,
-    pub border_color: Color,
+    /// Top, right, bottom, left; None is the computed `currentcolor` keyword.
+    pub border_colors: [Option<Color>; 4],
     pub border_radius: Length,
     pub top: Length,
     pub right: Length,
@@ -299,7 +301,7 @@ impl ComputedStyle {
             margin: Edges::ZERO,
             padding: Edges::ZERO,
             border_width: Edges::ZERO,
-            border_color: Color::BLACK,
+            border_colors: [None; 4],
             border_radius: Length::Px(0.0),
             top: Length::Auto,
             right: Length::Auto,

@@ -171,12 +171,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         radius: spec.border_radius,
                     });
                 }
-                if spec.border_color.alpha > 0 && spec.border_width.iter().any(|width| *width > 0.0)
+                if spec.border_colors.iter().any(|c| c.alpha > 0)
+                    && spec.border_width.iter().any(|width| *width > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {
                         rect: spec.rect,
                         widths: spec.border_width,
-                        color: spec.border_color,
+                        colors: spec.border_colors,
                         radius: spec.border_radius,
                     });
                 }
@@ -266,7 +267,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 if self.emit_paint
-                    && style.border_color.alpha > 0
+                    && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
                     && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {
@@ -277,7 +278,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             metrics.border.bottom,
                             metrics.border.left,
                         ],
-                        color: style.border_color.composite_over(
+                        colors: style.painted_border_colors(
                             style
                                 .background_color
                                 .composite_over(self.output.background),

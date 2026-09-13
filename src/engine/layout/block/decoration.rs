@@ -78,16 +78,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 index
             });
         let border_index = if self.emit_paint
-            && style.border_color.alpha > 0
+            && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
             && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
         {
             let index = self.output.items.len();
             self.output.items.push(DisplayItem::BorderRect {
                 rect,
                 widths: [borders.top, borders.right, borders.bottom, borders.left],
-                color: style
-                    .border_color
-                    .composite_over(self.effective_background_color(node)),
+                colors: style.painted_border_colors(self.effective_background_color(node)),
                 radius: 0.0,
             });
             Some(index)

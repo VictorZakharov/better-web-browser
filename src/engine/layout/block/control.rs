@@ -65,9 +65,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     form_id: nearest_form(node).map(|form| node_id(&form)),
                     background_color: self.effective_background_color(node),
                     text_color: style.color,
-                    border_color: style
-                        .border_color
-                        .composite_over(self.effective_background_color(node)),
+                    border_colors: style
+                        .painted_border_colors(self.effective_background_color(node)),
                     border_width: [borders.top, borders.right, borders.bottom, borders.left],
                     border_radius: resolve_border_radius(
                         style.border_radius,

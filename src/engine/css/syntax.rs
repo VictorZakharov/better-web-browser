@@ -1,4 +1,6 @@
 //! Shared delimiter and balanced-block CSS syntax helpers.
+mod components;
+pub(super) use components::components;
 
 pub(super) fn skip_css_whitespace(input: &str, mut cursor: usize) -> usize {
     while cursor < input.len() && input.as_bytes()[cursor].is_ascii_whitespace() {

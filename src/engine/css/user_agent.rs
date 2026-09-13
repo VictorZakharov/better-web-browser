@@ -96,7 +96,7 @@ pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyl
             }
             style.background_color = Color::WHITE;
             style.border_width = uniform_edges(Length::Px(2.0));
-            style.border_color = Color::rgb(118, 118, 118);
+            style.border_colors = [Some(Color::rgb(118, 118, 118)); 4];
         }
         "table" => style.box_sizing = BoxSizing::BorderBox,
         "center" => style.text_align = TextAlign::Center,

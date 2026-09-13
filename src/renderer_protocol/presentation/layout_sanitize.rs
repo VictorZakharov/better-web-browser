@@ -55,12 +55,12 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
         DisplayItem::BorderRect {
             rect,
             widths,
-            color,
+            colors,
             radius,
         } => DisplayItem::BorderRect {
             rect: sanitize_rect(rect)?,
             widths: sanitize_edges(widths),
-            color,
+            colors,
             radius: nonnegative(radius),
         },
         DisplayItem::Text {

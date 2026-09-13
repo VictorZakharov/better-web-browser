@@ -6,7 +6,7 @@ mod opacity;
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
     paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_alpha_image, paint_background_image,
-    paint_border, screen_rect,
+    paint_border_colors, screen_rect,
 };
 use super::platform::*;
 use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
@@ -128,17 +128,17 @@ impl BrowserState {
                             DisplayItem::BorderRect {
                                 rect,
                                 widths,
-                                color,
+                                colors,
                                 radius,
                             } => {
                                 let rectangle =
                                     screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
-                                    paint_border(
+                                    paint_border_colors(
                                         item_dc,
                                         &rectangle,
                                         widths.map(|width| width * scale),
-                                        color.to_colorref(),
+                                        *colors,
                                         *radius * scale,
                                     );
                                 }

@@ -236,30 +236,13 @@ pub(super) fn apply_declaration(
         "border-right-width" => assign_length(&mut style.border_width.right, value),
         "border-bottom-width" => assign_length(&mut style.border_width.bottom, value),
         "border-left-width" => assign_length(&mut style.border_width.left, value),
-        "border-color" => {
-            if let Some(color) = value.split_ascii_whitespace().find_map(parse_color) {
-                style.border_color = color;
-            }
-        }
+        "border-color"
+        | "border-top-color"
+        | "border-right-color"
+        | "border-bottom-color"
+        | "border-left-color" => style.apply_border_color(&declaration.name, value),
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
-            let width = if value.split_ascii_whitespace().any(|token| token == "none") {
-                Length::Px(0.0)
-            } else {
-                value
-                    .split_ascii_whitespace()
-                    .find_map(parse_length)
-                    .unwrap_or(Length::Px(1.0))
-            };
-            match declaration.name.as_str() {
-                "border-top" => style.border_width.top = width,
-                "border-right" => style.border_width.right = width,
-                "border-bottom" => style.border_width.bottom = width,
-                "border-left" => style.border_width.left = width,
-                _ => style.border_width = uniform_edges(width),
-            }
-            if let Some(color) = value.split_ascii_whitespace().find_map(parse_color) {
-                style.border_color = color;
-            }
+            style.apply_border_shorthand(&declaration.name, value)
         }
         "border-radius" => {
             if let Some(radius) = value

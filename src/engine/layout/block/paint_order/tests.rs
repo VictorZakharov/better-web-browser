@@ -25,7 +25,7 @@ fn block_backgrounds_and_borders_are_below_floats_but_inline_content_is_above() 
     let border = output
         .items
         .iter()
-        .position(|item| matches!(item,DisplayItem::BorderRect{color,..} if color.green==128))
+        .position(|item| matches!(item,DisplayItem::BorderRect{colors,..} if colors[2].green==128))
         .unwrap();
     let text = output
         .items

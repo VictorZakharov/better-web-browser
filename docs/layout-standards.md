@@ -98,6 +98,17 @@ also completes without a script error in both browsers.
 
 ## Live-page evidence and remaining gaps
 
+Physical border colors are independently cascaded, serialized and painted in top/right/
+bottom/left order, following [CSS Backgrounds 3](https://www.w3.org/TR/css-backgrounds-3/#border-color).
+One-to-four value expansion, side longhands, CSS-wide keywords, shorthand resets and
+`currentColor` used values are covered; transparent sides retain ownership of their corner
+sectors. Block, inline and control decoration carry all four colors across IPC (major 6
+rejects incompatible older peers). The oversized paint and wire coordinators were split
+by responsibility. `border-colors.html` is an owned comparison fixture; offscreen native
+raster tests check edge colors and transparent joins. This does not implement dashed/
+dotted/double patterns, independent border-style state, elliptical per-corner radii or
+collapsed-table border conflict resolution. Existing radius painting remains approximate.
+
 On the reported Wikipedia article, the sidebar text overlap and notice/icon overlap are
 removed, the serif heading uses its fallback font, and the artificial title-to-tabs gap
 is removed. The previous `nodeType` exception also disappears. The left pane now has its

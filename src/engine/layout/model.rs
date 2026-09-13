@@ -115,7 +115,7 @@ pub struct ControlSpec {
     pub form_id: Option<NodeId>,
     pub background_color: Color,
     pub text_color: Color,
-    pub border_color: Color,
+    pub border_colors: [Color; 4],
     pub border_width: [f32; 4],
     pub border_radius: f32,
     pub padding: [f32; 4],
@@ -166,7 +166,7 @@ pub enum DisplayItem {
     BorderRect {
         rect: RectF,
         widths: [f32; 4],
-        color: Color,
+        colors: [Color; 4],
         radius: f32,
     },
     Text {

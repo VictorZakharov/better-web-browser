@@ -83,7 +83,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
         }
-        "color" | "background-color" | "border-color" => parse_color(&value).is_some(),
+        "color" | "background-color" => parse_color(&value).is_some(),
+        "border-color" => values::borders::color_values(&value).is_some(),
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            values::borders::color_values(&value).is_some_and(|colors| colors.len() == 1)
+        }
         "width"
         | "height"
         | "min-width"
