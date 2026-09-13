@@ -108,6 +108,10 @@ by responsibility. `border-colors.html` is an owned comparison fixture; offscree
 raster tests check edge colors and transparent joins. This does not implement dashed/
 dotted/double patterns, independent border-style state, elliptical per-corner radii or
 collapsed-table border conflict resolution. Existing radius painting remains approximate.
+Border widths use CSS Values 4 device-pixel snapping before layout and CSSOM serialization,
+including generated pseudo-elements. A DPI change recomputes the lengths; paint does not
+independently round them up again. At 125% scale, authored 1px/6px borders become 0.8px/5.6px,
+while positive sub-device-pixel widths retain a one-device-pixel stroke.
 
 On the reported Wikipedia article, the sidebar text overlap and notice/icon overlap are
 removed, the serif heading uses its fallback font, and the artificial title-to-tabs gap

@@ -42,6 +42,7 @@ pub struct StyleSet {
     document_base_url: String,
     viewport_width: f32,
     viewport_height: f32,
+    resolution_dppx: f32,
 }
 
 impl StyleSet {
@@ -164,6 +165,7 @@ impl StyleSet {
             document_base_url: document_base_url.to_string(),
             viewport_width: environment.viewport_width,
             viewport_height: environment.viewport_height,
+            resolution_dppx: environment.resolution_dppx,
         }
     }
 
@@ -252,6 +254,7 @@ impl StyleSet {
         }
         style.blockify_float();
         style.resolve_line_height(self.viewport_width, self.viewport_height);
+        style.snap_border_widths(self.resolution_dppx);
         // Preserve inherited-map identity across incremental recalculation. Otherwise an
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large
         // equivalent map again. Equality is exact; changed values never reuse stale storage.

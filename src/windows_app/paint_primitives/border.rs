@@ -29,7 +29,7 @@ pub(in crate::windows_app) unsafe fn paint_border_colors(
     if rect.width() <= 0 || rect.height() <= 0 {
         return;
     }
-    let widths = widths.map(|v| v.ceil().max(0.0));
+    let widths = widths.map(|v| v.round().max(0.0));
     if !widths.iter().any(|v| *v > 0.0) {
         return;
     }

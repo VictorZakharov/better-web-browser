@@ -29,6 +29,35 @@ pub(in crate::engine::css) fn color_side(property: &str) -> Option<usize> {
 }
 
 impl ComputedStyle {
+    pub(in crate::engine::css) fn snap_border_widths(&mut self, scale: f32) {
+        // CSS Values 4 §6: positive sub-device-pixel strokes round up; larger
+        // strokes round down. Do this before layout so CSSOM, geometry and paint agree.
+        // https://www.w3.org/TR/css-values-4/#snap-a-length-as-a-border-width
+        let snap = |length: Length| {
+            let value = length.resolve(0.0, self.font_size).unwrap_or(0.0).max(0.0);
+            let pixels = value * scale;
+            let snapped = if pixels == 0.0 {
+                0.0
+            } else {
+                pixels.floor().max(1.0)
+            };
+            let css_pixels = snapped / scale;
+            // Pick the representable CSS length which stays on the snapped device
+            // pixel. Otherwise a later `inherit` can lose a pixel to f32 roundoff.
+            Length::Px(if css_pixels * scale < snapped {
+                css_pixels.next_up()
+            } else {
+                css_pixels
+            })
+        };
+        self.border_width = Edges {
+            top: snap(self.border_width.top),
+            right: snap(self.border_width.right),
+            bottom: snap(self.border_width.bottom),
+            left: snap(self.border_width.left),
+        };
+    }
+
     pub fn resolved_border_colors(&self) -> [Color; 4] {
         // CSS Color 4: currentcolor computes (and inherits) as the keyword, resolving
         // against this element's color only when its used value is needed.

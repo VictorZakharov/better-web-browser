@@ -38,7 +38,8 @@ impl StyleSet {
         removed_nodes: &[NodeId],
     ) -> StyleRefreshStats {
         let viewport_changed = self.viewport_width != environment.viewport_width
-            || self.viewport_height != environment.viewport_height;
+            || self.viewport_height != environment.viewport_height
+            || self.resolution_dppx != environment.resolution_dppx;
         // Full rule changes also invalidate entries which are no longer in the composed tree.
         // Keeping them would make later explicit queries reuse stale unassigned light-DOM styles.
         // A full refresh need not carry an incremental removal log, so prune detached entries too.
@@ -66,6 +67,7 @@ impl StyleSet {
         self.document_base_url = base_url.to_string();
         self.viewport_width = environment.viewport_width;
         self.viewport_height = environment.viewport_height;
+        self.resolution_dppx = environment.resolution_dppx;
         let mut stats = self.refresh_subtrees(
             &dom.document,
             std::slice::from_ref(&dom.document),

@@ -3,7 +3,12 @@ use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn scrollbar_gutters_preserve_fractional_resize_geometry_at_device_scales() {
-    for (scale, gutter) in [(1.0, 15.0), (1.25, 15.2), (1.5, 15.333333), (2.0, 15.0)] {
+    for (scale, gutter, outer_width) in [
+        (1.0, 15.0, 180.0),
+        (1.25, 15.2, 179.2),
+        (1.5, 15.333333, 180.0),
+        (2.0, 15.0, 180.0),
+    ] {
         let mut page = Page::parse(
             "<style>div{width:100px;height:100px;padding:30px;border:10px solid;overflow:scroll}</style><div></div>",
             "https://example.test/",
@@ -14,7 +19,9 @@ fn scrollbar_gutters_preserve_fractional_resize_geometry_at_device_scales() {
         let node = page.dom.elements_named("div").next().unwrap();
         let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
         let scroll = output.scroll_boxes[&node.id()];
-        assert_eq!(output.node_bounds[&node.id()].width, 180.0);
+        // At 125%, each 10px border snaps to 9.6 CSS px; the padding/content
+        // and fractional scrollbar contract are unaffected by that stroke snapping.
+        assert_eq!(output.node_bounds[&node.id()].width, outer_width);
         assert!(
             (scroll.port.width - (160.0 - gutter)).abs() < 0.0001,
             "scale {scale}"
