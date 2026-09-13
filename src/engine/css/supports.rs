@@ -134,7 +134,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 || value.parse::<u16>().is_ok()
         }
         "font-style" => matches!(value.as_str(), "normal" | "italic" | "oblique"),
-        "font-family" => !first_font_family(&value).is_empty(),
+        "font-family" => super::font_family::parse(&value).is_some(),
         "letter-spacing" | "word-spacing" => parse_text_spacing(&value, 16.0).is_some(),
         "line-height" => parse_line_height(&value, 16.0).is_some(),
         "text-align" => matches!(

@@ -13,6 +13,31 @@ fn spec() -> FontSpec {
 }
 
 #[test]
+fn unavailable_first_family_falls_back_to_the_next_named_family() {
+    let mut text = RendererTextSystem::new(96);
+    let mut direct = spec();
+    direct.family = "Georgia, serif".into();
+    let expected = text.shape("A serif heading", &direct);
+    let mut fallback = direct;
+    fallback.family = "'Absent Fixture Font', Georgia, serif".into();
+    let actual = text.shape("A serif heading", &fallback);
+    assert!(!actual.glyphs.is_empty());
+    assert_eq!(actual.width, expected.width);
+    assert_eq!(
+        actual
+            .glyphs
+            .iter()
+            .map(|g| g.raster_id)
+            .collect::<Vec<_>>(),
+        expected
+            .glyphs
+            .iter()
+            .map(|g| g.raster_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn measurement_shapes_advances_without_rasterizing_glyphs() {
     let mut text = RendererTextSystem::new(96);
     let font = spec();

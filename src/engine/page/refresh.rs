@@ -173,20 +173,19 @@ impl Page {
                     .push(PageResource::Image { url: url.clone() });
                 discovered_style_images += 1;
             }
-            let family = style
-                .font_family
-                .split(',')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .trim_matches(['\'', '"'])
-                .to_ascii_lowercase();
-            if !family.is_empty()
-                && !requested_faces.iter().any(|(requested, weight, italic)| {
-                    requested == &family && *weight == style.font_weight && *italic == style.italic
-                })
+            for family in
+                crate::engine::css::font_family::parse(&style.font_family).unwrap_or_default()
             {
-                requested_faces.push((family, style.font_weight, style.italic));
+                if let crate::engine::css::font_family::Family::Named(family) = family {
+                    let family = family.to_ascii_lowercase();
+                    if !requested_faces.iter().any(|(requested, weight, italic)| {
+                        requested == &family
+                            && *weight == style.font_weight
+                            && *italic == style.italic
+                    }) {
+                        requested_faces.push((family, style.font_weight, style.italic));
+                    }
+                }
             }
         }
         self.install_embedded_images();

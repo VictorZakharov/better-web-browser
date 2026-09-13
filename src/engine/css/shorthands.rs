@@ -344,8 +344,10 @@ pub(super) fn apply_font_shorthand(
             })
             .unwrap_or(size * 1.2);
     }
-    if size_index + 1 < tokens.len() {
-        style.font_family = first_font_family(&tokens[size_index + 1..].join(" "));
+    if size_index + 1 < tokens.len()
+        && let Some(family) = font_family::specified(&tokens[size_index + 1..].join(" "))
+    {
+        style.font_family = family;
     }
 }
 
@@ -408,16 +410,6 @@ pub(super) fn parse_line_height_for_viewport(
             .resolve_viewport_units(viewport_width, viewport_height)
             .resolve(font_size, font_size)
     })
-}
-
-pub(super) fn first_font_family(value: &str) -> String {
-    value
-        .split(',')
-        .next()
-        .unwrap_or("Arial")
-        .trim()
-        .trim_matches(['\'', '"'])
-        .to_string()
 }
 
 pub(super) fn assign_length(target: &mut Length, value: &str) {

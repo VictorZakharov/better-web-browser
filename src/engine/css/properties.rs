@@ -141,7 +141,11 @@ pub(super) fn apply_declaration(
             }
         }
         "font-style" => style.italic = matches!(value, "italic" | "oblique"),
-        "font-family" => style.font_family = first_font_family(value),
+        "font-family" => {
+            if let Some(family) = font_family::specified(value) {
+                style.font_family = family;
+            }
+        }
         "font" => apply_font_shorthand(
             style,
             value,

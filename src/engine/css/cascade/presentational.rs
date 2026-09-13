@@ -34,8 +34,11 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
         style.background_color = background;
     }
     if node.tag_name() == Some("font") {
-        if let Some(face) = node.attr("face") {
-            style.font_family = first_font_family(&face);
+        if let Some(face) = node
+            .attr("face")
+            .and_then(|face| font_family::specified(&face))
+        {
+            style.font_family = face;
         }
         if let Some(size) = node
             .attr("size")
