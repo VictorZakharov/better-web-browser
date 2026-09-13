@@ -174,7 +174,7 @@ impl DocumentRuntime {
         }
         let load = std::mem::take(&mut self.deferred_network_load).coalesce(current_load);
         if needs_present {
-            self.presentation(outcome, style, load)
+            self.presentation(outcome, style, load, connection)
                 .map(|presentation| Some(AdvanceResult::Presentation(Box::new(presentation))))
         } else {
             Ok(Some(AdvanceResult::Runtime(Box::new(

@@ -283,6 +283,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         };
         if !node.is_generated_pseudo() {
             self.output.node_bounds.insert(node_id(node), rect);
+            self.output.resize_boxes.insert(
+                node_id(node),
+                ResizeBox::from_content(content_width, content_height, padding, borders),
+            );
         }
         let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
             RectF {

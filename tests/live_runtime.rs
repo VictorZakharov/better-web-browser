@@ -30,6 +30,8 @@ mod network;
 mod parsing;
 #[path = "live_runtime/reload.rs"]
 mod reload;
+#[path = "live_runtime/resize_observers.rs"]
+mod resize_observers;
 #[path = "live_runtime/scrolling.rs"]
 mod scrolling;
 #[path = "live_runtime/stacking.rs"]

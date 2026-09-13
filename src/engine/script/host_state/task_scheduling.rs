@@ -32,6 +32,7 @@ impl HostState {
 
     pub(in crate::engine::script) fn idle_blocked(&self) -> bool {
         self.navigation_url.is_some()
+            || self.resize_observers_pending
             || self.timers.render_requested()
             || self.pending_dynamic_scripts.has_ready()
             || self.pending_dynamic_scripts.has_unrequested()

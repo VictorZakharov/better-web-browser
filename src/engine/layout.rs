@@ -43,6 +43,6 @@ pub use engine::{
 use model::*;
 pub use model::{
     ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
-    RectF, SelectOption, ShapedText, TextMeasurer,
+    RectF, ResizeBox, SelectOption, ShapedText, TextMeasurer,
 };
 use std::collections::HashMap;

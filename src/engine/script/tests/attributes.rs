@@ -155,6 +155,18 @@ fn resize_observer_delivers_after_a_layout_snapshot_changes() {
             height: 360.0,
         },
     )]));
+    runtime.set_resize_boxes(&HashMap::from([(
+        target.id(),
+        crate::engine::layout::ResizeBox {
+            content: RectF {
+                width: 640.0,
+                height: 360.0,
+                ..RectF::default()
+            },
+            border_width: 640.0,
+            border_height: 360.0,
+        },
+    )]));
     runtime.notify_layout_changed();
     let outcome = runtime.advance_time(Duration::from_millis(1), 8);
 

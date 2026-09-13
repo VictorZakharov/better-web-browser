@@ -30,7 +30,7 @@ impl DocumentRuntime {
     pub(in crate::renderer_process::child) fn pending_geometry_observer_update(
         &mut self,
     ) -> Option<RendererRuntimeUpdate> {
-        if !self.geometry_observers_pending {
+        if !self.has_pending_geometry_observers() {
             return None;
         }
         Some(RendererRuntimeUpdate {

@@ -133,6 +133,7 @@ impl PresentedLayout {
                 .map(|form| (form.node_id, form))
                 .collect(),
             node_bounds: Default::default(),
+            resize_boxes: Default::default(),
             node_paint_order: Default::default(),
         }
     }

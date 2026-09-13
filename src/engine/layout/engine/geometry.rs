@@ -13,6 +13,10 @@ fn assert_parity(page: &Page) -> LayoutOutput {
     let retained = layout_page_with_style_viewport(page, 800.0, 600.0, 815.0, &mut FixedMeasurer);
     let geometry = layout_page_for_output(page, 800.0, 600.0, 815.0, &mut FixedMeasurer, false);
     assert_eq!(geometry.node_bounds, retained.node_bounds);
+    assert_eq!(
+        geometry.resize_boxes, retained.resize_boxes,
+        "observer boxes do not depend on painting"
+    );
     assert!(
         geometry.items.is_empty(),
         "geometry does not construct paint items"

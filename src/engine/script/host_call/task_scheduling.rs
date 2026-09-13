@@ -6,6 +6,10 @@ pub(super) fn dispatch(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "resizeObserverSchedule" => {
+            state.resize_observers_pending = true;
+            JsValue::undefined()
+        }
         "timerSchedule" => {
             let id = argument_id(args, 1);
             if id == 0 {

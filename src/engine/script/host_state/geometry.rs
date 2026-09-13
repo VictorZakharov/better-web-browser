@@ -3,6 +3,7 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) resize_boxes: Option<HashMap<NodeId, crate::engine::layout::ResizeBox>>,
     pub(crate) content_height: Option<f32>,
     pub(crate) profile: bool,
     pub(crate) style: Duration,
@@ -33,6 +34,9 @@ impl HostState {
         };
         if let Some(geometry) = flush(&invalidation, &mut metrics) {
             self.layout_geometry = geometry;
+        }
+        if let Some(boxes) = metrics.resize_boxes {
+            self.resize_boxes = boxes;
         }
         if let Some(height) = metrics.content_height {
             self.layout_content_height = height;

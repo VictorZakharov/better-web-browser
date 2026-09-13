@@ -141,6 +141,7 @@ fn layout_page_for_output<M: TextMeasurer>(
                 HashMap::new()
             },
             node_bounds: HashMap::new(),
+            resize_boxes: HashMap::new(),
             node_paint_order: Vec::new(),
         },
     };

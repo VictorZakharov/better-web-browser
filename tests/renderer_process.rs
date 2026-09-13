@@ -24,6 +24,8 @@ mod media;
 mod pointer_buttons;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
+#[path = "renderer_process/resize_observers.rs"]
+mod resize_observers;
 #[path = "renderer_process/state.rs"]
 mod state;
 #[path = "renderer_process/state_backpressure.rs"]

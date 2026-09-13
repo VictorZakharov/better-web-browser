@@ -290,65 +290,6 @@
         }
         takeRecords() { return this.records.splice(0); }
     };
-    const resizeObservers = new Set();
-    let resizeObserverDeliveryPending = false;
-    const resizeSize = rect => Object.freeze({ inlineSize: rect.width, blockSize: rect.height });
-    const deliverResizeObserverNotifications = () => {
-        resizeObserverDeliveryPending = false;
-        for (const observer of Array.from(resizeObservers)) {
-                const entries = [];
-                for (const [target, previous] of observer.targets) {
-                    const rect = target.getBoundingClientRect();
-                    if (previous && previous.x === rect.x && previous.y === rect.y &&
-                        previous.width === rect.width && previous.height === rect.height) continue;
-                    observer.targets.set(target, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-                    const contentRect = Object.freeze({
-                        x: 0, y: 0, top: 0, left: 0, right: rect.width, bottom: rect.height,
-                        width: rect.width, height: rect.height,
-                        toJSON() { return { x: 0, y: 0, top: 0, left: 0, right: rect.width,
-                            bottom: rect.height, width: rect.width, height: rect.height }; }
-                    });
-                    const size = resizeSize(rect);
-                    entries.push(Object.freeze({
-                        target, contentRect,
-                        borderBoxSize: Object.freeze([size]),
-                        contentBoxSize: Object.freeze([size]),
-                        devicePixelContentBoxSize: Object.freeze([size])
-                    }));
-                }
-                if (entries.length) {
-                    try { observer.callback(entries, observer); }
-                    catch (error) { reportGlobalException(error); }
-                }
-        }
-    };
-    const scheduleResizeObserverDelivery = () => {
-        if (resizeObserverDeliveryPending || !resizeObservers.size) return;
-        resizeObserverDeliveryPending = true;
-        setTimeout(deliverResizeObserverNotifications, 0);
-    };
-    windowObject.__notifyResizeObservers = deliverResizeObserverNotifications;
-    windowObject.ResizeObserver = class ResizeObserver {
-        constructor(callback) {
-            if (typeof callback !== 'function') throw new TypeError('ResizeObserver requires a callback');
-            this.callback = callback;
-            this.targets = new Map();
-        }
-        observe(target) {
-            if (!(target instanceof Element)) throw new TypeError('ResizeObserver target must be an Element');
-            if (!this.targets.has(target)) this.targets.set(target, null);
-            resizeObservers.add(this);
-            scheduleResizeObserverDelivery();
-        }
-        unobserve(target) {
-            this.targets.delete(target);
-            if (!this.targets.size) resizeObservers.delete(this);
-        }
-        disconnect() {
-            this.targets.clear();
-            resizeObservers.delete(this);
-        }
-    };
     windowObject.__wrap = wrap;
     refreshWindowNamedProperties();
 })();

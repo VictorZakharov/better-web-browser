@@ -23,6 +23,52 @@ impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTex
 }
 
 impl DocumentRuntime {
+    pub(super) fn has_pending_geometry_observers(&self) -> bool {
+        self.geometry_observers_pending
+            || self.resize_observers_pending
+            || self
+                .script_runtime
+                .as_ref()
+                .is_some_and(ScriptRuntime::has_pending_resize_observers)
+    }
+
+    /// Settle observer mutations before presenting. The runtime performs the depth-bounded
+    /// style/layout loop; only its final state needs a paintable display list.
+    pub(super) fn deliver_geometry_observers(
+        &mut self,
+        outcome: &mut ScriptOutcome,
+        connection: &mut ChildConnection,
+    ) -> Result<bool, String> {
+        if !self.resize_observers_pending
+            && !self
+                .script_runtime
+                .as_ref()
+                .is_some_and(ScriptRuntime::has_pending_resize_observers)
+        {
+            return Ok(false);
+        }
+        self.resize_observers_pending = false;
+        let Some(runtime) = self.script_runtime.as_mut() else {
+            return Ok(false);
+        };
+        let mut observed = runtime.notify_resize_observers();
+        self.admit_user_input_outcome(&mut observed, connection)?;
+        let changed = observed.render_requested;
+        if changed {
+            self.page.refresh_resources_after_invalidation_for_viewport(
+                self.viewport.style_width,
+                self.viewport.height,
+                &observed.invalidation,
+            );
+            self.start_presentational_preloads(connection)?;
+            self.rebuild_layout();
+            // Repainting the layout already settled by the loop does not start another loop.
+            self.resize_observers_pending = false;
+        }
+        merge_outcome(outcome, observed, self.page.dom.document.id());
+        Ok(changed)
+    }
+
     pub(super) fn sync_script_layout_page(&mut self) {
         self.script_layout_viewport.set(self.viewport);
         let mut snapshot = self.script_layout_page.borrow_mut();
@@ -89,6 +135,7 @@ impl DocumentRuntime {
             metrics.text_measure = geometry_text.elapsed;
             metrics.layout = started.elapsed();
             metrics.content_height = Some(geometry.content_height);
+            metrics.resize_boxes = Some(geometry.resize_boxes);
             geometry_ready = true;
             Some(geometry.node_bounds)
         })
@@ -108,8 +155,10 @@ impl DocumentRuntime {
         drop(text);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
+            runtime.set_resize_boxes(&self.layout.resize_boxes);
             runtime.set_layout_content_height(self.layout.content_height);
             self.geometry_observers_pending = true;
+            self.resize_observers_pending = true;
         }
     }
 }

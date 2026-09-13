@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ResizeObserver responsive component</title>
+<style>
+  body { margin:32px; font:16px Arial,sans-serif; color:#19324a; background:#edf3f8 }
+  h1 { font-size:26px }
+  #panel { box-sizing:content-box; position:relative; width:260px; height:120px;
+    padding:12px; border:4px solid #245d87; background:white }
+  #tiles { display:flex; gap:12px }
+  #tiles div { background:#d7ebf7; width:90px; height:38px; padding:6px }
+  #summary { margin-top:24px; padding:16px; background:white; width:560px }
+  #result { font-size:22px; font-weight:bold }
+</style>
+<h1>ResizeObserver: responsive component</h1>
+<p>The component grows from 260 to 420 CSS px. Movement is not a resize.</p>
+<div id="panel"><p id="size">Waiting for layout</p><div id="tiles"><div>Content</div><div>Border</div></div></div>
+<div id="summary"><p id="result">RUNNING</p><p id="counts"></p><p id="boxes"></p></div>
+<script>
+  const panel = document.getElementById('panel');
+  const sizeLabel = document.getElementById('size');
+  let contentCalls = 0, borderCalls = 0, latest, loopErrors = 0;
+  addEventListener('error', event => {
+    if (event.message === 'ResizeObserver loop completed with undelivered notifications.') loopErrors++;
+  });
+  new ResizeObserver(entries => {
+    contentCalls++;
+    sizeLabel.textContent = entries[0].contentRect.width + ' CSS px content width';
+    document.getElementById('tiles').style.gap = entries[0].contentRect.width >= 400 ? '24px' : '12px';
+  }).observe(panel);
+  new ResizeObserver(entries => { borderCalls++; latest = entries[0]; })
+    .observe(panel, {box:'border-box'});
+  const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  (async () => {
+    await frame();
+    panel.style.width = '420px';
+    await frame();
+    panel.style.left = '8px';
+    await frame();
+    panel.style.padding = '20px';
+    await frame();
+    const content = latest.contentBoxSize[0], border = latest.borderBoxSize[0];
+    const good = contentCalls === 2 && borderCalls === 3 && loopErrors === 0 &&
+      latest.contentRect.x === 20 && latest.contentRect.y === 20 &&
+      content.inlineSize === 420 && content.blockSize === 120 &&
+      border.inlineSize === 468 && border.blockSize === 168 &&
+      latest instanceof ResizeObserverEntry && content instanceof ResizeObserverSize &&
+      latest.contentRect instanceof DOMRectReadOnly && Object.isFrozen(latest.contentBoxSize);
+    document.getElementById('result').textContent = good ? 'PASS' : 'FAIL';
+    document.getElementById('counts').textContent = `Callbacks: content ${contentCalls}, border ${borderCalls}; loop errors ${loopErrors}`;
+    document.getElementById('boxes').textContent = `Content ${content.inlineSize} x ${content.blockSize}; border ${border.inlineSize} x ${border.blockSize}; padding origin ${latest.contentRect.x}, ${latest.contentRect.y}`;
+    document.documentElement.dataset.fixtureReady = good ? 'true' : 'false';
+    console.log('resize-fixture:' + (good ? 'PASS' : 'FAIL'));
+  })();
+</script>
