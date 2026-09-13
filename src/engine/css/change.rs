@@ -8,6 +8,7 @@ impl ComputedStyle {
             && self.display == other.display
             && self.position == other.position
             && self.float == other.float
+            && self.clear == other.clear
             && self.font_size == other.font_size
             && self.font_weight == other.font_weight
             && self.italic == other.italic

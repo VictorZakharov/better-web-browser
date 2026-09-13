@@ -110,6 +110,7 @@ impl StyleSet {
         if matches!(style.position, Position::Absolute | Position::Fixed) {
             style.float = Float::None;
         }
+        style.blockify_float();
         style.line_height = style.line_height.max(style.font_size);
         (style, matched)
     }

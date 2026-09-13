@@ -125,6 +125,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         measurement_cache: HashMap::new(),
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
+        floats: Default::default(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -180,6 +181,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,
     pub(super) positioned_flow_scopes: Vec<Vec<InFlowPaintRange>>,
+    pub(super) floats: block::floats::FloatContext,
 }
 
 pub(super) struct InFlowPaintRange {

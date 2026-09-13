@@ -37,6 +37,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let cell_style = self.styles.get(cell).clone();
                 let in_flow_paint_start = self.output.items.len();
                 let in_flow_node_start = self.output.node_paint_order.len();
+                let outer_floats = std::mem::take(&mut self.floats);
                 let bottom = self.layout_block_children(
                     cell,
                     cell_x,
@@ -45,6 +46,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     containing_height,
                     &cell_style,
                 );
+                let bottom = bottom.max(self.floats.bottom());
+                self.floats = outer_floats;
                 self.layout_positioned_children(
                     cell,
                     RectF {

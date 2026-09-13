@@ -14,14 +14,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
         let mut line_height = 0.0_f32;
+        let (mut line_x, mut available) = self.floats.band(x, y, width, default_line_height);
 
         for atom in atoms {
             if matches!(atom, InlineAtom::Break) {
                 y = self.paint_line(
                     &line,
-                    x,
+                    line_x,
                     y,
-                    width,
+                    available,
                     align,
                     line_width,
                     line_height.max(default_line_height),
@@ -29,19 +30,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
+                (line_x, available) = self.floats.band(x, y, width, default_line_height);
                 continue;
             }
             let measured = self.measure_atom(atom, line.is_empty(), width);
+            if line.is_empty() {
+                (line_x, y, available) = self.floats.fit(
+                    x,
+                    y,
+                    width,
+                    measured.width,
+                    measured.height.max(default_line_height),
+                );
+            }
             let should_wrap = !line.is_empty()
-                && line_width + measured.width > width
+                && line_width + measured.width > available
                 && measured.break_before
                 && !measured.no_wrap;
             if should_wrap {
                 y = self.paint_line(
                     &line,
-                    x,
+                    line_x,
                     y,
-                    width,
+                    available,
                     align,
                     line_width,
                     line_height.max(default_line_height),
@@ -49,6 +60,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
+                (line_x, y, available) = self.floats.fit(
+                    x,
+                    y,
+                    width,
+                    measured.width,
+                    measured.height.max(default_line_height),
+                );
             }
             let measured = if should_wrap {
                 self.measure_atom(atom, true, width)
@@ -62,9 +80,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !line.is_empty() {
             y = self.paint_line(
                 &line,
-                x,
+                line_x,
                 y,
-                width,
+                available,
                 align,
                 line_width,
                 line_height.max(default_line_height),

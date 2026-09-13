@@ -1,5 +1,6 @@
 mod children;
 mod control;
+pub(super) mod floats;
 mod positioned;
 mod replaced;
 mod sizing;
@@ -10,26 +11,6 @@ use super::*;
 mod overflow;
 use sizing::resolve_used_border_box_width;
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
-    pub(super) fn layout_block(
-        &mut self,
-        node: &NodeRef,
-        containing_x: f32,
-        y: f32,
-        containing_width: f32,
-        containing_height: Option<f32>,
-        used_inline_size: Option<UsedInlineSize>,
-    ) -> BlockMetrics {
-        self.layout_block_with_content_height(
-            node,
-            containing_x,
-            y,
-            containing_width,
-            containing_height,
-            used_inline_size,
-            None,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_block_with_content_height(
         &mut self,
@@ -45,6 +26,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if style.display == Display::None || !style.visibility {
             return BlockMetrics { bottom: y };
         }
+        let own_context = floats::establishes_context(&style)
+            || node.tag_name() == Some("body")
+            || Node::composed_parent(node).is_some_and(|parent| {
+                matches!(
+                    self.styles.get(&parent).display,
+                    Display::Flex | Display::InlineFlex | Display::Grid
+                )
+            });
+        let outer_floats = own_context.then(|| std::mem::take(&mut self.floats));
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
         if self.emit_paint {
@@ -246,6 +236,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 ),
             }
         };
+        let content_bottom = if own_context {
+            content_bottom.max(self.floats.bottom())
+        } else {
+            content_bottom
+        };
         let natural_content_height = (content_bottom - content_y).max(0.0);
         let used_content_height = if style.display == Display::Table {
             natural_content_height
@@ -392,6 +387,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
         let flow_bottom = border_y + border_box_height + margins.bottom;
+        if let Some(outer) = outer_floats {
+            self.floats = outer;
+        }
         BlockMetrics {
             bottom: if matches!(style.position, Position::Absolute | Position::Fixed) {
                 y

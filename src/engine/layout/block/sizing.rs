@@ -2,6 +2,28 @@
 
 use super::super::*;
 
+impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(in crate::engine::layout) fn layout_block(
+        &mut self,
+        node: &NodeRef,
+        containing_x: f32,
+        y: f32,
+        containing_width: f32,
+        containing_height: Option<f32>,
+        used_inline_size: Option<UsedInlineSize>,
+    ) -> BlockMetrics {
+        self.layout_block_with_content_height(
+            node,
+            containing_x,
+            y,
+            containing_width,
+            containing_height,
+            used_inline_size,
+            None,
+        )
+    }
+}
+
 pub(super) fn resolve_height_constraints(
     style: &ComputedStyle,
     used_content_height: Option<f32>,

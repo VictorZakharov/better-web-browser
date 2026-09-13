@@ -244,6 +244,7 @@ impl StyleSet {
         if matches!(style.position, Position::Absolute | Position::Fixed) {
             style.float = Float::None;
         }
+        style.blockify_float();
         style.line_height = style.line_height.max(style.font_size);
         // Preserve inherited-map identity across incremental recalculation. Otherwise an
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large

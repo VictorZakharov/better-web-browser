@@ -23,8 +23,9 @@ mod variables;
 pub use cascade::{StyleRefreshStats, StyleSet};
 pub use content::GeneratedContent;
 pub use values::{
-    AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
-    Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges, TextAlign, WhiteSpace,
+    AlignItems, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle, Display, Edges,
+    FlexDirection, Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges,
+    TextAlign, WhiteSpace,
 };
 
 use super::dom::{self, Dom, Node, NodeData, NodeId, NodeRef};

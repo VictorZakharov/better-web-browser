@@ -1,5 +1,4 @@
-//! Normal-flow block children, inline runs, and floats.
-
+//! Normal block flow shares float exclusions with its enclosing formatting context.
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -14,9 +13,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> f32 {
         let mut atoms = Vec::new();
         let mut pending_space = false;
-        let mut left_float_width = 0.0_f32;
-        let mut right_float_width = 0.0_f32;
-        let mut float_bottom = y;
         if node.tag_name() == Some("li") && style.list_style_type != ListStyleType::None {
             atoms.push(InlineAtom::Text {
                 text: "• ".into(),
@@ -29,68 +25,97 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
         }
         for child in self.block_formatting_children(node).iter() {
-            if y >= float_bottom {
-                left_float_width = 0.0;
-                right_float_width = 0.0;
-                float_bottom = y;
-            }
             let child_style = self.styles.get(child);
-            if matches!(child_style.position, Position::Absolute | Position::Fixed) {
-                // Defer until the completed padding box can resolve percentage geometry.
+            if child_style.display == Display::None
+                || matches!(child_style.position, Position::Absolute | Position::Fixed)
+            {
                 continue;
-            } else if is_block_level(child_style.display) && child_style.float != Float::None {
-                let remaining_width = (width - left_float_width - right_float_width).max(0.0);
-                let float_width = self
-                    .flex_item_basis(child, child_style, remaining_width)
-                    .clamp(0.0, remaining_width);
-                let float_x = if child_style.float == Float::Right {
-                    x + width - right_float_width - float_width
-                } else {
-                    x + left_float_width
-                };
-                let metrics = self.layout_block(
-                    child,
-                    float_x,
-                    y,
-                    float_width,
-                    containing_height,
-                    Some(UsedInlineSize {
-                        outer: float_width,
-                        percentage_basis: remaining_width,
-                    }),
-                );
-                float_bottom = float_bottom.max(metrics.bottom);
-                if child_style.float == Float::Right {
-                    right_float_width += float_width;
-                } else {
-                    left_float_width += float_width;
-                }
-            } else if is_block_level(child_style.display) {
+            }
+            if child_style.float != Float::None {
+                // A float after inline content cannot rise above the preceding line.
                 if !atoms.is_empty() {
                     y = self.layout_inline_atoms(
                         &atoms,
-                        x + left_float_width,
+                        x,
                         y,
-                        (width - left_float_width - right_float_width).max(0.0),
+                        width,
                         style.text_align,
                         style.line_height,
                     );
                     atoms.clear();
                     pending_space = false;
                 }
-                if y >= float_bottom {
-                    left_float_width = 0.0;
-                    right_float_width = 0.0;
+                self.layout_float(child, x, y, width, containing_height);
+            } else if is_block_level(child_style.display) {
+                if !atoms.is_empty() {
+                    y = self.layout_inline_atoms(
+                        &atoms,
+                        x,
+                        y,
+                        width,
+                        style.text_align,
+                        style.line_height,
+                    );
+                    atoms.clear();
+                    pending_space = false;
                 }
-                let child_width = (width - left_float_width - right_float_width).max(0.0);
+                let margins = child_style.margin.resolve(width, child_style.font_size);
+                y = y.max(self.floats.clearance(child_style.clear, y + margins.top) - margins.top);
+                let mut child_x = x;
+                let mut child_width = width;
+                let mut used_width = None;
+                if super::floats::establishes_context(child_style) {
+                    let insets = child_style
+                        .padding
+                        .resolve(width, child_style.font_size)
+                        .horizontal()
+                        + table::resolved_table_borders(child, child_style, width).horizontal();
+                    let needed = if child_style.width == Length::Auto {
+                        resolve_outer_size(
+                            child_style.min_width,
+                            width,
+                            child_style.font_size,
+                            insets,
+                            child_style.box_sizing,
+                        )
+                        .unwrap_or(0.0)
+                            + margins.horizontal()
+                    } else {
+                        super::sizing::resolve_used_border_box_width(
+                            child_style,
+                            width,
+                            insets,
+                            margins,
+                            width,
+                            None,
+                        ) + margins.horizontal()
+                    };
+                    (child_x, y, child_width) =
+                        self.floats.fit(x, y, width, needed.max(0.01), 0.01);
+                    if child_style.width != Length::Auto
+                        || (child_style.display != Display::Table && child_width < width)
+                    {
+                        used_width = Some(UsedInlineSize {
+                            outer: super::sizing::resolve_used_border_box_width(
+                                child_style,
+                                width,
+                                insets,
+                                margins,
+                                (child_width - margins.horizontal()).max(0.0),
+                                None,
+                            ) + margins.horizontal(),
+                            percentage_basis: width,
+                        });
+                    }
+                }
                 y = self
                     .layout_block(
                         child,
-                        x + left_float_width,
+                        child_x,
                         y,
                         child_width,
                         containing_height,
-                        None,
+                        used_width,
                     )
                     .bottom;
             } else {
@@ -101,22 +126,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     &mut pending_space,
                     true,
                     InlineContainingBlock {
-                        width: (width - left_float_width - right_float_width).max(0.0),
+                        width,
                         height: containing_height,
                     },
                 );
             }
         }
         if !atoms.is_empty() {
-            y = self.layout_inline_atoms(
-                &atoms,
-                x + left_float_width,
-                y,
-                (width - left_float_width - right_float_width).max(0.0),
-                style.text_align,
-                style.line_height,
-            );
+            y = self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
         }
-        y.max(float_bottom)
+        y
     }
 }

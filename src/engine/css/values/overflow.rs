@@ -54,6 +54,10 @@ pub(crate) struct OverflowAxes {
 }
 
 impl ComputedStyle {
+    pub(crate) fn overflow_establishes_formatting_context(&self) -> bool {
+        self.overflow.x.computed(self.overflow.y).scrollable()
+            || self.overflow.y.computed(self.overflow.x).scrollable()
+    }
     pub(crate) fn apply_overflow(&mut self, property: &str, value: &str) {
         let mut words = value.split_ascii_whitespace();
         let Some(first) = words.next().and_then(Overflow::parse) else {

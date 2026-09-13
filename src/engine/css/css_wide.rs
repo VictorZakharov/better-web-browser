@@ -97,6 +97,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "position" => style.position = source.position,
         "z-index" => style.z_index = source.z_index,
         "float" => style.float = source.float,
+        "clear" => style.clear = source.clear,
         "color" => style.color = source.color,
         "background" => {
             style.background_color = source.background_color;

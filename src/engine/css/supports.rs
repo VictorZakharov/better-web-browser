@@ -70,6 +70,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "position" => matches!(value.as_str(), "static" | "relative" | "absolute" | "fixed"),
         "z-index" => value == "auto" || value.parse::<i32>().is_ok(),
         "float" => matches!(value.as_str(), "none" | "left" | "right"),
+        "clear" => super::Clear::parse(&value).is_some(),
         "box-sizing" | "-webkit-box-sizing" => {
             matches!(value.as_str(), "content-box" | "border-box")
         }
