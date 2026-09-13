@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Element scroll and sticky positioning contracts</title>
+<style>
+  body { margin: 0; font: 16px Arial; }
+  .pane { width: 200px; height: 100px; overflow: auto; margin-bottom: 20px; }
+  .content { height: 500px; background: #e8eef7; }
+  .sticky { position: sticky; top: 10px; height: 20px; background: #2467bb; color: white; }
+  #viewport-parent { height: 500px; margin-top: 20px; background: #eee; }
+  #viewport-sticky { height: 60px; width: 200px; top: 24px; }
+  #spacer { height: 1000px; }
+</style>
+<div id="wrapped" class="pane"><div class="content"><div id="wrapped-sticky" class="sticky">Wrapped sticky</div></div></div>
+<div id="direct" class="pane"><div id="direct-sticky" class="sticky">Direct sticky</div><div class="content"></div></div>
+<div id="viewport-parent"><div id="viewport-sticky" class="sticky">Viewport sticky</div></div>
+<div id="spacer"></div>
+<script>
+  document.getElementById('wrapped').scrollTop = 150;
+  document.getElementById('direct').scrollTop = 150;
+</script>

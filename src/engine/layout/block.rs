@@ -1,5 +1,6 @@
 mod children;
 mod control;
+mod decoration;
 pub(super) mod floats;
 pub(super) mod margins;
 mod positioned;
@@ -13,7 +14,7 @@ mod overflow;
 use sizing::resolve_used_border_box_width;
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn layout_block_with_content_height(
+    pub(in crate::engine::layout) fn layout_block_attempt(
         &mut self,
         node: &NodeRef,
         containing_x: f32,
@@ -109,8 +110,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
 
         let content_x = x + borders.left + padding.left;
         let mut content_y = border_y + borders.top + padding.top;
+        let (bar_x, bar_y) = self
+            .scroll_gutters
+            .get(&node.id())
+            .copied()
+            .unwrap_or_default();
+        let gutter_right = if bar_y {
+            self.page.scrollbar_thickness()
+        } else {
+            0.0
+        };
+        let gutter_bottom = if bar_x {
+            self.page.scrollbar_thickness()
+        } else {
+            0.0
+        };
         let content_width =
-            (border_box_width - borders.horizontal() - padding.horizontal()).max(0.0);
+            (border_box_width - borders.horizontal() - padding.horizontal() - gutter_right)
+                .max(0.0);
         let vertical_insets = borders.vertical() + padding.vertical();
         let percentage_height_basis = if style.position == Position::Fixed {
             Some(self.viewport.height)
@@ -125,65 +142,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             vertical_insets,
             margins,
         );
+        let specified_height = specified_height.map(|height| (height - gutter_bottom).max(0.0));
+        let minimum_height = (minimum_height - gutter_bottom).max(0.0);
+        let maximum_height = maximum_height.map(|height| (height - gutter_bottom).max(0.0));
         let block_image_height = block_image.as_ref().map(|image| {
             image.content_height(node, &style, content_width, percentage_height_basis)
         });
-        let background_index =
-            if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none() {
-                let index = self.output.items.len();
-                self.output.items.push(DisplayItem::SolidRect {
-                    rect: RectF {
-                        x,
-                        y: border_y,
-                        width: border_box_width,
-                        height: 0.0,
-                    },
-                    color: self.effective_background_color(node),
-                    radius: 0.0,
-                });
-                Some(index)
-            } else {
-                None
-            };
-        let background_image_index = style
-            .background_image
-            .as_ref()
-            .filter(|_| self.emit_paint)
-            .map(|url| {
-                let index = self.output.items.len();
-                self.output.items.push(DisplayItem::BackgroundImage {
-                    clip_rect: RectF {
-                        x,
-                        y: border_y,
-                        width: border_box_width,
-                        height: 0.0,
-                    },
-                    tile_rect: RectF::default(),
-                    url: url.clone(),
-                    repeat_x: style.background_repeat_x,
-                    repeat_y: style.background_repeat_y,
-                });
-                index
-            });
-        let mask_image_index = style
-            .mask_image
-            .as_ref()
-            .filter(|_| self.emit_paint)
-            .map(|url| {
-                let index = self.output.items.len();
-                self.output.items.push(DisplayItem::Image {
-                    rect: RectF {
-                        x,
-                        y: border_y,
-                        width: border_box_width,
-                        height: 0.0,
-                    },
-                    url: url.clone(),
-                    alt: String::new(),
-                    tint: Some(style.background_color),
-                });
-                index
-            });
+        let decoration = self.begin_block_decoration(
+            node,
+            &style,
+            RectF {
+                x,
+                y: border_y,
+                width: border_box_width,
+                height: 0.0,
+            },
+        );
         let overflow_clip = self.begin_overflow_clip(&style);
         // Negative positioned levels paint after this background and before in-flow descendants.
         let in_flow_paint_start = self.output.items.len();
@@ -252,8 +226,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(maximum_height) = maximum_height {
             content_height = content_height.min(maximum_height);
         }
-        let border_box_height =
-            borders.top + padding.top + content_height + padding.bottom + borders.bottom;
+        let border_box_height = borders.top
+            + padding.top
+            + content_height
+            + padding.bottom
+            + borders.bottom
+            + gutter_bottom;
         let bottom_shift = positioned::bottom_alignment_shift(
             &style,
             percentage_height_basis.unwrap_or(self.viewport.height),
@@ -279,16 +257,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         };
         if !node.is_generated_pseudo() {
             self.output.node_bounds.insert(node_id(node), rect);
-            self.output.resize_boxes.insert(
-                node_id(node),
-                ResizeBox::from_content(content_width, content_height, padding, borders),
-            );
+            let mut resize =
+                ResizeBox::from_content(content_width, content_height, padding, borders);
+            resize.border_width += gutter_right;
+            resize.border_height += gutter_bottom;
+            self.output.resize_boxes.insert(node_id(node), resize);
         }
         let positioning_box = if style.position != Position::Static || !style.transform.is_none() {
             RectF {
                 x: x + borders.left,
                 y: border_y + borders.top,
-                width: (border_box_width - borders.horizontal()).max(0.0),
+                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
                 height: padding.top + content_height + padding.bottom,
             }
         } else {
@@ -307,42 +286,28 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             in_flow_paint_start,
             in_flow_node_start,
         );
+        self.finish_scroll_container(
+            node,
+            &style,
+            RectF {
+                x: x + borders.left,
+                y: border_y + borders.top,
+                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
+                height: padding.top + content_height + padding.bottom,
+            },
+            in_flow_paint_start,
+        );
         self.finish_overflow_clip(
             overflow_clip,
             RectF {
                 x: x + borders.left,
                 y: border_y + borders.top,
-                width: (border_box_width - borders.horizontal()).max(0.0),
+                width: (border_box_width - borders.horizontal() - gutter_right).max(0.0),
                 height: padding.top + content_height + padding.bottom,
             },
         );
-        let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
-        if let Some(index) = background_index
-            && let DisplayItem::SolidRect {
-                rect: target,
-                radius: target_radius,
-                ..
-            } = &mut self.output.items[index]
-        {
-            *target = rect;
-            *target_radius = radius;
-        }
-        if let Some(index) = background_image_index
-            && let Some(tile_rect) = self.background_tile_rect(&style, rect)
-            && let DisplayItem::BackgroundImage {
-                clip_rect,
-                tile_rect: target_tile,
-                ..
-            } = &mut self.output.items[index]
-        {
-            *clip_rect = rect;
-            *target_tile = tile_rect;
-        }
-        if let Some(index) = mask_image_index
-            && let DisplayItem::Image { rect: target, .. } = &mut self.output.items[index]
-        {
-            *target = rect;
-        }
+        self.paint_scrollbars(node, &style);
+        let radius = self.finish_block_decoration(&style, rect, decoration);
         if self.emit_paint
             && let Some(image) = block_image
         {
@@ -385,6 +350,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.apply_transform(node.id(), &style, rect, item_start);
         }
         self.wrap_opacity(item_start, style.opacity);
+        if self.emit_paint && style.position == Position::Sticky {
+            self.output.items.insert(
+                item_start,
+                DisplayItem::NodeBoundary {
+                    node_id: node.id(),
+                    entering: true,
+                },
+            );
+            self.output.items.push(DisplayItem::NodeBoundary {
+                node_id: node.id(),
+                entering: false,
+            });
+        }
         self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
         let flow_bottom = if margin_profile.through {

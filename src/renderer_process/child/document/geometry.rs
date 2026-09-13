@@ -119,6 +119,7 @@ impl DocumentRuntime {
             // style-before-layout gate used by mature rendering engines and prevents repeated
             // ARIA/data updates from forcing full synchronous page layouts.
             if geometry_ready
+                && !metrics.scroll_changed
                 && !style_refresh.layout_changed
                 && !invalidation.impact.affects_intrinsic_size()
             {
@@ -142,6 +143,8 @@ impl DocumentRuntime {
             metrics.layout = started.elapsed();
             metrics.content_height = Some(geometry.content_height);
             metrics.resize_boxes = Some(geometry.resize_boxes);
+            metrics.scroll_boxes = Some(geometry.scroll_boxes);
+            metrics.sticky_offsets = Some(geometry.sticky_offsets);
             geometry_ready = true;
             Some(geometry.node_bounds)
         })
@@ -162,6 +165,8 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
             runtime.set_resize_boxes(&self.layout.resize_boxes);
+            runtime.set_scroll_boxes(&self.layout.scroll_boxes);
+            runtime.set_sticky_offsets(&self.layout.sticky_offsets);
             runtime.set_layout_content_height(self.layout.content_height);
             self.geometry_observers_pending = true;
             self.resize_observers_pending = true;

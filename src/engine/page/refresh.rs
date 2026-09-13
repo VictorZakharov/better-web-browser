@@ -25,6 +25,10 @@ pub(super) fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
 }
 
 impl Page {
+    pub(crate) fn scrollbar_thickness(&self) -> f32 {
+        let scale = self.media_environment.resolution_dppx.max(0.1);
+        (15.0 * scale).ceil() / scale
+    }
     pub fn style(&self, viewport_width: f32) -> StyleSet {
         self.style_for_viewport(viewport_width, viewport_width)
     }

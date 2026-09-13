@@ -29,6 +29,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
 fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
+        DisplayItem::NodeBoundary { .. } => return None,
         DisplayItem::BeginClip { bounds } => DisplayItem::BeginClip {
             bounds: sanitize_rect(bounds)?,
         },
@@ -158,6 +159,7 @@ fn sanitize_rect(mut rect: RectF) -> Option<RectF> {
 
 fn item_rect(item: &DisplayItem) -> Option<RectF> {
     match item {
+        DisplayItem::NodeBoundary { .. } => None,
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }

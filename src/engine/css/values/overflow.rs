@@ -2,7 +2,7 @@
 use super::ComputedStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Overflow {
+pub enum Overflow {
     #[default]
     Visible,
     Hidden,
@@ -33,7 +33,7 @@ impl Overflow {
         }
     }
 
-    fn scrollable(self) -> bool {
+    pub(crate) fn scrollable(self) -> bool {
         !matches!(self, Self::Visible | Self::Clip)
     }
 
@@ -54,6 +54,12 @@ pub(crate) struct OverflowAxes {
 }
 
 impl ComputedStyle {
+    pub(crate) fn overflow_axes(&self) -> (Overflow, Overflow) {
+        (
+            self.overflow.x.computed(self.overflow.y),
+            self.overflow.y.computed(self.overflow.x),
+        )
+    }
     pub(crate) fn overflow_establishes_formatting_context(&self) -> bool {
         self.overflow.x.computed(self.overflow.y).scrollable()
             || self.overflow.y.computed(self.overflow.x).scrollable()
@@ -94,10 +100,8 @@ impl ComputedStyle {
     }
 
     fn refresh_overflow_clip(&mut self) {
-        // The current display list has one rectangular clip, not independent scrolling layers.
-        // Keep that adapter separate from the lossless values used by CSSOM/viewport selection.
-        self.overflow_hidden = matches!(self.overflow.x, Overflow::Hidden | Overflow::Clip)
-            || matches!(self.overflow.y, Overflow::Hidden | Overflow::Clip);
+        let (x, y) = self.overflow_axes();
+        self.overflow_hidden = x != Overflow::Visible || y != Overflow::Visible;
     }
 
     pub(crate) fn serialize_overflow(&self, property: &str) -> String {

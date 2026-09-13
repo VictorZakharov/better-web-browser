@@ -68,6 +68,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         // Slotted content moves with its containing flex item even though its
                         // light-DOM parent lies outside the item's shadow subtree.
                         for descendant in Node::composed_descendants(node) {
+                            if let Some(scroll) = self.output.scroll_boxes.get_mut(&descendant.id())
+                            {
+                                scroll.port.y += offset_y;
+                            }
                             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                                 rect.y += offset_y;
                             }

@@ -79,6 +79,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "position" => match style.position {
             Position::Static => "static",
             Position::Relative => "relative",
+            Position::Sticky => "sticky",
             Position::Absolute => "absolute",
             Position::Fixed => "fixed",
         }

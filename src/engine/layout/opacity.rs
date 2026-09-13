@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) fn display_item_bounds(item: &DisplayItem) -> Option<RectF> {
     match item {
+        DisplayItem::NodeBoundary { .. } => None,
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }

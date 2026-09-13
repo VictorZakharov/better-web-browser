@@ -13,6 +13,15 @@ pub(super) fn encode_browser_input(
             writer.u64(input.document().get());
             writer.u64(input.sequence());
             match input {
+                DocumentInput::Wheel(input) => {
+                    writer.f32(input.x);
+                    writer.f32(input.y);
+                    writer.f32(input.delta_x);
+                    writer.f32(input.delta_y);
+                    writer.f32(input.viewport_y);
+                    encode_modifiers(&mut writer, input.modifiers);
+                    0x0151
+                }
                 DocumentInput::Pointer(input) => {
                     writer.u8(pointer_phase_tag(input.phase));
                     writer.u8(pointer_button_tag(input.button));
@@ -103,6 +112,16 @@ pub(super) fn decode_browser_input(
     } else {
         let sequence = reader.u64()?;
         let input = match kind {
+            0x0151 => DocumentInput::Wheel(WheelInput {
+                document,
+                sequence,
+                x: reader.f32()?,
+                y: reader.f32()?,
+                delta_x: reader.f32()?,
+                delta_y: reader.f32()?,
+                viewport_y: reader.f32()?,
+                modifiers: decode_modifiers(&mut reader)?,
+            }),
             0x0141 => DocumentInput::Pointer(PointerInput {
                 document,
                 sequence,

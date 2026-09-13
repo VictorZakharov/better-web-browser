@@ -14,7 +14,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return;
         }
         self.positioned_flow_scopes.pop();
-        if style.position == Position::Relative
+        if matches!(style.position, Position::Relative | Position::Sticky)
             && let Some(parent) = self.positioned_flow_scopes.last_mut()
         {
             parent.push(engine::InFlowPaintRange {

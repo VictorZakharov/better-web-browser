@@ -64,6 +64,20 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             .unwrap_or(0)
     };
     match event {
+        UserInputEvent::Wheel {
+            target: node,
+            x,
+            y,
+            delta_x,
+            delta_y,
+            modifiers,
+        } => serde_json::json!({
+            "kind": "wheel", "target": target(node), "x": x, "y": y, "deltaX": delta_x, "deltaY": delta_y,
+            "alt": modifiers.alt, "control": modifiers.control, "shift": modifiers.shift, "meta": modifiers.meta
+        }),
+        UserInputEvent::ElementScroll { target: node } => {
+            serde_json::json!({ "kind": "elementScroll", "target": target(Some(node)) })
+        }
         UserInputEvent::Pointer {
             target: node,
             phase,
@@ -131,6 +145,7 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             "naturalWidth": natural_width, "naturalHeight": natural_height
         }),
         UserInputEvent::Scroll { x, y } => {
+            host.borrow().document.scroll_offset.set((x, y));
             serde_json::json!({ "kind": "scroll", "x": x, "y": y })
         }
         UserInputEvent::Viewport {

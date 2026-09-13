@@ -328,7 +328,8 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
             check('condition-overload', CSS.supports('(display: grid) and (opacity: 25%)'));
             check('custom-property', CSS.supports('--theme-accent', 'anything'));
             check('unsupported-property', !CSS.supports('box-shadow', '0 0 1px black'));
-            check('unsupported-value', !CSS.supports('position', 'sticky'));
+            check('sticky-position', CSS.supports('position', 'sticky'));
+            check('unsupported-value', !CSS.supports('position', 'not-a-position'));
             let missingArgument = false;
             try { CSS.supports(); } catch (error) { missingArgument = error instanceof TypeError; }
             check('argument-conversion', missingArgument);

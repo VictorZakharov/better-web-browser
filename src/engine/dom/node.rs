@@ -125,6 +125,8 @@ pub struct Node {
     pub parent: Cell<Option<Weak<Node>>>,
     pub children: RefCell<Vec<NodeRef>>,
     adopted_stylesheets: RefCell<Vec<AdoptedStyleSheet>>,
+    /// UA scrolling state is not a DOM mutation and is not copied by cloneNode.
+    pub(crate) scroll_offset: Cell<(f32, f32)>,
     pub data: NodeData,
 }
 
@@ -195,6 +197,7 @@ impl Node {
             parent: Cell::new(None),
             children: RefCell::new(Vec::new()),
             adopted_stylesheets: RefCell::new(Vec::new()),
+            scroll_offset: Cell::new((0.0, 0.0)),
             data,
         })
     }

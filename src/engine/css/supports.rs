@@ -67,7 +67,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 | "table-row"
                 | "table-cell"
         ),
-        "position" => matches!(value.as_str(), "static" | "relative" | "absolute" | "fixed"),
+        "position" => matches!(
+            value.as_str(),
+            "static" | "relative" | "absolute" | "fixed" | "sticky"
+        ),
         "z-index" => value == "auto" || value.parse::<i32>().is_ok(),
         "float" => matches!(value.as_str(), "none" | "left" | "right"),
         "clear" => super::Clear::parse(&value).is_some(),
@@ -279,7 +282,7 @@ mod tests {
     #[test]
     fn feature_queries_are_conservative_about_unimplemented_values() {
         assert!(supports_matches("@supports (display: grid)"));
-        assert!(!supports_matches("@supports (position: sticky)"));
+        assert!(supports_matches("@supports (position: sticky)"));
         assert!(!supports_matches(
             "@supports (grid-template-columns: subgrid)"
         ));

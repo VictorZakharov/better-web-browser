@@ -6,6 +6,13 @@ impl DocumentRuntime {
         &mut self,
         input: PointerInput,
     ) -> Result<PointerInteraction, String> {
+        if let Some(outcome) = self.scrollbar_pointer(input)? {
+            return Ok(PointerInteraction {
+                outcome,
+                navigation: None,
+                cursor: None,
+            });
+        }
         let target = (input.phase != PointerPhase::Leave)
             .then(|| {
                 input

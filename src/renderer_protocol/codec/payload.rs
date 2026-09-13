@@ -131,7 +131,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             decode_browser_document(kind, payload)
         }
         0x0131 | 0x0133 | 0x0135 | 0x0137 => decode_browser_state(kind, payload),
-        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f => {
+        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 => {
             decode_browser_input(kind, payload)
         }
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),

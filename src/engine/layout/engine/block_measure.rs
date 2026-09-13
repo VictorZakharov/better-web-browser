@@ -34,6 +34,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             styles: self.styles,
             measurer: &mut *self.measurer,
             emit_paint: false,
+            scroll_gutters: HashMap::new(),
             measurement_cache: std::mem::take(&mut self.measurement_cache),
             intrinsic_block_heights: std::mem::take(&mut self.intrinsic_block_heights),
             margin_profiles: std::mem::take(&mut self.margin_profiles),

@@ -135,3 +135,15 @@ fn empty_block_self_collapse_does_not_apply_to_formatting_contexts() {
         assert_eq!(output.node_bounds[&next.id()].y, 1.0 + expected, "{extra}");
     }
 }
+
+#[test]
+fn grid_item_contains_a_collapsed_empty_child_margin_set() {
+    let page = Page::parse(
+        "<style>body{margin:0}main{display:grid;grid-template-columns:1fr}#empty{position:relative;margin:24px 0}#next{height:40px}</style><main><section>\n<div id=empty><!-- No rendered contents --></div>\n</section><section id=next></section></main>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let sections = page.dom.elements_named("section").collect::<Vec<_>>();
+    assert_eq!(output.node_bounds[&sections[0].id()].height, 24.0);
+    assert_eq!(output.node_bounds[&sections[1].id()].y, 24.0);
+}

@@ -123,6 +123,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         styles,
         measurer,
         emit_paint,
+        scroll_gutters: HashMap::new(),
         measurement_cache: HashMap::new(),
         intrinsic_block_heights: HashMap::new(),
         margin_profiles: Default::default(),
@@ -136,6 +137,9 @@ fn layout_page_for_output<M: TextMeasurer>(
             height: viewport_height.max(1.0),
         },
         output: LayoutOutput {
+            sticky_offsets: HashMap::new(),
+            sticky_ranges: HashMap::new(),
+            scroll_boxes: HashMap::new(),
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,
@@ -171,6 +175,12 @@ fn layout_page_for_output<M: TextMeasurer>(
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
+    engine.output.update_sticky_positions(
+        page,
+        viewport_width,
+        viewport_height,
+        style_viewport_width,
+    );
     engine.output
 }
 
@@ -179,6 +189,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) styles: &'a StyleSet,
     pub(super) measurer: &'a mut M,
     pub(super) emit_paint: bool,
+    pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
     intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
     pub(super) margin_profiles:
@@ -233,6 +244,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 children.push(after);
             }
             for child in children {
+                // Comments and processing instructions are DOM nodes, not CSS boxes.
+                // Their data must not interrupt adjoining margins or create flex items.
+                if !matches!(&child.data, NodeData::Element(_) | NodeData::Text(_)) {
+                    continue;
+                }
                 if child.element().is_some()
                     && engine.styles.get(&child).display == Display::Contents
                 {

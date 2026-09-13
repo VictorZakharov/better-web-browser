@@ -1,6 +1,18 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_sticky_offsets(&mut self, offsets: &HashMap<NodeId, (f32, f32)>) {
+        let mut host = self.host.borrow_mut();
+        host.sticky_offsets.clone_from(offsets);
+        host.geometry_scroll_offset = host.document.scroll_offset.get();
+        host.geometry_scroll_dirty = false;
+    }
+    pub(crate) fn set_scroll_boxes(
+        &mut self,
+        boxes: &HashMap<NodeId, crate::engine::layout::ScrollBox>,
+    ) {
+        self.host.borrow_mut().scroll_boxes.clone_from(boxes);
+    }
     pub(crate) fn set_resize_boxes(
         &mut self,
         boxes: &HashMap<NodeId, crate::engine::layout::ResizeBox>,

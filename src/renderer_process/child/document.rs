@@ -82,6 +82,7 @@ pub(super) struct DocumentRuntime {
     accessibility_values: HashMap<crate::engine::dom::NodeId, String>,
     focused_node: Option<crate::engine::dom::NodeId>,
     pointer_down: [Option<crate::engine::dom::NodeId>; 3],
+    scroll_drag: Option<(crate::engine::dom::NodeId, bool, f32, f32)>,
     scriptless_pointer_path: Vec<crate::engine::dom::NodeRef>,
     last_input_sequence: u64,
     last_acknowledged_revision: u64,

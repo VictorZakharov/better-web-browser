@@ -6,7 +6,7 @@ mod sizing;
 #[cfg(test)]
 mod tests;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(in crate::engine::layout) struct FloatContext {
     boxes: Vec<(Float, RectF)>,
 }

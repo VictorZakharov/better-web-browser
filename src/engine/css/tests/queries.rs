@@ -62,9 +62,9 @@ fn evaluates_css_supports_against_implemented_property_values() {
     };
 
     assert_eq!(display("grid"), Display::Block);
-    assert_eq!(display("sticky"), Display::Block);
-    assert_eq!(display("compound"), Display::Block);
-    assert_eq!(display("negated"), Display::None);
+    assert_eq!(display("sticky"), Display::None);
+    assert_eq!(display("compound"), Display::None);
+    assert_eq!(display("negated"), Display::Block);
 }
 
 #[test]

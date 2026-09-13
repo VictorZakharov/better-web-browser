@@ -1,7 +1,15 @@
     // CSSOM View's viewport offsets are shared by native input and script reads. Ordinary
     // elements without a scrolling box have zero offsets, not missing/expando properties.
     // https://drafts.csswg.org/cssom-view/#dom-element-scrolltop
-    // Nested scrolling boxes and horizontal native scrolling are not implemented yet.
+    const elementScrollEvents = new WeakSet();
+    function queueElementScrollEvent(element) {
+        if (elementScrollEvents.has(element)) return;
+        elementScrollEvents.add(element);
+        windowObject.setTimeout(() => {
+            elementScrollEvents.delete(element);
+            element.dispatchEvent(markTrusted(new Event('scroll')));
+        }, 0);
+    }
     function potentiallyScrollableBody(body, axis, scrollingElementQuery = false) {
         if (!body || body.localName !== 'body' || !layoutRect(body).hasBox) return false;
         const parent = body.parentElement;
@@ -35,6 +43,25 @@
         const number = +value;
         return Number.isFinite(number) ? number : 0;
     };
+    function elementScroll(element, args, relative) {
+        if (!(element instanceof Element)) throw new TypeError('Illegal Element receiver');
+        let x = relative ? 0 : element.scrollLeft, y = relative ? 0 : element.scrollTop;
+        if (args.length < 2) {
+            const options = args[0];
+            if (options != null && typeof options !== 'object' && typeof options !== 'function')
+                throw new TypeError('Scroll options must be a dictionary');
+            const behaviorValue = options?.behavior;
+            const behavior = behaviorValue === undefined ? 'auto' : String(behaviorValue);
+            if (!['auto', 'instant', 'smooth'].includes(behavior)) throw new TypeError('Invalid scroll behavior');
+            const left = options?.left, top = options?.top;
+            if (left !== undefined) x = finiteScrollValue(left);
+            if (top !== undefined) y = finiteScrollValue(top);
+        } else { x = finiteScrollValue(args[0]); y = finiteScrollValue(args[1]); }
+        element.scrollLeft = x + (relative ? element.scrollLeft : 0);
+        element.scrollTop = y + (relative ? element.scrollTop : 0);
+    }
+    Element.prototype.scroll = Element.prototype.scrollTo = function(...args) { elementScroll(this, args, false); };
+    Element.prototype.scrollBy = function(...args) { elementScroll(this, args, true); };
     let viewportScrollEventPending = false;
     function queueViewportScrollEvent() {
         if (viewportScrollEventPending) return;
@@ -63,12 +90,28 @@
             configurable: true, enumerable: true,
             get() {
                 if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
-                return scrollsViewport(this) ? (axis === 'x' ? viewportScrollX : viewportScrollY) : 0;
+                if (scrollsViewport(this)) return axis === 'x' ? viewportScrollX : viewportScrollY;
+                return host('elementScroll', this.__id)?.[axis === 'x' ? 0 : 1] || 0;
             },
             set(value) {
                 if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
                 value = finiteScrollValue(value);
-                if (scrollsViewport(this) && axis === 'y') scrollViewport(value);
+                if (scrollsViewport(this)) { if (axis === 'y') scrollViewport(value); return; }
+                const index = axis === 'x' ? 0 : 1;
+                const before = host('elementScroll', this.__id)?.[index] || 0;
+                const after = host('elementScroll', this.__id, index, value)?.[index] || 0;
+                if (before !== after) queueElementScrollEvent(this);
+            }
+        });
+    }
+    for (const [property, axis] of [['scrollWidth', 2], ['scrollHeight', 3]]) {
+        Object.defineProperty(Element.prototype, property, {
+            configurable: true, enumerable: true,
+            get() {
+                if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
+                if (isViewportElement(this)) return Math.round(axis === 3 ? host('documentScrollHeight') : layoutViewportWidth);
+                const metrics = host('elementScroll', this.__id);
+                return Math.round(metrics?.[axis] ?? (axis === 2 ? clientWidth(this) : clientHeight(this)));
             }
         });
     }

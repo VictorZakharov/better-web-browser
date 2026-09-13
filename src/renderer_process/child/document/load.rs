@@ -95,6 +95,7 @@ impl DocumentRuntime {
             accessibility_values: HashMap::new(),
             focused_node: None,
             pointer_down: [None; 3],
+            scroll_drag: None,
             scriptless_pointer_path: Vec::new(),
             last_input_sequence: 0,
             last_acknowledged_revision: 0,

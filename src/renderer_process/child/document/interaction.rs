@@ -1,7 +1,9 @@
 //! Renderer-owned hit testing, DOM event dispatch, default actions, and input sequencing.
 
 mod default_actions;
+mod hit_testing;
 mod pointer;
+mod scrolling;
 mod viewport;
 
 use super::*;
@@ -41,15 +43,19 @@ impl DocumentRuntime {
         self.last_input_sequence = input.sequence();
         self.media_activation.observe(&input);
         let force_accessibility_update =
-            matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_));
+            matches!(&input, DocumentInput::Text(_) | DocumentInput::Focus(_))
+                || (matches!(&input, DocumentInput::Scroll(_))
+                    && !self.layout.sticky_offsets.is_empty());
         let mut cursor = None;
         let (mut outcome, navigation) = match input {
+            DocumentInput::Wheel(input) => (self.wheel_input(input)?, None),
             DocumentInput::Pointer(input) => {
                 let interaction = self.pointer_input(input)?;
                 cursor = interaction.cursor;
                 (interaction.outcome, interaction.navigation)
             }
             DocumentInput::Keyboard(input) => {
+                let scroll_key = (input.phase == KeyPhase::Down).then(|| input.key.clone());
                 let key_code = key_code(&input.key);
                 let activates_form = input.phase == KeyPhase::Down && input.key == "Enter";
                 let target = input
@@ -70,6 +76,12 @@ impl DocumentRuntime {
                     modifiers: input.modifiers.into(),
                 })?;
                 let mut outcome = result.outcome;
+                if result.default_allowed
+                    && let Some(key) = scroll_key
+                    && let Some(scrolled) = self.scroll_key(&key)?
+                {
+                    merge_outcome(&mut outcome, scrolled, self.page.dom.document.id());
+                }
                 let navigation = if activates_form && result.default_allowed {
                     self.keyboard_default_action(target_id, &mut outcome)?
                 } else {
@@ -102,6 +114,7 @@ impl DocumentRuntime {
             DocumentInput::Focus(input) => {
                 if !input.focused {
                     self.pointer_down = [None; 3];
+                    self.scroll_drag = None;
                 }
                 let target = input.target.and_then(|target| self.resolve_target(target));
                 self.focused_node = input
@@ -115,6 +128,18 @@ impl DocumentRuntime {
                 (result.outcome, None)
             }
             DocumentInput::Scroll(input) => {
+                self.page.dom.document.scroll_offset.set((input.x, input.y));
+                if !self.layout.sticky_offsets.is_empty() {
+                    self.layout.update_sticky_positions(
+                        &self.page,
+                        self.viewport.width,
+                        self.viewport.height,
+                        self.viewport.style_width,
+                    );
+                    if let Some(runtime) = self.script_runtime.as_mut() {
+                        runtime.set_sticky_offsets(&self.layout.sticky_offsets);
+                    }
+                }
                 let result = self.dispatch_user_input(UserInputEvent::Scroll {
                     x: input.x,
                     y: input.y,
@@ -124,6 +149,7 @@ impl DocumentRuntime {
             DocumentInput::Lifecycle(input) => {
                 if input.state != DocumentLifecycle::Active {
                     self.pointer_down = [None; 3];
+                    self.scroll_drag = None;
                 }
                 let previous = lifecycle_name(self.lifecycle);
                 self.lifecycle = input.state;
@@ -216,81 +242,6 @@ impl DocumentRuntime {
         });
         self.presentation(outcome, style, load, connection)
             .map(Some)
-    }
-
-    fn resolve_target(&self, target: DocumentNodeId) -> Option<NodeRef> {
-        NodeId::from_wire(target.get()).and_then(|id| self.page.dom.find_node(id))
-    }
-
-    fn explicit_target(&self, target: DocumentNodeId) -> Option<HitTarget> {
-        let node = self.resolve_target(target)?;
-        self.layout.items.iter().find_map(|item| match item {
-            DisplayItem::Control(control) if control.node_id == node.id() => Some(HitTarget {
-                node: node.clone(),
-                link: None,
-                control: Some((**control).clone()),
-            }),
-            DisplayItem::Text {
-                node_id: Some(node_id),
-                link: Some(link),
-                ..
-            } if *node_id == node.id() => Some(HitTarget {
-                node: node.clone(),
-                link: Some(link.clone()),
-                control: None,
-            }),
-            _ => None,
-        })
-    }
-
-    fn hit_target(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout
-            .items
-            .iter()
-            .rev()
-            .find_map(|item| match item {
-                DisplayItem::Text {
-                    rect,
-                    link: Some(link),
-                    node_id: Some(node_id),
-                    ..
-                } if contains(*rect, x, y) => {
-                    self.page.dom.find_node(*node_id).map(|node| HitTarget {
-                        node,
-                        link: Some(link.clone()),
-                        control: None,
-                    })
-                }
-                DisplayItem::Control(control) if contains(control.rect, x, y) => self
-                    .page
-                    .dom
-                    .find_node(control.node_id)
-                    .map(|node| HitTarget {
-                        node,
-                        link: None,
-                        control: Some((**control).clone()),
-                    }),
-                _ => None,
-            })
-            .or_else(|| self.hit_element_bounds(x, y))
-    }
-
-    fn hit_element_bounds(&self, x: f32, y: f32) -> Option<HitTarget> {
-        self.layout
-            .node_paint_order
-            .iter()
-            .rev()
-            .find_map(|id| {
-                let rect = self.layout.node_bounds.get(id)?;
-                (rect.width > 0.0 && rect.height > 0.0 && contains(*rect, x, y))
-                    .then(|| self.page.dom.find_node(*id))
-                    .flatten()
-            })
-            .map(|node| HitTarget {
-                node,
-                link: None,
-                control: None,
-            })
     }
 }
 

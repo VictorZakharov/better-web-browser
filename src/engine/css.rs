@@ -43,7 +43,7 @@ use value_parser::consume_identifier;
 pub(crate) use value_parser::{parse_color, parse_length, parse_opacity};
 pub use values::{
     AlignItems, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle, Display, Edges,
-    FlexDirection, Float, JustifyContent, Length, ListStyleType, Position, ResolvedEdges,
+    FlexDirection, Float, JustifyContent, Length, ListStyleType, Overflow, Position, ResolvedEdges,
     TextAlign, WhiteSpace,
 };
 use variables::{apply_custom_properties, apply_resolved_declaration};

@@ -59,6 +59,7 @@ pub(super) fn apply_declaration(
         "position" => {
             style.position = match value {
                 "relative" => Position::Relative,
+                "sticky" => Position::Sticky,
                 "absolute" => Position::Absolute,
                 "fixed" => Position::Fixed,
                 _ => Position::Static,

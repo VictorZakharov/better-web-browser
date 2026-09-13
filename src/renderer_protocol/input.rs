@@ -144,6 +144,18 @@ pub struct ScrollInput {
     pub y: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WheelInput {
+    pub document: DocumentId,
+    pub sequence: u64,
+    pub x: f32,
+    pub y: f32,
+    pub delta_x: f32,
+    pub delta_y: f32,
+    pub viewport_y: f32,
+    pub modifiers: InputModifiers,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DocumentLifecycle {
     Active,
@@ -160,6 +172,7 @@ pub struct LifecycleInput {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DocumentInput {
+    Wheel(WheelInput),
     Pointer(PointerInput),
     Keyboard(KeyboardInput),
     Text(TextInput),
@@ -171,6 +184,7 @@ pub enum DocumentInput {
 impl DocumentInput {
     pub const fn document(&self) -> DocumentId {
         match self {
+            Self::Wheel(input) => input.document,
             Self::Pointer(input) => input.document,
             Self::Keyboard(input) => input.document,
             Self::Text(input) => input.document,
@@ -182,6 +196,7 @@ impl DocumentInput {
 
     pub const fn sequence(&self) -> u64 {
         match self {
+            Self::Wheel(input) => input.sequence,
             Self::Pointer(input) => input.sequence,
             Self::Keyboard(input) => input.sequence,
             Self::Text(input) => input.sequence,
@@ -206,6 +221,18 @@ impl DocumentInput {
             return Err(ProtocolError::InvalidPayload("input sequence"));
         }
         match self {
+            Self::Wheel(input) => {
+                validate_coordinates(input.x, input.y)?;
+                validate_coordinates(0.0, input.viewport_y)?;
+                if [input.delta_x, input.delta_y]
+                    .iter()
+                    .any(|value| !value.is_finite() || value.abs() > MAX_INPUT_COORDINATE)
+                {
+                    Err(ProtocolError::InvalidPayload("wheel delta"))
+                } else {
+                    Ok(())
+                }
+            }
             Self::Pointer(input) => {
                 if input.buttons & !7 != 0 {
                     return Err(ProtocolError::InvalidPayload("pointer buttons"));

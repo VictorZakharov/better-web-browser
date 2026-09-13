@@ -3,6 +3,7 @@
 mod edges;
 mod length;
 mod overflow;
+pub use overflow::Overflow;
 mod viewport;
 
 use super::*;
@@ -93,6 +94,7 @@ impl Display {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
+    Sticky,
     Static,
     Relative,
     Absolute,

@@ -10,6 +10,8 @@ use std::time::Duration;
 
 #[path = "input/helpers.rs"]
 mod helpers;
+#[path = "input/nested_scrolling.rs"]
+mod nested_scrolling;
 use helpers::*;
 
 #[test]

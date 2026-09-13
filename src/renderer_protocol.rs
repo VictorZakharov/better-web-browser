@@ -31,7 +31,7 @@ pub use input::{
     FullscreenDisposition, FullscreenRequest, FullscreenResponse, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
     PointerCursor, PointerCursorResult, PointerInput, PointerPhase, PresentationAcknowledgement,
-    ScrollInput, TextInput,
+    ScrollInput, TextInput, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,

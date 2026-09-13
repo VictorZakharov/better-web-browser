@@ -112,6 +112,12 @@
         configurable: false,
         value(input) {
             switch (input.kind) {
+                case 'wheel': return nativeTarget(input.target).dispatchEvent(markTrusted(new WheelEvent('wheel', {
+                    bubbles: true, cancelable: true, composed: true, view: windowObject,
+                    clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,
+                    deltaX: input.deltaX, deltaY: input.deltaY, deltaMode: 0, ...nativeModifiers(input)
+                })));
+                case 'elementScroll': queueElementScrollEvent(nativeTarget(input.target)); return true;
                 case 'pointer': return dispatchNativePointer(input);
                 case 'keyboard': return dispatchNativeKeyboard(input);
                 case 'text': return dispatchNativeText(input);

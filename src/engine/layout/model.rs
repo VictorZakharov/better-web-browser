@@ -135,6 +135,11 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    /// Renderer-local anchors survive paint-group reordering and are stripped before IPC.
+    NodeBoundary {
+        node_id: NodeId,
+        entering: bool,
+    },
     BeginClip {
         bounds: RectF,
     },
@@ -188,6 +193,10 @@ pub enum DisplayItem {
 
 #[derive(Debug, Clone, Default)]
 pub struct LayoutOutput {
+    pub(crate) sticky_offsets: HashMap<NodeId, (f32, f32)>,
+    pub(crate) sticky_ranges: HashMap<NodeId, std::ops::Range<usize>>,
+    /// Renderer-local scrollports; positions are unscrolled document coordinates.
+    pub scroll_boxes: HashMap<NodeId, super::ScrollBox>,
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,

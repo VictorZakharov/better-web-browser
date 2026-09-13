@@ -12,6 +12,16 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
         ..InputModifiers::default()
     };
     let messages = vec![
+        BrowserMessage::Input(DocumentInput::Wheel(WheelInput {
+            document,
+            sequence: 10,
+            x: 40.0,
+            y: 200.0,
+            delta_x: -20.25,
+            delta_y: 126.0,
+            viewport_y: 80.0,
+            modifiers,
+        })),
         BrowserMessage::Input(DocumentInput::Pointer(PointerInput {
             document,
             sequence: 1,

@@ -3,6 +3,9 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) sticky_offsets: Option<HashMap<NodeId, (f32, f32)>>,
+    pub(crate) scroll_changed: bool,
+    pub(crate) scroll_boxes: Option<HashMap<NodeId, crate::engine::layout::ScrollBox>>,
     pub(crate) resize_boxes: Option<HashMap<NodeId, crate::engine::layout::ResizeBox>>,
     pub(crate) content_height: Option<f32>,
     pub(crate) profile: bool,
@@ -21,7 +24,13 @@ pub(crate) type LayoutFlushCallback =
 impl HostState {
     pub(in crate::engine::script) fn flush_layout_if_needed(&mut self) {
         let version = self.document.subtree_mutation_version();
-        if self.layout_geometry_initialized && self.layout_geometry_version == version {
+        let scroll_changed = !self.sticky_offsets.is_empty()
+            && (self.geometry_scroll_dirty
+                || self.geometry_scroll_offset != self.document.scroll_offset.get());
+        if self.layout_geometry_initialized
+            && self.layout_geometry_version == version
+            && !scroll_changed
+        {
             return;
         }
         let Some(flush) = self.layout_flush.as_mut() else {
@@ -29,6 +38,7 @@ impl HostState {
         };
         let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
         let mut metrics = LayoutFlushMetrics {
+            scroll_changed,
             profile: self.host_call_profile.is_enabled(),
             ..LayoutFlushMetrics::default()
         };
@@ -38,6 +48,14 @@ impl HostState {
         if let Some(boxes) = metrics.resize_boxes {
             self.resize_boxes = boxes;
         }
+        if let Some(boxes) = metrics.scroll_boxes {
+            self.scroll_boxes = boxes;
+        }
+        if let Some(offsets) = metrics.sticky_offsets {
+            self.sticky_offsets = offsets;
+        }
+        self.geometry_scroll_offset = self.document.scroll_offset.get();
+        self.geometry_scroll_dirty = false;
         if let Some(height) = metrics.content_height {
             self.layout_content_height = height;
         }
