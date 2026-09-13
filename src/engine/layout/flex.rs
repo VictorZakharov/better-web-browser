@@ -3,7 +3,21 @@ mod item;
 
 use super::*;
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct CrossConstraints {
+    pub minimum: f32,
+    pub maximum: Option<f32>,
+}
+
+impl CrossConstraints {
+    fn clamp(self, size: f32) -> f32 {
+        size.min(self.maximum.unwrap_or(f32::INFINITY))
+            .max(self.minimum)
+    }
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex(
         &mut self,
         node: &NodeRef,
@@ -11,6 +25,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y: f32,
         width: f32,
         containing_height: Option<f32>,
+        cross: CrossConstraints,
         style: &ComputedStyle,
     ) -> f32 {
         let composed_children = self.box_children(node);
@@ -75,7 +90,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 self.layout_flex_column(&items, x, y, width, containing_height, style)
             }
             FlexDirection::Row | FlexDirection::RowReverse => {
-                self.layout_flex_rows(&items, x, y, width, containing_height, style)
+                self.layout_flex_rows(&items, x, y, width, containing_height, cross, style)
             }
         }
     }

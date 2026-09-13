@@ -6,6 +6,8 @@ mod accessibility;
 mod async_scripts;
 #[path = "renderer_process/backpressure.rs"]
 mod backpressure;
+#[path = "renderer_process/checkable.rs"]
+mod checkable;
 #[path = "renderer_process/clock_backpressure.rs"]
 mod clock_backpressure;
 #[path = "renderer_process/crypto.rs"]

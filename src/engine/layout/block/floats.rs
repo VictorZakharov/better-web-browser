@@ -81,6 +81,7 @@ pub(in crate::engine::layout) fn establishes_context(style: &ComputedStyle) -> b
         || matches!(
             style.display,
             Display::InlineBlock
+                | Display::FlowRoot
                 | Display::Flex
                 | Display::InlineFlex
                 | Display::Grid

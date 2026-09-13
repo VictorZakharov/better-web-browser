@@ -180,6 +180,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     content_y,
                     content_width,
                     specified_height,
+                    flex::CrossConstraints {
+                        minimum: minimum_height,
+                        maximum: maximum_height,
+                    },
                     &style,
                 ),
                 Display::Grid => self.layout_grid(
@@ -224,10 +228,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             specified_height.unwrap_or(natural_content_height)
         };
-        let mut content_height = used_content_height.max(minimum_height);
+        let mut content_height = used_content_height;
         if let Some(maximum_height) = maximum_height {
             content_height = content_height.min(maximum_height);
         }
+        content_height = content_height.max(minimum_height);
         if !matches!(
             style.display,
             Display::Flex | Display::InlineFlex | Display::Grid | Display::Table

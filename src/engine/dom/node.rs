@@ -1,5 +1,6 @@
 //! DOM node identity, data model, read access, and traversal.
 mod attributes;
+pub(super) mod checkable;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
@@ -168,6 +169,7 @@ pub struct ElementData {
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
     pub hovered: Cell<bool>,
+    pub(crate) input_state: Cell<checkable::InputState>,
     /// HTML script flags belong to the element, including across adoption and cloning.
     pub(crate) script_force_async: Cell<bool>,
     pub(crate) script_started: Cell<bool>,

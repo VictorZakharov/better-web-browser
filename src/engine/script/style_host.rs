@@ -137,6 +137,7 @@ pub(super) fn style_host_call(
         "" => None,
         ":before" | "::before" => Some(crate::engine::css::PseudoElement::Before),
         ":after" | "::after" => Some(crate::engine::css::PseudoElement::After),
+        "::placeholder" => Some(crate::engine::css::PseudoElement::Placeholder),
         _ => return Ok(Some(js_string(String::new()))),
     };
     let value = node

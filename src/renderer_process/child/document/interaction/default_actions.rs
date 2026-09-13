@@ -1,6 +1,7 @@
 //! Renderer-owned link and form default actions after cancelable DOM dispatch.
 
 use super::*;
+mod checkable;
 
 impl DocumentRuntime {
     pub(super) fn pointer_default_action(
@@ -12,6 +13,9 @@ impl DocumentRuntime {
         let Some(target) = target else {
             return Ok(None);
         };
+        if self.script_runtime.is_none() && input.button == PointerButton::Primary {
+            checkable::activate(&target.node, &self.page.dom.document, outcome);
+        }
         if let Some(url) = target.link.as_ref() {
             return Ok(Some((url.clone(), navigation_disposition(input))));
         }

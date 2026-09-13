@@ -22,6 +22,7 @@ mod attributes;
 mod bindings;
 mod canvas;
 mod channel_messaging;
+mod checkable;
 mod collections;
 mod compatibility;
 mod crypto;

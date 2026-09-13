@@ -91,6 +91,7 @@ pub(super) fn is_block_level(display: Display) -> bool {
     matches!(
         display,
         Display::Block
+            | Display::FlowRoot
             | Display::Flex
             | Display::Grid
             | Display::Table

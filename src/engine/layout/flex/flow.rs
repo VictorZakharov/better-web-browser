@@ -83,6 +83,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex_rows(
         &mut self,
         items: &[FlexItem],
@@ -90,6 +91,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y: f32,
         width: f32,
         containing_height: Option<f32>,
+        cross: super::CrossConstraints,
         style: &ComputedStyle,
     ) -> f32 {
         let gap = style
@@ -148,6 +150,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 width,
                 gap,
                 containing_height,
+                if style.flex_wrap {
+                    super::CrossConstraints::default()
+                } else {
+                    cross
+                },
                 style,
             );
             if index + 1 < line_count {
@@ -166,6 +173,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         base_gap: f32,
         containing_height: Option<f32>,
+        cross: super::CrossConstraints,
         style: &ComputedStyle,
     ) -> f32 {
         let gap_width = base_gap * items.len().saturating_sub(1) as f32;
@@ -255,14 +263,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
 
-        let cross_size = containing_height.unwrap_or(row_height).max(row_height);
+        // Flexbox 9.4 clamps a single line's cross size before aligning its items.
+        // A minimum is not a definite percentage-height basis for those items.
+        let cross_size = cross.clamp(containing_height.unwrap_or(row_height));
         for (start, end, item_height, node) in painted {
             let offset_y = match style.align_items {
                 AlignItems::Center => (cross_size - item_height) / 2.0,
                 AlignItems::End => cross_size - item_height,
                 AlignItems::Stretch | AlignItems::Start => 0.0,
             };
-            if offset_y > 0.0 {
+            if offset_y != 0.0 {
                 self.translate_layout_subtree(node.as_ref(), start, end, 0.0, offset_y);
             }
         }

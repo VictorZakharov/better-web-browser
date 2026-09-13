@@ -1,4 +1,5 @@
 use super::*;
+mod flow_root;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 fn boxes(source: &str) -> (Page, LayoutOutput) {

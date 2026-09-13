@@ -36,14 +36,18 @@ pub(super) fn apply_declaration(
             }
         }
         "display" => {
-            style.display = match value.split_ascii_whitespace().next().unwrap_or("") {
+            style.display = match value {
                 "none" => Display::None,
                 "contents" => Display::Contents,
-                "block" => Display::Block,
-                "inline" => Display::Inline,
+                "block" | "flow" | "block flow" | "flow block" => Display::Block,
+                "inline" | "inline flow" | "flow inline" => Display::Inline,
+                "flow-root" | "block flow-root" | "flow-root block" => Display::FlowRoot,
+                "inline flow-root" | "flow-root inline" => Display::InlineBlock,
                 "inline-block" | "inline-box" => Display::InlineBlock,
-                "inline-flex" | "-webkit-inline-flex" => Display::InlineFlex,
-                "flex" | "-webkit-flex" => Display::Flex,
+                "inline-flex" | "-webkit-inline-flex" | "inline flex" | "flex inline" => {
+                    Display::InlineFlex
+                }
+                "flex" | "-webkit-flex" | "block flex" | "flex block" => Display::Flex,
                 // The legacy WebKit box model is not the modern flexbox model. Treating it as
                 // modern flex drops anonymous text children in our flex layout (notably
                 // YouTube's watch title). Block flow is the safer compatibility fallback until
@@ -86,7 +90,9 @@ pub(super) fn apply_declaration(
             };
         }
         "color" => {
-            if let Some(color) = parse_color(value) {
+            if value.eq_ignore_ascii_case("currentcolor") {
+                style.color = parent.map_or(Color::BLACK, |parent| parent.color);
+            } else if let Some(color) = parse_color(value) {
                 style.color = color;
             }
         }

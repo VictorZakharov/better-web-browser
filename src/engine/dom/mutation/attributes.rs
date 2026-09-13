@@ -65,6 +65,7 @@ impl Node {
             });
         }
         drop(attributes);
+        self.checkable_attribute_changed(qualified_name);
         self.mark_mutated();
         true
     }
@@ -92,6 +93,9 @@ impl Node {
             attributes.push(new_attribute(namespace, prefix, local_name, value));
         }
         drop(attributes);
+        if namespace.unwrap_or_default().is_empty() {
+            self.checkable_attribute_changed(local_name);
+        }
         self.mark_mutated();
         true
     }
@@ -122,6 +126,9 @@ impl Node {
             attributes.push(replacement);
         }
         drop(attributes);
+        if namespace.unwrap_or_default().is_empty() {
+            self.checkable_attribute_changed(local_name);
+        }
         self.mark_mutated();
         true
     }
@@ -142,8 +149,11 @@ impl Node {
         let Some(index) = attributes.iter().position(matches) else {
             return false;
         };
-        attributes.remove(index);
+        let removed = attributes.remove(index);
         drop(attributes);
+        if removed.name.ns.as_ref().is_empty() {
+            self.checkable_attribute_changed(removed.name.local.as_ref());
+        }
         self.mark_mutated();
         true
     }

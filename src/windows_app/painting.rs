@@ -386,7 +386,15 @@ impl BrowserState {
                                         .find(|control| control.spec.node_id == spec.node_id)
                                         .map(|control| window_text(control.window))
                                         .unwrap_or_else(|| spec.value.clone());
-                                    let text = if spec.kind == ControlKind::Password {
+                                    if value.is_empty()
+                                        && !is_button
+                                        && spec.kind != ControlKind::Select
+                                    {
+                                        SetTextColor(item_dc, spec.placeholder_color.to_colorref());
+                                    }
+                                    let text = if spec.kind == ControlKind::Password
+                                        && !value.is_empty()
+                                    {
                                         "•".repeat(value.chars().count())
                                     } else if value.is_empty() {
                                         if spec.kind == ControlKind::Select || is_button {

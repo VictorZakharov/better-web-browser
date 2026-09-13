@@ -3,6 +3,15 @@
 use super::*;
 
 impl StyleSet {
+    pub(crate) fn placeholder_color(&self, origin: &NodeRef, backdrop: Color) -> Color {
+        let style = self
+            .compute_pseudo_style(origin, PseudoElement::Placeholder, self.get(origin))
+            .0;
+        let mut color = style.color;
+        color.alpha = (f32::from(color.alpha) * style.opacity).round() as u8;
+        color.composite_over(backdrop)
+    }
+
     pub(crate) fn generated_pseudo(
         &self,
         origin: &NodeRef,
@@ -31,6 +40,15 @@ impl StyleSet {
         origin_style: &ComputedStyle,
     ) -> bool {
         let mut layout_changed = false;
+        if origin.attr("placeholder").is_some() {
+            let key = (origin.id(), PseudoElement::Placeholder);
+            let style = self
+                .compute_pseudo_style(origin, PseudoElement::Placeholder, origin_style)
+                .0;
+            // A retained control owns the placeholder paint, not a generated child box.
+            layout_changed |= self.pseudo_styles.get(&key) != Some(&style);
+            self.pseudo_styles.insert(key, style);
+        }
         for pseudo in [PseudoElement::Before, PseudoElement::After] {
             let key = (origin.id(), pseudo);
             let previous = self.generated_nodes.get(&key).and_then(|node| {
@@ -60,7 +78,11 @@ impl StyleSet {
 
     pub(super) fn remove_generated_pseudos(&mut self, origins: &HashSet<NodeId>) {
         for &origin in origins {
-            for pseudo in [PseudoElement::Before, PseudoElement::After] {
+            for pseudo in [
+                PseudoElement::Before,
+                PseudoElement::After,
+                PseudoElement::Placeholder,
+            ] {
                 self.remove_pseudo(origin, pseudo);
             }
         }
@@ -78,6 +100,11 @@ impl StyleSet {
         // https://drafts.csswg.org/css-pseudo/#treelike
         let mut style = ComputedStyle::inherit_from(Some(origin_style));
         style.root_font_size = origin_style.root_font_size;
+        // UA placeholder color is separate from the entered text; author declarations
+        // (including currentColor and custom properties) still participate in the cascade.
+        if pseudo == PseudoElement::Placeholder {
+            style.color = Color::rgb(117, 117, 117);
+        }
         let lower_origin = style.clone();
         let matching = self.matching_rules(origin, Some(pseudo));
         let matched = !matching.is_empty();
@@ -118,7 +145,8 @@ impl StyleSet {
 
     fn install_pseudo(&mut self, origin: &NodeRef, pseudo: PseudoElement, style: ComputedStyle) {
         let key = (origin.id(), pseudo);
-        let generates = style.generated_content.generates_box()
+        let generates = pseudo != PseudoElement::Placeholder
+            && style.generated_content.generates_box()
             && style.display != Display::None
             && origin_accepts_generated_children(origin)
             && self
@@ -169,6 +197,7 @@ impl PseudoElement {
         match self {
             Self::Before => "breeze-pseudo-before",
             Self::After => "breeze-pseudo-after",
+            Self::Placeholder => unreachable!("placeholder is painted by its control"),
         }
     }
 }

@@ -17,8 +17,6 @@
             this.selectionDirection = direction;
         }
         select() { this.setSelectionRange(0, this.value.length); }
-        get indeterminate() { return !!this.__indeterminate; }
-        set indeterminate(value) { this.__indeterminate = !!value; }
         get list() {
             const id = this.getAttribute('list');
             const candidate = id ? document.getElementById(id) : null;
@@ -153,10 +151,6 @@
         get control() {
             if (this.htmlFor) return document.getElementById(this.htmlFor);
             return this.querySelector('button, input, meter, output, progress, select, textarea');
-        }
-        click() {
-            super.click();
-            this.control?.focus();
         }
     }
     class HTMLFieldSetElement extends HTMLElement {

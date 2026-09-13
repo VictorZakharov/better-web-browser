@@ -108,7 +108,7 @@ Physical border colors are independently cascaded, serialized and painted in top
 bottom/left order, following [CSS Backgrounds 3](https://www.w3.org/TR/css-backgrounds-3/#border-color).
 One-to-four value expansion, side longhands, CSS-wide keywords, shorthand resets and
 `currentColor` used values are covered; transparent sides retain ownership of their corner
-sectors. Block, inline and control decoration carry all four colors across IPC (major 6
+sectors. Block, inline and control decoration carry all four colors across IPC (major 7
 rejects incompatible older peers). The oversized paint and wire coordinators were split
 by responsibility. `border-colors.html` is an owned comparison fixture; offscreen native
 raster tests check edge colors and transparent joins. This does not implement dashed/
@@ -122,8 +122,12 @@ while positive sub-device-pixel widths retain a one-device-pixel stroke.
 On the reported Wikipedia article, the sidebar text overlap and notice/icon overlap are
 removed, the serif heading uses its fallback font, and the artificial title-to-tabs gap
 is removed. The previous `nodeType` exception also disappears. The left pane now has its
-own scrollbar and sticky placement; the heading rule paints behind the floating infobox.
-Unchecked appearance controls and typography/spacing differences remain visible.
+own scrollbar and sticky placement. `display:flow-root` now establishes an independent
+block formatting context: its border box avoids outside floats, contains its own floats,
+and prevents parent/child margin collapse without imposing an overflow clip. Wikipedia's
+Background rule is 572.88px wide versus Chrome's 572.8875px, ending before the infobox.
+Appearance radio selections and the search field/button now render in the comparison;
+typography/spacing and circle rasterization differences remain visible.
 Console diagnostics now expose missing PerformanceObserver
 support; this is not proof that it explains every remaining initialization difference.
 
@@ -136,7 +140,7 @@ scrollbar widths still differ. Live banners/content can also vary between reques
 
 Further slices must cover remaining positioned paint-context ordering, broader grid track
 constraints and self-alignment, shared multi-row table columns/spans and vertical alignment,
-checkable form controls, and the remaining page-initialization APIs. Native control artwork
+broader form-control behavior, and the remaining page-initialization APIs. Native control artwork
 remains approximate. The owned `button-alignment.html` fixture checks intrinsic inline
 buttons, retained SVGs and positional block alignment independently of Wikipedia.
 At 125% scaling its inline text button is 30.6875px wide and its icon button is 40px wide
@@ -145,3 +149,38 @@ not yet match: Breeze centers neighboring atomic inline boxes. This is a separat
 formatting gap, not passing evidence. `line-heights.html` covers computed inheritance,
 shorthand/longhand order and negative leading independently of Wikipedia.
 Do not replace these gaps with site-specific CSS or claim full conformance from this fixture.
+
+## Authored form-control state and search-field follow-up
+
+The owned `form-controls-flow-root.html` fixture covers the additional requested controls
+without copying site markup. [HTML checkedness](https://html.spec.whatwg.org/multipage/input.html#dom-input-checked)
+is live state separate from the `checked` content attribute. Dirty checkedness, default
+reflection, cloning, reset, name/form/tree radio grouping, `:checked`/`:indeterminate`,
+and canceled legacy click activation are tested. Labels forward activation, and native
+clicks update authored radio artwork on both scripted and scriptless pages. These state
+changes invalidate styles without fabricating attribute mutation records. A hidden live
+Wikipedia click selected Small and changed the page preference, with no JavaScript errors.
+
+[CSS Pseudo-Elements](https://www.w3.org/TR/css-pseudo-4/#placeholder-pseudo) placeholder
+color/opacity cascade separately from entered text, including variables, inheritance and
+`currentColor`. The retained control carries its resolved hint color across IPC major 7;
+native EDIT painting uses the same color without putting placeholder text into the value.
+No generated DOM child is created. Broader placeholder typography and native-control
+artwork remain separate work.
+
+[Flexbox cross sizing](https://www.w3.org/TR/css-flexbox-1/#cross-sizing) applies a single
+line's min/max height before center/end alignment, including overflow and min-over-max
+precedence, without turning a minimum into a definite percentage-height basis. This
+centers the Search label without a button-specific offset. The rest of the flex algorithm,
+including auto-height stretch relayout and multiline distribution, is not declared complete.
+
+This is not full form conformance: native checkbox/radio artwork, keyboard group traversal,
+full form reset/submission, dynamic external form-ID reassociation, and selected-option
+state need further slices. The current work specifically verifies authored checkable
+artwork and its pointer-driven live state.
+
+The final local follow-up suite passed 1,186 tests (4 intentionally ignored); Clippy,
+format and source-size checks passed without raising ceilings. The curated 125%-DPI WPT
+rerun remains 141 passing/4 failing cases, 746 passing/7 failing assertions, zero timeouts
+or crashes. These are the same documented fractional-DPI failures also observed in Chrome,
+not newly passing conformance claims. Captures and reports remain ignored local artifacts.
