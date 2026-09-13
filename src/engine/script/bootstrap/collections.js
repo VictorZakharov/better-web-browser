@@ -9,7 +9,7 @@
     const collectionIndex = property => {
         if (typeof property !== 'string' || !/^(0|[1-9][0-9]*)$/.test(property)) return null;
         const index = Number(property);
-        return Number.isSafeInteger(index) ? index : null;
+        return Number.isInteger(index) && index < 4294967295 ? index : null;
     };
     const supportedCollectionNames = items => {
         const names = [];
@@ -58,14 +58,17 @@
         const proxy = new Proxy(target, {
             get(target, property, receiver) {
                 const index = collectionIndex(property);
-                if (index !== null) return target.item(index);
+                // Indexed getters only expose supported indices. Unlike item(),
+                // an absent property falls through to ordinary prototype lookup.
+                // https://webidl.spec.whatwg.org/#legacy-platform-object-getownproperty
+                if (index !== null) return target.item(index) ?? Reflect.get(target, property, receiver);
                 if (typeof property === 'string' && !(property in target)) {
                     return target.namedItem(property) || undefined;
                 }
                 return Reflect.get(target, property, receiver);
             },
             has(target, property) {
-                if (collectionIndex(property) !== null) return target.item(property) !== null;
+                if (collectionIndex(property) !== null) return target.item(property) !== null || property in target;
                 return property in target ||
                     (typeof property === 'string' && target.namedItem(property) !== null);
             },
