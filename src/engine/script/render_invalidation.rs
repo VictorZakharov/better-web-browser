@@ -81,6 +81,10 @@ impl PendingInvalidation {
 
 pub(super) fn rebuilds_style_rules(target: Option<&NodeRef>, kind: MutationKind<'_>) -> bool {
     matches!(kind, MutationKind::Stylesheet)
+        || (matches!(
+            kind,
+            MutationKind::Attribute("href" | "rel" | "media" | "type" | "disabled" | "title")
+        ) && target.is_some_and(|node| matches!(node.tag_name(), Some("style" | "link"))))
         || (matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
             && target.is_some_and(is_in_style_element))
 }

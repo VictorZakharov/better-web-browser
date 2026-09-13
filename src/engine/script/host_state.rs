@@ -28,7 +28,7 @@ pub(super) struct HostState {
     pub(super) document_url: String,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
-    pub(super) stylesheet_sources: Vec<(String, String)>,
+    pub(super) stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,

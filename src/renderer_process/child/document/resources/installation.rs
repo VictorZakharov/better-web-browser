@@ -64,7 +64,7 @@ impl DocumentRuntime {
             let installed = match resource {
                 PageResource::Stylesheet { url } => self
                     .page
-                    .add_stylesheet_from(
+                    .add_linked_stylesheet(
                         &url,
                         crate::winhttp::decode_text(&bytes, content_type.as_deref()),
                     )

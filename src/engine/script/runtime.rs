@@ -202,7 +202,10 @@ impl ScriptRuntime {
             .replace_cookies_from_header(cookie_header);
     }
 
-    pub(crate) fn set_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
+    pub(crate) fn set_document_stylesheets(
+        &mut self,
+        stylesheets: &[crate::engine::css::StylesheetSource],
+    ) {
         self.host
             .borrow_mut()
             .replace_document_stylesheets(stylesheets);

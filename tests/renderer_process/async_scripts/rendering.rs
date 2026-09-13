@@ -36,6 +36,22 @@ fn blocked_until_request(driver: &mut Driver, suffix: &str) {
 }
 
 #[test]
+fn stylesheet_response_order_does_not_replace_owner_tree_order() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(
+        "<!doctype html><head><link rel=stylesheet href=/a.css><style>#status{color:green}</style><link rel=stylesheet href=/b.css></head><body><p id=status>owner order</p>",
+    );
+    blocked_until_request(&mut driver, "a.css");
+    blocked_until_request(&mut driver, "b.css");
+    driver.respond_bytes("b.css", b"#status{color:blue}", "text/css", 200);
+    driver.respond_bytes("a.css", b"#status{color:red}", "text/css", 200);
+    let first = driver.until_text("owner order");
+    assert!(first.layout.items.iter().any(|item| matches!(item,
+        DisplayItem::Text{color,..} if color.red==0 && color.green==0 && color.blue==255)));
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn initial_stylesheets_block_paint_not_async_scripts_or_heartbeats() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut driver = Driver::new(

@@ -21,7 +21,10 @@ impl HostState {
         }
     }
 
-    pub(super) fn replace_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
+    pub(super) fn replace_document_stylesheets(
+        &mut self,
+        stylesheets: &[crate::engine::css::StylesheetSource],
+    ) {
         // Source order breaks otherwise equal cascade ties, including repeated source URLs.
         // Preserve the owning Page's sequence for layout, computed style, and offsetParent.
         // https://www.w3.org/TR/css-cascade-3/#cascade-order
@@ -201,8 +204,8 @@ mod tests {
             "UTF-8",
             Rc::new(module_loader::WebModuleLoader::new()),
         );
-        state.replace_document_stylesheets(&[(
-            "https://example.com/app.css".into(),
+        state.replace_document_stylesheets(&[crate::engine::css::StylesheetSource::injected(
+            "https://example.com/app.css",
             "#target { position: absolute; color: #123456 }".into(),
         )]);
         assert_eq!(
@@ -216,8 +219,8 @@ mod tests {
             Some("rgb(18, 52, 86)")
         );
         let version = state.document.document_mutation_version();
-        state.replace_document_stylesheets(&[(
-            "https://example.com/app.css".into(),
+        state.replace_document_stylesheets(&[crate::engine::css::StylesheetSource::injected(
+            "https://example.com/app.css",
             "#target { position: relative; color: #654321 }".into(),
         )]);
         assert_eq!(state.document.document_mutation_version(), version);
@@ -277,8 +280,8 @@ mod tests {
             "UTF-8",
             Rc::new(module_loader::WebModuleLoader::new()),
         );
-        state.replace_document_stylesheets(&[(
-            "https://example.com/app.css".into(),
+        state.replace_document_stylesheets(&[crate::engine::css::StylesheetSource::injected(
+            "https://example.com/app.css",
             ".positioned { position: relative }".into(),
         )]);
 

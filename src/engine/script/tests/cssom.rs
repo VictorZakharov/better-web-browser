@@ -23,7 +23,11 @@ fn execute_html_with_stylesheets(
         })
         .collect::<Vec<_>>();
     let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
-    runtime.set_document_stylesheets(&stylesheets);
+    let sources = stylesheets
+        .iter()
+        .map(|(url, source)| crate::engine::css::StylesheetSource::linked(url, source.clone()))
+        .collect::<Vec<_>>();
+    runtime.set_document_stylesheets(&sources);
     let outcome = runtime.execute_initial(&scripts);
     (dom, outcome)
 }
@@ -339,4 +343,28 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
+fn stylesheet_owner_changes_invalidate_the_computed_cascade_synchronously() {
+    let (dom, outcome) = execute_html_with_stylesheets(
+        r#"<link id=sheet rel=stylesheet href=app.css>
+        <style>p{color:green}</style><p id=target>text</p><script>
+        const target=document.getElementById('target'),sheet=document.getElementById('sheet'),values=[];
+        const sample=()=>values.push(getComputedStyle(target).color);
+        sample(); document.head.appendChild(sheet); sample();
+        sheet.setAttribute('media','print'); sample(); sheet.removeAttribute('media'); sample();
+        sheet.setAttribute('disabled',''); sample(); sheet.removeAttribute('disabled'); sample();
+        sheet.remove(); sample();
+        document.body.dataset.result=values.join('|');
+        </script>"#,
+        vec![("https://example.com/app.css".into(), "p{color:red}".into())],
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        result(&dom).as_deref(),
+        Some(
+            "rgb(0, 128, 0)|rgb(255, 0, 0)|rgb(0, 128, 0)|rgb(255, 0, 0)|rgb(0, 128, 0)|rgb(255, 0, 0)|rgb(0, 128, 0)"
+        )
+    );
 }

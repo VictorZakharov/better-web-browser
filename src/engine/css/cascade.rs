@@ -6,6 +6,8 @@ mod pseudo;
 mod refresh;
 mod root_units;
 mod sheets;
+mod sources;
+pub use sources::StylesheetSource;
 #[cfg(test)]
 mod tests;
 
@@ -46,7 +48,7 @@ impl StyleSet {
     pub fn from_dom(dom: &Dom, external_stylesheets: &[String], viewport_width: f32) -> Self {
         let sources = external_stylesheets
             .iter()
-            .map(|stylesheet| (String::new(), stylesheet.clone()))
+            .map(|stylesheet| StylesheetSource::injected("", stylesheet.clone()))
             .collect::<Vec<_>>();
         Self::from_document(&dom.document, "", &sources, viewport_width)
     }
@@ -59,10 +61,14 @@ impl StyleSet {
         viewport_width: f32,
         viewport_height: f32,
     ) -> Self {
+        let sources = external_stylesheets
+            .iter()
+            .map(|(url, source)| StylesheetSource::injected(url, source.clone()))
+            .collect::<Vec<_>>();
         Self::from_sources_for_media_environment(
             dom,
             document_base_url,
-            external_stylesheets,
+            &sources,
             MediaEnvironment::new(viewport_width, viewport_height, 1.0, false),
         )
     }
@@ -70,7 +76,7 @@ impl StyleSet {
     pub(crate) fn from_sources_for_media_environment(
         dom: &Dom,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         Self::from_document_for_media_environment(
@@ -84,7 +90,7 @@ impl StyleSet {
     pub(crate) fn from_document(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         viewport_width: f32,
     ) -> Self {
         Self::from_document_for_viewport(
@@ -100,7 +106,7 @@ impl StyleSet {
     pub(crate) fn from_document_for_viewport(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         viewport_width: f32,
         viewport_height: f32,
         prefers_dark_color_scheme: bool,
@@ -121,7 +127,7 @@ impl StyleSet {
     fn from_document_for_media_environment(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         let mut set = Self::for_computed_style_for_media_environment(
@@ -138,7 +144,7 @@ impl StyleSet {
     pub(crate) fn for_computed_style_for_media_environment(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         let compiled = sheets::collect(

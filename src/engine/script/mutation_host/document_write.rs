@@ -23,7 +23,7 @@ pub(in crate::engine::script) fn flush_document_write(state: &mut HostState) -> 
         .unwrap_or_else(|| document.clone());
     append_html_fragment(&document, &target, &html);
     state.register_subtree(&target);
-    let kind = if contains_ascii_tag(&html, "style") {
+    let kind = if contains_ascii_tag(&html, "style") || contains_ascii_tag(&html, "link") {
         MutationKind::Stylesheet
     } else {
         MutationKind::ChildList

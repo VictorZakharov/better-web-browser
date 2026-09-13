@@ -90,7 +90,7 @@ pub struct Page {
     pub resources: Vec<PageResource>,
     pub scripts: Vec<PageScript>,
     pub external_stylesheets: Vec<String>,
-    stylesheet_sources: Vec<(String, String)>,
+    stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
     inline_svg_versions: HashMap<NodeId, u64>,
@@ -188,7 +188,17 @@ impl Page {
     }
 
     pub fn add_stylesheet_from(&mut self, source_url: &str, css: String) -> bool {
-        let (css, truncated) = bounded_utf8_prefix(&css, MAX_CSS_SOURCE_BYTES);
+        self.install_stylesheet(super::css::StylesheetSource::injected(source_url, css))
+    }
+
+    pub(crate) fn add_linked_stylesheet(&mut self, source_url: &str, css: String) -> bool {
+        self.install_stylesheet(super::css::StylesheetSource::linked(source_url, css))
+    }
+
+    fn install_stylesheet(&mut self, mut source: super::css::StylesheetSource) -> bool {
+        let source_url = source.url();
+        let css = &source.source;
+        let (css, truncated) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
         if truncated {
             self.diagnostics.push(format!(
                 "stylesheet {source_url} was truncated at {MAX_CSS_SOURCE_BYTES} bytes"
@@ -196,8 +206,8 @@ impl Page {
         }
         let css = css.to_string();
         self.cached_styles = None;
-        self.stylesheet_sources
-            .push((source_url.to_string(), css.clone()));
+        source.source = css.clone();
+        self.stylesheet_sources.push(source);
         self.external_stylesheets.push(css);
         true
     }
