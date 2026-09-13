@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Intrinsic layout contracts</title>
+<style>
+  html { font: 16px Arial, sans-serif }
+  body { margin: 20px }
+  main { display: grid; width: 600px; grid-template-columns: 400px 200px;
+    grid-template-rows: min-content min-content 1fr; row-gap: 10px;
+    grid-template-areas: 'title rail' 'tabs rail' 'body rail' }
+  h1 { grid-area: title; margin: 0; height: 40px; font: 28px 'Absent Fixture Font', Georgia, serif }
+  nav { grid-area: tabs; height: 30px; background: #dde8ff }
+  article { grid-area: body }
+  aside { grid-area: rail; height: 600px; background: #f2f2f2 }
+  .toggle { position: relative; height: 30px; padding-left: 30px }
+  button { position: absolute; left: 0; top: 0; display: block; padding: 4px;
+    border: 1px solid #555; min-width: 22px; min-height: 22px; background: white }
+  .icon { display: block; width: 12px; height: 12px; background: #36c }
+  .label { position: absolute; width: 1px; height: 1px; overflow: hidden }
+  table { width: 400px; border-spacing: 0; border-collapse: collapse }
+  td { padding: 4px; vertical-align: top }
+  .message { width: 100%; background: #dde8ff }
+  img { display: block }
+</style>
+<main>
+  <h1>Fallback serif heading</h1>
+  <nav>Article tabs</nav>
+  <article>
+    <div class="toggle"><button><span class="icon"></span><span class="label">Toggle a long accessible label</span></button>Section label</div>
+    <table><tr><td class="image"><img width="52" height="52" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='52' height='52'%3E%3Crect width='52' height='52' fill='%2336c'/%3E%3C/svg%3E"></td><td class="message">A percentage-width text cell must leave room for this image and its padding.</td></tr></table>
+    <output>Collection check pending</output>
+  </article>
+  <aside>Spanning sidebar</aside>
+</main>
+<script>
+  const cells = document.getElementsByTagName('td');
+  let count = 0;
+  for (let i = 0; cells[i] !== undefined; i++) if (cells[i].nodeType === 1) count++;
+  document.querySelector('output').textContent = count === 2 ? 'Collection check passed' : 'Collection check failed';
+</script>
