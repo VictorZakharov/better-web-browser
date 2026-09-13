@@ -27,6 +27,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return BlockMetrics { bottom: y };
         }
         let own_context = floats::establishes_context(&style)
+            || node.tag_name() == Some("button")
             || node.tag_name() == Some("body")
             || Node::composed_parent(node).is_some_and(|parent| {
                 matches!(
@@ -44,11 +45,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output.node_paint_order.push(node_id(node));
         }
         let block_control = input_control_data(node);
-        let authored_button = node.tag_name() == Some("button")
-            && matches!(
-                style.display,
-                Display::Flex | Display::InlineFlex | Display::Grid
-            );
+        let authored_button = node.tag_name() == Some("button");
         let block_image = self.block_image(node);
 
         let percentage_basis = used_inline_size
@@ -67,7 +64,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
             image.outer_width(node, &style, percentage_basis, horizontal_insets)
         });
-        let automatic_width = if caption_width > 0.0 {
+        let automatic_width = if authored_button && style.width == Length::Auto {
+            self.button_fit_content_width(node, percentage_basis, available_width)
+        } else if caption_width > 0.0 {
             caption_width
         } else {
             normal_automatic_width
@@ -84,6 +83,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             border_box_width = border_box_width.max(caption_width);
         }
         if style.width == Length::Auto
+            && !authored_button
             && matches!(style.position, Position::Absolute | Position::Fixed)
         {
             let positioning_width = if style.position == Position::Fixed {
