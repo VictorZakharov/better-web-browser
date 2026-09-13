@@ -12,6 +12,8 @@ use std::time::Duration;
 mod helpers;
 #[path = "input/nested_scrolling.rs"]
 mod nested_scrolling;
+#[path = "input/scroll_composition.rs"]
+mod scroll_composition;
 use helpers::*;
 
 #[test]

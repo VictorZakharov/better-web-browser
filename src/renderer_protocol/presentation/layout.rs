@@ -11,6 +11,7 @@ use crate::limits::{
 
 mod controls;
 mod groups;
+pub(super) mod sticky;
 mod values;
 use controls::{decode_control, decode_form, encode_control, encode_form};
 use groups::validate_display_groups;
@@ -37,6 +38,7 @@ pub(super) fn encode_layout(
     for form in &layout.forms {
         encode_form(writer, form)?;
     }
+    sticky::encode(writer, &layout.sticky_layers, layout.items.len())?;
     Ok(())
 }
 
@@ -59,8 +61,10 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
     for _ in 0..form_count {
         forms.push(decode_form(reader)?);
     }
+    let sticky_layers = sticky::decode(reader, item_count)?;
     Ok(PresentedLayout {
         items,
+        sticky_layers,
         content_height,
         background,
         forms,

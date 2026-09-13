@@ -13,6 +13,30 @@ fn spec() -> FontSpec {
 }
 
 #[test]
+fn reports_consume_work_counters_without_discarding_cached_shapes() {
+    let mut text = RendererTextSystem::new(96);
+    text.shape("cached text", &spec());
+    let first = text.finish_load_report(PageLoadReport::default());
+    assert!(first.text_measure_count > 0);
+    assert!(first.text_shape_cache_entries > 0);
+    let idle = text.finish_load_report(PageLoadReport::default());
+    assert_eq!(idle.text_measure_count, 0);
+    assert_eq!(idle.text_shape_cache_hits, 0);
+    assert_eq!(idle.text_shape_cache_misses, 0);
+    assert_eq!(idle.font_select_micros, 0);
+    assert_eq!(idle.open_type_shape_micros, 0);
+    assert_eq!(idle.glyph_raster_micros, 0);
+    assert_eq!(
+        idle.text_shape_cache_entries,
+        first.text_shape_cache_entries
+    );
+    text.shape("cached text", &spec());
+    let reused = text.finish_load_report(PageLoadReport::default());
+    assert_eq!(reused.text_shape_cache_hits, 1);
+    assert_eq!(reused.text_shape_cache_misses, 0);
+}
+
+#[test]
 fn unavailable_first_family_falls_back_to_the_next_named_family() {
     let mut text = RendererTextSystem::new(96);
     let mut direct = spec();

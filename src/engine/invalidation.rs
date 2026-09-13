@@ -64,11 +64,14 @@ pub enum MutationKind<'a> {
     Viewport,
     /// User-agent state (for example pointer designation), not an attribute mutation.
     State,
+    /// Pointer designation can change selectors, but does not itself change content or controls.
+    PointerDesignation,
 }
 
 impl MutationKind<'_> {
     pub fn impact(self) -> InvalidationImpact {
         match self {
+            Self::PointerDesignation => InvalidationImpact::STYLE,
             Self::Attribute(name) => {
                 let base = InvalidationImpact::STYLE
                     .union(InvalidationImpact::LAYOUT)

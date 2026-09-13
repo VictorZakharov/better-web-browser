@@ -1,6 +1,61 @@
 use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
+#[test]
+fn retained_nested_sticky_layers_match_fresh_layout_after_direction_reversals() {
+    let page = Page::parse(
+        "<style>body{margin:0}main{padding-top:100px;height:1500px}#outer{position:sticky;top:20px;height:300px;background:red}#inner{position:sticky;top:50px;height:40px;background:blue}#tail{height:1000px}</style><main><div id=outer><div id=inner>label</div></div></main><div id=tail></div>",
+        "https://example.test/",
+    );
+    let mut retained = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    for y in [300.0, 800.0, 10.0, 1300.0, 0.0, 400.0, 0.0] {
+        retained.update_scroll_position(0.0, y);
+        page.dom.document.scroll_offset.set((0.0, y));
+        let fresh = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        assert_paint_close(&retained.items, &fresh.items);
+        assert_eq!(retained.sticky_offsets, fresh.sticky_offsets, "scroll {y}");
+    }
+}
+
+#[test]
+fn delayed_serialized_presentation_can_be_reconciled_without_renderer_or_dom() {
+    use crate::renderer_protocol::PresentedLayout;
+    let page = Page::parse(
+        "<style>body{margin:0}main{padding-top:100px;height:2000px}aside{position:sticky;top:24px;height:70px;background:red}</style><main><aside>panel</aside></main>",
+        "https://example.test/",
+    );
+    page.dom.document.scroll_offset.set((0.0, 900.0));
+    let old = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let mut browser = PresentedLayout::from_layout(old).into_layout();
+    for y in [0.0, 500.0, 1500.0, 300.0, 0.0] {
+        browser.update_scroll_position(0.0, y);
+        page.dom.document.scroll_offset.set((0.0, y));
+        let fresh =
+            PresentedLayout::from_layout(layout_page(&page, 800.0, 600.0, &mut FixedMeasurer));
+        assert_paint_close(&browser.items, &fresh.items);
+    }
+}
+
+fn assert_paint_close(actual: &[DisplayItem], expected: &[DisplayItem]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        // f32 translation round trips can lose a few ULPs at large document offsets.
+        if let (DisplayItem::Text { rect: a, .. }, DisplayItem::Text { rect: b, .. }) =
+            (actual, expected)
+        {
+            assert!((a.x - b.x).abs() < 0.001 && (a.y - b.y).abs() < 0.001);
+            assert_eq!((a.width, a.height), (b.width, b.height));
+            let mut normalized = actual.clone();
+            if let DisplayItem::Text { rect, .. } = &mut normalized {
+                *rect = *b;
+            }
+            assert_eq!(&normalized, expected);
+        } else {
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
 fn element(page: &Page, id: &str) -> NodeRef {
     Node::composed_descendants(&page.dom.document)
         .find(|node| node.attr("id").as_deref() == Some(id))

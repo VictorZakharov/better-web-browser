@@ -39,13 +39,15 @@ fn pointer_boundary(state: &mut HostState, target: Option<NodeRef>) -> serde_jso
     let boundary = Node::update_hover_path(&mut state.pointer_path, target);
     for node in boundary.leaving.iter().chain(&boundary.entering) {
         if state.mutation_requires_render(node) {
-            state
-                .pending_invalidation
-                .record(&state.document, Some(node), MutationKind::State);
+            state.pending_invalidation.record(
+                &state.document,
+                Some(node),
+                MutationKind::PointerDesignation,
+            );
             state.pending_layout_invalidation.record(
                 &state.document,
                 Some(node),
-                MutationKind::State,
+                MutationKind::PointerDesignation,
             );
             state.timers.request_render();
         }

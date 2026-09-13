@@ -137,6 +137,8 @@ impl RendererTextSystem {
         report.font_select_micros = micros(self.font_select_time);
         report.open_type_shape_micros = micros(self.open_type_time);
         report.glyph_raster_micros = micros(self.glyph_raster_time);
+        // Reports describe this update, not the most recent update that ran layout.
+        self.reset_layout_metrics();
         report
     }
 

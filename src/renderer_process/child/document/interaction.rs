@@ -3,6 +3,7 @@
 mod default_actions;
 mod hit_testing;
 mod pointer;
+mod rendering;
 mod scrolling;
 mod viewport;
 
@@ -205,7 +206,7 @@ impl DocumentRuntime {
 
     pub(super) fn presentation_after_user_input(
         &mut self,
-        outcome: ScriptOutcome,
+        mut outcome: ScriptOutcome,
         force_accessibility_update: bool,
         connection: &mut ChildConnection,
     ) -> Result<Option<AdvanceResult>, String> {
@@ -224,11 +225,7 @@ impl DocumentRuntime {
             return Ok(None);
         }
         let style = if outcome.render_requested {
-            self.page.refresh_resources_after_invalidation_for_viewport(
-                self.viewport.style_width,
-                self.viewport.height,
-                &outcome.invalidation,
-            )
+            self.refresh_input_styles(&mut outcome)
         } else {
             StyleRefreshStats::default()
         };
@@ -241,6 +238,21 @@ impl DocumentRuntime {
             layout_micros: micros(started.elapsed()),
             ..PageLoadReport::default()
         });
+        if !outcome.render_requested && !force_accessibility_update {
+            return Ok(Some(AdvanceResult::Runtime(Box::new(
+                RendererRuntimeUpdate {
+                    document: self.id,
+                    clock_advanced: false,
+                    next_timer_micros: self.next_timer_micros(),
+                    runtime: runtime_report(
+                        outcome,
+                        self.script_runtime.is_some(),
+                        self.media_runtime_report(),
+                    ),
+                    load,
+                },
+            ))));
+        }
         self.presentation(outcome, style, load, connection)
             .map(Some)
     }

@@ -83,7 +83,7 @@ impl DocumentRuntime {
                 outcome.render_requested = true;
                 outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
                     roots: vec![self.page.dom.document.id()],
-                    impact: crate::engine::invalidation::MutationKind::State.impact(),
+                    impact: crate::engine::invalidation::MutationKind::PointerDesignation.impact(),
                     mutation_count: 0,
                     rebuild_style_rules: false,
                     removed_nodes: Vec::new(),

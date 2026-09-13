@@ -179,8 +179,69 @@ full form reset/submission, dynamic external form-ID reassociation, and selected
 state need further slices. The current work specifically verifies authored checkable
 artwork and its pointer-driven live state.
 
-The final local follow-up suite passed 1,186 tests (4 intentionally ignored); Clippy,
+The final local follow-up suite passed 1,196 tests (4 intentionally ignored); Clippy,
 format and source-size checks passed without raising ceilings. The curated 125%-DPI WPT
 rerun remains 141 passing/4 failing cases, 746 passing/7 failing assertions, zero timeouts
 or crashes. These are the same documented fractional-DPI failures also observed in Chrome,
 not newly passing conformance claims. Captures and reports remain ignored local artifacts.
+
+## Scroll and loading regression follow-up (2026-09-13)
+
+Static final screenshots did not cover rapid direction reversals. Sticky constraints now
+travel with the retained display list through IPC major 8. The native browser evaluates
+them at its latest viewport offset, including when installing an older renderer response.
+It also invalidates the viewport instead of bit-scrolling already displaced sticky pixels.
+The renderer reuses the same constraints for root scrolling, without walking the DOM or
+measuring text again. Nested sticky ancestry and containing-block limits are retained;
+wire ranges, dependency order, nesting and finite geometry are bounded and validated.
+Malformed page-derived constraints are discarded before publication, not allowed to
+terminate the renderer. This is retained viewport-sticky composition, not a claim of a
+complete asynchronous scrolling/compositing tree for nested scrollports.
+
+Pointer designation invalidates selectors first. If computed styles and generated boxes
+are unchanged, the renderer retains layout and returns runtime effects without sending
+an unchanged full display list. Author mutations and actual hover-style changes retain
+their normal rendering work. Text measurement reports now consume their work counters;
+an update without layout no longer reports the previous update's measurements.
+
+Window named-property lookup previously traversed the whole DOM for every queried name.
+A mutation-generation index now preserves the existing tree order, duplicate suppression,
+and live attribute/removal behavior while sharing that traversal. On the reported article,
+three roughly 2,450-name enumeration passes consumed **3,254 ms** in the old implementation;
+three roughly 2,470-name passes consumed **3.857 ms** after indexing. These are measured host
+call costs, not whole-page completion times. The implementation preserves the existing
+[Window named access](https://html.spec.whatwg.org/multipage/nav-history-apis.html#named-access-on-the-window-object)
+contract; it does not add unsupported child browsing contexts.
+
+Three alternating fresh-profile release/Chrome loads used a 1680px media viewport, 788px
+content height, 125% scaling, no visible windows, and 500ms captures anchored at navigation
+start. Breeze's outer window was 1694x960; its scrollbar-excluded width was 1663.2px.
+
+| Observed milestone | Headless Chrome | Hidden release Breeze |
+| --- | --- | --- |
+| Article, map and readable text visible | Already present in the first 0.5s sample, all three runs | Around 2.0s |
+| Appearance controls visible | Already present in the first 0.5s sample, all three runs | First complete samples at 5.0s, 6.0s and 5.5s |
+| Harness page-ready median (process start; **not** visual completion) | 871 ms (775-934) | 1,697 ms (1,657-1,736) |
+
+The controls milestone is still roughly ten times the first Chrome sample. Sampling only
+gives interval bounds, not an exact ratio, and these are fresh-profile live-page runs, not
+a guarantee for every network/cache state. The page-ready number substantially understates
+the remaining initialization gap. **Loading parity is not achieved.** The lookup bottleneck
+is fixed; the remaining delay needs further phase profiling rather than a larger timeout,
+relaxed benchmark threshold, or a site-specific workaround.
+
+The hidden harness now accepts `-WheelTarget 'x,y,delta'` in CSS viewport/pixel coordinates.
+It uses ordinary renderer wheel dispatch, including cancellation, scroll chaining and
+native animation. A process test checks the four delivered events, return to zero, and
+the final sticky pixels. Two live runs exercised ten alternating viewport/nested-pane
+wheels, one after twelve seconds of pointer-only initialization. Both survived without
+renderer exits or uncaught script errors; sampled scrolled and return-to-top frames kept
+the panels positioned correctly. This does not establish a universal scrolling FPS bound:
+script-driven nested scroll and geometry flushes can still do expensive work.
+
+The user's incident also contains missing `Element.getClientRects()` errors. That separate
+fragment-geometry API is not implemented by this change; returning one bounding rectangle
+would not implement its inline-fragment contract. PerformanceObserver warnings also remain.
+The current head passes 1,196 local tests (4 intentional ignores), Clippy, formatting and
+source-size checks. The WPT figures above are from the earlier form/layout head and have
+not been rerun for this scrolling/performance follow-up.

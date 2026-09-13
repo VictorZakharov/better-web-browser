@@ -16,7 +16,8 @@ impl TaskMutationProfile {
             MutationKind::Attribute(_)
             | MutationKind::CharacterData
             | MutationKind::Viewport
-            | MutationKind::State => {
+            | MutationKind::State
+            | MutationKind::PointerDesignation => {
                 return;
             }
         };

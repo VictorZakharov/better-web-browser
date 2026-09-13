@@ -1,5 +1,6 @@
 use super::*;
 mod borders;
+mod sticky;
 use crate::document::Document;
 use crate::engine::{FontSpec, PositionedGlyph, RectF};
 use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};
@@ -70,6 +71,7 @@ pub(super) fn sample() -> RendererPresentation {
             truncated: false,
         },
         layout: PresentedLayout {
+            sticky_layers: Vec::new(),
             items: vec![DisplayItem::Text {
                 rect: RectF {
                     x: 1.0,

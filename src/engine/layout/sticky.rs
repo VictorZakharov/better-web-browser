@@ -1,6 +1,8 @@
 //! Sticky positioning adjusts visual placement, never normal-flow or offset geometry.
 //! https://drafts.csswg.org/css-position-3/#sticky-pos
 use super::*;
+mod composition;
+pub use composition::StickyLayer;
 #[cfg(test)]
 mod tests;
 
@@ -12,6 +14,14 @@ impl LayoutOutput {
         height: f32,
         style_width: f32,
     ) {
+        if self.sticky_layers.is_empty() {
+            self.build_sticky_layers(page, width, height, style_width);
+        }
+        let (x, y) = page.dom.document.scroll_offset.get();
+        self.update_scroll_position(x, y);
+    }
+
+    fn build_sticky_layers(&mut self, page: &Page, width: f32, height: f32, style_width: f32) {
         let computed;
         let styles = if let Some(styles) = page.cached_style_for_viewport(style_width, height) {
             styles
@@ -19,30 +29,26 @@ impl LayoutOutput {
             computed = page.style_for_viewport(style_width, height);
             &computed
         };
-        if self.sticky_ranges.is_empty() {
+        let mut ranges = HashMap::new();
+        {
             let mut starts = HashMap::new();
             for (index, item) in self.items.iter().enumerate() {
                 if let DisplayItem::NodeBoundary { node_id, entering } = item {
                     if *entering {
                         starts.insert(*node_id, index);
                     } else if let Some(start) = starts.remove(node_id) {
-                        self.sticky_ranges.insert(*node_id, start..index + 1);
+                        ranges.insert(*node_id, start..index + 1);
                     }
                 }
             }
         }
-        for (id, (x, y)) in std::mem::take(&mut self.sticky_offsets) {
-            if let Some(range) = self.sticky_ranges.get(&id) {
-                translate::translate_display_items(&mut self.items[range.clone()], -x, -y);
-            }
-        }
-        let (scroll_x, scroll_y) = page.dom.document.scroll_offset.get();
         let viewport = RectF {
-            x: scroll_x,
-            y: scroll_y,
+            x: 0.0,
+            y: 0.0,
             width,
             height,
         };
+        let mut indices = HashMap::new();
         for node in Node::composed_descendants(&page.dom.document) {
             // Sparse layout deliberately omits styles below hidden subtrees.
             if !self.node_bounds.contains_key(&node.id()) {
@@ -64,6 +70,8 @@ impl LayoutOutput {
                 continue;
             };
             let parent_style = styles.get(&parent);
+            let sticky_parent = std::iter::successors(Some(parent.clone()), Node::composed_parent)
+                .find_map(|ancestor| indices.get(&ancestor.id()).copied());
             let padding = parent_style
                 .padding
                 .resolve(containing.width, parent_style.font_size);
@@ -90,6 +98,8 @@ impl LayoutOutput {
                 containing.y -= scroll.offset_y;
             }
             let mut port = viewport;
+            let mut viewport_port = true;
+            let mut port_parent = None;
             for ancestor in std::iter::successors(Some(parent), Node::composed_parent) {
                 if let Some(scroll) = self.scroll_boxes.get(&ancestor.id())
                     && (scroll.scroll_x || scroll.scroll_y)
@@ -101,38 +111,32 @@ impl LayoutOutput {
                         y: scroll.port.y + visual.y - raw.y,
                         ..scroll.port
                     };
+                    viewport_port = false;
+                    port_parent = std::iter::successors(Some(ancestor), Node::composed_parent)
+                        .find_map(|ancestor| indices.get(&ancestor.id()).copied());
                     break;
                 }
             }
             let margins = style.margin.resolve(containing.width, style.font_size);
-            let x = sticky_axis(
-                normal.x,
-                normal.width,
-                containing.x,
-                containing.width,
-                port.x,
-                port.width,
-                style.left.resolve(port.width, style.font_size),
-                style.right.resolve(port.width, style.font_size),
-                margins.left,
-                margins.right,
-            );
-            let y = sticky_axis(
-                normal.y,
-                normal.height,
-                containing.y,
-                containing.height,
-                port.y,
-                port.height,
-                style.top.resolve(port.height, style.font_size),
-                style.bottom.resolve(port.height, style.font_size),
-                margins.top,
-                margins.bottom,
-            );
-            self.sticky_offsets.insert(node.id(), (x, y));
-            if let Some(range) = self.sticky_ranges.get(&node.id()) {
-                translate::translate_display_items(&mut self.items[range.clone()], x, y);
-            }
+            indices.insert(node.id(), self.sticky_layers.len());
+            self.sticky_layers.push(StickyLayer {
+                node_id: node.id(),
+                items: ranges.remove(&node.id()).unwrap_or(0..0),
+                normal,
+                containing,
+                port,
+                insets: [
+                    style.top.resolve(port.height, style.font_size),
+                    style.right.resolve(port.width, style.font_size),
+                    style.bottom.resolve(port.height, style.font_size),
+                    style.left.resolve(port.width, style.font_size),
+                ],
+                margins: [margins.top, margins.right, margins.bottom, margins.left],
+                parent: sticky_parent,
+                port_parent,
+                viewport_port,
+                offset: (0.0, 0.0),
+            });
         }
     }
 }

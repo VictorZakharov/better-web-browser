@@ -241,7 +241,11 @@ impl BrowserState {
             }
         };
 
-        let next_layout = std::mem::take(&mut presentation.layout).into_layout();
+        let mut next_layout = std::mem::take(&mut presentation.layout).into_layout();
+        next_layout.update_scroll_position(
+            0.0,
+            self.scroll_y.max(0) as f32 / self.page_scale().max(f32::EPSILON),
+        );
         let damage = DisplayListDamage::between(&self.page_layout, &next_layout);
         let layout_changed = !damage.is_empty();
         let controls_changed = first_presentation || self.page_layout.forms != next_layout.forms;
@@ -255,7 +259,10 @@ impl BrowserState {
             }
             self.content_height =
                 (self.page_layout.content_height * self.page_scale()).ceil() as i32;
+        } else {
+            self.page_layout.sticky_layers = next_layout.sticky_layers;
         }
+        self.sync_retained_control_rects();
         self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
         if first_presentation {
             self.presented_images.clear();

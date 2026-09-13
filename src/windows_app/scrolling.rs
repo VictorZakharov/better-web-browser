@@ -1,6 +1,7 @@
 //! Coalesced, time-based wheel scrolling for interactive browser windows.
 
 use super::*;
+mod sticky;
 
 // A 16 ms SetTimer request repeatedly landed on alternating one/two-tick boundaries in
 // diagnostics, producing the observed ~16/32 ms cadence. The animation remains time-based, so

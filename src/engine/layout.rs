@@ -45,3 +45,4 @@ pub use model::{
 };
 pub use scrolling::ScrollBox;
 use std::collections::HashMap;
+pub use sticky::StickyLayer;

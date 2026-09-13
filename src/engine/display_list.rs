@@ -113,7 +113,7 @@ mod tests {
     fn output(items: Vec<DisplayItem>) -> LayoutOutput {
         LayoutOutput {
             sticky_offsets: Default::default(),
-            sticky_ranges: Default::default(),
+            sticky_layers: Default::default(),
             scroll_boxes: Default::default(),
             items,
             content_height: 100.0,

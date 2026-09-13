@@ -138,7 +138,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         },
         output: LayoutOutput {
             sticky_offsets: HashMap::new(),
-            sticky_ranges: HashMap::new(),
+            sticky_layers: Vec::new(),
             scroll_boxes: HashMap::new(),
             items: Vec::new(),
             content_height: viewport_height,
