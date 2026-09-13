@@ -215,6 +215,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.align_items_center = source.align_items_center;
             style.align_items = source.align_items;
         }
+        "align-content" => style.align_content = source.align_content,
         "justify-self" => style.justify_self = source.justify_self,
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             style.flex_direction = source.flex_direction

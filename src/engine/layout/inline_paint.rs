@@ -34,6 +34,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) {
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         match measured.atom {
+            InlineAtom::BlockBox { node, height_basis } => {
+                self.layout_block(
+                    node,
+                    x,
+                    atom_y,
+                    containing_width,
+                    *height_basis,
+                    Some(UsedInlineSize {
+                        outer: measured.width,
+                        percentage_basis: containing_width,
+                    }),
+                );
+            }
             InlineAtom::Text {
                 font,
                 color,

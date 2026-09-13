@@ -217,6 +217,10 @@ pub struct LayoutOutput {
 
 #[derive(Debug, Clone)]
 pub(super) enum InlineAtom {
+    BlockBox {
+        node: NodeRef,
+        height_basis: Option<f32>,
+    },
     Text {
         text: String,
         font: FontSpec,

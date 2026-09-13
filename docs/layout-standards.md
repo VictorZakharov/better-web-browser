@@ -13,7 +13,8 @@ rendering or complete implementation of CSS Grid, tables, buttons, or legacy col
 | [CSSOM View element scrolling](https://drafts.csswg.org/cssom-view/#dom-element-scrolltop) | Synchronous clamped `scrollTop`/`scrollLeft`, `scroll`/`scrollTo`/`scrollBy`, client/scroll extents and coalesced non-bubbling scroll events. Offset geometry stays unscrolled; client rectangles and hit testing use visual offsets. |
 | [Sticky positioning](https://drafts.csswg.org/css-position-3/#sticky-pos) | Block-path sticky boxes follow the nearest scrollport within their containing block. Native viewport scrolling updates retained paint offsets without relaying out the document; normal-flow and offset geometry remain unchanged. Tests cover direct and wrapped scroller children, hidden versus clip overflow, inset limits, repeated reversal, and renderer presentation without JavaScript. |
 | [Adjoining block margins](https://www.w3.org/TR/CSS22/box.html#collapsing-margins) | Preserve positive/negative extrema through empty blocks and nested parent/child boundaries, with formatting-context and border/padding exclusions. Comments do not generate boxes or interrupt empty-block margin collapse. |
-| [HTML button layout](https://html.spec.whatwg.org/multipage/rendering.html#button-layout) | Block-path buttons retain their authored descendants, clipping, and form metadata; automatic inline size is fit-content, with a formatting context and border-box default. An absolutely positioned hidden label no longer becomes visible native button text. |
+| [HTML button layout](https://html.spec.whatwg.org/multipage/rendering.html#button-layout) | Inline, block, and flex-item buttons share authored descendant layout, clipping and form metadata. Automatic inline size is fit-content, without a 70px native minimum; flex stretch reaches the same block layout. SVG/mask descendants paint as authored content. The default border-box sizing, text alignment and block content centering can be overridden by author CSS. |
+| [Block content alignment](https://www.w3.org/TR/css-align-3/#distribution-block) | Positional `align-content`, explicit safe/unsafe overflow, and single-subject distribution fallbacks move the block's in-flow contents as a unit. Non-normal alignment establishes a formatting context. Cascade, CSS-wide keywords, computed-value serialization and layout invalidation retain the value. Baseline alignment, multiline flex/grid distribution and vertical writing modes are not covered by this slice. |
 | [CSS Fonts family lists](https://drafts.csswg.org/css-fonts-4/#font-family-prop) | Preserve ordered families through cascade, inheritance, shorthand, resource discovery, and renderer font selection. Parse quoted names, commas, escapes, and generic-family identity with the existing cssparser dependency. A missing first family no longer discards the specified fallback fonts. |
 | [Grid spanning contributions](https://www.w3.org/TR/css-grid-1/#algo-spanning-items) | Resolve non-spanning intrinsic row contributions before spans; spans crossing flexible rows contribute to the flex fraction instead of inflating title rows. Lay out stretched items using the resolved area height, including percentage descendants and observer/paint bounds. |
 | [Table cell sizing](https://www.w3.org/TR/CSS22/tables.html#auto-table-layout) | Percentage width preferences cannot starve another cell's intrinsic content, padding, and borders. Cell boxes use the shared row height, preserving backgrounds, clips, and bounds through normal block layout. |
@@ -33,6 +34,11 @@ Its classic gutter rounds 15 CSS pixels up to a whole device pixel, matching the
 Chrome gutter at 125% scaling. ResizeObserver preserves the resulting fractional content
 size; integer CSSOM client sizes do not necessarily reconstruct that fraction. The owned
 `scrollbar-resize.html` probe records both APIs without rounding the observer result.
+At 125% scaling, upstream `resize-observer/scrollbars-2.html` fails in **both** browsers:
+Breeze reports 84.800003px versus the test's integer-derived 85px; Chrome reports
+84.796875px versus its integer-derived 86px. The pinned WPT run has 144 passing cases and
+this one failure (752 assertions pass, one fails). The test is retained unchanged; fractional
+observer geometry is not rounded to make the suite green.
 
 Normal block backgrounds and borders now paint before floating descendants, followed by
 inline content and nonnegative positioned groups, following
@@ -83,9 +89,10 @@ also completes without a script error in both browsers.
 
 On the reported Wikipedia article, the sidebar text overlap and notice/icon overlap are
 removed, the serif heading uses its fallback font, and the artificial title-to-tabs gap
-is removed. The previous `nodeType` exception also disappears. Missing sidebar arrows,
-unchecked appearance controls, vertical spacing, and a heading rule painting across the
-floating infobox remain visible. Console diagnostics now expose missing PerformanceObserver
+is removed. The previous `nodeType` exception also disappears. The left pane now has its
+own scrollbar and sticky placement; the heading rule paints behind the floating infobox.
+Unchecked appearance controls and typography/spacing differences remain visible.
+Console diagnostics now expose missing PerformanceObserver
 support; this is not proof that it explains every remaining initialization difference.
 
 Match **media viewport width**, not content width, when comparing responsive pages.
@@ -95,7 +102,13 @@ Setting Chrome to 1663px incorrectly selected the opposite side of Wikipedia's 1
 breakpoint. At 1680px both use a 260px left sidebar and 948px article column; their native
 scrollbar widths still differ. Live banners/content can also vary between requests.
 
-Further slices must cover margin collapsing and float paint order, broader grid track
+Further slices must cover remaining positioned paint-context ordering, broader grid track
 constraints and self-alignment, shared multi-row table columns/spans and vertical alignment,
-and the remaining page-initialization APIs. Inline/native control styling remains approximate.
+checkable form controls, and the remaining page-initialization APIs. Native control artwork
+remains approximate. The owned `button-alignment.html` fixture checks intrinsic inline
+buttons, retained SVGs and positional block alignment independently of Wikipedia.
+At 125% scaling its inline text button is 30.6875px wide and its icon button is 40px wide
+in both engines, and all four block-alignment child rectangles match. Inline baselines do
+not yet match: Breeze centers neighboring atomic inline boxes and expands short authored
+line heights to font metrics. This is a separate inline-formatting gap, not passing evidence.
 Do not replace these gaps with site-specific CSS or claim full conformance from this fixture.

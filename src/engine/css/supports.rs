@@ -140,6 +140,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "font-family" => super::font_family::parse(&value).is_some(),
         "letter-spacing" | "word-spacing" => parse_text_spacing(&value, 16.0).is_some(),
         "line-height" => parse_line_height(&value, 16.0).is_some(),
+        "align-content" => ContentAlignment::parse(&value).is_some(),
         "text-align" => matches!(
             value.as_str(),
             "left" | "start" | "center" | "right" | "end"

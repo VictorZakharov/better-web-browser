@@ -42,9 +42,9 @@ pub(crate) use user_agent::is_hidden_by_html_rendering;
 use value_parser::consume_identifier;
 pub(crate) use value_parser::{parse_color, parse_length, parse_opacity};
 pub use values::{
-    AlignItems, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle, Display, Edges,
-    FlexDirection, Float, JustifyContent, Length, ListStyleType, Overflow, Position, ResolvedEdges,
-    TextAlign, WhiteSpace,
+    AlignItems, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle, ContentAlignment, Display,
+    Edges, FlexDirection, Float, JustifyContent, Length, ListStyleType, Overflow, Position,
+    ResolvedEdges, TextAlign, WhiteSpace,
 };
 use variables::{apply_custom_properties, apply_resolved_declaration};
 #[cfg(test)]

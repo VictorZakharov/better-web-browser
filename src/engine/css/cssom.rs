@@ -29,6 +29,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
+        "align-content" => style.align_content.css_text(),
         "background-color" => serialize_color(style.background_color),
         "border-bottom-width" => serialize_length(style.border_width.bottom),
         "border-left-width" => serialize_length(style.border_width.left),

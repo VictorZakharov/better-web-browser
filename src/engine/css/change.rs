@@ -43,6 +43,7 @@ impl ComputedStyle {
             && self.flex_direction == other.flex_direction
             && self.justify_content == other.justify_content
             && self.align_items == other.align_items
+            && self.align_content == other.align_content
             && self.justify_self == other.justify_self
             && self.flex_wrap == other.flex_wrap
             && self.flex_grow == other.flex_grow

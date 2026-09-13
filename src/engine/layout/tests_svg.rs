@@ -152,8 +152,17 @@ fn icon_button_paints_a_shadow_hydrated_svg_inside_its_control_box() {
 
     assert_eq!(control.rect.width, 40.0);
     assert_eq!(control.rect.height, 40.0);
-    assert_eq!(control.icon_url.as_deref(), Some(key.as_str()));
-    assert_eq!(control.icon_width, 24.0);
-    assert_eq!(control.icon_height, 24.0);
+    assert!(control.authored_content);
+    let icon = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Image { rect, url, .. } if url == &key => Some(rect),
+            _ => None,
+        })
+        .expect("authored SVG is retained as its own paint item");
+    assert_eq!((icon.width, icon.height), (24.0, 24.0));
+    assert_eq!(icon.x - control.rect.x, 8.0);
+    assert_eq!(icon.y - control.rect.y, 8.0);
     assert_eq!(page.image_url(&svg).as_deref(), Some(key.as_str()));
 }

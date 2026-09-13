@@ -107,7 +107,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let containing_width = containing_width.max(0.0);
         // Only inline boxes resolve percentage sizing against the containing block. Text,
         // replaced content, and placeholders keep identical measurements across box passes.
-        let containing_width_key = if matches!(atom, InlineAtom::InlineBox { .. }) {
+        let containing_width_key = if matches!(
+            atom,
+            InlineAtom::InlineBox { .. } | InlineAtom::BlockBox { .. }
+        ) {
             containing_width.to_bits()
         } else {
             0
@@ -121,6 +124,30 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return measured.for_atom(atom);
         }
         let measured = match atom {
+            InlineAtom::BlockBox { node, height_basis } => {
+                let (minimum, preferred) = self.float_intrinsic_widths(node, containing_width);
+                let width = preferred.min(containing_width.max(minimum));
+                let height = self.intrinsic_block_height(
+                    node,
+                    containing_width,
+                    *height_basis,
+                    Some(UsedInlineSize {
+                        outer: width,
+                        percentage_basis: containing_width,
+                    }),
+                );
+                MeasuredAtom {
+                    atom,
+                    text: None,
+                    width,
+                    height,
+                    content_height: height,
+                    no_wrap: false,
+                    break_before: true,
+                    raster_run_id: 0,
+                    glyphs: Vec::new(),
+                }
+            }
             InlineAtom::Text {
                 text,
                 font,

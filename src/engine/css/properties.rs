@@ -304,6 +304,11 @@ pub(super) fn apply_declaration(
                 .any(|token| matches!(token, "transform" | "perspective" | "filter"));
         }
         "overflow" | "overflow-x" | "overflow-y" => style.apply_overflow(&declaration.name, value),
+        "align-content" => {
+            if let Some(alignment) = ContentAlignment::parse(value) {
+                style.align_content = alignment;
+            }
+        }
         "justify-content" | "-webkit-justify-content" | "-webkit-box-pack" => {
             style.justify_content_end = matches!(value, "end" | "flex-end" | "right");
             style.justify_content = match value {

@@ -1,6 +1,8 @@
 //! Computed CSS value types and inherited/initial style state.
 
+mod content_alignment;
 mod edges;
+pub use content_alignment::ContentAlignment;
 mod length;
 mod overflow;
 pub use overflow::Overflow;
@@ -232,6 +234,7 @@ pub struct ComputedStyle {
     pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub align_content: ContentAlignment,
     pub justify_self: AlignItems,
     pub flex_wrap: bool,
     pub flex_grow: f32,
@@ -313,6 +316,7 @@ impl ComputedStyle {
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            align_content: ContentAlignment::default(),
             justify_self: AlignItems::Stretch,
             flex_wrap: false,
             flex_grow: 0.0,

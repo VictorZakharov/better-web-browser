@@ -228,6 +228,25 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(maximum_height) = maximum_height {
             content_height = content_height.min(maximum_height);
         }
+        if !matches!(
+            style.display,
+            Display::Flex | Display::InlineFlex | Display::Grid | Display::Table
+        ) {
+            let offset = style
+                .align_content
+                .block_offset(content_height - natural_content_height);
+            if offset != 0.0 {
+                // Move the in-flow content as a unit, before resolving positioned
+                // children against the unshifted containing block.
+                self.translate_layout_subtree(
+                    Some(node),
+                    in_flow_paint_start,
+                    self.output.items.len(),
+                    0.0,
+                    offset,
+                );
+            }
+        }
         let border_box_height = borders.top
             + padding.top
             + content_height

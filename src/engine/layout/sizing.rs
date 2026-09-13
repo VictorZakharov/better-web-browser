@@ -223,22 +223,6 @@ pub(super) fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -
             .is_some_and(|height| height <= 1.0)
 }
 
-pub(super) fn element_length(
-    node: &NodeRef,
-    attribute: &str,
-    css: Length,
-    fallback: f32,
-    font_size: f32,
-) -> f32 {
-    css.resolve(fallback, font_size)
-        .or_else(|| {
-            node.attr(attribute)
-                .and_then(|value| value.trim_end_matches("px").parse::<f32>().ok())
-        })
-        .unwrap_or(fallback)
-        .max(0.0)
-}
-
 pub(super) fn resolve_svg_replaced_size(
     node: &NodeRef,
     style: &ComputedStyle,

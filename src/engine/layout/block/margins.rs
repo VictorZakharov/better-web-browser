@@ -43,6 +43,7 @@ pub(in crate::engine::layout) struct MarginProfile {
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_establishes_context(&self, node: &NodeRef) -> bool {
         super::floats::establishes_context(self.styles.get(node))
+            || !self.styles.get(node).align_content.is_normal()
             || matches!(node.tag_name(), Some("button" | "body" | "html"))
             || Node::composed_parent(node).is_some_and(|parent| {
                 matches!(

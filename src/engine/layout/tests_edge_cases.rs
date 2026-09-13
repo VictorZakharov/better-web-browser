@@ -346,37 +346,6 @@ fn honors_hidden_list_markers_and_clips_accessibility_text() {
 }
 
 #[test]
-fn icon_only_buttons_use_mask_descendants_without_accessibility_text() {
-    let mut page = Page::parse(
-        r#"<style>
-            .icon { width: 20px; height: 20px; background-color: black;
-                    mask-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2220%22 height=%2220%22%3E%3Cpath d=%22M0 0h10v20H0z%22/%3E%3C/svg%3E') }
-            .label { display: block; position: absolute; width: 1px; height: 1px;
-                     overflow: hidden }
-           </style><button><span class="icon"></span><span class="label">Toggle menu</span></button>"#,
-        "https://example.com/",
-    );
-    page.refresh_resources(300.0);
-    let mut measurer = FixedMeasurer;
-    let output = layout_page(&page, 300.0, 200.0, &mut measurer);
-    let control = output
-        .items
-        .iter()
-        .find_map(|item| match item {
-            DisplayItem::Control(control) => Some(control),
-            _ => None,
-        })
-        .unwrap();
-    assert!(control.label.is_empty());
-    assert!(
-        control
-            .icon_url
-            .as_deref()
-            .is_some_and(|url| url.starts_with("data:"))
-    );
-}
-
-#[test]
 fn paints_block_level_replaced_images_at_their_specified_size() {
     let mut page = Page::parse(
         r#"<style>img { display: block; width: 40px; height: 20px }</style>

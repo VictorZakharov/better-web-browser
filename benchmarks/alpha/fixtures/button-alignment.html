@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Authored button and block content alignment</title>
+<style>
+  body { margin:20px; font:16px/20px Arial,sans-serif }
+  .sample { margin-bottom:20px; width:400px; height:100px; background:#edf3fa }
+  button { padding:2px 4px; border:0; font:12px/14px Arial,sans-serif }
+  #icon { width:40px; height:40px; padding:0 }
+  svg { width:24px; height:24px }
+  #center { align-content:center }
+  #end { align-content:end }
+  .child { height:20px; background:#137f51; color:white }
+  #safe, #unsafe { height:10px; margin-bottom:40px }
+  #safe { align-content:safe center }
+  #unsafe { align-content:unsafe center }
+</style>
+<div class=sample><button id=hide>hide</button><button id=icon aria-label=Menu><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button></div>
+<div class=sample id=center><div class=child>Centered block contents</div></div>
+<div class=sample id=end><div class=child>End-aligned block contents</div></div>
+<div class=sample id=safe><div class=child>Safe overflow</div></div>
+<div class=sample id=unsafe><div class=child>Unsafe overflow</div></div>

@@ -87,6 +87,8 @@ pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyl
             if node.tag_name() == Some("button") {
                 // HTML's default button styling measures authored sizes at the border box.
                 style.box_sizing = BoxSizing::BorderBox;
+                style.text_align = TextAlign::Center;
+                style.align_content = ContentAlignment::CENTER;
             }
             style.background_color = Color::WHITE;
             style.border_width = uniform_edges(Length::Px(2.0));
