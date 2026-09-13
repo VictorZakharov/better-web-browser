@@ -36,6 +36,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             emit_paint: false,
             measurement_cache: std::mem::take(&mut self.measurement_cache),
             intrinsic_block_heights: std::mem::take(&mut self.intrinsic_block_heights),
+            margin_profiles: std::mem::take(&mut self.margin_profiles),
             inline_box_cache: std::mem::take(&mut self.inline_box_cache),
             viewport: self.viewport,
             output: LayoutOutput::default(),
@@ -48,6 +49,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.measurement_cache = probe.measurement_cache;
         self.inline_box_cache = probe.inline_box_cache;
         self.intrinsic_block_heights = probe.intrinsic_block_heights;
+        self.margin_profiles = probe.margin_profiles;
         self.intrinsic_block_heights.insert(key, height);
         height
     }

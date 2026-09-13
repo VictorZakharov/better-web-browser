@@ -2,6 +2,7 @@
 use super::super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::engine::layout) fn layout_block_children(
         &mut self,
         node: &NodeRef,
@@ -10,9 +11,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         width: f32,
         containing_height: Option<f32>,
         style: &ComputedStyle,
+        parent_profile: super::margins::MarginProfile,
     ) -> f32 {
         let mut atoms = Vec::new();
         let mut pending_space = false;
+        let mut adjoining = super::margins::MarginStrut::default();
+        let mut absorb_start = parent_profile.absorb_start;
         if node.tag_name() == Some("li") && style.list_style_type != ListStyleType::None {
             atoms.push(InlineAtom::Text {
                 text: "• ".into(),
@@ -34,6 +38,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if child_style.float != Float::None {
                 // A float after inline content cannot rise above the preceding line.
                 if !atoms.is_empty() {
+                    let previous_y = y;
                     y = self.layout_inline_atoms(
                         &atoms,
                         x,
@@ -42,12 +47,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         style.text_align,
                         style.line_height,
                     );
+                    if y != previous_y {
+                        adjoining = Default::default();
+                        absorb_start = false;
+                    }
                     atoms.clear();
                     pending_space = false;
                 }
                 self.layout_float(child, x, y, width, containing_height);
             } else if is_block_level(child_style.display) {
                 if !atoms.is_empty() {
+                    let previous_y = y;
                     y = self.layout_inline_atoms(
                         &atoms,
                         x,
@@ -56,11 +66,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         style.text_align,
                         style.line_height,
                     );
+                    if y != previous_y {
+                        adjoining = Default::default();
+                        absorb_start = false;
+                    }
                     atoms.clear();
                     pending_space = false;
                 }
-                let margins = child_style.margin.resolve(width, child_style.font_size);
+                let child_profile = self.block_margin_profile(child, width);
+                let mut margins = child_style.margin.resolve(width, child_style.font_size);
+                margins.top = child_profile.top.size();
+                margins.bottom = child_profile.bottom.size();
+                let before_margin = y - adjoining.size();
+                let combined = adjoining.merge(child_profile.top);
+                let absorbed = absorb_start && child_style.clear == crate::engine::css::Clear::None;
+                y = if absorbed {
+                    y - margins.top
+                } else {
+                    before_margin + combined.size() - margins.top
+                };
+                let adjoining_empty = child_profile.through;
+                let previous_y = y;
                 y = y.max(self.floats.clearance(child_style.clear, y + margins.top) - margins.top);
+                let cleared = y != previous_y;
                 let mut child_x = x;
                 let mut child_width = width;
                 let mut used_width = None;
@@ -118,6 +146,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         used_width,
                     )
                     .bottom;
+                if adjoining_empty && absorbed && !cleared {
+                    y = before_margin;
+                } else if adjoining_empty && !cleared {
+                    adjoining = combined.merge(child_profile.bottom);
+                    y = before_margin + adjoining.size();
+                } else {
+                    adjoining = child_profile.bottom;
+                    absorb_start = false;
+                }
             } else {
                 self.collect_inline(
                     child,
@@ -133,7 +170,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
         if !atoms.is_empty() {
+            let previous_y = y;
             y = self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
+            if y != previous_y {
+                adjoining = Default::default();
+            }
+        }
+        if parent_profile.absorb_end {
+            y -= adjoining.size();
         }
         y
     }

@@ -1,6 +1,7 @@
 mod children;
 mod control;
 pub(super) mod floats;
+pub(super) mod margins;
 mod positioned;
 mod replaced;
 mod sizing;
@@ -26,15 +27,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if style.display == Display::None || !style.visibility {
             return BlockMetrics { bottom: y };
         }
-        let own_context = floats::establishes_context(&style)
-            || node.tag_name() == Some("button")
-            || node.tag_name() == Some("body")
-            || Node::composed_parent(node).is_some_and(|parent| {
-                matches!(
-                    self.styles.get(&parent).display,
-                    Display::Flex | Display::InlineFlex | Display::Grid
-                )
-            });
+        let own_context = self.block_establishes_context(node);
         let outer_floats = own_context.then(|| std::mem::take(&mut self.floats));
         let item_start = self.output.items.len();
         let node_start = self.output.node_paint_order.len();
@@ -51,7 +44,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let percentage_basis = used_inline_size
             .map(|size| size.percentage_basis)
             .unwrap_or(containing_width);
-        let margins = style.margin.resolve(percentage_basis, style.font_size);
+        let margin_profile = self.block_margin_profile(node, percentage_basis);
+        let mut margins = style.margin.resolve(percentage_basis, style.font_size);
+        margins.top = margin_profile.top.size();
+        margins.bottom = margin_profile.bottom.size();
         let borders = table::resolved_table_borders(node, &style, percentage_basis);
         let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
@@ -233,6 +229,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     content_width,
                     specified_height,
                     &style,
+                    margin_profile,
                 ),
             }
         };
@@ -241,7 +238,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             content_bottom
         };
-        let natural_content_height = (content_bottom - content_y).max(0.0);
+        let natural_content_height = if margin_profile.through {
+            0.0
+        } else {
+            (content_bottom - content_y).max(0.0)
+        };
         let used_content_height = if style.display == Display::Table {
             natural_content_height
         } else {
@@ -386,7 +387,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.wrap_opacity(item_start, style.opacity);
         self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
-        let flow_bottom = border_y + border_box_height + margins.bottom;
+        let flow_bottom = if margin_profile.through {
+            y + margin_profile.top.merge(margin_profile.bottom).size()
+        } else {
+            border_y + border_box_height + margins.bottom
+        };
         if let Some(outer) = outer_floats {
             self.floats = outer;
         }

@@ -125,6 +125,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         emit_paint,
         measurement_cache: HashMap::new(),
         intrinsic_block_heights: HashMap::new(),
+        margin_profiles: Default::default(),
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
         floats: Default::default(),
@@ -180,6 +181,8 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) emit_paint: bool,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
     intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
+    pub(super) margin_profiles:
+        std::cell::RefCell<HashMap<(NodeId, u32), block::margins::MarginProfile>>,
     pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,
