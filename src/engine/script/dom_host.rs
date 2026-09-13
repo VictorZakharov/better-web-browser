@@ -3,7 +3,10 @@
 use super::binding_helpers::{argument_id, argument_string, join_node_ids, js_string};
 use super::*;
 mod construction;
+mod named;
 use construction::{create_document, create_html_document, subtree_size};
+pub(super) use named::NamedPropertyIndex;
+use named::{named_property_candidates, named_property_names, named_property_nodes};
 
 const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 
@@ -321,54 +324,4 @@ fn element_qualified_name(state: &HostState, node: &NodeRef) -> String {
     } else {
         name
     }
-}
-
-fn named_property_names(state: &HostState) -> String {
-    let mut seen = HashSet::new();
-    let mut names = Vec::new();
-    for node in Node::descendants(&state.document) {
-        for name in named_values(&node) {
-            if seen.insert(name.clone()) {
-                names.push(name);
-            }
-        }
-    }
-    serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
-}
-
-fn named_property_candidates(state: &HostState, root_id: u32) -> String {
-    let Some(root) = state.node(root_id) else {
-        return "[]".to_string();
-    };
-    let mut seen = HashSet::new();
-    let names = Node::descendants(&root)
-        .flat_map(|node| named_values(&node))
-        .filter(|name| seen.insert(name.clone()))
-        .collect::<Vec<_>>();
-    serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
-}
-
-fn named_property_nodes(state: &HostState, wanted: &str) -> Vec<NodeRef> {
-    let mut seen = HashSet::new();
-    Node::descendants(&state.document)
-        .filter(|node| {
-            named_values(node).iter().any(|name| name == wanted) && seen.insert(node.id())
-        })
-        .collect()
-}
-
-fn named_values(node: &NodeRef) -> Vec<String> {
-    if node.namespace_uri() != Some(HTML_NAMESPACE) {
-        return Vec::new();
-    }
-    let mut names = Vec::with_capacity(2);
-    if let Some(id) = node.attr("id").filter(|id| !id.is_empty()) {
-        names.push(id);
-    }
-    if matches!(node.tag_name(), Some("embed" | "form" | "img" | "object"))
-        && let Some(name) = node.attr("name").filter(|name| !name.is_empty())
-    {
-        names.push(name);
-    }
-    names
 }

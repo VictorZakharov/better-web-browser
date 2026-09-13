@@ -25,6 +25,7 @@ pub(super) struct CompletedModuleEvaluation {
 
 pub(super) struct HostState {
     pub(super) document: NodeRef,
+    pub(super) named_property_index: super::dom_host::NamedPropertyIndex,
     pub(super) document_url: String,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
@@ -102,6 +103,7 @@ impl HostState {
     ) -> Self {
         let mut state = Self {
             document,
+            named_property_index: Default::default(),
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),
