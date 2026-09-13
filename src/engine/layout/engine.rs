@@ -1,4 +1,5 @@
 use super::*;
+mod block_measure;
 
 #[cfg(test)]
 mod fullscreen;
@@ -123,6 +124,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         measurer,
         emit_paint,
         measurement_cache: HashMap::new(),
+        intrinsic_block_heights: HashMap::new(),
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
         floats: Default::default(),
@@ -177,6 +179,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) measurer: &'a mut M,
     pub(super) emit_paint: bool,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
+    intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
     pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,

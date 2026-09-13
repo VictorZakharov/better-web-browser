@@ -1,4 +1,5 @@
 use super::*;
+mod rows;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_grid(
@@ -110,14 +111,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return y;
         }
 
-        let mut cursor_y = y;
-        for row in 0..row_count {
+        let mut row_heights = vec![0.0; row_count];
+        let mut laid_out = Vec::new();
+        for (row, row_height) in row_heights.iter_mut().enumerate() {
             let track_height = row_tracks
                 .get(row)
                 .map(|track| resolve_grid_row_minimum(track, self.viewport.height, style.font_size))
                 .unwrap_or(0.0);
             let mut natural_height = 0.0_f32;
-            for placement in placements.iter().filter(|placement| placement.row == row) {
+            for (index, placement) in placements
+                .iter()
+                .enumerate()
+                .filter(|(_, placement)| placement.row == row)
+            {
                 let cell_x = x
                     + column_widths[..placement.column].iter().sum::<f32>()
                     + column_gap * placement.column as f32;
@@ -153,25 +159,87 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         )
                     }
                 };
-                let metrics = self.layout_block(
-                    &placement.node,
-                    item_x,
-                    cursor_y,
-                    item_width,
-                    containing_height,
-                    used_inline_size,
-                );
+                let height = self
+                    .intrinsic_block_height(
+                        &placement.node,
+                        item_width,
+                        containing_height,
+                        used_inline_size,
+                    )
+                    .max(0.0);
                 if !matches!(child_style.position, Position::Absolute | Position::Fixed) {
-                    let span = placement.row_end.saturating_sub(placement.row).max(1) as f32;
-                    natural_height =
-                        natural_height.max((metrics.bottom - cursor_y).max(0.0) / span);
+                    if placement.row_end == row + 1 {
+                        natural_height = natural_height.max(height);
+                    }
+                    laid_out.push((index, item_x, item_width, used_inline_size, height));
                 }
             }
-            cursor_y += track_height.max(natural_height);
-            if row + 1 < row_count {
-                cursor_y += row_gap;
-            }
+            *row_height = if rows::is_fixed(row_tracks.get(row)) {
+                track_height
+            } else {
+                track_height.max(natural_height)
+            };
         }
-        cursor_y
+        let contributions = laid_out
+            .iter()
+            .map(|&(index, _, _, _, height)| {
+                let item = &placements[index];
+                (item.row, item.row_end, height)
+            })
+            .collect::<Vec<_>>();
+        rows::resolve(
+            &row_tracks,
+            &mut row_heights,
+            &contributions,
+            row_gap,
+            containing_height,
+        );
+        for (index, item_x, item_width, used_inline_size, natural_height) in laid_out {
+            let item = &placements[index];
+            let mut final_y =
+                y + row_heights[..item.row].iter().sum::<f32>() + row_gap * item.row as f32;
+            let area_height = row_heights[item.row..item.row_end].iter().sum::<f32>()
+                + row_gap * (item.row_end - item.row - 1) as f32;
+            let child_style = self.styles.get(&item.node);
+            let stretch = style.align_items == AlignItems::Stretch
+                && child_style.height == Length::Auto
+                && child_style.margin.top != Length::Auto
+                && child_style.margin.bottom != Length::Auto
+                && !matches!(
+                    item.node.tag_name(),
+                    Some("img" | "video" | "svg" | "input" | "textarea" | "select")
+                );
+            let content_height = stretch.then(|| {
+                let insets = child_style
+                    .margin
+                    .resolve(item_width, child_style.font_size)
+                    .vertical()
+                    + child_style
+                        .padding
+                        .resolve(item_width, child_style.font_size)
+                        .vertical()
+                    + child_style
+                        .border_width
+                        .resolve(item_width, child_style.font_size)
+                        .vertical();
+                (area_height - insets).max(0.0)
+            });
+            let free = (area_height - natural_height).max(0.0);
+            final_y += match style.align_items {
+                AlignItems::Center => free / 2.0,
+                AlignItems::End => free,
+                _ => 0.0,
+            };
+            self.layout_block_with_content_height(
+                &item.node,
+                item_x,
+                final_y,
+                item_width,
+                Some(area_height),
+                used_inline_size,
+                content_height,
+            );
+        }
+        y + row_heights.iter().sum::<f32>() + row_gap * row_count.saturating_sub(1) as f32
     }
 }
