@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Block and float paint phases</title>
+<style>
+body { margin:20px; font:16px/20px sans-serif }
+main { width:400px; height:240px; position:relative; background:white }
+aside { float:right; width:160px; height:180px; background:#e04040 }
+section { background:#d0e8ff }
+p { margin:0; border-bottom:4px solid #0044bb; padding-bottom:16px }
+.clipped { overflow:hidden; height:40px; margin-top:12px }
+.clipped p { height:70px; background:#d0ffdc }
+.badge { position:absolute; right:10px; top:100px; background:#ffdb40; padding:4px }
+</style>
+<main><aside>Floating box</aside><section><p>The blue block border belongs behind the red float.</p></section>
+<div class="clipped"><p>This normal block keeps its clip.</p></div><span class="badge">Positioned above float</span></main>

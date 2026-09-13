@@ -29,6 +29,19 @@ wrapped sticky boxes after a 150px element scroll. Headless Chrome reports top p
 assert these values. Renderer-process tests exercise wheel cancellation, clipping-aware
 clicks, scrollbar dragging and sticky viewport updates through the actual IPC path.
 Scrollbar artwork is Breeze-owned, not a reproduction of the platform theme.
+Its classic gutter rounds 15 CSS pixels up to a whole device pixel, matching the observed
+Chrome gutter at 125% scaling. ResizeObserver preserves the resulting fractional content
+size; integer CSSOM client sizes do not necessarily reconstruct that fraction. The owned
+`scrollbar-resize.html` probe records both APIs without rounding the observer result.
+
+Normal block backgrounds and borders now paint before floating descendants, followed by
+inline content and nonnegative positioned groups, following
+[CSS 2.2 Appendix E](https://www.w3.org/TR/CSS22/zindex.html#painting-order).
+Paint ownership survives geometry reordering; clip groups stay balanced when split across
+phases, and opacity groups remain atomic. The owned `paint-phases.html` fixture compares
+the border/float overlap with Chrome. It also exposes a separate, still-unfixed absolute
+shrink-to-fit width difference; matching paint order does not establish matching geometry.
+Positioned descendants escaping float/auto-z-index pseudo-contexts remain a separate gap.
 
 Viewport wheel defaults retain relative distance through IPC and output coalescing, then
 use the browser's smooth-scroll target. They do not reuse a stale input-time absolute

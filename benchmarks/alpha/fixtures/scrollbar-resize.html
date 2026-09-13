@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Scrollbar resize geometry</title>
+<style>body{font:16px sans-serif}#box{width:100px;height:100px;padding:30px;border:10px solid blue;overflow:scroll}</style>
+<div id="box"></div><pre id="result"></pre>
+<script>
+const box=document.getElementById('box');
+new ResizeObserver(entries=>{
+ const size=entries[0].contentBoxSize[0];
+ const result={dpr:devicePixelRatio,offset:box.offsetWidth,client:box.clientWidth,
+   inline:size.inlineSize,block:size.blockSize,integerDerived:100-(box.offsetWidth-box.clientWidth-20)};
+ document.getElementById('result').textContent=JSON.stringify(result,null,2);
+ console.log(JSON.stringify(result));
+}).observe(box);
+</script>

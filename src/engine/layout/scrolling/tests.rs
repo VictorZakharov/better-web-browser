@@ -2,6 +2,40 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
+fn scrollbar_gutters_preserve_fractional_resize_geometry_at_device_scales() {
+    for (scale, gutter) in [(1.0, 15.0), (1.25, 15.2), (1.5, 15.333333), (2.0, 15.0)] {
+        let mut page = Page::parse(
+            "<style>div{width:100px;height:100px;padding:30px;border:10px solid;overflow:scroll}</style><div></div>",
+            "https://example.test/",
+        );
+        page.set_media_environment(crate::engine::MediaEnvironment::new(
+            800.0, 600.0, scale, false,
+        ));
+        let node = page.dom.elements_named("div").next().unwrap();
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        let scroll = output.scroll_boxes[&node.id()];
+        assert_eq!(output.node_bounds[&node.id()].width, 180.0);
+        assert!(
+            (scroll.port.width - (160.0 - gutter)).abs() < 0.0001,
+            "scale {scale}"
+        );
+        assert!(
+            (scroll.port.height - (160.0 - gutter)).abs() < 0.0001,
+            "scale {scale}"
+        );
+        let resize = output.resize_boxes[&node.id()];
+        assert!(
+            (resize.content.width - (100.0 - gutter)).abs() < 0.0001,
+            "scale {scale}"
+        );
+        assert!(
+            (resize.content.height - (100.0 - gutter)).abs() < 0.0001,
+            "scale {scale}"
+        );
+    }
+}
+
+#[test]
 fn nested_scrollport_clips_paint_without_changing_offset_geometry() {
     let page = Page::parse(
         "<style>body{margin:0}main{width:200px;height:100px;overflow:auto}div{height:400px;background:red}</style><main><div></div></main>",

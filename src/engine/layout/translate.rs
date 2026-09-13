@@ -6,7 +6,7 @@ mod tests;
 pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
     for item in items {
         let rect = match item {
-            DisplayItem::NodeBoundary { .. } => continue,
+            DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => continue,
             DisplayItem::BeginClip { bounds }
             | DisplayItem::EndClip { bounds }
             | DisplayItem::BeginOpacity { bounds, .. }

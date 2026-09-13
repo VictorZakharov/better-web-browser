@@ -3,6 +3,7 @@ mod control;
 mod decoration;
 pub(super) mod floats;
 pub(super) mod margins;
+pub(super) mod paint_order;
 mod positioned;
 mod replaced;
 mod sizing;
@@ -151,6 +152,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let decoration = self.begin_block_decoration(
             node,
             &style,
+            borders,
             RectF {
                 x,
                 y: border_y,
@@ -307,7 +309,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             },
         );
         self.paint_scrollbars(node, &style);
-        let radius = self.finish_block_decoration(&style, rect, decoration);
+        self.finish_block_decoration(&style, rect, decoration);
         if self.emit_paint
             && let Some(image) = block_image
         {
@@ -321,19 +323,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: content_height,
                 },
             );
-        }
-        if self.emit_paint
-            && style.border_color.alpha > 0
-            && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
-        {
-            self.output.items.push(DisplayItem::BorderRect {
-                rect,
-                widths: [borders.top, borders.right, borders.bottom, borders.left],
-                color: style
-                    .border_color
-                    .composite_over(self.effective_background_color(node)),
-                radius,
-            });
         }
         self.project_control(
             node,
@@ -363,6 +352,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 entering: false,
             });
         }
+        self.wrap_block_paint(node, &style, item_start);
         self.finish_positioned_flow_scope(node.id(), &style, item_start, node_start);
 
         let flow_bottom = if margin_profile.through {

@@ -135,6 +135,11 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    /// Renderer-local CSS paint-phase ownership; consumed by layout before presentation.
+    PaintBoundary {
+        kind: u8,
+        entering: bool,
+    },
     /// Renderer-local anchors survive paint-group reordering and are stripped before IPC.
     NodeBoundary {
         node_id: NodeId,

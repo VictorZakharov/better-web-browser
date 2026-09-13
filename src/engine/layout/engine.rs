@@ -175,6 +175,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
+    block::paint_order::finalize(&mut engine.output.items);
     engine.output.update_sticky_positions(
         page,
         viewport_width,

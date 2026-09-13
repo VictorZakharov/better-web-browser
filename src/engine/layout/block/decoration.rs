@@ -1,6 +1,7 @@
 use super::super::*;
 
 pub(super) struct BlockDecoration {
+    border_index: Option<usize>,
     background_index: Option<usize>,
     background_image_index: Option<usize>,
     mask_image_index: Option<usize>,
@@ -10,8 +11,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         node: &NodeRef,
         style: &ComputedStyle,
+        borders: ResolvedEdges,
         rect: RectF,
     ) -> BlockDecoration {
+        if self.emit_paint {
+            self.output.items.push(DisplayItem::PaintBoundary {
+                kind: super::paint_order::DECORATION,
+                entering: true,
+            });
+        }
         let (x, border_y, border_box_width) = (rect.x, rect.y, rect.width);
         let background_index =
             if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none() {
@@ -69,7 +77,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 });
                 index
             });
+        let border_index = if self.emit_paint
+            && style.border_color.alpha > 0
+            && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
+        {
+            let index = self.output.items.len();
+            self.output.items.push(DisplayItem::BorderRect {
+                rect,
+                widths: [borders.top, borders.right, borders.bottom, borders.left],
+                color: style
+                    .border_color
+                    .composite_over(self.effective_background_color(node)),
+                radius: 0.0,
+            });
+            Some(index)
+        } else {
+            None
+        };
+        if self.emit_paint {
+            self.output.items.push(DisplayItem::PaintBoundary {
+                kind: super::paint_order::DECORATION,
+                entering: false,
+            });
+        }
         BlockDecoration {
+            border_index,
             background_index,
             background_image_index,
             mask_image_index,
@@ -82,11 +114,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         decoration: BlockDecoration,
     ) -> f32 {
         let BlockDecoration {
+            border_index,
             background_index,
             background_image_index,
             mask_image_index,
         } = decoration;
         let radius = resolve_border_radius(style.border_radius, rect, style.font_size);
+        if let Some(index) = border_index
+            && let DisplayItem::BorderRect {
+                rect: target,
+                radius: target_radius,
+                ..
+            } = &mut self.output.items[index]
+        {
+            *target = rect;
+            *target_radius = radius;
+        }
         if let Some(index) = background_index
             && let DisplayItem::SolidRect {
                 rect: target,
