@@ -9,7 +9,8 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn has_pending_resize_observers(&self) -> bool {
-        self.host.borrow().resize_observers_pending
+        let host = self.host.borrow();
+        host.resize_observers_pending && !host.resize_observers_deferred
     }
     pub(crate) fn set_layout_content_height(&mut self, height: f32) {
         self.host.borrow_mut().layout_content_height = height;
@@ -51,6 +52,9 @@ impl ScriptRuntime {
             return inactive_runtime_outcome();
         };
         let host = Rc::clone(&self.host);
+        // A skipped observation belongs to a later rendering opportunity, after that
+        // opportunity's animation callbacks, not the next input/resource checkpoint.
+        let resize = resize && !host.borrow().resize_observers_deferred;
         let result = catch_unwind(AssertUnwindSafe(|| {
             host.borrow_mut().begin_task();
             if resize {

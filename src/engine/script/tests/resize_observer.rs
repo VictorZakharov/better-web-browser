@@ -1,6 +1,8 @@
 use super::*;
 use crate::engine::{FontSpec, Page, TextMeasurer, layout_geometry_with_style_viewport};
 
+mod rendering_order;
+
 struct Measurer;
 impl TextMeasurer for Measurer {
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
@@ -148,6 +150,12 @@ fn resize_observer_self_resize_reports_loop_error_without_recursive_delivery() {
     );
     notify(&mut runtime);
     assert_eq!(result(&dom), "1:1");
+    assert!(
+        runtime
+            .advance_time(Duration::from_millis(16), 16)
+            .errors
+            .is_empty()
+    );
     notify(&mut runtime);
     assert_eq!(result(&dom), "2:2");
 }

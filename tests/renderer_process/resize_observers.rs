@@ -73,7 +73,7 @@ fn resize_observer_mutations_are_visible_in_first_presentation() {
 }
 
 #[test]
-fn resize_observer_loop_errors_defer_self_resize_to_another_checkpoint() {
+fn resize_observer_loop_errors_defer_self_resize_to_another_frame() {
     let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = RendererSession::launch(options()).unwrap();
     let initial = load_html_document(
@@ -98,6 +98,13 @@ fn resize_observer_loop_errors_defer_self_resize_to_another_checkpoint() {
         initial.runtime.console,
         ["log: resize:1", "log: loop error"]
     );
+    // DCL/load and other non-rendering checkpoints must not retry skipped observations.
+    for _ in 0..3 {
+        session
+            .advance_time(initial.document, Duration::ZERO, 4)
+            .unwrap();
+        assert!(next_console(&session, initial.document).is_empty());
+    }
     session
         .advance_time(initial.document, Duration::from_millis(16), 4)
         .unwrap();

@@ -27,15 +27,21 @@
     };
     let nextAnimationFrame = 1;
     let animationFrameTimer = null;
+    let pendingResizeObserverFrame = false;
     let pendingAnimationFrameCallbacks = new Map();
     let activeAnimationFrameCallbacks = null;
     // A rendering opportunity snapshots every pending callback and invokes that whole batch with
     // one timestamp. A callback requested while the batch is running belongs to the next frame.
     // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
     const scheduleAnimationFrame = () => {
-        if (animationFrameTimer !== null || !pendingAnimationFrameCallbacks.size) return;
+        if (animationFrameTimer !== null ||
+            (!pendingAnimationFrameCallbacks.size && !pendingResizeObserverFrame)) return;
         animationFrameTimer = queueTimer(() => {
             animationFrameTimer = null;
+            if (pendingResizeObserverFrame) {
+                pendingResizeObserverFrame = false;
+                host('resizeObserverFrame');
+            }
             activeAnimationFrameCallbacks = pendingAnimationFrameCallbacks;
             pendingAnimationFrameCallbacks = new Map();
             const timestamp = performance.now();
@@ -47,6 +53,14 @@
             activeAnimationFrameCallbacks = null;
             scheduleAnimationFrame();
         }, 16, false, [], 'requestAnimationFrame callbacks');
+    };
+    // Skipped resize observations must not re-enter the loop before the next frame's
+    // callbacks. Share the private frame scheduler, even if author APIs are overridden.
+    // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+    const requestResizeObserverFrame = () => {
+        pendingResizeObserverFrame = true;
+        host('resizeObserverDefer');
+        scheduleAnimationFrame();
     };
     windowObject.requestAnimationFrame = callback => {
         if (typeof callback !== 'function')
@@ -60,7 +74,7 @@
         id = Number(id);
         pendingAnimationFrameCallbacks.delete(id);
         activeAnimationFrameCallbacks?.delete(id);
-        if (!pendingAnimationFrameCallbacks.size && animationFrameTimer !== null) {
+        if (!pendingAnimationFrameCallbacks.size && !pendingResizeObserverFrame && animationFrameTimer !== null) {
             windowObject.clearTimeout(animationFrameTimer);
             animationFrameTimer = null;
         }

@@ -41,6 +41,11 @@ Empty native windows do not reserve a scrollbar before content creates overflow;
 otherwise delaying the first presentation changes CSSOM width and spuriously
 redelivers ResizeObserver callbacks when the initial gutter disappears.
 
+Skipped ResizeObserver notifications retry after the next animation-frame callback
+batch, not on an intervening input/resource checkpoint. This prevents repeated loop
+errors before a frame callback can repair the layout. Cancelling an author callback
+does not cancel the observer's internal frame wakeup.
+
 This implements a bounded part of the [HTML render-blocking mechanism](https://html.spec.whatwg.org/multipage/dom.html#render-blocking-mechanism)
 and [stylesheet processing](https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet).
 Recursive `@import` blocking, complete stylesheet-set selection, render-blocking

@@ -87,7 +87,7 @@
     windowObject.__finishResizeObservers = () => {
         resizeRound = [];
         if (resizeSkipped) {
-            host('resizeObserverSchedule');
+            requestResizeObserverFrame();
             const message = 'ResizeObserver loop completed with undelivered notifications.';
             const event = markTrusted(new ErrorEvent('error', {message, cancelable: true}));
             if (windowObject.dispatchEvent(event)) console.error(message);
