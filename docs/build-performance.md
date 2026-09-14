@@ -25,6 +25,21 @@ Rust's bundled MSVC-compatible `rust-lld` path was also measured. It reduced a w
 `performance` build from roughly 3.5 seconds to 3.01 seconds in that experiment, which was too small
 and variable to justify changing the linker. The default MSVC linker therefore remains in use.
 
+## Keep comparison builds isolated
+
+Do not point an archived baseline's `--manifest-path` at the working tree's `target`
+directory. During a September 14 comparison investigation, a reused integration-test
+fingerprint tracked `perf-baseline-source-5e0aa38/tests/...` instead of the current
+test sources. Cargo reported Fresh and ran an older executable with zero matches for
+a newly added test. A package-only debug cleanup rebuilt the expected test, which
+then failed as intended before its fix. Use a distinct target directory for each
+source tree and verify that a targeted test actually runs, not just that Cargo exits
+successfully. If contamination is confirmed, preview and clean only this package's
+affected profile, preserving downloaded dependencies and other comparison evidence.
+
+This local artifact issue is not evidence for the reported browser crash. Runtime
+claims still require a canonical release build from the exact source head.
+
 ## GitHub Actions feedback
 
 End-to-end time is measured from each workflow attempt's `run_started_at` timestamp through

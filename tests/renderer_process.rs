@@ -14,6 +14,8 @@ mod clock_backpressure;
 mod crypto;
 #[path = "renderer_process/event_notifications.rs"]
 mod event_notifications;
+#[path = "renderer_process/exit_diagnostics.rs"]
+mod exit_diagnostics;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
 #[path = "renderer_process/hover.rs"]
