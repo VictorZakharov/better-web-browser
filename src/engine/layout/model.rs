@@ -286,8 +286,6 @@ pub(super) struct MeasuredAtom<'a> {
     pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
-    pub(super) raster_run_id: u64,
-    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
 #[derive(Debug, Clone)]
@@ -298,8 +296,6 @@ pub(super) struct CachedAtomMeasurement {
     pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
-    pub(super) raster_run_id: u64,
-    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
 impl CachedAtomMeasurement {
@@ -316,8 +312,6 @@ impl CachedAtomMeasurement {
             content_height: self.content_height,
             no_wrap: self.no_wrap,
             break_before: self.break_before,
-            raster_run_id: self.raster_run_id,
-            glyphs: self.glyphs.clone(),
         }
     }
 }
@@ -336,8 +330,6 @@ impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
             content_height: measured.content_height,
             no_wrap: measured.no_wrap,
             break_before: measured.break_before,
-            raster_run_id: measured.raster_run_id,
-            glyphs: measured.glyphs.clone(),
         }
     }
 }

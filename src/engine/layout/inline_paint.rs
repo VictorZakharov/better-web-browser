@@ -56,6 +56,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             } => {
                 let text = measured.text.unwrap_or_default();
                 if self.emit_paint && !text.is_empty() {
+                    let shaped = self.measurer.shape(text, font);
                     // CSS 2.2 10.8.1: split extra line leading above and below the font.
                     let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
@@ -70,8 +71,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         color: *color,
                         link: link.clone(),
                         node_id: *node_id,
-                        raster_run_id: measured.raster_run_id,
-                        glyphs: measured.glyphs.clone(),
+                        raster_run_id: shaped.raster_run_id,
+                        glyphs: shaped.glyphs,
                     });
                     if font.underline {
                         let thickness = (font.size / 14.0).clamp(1.0, 3.0);

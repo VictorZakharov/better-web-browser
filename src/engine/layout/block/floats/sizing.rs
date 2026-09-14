@@ -7,6 +7,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         basis: f32,
     ) -> (f32, f32) {
+        if let Some(widths) = self.intrinsic_widths.get(node.id(), basis, true) {
+            return widths;
+        }
         let style = self.styles.get(node).clone();
         let margin = style.margin.resolve(basis, style.font_size).horizontal();
         let insets = style.padding.resolve(basis, style.font_size).horizontal()
@@ -63,7 +66,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             minimum = minimum.max(lower);
             preferred = preferred.max(lower);
         }
-        (minimum.max(0.0) + margin, preferred.max(0.0) + margin)
+        let widths = (minimum.max(0.0) + margin, preferred.max(0.0) + margin);
+        self.intrinsic_widths.insert(node.id(), basis, true, widths);
+        widths
     }
 
     pub(in crate::engine::layout) fn intrinsic_content_widths(
@@ -71,6 +76,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         basis: f32,
     ) -> (f32, f32) {
+        if let Some(widths) = self.intrinsic_widths.get(node.id(), basis, false) {
+            return widths;
+        }
         let mut minimum = 0.0_f32;
         let mut preferred = 0.0_f32;
         let mut atoms = Vec::new();
@@ -106,7 +114,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
         }
         let (lo, hi) = self.float_inline_widths(&atoms, basis);
-        (minimum.max(lo), preferred.max(hi))
+        let widths = (minimum.max(lo), preferred.max(hi));
+        self.intrinsic_widths
+            .insert(node.id(), basis, false, widths);
+        widths
     }
 
     fn float_inline_widths(&mut self, atoms: &[InlineAtom], basis: f32) -> (f32, f32) {

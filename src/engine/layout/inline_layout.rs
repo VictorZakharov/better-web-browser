@@ -144,8 +144,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     content_height: height,
                     no_wrap: false,
                     break_before: true,
-                    raster_run_id: 0,
-                    glyphs: Vec::new(),
                 }
             }
             InlineAtom::Text {
@@ -161,17 +159,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 } else {
                     text.as_str()
                 };
-                let shaped = self.measurer.shape(text, font);
+                // Intrinsic sizing and line breaking need advances, not copied raster runs.
+                // Request positioned glyphs only when inline_paint emits the final text item.
+                let (width, content_height) = self.measurer.measure(text, font);
                 MeasuredAtom {
                     atom,
                     text: Some(text),
-                    width: shaped.width,
+                    width,
                     height: *line_height,
-                    content_height: shaped.height,
+                    content_height,
                     no_wrap: *no_wrap,
                     break_before,
-                    raster_run_id: shaped.raster_run_id,
-                    glyphs: shaped.glyphs,
                 }
             }
             InlineAtom::Image { width, height, .. }
@@ -184,8 +182,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 content_height: *height,
                 no_wrap: false,
                 break_before: false,
-                raster_run_id: 0,
-                glyphs: Vec::new(),
             },
             InlineAtom::InlineBox {
                 children, style, ..
@@ -199,8 +195,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     content_height: metrics.total_height(),
                     no_wrap: style.white_space == WhiteSpace::NoWrap,
                     break_before: false,
-                    raster_run_id: 0,
-                    glyphs: Vec::new(),
                 }
             }
             InlineAtom::Break => unreachable!(),

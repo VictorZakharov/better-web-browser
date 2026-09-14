@@ -13,6 +13,31 @@ fn spec() -> FontSpec {
 }
 
 #[test]
+fn borrowed_cache_keys_match_owned_entries_without_losing_shaping_inputs() {
+    let text = String::from("a b");
+    let font = spec();
+    let key = ShapeKey::new(&text, &font);
+    assert!(matches!(key.text, Cow::Borrowed(_)));
+    assert!(matches!(key.family, Cow::Borrowed(_)));
+    let owned = key.clone().into_owned();
+    let cache: HashMap<ShapeKey<'static>, u32> = HashMap::from([(owned, 42)]);
+    assert_eq!(cache.get(&key), Some(&42));
+    assert_eq!(cache.get(&ShapeKey::new("different", &font)), None);
+    for field in 0..6 {
+        let mut changed = font.clone();
+        match field {
+            0 => changed.family = "serif".into(),
+            1 => changed.size += 1.0,
+            2 => changed.weight += 100,
+            3 => changed.italic = !changed.italic,
+            4 => changed.letter_spacing += 1.0,
+            _ => changed.word_spacing += 1.0,
+        }
+        assert_eq!(cache.get(&ShapeKey::new(&text, &changed)), None, "{field}");
+    }
+}
+
+#[test]
 fn reports_consume_work_counters_without_discarding_cached_shapes() {
     let mut text = RendererTextSystem::new(96);
     text.shape("cached text", &spec());

@@ -79,17 +79,8 @@ impl DocumentRuntime {
         self.script_layout_viewport.set(self.viewport);
         let mut snapshot = self.script_layout_page.borrow_mut();
         snapshot.synchronize_layout_snapshot(&self.page);
-        if snapshot
-            .cached_style_for_viewport(self.viewport.style_width, self.viewport.height)
-            .is_none()
-        {
-            let root = snapshot.dom.document.id();
-            snapshot.refresh_layout_styles_after_invalidation_for_viewport(
-                self.viewport.style_width,
-                self.viewport.height,
-                &crate::engine::invalidation::RenderInvalidation::full(root),
-            );
-        }
+        // The CSSOM flush callback below builds missing styles on demand. Publishing already
+        // computed geometry must not eagerly build a second style tree that script may never read.
     }
 
     pub(super) fn script_layout_flush_callback(

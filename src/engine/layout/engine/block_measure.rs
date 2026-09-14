@@ -37,6 +37,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             scroll_gutters: HashMap::new(),
             measurement_cache: std::mem::take(&mut self.measurement_cache),
             intrinsic_block_heights: std::mem::take(&mut self.intrinsic_block_heights),
+            intrinsic_widths: std::mem::take(&mut self.intrinsic_widths),
             margin_profiles: std::mem::take(&mut self.margin_profiles),
             inline_box_cache: std::mem::take(&mut self.inline_box_cache),
             viewport: self.viewport,
@@ -50,6 +51,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.measurement_cache = probe.measurement_cache;
         self.inline_box_cache = probe.inline_box_cache;
         self.intrinsic_block_heights = probe.intrinsic_block_heights;
+        self.intrinsic_widths = probe.intrinsic_widths;
         self.margin_profiles = probe.margin_profiles;
         self.intrinsic_block_heights.insert(key, height);
         height

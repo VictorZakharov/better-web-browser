@@ -1,10 +1,13 @@
 use super::*;
 mod block_measure;
+mod intrinsic_widths;
 
 #[cfg(test)]
 mod fullscreen;
 #[cfg(test)]
 mod geometry;
+#[cfg(test)]
+mod geometry_glyphs;
 
 pub fn layout_page<M: TextMeasurer>(
     page: &Page,
@@ -126,6 +129,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         scroll_gutters: HashMap::new(),
         measurement_cache: HashMap::new(),
         intrinsic_block_heights: HashMap::new(),
+        intrinsic_widths: Default::default(),
         margin_profiles: Default::default(),
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
@@ -193,6 +197,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
     intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
+    pub(super) intrinsic_widths: intrinsic_widths::IntrinsicWidths,
     pub(super) margin_profiles:
         std::cell::RefCell<HashMap<(NodeId, u32), block::margins::MarginProfile>>,
     pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
