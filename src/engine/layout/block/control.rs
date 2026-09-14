@@ -1,6 +1,27 @@
 use super::super::*;
 
+#[cfg(test)]
+mod tests;
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn button_fit_content_width(
+        &mut self,
+        node: &NodeRef,
+        basis: f32,
+        available: f32,
+    ) -> f32 {
+        // HTML button layout: auto inline-size is fit-content even for block and
+        // absolutely positioned buttons. Out-of-flow labels do not contribute.
+        // https://html.spec.whatwg.org/multipage/rendering.html#button-layout
+        let margins = self
+            .styles
+            .get(node)
+            .margin
+            .resolve(basis, self.styles.get(node).font_size);
+        let (minimum, preferred) = self.float_intrinsic_widths(node, basis);
+        (preferred - margins.horizontal()).min(available.max(minimum - margins.horizontal()))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn project_control(
         &mut self,
@@ -44,9 +65,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     form_id: nearest_form(node).map(|form| node_id(&form)),
                     background_color: self.effective_background_color(node),
                     text_color: style.color,
-                    border_color: style
-                        .border_color
-                        .composite_over(self.effective_background_color(node)),
+                    placeholder_color: self
+                        .styles
+                        .placeholder_color(node, self.effective_background_color(node)),
+                    border_colors: style
+                        .painted_border_colors(self.effective_background_color(node)),
                     border_width: [borders.top, borders.right, borders.bottom, borders.left],
                     border_radius: resolve_border_radius(
                         style.border_radius,

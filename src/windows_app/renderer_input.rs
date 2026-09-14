@@ -2,6 +2,7 @@
 
 mod keyboard;
 mod pointer;
+mod wheel;
 
 pub(super) use pointer::current_buttons;
 

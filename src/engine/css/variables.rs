@@ -2,6 +2,27 @@
 
 use super::*;
 
+const MAX_CACHED_LITERAL_BYTES: usize = 4 * 1024;
+
+impl Declaration {
+    fn prepared_literal(&self) -> Option<&str> {
+        self.literal_value
+            .get_or_init(|| {
+                if self.value.len() > MAX_CACHED_LITERAL_BYTES {
+                    return None;
+                }
+                let mut input = ParserInput::new(&self.value);
+                let mut parser = Parser::new(&mut input);
+                // Tokenize, including escaped function names and nested blocks. A var() at any
+                // depth requires the element's current custom properties, never a cached result.
+                // https://www.w3.org/TR/css-variables-1/#using-variables
+                substitute_component_values(&mut parser, None, &mut Vec::new(), 0)
+                    .filter(|value| value.len() <= MAX_CACHED_LITERAL_BYTES)
+            })
+            .as_deref()
+    }
+}
+
 pub(super) fn apply_custom_properties(
     style: &mut ComputedStyle,
     declarations: &[Declaration],
@@ -46,17 +67,19 @@ pub(super) fn apply_resolved_declaration(
     if declaration.name.starts_with("--") {
         return;
     }
-    let Some(value) = substitute_variables(&declaration.value, &style.custom_properties) else {
-        return;
-    };
-    let resolved = Declaration {
-        name: declaration.name.clone(),
-        value,
-        important: declaration.important,
+    let substituted;
+    let value = if let Some(literal) = declaration.prepared_literal() {
+        literal
+    } else {
+        let Some(value) = substitute_variables(&declaration.value, &style.custom_properties) else {
+            return;
+        };
+        substituted = value;
+        &substituted
     };
     apply_declaration(
         style,
-        &resolved,
+        (&declaration.name, value),
         parent,
         lower_origin,
         base_url,
@@ -83,12 +106,12 @@ pub(super) fn substitute_variable_references(
     }
     let mut input = ParserInput::new(value);
     let mut parser = Parser::new(&mut input);
-    substitute_component_values(&mut parser, custom_properties, stack, depth)
+    substitute_component_values(&mut parser, Some(custom_properties), stack, depth)
 }
 
 pub(super) fn substitute_component_values<'i, 't>(
     parser: &mut Parser<'i, 't>,
-    custom_properties: &HashMap<String, String>,
+    custom_properties: Option<&HashMap<String, String>>,
     stack: &mut Vec<String>,
     depth: usize,
 ) -> Option<String> {
@@ -97,6 +120,7 @@ pub(super) fn substitute_component_values<'i, 't>(
         let token = parser.next_including_whitespace().ok()?.clone();
         match &token {
             Token::Function(name) if name.eq_ignore_ascii_case("var") => {
+                let custom_properties = custom_properties?;
                 let replacement = parser
                     .parse_nested_block(|nested| -> Result<String, cssparser::ParseError<'i, ()>> {
                         let name = nested.expect_ident_cloned()?.to_string();
@@ -130,8 +154,13 @@ pub(super) fn substitute_component_values<'i, 't>(
                             consume_component_values(nested)?;
                             Ok(replacement)
                         } else if has_fallback {
-                            substitute_component_values(nested, custom_properties, stack, depth + 1)
-                                .ok_or_else(|| nested.new_custom_error(()))
+                            substitute_component_values(
+                                nested,
+                                Some(custom_properties),
+                                stack,
+                                depth + 1,
+                            )
+                            .ok_or_else(|| nested.new_custom_error(()))
                         } else {
                             Err(nested.new_custom_error(()))
                         }
@@ -180,3 +209,6 @@ fn consume_component_values<'i, 't>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod literal_tests;

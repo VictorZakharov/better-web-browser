@@ -1,4 +1,7 @@
 use super::*;
+mod boundaries;
+pub(super) mod geometry;
+mod wrapping;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_inline_atoms(
@@ -11,17 +14,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         default_line_height: f32,
     ) -> f32 {
         self.begin_inline_measurement_context();
+        let runs = self.unbreakable_run_widths(atoms, width);
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
         let mut line_height = 0.0_f32;
+        let (mut line_x, mut available) = self.floats.band(x, y, width, default_line_height);
 
-        for atom in atoms {
+        for (index, atom) in atoms.iter().enumerate() {
             if matches!(atom, InlineAtom::Break) {
                 y = self.paint_line(
                     &line,
-                    x,
+                    line_x,
                     y,
-                    width,
+                    available,
                     align,
                     line_width,
                     line_height.max(default_line_height),
@@ -29,19 +34,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
+                (line_x, available) = self.floats.band(x, y, width, default_line_height);
                 continue;
             }
             let measured = self.measure_atom(atom, line.is_empty(), width);
-            let should_wrap = !line.is_empty()
-                && line_width + measured.width > width
-                && measured.break_before
-                && !measured.no_wrap;
-            if should_wrap {
-                y = self.paint_line(
-                    &line,
+            let run_width = runs[index];
+            if line.is_empty() {
+                (line_x, y, available) = self.floats.fit(
                     x,
                     y,
                     width,
+                    run_width,
+                    measured.height.max(default_line_height),
+                );
+            }
+            let should_wrap = !line.is_empty()
+                && line_width + run_width > available
+                && self.inline_break_before(atoms, index);
+            if should_wrap {
+                y = self.paint_line(
+                    &line,
+                    line_x,
+                    y,
+                    available,
                     align,
                     line_width,
                     line_height.max(default_line_height),
@@ -49,6 +64,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
+                (line_x, y, available) = self.floats.fit(
+                    x,
+                    y,
+                    width,
+                    run_width,
+                    measured.height.max(default_line_height),
+                );
             }
             let measured = if should_wrap {
                 self.measure_atom(atom, true, width)
@@ -62,9 +84,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !line.is_empty() {
             y = self.paint_line(
                 &line,
-                x,
+                line_x,
                 y,
-                width,
+                available,
                 align,
                 line_width,
                 line_height.max(default_line_height),
@@ -89,7 +111,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let containing_width = containing_width.max(0.0);
         // Only inline boxes resolve percentage sizing against the containing block. Text,
         // replaced content, and placeholders keep identical measurements across box passes.
-        let containing_width_key = if matches!(atom, InlineAtom::InlineBox { .. }) {
+        let containing_width_key = if matches!(
+            atom,
+            InlineAtom::InlineBox { .. } | InlineAtom::BlockBox { .. }
+        ) {
             containing_width.to_bits()
         } else {
             0
@@ -103,6 +128,30 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return measured.for_atom(atom);
         }
         let measured = match atom {
+            InlineAtom::BlockBox { node, height_basis } => {
+                let (minimum, preferred) = self.float_intrinsic_widths(node, containing_width);
+                let width = preferred.min(containing_width.max(minimum));
+                let height = self.intrinsic_block_height(
+                    node,
+                    containing_width,
+                    *height_basis,
+                    Some(UsedInlineSize {
+                        outer: width,
+                        percentage_basis: containing_width,
+                    }),
+                );
+                MeasuredAtom {
+                    atom,
+                    text: None,
+                    width,
+                    height,
+                    content_height: height,
+                    no_wrap: Node::composed_parent(node).is_some_and(|parent| {
+                        self.styles.get(&parent).white_space != WhiteSpace::Normal
+                    }),
+                    break_before: true,
+                }
+            }
             InlineAtom::Text {
                 text,
                 font,
@@ -116,17 +165,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 } else {
                     text.as_str()
                 };
-                let shaped = self.measurer.shape(text, font);
+                // Intrinsic sizing and line breaking need advances, not copied raster runs.
+                // Request positioned glyphs only when inline_paint emits the final text item.
+                let (width, content_height) = self.measurer.measure(text, font);
                 MeasuredAtom {
                     atom,
                     text: Some(text),
-                    width: shaped.width,
-                    height: line_height.max(shaped.height),
-                    content_height: shaped.height,
+                    width,
+                    height: *line_height,
+                    content_height,
                     no_wrap: *no_wrap,
                     break_before,
-                    raster_run_id: shaped.raster_run_id,
-                    glyphs: shaped.glyphs,
                 }
             }
             InlineAtom::Image { width, height, .. }
@@ -139,8 +188,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 content_height: *height,
                 no_wrap: false,
                 break_before: false,
-                raster_run_id: 0,
-                glyphs: Vec::new(),
             },
             InlineAtom::InlineBox {
                 children, style, ..
@@ -154,8 +201,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     content_height: metrics.total_height(),
                     no_wrap: style.white_space == WhiteSpace::NoWrap,
                     break_before: false,
-                    raster_run_id: 0,
-                    glyphs: Vec::new(),
                 }
             }
             InlineAtom::Break => unreachable!(),

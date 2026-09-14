@@ -54,6 +54,7 @@ impl BrowserState {
         }
         self.apply_same_document_history_updates(&update.runtime.history_updates);
         self.apply_script_viewport_scroll(update.runtime.viewport_scroll_y);
+        self.queue_css_wheel_scroll(update.runtime.viewport_wheel_delta_y);
         self.schedule_script_runtime_wakeup();
         if benchmark_completed {
             self.finish_benchmark_after_completion();
@@ -145,9 +146,33 @@ fn remaining_renderer_delay(next: Duration, elapsed: Duration) -> Duration {
     next.saturating_sub(elapsed)
 }
 
+pub(super) fn initial_presentation_clock(clock: &mut Option<Instant>, now: Instant) {
+    // Scripts can run while first paint is blocked. The clock is already anchored at document
+    // submission or the latest advance; resetting it at first paint loses that work's elapsed
+    // time and can run an expired idle callback as if an idle period were still available.
+    clock.get_or_insert(now);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_presentation_preserves_time_spent_in_render_blocked_script_tasks() {
+        let submitted = Instant::now();
+        let first_paint = submitted + Duration::from_millis(500);
+        let mut clock = Some(submitted);
+        initial_presentation_clock(&mut clock, first_paint);
+        assert_eq!(clock, Some(submitted));
+        assert_eq!(
+            remaining_renderer_delay(Duration::from_millis(300), first_paint - clock.unwrap()),
+            Duration::ZERO,
+            "first paint must not restart an expired timeout"
+        );
+        let mut missing = None;
+        initial_presentation_clock(&mut missing, first_paint);
+        assert_eq!(missing, Some(first_paint));
+    }
 
     #[test]
     fn win32_timer_delay_is_bounded_and_never_busy_loops() {

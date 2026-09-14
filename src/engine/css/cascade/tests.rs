@@ -2,6 +2,47 @@ use super::*;
 use crate::limits::MAX_DOM_DEPTH;
 
 #[test]
+fn unmatched_pseudos_are_lazy_but_cssom_and_later_matches_remain_live() {
+    let dom = dom::parse(
+        "<style>p {color:red} p.active::before {content:attr(data-label);color:blue}</style><p data-label=first>text</p>",
+    );
+    let node = dom.elements_named("p").next().unwrap();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    assert!(
+        !styles
+            .pseudo_styles
+            .contains_key(&(node.id(), PseudoElement::Before))
+    );
+    let absent = styles
+        .computed_style_for_pseudo(&node, PseudoElement::Before)
+        .unwrap();
+    assert_eq!(absent.color, Color::rgb(255, 0, 0));
+    assert!(!absent.generated_content.generates_box());
+    node.set_attr("class", "active");
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&node), &[]);
+    let generated = styles
+        .generated_pseudo(&node, PseudoElement::Before)
+        .unwrap();
+    assert_eq!(generated.text_content(), "first");
+    assert_eq!(styles.get(&generated).color, Color::rgb(0, 0, 255));
+    node.set_attr("class", "");
+    let stats = styles.refresh_subtrees(&dom.document, std::slice::from_ref(&node), &[]);
+    assert!(stats.layout_changed);
+    assert!(
+        styles
+            .generated_pseudo(&node, PseudoElement::Before)
+            .is_none()
+    );
+    assert_eq!(
+        styles
+            .computed_style_for_pseudo(&node, PseudoElement::Before)
+            .unwrap()
+            .color,
+        Color::rgb(255, 0, 0)
+    );
+}
+
+#[test]
 fn generated_pseudos_invalidate_geometry_only_when_boxes_or_text_change() {
     let dom = dom::parse(
         r#"<style>

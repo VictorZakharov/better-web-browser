@@ -82,6 +82,7 @@ pub(super) fn text_atom(
         color: style.color,
         link,
         node_id: interaction_node,
+        source_node,
         line_height: style.line_height,
         no_wrap: style.white_space == WhiteSpace::NoWrap,
     }
@@ -91,11 +92,16 @@ pub(super) fn is_block_level(display: Display) -> bool {
     matches!(
         display,
         Display::Block
+            | Display::FlowRoot
             | Display::Flex
             | Display::Grid
             | Display::Table
             | Display::TableRow
             | Display::TableCell
+            | Display::TableCaption
+            | Display::TableRowGroup
+            | Display::TableHeaderGroup
+            | Display::TableFooterGroup
     )
 }
 
@@ -223,22 +229,6 @@ pub(super) fn style_collapses_overflow(style: &ComputedStyle, viewport: RectF) -
             .is_some_and(|height| height <= 1.0)
 }
 
-pub(super) fn element_length(
-    node: &NodeRef,
-    attribute: &str,
-    css: Length,
-    fallback: f32,
-    font_size: f32,
-) -> f32 {
-    css.resolve(fallback, font_size)
-        .or_else(|| {
-            node.attr(attribute)
-                .and_then(|value| value.trim_end_matches("px").parse::<f32>().ok())
-        })
-        .unwrap_or(fallback)
-        .max(0.0)
-}
-
 pub(super) fn resolve_svg_replaced_size(
     node: &NodeRef,
     style: &ComputedStyle,
@@ -292,19 +282,17 @@ pub(super) fn resolve_svg_replaced_length(
 }
 
 pub(super) fn resolve_replaced_length(
-    node: &NodeRef,
-    attribute: &str,
+    _node: &NodeRef,
+    _attribute: &str,
     css: Length,
     percentage_basis: Option<f32>,
     font_size: f32,
 ) -> Option<f32> {
-    let css = resolve_replaced_css_length(css, percentage_basis, font_size);
-    css.or_else(|| {
-        node.attr(attribute)
-            .and_then(|value| value.trim_end_matches("px").parse::<f32>().ok())
-    })
-    .filter(|value| value.is_finite())
-    .map(|value| value.max(0.0))
+    // HTML dimensions have already entered the cascade as presentational hints.
+    // Falling back to the attribute here would undo an author's explicit auto.
+    resolve_replaced_css_length(css, percentage_basis, font_size)
+        .filter(|value| value.is_finite())
+        .map(|value| value.max(0.0))
 }
 
 fn resolve_replaced_css_length(

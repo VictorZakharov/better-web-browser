@@ -159,8 +159,11 @@ pub(super) fn parse_grid_track(token: &str) -> Option<GridTrack> {
     if token.is_empty() || token == "none" || token.starts_with('[') {
         return None;
     }
-    if matches!(token, "auto" | "min-content" | "max-content") {
-        return Some(GridTrack::Auto);
+    match token {
+        "auto" => return Some(GridTrack::Auto),
+        "min-content" => return Some(GridTrack::MinContent),
+        "max-content" => return Some(GridTrack::MaxContent),
+        _ => {}
     }
     if let Some(fraction) = token.strip_suffix("fr") {
         return Some(GridTrack::Fraction(
@@ -201,76 +204,12 @@ pub(super) fn split_grid_once(input: &str, delimiter: char) -> Option<(&str, &st
     None
 }
 
-pub(super) fn resolve_grid_columns(
-    tracks: &[GridTrack],
-    available_width: f32,
-    gap: f32,
-    font_size: f32,
-) -> Vec<f32> {
-    let gap_width = gap * tracks.len().saturating_sub(1) as f32;
-    let available_tracks = (available_width - gap_width).max(0.0);
-    let mut sizes = Vec::with_capacity(tracks.len());
-    let mut flex_factors = Vec::with_capacity(tracks.len());
-    let mut automatic = Vec::with_capacity(tracks.len());
-    for track in tracks {
-        let (base, flex, is_auto) = grid_track_metrics(track, available_tracks, font_size);
-        sizes.push(base);
-        flex_factors.push(flex);
-        automatic.push(is_auto);
-    }
-
-    let remaining = (available_tracks - sizes.iter().sum::<f32>()).max(0.0);
-    let total_flex = flex_factors.iter().sum::<f32>();
-    if total_flex > 0.0 {
-        for (size, flex) in sizes.iter_mut().zip(flex_factors) {
-            *size += remaining * flex / total_flex;
-        }
-    } else {
-        let automatic_count = automatic.iter().filter(|is_auto| **is_auto).count();
-        if automatic_count > 0 {
-            let share = remaining / automatic_count as f32;
-            for (size, is_auto) in sizes.iter_mut().zip(automatic) {
-                if is_auto {
-                    *size += share;
-                }
-            }
-        }
-    }
-    sizes
-}
-
-pub(super) fn grid_track_metrics(
-    track: &GridTrack,
-    basis: f32,
-    font_size: f32,
-) -> (f32, f32, bool) {
-    match track {
-        GridTrack::Auto => (0.0, 0.0, true),
-        GridTrack::Fixed(length) => (
-            length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
-            0.0,
-            false,
-        ),
-        GridTrack::Fraction(fraction) => (0.0, *fraction, false),
-        GridTrack::MinMax(minimum, maximum) => {
-            let (minimum, _, _) = grid_track_metrics(minimum, basis, font_size);
-            match maximum.as_ref() {
-                GridTrack::Fraction(fraction) => (minimum, *fraction, false),
-                GridTrack::Fixed(length) => (
-                    minimum.max(length.resolve(basis, font_size).unwrap_or(minimum)),
-                    0.0,
-                    false,
-                ),
-                GridTrack::Auto => (minimum, 0.0, true),
-                GridTrack::MinMax(_, _) => (minimum, 0.0, true),
-            }
-        }
-    }
-}
-
 pub(super) fn resolve_grid_row_minimum(track: &GridTrack, basis: f32, font_size: f32) -> f32 {
     match track {
-        GridTrack::Auto | GridTrack::Fraction(_) => 0.0,
+        GridTrack::Auto
+        | GridTrack::MinContent
+        | GridTrack::MaxContent
+        | GridTrack::Fraction(_) => 0.0,
         GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),
         GridTrack::MinMax(minimum, maximum) => match maximum.as_ref() {
             GridTrack::Fixed(length) => length.resolve(basis, font_size).unwrap_or(0.0).max(0.0),

@@ -71,6 +71,7 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        self.update_render_blockers();
         if self.dispatch_cached_resource_events()? {
             self.resource_render_pending = true;
         }
@@ -113,7 +114,8 @@ impl DocumentRuntime {
         self.finish_ready_dynamic_scripts(connection)?;
         let changes = self.finish_ready_resource_preloads(connection)?;
         self.start_presentational_preloads(connection)?;
-        let render = changes.as_ref().is_some_and(|changes| changes.render);
+        let render = changes.as_ref().is_some_and(|changes| changes.render)
+            || (self.rendering.dirty && !self.rendering_is_blocked());
         let style = changes.as_ref().is_some_and(|changes| changes.style);
         let dynamic_ready = self
             .script_runtime

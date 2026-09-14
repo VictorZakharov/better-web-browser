@@ -34,17 +34,47 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) {
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         match measured.atom {
+            InlineAtom::BlockBox { node, height_basis } => {
+                self.layout_block(
+                    node,
+                    x,
+                    atom_y,
+                    containing_width,
+                    *height_basis,
+                    Some(UsedInlineSize {
+                        outer: measured.width,
+                        percentage_basis: containing_width,
+                    }),
+                );
+            }
             InlineAtom::Text {
                 font,
                 color,
                 link,
                 node_id,
+                source_node,
                 ..
             } => {
                 let text = measured.text.unwrap_or_default();
+                // Geometry-only layout must publish the same inline fragments as painting.
+                let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
+                if !text.is_empty()
+                    && let Some(id) = source_node
+                {
+                    inline_layout::geometry::include(
+                        &mut self.output.node_bounds,
+                        *id,
+                        RectF {
+                            x,
+                            y: text_y,
+                            width: measured.width,
+                            height: measured.content_height,
+                        },
+                    );
+                }
                 if self.emit_paint && !text.is_empty() {
+                    let shaped = self.measurer.shape(text, font);
                     // CSS 2.2 10.8.1: split extra line leading above and below the font.
-                    let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
                         rect: RectF {
                             x,
@@ -57,8 +87,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         color: *color,
                         link: link.clone(),
                         node_id: *node_id,
-                        raster_run_id: measured.raster_run_id,
-                        glyphs: measured.glyphs.clone(),
+                        raster_run_id: shaped.raster_run_id,
+                        glyphs: shaped.glyphs,
                     });
                     if font.underline {
                         let thickness = (font.size / 14.0).clamp(1.0, 3.0);
@@ -158,12 +188,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         radius: spec.border_radius,
                     });
                 }
-                if spec.border_color.alpha > 0 && spec.border_width.iter().any(|width| *width > 0.0)
+                if spec.border_colors.iter().any(|c| c.alpha > 0)
+                    && spec.border_width.iter().any(|width| *width > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {
                         rect: spec.rect,
                         widths: spec.border_width,
-                        color: spec.border_color,
+                        colors: spec.border_colors,
                         radius: spec.border_radius,
                     });
                 }
@@ -253,7 +284,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 if self.emit_paint
-                    && style.border_color.alpha > 0
+                    && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
                     && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
                 {
                     self.output.items.push(DisplayItem::BorderRect {
@@ -264,7 +295,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             metrics.border.bottom,
                             metrics.border.left,
                         ],
-                        color: style.border_color.composite_over(
+                        colors: style.painted_border_colors(
                             style
                                 .background_color
                                 .composite_over(self.output.background),

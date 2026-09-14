@@ -8,8 +8,14 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+#[path = "input/fragment_navigation.rs"]
+mod fragment_navigation;
 #[path = "input/helpers.rs"]
 mod helpers;
+#[path = "input/nested_scrolling.rs"]
+mod nested_scrolling;
+#[path = "input/scroll_composition.rs"]
+mod scroll_composition;
 use helpers::*;
 
 #[test]

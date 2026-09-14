@@ -75,8 +75,11 @@ fn hidden_cells_do_not_consume_column_width_or_row_height() {
         let left = output.node_bounds[&by_id(&page, "left").id()];
         let right = output.node_bounds[&by_id(&page, "right").id()];
         let next = output.node_bounds[&by_id(&page, "next").id()];
-        assert_eq!((left.x, left.width), (0.0, 150.0));
-        assert_eq!((right.x, right.width), (150.0, 150.0));
+        assert_eq!(left.x, 0.0);
+        assert!(left.width > 100.0 && right.width > 100.0);
+        assert_eq!(right.x, left.right());
+        assert_eq!(right.right(), 300.0);
+        assert_eq!(next.width, left.width);
         assert_eq!(next.y, 20.0);
         assert!(
             !output

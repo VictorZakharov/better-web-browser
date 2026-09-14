@@ -1,70 +1,21 @@
 //! Computed CSS value types and inherited/initial style state.
 
+pub(super) mod borders;
+mod content_alignment;
 mod edges;
+pub use content_alignment::ContentAlignment;
 mod length;
+mod line_height;
+pub(crate) use line_height::LineHeight;
 mod overflow;
+pub use overflow::Overflow;
+mod vertical_align;
 mod viewport;
+pub use vertical_align::VerticalAlign;
 
 use super::*;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Color {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-    pub alpha: u8,
-}
-
-impl Color {
-    pub const BLACK: Self = Self::rgb(0, 0, 0);
-    pub const WHITE: Self = Self::rgb(255, 255, 255);
-    pub const TRANSPARENT: Self = Self {
-        red: 0,
-        green: 0,
-        blue: 0,
-        alpha: 0,
-    };
-
-    pub const fn rgb(red: u8, green: u8, blue: u8) -> Self {
-        Self {
-            red,
-            green,
-            blue,
-            alpha: 255,
-        }
-    }
-
-    pub fn to_colorref(self) -> u32 {
-        self.red as u32 | ((self.green as u32) << 8) | ((self.blue as u32) << 16)
-    }
-
-    pub fn composite_over(self, backdrop: Self) -> Self {
-        if self.alpha == 255 {
-            return self;
-        }
-        if self.alpha == 0 {
-            return backdrop;
-        }
-        let source_alpha = f32::from(self.alpha) / 255.0;
-        let backdrop_alpha = f32::from(backdrop.alpha) / 255.0;
-        let output_alpha = source_alpha + backdrop_alpha * (1.0 - source_alpha);
-        if output_alpha <= f32::EPSILON {
-            return Self::TRANSPARENT;
-        }
-        let channel = |source: u8, backdrop: u8| {
-            ((f32::from(source) * source_alpha
-                + f32::from(backdrop) * backdrop_alpha * (1.0 - source_alpha))
-                / output_alpha)
-                .round()
-                .clamp(0.0, 255.0) as u8
-        };
-        Self {
-            red: channel(self.red, backdrop.red),
-            green: channel(self.green, backdrop.green),
-            blue: channel(self.blue, backdrop.blue),
-            alpha: (output_alpha * 255.0).round().clamp(0.0, 255.0) as u8,
-        }
-    }
-}
+mod color;
+pub use color::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Length {
@@ -115,41 +66,12 @@ impl ResolvedEdges {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Display {
-    None,
-    Contents,
-    Block,
-    Inline,
-    InlineBlock,
-    InlineFlex,
-    Flex,
-    Grid,
-    Table,
-    TableRow,
-    TableCell,
-}
-
-impl Display {
-    pub(crate) const fn css_keyword(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Contents => "contents",
-            Self::Block => "block",
-            Self::Inline => "inline",
-            Self::InlineBlock => "inline-block",
-            Self::InlineFlex => "inline-flex",
-            Self::Flex => "flex",
-            Self::Grid => "grid",
-            Self::Table => "table",
-            Self::TableRow => "table-row",
-            Self::TableCell => "table-cell",
-        }
-    }
-}
+mod display;
+pub use display::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
+    Sticky,
     Static,
     Relative,
     Absolute,
@@ -206,12 +128,8 @@ pub enum WhiteSpace {
     Pre,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Float {
-    None,
-    Left,
-    Right,
-}
+mod floats;
+pub use floats::{Clear, Float};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoxSizing {
@@ -240,6 +158,7 @@ pub struct ComputedStyle {
     pub position: Position,
     pub z_index: Option<i32>,
     pub float: Float,
+    pub clear: Clear,
     pub color: Color,
     pub background_color: Color,
     pub background_image: Option<String>,
@@ -257,6 +176,7 @@ pub struct ComputedStyle {
     pub letter_spacing: f32,
     pub word_spacing: f32,
     pub line_height: f32,
+    pub(crate) line_height_value: LineHeight,
     pub text_align: TextAlign,
     pub white_space: WhiteSpace,
     pub text_decoration_underline: bool,
@@ -269,7 +189,8 @@ pub struct ComputedStyle {
     pub margin: Edges,
     pub padding: Edges,
     pub border_width: Edges,
-    pub border_color: Color,
+    /// Top, right, bottom, left; None is the computed `currentcolor` keyword.
+    pub border_colors: [Option<Color>; 4],
     pub border_radius: Length,
     pub top: Length,
     pub right: Length,
@@ -290,6 +211,7 @@ pub struct ComputedStyle {
     pub flex_direction: FlexDirection,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub align_content: ContentAlignment,
     pub justify_self: AlignItems,
     pub flex_wrap: bool,
     pub flex_grow: f32,
@@ -298,6 +220,7 @@ pub struct ComputedStyle {
     pub box_sizing: BoxSizing,
     pub border_collapse: bool,
     pub caption_side_bottom: bool,
+    pub vertical_align: VerticalAlign,
     pub list_style_type: ListStyleType,
     pub grid_template_columns: String,
     pub grid_template_rows: String,
@@ -320,6 +243,7 @@ impl ComputedStyle {
             position: Position::Static,
             z_index: None,
             float: Float::None,
+            clear: Clear::None,
             color: Color::BLACK,
             background_color: Color::TRANSPARENT,
             background_image: None,
@@ -337,6 +261,7 @@ impl ComputedStyle {
             letter_spacing: 0.0,
             word_spacing: 0.0,
             line_height: 19.2,
+            line_height_value: LineHeight::Normal,
             text_align: TextAlign::Start,
             white_space: WhiteSpace::Normal,
             text_decoration_underline: false,
@@ -349,7 +274,7 @@ impl ComputedStyle {
             margin: Edges::ZERO,
             padding: Edges::ZERO,
             border_width: Edges::ZERO,
-            border_color: Color::BLACK,
+            border_colors: [None; 4],
             border_radius: Length::Px(0.0),
             top: Length::Auto,
             right: Length::Auto,
@@ -370,6 +295,7 @@ impl ComputedStyle {
             flex_direction: FlexDirection::Row,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            align_content: ContentAlignment::default(),
             justify_self: AlignItems::Stretch,
             flex_wrap: false,
             flex_grow: 0.0,
@@ -378,6 +304,7 @@ impl ComputedStyle {
             box_sizing: BoxSizing::ContentBox,
             border_collapse: false,
             caption_side_bottom: false,
+            vertical_align: VerticalAlign::Baseline,
             list_style_type: ListStyleType::Disc,
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),
@@ -393,7 +320,7 @@ impl ComputedStyle {
         }
     }
 
-    pub(super) fn inherit_from(parent: Option<&Self>) -> Self {
+    pub(crate) fn inherit_from(parent: Option<&Self>) -> Self {
         let mut style = Self::initial();
         if let Some(parent) = parent {
             style.color = parent.color;
@@ -405,6 +332,7 @@ impl ComputedStyle {
             style.letter_spacing = parent.letter_spacing;
             style.word_spacing = parent.word_spacing;
             style.line_height = parent.line_height;
+            style.line_height_value = parent.line_height_value;
             style.text_align = parent.text_align;
             style.white_space = parent.white_space;
             style.border_collapse = parent.border_collapse;

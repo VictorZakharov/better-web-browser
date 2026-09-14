@@ -241,7 +241,11 @@ impl BrowserState {
             }
         };
 
-        let next_layout = std::mem::take(&mut presentation.layout).into_layout();
+        let mut next_layout = std::mem::take(&mut presentation.layout).into_layout();
+        next_layout.update_scroll_position(
+            0.0,
+            self.scroll_y.max(0) as f32 / self.page_scale().max(f32::EPSILON),
+        );
         let damage = DisplayListDamage::between(&self.page_layout, &next_layout);
         let layout_changed = !damage.is_empty();
         let controls_changed = first_presentation || self.page_layout.forms != next_layout.forms;
@@ -255,7 +259,10 @@ impl BrowserState {
             }
             self.content_height =
                 (self.page_layout.content_height * self.page_scale()).ceil() as i32;
+        } else {
+            self.page_layout.sticky_layers = next_layout.sticky_layers;
         }
+        self.sync_retained_control_rects();
         self.page_diagnostics = std::mem::take(&mut presentation.page_diagnostics);
         if first_presentation {
             self.presented_images.clear();
@@ -298,7 +305,10 @@ impl BrowserState {
         self.crashed = false;
         self.renderer_next_timer = presentation.next_timer_micros.map(Duration::from_micros);
         if first_presentation {
-            self.renderer_runtime_clock = Some(Instant::now());
+            super::runtime::initial_presentation_clock(
+                &mut self.renderer_runtime_clock,
+                Instant::now(),
+            );
         }
         if presentation.clock_advanced {
             self.renderer_clock_pending = false;
@@ -324,6 +334,7 @@ impl BrowserState {
         self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
         self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
+        self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
         if layout_changed {
             self.update_scrollbar();
         }

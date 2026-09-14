@@ -9,7 +9,10 @@ impl DocumentRuntime {
         self.publish_document_load_readiness(
             self.resource_render_pending || self.pending_async_outcome.render_requested,
         );
-        if self.has_pending_geometry_observers() || self.resource_render_pending {
+        if self.has_pending_geometry_observers()
+            || self.resource_render_pending
+            || (self.rendering.dirty && !self.rendering_is_blocked())
+        {
             return Some(0);
         }
         let runtime_timer = self
@@ -22,10 +25,14 @@ impl DocumentRuntime {
         } else {
             runtime_timer
         };
-        match (runtime_timer, self.media_timer_micros()) {
-            (Some(runtime), Some(media)) => Some(runtime.min(media)),
-            (runtime, media) => runtime.or(media),
-        }
+        [
+            runtime_timer,
+            self.media_timer_micros(),
+            self.rendering_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn has_post_load_work(&self) -> bool {
@@ -63,7 +70,8 @@ impl DocumentRuntime {
         }
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
         // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
-        if std::mem::take(&mut self.geometry_observers_pending)
+        if !self.rendering_is_blocked()
+            && std::mem::take(&mut self.geometry_observers_pending)
             && let Some(runtime) = self.script_runtime.as_mut()
         {
             merge_outcome(
@@ -174,7 +182,7 @@ impl DocumentRuntime {
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
-        let mut needs_present = resources_changed || media_changed || outcome.render_requested;
+        let style_started = Instant::now();
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
                 "refreshing styles for {}",
@@ -191,12 +199,24 @@ impl DocumentRuntime {
         } else {
             StyleRefreshStats::default()
         };
+        let style_time = style_started.elapsed();
+        let mut needs_present = resources_changed
+            || media_changed
+            || outcome.render_requested
+            || (self.rendering.dirty && !self.rendering_is_blocked());
         // A rendering checkpoint can discover resources in newly-created shadow trees. Start the
         // browser fetch now, but do not wait inside this renderer task. The response path installs
         // the completed batch and presents the resulting layout without blocking heartbeats.
         self.start_presentational_preloads(connection)?;
         let layout_started = Instant::now();
-        if resources_changed || outcome.render_requested {
+        // Reuse only box geometry. A hidden DOM change can still update the document title
+        // or an accessibility name, so keep the regular presentation/metadata path.
+        if resources_changed
+            || (outcome.render_requested
+                && !self
+                    .page
+                    .invalidation_is_nonrendered(&outcome.invalidation, &style))
+        {
             connection.report_renderer_task_stage(format!(
                 "rebuilding layout for {}",
                 self.page.source_url
@@ -204,16 +224,34 @@ impl DocumentRuntime {
             self.rebuild_layout();
         }
         needs_present |= self.deliver_geometry_observers(&mut outcome, connection)?;
+        let layout_time = layout_started.elapsed();
+        if needs_present && !self.diagnostic_selectors.is_empty() {
+            outcome.diagnostics.push(format!(
+                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {}",
+                style_time.as_secs_f64() * 1000.0,
+                style.element_style_time.as_secs_f64() * 1000.0,
+                style.pseudo_style_time.as_secs_f64() * 1000.0,
+                layout_time.as_secs_f64() * 1000.0,
+                style.changed_styles,
+                style.recomputed_styles,
+                style.full_rebuild,
+                outcome.invalidation.roots.len(),
+            ));
+        }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
-            layout_micros: micros(layout_started.elapsed()),
+            style_micros: micros(style_time),
+            layout_micros: micros(layout_time),
             ..PageLoadReport::default()
         });
         if needs_present {
             self.presentation_after_observers(outcome, style, load)
                 .map(|mut presentation| {
-                    presentation.clock_advanced = true;
-                    AdvanceResult::Presentation(Box::new(presentation))
+                    match &mut presentation {
+                        AdvanceResult::Presentation(value) => value.clock_advanced = true,
+                        AdvanceResult::Runtime(value) => value.clock_advanced = true,
+                    }
+                    presentation
                 })
         } else {
             let next_timer_micros = self.next_timer_micros();

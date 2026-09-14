@@ -26,6 +26,8 @@ pub(super) struct CompoundSelector {
     pub(super) requires_disabled: bool,
     pub(super) requires_fullscreen: bool,
     pub(super) requires_hover: bool,
+    pub(super) requires_checked: bool,
+    pub(super) requires_indeterminate: bool,
     pub(super) never_matches: bool,
 }
 
@@ -50,6 +52,7 @@ pub(super) enum AttributeOperator {
 
 #[derive(Debug, Clone)]
 pub(super) enum SimpleSelector {
+    State(String),
     Tag(String),
     Id(String),
     Class(String),

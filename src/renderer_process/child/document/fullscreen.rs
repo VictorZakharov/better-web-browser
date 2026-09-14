@@ -9,7 +9,7 @@ impl DocumentRuntime {
         &mut self,
         response: FullscreenResponse,
         connection: &mut ChildConnection,
-    ) -> Result<Option<RendererPresentation>, String> {
+    ) -> Result<Option<AdvanceResult>, String> {
         if response.document != self.id {
             return Ok(None);
         }

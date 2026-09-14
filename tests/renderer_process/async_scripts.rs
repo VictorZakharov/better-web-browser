@@ -19,6 +19,8 @@ mod document_lifecycle;
 mod dynamic;
 #[path = "async_scripts/parsing.rs"]
 mod parsing;
+#[path = "async_scripts/rendering.rs"]
+mod rendering;
 
 #[test]
 fn async_scripts_execute_ready_elements_and_fail_each_owner_without_waiting_for_slow_fetch() {

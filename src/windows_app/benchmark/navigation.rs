@@ -16,6 +16,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     ClickPoint { x: i32, y: i32 },
     MovePoint { x: i32, y: i32 },
     ScrollTo { y: i32 },
+    Wheel { x: i32, y: i32, delta: i32 },
     Key { key: String, code: String },
 }
 
@@ -76,6 +77,13 @@ impl BrowserState {
                 }
                 BenchmarkNavigation::ScrollTo { y } => {
                     let result = self.scroll_benchmark_page(y);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::Wheel { x, y, delta } => {
+                    let result = self.wheel_benchmark_page(x, y, delta);
                     if result.is_ok() {
                         self.continue_or_finish_benchmark_actions();
                     }

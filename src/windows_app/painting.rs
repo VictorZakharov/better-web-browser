@@ -1,3 +1,4 @@
+mod backbuffer;
 mod clip;
 mod crash;
 mod opacity;
@@ -5,7 +6,7 @@ mod opacity;
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, intersects, paint_alpha_bitmap,
     paint_alpha_bitmap_from_dc, paint_alpha_bitmap_size, paint_alpha_image, paint_background_image,
-    paint_border, screen_rect,
+    paint_border_colors, screen_rect,
 };
 use super::platform::*;
 use super::{BrowserState, Surface, rgb, wide_without_null, window_text};
@@ -17,70 +18,6 @@ use std::ptr::null_mut;
 use std::time::Instant;
 
 impl BrowserState {
-    pub(super) unsafe fn paint(&mut self) {
-        let paint_started = Instant::now();
-        let mut paint: PaintStruct = std::mem::zeroed();
-        let window_dc = BeginPaint(self.window, &mut paint);
-        if window_dc.is_null() {
-            return;
-        }
-        let mut client: Rect = std::mem::zeroed();
-        GetClientRect(self.window, &mut client);
-        let dirty = if paint.paint.width() > 0 && paint.paint.height() > 0 {
-            paint.paint
-        } else {
-            client
-        };
-        let content = Rect {
-            left: 0,
-            top: self.toolbar_height(),
-            right: client.right,
-            bottom: (client.bottom - self.status_height()).max(self.toolbar_height()),
-        };
-        let painted_content = intersects(&dirty, &content);
-        let memory_dc = CreateCompatibleDC(window_dc);
-        let bitmap = if memory_dc.is_null() {
-            null_mut()
-        } else {
-            CreateCompatibleBitmap(window_dc, dirty.width().max(1), dirty.height().max(1))
-        };
-
-        if !memory_dc.is_null() && !bitmap.is_null() {
-            let previous = SelectObject(memory_dc, bitmap);
-            // Map client coordinates into a backbuffer sized to the invalidated region.
-            SetViewportOrgEx(memory_dc, -dirty.left, -dirty.top, null_mut());
-            IntersectClipRect(memory_dc, dirty.left, dirty.top, dirty.right, dirty.bottom);
-            self.paint_surface(memory_dc, &client, &dirty);
-            BitBlt(
-                window_dc,
-                dirty.left,
-                dirty.top,
-                dirty.width(),
-                dirty.height(),
-                memory_dc,
-                dirty.left,
-                dirty.top,
-                SRCCOPY,
-            );
-            if !previous.is_null() {
-                SelectObject(memory_dc, previous);
-            }
-            DeleteObject(bitmap);
-            DeleteDC(memory_dc);
-        } else {
-            if !memory_dc.is_null() {
-                DeleteDC(memory_dc);
-            }
-            self.paint_surface(window_dc, &client, &dirty);
-        }
-        EndPaint(self.window, &paint);
-        let paint_time = paint_started.elapsed();
-        if painted_content {
-            self.record_visible_paint(paint_time);
-        }
-        self.record_benchmark_paint(paint_time);
-    }
-
     pub(super) unsafe fn paint_surface(&mut self, dc: Hdc, client: &Rect, dirty: &Rect) {
         let toolbar_height = self.toolbar_height();
         let scale = self.page_scale();
@@ -101,10 +38,10 @@ impl BrowserState {
             return;
         }
         match tab.surface {
-            Surface::Page => {
+            Surface::Page if tab.page_layout.background.alpha != 0 => {
                 fill_color_rect(dc, &content, tab.page_layout.background.to_colorref())
             }
-            Surface::Reader => {
+            _ => {
                 FillRect(dc, &content, content_brush);
             }
         }
@@ -137,6 +74,8 @@ impl BrowserState {
                             .find_map(OpacityLayer::dc)
                             .unwrap_or(dc);
                         match item {
+                            DisplayItem::NodeBoundary { .. }
+                            | DisplayItem::PaintBoundary { .. } => continue,
                             DisplayItem::BeginOpacity { bounds, opacity } => {
                                 if *opacity <= 0.0 {
                                     skipped_opacity_depth = 1;
@@ -189,17 +128,17 @@ impl BrowserState {
                             DisplayItem::BorderRect {
                                 rect,
                                 widths,
-                                color,
+                                colors,
                                 radius,
                             } => {
                                 let rectangle =
                                     screen_rect(*rect, tab.scroll_y, toolbar_height, scale);
                                 if intersects(&rectangle, &content) {
-                                    paint_border(
+                                    paint_border_colors(
                                         item_dc,
                                         &rectangle,
                                         widths.map(|width| width * scale),
-                                        color.to_colorref(),
+                                        *colors,
                                         *radius * scale,
                                     );
                                 }
@@ -447,7 +386,15 @@ impl BrowserState {
                                         .find(|control| control.spec.node_id == spec.node_id)
                                         .map(|control| window_text(control.window))
                                         .unwrap_or_else(|| spec.value.clone());
-                                    let text = if spec.kind == ControlKind::Password {
+                                    if value.is_empty()
+                                        && !is_button
+                                        && spec.kind != ControlKind::Select
+                                    {
+                                        SetTextColor(item_dc, spec.placeholder_color.to_colorref());
+                                    }
+                                    let text = if spec.kind == ControlKind::Password
+                                        && !value.is_empty()
+                                    {
                                         "•".repeat(value.chars().count())
                                     } else if value.is_empty() {
                                         if spec.kind == ControlKind::Select || is_button {

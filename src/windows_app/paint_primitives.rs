@@ -2,6 +2,8 @@ use super::platform::*;
 use super::wide_without_null;
 use better_web_browser::engine::{DecodedImage, RectF};
 use std::mem::size_of;
+mod border;
+pub(super) use border::{paint_border, paint_border_colors};
 
 pub(super) fn screen_rect(rect: RectF, scroll_y: i32, content_top: i32, scale: f32) -> Rect {
     Rect {
@@ -276,106 +278,4 @@ pub(super) unsafe fn paint_text(
     SetTextColor(dc, color);
     SetBkMode(dc, TRANSPARENT);
     draw_text_in_rect(dc, text, &mut rectangle, format);
-}
-
-pub(super) unsafe fn paint_border(
-    dc: Hdc,
-    rectangle: &Rect,
-    widths: [f32; 4],
-    color: u32,
-    radius: f32,
-) {
-    let [top, right, bottom, left] = widths.map(|width| width.ceil().max(0.0) as i32);
-    if radius > 0.0 {
-        let brush = CreateSolidBrush(color);
-        if brush.is_null() {
-            return;
-        }
-        let diameter = (radius * 2.0).round().max(1.0) as i32;
-        let outer = CreateRoundRectRgn(
-            rectangle.left,
-            rectangle.top,
-            rectangle.right + 1,
-            rectangle.bottom + 1,
-            diameter,
-            diameter,
-        );
-        let inner_rect = Rect {
-            left: rectangle.left + left,
-            top: rectangle.top + top,
-            right: rectangle.right - right,
-            bottom: rectangle.bottom - bottom,
-        };
-        if !outer.is_null() {
-            if inner_rect.width() > 0 && inner_rect.height() > 0 {
-                let border_width = top.max(right).max(bottom).max(left) as f32;
-                let inner_radius = (radius - border_width).max(0.0);
-                let inner_diameter = (inner_radius * 2.0).round().max(1.0) as i32;
-                let inner = CreateRoundRectRgn(
-                    inner_rect.left,
-                    inner_rect.top,
-                    inner_rect.right + 1,
-                    inner_rect.bottom + 1,
-                    inner_diameter,
-                    inner_diameter,
-                );
-                if !inner.is_null() {
-                    CombineRgn(outer, outer, inner, RGN_DIFF);
-                    DeleteObject(inner);
-                }
-            }
-            FillRgn(dc, outer, brush);
-            DeleteObject(outer);
-        }
-        DeleteObject(brush);
-        return;
-    }
-    if top > 0 {
-        fill_color_rect(
-            dc,
-            &Rect {
-                left: rectangle.left,
-                top: rectangle.top,
-                right: rectangle.right,
-                bottom: (rectangle.top + top).min(rectangle.bottom),
-            },
-            color,
-        );
-    }
-    if right > 0 {
-        fill_color_rect(
-            dc,
-            &Rect {
-                left: (rectangle.right - right).max(rectangle.left),
-                top: rectangle.top,
-                right: rectangle.right,
-                bottom: rectangle.bottom,
-            },
-            color,
-        );
-    }
-    if bottom > 0 {
-        fill_color_rect(
-            dc,
-            &Rect {
-                left: rectangle.left,
-                top: (rectangle.bottom - bottom).max(rectangle.top),
-                right: rectangle.right,
-                bottom: rectangle.bottom,
-            },
-            color,
-        );
-    }
-    if left > 0 {
-        fill_color_rect(
-            dc,
-            &Rect {
-                left: rectangle.left,
-                top: rectangle.top,
-                right: (rectangle.left + left).min(rectangle.right),
-                bottom: rectangle.bottom,
-            },
-            color,
-        );
-    }
 }

@@ -146,7 +146,7 @@ fn requests_only_webfont_faces_used_by_computed_styles() {
                     src: url(../fonts/used-bold.woff) format("woff"); }
                 @font-face { font-family: Unused;
                     src: url(../fonts/unused.woff) format("woff"); }
-                body { font-family: Used; }
+                body { font-family: 'Absent First Choice', Used, serif; }
             "#
         .into(),
     );

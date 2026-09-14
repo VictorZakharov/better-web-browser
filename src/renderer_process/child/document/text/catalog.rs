@@ -82,10 +82,16 @@ impl FontCatalog {
         if cluster_looks_like_emoji(cluster) {
             families.push(QueryFamily::Generic(GenericFamily::Emoji));
         }
-        for family in css_families(family) {
-            match GenericFamily::parse(&family.to_ascii_lowercase()) {
-                Some(generic) => families.push(QueryFamily::Generic(generic)),
-                None => families.push(QueryFamily::Named(family)),
+        use crate::engine::css::font_family::{self, Family};
+        let requested = font_family::parse(family).unwrap_or_default();
+        for family in &requested {
+            match family {
+                Family::Generic(name) => {
+                    if let Some(generic) = GenericFamily::parse(name) {
+                        families.push(QueryFamily::Generic(generic));
+                    }
+                }
+                Family::Named(name) => families.push(QueryFamily::Named(name)),
             }
         }
         families.push(QueryFamily::Generic(GenericFamily::SansSerif));
@@ -145,13 +151,6 @@ impl FontCatalog {
             .load(Some(&mut self.sources))
             .map(|blob| blob.as_ref().to_vec())
     }
-}
-
-fn css_families(value: &str) -> impl Iterator<Item = &str> {
-    value.split(',').filter_map(|family| {
-        let family = family.trim().trim_matches(['\'', '"']);
-        (!family.is_empty()).then_some(family)
-    })
 }
 
 fn cluster_has_coverage(cluster: &str, map: &fontique::Charmap<'_>) -> bool {

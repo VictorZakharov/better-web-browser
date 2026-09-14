@@ -171,6 +171,7 @@ impl BrowserState {
         if let Some(initial_scroll_y) = initial_scroll_y {
             let maximum_scroll = (self.content_height - self.viewport_height()).max(0);
             self.scroll_y = initial_scroll_y.clamp(0, maximum_scroll);
+            self.compose_viewport_sticky_layers();
         }
 
         let scroll_sample_count = self

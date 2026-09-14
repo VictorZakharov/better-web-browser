@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Independent border colors</title>
+<style>
+body { margin:20px; font:16px/1.5 Arial; color:#222 }
+.box { box-sizing:border-box; width:280px; height:100px; margin:0 0 20px; border:12px solid; background:#eee; padding:12px }
+#four { border-color:red green blue black }
+#notice { border:1px solid #a2a9b1; border-left:12px solid #36c }
+#round { border-radius:30px; border-color:red green blue black }
+#transparent { border-color:red transparent blue transparent }
+#current { border-color:currentColor; color:purple }
+button { font:inherit; background:white; border:6px solid red; border-right-color:blue; padding:8px }
+</style>
+<div id=four class=box>Four independent colors</div>
+<div id=notice class=box>One emphasized edge</div>
+<div id=round class=box>Rounded corners</div>
+<div id=transparent class=box>Transparent side ownership</div>
+<div id=current class=box>Current text color</div>
+<button id=control>Authored control border</button>

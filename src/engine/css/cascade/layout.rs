@@ -85,7 +85,7 @@ impl StyleSet {
     pub(crate) fn from_sources_for_layout(
         dom: &Dom,
         base_url: &str,
-        sheets: &[(String, String)],
+        sheets: &[StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         let mut styles = Self::for_computed_style_for_media_environment(

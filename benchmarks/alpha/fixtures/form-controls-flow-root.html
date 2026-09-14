@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Form controls and independent flow roots</title>
+<style>
+body { margin: 24px; font: 16px/1.5 Arial, sans-serif; color: #202122 }
+form { display:flex; width:500px; align-items:stretch; margin-bottom:24px }
+input[type=search] { min-width:0; width:400px; height:32px; box-sizing:border-box;
+  border:1px solid #a2a9b1; padding:4px 8px; font:14px/22px Arial }
+input::placeholder { color:#72777d }
+button { display:flex; align-items:center; justify-content:center; min-height:32px;
+  border:1px solid #a2a9b1; padding:1px 11px; background:#f8f9fa; font:bold 14px Arial }
+.choices { display:flex; gap:24px; margin-bottom:24px }
+label { position:relative; display:flex; gap:8px; align-items:center }
+label input { position:absolute; opacity:0; width:20px; height:20px; margin:0 }
+.icon { width:20px; height:20px; border:1px solid #72777d; border-radius:50%; box-sizing:border-box }
+input:checked + .icon { border:6px solid #36c }
+input:disabled + .icon { border-color:#a2a9b1 }
+main { width:600px }
+aside { float:right; width:180px; height:200px; margin-left:20px; background:#eef }
+.heading { display:flow-root; border-bottom:1px solid #a2a9b1; padding-bottom:4px; font:24px Georgia }
+</style>
+<form action="#submitted"><input id=search type=search placeholder="Search articles"><button>Search</button></form>
+<div class=choices>
+<label id=small><input id=first type=radio name=size checked><span class=icon></span>Small</label>
+<label id=standard><input id=second type=radio name=size><span class=icon></span>Standard</label>
+<label><input type=radio name=size disabled><span class=icon></span>Disabled</label>
+</div>
+<main><aside>Float</aside><section class=heading>Background</section><p>The heading rule ends before the float.</p></main>

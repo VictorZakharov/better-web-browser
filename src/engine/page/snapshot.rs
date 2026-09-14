@@ -101,6 +101,35 @@ mod tests {
     }
 
     #[test]
+    fn deferred_snapshot_styles_observe_new_sources_and_current_dom() {
+        let mut page = Page::parse("<p>geometry</p>", "https://example.com/");
+        let mut snapshot = page.layout_snapshot();
+        let invalidation =
+            crate::engine::invalidation::RenderInvalidation::full(page.dom.document.id());
+        for width in [120, 240] {
+            page.stylesheet_sources = vec![crate::engine::css::StylesheetSource::injected(
+                "https://example.com/style.css",
+                format!("p {{ width: {width}px; height: 30px }}"),
+            )];
+            let paragraph = page.dom.elements_named("p").next().unwrap();
+            paragraph.set_attr("style", "padding: 2px");
+            snapshot.synchronize_layout_snapshot(&page);
+            assert!(snapshot.cached_styles.is_none());
+            // The synchronous geometry read, not snapshot publication, initializes styles.
+            let refresh = snapshot.refresh_layout_styles_after_invalidation_for_viewport(
+                800.0,
+                600.0,
+                &invalidation,
+            );
+            assert!(refresh.full_rebuild);
+            let expected = crate::engine::layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+            let actual = crate::engine::layout_page(&snapshot, 800.0, 600.0, &mut FixedMeasurer);
+            assert_eq!(actual.node_bounds, expected.node_bounds);
+            assert_eq!(actual.content_height, expected.content_height);
+        }
+    }
+
+    #[test]
     fn layout_snapshots_retain_image_dimensions_without_copying_pixels() {
         let mut page = Page::parse("<img src='hero.png'>", "https://example.com/");
         page.images.insert(

@@ -54,6 +54,20 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             "none"
                 | "contents"
                 | "block"
+                | "flow"
+                | "block flow"
+                | "flow block"
+                | "flow-root"
+                | "block flow-root"
+                | "flow-root block"
+                | "inline flow-root"
+                | "flow-root inline"
+                | "inline flow"
+                | "flow inline"
+                | "inline flex"
+                | "flex inline"
+                | "block flex"
+                | "flex block"
                 | "inline"
                 | "inline-block"
                 | "inline-flex"
@@ -67,9 +81,13 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 | "table-row"
                 | "table-cell"
         ),
-        "position" => matches!(value.as_str(), "static" | "relative" | "absolute" | "fixed"),
+        "position" => matches!(
+            value.as_str(),
+            "static" | "relative" | "absolute" | "fixed" | "sticky"
+        ),
         "z-index" => value == "auto" || value.parse::<i32>().is_ok(),
         "float" => matches!(value.as_str(), "none" | "left" | "right"),
+        "clear" => super::Clear::parse(&value).is_some(),
         "box-sizing" | "-webkit-box-sizing" => {
             matches!(value.as_str(), "content-box" | "border-box")
         }
@@ -79,7 +97,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
         }
-        "color" | "background-color" | "border-color" => parse_color(&value).is_some(),
+        "color" | "background-color" => parse_color(&value).is_some(),
+        "border-color" => values::borders::color_values(&value).is_some(),
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            values::borders::color_values(&value).is_some_and(|colors| colors.len() == 1)
+        }
         "width"
         | "height"
         | "min-width"
@@ -133,9 +155,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                 || value.parse::<u16>().is_ok()
         }
         "font-style" => matches!(value.as_str(), "normal" | "italic" | "oblique"),
-        "font-family" => !first_font_family(&value).is_empty(),
+        "font-family" => super::font_family::parse(&value).is_some(),
         "letter-spacing" | "word-spacing" => parse_text_spacing(&value, 16.0).is_some(),
         "line-height" => parse_line_height(&value, 16.0).is_some(),
+        "align-content" => ContentAlignment::parse(&value).is_some(),
         "text-align" => matches!(
             value.as_str(),
             "left" | "start" | "center" | "right" | "end"
@@ -278,7 +301,7 @@ mod tests {
     #[test]
     fn feature_queries_are_conservative_about_unimplemented_values() {
         assert!(supports_matches("@supports (display: grid)"));
-        assert!(!supports_matches("@supports (position: sticky)"));
+        assert!(supports_matches("@supports (position: sticky)"));
         assert!(!supports_matches(
             "@supports (grid-template-columns: subgrid)"
         ));

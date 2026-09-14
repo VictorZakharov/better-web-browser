@@ -6,6 +6,7 @@ mod tests;
 pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
     for item in items {
         let rect = match item {
+            DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => continue,
             DisplayItem::BeginClip { bounds }
             | DisplayItem::EndClip { bounds }
             | DisplayItem::BeginOpacity { bounds, .. }
@@ -67,7 +68,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         // Assigned nodes belong to the composed box subtree, not necessarily this DOM subtree.
         // Translate their CSSOM bounds with the paint range while excluding unassigned/fallback
         // content that does not participate in these boxes.
-        for descendant in Node::composed_descendants(node) {
+        for descendant in self.styles.descendants(node) {
+            if let Some(scroll) = self.output.scroll_boxes.get_mut(&descendant.id()) {
+                scroll.port.x += offset_x;
+                scroll.port.y += offset_y;
+            }
             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                 rect.x += offset_x;
                 rect.y += offset_y;
@@ -89,7 +94,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if offset_x.abs() <= f32::EPSILON && offset_y.abs() <= f32::EPSILON {
             return;
         }
-        let Some(node) = self.page.dom.find_node(node_id) else {
+        let Some(node) = self.styles.node(node_id) else {
             return;
         };
         let item_end = self.output.items.len();

@@ -34,8 +34,11 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
         style.background_color = background;
     }
     if node.tag_name() == Some("font") {
-        if let Some(face) = node.attr("face") {
-            style.font_family = first_font_family(&face);
+        if let Some(face) = node
+            .attr("face")
+            .and_then(|face| font_family::specified(&face))
+        {
+            style.font_family = face;
         }
         if let Some(size) = node
             .attr("size")
@@ -43,7 +46,6 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
         {
             const LEGACY_SIZES: [f32; 7] = [10.0, 13.0, 16.0, 18.0, 24.0, 32.0, 48.0];
             style.font_size = LEGACY_SIZES[(size.clamp(1, 7) - 1) as usize];
-            style.line_height = style.font_size * 1.2;
         }
     }
 }

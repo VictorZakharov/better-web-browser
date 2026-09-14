@@ -31,9 +31,18 @@ impl HostState {
     }
 
     pub(in crate::engine::script) fn idle_blocked(&self) -> bool {
-        self.navigation_url.is_some()
+        self.idle_deadline_blocked()
             || self.resize_observers_pending
             || self.timers.render_requested()
+    }
+
+    pub(in crate::engine::script) fn idle_deadline_blocked(&self) -> bool {
+        // Dirty DOM prevents admitting a new idle callback before rendering, but does not
+        // exhaust the deadline of the callback currently running. The active period still
+        // uses its original wall-clock budget and next-task bound. Actual input/network/
+        // rendering task delivery interrupts the period through begin_task.
+        // https://w3c.github.io/requestidlecallback/#the-idledeadline-interface
+        self.navigation_url.is_some()
             || self.pending_dynamic_scripts.has_ready()
             || self.pending_dynamic_scripts.has_unrequested()
             || !self.pending_fetch_actions.is_empty()

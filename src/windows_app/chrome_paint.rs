@@ -1,6 +1,6 @@
 use super::paint_primitives::{
     draw_text_in_rect, fill_color_rect, fill_color_shape, paint_alpha_bitmap, paint_border,
-    paint_rounded_panel,
+    paint_border_colors, paint_rounded_panel,
 };
 use super::platform::*;
 use super::{BrowserState, Surface};
@@ -226,12 +226,14 @@ impl BrowserState {
             spec.background_color.to_colorref(),
             radius,
         );
-        if spec.border_color.alpha > 0 && spec.border_width.iter().any(|width| *width > 0.0) {
-            paint_border(
+        if spec.border_colors.iter().any(|c| c.alpha > 0)
+            && spec.border_width.iter().any(|width| *width > 0.0)
+        {
+            paint_border_colors(
                 item.dc,
                 &item.item_rect,
                 spec.border_width.map(|width| width * scale),
-                spec.border_color.to_colorref(),
+                spec.border_colors,
                 radius,
             );
         }

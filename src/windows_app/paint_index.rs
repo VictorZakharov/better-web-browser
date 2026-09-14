@@ -65,6 +65,7 @@ impl PaintIndex {
 
 fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
     let rect = match item {
+        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => return (0.0, 0.0),
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }

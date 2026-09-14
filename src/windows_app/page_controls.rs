@@ -2,6 +2,7 @@
 
 use super::tab_state::TabFocus;
 use super::*;
+mod placeholder;
 
 pub(super) struct PageControlWindow {
     pub(super) window: Hwnd,
@@ -115,8 +116,7 @@ impl BrowserState {
                         | ControlKind::Search
                 )
             {
-                let placeholder = wide(&spec.placeholder);
-                SendMessageW(window, EM_SETCUEBANNER, 1, placeholder.as_ptr() as isize);
+                placeholder::install(window, &spec);
             }
             let brush = CreateSolidBrush(spec.background_color.to_colorref());
             self.page_controls.push(PageControlWindow {

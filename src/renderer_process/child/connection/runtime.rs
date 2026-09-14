@@ -14,6 +14,15 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 impl ChildConnection {
+    fn send_document_update(&mut self, update: AdvanceResult) -> Result<(), String> {
+        match update {
+            AdvanceResult::Presentation(presentation) => self.send_presentation(&presentation),
+            AdvanceResult::Runtime(update) => self
+                .writer
+                .send_renderer(&RendererMessage::RuntimeUpdate(update))
+                .map_err(|error| error.to_string()),
+        }
+    }
     pub(super) fn complete_document_resource_preloads(&mut self) -> Result<(), String> {
         let Some(mut runtime) = self.document.take() else {
             return Ok(());
@@ -133,7 +142,7 @@ impl ChildConnection {
         }));
         match result {
             Ok(Ok(LoadResult::Ready(runtime, presentation))) => {
-                self.send_presentation(&presentation)?;
+                self.send_document_update(presentation)?;
                 self.document = Some(*runtime);
             }
             Ok(Ok(LoadResult::Navigate(url, text))) => {
@@ -204,7 +213,7 @@ impl ChildConnection {
         };
         if runtime.id() == document {
             match catch_unwind(AssertUnwindSafe(|| runtime.resize(viewport, self))) {
-                Ok(Ok(presentation)) => self.send_presentation(&presentation)?,
+                Ok(Ok(presentation)) => self.send_document_update(presentation)?,
                 Ok(Err(error)) => {
                     self.send_document_failure(document, error)?;
                     return Ok(());
@@ -237,7 +246,7 @@ impl ChildConnection {
                         .map_err(|error| error.to_string())?;
                 }
                 if let Some(presentation) = result.presentation {
-                    self.send_presentation(&presentation)?;
+                    self.send_document_update(presentation)?;
                 } else if let Some(update) = runtime.pending_geometry_observer_update() {
                     // A scroll-only input has no visual revision, but its observer task must
                     // still wake an otherwise idle browser-owned document clock.
@@ -288,7 +297,7 @@ impl ChildConnection {
             runtime.apply_fullscreen_response(response, self)
         }));
         match result {
-            Ok(Ok(Some(presentation))) => self.send_presentation(&presentation)?,
+            Ok(Ok(Some(presentation))) => self.send_document_update(presentation)?,
             Ok(Ok(None)) => {}
             Ok(Err(error)) => {
                 self.send_document_failure(document, error)?;

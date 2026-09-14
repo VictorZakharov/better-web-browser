@@ -1,6 +1,7 @@
 //! Coalesced, time-based wheel scrolling for interactive browser windows.
 
 use super::*;
+mod sticky;
 
 // A 16 ms SetTimer request repeatedly landed on alternating one/two-tick boundaries in
 // diagnostics, producing the observed ~16/32 ms cadence. The animation remains time-based, so
@@ -16,9 +17,16 @@ pub(super) struct ScrollAnimation {
     target: Option<i32>,
     last_frame: Option<Instant>,
     wheel_delta_remainder: i32,
+    pixel_remainder: f64,
 }
 
 impl ScrollAnimation {
+    fn consume_css_delta(&mut self, delta: f32, scale: f32) -> i32 {
+        let total = delta as f64 * scale as f64 + self.pixel_remainder;
+        let pixels = total.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
+        self.pixel_remainder = (total - pixels as f64).clamp(-0.5, 0.5);
+        pixels
+    }
     fn consume_wheel_delta(&mut self, delta: i32) -> i32 {
         let total = self.wheel_delta_remainder.saturating_add(delta);
         let notches = total / WHEEL_DELTA;
@@ -43,6 +51,22 @@ impl BrowserState {
         if notches == 0 {
             return;
         }
+        self.queue_scroll_distance(-notches * self.scale(WHEEL_STEP_DIP));
+    }
+
+    pub(super) unsafe fn queue_css_wheel_scroll(&mut self, delta: f32) {
+        if !delta.is_finite() || delta == 0.0 {
+            return;
+        }
+        let scale = self.page_scale();
+        let distance = self.scroll_animation.consume_css_delta(delta, scale);
+        if distance != 0 {
+            self.note_scroll_activity();
+            self.queue_scroll_distance(distance);
+        }
+    }
+
+    unsafe fn queue_scroll_distance(&mut self, distance: i32) {
         let maximum = (self.content_height - self.viewport_height()).max(0);
         let base = self
             .tabs
@@ -50,7 +74,7 @@ impl BrowserState {
             .scroll_animation
             .target
             .unwrap_or(self.scroll_y);
-        let target = (base - notches * self.scale(WHEEL_STEP_DIP)).clamp(0, maximum);
+        let target = base.saturating_add(distance).clamp(0, maximum);
         if target == self.scroll_y && self.scroll_animation.target.is_none() {
             return;
         }
@@ -127,6 +151,20 @@ impl BrowserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fractional_css_wheel_distance_is_retained_across_inputs() {
+        let mut animation = ScrollAnimation::default();
+        let pixels: i32 = (0..16)
+            .map(|_| animation.consume_css_delta(0.25, 1.25))
+            .sum();
+        assert_eq!(pixels, 5);
+        let reversed: i32 = (0..16)
+            .map(|_| animation.consume_css_delta(-0.25, 1.25))
+            .sum();
+        assert_eq!(reversed, -5);
+        assert_eq!(animation.pixel_remainder, 0.0);
+    }
 
     #[test]
     fn response_curve_advances_without_overshooting() {

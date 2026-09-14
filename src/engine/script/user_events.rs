@@ -39,13 +39,15 @@ fn pointer_boundary(state: &mut HostState, target: Option<NodeRef>) -> serde_jso
     let boundary = Node::update_hover_path(&mut state.pointer_path, target);
     for node in boundary.leaving.iter().chain(&boundary.entering) {
         if state.mutation_requires_render(node) {
-            state
-                .pending_invalidation
-                .record(&state.document, Some(node), MutationKind::State);
+            state.pending_invalidation.record(
+                &state.document,
+                Some(node),
+                MutationKind::PointerDesignation,
+            );
             state.pending_layout_invalidation.record(
                 &state.document,
                 Some(node),
-                MutationKind::State,
+                MutationKind::PointerDesignation,
             );
             state.timers.request_render();
         }
@@ -64,6 +66,23 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             .unwrap_or(0)
     };
     match event {
+        UserInputEvent::FragmentNavigation { url } => {
+            serde_json::json!({ "kind": "fragmentNavigation", "url": url })
+        }
+        UserInputEvent::Wheel {
+            target: node,
+            x,
+            y,
+            delta_x,
+            delta_y,
+            modifiers,
+        } => serde_json::json!({
+            "kind": "wheel", "target": target(node), "x": x, "y": y, "deltaX": delta_x, "deltaY": delta_y,
+            "alt": modifiers.alt, "control": modifiers.control, "shift": modifiers.shift, "meta": modifiers.meta
+        }),
+        UserInputEvent::ElementScroll { target: node } => {
+            serde_json::json!({ "kind": "elementScroll", "target": target(Some(node)) })
+        }
         UserInputEvent::Pointer {
             target: node,
             phase,
@@ -131,6 +150,7 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             "naturalWidth": natural_width, "naturalHeight": natural_height
         }),
         UserInputEvent::Scroll { x, y } => {
+            host.borrow().document.scroll_offset.set((x, y));
             serde_json::json!({ "kind": "scroll", "x": x, "y": y })
         }
         UserInputEvent::Viewport {

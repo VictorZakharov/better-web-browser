@@ -10,6 +10,15 @@ pub(super) fn dispatch(
             state.resize_observers_pending = true;
             JsValue::undefined()
         }
+        "resizeObserverDefer" => {
+            state.resize_observers_pending = true;
+            state.resize_observers_deferred = true;
+            JsValue::undefined()
+        }
+        "resizeObserverFrame" => {
+            state.resize_observers_deferred = false;
+            JsValue::undefined()
+        }
         "timerSchedule" => {
             let id = argument_id(args, 1);
             if id == 0 {
@@ -61,7 +70,7 @@ pub(super) fn dispatch(
                 argument_id(args, 1),
                 state.timers.now(),
                 next_task,
-                state.idle_blocked(),
+                state.idle_deadline_blocked(),
             ))
         }
         "timerCancel" => {

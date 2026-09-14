@@ -4,6 +4,8 @@ use crate::engine::css::media::MediaEnvironment;
 use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
 
+mod invalidation;
+mod owners;
 mod parsed;
 #[cfg(test)]
 mod rebuild_tests;
@@ -32,39 +34,19 @@ impl StyleSet {
         &mut self,
         dom: &Dom,
         base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
         removed_nodes: &[NodeId],
     ) -> StyleRefreshStats {
         let viewport_changed = self.viewport_width != environment.viewport_width
-            || self.viewport_height != environment.viewport_height;
-        // Full rule changes also invalidate entries which are no longer in the composed tree.
-        // Keeping them would make later explicit queries reuse stale unassigned light-DOM styles.
-        // A full refresh need not carry an incremental removal log, so prune detached entries too.
-        let composed = Node::composed_descendants(&dom.document)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>();
-        let previous_count = self.styles.len();
-        let previous_generated_count = self.generated_nodes.len();
-        self.styles.retain(|node, _| composed.contains(node));
-        self.pseudo_styles
-            .retain(|(origin, _), _| composed.contains(origin));
-        self.generated_nodes
-            .retain(|(origin, _), _| composed.contains(origin));
-        let generated = self
-            .generated_nodes
-            .values()
-            .flat_map(Node::descendants)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>();
-        self.generated_styles
-            .retain(|node, _| generated.contains(node));
-        let removed_styles = previous_count - self.styles.len();
-        let removed_generated = previous_generated_count != self.generated_nodes.len();
+            || self.viewport_height != environment.viewport_height
+            || self.resolution_dppx != environment.resolution_dppx;
+        let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
         self.compiled = collect(&dom.document, base_url, external_stylesheets, environment);
         self.document_base_url = base_url.to_string();
         self.viewport_width = environment.viewport_width;
         self.viewport_height = environment.viewport_height;
+        self.resolution_dppx = environment.resolution_dppx;
         let mut stats = self.refresh_subtrees(
             &dom.document,
             std::slice::from_ref(&dom.document),
@@ -82,22 +64,25 @@ impl StyleSet {
 pub(super) fn collect(
     document: &NodeRef,
     document_base_url: &str,
-    external_stylesheets: &[(String, String)],
+    external_stylesheets: &[crate::engine::css::StylesheetSource],
     environment: MediaEnvironment,
 ) -> Rc<CompiledRules> {
     let mut inputs = Vec::new();
-    append_inline(
+    owners::append(
         document,
         document_base_url,
+        external_stylesheets,
+        environment,
         &mut inputs,
         RuleScope::Document,
     );
     inputs.extend(
         external_stylesheets
             .iter()
-            .map(|(base_url, source)| SheetInput {
-                source: source.clone(),
-                base_url: base_url.clone(),
+            .filter(|source| source.owner_url.is_none())
+            .map(|source| SheetInput {
+                source: source.source.clone(),
+                base_url: source.base_url.clone(),
                 scope: RuleScope::Document,
             }),
     );
@@ -105,9 +90,11 @@ pub(super) fn collect(
     for shadow in Node::shadow_including_descendants(document)
         .filter(|node| matches!(node.data, NodeData::ShadowRoot(_)))
     {
-        append_inline(
+        owners::append(
             &shadow,
             document_base_url,
+            external_stylesheets,
+            environment,
             &mut inputs,
             RuleScope::Shadow(shadow.id()),
         );
@@ -140,18 +127,6 @@ pub(super) fn collect(
     });
     registry::remember(document.id(), &compiled);
     compiled
-}
-
-fn append_inline(root: &NodeRef, base_url: &str, inputs: &mut Vec<SheetInput>, scope: RuleScope) {
-    inputs.extend(
-        Node::descendants(root)
-            .filter(|node| node.tag_name() == Some("style"))
-            .map(|node| SheetInput {
-                source: node.text_content(),
-                base_url: base_url.to_string(),
-                scope,
-            }),
-    );
 }
 
 fn append_adopted(
@@ -320,8 +295,8 @@ mod tests {
             &dom.document,
             "",
             &[
-                ("https://example.com/a.css".into(), "p{color:red}".into()),
-                ("https://example.com/b.css".into(), "p{color:blue}".into()),
+                StylesheetSource::injected("https://example.com/a.css", "p{color:red}".into()),
+                StylesheetSource::injected("https://example.com/b.css", "p{color:blue}".into()),
             ],
             environment,
         );
@@ -329,8 +304,8 @@ mod tests {
             &dom.document,
             "",
             &[
-                ("https://example.com/b.css".into(), "p{color:blue}".into()),
-                ("https://example.com/a.css".into(), "p{color:red}".into()),
+                StylesheetSource::injected("https://example.com/b.css", "p{color:blue}".into()),
+                StylesheetSource::injected("https://example.com/a.css", "p{color:red}".into()),
             ],
             environment,
         );
@@ -339,8 +314,8 @@ mod tests {
             &dom.document,
             "",
             &[
-                ("https://other.example/a.css".into(), "p{color:red}".into()),
-                ("https://example.com/b.css".into(), "p{color:blue}".into()),
+                StylesheetSource::injected("https://other.example/a.css", "p{color:red}".into()),
+                StylesheetSource::injected("https://example.com/b.css", "p{color:blue}".into()),
             ],
             environment,
         );

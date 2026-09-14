@@ -1,7 +1,17 @@
 use super::*;
+#[cfg(test)]
+mod alignment_tests;
+#[cfg(test)]
+mod anonymous_tests;
+mod columns;
+mod grid;
+#[cfg(test)]
+mod grid_tests;
 
 #[cfg(test)]
 mod hidden;
+#[cfg(test)]
+mod sizing_tests;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_table(
@@ -13,54 +23,71 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_height: Option<f32>,
         _style: &ComputedStyle,
     ) -> f32 {
-        let captions = table_captions(node);
+        let captions = table_captions(node, self.styles);
         let (top_captions, bottom_captions): (Vec<_>, Vec<_>) = captions
             .into_iter()
             .filter(|caption| self.styles.get(caption).display != Display::None)
             .partition(|caption| !self.styles.get(caption).caption_side_bottom);
         y = self.layout_captions(&top_captions, x, y, width, containing_height);
         let grid_top = y;
-        let rows = table_rows(node, self.styles);
-        for row in rows {
-            let cells = Node::composed_children(&row)
-                .into_iter()
-                .filter(|child| matches!(child.tag_name(), Some("td" | "th")))
-                .filter(|child| self.styles.get(child).display != Display::None)
-                .collect::<Vec<_>>();
-            if cells.is_empty() {
-                continue;
+        let grid = grid::Grid::new(node, self.styles);
+        let columns = self.table_columns(&grid, width);
+        let widths = columns::used_widths(&columns, width);
+        let xs = track_offsets(&widths, x);
+        let mut heights = grid
+            .rows
+            .iter()
+            .map(|row| {
+                let style = self.styles.get(row);
+                style
+                    .height
+                    .resolve(containing_height.unwrap_or(0.0), style.font_size)
+                    .unwrap_or(0.0)
+            })
+            .collect::<Vec<_>>();
+        let mut cells = grid.cells.iter().collect::<Vec<_>>();
+        cells.sort_by_key(|cell| cell.rows);
+        for cell in cells {
+            let cell_width = xs[cell.column + cell.columns] - xs[cell.column];
+            let minimum = self.intrinsic_block_height(
+                &cell.node,
+                cell_width,
+                containing_height,
+                Some(UsedInlineSize {
+                    outer: cell_width,
+                    percentage_basis: width,
+                }),
+            );
+            let rows = &mut heights[cell.row..cell.row + cell.rows];
+            let extra = (minimum - rows.iter().sum::<f32>()).max(0.0) / rows.len() as f32;
+            for height in rows {
+                *height += extra;
             }
-            let widths = table_cell_widths(&cells, width, self.styles);
-            let mut cell_x = x;
-            let mut row_bottom = y;
-            for (cell, cell_width) in cells.iter().zip(widths) {
-                let cell_style = self.styles.get(cell).clone();
-                let in_flow_paint_start = self.output.items.len();
-                let in_flow_node_start = self.output.node_paint_order.len();
-                let bottom = self.layout_block_children(
-                    cell,
-                    cell_x,
-                    y,
-                    cell_width,
-                    containing_height,
-                    &cell_style,
-                );
-                self.layout_positioned_children(
-                    cell,
-                    RectF {
-                        x: cell_x,
-                        y,
-                        width: cell_width,
-                        height: (bottom - y).max(0.0),
-                    },
-                    in_flow_paint_start,
-                    in_flow_node_start,
-                );
-                row_bottom = row_bottom.max(bottom);
-                cell_x += cell_width;
-            }
-            y = row_bottom;
         }
+        let ys = track_offsets(&heights, y);
+        for cell in &grid.cells {
+            let cell_width = xs[cell.column + cell.columns] - xs[cell.column];
+            let cell_height = ys[cell.row + cell.rows] - ys[cell.row];
+            let style = self.styles.get(&cell.node);
+            let insets = style.padding.resolve(width, style.font_size).vertical()
+                + style
+                    .border_width
+                    .resolve(width, style.font_size)
+                    .vertical();
+            self.layout_block_with_content_height(
+                &cell.node,
+                xs[cell.column],
+                ys[cell.row],
+                cell_width,
+                containing_height,
+                Some(UsedInlineSize {
+                    outer: cell_width,
+                    percentage_basis: width,
+                }),
+                Some((cell_height - insets).max(0.0)),
+            );
+        }
+        y = *ys.last().unwrap_or(&y);
         y = y.max(grid_top + containing_height.unwrap_or(0.0));
         self.layout_captions(&bottom_captions, x, y, width, containing_height)
     }
@@ -82,6 +109,40 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 }
 
+fn track_offsets(sizes: &[f32], start: f32) -> Vec<f32> {
+    let mut offsets = Vec::with_capacity(sizes.len() + 1);
+    offsets.push(start);
+    for size in sizes {
+        offsets.push(offsets.last().unwrap() + size);
+    }
+    offsets
+}
+
+pub(super) fn cell_content_height(style: &ComputedStyle, used: f32, natural: f32) -> f32 {
+    // CSS 2.2 17.5.3: a cell's height is a minimum, never a content cap.
+    // https://www.w3.org/TR/CSS22/tables.html#height-layout
+    if style.display == Display::TableCell {
+        used.max(natural)
+    } else {
+        used
+    }
+}
+
+pub(super) fn content_offset(style: &ComputedStyle, free: f32) -> f32 {
+    if style.display.is_table()
+        || matches!(
+            style.display,
+            Display::Flex | Display::InlineFlex | Display::Grid
+        )
+    {
+        0.0
+    } else if style.display == Display::TableCell {
+        style.vertical_align.cell_offset(free)
+    } else {
+        style.align_content.block_offset(free)
+    }
+}
+
 pub(super) fn resolved_table_borders(
     node: &NodeRef,
     style: &ComputedStyle,
@@ -99,8 +160,18 @@ pub(super) fn resolved_table_borders(
     borders
 }
 
-pub(super) fn caption_outer_width(node: &NodeRef, percentage_basis: f32, styles: &StyleSet) -> f32 {
-    table_captions(node)
+pub(super) fn caption_outer_width(
+    node: &NodeRef,
+    percentage_basis: f32,
+    styles: &engine::box_tree::BoxTree<'_>,
+) -> f32 {
+    if !matches!(
+        styles.get(node).display,
+        Display::Table | Display::InlineTable
+    ) {
+        return 0.0;
+    }
+    table_captions(node, styles)
         .into_iter()
         .filter_map(|caption| {
             let style = styles.get(&caption);
@@ -124,19 +195,17 @@ pub(super) fn caption_outer_width(node: &NodeRef, percentage_basis: f32, styles:
         .fold(0.0, f32::max)
 }
 
-fn table_captions(node: &NodeRef) -> Vec<NodeRef> {
-    Node::composed_children(node)
+fn table_captions(node: &NodeRef, styles: &engine::box_tree::BoxTree<'_>) -> Vec<NodeRef> {
+    styles
+        .children(node)
         .into_iter()
-        .filter(|child| child.tag_name() == Some("caption"))
+        .filter(|child| styles.get(child).display == Display::TableCaption)
         .collect()
 }
 
-fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
+fn table_rows(node: &NodeRef, styles: &engine::box_tree::BoxTree<'_>) -> Vec<NodeRef> {
     let mut rows = Vec::new();
-    let mut stack = Node::composed_children(node)
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>();
+    let mut stack = styles.children(node).into_iter().rev().collect::<Vec<_>>();
     while let Some(candidate) = stack.pop() {
         // A display:none row group removes its entire subtree from the box tree. Do not
         // inspect descendants: layout-only snapshots may defer their computed styles.
@@ -144,40 +213,12 @@ fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
         if styles.get(&candidate).display == Display::None {
             continue;
         }
-        if candidate.tag_name() == Some("tr") {
+        if styles.get(&candidate).display == Display::TableRow || candidate.tag_name() == Some("tr")
+        {
             rows.push(candidate);
-        } else if matches!(candidate.tag_name(), Some("thead" | "tbody" | "tfoot")) {
-            stack.extend(Node::composed_children(&candidate).into_iter().rev());
+        } else if engine::box_tree::row_group(styles.get(&candidate).display) {
+            stack.extend(styles.children(&candidate).into_iter().rev());
         }
     }
     rows
-}
-
-pub(super) fn table_cell_widths(cells: &[NodeRef], width: f32, styles: &StyleSet) -> Vec<f32> {
-    let mut widths = vec![None; cells.len()];
-    let mut assigned = 0.0;
-    for (index, cell) in cells.iter().enumerate() {
-        let length = cell
-            .attr("width")
-            .and_then(|value| {
-                if let Some(percent) = value.strip_suffix('%') {
-                    percent.parse::<f32>().ok().map(Length::Percent)
-                } else {
-                    value.parse::<f32>().ok().map(Length::Px)
-                }
-            })
-            .or_else(|| (styles.get(cell).width != Length::Auto).then_some(styles.get(cell).width));
-        if let Some(resolved) =
-            length.and_then(|length| length.resolve(width, styles.get(cell).font_size))
-        {
-            widths[index] = Some(resolved);
-            assigned += resolved;
-        }
-    }
-    let auto_count = widths.iter().filter(|width| width.is_none()).count().max(1);
-    let automatic = ((width - assigned).max(0.0) / auto_count as f32).max(1.0);
-    widths
-        .into_iter()
-        .map(|value| value.unwrap_or(automatic))
-        .collect()
 }

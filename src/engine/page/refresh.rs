@@ -25,6 +25,10 @@ pub(super) fn parse_immediate_refresh_target(content: &str) -> Option<&str> {
 }
 
 impl Page {
+    pub(crate) fn scrollbar_thickness(&self) -> f32 {
+        let scale = self.media_environment.resolution_dppx.max(0.1);
+        (15.0 * scale).ceil() / scale
+    }
     pub fn style(&self, viewport_width: f32) -> StyleSet {
         self.style_for_viewport(viewport_width, viewport_width)
     }
@@ -122,8 +126,8 @@ impl Page {
             }
         }
         let mut available_faces = Vec::new();
-        for (source_url, css) in &self.stylesheet_sources {
-            available_faces.extend(discover_font_faces(css, source_url));
+        for source in &self.stylesheet_sources {
+            available_faces.extend(discover_font_faces(&source.source, &source.base_url));
         }
         for root in Node::shadow_including_descendants(&self.dom.document) {
             for stylesheet in root.adopted_stylesheets() {
@@ -173,20 +177,19 @@ impl Page {
                     .push(PageResource::Image { url: url.clone() });
                 discovered_style_images += 1;
             }
-            let family = style
-                .font_family
-                .split(',')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .trim_matches(['\'', '"'])
-                .to_ascii_lowercase();
-            if !family.is_empty()
-                && !requested_faces.iter().any(|(requested, weight, italic)| {
-                    requested == &family && *weight == style.font_weight && *italic == style.italic
-                })
+            for family in
+                crate::engine::css::font_family::parse(&style.font_family).unwrap_or_default()
             {
-                requested_faces.push((family, style.font_weight, style.italic));
+                if let crate::engine::css::font_family::Family::Named(family) = family {
+                    let family = family.to_ascii_lowercase();
+                    if !requested_faces.iter().any(|(requested, weight, italic)| {
+                        requested == &family
+                            && *weight == style.font_weight
+                            && *italic == style.italic
+                    }) {
+                        requested_faces.push((family, style.font_weight, style.italic));
+                    }
+                }
             }
         }
         self.install_embedded_images();
@@ -261,13 +264,13 @@ impl Page {
                 (styles, stats)
             }
             Some((_, _, mut styles)) => {
-                let stats = styles.rebuild_rules_for_media_environment(
+                let stats = styles.refresh_rules_after_invalidation(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,
                     self.media_environment
                         .with_viewport(viewport_width, viewport_height),
-                    &invalidation.removed_nodes,
+                    invalidation,
                 );
                 (styles, stats)
             }

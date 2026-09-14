@@ -19,7 +19,62 @@ pub(super) fn viewport_host_call(
             let max_scroll = (state.layout_content_height - state.layout_viewport_height).max(0.0);
             let y = requested.clamp(0.0, f64::from(max_scroll)) as f32;
             state.viewport_scroll_y = Some(y);
+            state.document.scroll_offset.set((0.0, y));
             JsValue::from(f64::from(y))
+        }
+        "elementScroll" => {
+            state.flush_layout_if_needed();
+            let node = state
+                .node(argument_id(args, 1))
+                .filter(|node| state.is_connected(node));
+            let scroll = node
+                .as_ref()
+                .and_then(|node| state.scroll_boxes.get(&node.id()).copied());
+            if let (Some(node), Some(scroll)) = (&node, scroll) {
+                let (mut x, mut y) = node.scroll_offset.get();
+                if args.len() > 3 {
+                    let requested = args[3]
+                        .as_number()
+                        .filter(|value| value.is_finite())
+                        .unwrap_or(0.0)
+                        .clamp(f64::from(f32::MIN), f64::from(f32::MAX))
+                        as f32;
+                    if args[2].as_number() == Some(0.0) {
+                        x = requested;
+                    } else {
+                        y = requested;
+                    }
+                    let accepted = scroll.clamp(x, y);
+                    if node.scroll_offset.replace(accepted) != accepted {
+                        state.geometry_scroll_dirty = true;
+                        state.timers.request_render();
+                    }
+                }
+                let (x, y) = scroll.clamp(node.scroll_offset.get().0, node.scroll_offset.get().1);
+                JsValue::Array(
+                    vec![
+                        x,
+                        y,
+                        scroll.content_width,
+                        scroll.content_height,
+                        scroll.port.width,
+                        scroll.port.height,
+                    ]
+                    .into_iter()
+                    .map(|value| JsValue::from(f64::from(value)))
+                    .collect(),
+                )
+            } else {
+                JsValue::null()
+            }
+        }
+        "documentScrollHeight" => {
+            state.flush_layout_if_needed();
+            JsValue::from(f64::from(
+                state
+                    .layout_content_height
+                    .max(state.layout_viewport_height),
+            ))
         }
         "mediaMatches" => {
             let query = argument_string(args, 1)?;

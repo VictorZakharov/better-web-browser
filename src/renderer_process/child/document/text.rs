@@ -12,6 +12,7 @@ use self::raster::{GlyphRasterCache, RasterizedGlyph};
 use self::shape::TextShaper;
 use crate::engine::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer, WebFont};
 use crate::renderer_protocol::{PageLoadReport, PresentedGlyphRaster};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -21,9 +22,9 @@ const MAX_MEASUREMENT_CACHE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CACHED_TEXT_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct ShapeKey {
-    text: String,
-    family: String,
+struct ShapeKey<'a> {
+    text: Cow<'a, str>,
+    family: Cow<'a, str>,
     size: u32,
     weight: u16,
     italic: bool,
@@ -35,9 +36,9 @@ pub(in crate::renderer_process::child) struct RendererTextSystem {
     catalog: FontCatalog,
     shaper: TextShaper,
     rasters: GlyphRasterCache,
-    shapes: HashMap<ShapeKey, ShapedText>,
+    shapes: HashMap<ShapeKey<'static>, ShapedText>,
     shape_cache_bytes: usize,
-    measurements: HashMap<ShapeKey, (f32, f32)>,
+    measurements: HashMap<ShapeKey<'static>, (f32, f32)>,
     measurement_cache_bytes: usize,
     dpi: u32,
     glyph_epoch: u64,
@@ -137,6 +138,8 @@ impl RendererTextSystem {
         report.font_select_micros = micros(self.font_select_time);
         report.open_type_shape_micros = micros(self.open_type_time);
         report.glyph_raster_micros = micros(self.glyph_raster_time);
+        // Reports describe this update, not the most recent update that ran layout.
+        self.reset_layout_metrics();
         report
     }
 
@@ -198,7 +201,7 @@ impl RendererTextSystem {
                 self.shape_cache_flushes = self.shape_cache_flushes.saturating_add(1);
             }
             self.shape_cache_bytes += cached_bytes;
-            self.shapes.insert(key, shaped.clone());
+            self.shapes.insert(key.into_owned(), shaped.clone());
         }
         shaped
     }
@@ -230,7 +233,7 @@ impl RendererTextSystem {
                     self.measurement_cache_bytes = 0;
                 }
                 self.measurement_cache_bytes += cached_bytes;
-                self.measurements.insert(key, measurement);
+                self.measurements.insert(key.into_owned(), measurement);
             }
         }
         measurement
@@ -276,16 +279,30 @@ impl TextMeasurer for RendererTextSystem {
     }
 }
 
-impl ShapeKey {
-    fn new(text: &str, spec: &FontSpec) -> Self {
+impl<'a> ShapeKey<'a> {
+    fn new(text: &'a str, spec: &'a FontSpec) -> Self {
         Self {
-            text: text.to_string(),
-            family: spec.family.clone(),
+            text: Cow::Borrowed(text),
+            family: Cow::Borrowed(&spec.family),
             size: spec.size.to_bits(),
             weight: spec.weight,
             italic: spec.italic,
             letter_spacing: spec.letter_spacing.to_bits(),
             word_spacing: spec.word_spacing.to_bits(),
+        }
+    }
+
+    // Cache hits borrow their key. Only retained misses copy the text and family; equality and
+    // hashing still include every shaping input, with the same byte/entry budgets as before.
+    fn into_owned(self) -> ShapeKey<'static> {
+        ShapeKey {
+            text: Cow::Owned(self.text.into_owned()),
+            family: Cow::Owned(self.family.into_owned()),
+            size: self.size,
+            weight: self.weight,
+            italic: self.italic,
+            letter_spacing: self.letter_spacing,
+            word_spacing: self.word_spacing,
         }
     }
 }

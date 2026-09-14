@@ -33,6 +33,37 @@ increase, renderer privilege change or site-specific policy is required.
 
 ## Validation
 
+### Failure evidence when input races process exit
+
+The broker publishes its terminal snapshot before disconnecting command receivers.
+An input event can reach the shell before its next renderer-event drain. A failed
+enqueue must therefore include the original renderer exit reason, PID and exit code,
+not only the secondary `renderer broker has exited` transport message. The shell
+captures the latest snapshot and records any terminal exit before tearing down the
+session, so F12 retains it instead of an older Running snapshot or a cleanup reason.
+
+The hidden real-process regression deliberately leaves events undrained after a
+forced crash and a watchdog termination, then submits input. It failed with the old
+generic message and passes with the original cause retained. Shell tests cover
+terminal snapshot retention and browser-side failures that must not invent an exit.
+
+This is a diagnostic correction, **not a demonstrated fix for the reported Wikipedia
+Main_Page crash**. The September 14 investigation did not reproduce that crash in
+fresh-profile loads, article/main-page navigation, scrolling, or repeated main-page
+loads using an explicitly authorized isolated copy of saved profile state. Those
+successful runs do not invalidate the user report or establish regression-free
+loading. The original failure reason from the affected run is still needed.
+
+Local validation qualification: the clean full-suite run failed the existing
+`startup_faults_fail_closed_within_the_deadline` handle-count assertion (154 to 156).
+Isolated repeats also failed (133 to 134), including a control run with the original
+broker error path restored. The retained handle appeared after Silent startup;
+the other four fault cases did not add more. Its cause is not established and no
+handle allowance, timeout, or expected result was relaxed. Temporary probes were
+removed. This remains an unresolved validation failure, not a claimed fix.
+
+### Event queue and delivery checks
+
 Queue regressions cover burst coalescing, partial drains, arrivals during handling,
 registration after enqueue, callbacks outside the queue lock, concurrent re-arming,
 failed-message fallback, teardown and lossless Fetch notifications. An isolated

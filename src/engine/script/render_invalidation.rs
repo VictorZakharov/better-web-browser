@@ -16,24 +16,28 @@ impl PendingInvalidation {
         &mut self,
         document: &NodeRef,
         target: Option<&NodeRef>,
-        mut kind: MutationKind<'_>,
+        kind: MutationKind<'_>,
     ) {
-        if rebuilds_style_rules(target, kind) {
-            kind = MutationKind::Stylesheet;
-        }
+        let rebuild_rules = rebuilds_style_rules(target, kind);
         self.impact = self.impact.union(kind.impact());
-        self.rebuild_style_rules |= matches!(kind, MutationKind::Stylesheet);
+        if rebuild_rules {
+            self.impact = self.impact.union(MutationKind::Stylesheet.impact());
+        }
+        self.rebuild_style_rules |= rebuild_rules;
         let Some(target) = target else {
             return;
         };
         let root = match kind {
-            MutationKind::Attribute(_) | MutationKind::CharacterData | MutationKind::State => {
-                target
-                    .shadow_including_parent()
-                    .unwrap_or_else(|| target.clone())
-            }
-            MutationKind::ChildList => target.clone(),
-            MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
+            MutationKind::Attribute(_)
+            | MutationKind::CharacterData
+            | MutationKind::State
+            | MutationKind::PointerDesignation => target
+                .shadow_including_parent()
+                .unwrap_or_else(|| target.clone()),
+            // Keep the DOM mutation's scope even when rules may need rebuilding. The style
+            // consumer widens to the document only if the effective rule inputs changed.
+            MutationKind::ChildList | MutationKind::Stylesheet => target.clone(),
+            MutationKind::Viewport => document.clone(),
         };
         self.extend(document, &root);
     }
@@ -81,6 +85,10 @@ impl PendingInvalidation {
 
 pub(super) fn rebuilds_style_rules(target: Option<&NodeRef>, kind: MutationKind<'_>) -> bool {
     matches!(kind, MutationKind::Stylesheet)
+        || (matches!(
+            kind,
+            MutationKind::Attribute("href" | "rel" | "media" | "type" | "disabled" | "title")
+        ) && target.is_some_and(|node| matches!(node.tag_name(), Some("style" | "link"))))
         || (matches!(kind, MutationKind::CharacterData | MutationKind::ChildList)
             && target.is_some_and(is_in_style_element))
 }

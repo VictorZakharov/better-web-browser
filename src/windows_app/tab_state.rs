@@ -1,5 +1,7 @@
 //! Complete document-owned state retained independently for each browser tab.
 
+mod failure;
+
 use super::accessibility::AccessibilityDocument;
 use super::document_navigation::ScriptNavigationGuard;
 use super::navigation_transaction::NavigationTransaction;
@@ -143,6 +145,9 @@ impl BrowserTab {
     }
 
     pub(super) fn mark_crashed(&mut self, status: String) {
+        if let Some(session) = self.renderer_session.as_ref() {
+            self.retain_failure_snapshot(session.snapshot());
+        }
         self.navigation.invalidate();
         self.crashed = true;
         self.status_text = status;

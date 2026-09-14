@@ -1,11 +1,12 @@
 use super::*;
 use crate::engine::Page;
+use crate::engine::css::StylesheetSource;
 
 const HTML: &str = "<main><span id=target>text</span></main>";
 const URL: &str = "https://example.com/";
 
-fn sheet(name: &str, color: &str, position: &str) -> (String, String) {
-    (
+fn sheet(name: &str, color: &str, position: &str) -> StylesheetSource {
+    StylesheetSource::injected(
         format!("{URL}{name}.css"),
         format!("#target{{color:{color}}}main{{position:{position}}}"),
     )
@@ -45,8 +46,8 @@ fn external_source_order_updates_and_removal_match_the_layout_cascade() {
         assert_eq!(dom.document.document_mutation_version(), version);
 
         let mut page = Page::parse(HTML, URL);
-        for (url, source) in &sources {
-            page.add_stylesheet_from(url, source.clone());
+        for source in &sources {
+            page.add_stylesheet_from(&source.base_url, source.source.clone());
         }
         let layout_styles = page.style_for_viewport(800.0, 600.0);
         let layout_target = page.dom.elements_named("span").next().unwrap();
@@ -86,14 +87,14 @@ fn cssom_source_lookup_keeps_last_resource_value_without_deduplicating_cascade_o
     state.replace_document_stylesheets(&[old.clone(), current.clone()]);
     let args = [
         JsValue::undefined(),
-        binding_helpers::js_string(current.0.clone()),
+        binding_helpers::js_string(current.base_url.clone()),
     ];
     let value = cssom_host::cssom_host_call("stylesheetSource", &args, &mut state).unwrap();
-    assert!(matches!(value, Some(JsValue::String(value)) if value == current.1));
+    assert!(matches!(value, Some(JsValue::String(value)) if value == current.source));
     assert_eq!(state.stylesheet_sources.len(), 2);
     state.replace_document_stylesheets(std::slice::from_ref(&old));
     let value = cssom_host::cssom_host_call("stylesheetSource", &args, &mut state).unwrap();
-    assert!(matches!(value, Some(JsValue::String(value)) if value == old.1));
+    assert!(matches!(value, Some(JsValue::String(value)) if value == old.source));
     state.replace_document_stylesheets(&[]);
     let value = cssom_host::cssom_host_call("stylesheetSource", &args, &mut state).unwrap();
     assert!(matches!(value, Some(JsValue::Null)));

@@ -1,6 +1,26 @@
 //! Validated hidden pointer, keyboard, and scroll action arguments.
 use super::BenchmarkNavigation;
 
+pub(super) fn wheel_input(value: &str) -> Result<BenchmarkNavigation, String> {
+    let error = "--wheel-after-ready requires x,y,delta (CSS viewport coordinates and pixel delta)";
+    let values = value
+        .split(',')
+        .map(|v| v.trim().parse::<i32>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| error.to_string())?;
+    let [x, y, delta] = values.as_slice() else {
+        return Err(error.into());
+    };
+    if !(0..=7680).contains(x) || !(0..=4320).contains(y) || !(-10000..=10000).contains(delta) {
+        return Err(error.into());
+    }
+    Ok(BenchmarkNavigation::Wheel {
+        x: *x,
+        y: *y,
+        delta: *delta,
+    })
+}
+
 pub(super) fn scroll_input(value: &str) -> Result<BenchmarkNavigation, String> {
     let value = value.trim();
     let error = || "--scroll-after-ready requires an integer CSS y offset from 0 to 2147483647";
@@ -52,6 +72,30 @@ mod tests {
     use super::*;
     use crate::windows_app::benchmark::options::LaunchOptions;
     use std::time::Instant;
+
+    #[test]
+    fn wheel_arguments_are_bounded_and_require_hidden_mode() {
+        assert_eq!(
+            wheel_input("300,100,-126").unwrap(),
+            BenchmarkNavigation::Wheel {
+                x: 300,
+                y: 100,
+                delta: -126
+            }
+        );
+        for value in ["", "1,2", "-1,2,3", "1,2,NaN", "1,2,10001", "7681,1,1"] {
+            assert!(wheel_input(value).is_err());
+        }
+        assert!(
+            LaunchOptions::parse_from(
+                Instant::now(),
+                ["--wheel-after-ready", "1,2,3"]
+                    .into_iter()
+                    .map(str::to_string)
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn validates_bounded_integer_scroll_targets() {

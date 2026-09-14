@@ -97,6 +97,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "position" => style.position = source.position,
         "z-index" => style.z_index = source.z_index,
         "float" => style.float = source.float,
+        "clear" => style.clear = source.clear,
         "color" => style.color = source.color,
         "background" => {
             style.background_color = source.background_color;
@@ -129,6 +130,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.italic = source.italic;
             style.font_family.clone_from(&source.font_family);
             style.line_height = source.line_height;
+            style.line_height_value = source.line_height_value;
         }
         "font-size" => style.font_size = source.font_size,
         "font-weight" => style.font_weight = source.font_weight,
@@ -136,7 +138,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "font-family" => style.font_family.clone_from(&source.font_family),
         "letter-spacing" => style.letter_spacing = source.letter_spacing,
         "word-spacing" => style.word_spacing = source.word_spacing,
-        "line-height" => style.line_height = source.line_height,
+        "line-height" => {
+            style.line_height = source.line_height;
+            style.line_height_value = source.line_height_value;
+        }
         "text-align" => style.text_align = source.text_align,
         "white-space" => style.white_space = source.white_space,
         "text-decoration" | "text-decoration-line" => {
@@ -173,30 +178,35 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "border-right-width" => style.border_width.right = source.border_width.right,
         "border-bottom-width" => style.border_width.bottom = source.border_width.bottom,
         "border-left-width" => style.border_width.left = source.border_width.left,
-        "border-color" => style.border_color = source.border_color,
+        "border-color" => style.border_colors = source.border_colors,
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            let side = values::borders::color_side(property).unwrap();
+            style.border_colors[side] = source.border_colors[side];
+        }
         "border" => {
             style.border_width = source.border_width;
-            style.border_color = source.border_color;
+            style.border_colors = source.border_colors;
         }
         "border-top" => {
             style.border_width.top = source.border_width.top;
-            style.border_color = source.border_color;
+            style.border_colors[0] = source.border_colors[0];
         }
         "border-right" => {
             style.border_width.right = source.border_width.right;
-            style.border_color = source.border_color;
+            style.border_colors[1] = source.border_colors[1];
         }
         "border-bottom" => {
             style.border_width.bottom = source.border_width.bottom;
-            style.border_color = source.border_color;
+            style.border_colors[2] = source.border_colors[2];
         }
         "border-left" => {
             style.border_width.left = source.border_width.left;
-            style.border_color = source.border_color;
+            style.border_colors[3] = source.border_colors[3];
         }
         "border-radius" => style.border_radius = source.border_radius,
         "border-collapse" => style.border_collapse = source.border_collapse,
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
+        "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
@@ -214,6 +224,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.align_items_center = source.align_items_center;
             style.align_items = source.align_items;
         }
+        "align-content" => style.align_content = source.align_content,
         "justify-self" => style.justify_self = source.justify_self,
         "flex-direction" | "-webkit-flex-direction" | "-moz-flex-direction" => {
             style.flex_direction = source.flex_direction

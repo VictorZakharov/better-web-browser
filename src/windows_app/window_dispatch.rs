@@ -250,7 +250,9 @@ unsafe fn dispatch_window_message(
         WM_ERASEBKGND => 1,
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16) as i16 as i32;
-            state.queue_wheel_scroll(delta);
+            if !state.route_content_wheel(delta, wparam, lparam) {
+                state.queue_wheel_scroll(delta);
+            }
             0
         }
         WM_MOUSEMOVE => {

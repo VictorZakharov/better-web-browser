@@ -187,7 +187,6 @@
                 for (const child of [...holder.childNodes]) this.parentNode.insertBefore(child, reference);
             }
         }
-        insertAdjacentText(position, text) { this.insertAdjacentHTML(position, String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;')); }
         get href() { const value = this.getAttribute('href'); return value == null ? '' : host('resolveUrl', value); }
         set href(value) { this.setAttribute('href', value); }
         get src() { const value = this.getAttribute('src'); return value == null ? '' : host('resolveUrl', value); }
@@ -198,8 +197,6 @@
         set name(value) { this.setAttribute('name', value); }
         get type() { return this.getAttribute('type') || ''; }
         set type(value) { this.setAttribute('type', value); }
-        get checked() { return this.hasAttribute('checked'); }
-        set checked(value) { this.toggleAttribute('checked', !!value); }
         get disabled() { return this.hasAttribute('disabled'); }
         set disabled(value) { this.toggleAttribute('disabled', !!value); }
         get hidden() { return this.hasAttribute('hidden'); }
@@ -218,7 +215,11 @@
             return this.localName === 'iframe' ? iframeDocumentFor(this) : null;
         }
         click() {
-            const allowed = this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+            if (this.__clicking || this.matches(':disabled')) return;
+            this.__clicking = true;
+            let allowed;
+            try { allowed = this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true })); }
+            finally { this.__clicking = false; }
             if (allowed && this.localName === 'summary') {
                 const details = this.parentElement;
                 const firstSummary = Array.from(details?.children || [])
@@ -374,62 +375,6 @@
         set referrerPolicy(value) { this.setAttribute('referrerpolicy', value); }
         get text() { return this.textContent; }
         set text(value) { this.textContent = String(value); }
-    }
-    class HTMLDetailsElement extends HTMLElement {
-        get open() { return this.hasAttribute('open'); }
-        set open(value) {
-            const wasOpen = this.open;
-            const isOpen = !!value;
-            if (wasOpen === isOpen) return;
-            this.toggleAttribute('open', isOpen);
-            setTimeout(() => this.dispatchEvent(new ToggleEvent('toggle', {
-                oldState: wasOpen ? 'open' : 'closed',
-                newState: isOpen ? 'open' : 'closed'
-            })), 0);
-        }
-    }
-    class HTMLDialogElement extends HTMLElement {
-        constructor(id, ...metadata) {
-            super(id, ...metadata);
-            this.returnValue = '';
-            this.__isModal = false;
-        }
-        get open() { return this.hasAttribute('open'); }
-        set open(value) { this.toggleAttribute('open', !!value); }
-        get closedBy() { return this.getAttribute('closedby') || 'none'; }
-        set closedBy(value) { this.setAttribute('closedby', value); }
-        show() {
-            if (this.open) return;
-            const event = new ToggleEvent('beforetoggle', {
-                cancelable: true, oldState: 'closed', newState: 'open', source: this
-            });
-            if (!this.dispatchEvent(event)) return;
-            this.open = true;
-            this.focus();
-            setTimeout(() => this.dispatchEvent(new ToggleEvent('toggle', {
-                oldState: 'closed', newState: 'open', source: this
-            })), 0);
-        }
-        showModal() {
-            if (!this.isConnected) throw new DOMException('Dialog is not connected to a document', 'InvalidStateError');
-            if (this.open) {
-                if (!this.__isModal) throw new DOMException('Dialog is already open non-modally', 'InvalidStateError');
-                return;
-            }
-            this.__isModal = true;
-            this.show();
-        }
-        close(returnValue) {
-            if (!this.open) return;
-            if (returnValue !== undefined) this.returnValue = String(returnValue);
-            this.__isModal = false;
-            this.open = false;
-            setTimeout(() => this.dispatchEvent(new Event('close')), 0);
-        }
-        requestClose(returnValue) {
-            if (!this.open) return;
-            if (this.dispatchEvent(new Event('cancel', { cancelable: true }))) this.close(returnValue);
-        }
     }
     class HTMLImageElement extends HTMLElement {
         get complete() { return imageElementState(this).complete; }

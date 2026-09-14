@@ -70,9 +70,12 @@ pub(super) fn settle_timer_slice(
         };
         let timer_id = callback.id();
         let is_idle = callback.is_idle();
+        let in_idle_period = matches!(
+            &callback,
+            super::idle_callbacks::Callback::Idle(task) if !task.timed_out
+        );
 
-        let render_pending_before = host.borrow().timers.render_requested();
-        if is_idle {
+        if in_idle_period {
             host.borrow_mut().begin_idle_task();
         } else {
             host.borrow_mut().begin_task();
@@ -120,7 +123,9 @@ pub(super) fn settle_timer_slice(
         let mut callback_diagnostics = Vec::new();
         host.borrow_mut()
             .append_host_call_diagnostics(&mut callback_diagnostics);
-        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(100) {
+        // Opt-in host diagnostics must expose callbacks that already miss a 60 Hz
+        // frame, not just 100 ms stalls. The host keeps each report bounded.
+        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(16) {
             outcome.diagnostics.extend(
                 callback_diagnostics.into_iter().map(|diagnostic| {
                     format!("JavaScript timer {timer_id} ({label}): {diagnostic}")
@@ -144,16 +149,15 @@ pub(super) fn settle_timer_slice(
         outcome.record_timing("JavaScript timer promise jobs", jobs_started.elapsed());
         super::module_lifecycle::drain(context, host, outcome);
         drain_dynamic_scripts(context, host, outcome, dynamic_script_loader, total_bytes);
-        // HTML exposes a rendering opportunity between tasks. Once one callback changes the
-        // connected document, return to the renderer so it can refresh style/layout before a
-        // later timer observes CSSOM View geometry. Continuing the batch here made those later
-        // tasks read boxes from the previous presentation.
-        if !render_pending_before && host.borrow().timers.render_requested() {
-            break;
-        }
+        // A mutation is not itself a rendering opportunity. The bounded slice may run several
+        // ready tasks; CSSOM View reads synchronously flush pending invalidation when needed.
+        // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
         // Return to the embedder after each background callback and its microtask checkpoint.
         // Accepted input/network completions and rendering can then preempt the remaining batch.
-        if is_idle || slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
+        // Expired idle callbacks execute outside an idle period as queued tasks. They can share
+        // the ordinary bounded task slice, without inventing a render after each mutation.
+        // https://w3c.github.io/requestidlecallback/#the-idledeadline-interface
+        if in_idle_period || slice_started.elapsed() >= TIMER_TASK_WALL_SLICE {
             break;
         }
     }

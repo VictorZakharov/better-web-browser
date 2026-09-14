@@ -51,10 +51,7 @@ pub(super) unsafe fn create_browser_window(
     let pointer = Box::into_raw(Box::new(state));
     let class = wide(MAIN_CLASS);
     let title = wide(PRODUCT_NAME);
-    let style = WS_OVERLAPPEDWINDOW
-        | WS_VSCROLL
-        | WS_CLIPCHILDREN
-        | if placement.visible { WS_VISIBLE } else { 0 };
+    let style = initial_window_style(placement.visible);
     let window = CreateWindowExW(
         0,
         class.as_ptr(),
@@ -77,4 +74,22 @@ pub(super) unsafe fn create_browser_window(
     ShowWindow(window, if placement.visible { SW_SHOW } else { SW_HIDE });
     UpdateWindow(window);
     Ok(window)
+}
+
+fn initial_window_style(visible: bool) -> u32 {
+    // The empty viewport has no overflow. Reserving a scrollbar before the first
+    // layout narrows CSSOM geometry, then creates a spurious resize when it is hidden.
+    // update_scrollbar adds the gutter when presented content actually needs it.
+    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | if visible { WS_VISIBLE } else { 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn empty_window_has_no_scrollbar_and_hidden_mode_has_no_visible_style() {
+        assert_eq!(initial_window_style(false) & (WS_VSCROLL | WS_VISIBLE), 0);
+        assert_eq!(initial_window_style(true) & WS_VSCROLL, 0);
+        assert_ne!(initial_window_style(true) & WS_VISIBLE, 0);
+    }
 }

@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn hidden_wheel_reversals_deliver_events_and_restore_sticky_pixels() {
+    const HTML: &str = r#"<!doctype html><title>wheel sticky fixture</title>
+        <style>body{margin:0}main{padding-top:100px;height:3000px}
+        aside{position:sticky;top:24px;width:200px;height:60px;background:red}</style>
+        <main><aside>Sticky panel</aside></main><script>
+        addEventListener('wheel', e => console.log('wheel delta:' + e.deltaY));
+        addEventListener('scroll', () => console.log('scroll offset:' + scrollY));
+        </script>"#;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/wheel", listener.local_addr().unwrap());
+    let server = thread::spawn(move || serve_fixtures(listener, 1, |_| HTML));
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark_with_args(
+        &url,
+        &artifacts,
+        800,
+        &[
+            "--wheel-after-ready",
+            "350,180,1260",
+            "--wheel-after-ready",
+            "350,180,-1260",
+            "--wheel-after-ready",
+            "350,180,630",
+            "--wheel-after-ready",
+            "350,180,-1260",
+            "--navigation-delay-ms",
+            "500",
+        ],
+    );
+    let status = wait_for_child(&mut child, Duration::from_secs(20));
+    server.join().unwrap().unwrap();
+    assert!(status.success());
+    let report: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&artifacts.json).unwrap()).unwrap();
+    assert!(report["error"].is_null());
+    assert_eq!(report["javascript_errors"], serde_json::json!([]));
+    let console = report["javascript_console"].as_array().unwrap();
+    let offsets = console
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|line| {
+            line.split_once("scroll offset:")
+                .map(|(_, y)| y.parse::<f64>().unwrap())
+        })
+        .collect::<Vec<_>>();
+    assert!(offsets.iter().any(|y| *y > 500.0), "{offsets:?}");
+    assert_eq!(offsets.last(), Some(&0.0));
+    assert_eq!(
+        console
+            .iter()
+            .filter(|line| line.as_str().unwrap_or("").contains("wheel delta:"))
+            .count(),
+        4
+    );
+    let capture = image::open(&artifacts.screenshot).unwrap().to_rgba8();
+    let red = capture
+        .enumerate_pixels()
+        .filter(|(_, _, p)| p[0] > 220 && p[1] < 30 && p[2] < 30)
+        .map(|(_, y, _)| y)
+        .collect::<Vec<_>>();
+    assert!(red.len() > 5000, "sticky panel disappeared after reversal");
+    assert!(
+        *red.iter().min().unwrap() < capture.height() / 2,
+        "sticky panel retained an old viewport offset"
+    );
+}
+
+#[test]
 fn script_scroll_request_moves_native_pixels_and_uses_absolute_overflow_extent() {
     const HTML: &str = r#"<!doctype html><title>script scroll fixture</title>
         <style>html,body{margin:0}main{position:absolute;top:1000px;width:600px;

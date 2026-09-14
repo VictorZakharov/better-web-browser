@@ -81,12 +81,12 @@ fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
         let kind = child
             .as_ref()
             .map_or(MutationKind::ChildList, child_list_kind);
-        let requires_render = child
+        let requires_render = parent
             .as_ref()
-            .is_some_and(|child| state.mutation_requires_render(child));
+            .is_some_and(|parent| state.mutation_requires_render(parent));
         state.record_mutation_with_render(parent.as_ref(), kind, requires_render);
-        if let Some(previous_parent) = previous_parent.as_ref() {
-            state.extend_invalidation_root(previous_parent);
+        if let (Some(previous_parent), Some(child)) = (previous_parent.as_ref(), child.as_ref()) {
+            state.invalidate_previous_parent(previous_parent, child, kind);
         }
         if let (Some(parent), Some(child)) = (parent.as_ref(), child.as_ref()) {
             state.diagnose(format!(
@@ -130,12 +130,12 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
         let kind = child
             .as_ref()
             .map_or(MutationKind::ChildList, child_list_kind);
-        let requires_render = child
+        let requires_render = parent
             .as_ref()
-            .is_some_and(|child| state.mutation_requires_render(child));
+            .is_some_and(|parent| state.mutation_requires_render(parent));
         state.record_mutation_with_render(parent.as_ref(), kind, requires_render);
-        if let Some(previous_parent) = previous_parent.as_ref() {
-            state.extend_invalidation_root(previous_parent);
+        if let (Some(previous_parent), Some(child)) = (previous_parent.as_ref(), child.as_ref()) {
+            state.invalidate_previous_parent(previous_parent, child, kind);
         }
         state.diagnose("insert node before sibling".into());
         if let Some(child) = child.as_ref() {
@@ -152,9 +152,8 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
 fn remove_child(args: &[JsValue], state: &mut HostState) -> JsValue {
     let parent = state.node(argument_id(args, 1));
     let child = state.node(argument_id(args, 2));
-    let requires_render = child
+    let requires_render = parent
         .as_ref()
-        .or(parent.as_ref())
         .is_some_and(|target| state.mutation_requires_render(target));
     let kind = child
         .as_ref()
@@ -177,9 +176,9 @@ fn remove(args: &[JsValue], state: &mut HostState) -> JsValue {
     let node = state.node(argument_id(args, 1));
     let parent = node.as_ref().and_then(|node| node.parent());
     let changed = node.as_ref().is_some_and(|node| node.parent().is_some());
-    let requires_render = node
+    let requires_render = parent
         .as_ref()
-        .is_some_and(|node| state.mutation_requires_render(node));
+        .is_some_and(|parent| state.mutation_requires_render(parent));
     let kind = node
         .as_ref()
         .map_or(MutationKind::ChildList, child_list_kind);
@@ -216,7 +215,9 @@ fn adopt_node(args: &[JsValue], state: &mut HostState) -> JsValue {
     let owner = owner.expect("validated owner");
     let node = node.expect("validated node");
     let parent = node.parent();
-    let requires_render = state.mutation_requires_render(&node);
+    let requires_render = parent
+        .as_ref()
+        .is_some_and(|parent| state.mutation_requires_render(parent));
     let kind = child_list_kind(&node);
     if let Some(parent) = parent.as_ref() {
         Node::remove_from_parent(&node);
@@ -341,8 +342,9 @@ fn child_list_kind(root: &NodeRef) -> MutationKind<'static> {
 }
 
 fn subtree_contains_style(root: &NodeRef) -> bool {
-    Node::shadow_including_descendants(root)
-        .any(|node| node.tag_name() == Some("style") || !node.adopted_stylesheets().is_empty())
+    Node::shadow_including_descendants(root).any(|node| {
+        matches!(node.tag_name(), Some("style" | "link")) || !node.adopted_stylesheets().is_empty()
+    })
 }
 
 fn contains_ascii_tag(html: &str, tag: &str) -> bool {

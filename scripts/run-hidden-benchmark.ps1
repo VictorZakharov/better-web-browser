@@ -34,6 +34,7 @@ param(
     [string[]] $PointerMoveTarget = @(),
     [string[]] $KeyTarget = @(),
     [string[]] $ScrollTarget = @(),
+    [string[]] $WheelTarget = @(),
     [ValidateRange(0, 60000)]
     [int] $NavigationDelayMs = 0
 )
@@ -190,9 +191,16 @@ foreach ($target in $ScrollTarget) {
     $arguments.Add('--scroll-after-ready')
     $arguments.Add($scrollOffset.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 }
+foreach ($target in $WheelTarget) {
+    if ($target -notmatch '^\d+\s*,\s*\d+\s*,\s*-?\d+$') {
+        throw '-WheelTarget values must use x,y,delta CSS viewport/pixel coordinates.'
+    }
+    $arguments.Add('--wheel-after-ready')
+    $arguments.Add($target)
+}
 if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
     $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or
-    $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0) {
+    $ClickTarget.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0 -or $WheelTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
     $arguments.Add($NavigationDelayMs.ToString([System.Globalization.CultureInfo]::InvariantCulture))
 } elseif ($NavigationDelayMs -ne 0) {

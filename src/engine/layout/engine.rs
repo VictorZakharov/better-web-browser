@@ -1,9 +1,14 @@
 use super::*;
+mod block_measure;
+pub(super) mod box_tree;
+mod intrinsic_widths;
 
 #[cfg(test)]
 mod fullscreen;
 #[cfg(test)]
 mod geometry;
+#[cfg(test)]
+mod geometry_glyphs;
 
 pub fn layout_page<M: TextMeasurer>(
     page: &Page,
@@ -117,14 +122,20 @@ fn layout_page_for_output<M: TextMeasurer>(
         };
         root = parent;
     }
+    let box_tree = box_tree::BoxTree::new(&root, styles);
     let mut engine = LayoutEngine {
         page,
-        styles,
+        styles: &box_tree,
         measurer,
         emit_paint,
+        scroll_gutters: HashMap::new(),
         measurement_cache: HashMap::new(),
+        intrinsic_block_heights: HashMap::new(),
+        intrinsic_widths: Default::default(),
+        margin_profiles: Default::default(),
         inline_box_cache: HashMap::new(),
         positioned_flow_scopes: Vec::new(),
+        floats: Default::default(),
         viewport: RectF {
             x: 0.0,
             y: 0.0,
@@ -132,6 +143,9 @@ fn layout_page_for_output<M: TextMeasurer>(
             height: viewport_height.max(1.0),
         },
         output: LayoutOutput {
+            sticky_offsets: HashMap::new(),
+            sticky_layers: Vec::new(),
+            scroll_boxes: HashMap::new(),
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,
@@ -163,23 +177,38 @@ fn layout_page_for_output<M: TextMeasurer>(
         Some(viewport_height.max(1.0)),
         None,
     );
+    inline_layout::geometry::finish(&root, styles, &mut engine.output);
     engine.output.content_height = metrics
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
+    block::paint_order::finalize(&mut engine.output);
+    box_tree.remove_anonymous_geometry(&mut engine.output);
+    engine.output.update_sticky_positions(
+        page,
+        viewport_width,
+        viewport_height,
+        style_viewport_width,
+    );
     engine.output
 }
 
 pub(super) struct LayoutEngine<'a, M> {
     pub(super) page: &'a Page,
-    pub(super) styles: &'a StyleSet,
+    pub(super) styles: &'a box_tree::BoxTree<'a>,
     pub(super) measurer: &'a mut M,
     pub(super) emit_paint: bool,
+    pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
+    intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,
+    pub(super) intrinsic_widths: intrinsic_widths::IntrinsicWidths,
+    pub(super) margin_profiles:
+        std::cell::RefCell<HashMap<(NodeId, u32), block::margins::MarginProfile>>,
     pub(super) inline_box_cache: HashMap<(usize, u32), InlineBoxMetrics>,
     pub(super) viewport: RectF,
     pub(super) output: LayoutOutput,
     pub(super) positioned_flow_scopes: Vec<Vec<InFlowPaintRange>>,
+    pub(super) floats: block::floats::FloatContext,
 }
 
 pub(super) struct InFlowPaintRange {
@@ -207,37 +236,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if self.styles.get(node).display == Display::None {
             return Vec::new();
         }
-        fn append<M: TextMeasurer>(
-            engine: &LayoutEngine<'_, M>,
-            node: &NodeRef,
-            output: &mut Vec<NodeRef>,
-        ) {
-            let mut children = Vec::new();
-            if !node.is_generated_pseudo()
-                && let Some(before) = engine.styles.generated_pseudo(node, PseudoElement::Before)
-            {
-                children.push(before);
-            }
-            children.extend(Node::composed_children(node));
-            if !node.is_generated_pseudo()
-                && let Some(after) = engine.styles.generated_pseudo(node, PseudoElement::After)
-            {
-                children.push(after);
-            }
-            for child in children {
-                if child.element().is_some()
-                    && engine.styles.get(&child).display == Display::Contents
-                {
-                    append(engine, &child, output);
-                } else {
-                    output.push(child);
-                }
-            }
-        }
-
-        let mut output = Vec::new();
-        append(self, node, &mut output);
-        output
+        self.styles.children(node)
     }
 
     /// Returns children participating in a block formatting context. A boxless inline wrapper

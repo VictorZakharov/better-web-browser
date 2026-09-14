@@ -131,7 +131,7 @@ fn retained_runtime_executes_post_load_work_in_the_same_realm() {
 }
 
 #[test]
-fn timer_batches_yield_after_a_layout_mutation() {
+fn timer_batches_coalesce_mutations_within_the_callback_budget() {
     let dom = dom::parse_with_scripting(
         r#"<body><div id="status">waiting</div><script>
             setTimeout(() => {
@@ -152,7 +152,7 @@ fn timer_batches_yield_after_a_layout_mutation() {
     let first = runtime.advance_time(Duration::from_millis(500), 8);
     assert!(first.errors.is_empty(), "{:?}", first.errors);
     assert!(first.render_requested);
-    assert_eq!(first.mutation_count, 1);
+    assert_eq!(first.mutation_count, 2);
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "first"
@@ -161,14 +161,15 @@ fn timer_batches_yield_after_a_layout_mutation() {
         dom.elements_named("body")
             .next()
             .unwrap()
-            .attr("data-second"),
-        None
+            .attr("data-second")
+            .as_deref(),
+        Some("ran")
     );
-    assert_eq!(runtime.next_timer_delay(), Some(Duration::ZERO));
+    assert_eq!(runtime.next_timer_delay(), None);
 
     let second = runtime.advance_time(Duration::ZERO, 8);
     assert!(second.errors.is_empty(), "{:?}", second.errors);
-    assert!(second.render_requested);
+    assert!(!second.render_requested);
     assert_eq!(
         dom.elements_named("body")
             .next()

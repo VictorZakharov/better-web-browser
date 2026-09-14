@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Delayed render-blocking stylesheet</title>
+  <link rel="stylesheet" href="render-blocking-stylesheet.css?delay_ms=1500">
+</head>
+<body>
+  <h1>Styled on the first content frame</h1>
+  <p>The heading, this panel, and the blue background should appear together.
+    There should be no intermediate frame of plain black text on white.</p>
+</body>
+</html>

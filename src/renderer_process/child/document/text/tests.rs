@@ -13,6 +13,80 @@ fn spec() -> FontSpec {
 }
 
 #[test]
+fn borrowed_cache_keys_match_owned_entries_without_losing_shaping_inputs() {
+    let text = String::from("a b");
+    let font = spec();
+    let key = ShapeKey::new(&text, &font);
+    assert!(matches!(key.text, Cow::Borrowed(_)));
+    assert!(matches!(key.family, Cow::Borrowed(_)));
+    let owned = key.clone().into_owned();
+    let cache: HashMap<ShapeKey<'static>, u32> = HashMap::from([(owned, 42)]);
+    assert_eq!(cache.get(&key), Some(&42));
+    assert_eq!(cache.get(&ShapeKey::new("different", &font)), None);
+    for field in 0..6 {
+        let mut changed = font.clone();
+        match field {
+            0 => changed.family = "serif".into(),
+            1 => changed.size += 1.0,
+            2 => changed.weight += 100,
+            3 => changed.italic = !changed.italic,
+            4 => changed.letter_spacing += 1.0,
+            _ => changed.word_spacing += 1.0,
+        }
+        assert_eq!(cache.get(&ShapeKey::new(&text, &changed)), None, "{field}");
+    }
+}
+
+#[test]
+fn reports_consume_work_counters_without_discarding_cached_shapes() {
+    let mut text = RendererTextSystem::new(96);
+    text.shape("cached text", &spec());
+    let first = text.finish_load_report(PageLoadReport::default());
+    assert!(first.text_measure_count > 0);
+    assert!(first.text_shape_cache_entries > 0);
+    let idle = text.finish_load_report(PageLoadReport::default());
+    assert_eq!(idle.text_measure_count, 0);
+    assert_eq!(idle.text_shape_cache_hits, 0);
+    assert_eq!(idle.text_shape_cache_misses, 0);
+    assert_eq!(idle.font_select_micros, 0);
+    assert_eq!(idle.open_type_shape_micros, 0);
+    assert_eq!(idle.glyph_raster_micros, 0);
+    assert_eq!(
+        idle.text_shape_cache_entries,
+        first.text_shape_cache_entries
+    );
+    text.shape("cached text", &spec());
+    let reused = text.finish_load_report(PageLoadReport::default());
+    assert_eq!(reused.text_shape_cache_hits, 1);
+    assert_eq!(reused.text_shape_cache_misses, 0);
+}
+
+#[test]
+fn unavailable_first_family_falls_back_to_the_next_named_family() {
+    let mut text = RendererTextSystem::new(96);
+    let mut direct = spec();
+    direct.family = "Georgia, serif".into();
+    let expected = text.shape("A serif heading", &direct);
+    let mut fallback = direct;
+    fallback.family = "'Absent Fixture Font', Georgia, serif".into();
+    let actual = text.shape("A serif heading", &fallback);
+    assert!(!actual.glyphs.is_empty());
+    assert_eq!(actual.width, expected.width);
+    assert_eq!(
+        actual
+            .glyphs
+            .iter()
+            .map(|g| g.raster_id)
+            .collect::<Vec<_>>(),
+        expected
+            .glyphs
+            .iter()
+            .map(|g| g.raster_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn measurement_shapes_advances_without_rasterizing_glyphs() {
     let mut text = RendererTextSystem::new(96);
     let font = spec();

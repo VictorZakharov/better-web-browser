@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Float clearance and intrinsic width</title>
+<style>
+  body { margin: 24px; font: 16px/24px Arial, sans-serif; color: #172b42; }
+  main { width: 800px; }
+  h1 { font-size: 24px; margin: 0 0 24px; }
+  p { margin: 0 0 16px; }
+  .stack { float: right; clear: right; margin-left: 24px; }
+  table { width: 280px; background: #e4edf7; }
+  .aside { float: right; clear: right; width: 280px; height: 80px;
+    margin: 12px 0 12px 24px; background: #d9ebdf; }
+  .tail { clear: both; padding: 16px; background: #f6e6c4; }
+</style>
+<main>
+  <h1>Readable article beside stacked floats</h1>
+  <div class="stack"><span><table><tr><td>
+    This fixed-width table contains a sentence longer than its own width. Its
+    auto-width floating wrapper must respect the table width, not the unwrapped text.
+  </td></tr></table></span></div>
+  <div class="aside">This right float clears the first.</div>
+  <p>The article starts beside the first box, not below all of the boxes. Its
+    normal block remains full width; only the lines intersecting a float become narrower.</p>
+  <p>Clearance belongs to the surrounding formatting context. Later floats move
+    down rather than squeezing the article into a narrow column. Once the text
+    passes their lower edges, subsequent lines can use the full available width.</p>
+  <div class="tail">This block clears both sides.</div>
+</main>

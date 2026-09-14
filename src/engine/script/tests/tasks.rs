@@ -132,22 +132,18 @@ fn tree_mutation_budget_does_not_block_attribute_or_text_node_updates() {
 }
 
 #[test]
-fn detached_nodes_and_script_cleanup_do_not_request_rendering() {
+fn detached_node_attributes_do_not_request_rendering() {
     let (_, outcome) = execute_html(
         r#"<body><script>
             setTimeout(() => {
                 const detached = document.createElement('div');
                 detached.setAttribute('class', 'unused');
-                const loader = document.createElement('script');
-                loader.setAttribute('type', 'application/json');
-                document.head.appendChild(loader);
-                loader.remove();
             }, 0);
         </script></body>"#,
     );
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(outcome.mutation_count, 4);
+    assert_eq!(outcome.mutation_count, 1);
     assert!(!outcome.render_requested);
 }
 

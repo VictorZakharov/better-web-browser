@@ -1,6 +1,18 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_sticky_offsets(&mut self, offsets: &HashMap<NodeId, (f32, f32)>) {
+        let mut host = self.host.borrow_mut();
+        host.sticky_offsets.clone_from(offsets);
+        host.geometry_scroll_offset = host.document.scroll_offset.get();
+        host.geometry_scroll_dirty = false;
+    }
+    pub(crate) fn set_scroll_boxes(
+        &mut self,
+        boxes: &HashMap<NodeId, crate::engine::layout::ScrollBox>,
+    ) {
+        self.host.borrow_mut().scroll_boxes.clone_from(boxes);
+    }
     pub(crate) fn set_resize_boxes(
         &mut self,
         boxes: &HashMap<NodeId, crate::engine::layout::ResizeBox>,
@@ -9,7 +21,8 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn has_pending_resize_observers(&self) -> bool {
-        self.host.borrow().resize_observers_pending
+        let host = self.host.borrow();
+        host.resize_observers_pending && !host.resize_observers_deferred
     }
     pub(crate) fn set_layout_content_height(&mut self, height: f32) {
         self.host.borrow_mut().layout_content_height = height;
@@ -51,6 +64,9 @@ impl ScriptRuntime {
             return inactive_runtime_outcome();
         };
         let host = Rc::clone(&self.host);
+        // A skipped observation belongs to a later rendering opportunity, after that
+        // opportunity's animation callbacks, not the next input/resource checkpoint.
+        let resize = resize && !host.borrow().resize_observers_deferred;
         let result = catch_unwind(AssertUnwindSafe(|| {
             host.borrow_mut().begin_task();
             if resize {

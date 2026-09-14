@@ -240,7 +240,7 @@ fn state_and_stream_messages_round_trip() {
             document,
             mutation: StorageMutation {
                 area: StorageAreaKind::Session,
-                expected_version: 7,
+                expected_version: 8,
                 operation: StorageOperation::Set {
                     key: "draft".into(),
                     value: "saved".into(),

@@ -2,12 +2,16 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string, node_label};
 use super::*;
+mod checkable;
 
 pub(super) fn attribute_host_call(
     operation: &str,
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = checkable::dispatch(operation, args, state)? {
+        return Ok(Some(value));
+    }
     let value = match operation {
         "scriptForceAsync" => JsValue::from(
             state

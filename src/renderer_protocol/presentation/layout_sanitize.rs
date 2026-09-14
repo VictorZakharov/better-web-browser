@@ -5,8 +5,36 @@ use crate::engine::{ControlSpec, DisplayItem, FontSpec, LayoutOutput, Positioned
 use crate::limits::MAX_PRESENTATION_COORDINATE;
 
 pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
-    let mut items: Vec<_> = layout.items.into_iter().filter_map(sanitize_item).collect();
+    let mut offsets = Vec::with_capacity(layout.items.len() + 1);
+    let mut items = Vec::with_capacity(layout.items.len());
+    let mut dropped_paint = false;
+    for item in layout.items {
+        offsets.push(items.len());
+        let local = matches!(
+            item,
+            DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. }
+        );
+        if let Some(item) = sanitize_item(item) {
+            items.push(item);
+        } else if !local {
+            dropped_paint = true;
+        }
+    }
+    offsets.push(items.len());
+    let before_groups = items.len();
     retain_balanced_display_groups(&mut items);
+    let mut sticky_layers = layout.sticky_layers;
+    if dropped_paint
+        || items.len() != before_groups
+        || super::layout::sticky::validate(&sticky_layers, offsets.len() - 1).is_err()
+    {
+        // Malformed paint was contained; no retained range may refer to its old indices.
+        sticky_layers.clear();
+    } else {
+        for layer in &mut sticky_layers {
+            layer.items = offsets[layer.items.start]..offsets[layer.items.end];
+        }
+    }
     let content_height = if layout.content_height.is_finite() {
         nonnegative(layout.content_height)
     } else {
@@ -21,6 +49,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
     PresentedLayout {
         items,
+        sticky_layers,
         content_height,
         background: layout.background,
         forms: layout.forms.into_values().collect(),
@@ -29,6 +58,7 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
 fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
+        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => return None,
         DisplayItem::BeginClip { bounds } => DisplayItem::BeginClip {
             bounds: sanitize_rect(bounds)?,
         },
@@ -54,12 +84,12 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
         DisplayItem::BorderRect {
             rect,
             widths,
-            color,
+            colors,
             radius,
         } => DisplayItem::BorderRect {
             rect: sanitize_rect(rect)?,
             widths: sanitize_edges(widths),
-            color,
+            colors,
             radius: nonnegative(radius),
         },
         DisplayItem::Text {
@@ -158,6 +188,7 @@ fn sanitize_rect(mut rect: RectF) -> Option<RectF> {
 
 fn item_rect(item: &DisplayItem) -> Option<RectF> {
     match item {
+        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => None,
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }

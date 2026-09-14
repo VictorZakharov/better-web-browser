@@ -269,6 +269,11 @@ unsafe extern "system" {
 
 #[link(name = "comctl32")]
 unsafe extern "system" {
+    pub(in crate::windows_app) fn RemoveWindowSubclass(
+        window: Hwnd,
+        subclass_proc: Option<SubclassProc>,
+        subclass_id: usize,
+    ) -> i32;
     pub(in crate::windows_app) fn SetWindowSubclass(
         window: Hwnd,
         subclass_proc: Option<SubclassProc>,

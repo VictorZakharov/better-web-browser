@@ -1,7 +1,23 @@
 use super::*;
+mod borders;
+mod sticky;
 use crate::document::Document;
 use crate::engine::{FontSpec, PositionedGlyph, RectF};
 use crate::renderer_protocol::{DocumentNodeId, SemanticActions, SemanticNode, SemanticRole};
+
+#[test]
+fn relative_wheel_scroll_round_trips_both_directions_and_rejects_non_finite_values() {
+    let mut presentation = sample();
+    for delta in [0.25, 126.0, -126.0] {
+        presentation.runtime.viewport_wheel_delta_y = delta;
+        let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+        assert_eq!(decoded.runtime.viewport_wheel_delta_y, delta);
+    }
+    for delta in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        presentation.runtime.viewport_wheel_delta_y = delta;
+        assert!(presentation.encode().is_err());
+    }
+}
 
 #[test]
 fn viewport_scroll_requests_round_trip_and_reject_non_finite_or_negative_offsets() {
@@ -55,6 +71,7 @@ pub(super) fn sample() -> RendererPresentation {
             truncated: false,
         },
         layout: PresentedLayout {
+            sticky_layers: Vec::new(),
             items: vec![DisplayItem::Text {
                 rect: RectF {
                     x: 1.0,

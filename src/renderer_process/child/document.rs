@@ -12,6 +12,7 @@ mod media;
 mod media_environment;
 mod parser_scripts;
 mod parsing;
+mod rendering;
 mod reporting;
 mod resources;
 mod scheduling;
@@ -42,7 +43,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub(super) enum LoadResult {
-    Ready(Box<DocumentRuntime>, Box<RendererPresentation>),
+    Ready(Box<DocumentRuntime>, AdvanceResult),
     Navigate(String, Box<RendererTextSystem>),
 }
 
@@ -81,6 +82,7 @@ pub(super) struct DocumentRuntime {
     accessibility_values: HashMap<crate::engine::dom::NodeId, String>,
     focused_node: Option<crate::engine::dom::NodeId>,
     pointer_down: [Option<crate::engine::dom::NodeId>; 3],
+    scroll_drag: Option<(crate::engine::dom::NodeId, bool, f32, f32)>,
     scriptless_pointer_path: Vec<crate::engine::dom::NodeRef>,
     last_input_sequence: u64,
     last_acknowledged_revision: u64,
@@ -96,6 +98,7 @@ pub(super) struct DocumentRuntime {
     resource_events: resources::events::ResourceEvents,
     geometry_observers_pending: bool,
     resize_observers_pending: bool,
+    rendering: rendering::RenderBlocking,
 }
 
 impl DocumentRuntime {
@@ -140,7 +143,7 @@ impl DocumentRuntime {
         &mut self,
         viewport: crate::renderer_protocol::PresentedViewport,
         connection: &mut ChildConnection,
-    ) -> Result<RendererPresentation, String> {
+    ) -> Result<AdvanceResult, String> {
         self.viewport = viewport.validate().map_err(|error| error.to_string())?;
         self.apply_media_environment(viewport);
         self.text.borrow_mut().set_dpi(viewport.dpi);
@@ -174,7 +177,10 @@ impl DocumentRuntime {
         style: StyleRefreshStats,
         load: PageLoadReport,
         connection: &mut ChildConnection,
-    ) -> Result<RendererPresentation, String> {
+    ) -> Result<AdvanceResult, String> {
+        if self.rendering_is_blocked() {
+            return Ok(self.blocked_render_update(outcome, load));
+        }
         self.deliver_geometry_observers(&mut outcome, connection)?;
         self.presentation_after_observers(outcome, style, load)
     }
@@ -184,7 +190,11 @@ impl DocumentRuntime {
         mut outcome: ScriptOutcome,
         style: StyleRefreshStats,
         load: PageLoadReport,
-    ) -> Result<RendererPresentation, String> {
+    ) -> Result<AdvanceResult, String> {
+        if self.rendering_is_blocked() {
+            return Ok(self.blocked_render_update(outcome, load));
+        }
+        self.rendering.dirty = false;
         self.page.title = self.page.dom.title();
         if !self.diagnostic_selectors.is_empty()
             && outcome.diagnostics.len() < MAX_RUNTIME_REPORT_ENTRIES
@@ -238,29 +248,31 @@ impl DocumentRuntime {
             self.accessibility_selection,
             &self.accessibility_values,
         )?;
-        Ok(RendererPresentation {
-            document: self.id,
-            revision: self.revision,
-            clock_advanced: false,
-            title: self.page.title.clone(),
-            final_url: self.page.source_url.clone(),
-            status: self.status,
-            character_set: self.page.character_set.clone(),
-            reader: self.reader.clone(),
-            layout: PresentedLayout::from_layout(self.layout.clone()),
-            images,
-            glyph_epoch,
-            glyphs,
-            runtime: runtime_report(
-                outcome,
-                self.script_runtime.is_some(),
-                self.media_runtime_report(),
-            ),
-            style: style_report(style),
-            load,
-            page_diagnostics,
-            accessibility,
-            next_timer_micros,
-        })
+        Ok(AdvanceResult::Presentation(Box::new(
+            RendererPresentation {
+                document: self.id,
+                revision: self.revision,
+                clock_advanced: false,
+                title: self.page.title.clone(),
+                final_url: self.page.source_url.clone(),
+                status: self.status,
+                character_set: self.page.character_set.clone(),
+                reader: self.reader.clone(),
+                layout: PresentedLayout::from_layout(self.layout.clone()),
+                images,
+                glyph_epoch,
+                glyphs,
+                runtime: runtime_report(
+                    outcome,
+                    self.script_runtime.is_some(),
+                    self.media_runtime_report(),
+                ),
+                style: style_report(style),
+                load,
+                page_diagnostics,
+                accessibility,
+                next_timer_micros,
+            },
+        )))
     }
 }

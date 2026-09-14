@@ -105,7 +105,8 @@ internal static class BrowserScripts
                 'grid-template-columns', 'grid-template-rows',
                 'overflow-x', 'overflow-y', 'aspect-ratio', 'object-fit',
                 'inset', 'top', 'right', 'bottom', 'left', 'z-index',
-                'transform', 'background-color', 'background-image', 'color'
+                'transform', 'background-color', 'background-image', 'color',
+                'font-family', 'font-size', 'line-height', 'mask-image', 'clip', 'clip-path'
               ];
               const authoredRules = [];
               const collectRules = (root, rules, conditions = [], active = true) => {

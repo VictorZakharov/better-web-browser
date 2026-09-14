@@ -24,6 +24,9 @@ impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTex
 
 impl DocumentRuntime {
     pub(super) fn has_pending_geometry_observers(&self) -> bool {
+        if self.rendering_is_blocked() {
+            return false;
+        }
         self.geometry_observers_pending
             || self.resize_observers_pending
             || self
@@ -39,6 +42,9 @@ impl DocumentRuntime {
         outcome: &mut ScriptOutcome,
         connection: &mut ChildConnection,
     ) -> Result<bool, String> {
+        if self.rendering_is_blocked() {
+            return Ok(false);
+        }
         if !self.resize_observers_pending
             && !self
                 .script_runtime
@@ -73,17 +79,8 @@ impl DocumentRuntime {
         self.script_layout_viewport.set(self.viewport);
         let mut snapshot = self.script_layout_page.borrow_mut();
         snapshot.synchronize_layout_snapshot(&self.page);
-        if snapshot
-            .cached_style_for_viewport(self.viewport.style_width, self.viewport.height)
-            .is_none()
-        {
-            let root = snapshot.dom.document.id();
-            snapshot.refresh_layout_styles_after_invalidation_for_viewport(
-                self.viewport.style_width,
-                self.viewport.height,
-                &crate::engine::invalidation::RenderInvalidation::full(root),
-            );
-        }
+        // The CSSOM flush callback below builds missing styles on demand. Publishing already
+        // computed geometry must not eagerly build a second style tree that script may never read.
     }
 
     pub(super) fn script_layout_flush_callback(
@@ -113,6 +110,7 @@ impl DocumentRuntime {
             // style-before-layout gate used by mature rendering engines and prevents repeated
             // ARIA/data updates from forcing full synchronous page layouts.
             if geometry_ready
+                && !metrics.scroll_changed
                 && !style_refresh.layout_changed
                 && !invalidation.impact.affects_intrinsic_size()
             {
@@ -136,6 +134,8 @@ impl DocumentRuntime {
             metrics.layout = started.elapsed();
             metrics.content_height = Some(geometry.content_height);
             metrics.resize_boxes = Some(geometry.resize_boxes);
+            metrics.scroll_boxes = Some(geometry.scroll_boxes);
+            metrics.sticky_offsets = Some(geometry.sticky_offsets);
             geometry_ready = true;
             Some(geometry.node_bounds)
         })
@@ -156,6 +156,8 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
             runtime.set_resize_boxes(&self.layout.resize_boxes);
+            runtime.set_scroll_boxes(&self.layout.scroll_boxes);
+            runtime.set_sticky_offsets(&self.layout.sticky_offsets);
             runtime.set_layout_content_height(self.layout.content_height);
             self.geometry_observers_pending = true;
             self.resize_observers_pending = true;

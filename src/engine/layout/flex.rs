@@ -3,7 +3,21 @@ mod item;
 
 use super::*;
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct CrossConstraints {
+    pub minimum: f32,
+    pub maximum: Option<f32>,
+}
+
+impl CrossConstraints {
+    fn clamp(self, size: f32) -> f32 {
+        size.min(self.maximum.unwrap_or(f32::INFINITY))
+            .max(self.minimum)
+    }
+}
+
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_flex(
         &mut self,
         node: &NodeRef,
@@ -11,6 +25,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y: f32,
         width: f32,
         containing_height: Option<f32>,
+        cross: CrossConstraints,
         style: &ComputedStyle,
     ) -> f32 {
         let composed_children = self.box_children(node);
@@ -75,7 +90,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 self.layout_flex_column(&items, x, y, width, containing_height, style)
             }
             FlexDirection::Row | FlexDirection::RowReverse => {
-                self.layout_flex_rows(&items, x, y, width, containing_height, style)
+                self.layout_flex_rows(&items, x, y, width, containing_height, cross, style)
             }
         }
     }
@@ -142,6 +157,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         percentage_basis: Option<f32>,
     ) -> f32 {
+        if let Some(width) = self
+            .intrinsic_widths
+            .max_content(node.id(), percentage_basis)
+        {
+            return width;
+        }
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut widest = 0.0_f32;
         let mut inline_atoms = Vec::new();
@@ -183,6 +204,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !inline_atoms.is_empty() {
             widest = widest.max(self.inline_intrinsic_width(&inline_atoms, available_width));
         }
+        self.intrinsic_widths
+            .insert_max_content(node.id(), percentage_basis, widest);
         widest
     }
 
@@ -192,6 +215,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         style: &ComputedStyle,
         percentage_basis: Option<f32>,
     ) -> f32 {
+        if let Some(width) = self
+            .intrinsic_widths
+            .max_content(node.id(), percentage_basis)
+        {
+            return width;
+        }
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut contributions = Vec::new();
         let mut anonymous_atoms = Vec::new();
@@ -242,11 +271,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .resolve(available_width, style.font_size)
             .unwrap_or(0.0)
             .max(0.0);
-        if style.flex_direction.is_row() {
+        let width = if style.flex_direction.is_row() {
             contributions.iter().sum::<f32>() + gap * contributions.len().saturating_sub(1) as f32
         } else {
             contributions.into_iter().fold(0.0, f32::max)
-        }
+        };
+        self.intrinsic_widths
+            .insert_max_content(node.id(), percentage_basis, width);
+        width
     }
 
     /// CSS Flexbox 9.9.3 defines a flex item's max-content contribution independently from

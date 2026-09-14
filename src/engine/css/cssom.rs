@@ -1,5 +1,6 @@
 //! CSSOM serialization for values already computed by the cascade engine.
 
+use super::values::LineHeight;
 use super::*;
 
 const MAX_DIAGNOSTIC_CUSTOM_PROPERTIES: usize = 64;
@@ -29,7 +30,29 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         return super::variables::substitute_variables(value, &style.custom_properties);
     }
     let value = match property {
+        "align-content" => style.align_content.css_text(),
+        "vertical-align" => style.vertical_align.css_keyword().to_string(),
         "background-color" => serialize_color(style.background_color),
+        "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
+            serialize_color(style.resolved_border_colors()[values::borders::color_side(property)?])
+        }
+        "border-color" => {
+            let c = style.resolved_border_colors();
+            let count = if c[1] != c[3] {
+                4
+            } else if c[0] != c[2] {
+                3
+            } else if c[0] != c[1] {
+                2
+            } else {
+                1
+            };
+            c[..count]
+                .iter()
+                .map(|c| serialize_color(*c))
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
         "border-bottom-width" => serialize_length(style.border_width.bottom),
         "border-left-width" => serialize_length(style.border_width.left),
         "border-right-width" => serialize_length(style.border_width.right),
@@ -47,6 +70,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "color" => serialize_color(style.color),
+        "clear" => style.clear.css_keyword().to_string(),
         "content" => style.generated_content.css_text(),
         "display" => style.display.css_keyword().to_string(),
         "flex-direction" => match style.flex_direction {
@@ -68,7 +92,13 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "font-weight" => style.font_weight.to_string(),
         "letter-spacing" => serialize_px(style.letter_spacing),
         "word-spacing" => serialize_px(style.word_spacing),
-        "line-height" => serialize_px(style.line_height),
+        "line-height" => {
+            if style.line_height_value == LineHeight::Normal {
+                "normal".to_string()
+            } else {
+                serialize_px(style.line_height)
+            }
+        }
         "opacity" => serialize_number(style.opacity),
         "padding-bottom" => serialize_length(style.padding.bottom),
         "padding-left" => serialize_length(style.padding.left),
@@ -78,6 +108,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "position" => match style.position {
             Position::Static => "static",
             Position::Relative => "relative",
+            Position::Sticky => "sticky",
             Position::Absolute => "absolute",
             Position::Fixed => "fixed",
         }

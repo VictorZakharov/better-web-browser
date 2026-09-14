@@ -309,7 +309,11 @@ fn stylesheet_text_mutation_forces_rule_rebuild_without_stale_style() {
     let outcome = runtime.advance_time(std::time::Duration::from_millis(500), 128);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert!(outcome.invalidation.rebuild_style_rules);
-    assert_eq!(outcome.invalidation.roots, vec![page.dom.document.id()]);
+    // Keep the actual DOM scope until the style consumer compares rule inputs.
+    assert_eq!(
+        outcome.invalidation.roots,
+        vec![element_with_id(&page, "style", "theme").id()]
+    );
     let stats = page.refresh_resources_after_invalidation(800.0, &outcome.invalidation);
 
     assert!(stats.full_rebuild);

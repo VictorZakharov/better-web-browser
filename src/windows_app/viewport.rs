@@ -125,6 +125,7 @@ impl BrowserState {
         if self.scroll_y == previous {
             return;
         }
+        let sticky_changed = self.compose_viewport_sticky_layers();
         self.update_scrollbar();
         if !self.processing_background_tab {
             if self
@@ -152,7 +153,7 @@ impl BrowserState {
                     bottom: (client.bottom - self.status_height()).max(self.toolbar_height()),
                 };
                 let delta = previous - self.scroll_y;
-                if delta.unsigned_abs() < content.height() as u32 {
+                if !sticky_changed && delta.unsigned_abs() < content.height() as u32 {
                     // Preserve pixels that remain visible and invalidate only the exposed strip.
                     // <https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-scrollwindowex>
                     ScrollWindowEx(

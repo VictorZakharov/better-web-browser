@@ -8,6 +8,7 @@ impl ComputedStyle {
             && self.display == other.display
             && self.position == other.position
             && self.float == other.float
+            && self.clear == other.clear
             && self.font_size == other.font_size
             && self.font_weight == other.font_weight
             && self.italic == other.italic
@@ -42,6 +43,7 @@ impl ComputedStyle {
             && self.flex_direction == other.flex_direction
             && self.justify_content == other.justify_content
             && self.align_items == other.align_items
+            && self.align_content == other.align_content
             && self.justify_self == other.justify_self
             && self.flex_wrap == other.flex_wrap
             && self.flex_grow == other.flex_grow
@@ -50,6 +52,7 @@ impl ComputedStyle {
             && self.box_sizing == other.box_sizing
             && self.border_collapse == other.border_collapse
             && self.caption_side_bottom == other.caption_side_bottom
+            && self.vertical_align == other.vertical_align
             && self.list_style_type == other.list_style_type
             && self.grid_template_columns == other.grid_template_columns
             && self.grid_template_rows == other.grid_template_rows

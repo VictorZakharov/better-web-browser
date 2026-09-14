@@ -30,6 +30,8 @@ impl DocumentRuntime {
                 }
                 self.execute_pending_parser_script(connection, outcome)?;
             }
+            self.update_render_blockers();
+            let previous_links = self.head_links();
             let parser = self.parser.as_mut().expect("active parser");
             let step = parser
                 .next
@@ -43,6 +45,7 @@ impl DocumentRuntime {
                 .dom
                 .errors
                 .replace(parser.parser.dom().errors.borrow().clone());
+            self.record_parser_stylesheets(&previous_links);
             if let Some(runtime) = self.script_runtime.as_mut() {
                 runtime.set_quirks_mode(
                     self.page.dom.quirks_mode.get()

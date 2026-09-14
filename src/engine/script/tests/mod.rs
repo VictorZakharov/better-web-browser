@@ -18,19 +18,24 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
     (dom, outcome)
 }
 
+mod adjacent_insertion;
 mod attributes;
 mod bindings;
 mod canvas;
 mod channel_messaging;
+mod checkable;
+mod collections;
 mod compatibility;
 mod crypto;
 mod cssom;
 mod cssom_view;
 mod cssom_view_scroll;
 mod custom_elements;
+mod element_scrolling;
 mod embedded_elements;
 mod events;
 mod forms;
+mod fragment_navigation;
 mod fullscreen;
 mod hyperlinks;
 mod intersection_observer;
@@ -53,6 +58,7 @@ mod published_geometry;
 mod ranges;
 mod request_state;
 mod resize_observer;
+mod scoped_invalidation;
 mod selectors;
 mod shadow_dom;
 mod svg;

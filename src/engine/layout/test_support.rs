@@ -18,4 +18,14 @@ impl TextMeasurer for CountingMeasurer {
         self.calls += 1;
         (text.chars().count() as f32 * font.size * 0.5, font.size)
     }
+
+    fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {
+        // Keep the intrinsic-measurement counter independent of final paint requests.
+        let (width, height) = FixedMeasurer.measure(text, font);
+        ShapedText {
+            width,
+            height,
+            ..ShapedText::default()
+        }
+    }
 }

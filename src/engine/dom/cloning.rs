@@ -59,6 +59,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
                 .mathml_annotation_xml_integration_point,
             fullscreen: std::cell::Cell::new(false),
             hovered: std::cell::Cell::new(false),
+            input_state: std::cell::Cell::new(element.input_state.get()),
             // HTML cloning copies already-started, but not the original force-async flag.
             script_force_async: std::cell::Cell::new(source.attr("async").is_none()),
             script_started: std::cell::Cell::new(element.script_started.get()),

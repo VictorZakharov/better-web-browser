@@ -3,6 +3,67 @@ use super::*;
 use std::cell::Cell;
 
 #[test]
+fn timer_batch_flushes_mutations_and_microtasks_before_later_geometry_reads() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><div></div><script>
+        const box = document.querySelector('div');
+        const seen = [];
+        setTimeout(() => {
+            box.style.width = '200px';
+            queueMicrotask(() => box.style.width = '300px');
+        }, 5000);
+        setTimeout(() => {
+            seen.push(box.getBoundingClientRect().width);
+            box.style.width = '400px';
+        }, 5000);
+        setTimeout(() => {
+            seen.push(box.getBoundingClientRect().width);
+            document.body.dataset.result = seen.join(',');
+        }, 5000);
+    </script></body>"#,
+        true,
+    );
+    let target = dom.elements_named("div").next().unwrap();
+    let body = dom.elements_named("body").next().unwrap();
+    let target_id = target.id();
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.test/");
+    runtime.set_layout_flush_callback(Box::new(move |invalidation, _| {
+        assert!(invalidation.impact.affects_style());
+        observed.set(observed.get() + 1);
+        let width = if target.attr("style").unwrap_or_default().contains("400") {
+            400.0
+        } else {
+            300.0
+        };
+        Some(HashMap::from([(
+            target_id,
+            RectF {
+                width,
+                height: 20.0,
+                ..RectF::default()
+            },
+        )]))
+    }));
+    let node = dom.elements_named("script").next().unwrap();
+    let initial = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.test/tasks.js".into(),
+        code: node.text_content(),
+        node,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert!(body.attr("data-result").is_none());
+    let batch = runtime.advance_time(std::time::Duration::from_secs(5), 8);
+    assert!(batch.errors.is_empty(), "{:?}", batch.errors);
+    assert_eq!(body.attr("data-result").as_deref(), Some("300,400"));
+    assert_eq!(calls.get(), 2);
+}
+
+#[test]
 fn published_geometry_does_not_replay_old_text_layout_but_new_text_still_invalidates() {
     let dom = dom::parse_with_scripting(
         r#"<body><div id=target>initial text</div>

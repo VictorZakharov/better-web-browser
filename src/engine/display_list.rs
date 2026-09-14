@@ -74,6 +74,7 @@ impl DisplayListDamage {
 
 fn item_bounds(item: &DisplayItem) -> RectF {
     match item {
+        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => RectF::default(),
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
@@ -111,6 +112,9 @@ mod tests {
 
     fn output(items: Vec<DisplayItem>) -> LayoutOutput {
         LayoutOutput {
+            sticky_offsets: Default::default(),
+            sticky_layers: Default::default(),
+            scroll_boxes: Default::default(),
             items,
             content_height: 100.0,
             background: Color::WHITE,

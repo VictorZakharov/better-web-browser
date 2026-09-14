@@ -329,12 +329,14 @@
             event.__target = targetOverride;
             const hasRelatedTarget = 'relatedTarget' in event;
             const relatedTarget = hasRelatedTarget ? event.relatedTarget : null;
+            let activation = null;
             const adjust = current => {
                 event.__target = retarget(targetOverride, current);
                 if (hasRelatedTarget) event.relatedTarget = retarget(relatedTarget, current);
                 return !hasRelatedTarget || event.__target !== event.relatedTarget;
             };
             try {
+                activation = prepareCheckableActivation(target, event);
                 const path = eventPath(target, event);
                 event.__path = [...path];
                 for (let index = path.length - 1; index > 0; index--) {
@@ -366,6 +368,8 @@
                 event.__immediate = false;
                 event.__passive = false;
             }
+            finishCheckableActivation(activation, event);
+            activateLabel(target, event);
             return !event.defaultPrevented;
         }
     }

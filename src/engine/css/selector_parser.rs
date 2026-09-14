@@ -6,6 +6,7 @@ use super::*;
 pub enum PseudoElement {
     Before,
     After,
+    Placeholder,
 }
 
 pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option<PseudoElement>)> {
@@ -14,6 +15,7 @@ pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option
     let (origin, pseudo) = [
         ("::before", PseudoElement::Before),
         ("::after", PseudoElement::After),
+        ("::placeholder", PseudoElement::Placeholder),
         (":before", PseudoElement::Before),
         (":after", PseudoElement::After),
     ]
@@ -229,6 +231,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "disabled" => compound.requires_disabled = true,
                         "fullscreen" => compound.requires_fullscreen = true,
                         "hover" => compound.requires_hover = true,
+                        "checked" => compound.requires_checked = true,
+                        "indeterminate" => compound.requires_indeterminate = true,
                         "active" | "focus" | "visited" | "focus-visible" => {
                             compound.never_matches = true
                         }
@@ -297,6 +301,11 @@ pub(super) fn parse_attribute_selector(input: &str) -> Option<AttributeSelector>
 }
 
 pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
+    if let Some(name) = input.strip_prefix(':')
+        && matches!(name, "checked" | "indeterminate" | "disabled" | "enabled")
+    {
+        return Some(SimpleSelector::State(name.to_string()));
+    }
     if let Some(id) = input.strip_prefix('#') {
         Some(SimpleSelector::Id(id.to_string()))
     } else if let Some(class) = input.strip_prefix('.') {
@@ -320,6 +329,10 @@ pub(super) fn parse_simple_selector_list(input: &str) -> Option<Vec<SimpleSelect
 
 pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specificity {
     match selector {
+        SimpleSelector::State(_) => Specificity {
+            classes: 1,
+            ..Specificity::default()
+        },
         SimpleSelector::Id(_) => Specificity {
             ids: 1,
             ..Specificity::default()

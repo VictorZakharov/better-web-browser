@@ -23,7 +23,10 @@ pub(super) fn encode_control(
     }
     encode_color(writer, spec.background_color);
     encode_color(writer, spec.text_color);
-    encode_color(writer, spec.border_color);
+    encode_color(writer, spec.placeholder_color);
+    for color in spec.border_colors {
+        encode_color(writer, color);
+    }
     encode_edges(writer, spec.border_width);
     writer.f32(spec.border_radius);
     encode_edges(writer, spec.padding);
@@ -69,7 +72,13 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
         form_id,
         background_color: decode_color(reader)?,
         text_color: decode_color(reader)?,
-        border_color: decode_color(reader)?,
+        placeholder_color: decode_color(reader)?,
+        border_colors: [
+            decode_color(reader)?,
+            decode_color(reader)?,
+            decode_color(reader)?,
+            decode_color(reader)?,
+        ],
         border_width: decode_edges(reader)?,
         border_radius: finite(
             reader.f32()?,

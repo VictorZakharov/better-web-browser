@@ -58,6 +58,12 @@ impl TreeSink for Dom {
             Rc::clone(&self.identity),
             NodeData::Element(ElementData {
                 name,
+                input_state: std::cell::Cell::new(super::super::node::checkable::InputState {
+                    checked: attrs.iter().any(|attr| {
+                        attr.name.ns.as_ref().is_empty() && attr.name.local.as_ref() == "checked"
+                    }),
+                    ..Default::default()
+                }),
                 attrs: RefCell::new(attrs),
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
@@ -183,7 +189,8 @@ impl TreeSink for Dom {
         };
         remove_from_parent(&child);
         child.parent.set(Some(Rc::downgrade(&parent)));
-        parent.children.borrow_mut().insert(index, child);
+        parent.children.borrow_mut().insert(index, child.clone());
+        Node::checkable_subtree_inserted(&child);
         parent.mark_mutated();
     }
 

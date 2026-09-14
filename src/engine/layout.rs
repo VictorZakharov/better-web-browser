@@ -11,7 +11,9 @@ mod inline_paint;
 mod model;
 mod opacity;
 mod scrollable_overflow;
+mod scrolling;
 mod sizing;
+mod sticky;
 mod table;
 #[cfg(test)]
 mod test_support;
@@ -28,11 +30,7 @@ mod tests_pseudo;
 mod tracks;
 mod translate;
 use self::{forms::*, sizing::*, tracks::*};
-use super::css::{
-    AlignItems, BackgroundSize, BoxSizing, Color, ComputedStyle, Display, Edges, FlexDirection,
-    Float, JustifyContent, Length, ListStyleType, Position, PseudoElement, ResolvedEdges, StyleSet,
-    TextAlign, WhiteSpace, parse_length,
-};
+use super::css::*;
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};
 use crate::navigation::resolve_url;
@@ -45,4 +43,6 @@ pub use model::{
     ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
     RectF, ResizeBox, SelectOption, ShapedText, TextMeasurer,
 };
+pub use scrolling::ScrollBox;
 use std::collections::HashMap;
+pub use sticky::StickyLayer;

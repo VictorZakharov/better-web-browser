@@ -115,7 +115,8 @@ pub struct ControlSpec {
     pub form_id: Option<NodeId>,
     pub background_color: Color,
     pub text_color: Color,
-    pub border_color: Color,
+    pub placeholder_color: Color,
+    pub border_colors: [Color; 4],
     pub border_width: [f32; 4],
     pub border_radius: f32,
     pub padding: [f32; 4],
@@ -135,6 +136,19 @@ pub struct FormSpec {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
+    /// Renderer-local CSS paint-phase ownership; consumed by layout before presentation.
+    PaintBoundary {
+        kind: u8,
+        entering: bool,
+        level: i32,
+        isolates: bool,
+        node_id: Option<NodeId>,
+    },
+    /// Renderer-local anchors survive paint-group reordering and are stripped before IPC.
+    NodeBoundary {
+        node_id: NodeId,
+        entering: bool,
+    },
     BeginClip {
         bounds: RectF,
     },
@@ -156,7 +170,7 @@ pub enum DisplayItem {
     BorderRect {
         rect: RectF,
         widths: [f32; 4],
-        color: Color,
+        colors: [Color; 4],
         radius: f32,
     },
     Text {
@@ -188,6 +202,10 @@ pub enum DisplayItem {
 
 #[derive(Debug, Clone, Default)]
 pub struct LayoutOutput {
+    pub(crate) sticky_offsets: HashMap<NodeId, (f32, f32)>,
+    pub sticky_layers: Vec<super::StickyLayer>,
+    /// Renderer-local scrollports; positions are unscrolled document coordinates.
+    pub scroll_boxes: HashMap<NodeId, super::ScrollBox>,
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,
@@ -203,12 +221,17 @@ pub struct LayoutOutput {
 
 #[derive(Debug, Clone)]
 pub(super) enum InlineAtom {
+    BlockBox {
+        node: NodeRef,
+        height_basis: Option<f32>,
+    },
     Text {
         text: String,
         font: FontSpec,
         color: Color,
         link: Option<String>,
         node_id: Option<NodeId>,
+        source_node: Option<NodeId>,
         line_height: f32,
         no_wrap: bool,
     },
@@ -267,8 +290,6 @@ pub(super) struct MeasuredAtom<'a> {
     pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
-    pub(super) raster_run_id: u64,
-    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
 #[derive(Debug, Clone)]
@@ -279,8 +300,6 @@ pub(super) struct CachedAtomMeasurement {
     pub(super) content_height: f32,
     pub(super) no_wrap: bool,
     pub(super) break_before: bool,
-    pub(super) raster_run_id: u64,
-    pub(super) glyphs: Vec<PositionedGlyph>,
 }
 
 impl CachedAtomMeasurement {
@@ -297,8 +316,6 @@ impl CachedAtomMeasurement {
             content_height: self.content_height,
             no_wrap: self.no_wrap,
             break_before: self.break_before,
-            raster_run_id: self.raster_run_id,
-            glyphs: self.glyphs.clone(),
         }
     }
 }
@@ -317,8 +334,6 @@ impl From<&MeasuredAtom<'_>> for CachedAtomMeasurement {
             content_height: measured.content_height,
             no_wrap: measured.no_wrap,
             break_before: measured.break_before,
-            raster_run_id: measured.raster_run_id,
-            glyphs: measured.glyphs.clone(),
         }
     }
 }
@@ -336,6 +351,8 @@ pub(super) struct InlineBoxMetrics {
 #[derive(Debug, Clone)]
 pub(super) enum GridTrack {
     Auto,
+    MinContent,
+    MaxContent,
     Fixed(Length),
     Fraction(f32),
     MinMax(Box<GridTrack>, Box<GridTrack>),

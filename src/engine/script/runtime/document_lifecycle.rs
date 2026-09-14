@@ -115,6 +115,7 @@ impl ScriptRuntime {
         host.timers.clear();
         host.idle_callbacks.clear();
         host.resize_observers_pending = false;
+        host.resize_observers_deferred = false;
         host.resize_boxes.clear();
         host.timer_handles.clear();
         host.pending_document_write.clear();

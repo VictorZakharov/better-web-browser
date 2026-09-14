@@ -25,10 +25,11 @@ pub(super) struct CompletedModuleEvaluation {
 
 pub(super) struct HostState {
     pub(super) document: NodeRef,
+    pub(super) named_property_index: super::dom_host::NamedPropertyIndex,
     pub(super) document_url: String,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
-    pub(super) stylesheet_sources: Vec<(String, String)>,
+    pub(super) stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
@@ -74,8 +75,13 @@ pub(super) struct HostState {
     pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
     /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
     pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) scroll_boxes: HashMap<NodeId, crate::engine::layout::ScrollBox>,
+    pub(super) sticky_offsets: HashMap<NodeId, (f32, f32)>,
+    pub(super) geometry_scroll_offset: (f32, f32),
+    pub(super) geometry_scroll_dirty: bool,
     pub(super) resize_boxes: HashMap<NodeId, crate::engine::layout::ResizeBox>,
     pub(super) resize_observers_pending: bool,
+    pub(super) resize_observers_deferred: bool,
     pub(super) layout_geometry_version: u64,
     pub(super) layout_geometry_initialized: bool,
     pub(super) layout_flush: Option<LayoutFlushCallback>,
@@ -97,6 +103,7 @@ impl HostState {
     ) -> Self {
         let mut state = Self {
             document,
+            named_property_index: Default::default(),
             document_url: document_url.to_string(),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),
@@ -145,8 +152,13 @@ impl HostState {
             computed_styles: None,
             offset_parent_styles: None,
             layout_geometry: HashMap::new(),
+            scroll_boxes: HashMap::new(),
+            sticky_offsets: HashMap::new(),
+            geometry_scroll_offset: (0.0, 0.0),
+            geometry_scroll_dirty: false,
             resize_boxes: HashMap::new(),
             resize_observers_pending: false,
+            resize_observers_deferred: false,
             layout_geometry_version: 0,
             layout_geometry_initialized: false,
             layout_flush: None,
@@ -244,10 +256,28 @@ impl HostState {
         self.task_started = Some(Instant::now());
     }
 
-    pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
-        self.pending_invalidation.extend(&self.document, target);
+    pub(super) fn invalidate_previous_parent(
+        &mut self,
+        target: &NodeRef,
+        moved: &NodeRef,
+        kind: MutationKind<'_>,
+    ) {
+        // Pre-insertion removes the child from its old parent. Only a connected old parent
+        // affects rendering; detached staging fragments must not widen the dirty root set.
+        // Conversely, moving into a detached tree must still render the connected removal.
+        // https://dom.spec.whatwg.org/#concept-node-insert
+        if !self.mutation_requires_render(target) {
+            return;
+        }
+        self.invalidate_style_rules_for_mutation(Some(target), kind);
+        self.pending_invalidation
+            .record(&self.document, Some(target), kind);
         self.pending_layout_invalidation
-            .extend(&self.document, target);
+            .record(&self.document, Some(target), kind);
+        if !self.is_connected(moved) {
+            self.record_removed_subtree(moved);
+        }
+        self.timers.request_render();
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {

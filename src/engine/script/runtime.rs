@@ -29,6 +29,10 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    pub(crate) fn document_url(&self) -> String {
+        self.host.borrow().document_url.clone()
+    }
+
     pub fn new(document: NodeRef, document_url: &str) -> Self {
         Self::new_with_character_set(document, document_url, "UTF-8")
     }
@@ -202,7 +206,10 @@ impl ScriptRuntime {
             .replace_cookies_from_header(cookie_header);
     }
 
-    pub(crate) fn set_document_stylesheets(&mut self, stylesheets: &[(String, String)]) {
+    pub(crate) fn set_document_stylesheets(
+        &mut self,
+        stylesheets: &[crate::engine::css::StylesheetSource],
+    ) {
         self.host
             .borrow_mut()
             .replace_document_stylesheets(stylesheets);

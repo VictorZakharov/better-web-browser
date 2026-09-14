@@ -6,6 +6,8 @@ mod pseudo;
 mod refresh;
 mod root_units;
 mod sheets;
+mod sources;
+pub use sources::StylesheetSource;
 #[cfg(test)]
 mod tests;
 
@@ -35,18 +37,20 @@ pub struct StyleSet {
     generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
     generated_styles: HashMap<NodeId, ComputedStyle>,
     compiled: std::rc::Rc<sheets::CompiledRules>,
+    ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     defer_nonrendered_descendants: bool,
     deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
     viewport_width: f32,
     viewport_height: f32,
+    resolution_dppx: f32,
 }
 
 impl StyleSet {
     pub fn from_dom(dom: &Dom, external_stylesheets: &[String], viewport_width: f32) -> Self {
         let sources = external_stylesheets
             .iter()
-            .map(|stylesheet| (String::new(), stylesheet.clone()))
+            .map(|stylesheet| StylesheetSource::injected("", stylesheet.clone()))
             .collect::<Vec<_>>();
         Self::from_document(&dom.document, "", &sources, viewport_width)
     }
@@ -59,10 +63,14 @@ impl StyleSet {
         viewport_width: f32,
         viewport_height: f32,
     ) -> Self {
+        let sources = external_stylesheets
+            .iter()
+            .map(|(url, source)| StylesheetSource::injected(url, source.clone()))
+            .collect::<Vec<_>>();
         Self::from_sources_for_media_environment(
             dom,
             document_base_url,
-            external_stylesheets,
+            &sources,
             MediaEnvironment::new(viewport_width, viewport_height, 1.0, false),
         )
     }
@@ -70,7 +78,7 @@ impl StyleSet {
     pub(crate) fn from_sources_for_media_environment(
         dom: &Dom,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         Self::from_document_for_media_environment(
@@ -84,7 +92,7 @@ impl StyleSet {
     pub(crate) fn from_document(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         viewport_width: f32,
     ) -> Self {
         Self::from_document_for_viewport(
@@ -100,7 +108,7 @@ impl StyleSet {
     pub(crate) fn from_document_for_viewport(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         viewport_width: f32,
         viewport_height: f32,
         prefers_dark_color_scheme: bool,
@@ -121,7 +129,7 @@ impl StyleSet {
     fn from_document_for_media_environment(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         let mut set = Self::for_computed_style_for_media_environment(
@@ -138,7 +146,7 @@ impl StyleSet {
     pub(crate) fn for_computed_style_for_media_environment(
         document: &NodeRef,
         document_base_url: &str,
-        external_stylesheets: &[(String, String)],
+        external_stylesheets: &[crate::engine::css::StylesheetSource],
         environment: MediaEnvironment,
     ) -> Self {
         let compiled = sheets::collect(
@@ -153,11 +161,13 @@ impl StyleSet {
             generated_nodes: HashMap::new(),
             generated_styles: HashMap::new(),
             compiled,
+            ancestor_filters: std::cell::RefCell::default(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
             viewport_width: environment.viewport_width,
             viewport_height: environment.viewport_height,
+            resolution_dppx: environment.resolution_dppx,
         }
     }
 
@@ -208,8 +218,10 @@ impl StyleSet {
     fn compute_style(&self, node: &NodeRef, parent: Option<&ComputedStyle>) -> ComputedStyle {
         let mut style = ComputedStyle::inherit_from(parent);
         style.root_font_size = root_font_size_for(&self.styles, node);
-        apply_user_agent_defaults(node, &mut style);
+        apply_user_agent_defaults(node, &mut style, parent);
         let lower_origin = style.clone();
+        // HTML hints precede author rules, including an explicit width/height:auto.
+        apply_presentational_hints(node, &mut style);
 
         let matching = self.matching_rules(node, None);
         let inline_declarations = node
@@ -224,7 +236,6 @@ impl StyleSet {
             &matching,
             &inline_declarations,
         );
-        apply_presentational_hints(node, &mut style);
         style.resolve_relative_units(
             self.viewport_width,
             self.viewport_height,
@@ -244,7 +255,9 @@ impl StyleSet {
         if matches!(style.position, Position::Absolute | Position::Fixed) {
             style.float = Float::None;
         }
-        style.line_height = style.line_height.max(style.font_size);
+        style.blockify_float();
+        style.resolve_line_height(self.viewport_width, self.viewport_height);
+        style.snap_border_widths(self.resolution_dppx);
         // Preserve inherited-map identity across incremental recalculation. Otherwise an
         // unchanged ancestor's rebuilt variable map makes every descendant compare a large
         // equivalent map again. Equality is exact; changed values never reuse stale storage.
@@ -266,7 +279,7 @@ impl StyleSet {
         let mut matching = self
             .compiled
             .index
-            .candidates(node)
+            .candidates(node, pseudo)
             .into_iter()
             .filter_map(|index| self.compiled.rules.get(index))
             .filter(|rule| rule.pseudo == pseudo)
@@ -275,13 +288,13 @@ impl StyleSet {
         let ancestors = std::cell::OnceCell::new();
         matching.retain(|rule| {
             if !super::selector_match::AncestorFilter::needed(&rule.selector) {
-                return selector_matches(&rule.selector, node);
-            }
-            super::selector_match::compound_matches(rule.selector.compounds.last().unwrap(), node)
-                && ancestors
-                    .get_or_init(|| super::selector_match::AncestorFilter::new(node))
+                selector_matches(&rule.selector, node)
+            } else {
+                ancestors
+                    .get_or_init(|| self.ancestor_filters.borrow_mut().for_node(node))
                     .may_match(&rule.selector)
-                && selector_matches(&rule.selector, node)
+                    && selector_matches(&rule.selector, node)
+            }
         });
         matching.sort_by(|left, right| {
             left.selector
@@ -324,20 +337,18 @@ impl StyleSet {
         for &(declaration, _) in &cascaded {
             apply_custom_properties(style, std::slice::from_ref(declaration), parent);
         }
-        for line_height in [false, true] {
-            for &(declaration, base_url) in &cascaded {
-                if (declaration.name == "line-height") == line_height {
-                    apply_resolved_declaration(
-                        style,
-                        declaration,
-                        parent,
-                        lower_origin,
-                        base_url,
-                        self.viewport_width,
-                        self.viewport_height,
-                    );
-                }
-            }
+        // Font-relative line height resolves after the cascade. Do not move its
+        // declarations past later font shorthands or change importance ordering.
+        for &(declaration, base_url) in &cascaded {
+            apply_resolved_declaration(
+                style,
+                declaration,
+                parent,
+                lower_origin,
+                base_url,
+                self.viewport_width,
+                self.viewport_height,
+            );
         }
     }
 }

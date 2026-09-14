@@ -27,6 +27,8 @@
 
     function clientWidth(element) {
         if (isViewportElement(element)) return layoutViewportWidth;
+        const scroll = host('elementScroll', element.__id);
+        if (Array.isArray(scroll)) return scroll[4];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
         if (element.localName === 'table') return rect.width;
@@ -40,6 +42,8 @@
 
     function clientHeight(element) {
         if (isViewportElement(element)) return layoutViewportHeight;
+        const scroll = host('elementScroll', element.__id);
+        if (Array.isArray(scroll)) return scroll[5];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
         if (element.localName === 'table') return rect.height;

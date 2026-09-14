@@ -1,6 +1,6 @@
 //! Selector matching against DOM nodes.
 mod ancestor_filter;
-pub(super) use ancestor_filter::AncestorFilter;
+pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
 use super::*;
 
@@ -122,6 +122,12 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     if selector.requires_hover && !node.is_hovered() {
         return false;
     }
+    if selector.requires_checked && !matches_checked(node) {
+        return false;
+    }
+    if selector.requires_indeterminate && !matches_indeterminate(node) {
+        return false;
+    }
     if selector.requires_fullscreen && !node.is_fullscreen() {
         return false;
     }
@@ -208,11 +214,31 @@ fn is_disabled(node: &NodeRef) -> bool {
 
 pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -> bool {
     match simple {
+        SimpleSelector::State(name) => match name.as_str() {
+            "checked" => matches_checked(node),
+            "indeterminate" => matches_indeterminate(node),
+            "disabled" => is_disableable(node) && is_disabled(node),
+            "enabled" => is_disableable(node) && !is_disabled(node),
+            _ => false,
+        },
         SimpleSelector::Tag(tag) => node.tag_name() == Some(tag),
         SimpleSelector::Id(id) => node.attr_ref("id").as_deref() == Some(id),
         SimpleSelector::Class(class) => node.has_class(class),
         SimpleSelector::Attribute(attribute) => attribute_matches(attribute, node),
     }
+}
+
+fn matches_checked(node: &NodeRef) -> bool {
+    (node.is_checkable() && node.checked())
+        || (node.tag_name() == Some("option") && node.attr("selected").is_some())
+}
+
+fn matches_indeterminate(node: &NodeRef) -> bool {
+    if node.is_radio() {
+        return !node.checked() && node.radio_group().iter().all(|other| !other.checked());
+    }
+    (node.is_checkable() && node.indeterminate())
+        || (node.tag_name() == Some("progress") && node.attr("value").is_none())
 }
 
 pub(super) fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) -> bool {

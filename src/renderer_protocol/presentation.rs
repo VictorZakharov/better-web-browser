@@ -30,6 +30,7 @@ pub struct RuntimeReport {
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
     pub viewport_scroll_y: Option<f32>,
+    pub viewport_wheel_delta_y: f32,
     pub history_updates: Vec<HistoryUpdate>,
     pub cookie_updates: Vec<String>,
     pub runtime_active: bool,
@@ -112,6 +113,7 @@ pub struct PageLoadReport {
 #[derive(Clone, Debug, Default)]
 pub struct PresentedLayout {
     pub items: Vec<DisplayItem>,
+    pub sticky_layers: Vec<crate::engine::layout::StickyLayer>,
     pub content_height: f32,
     pub background: Color,
     pub forms: Vec<FormSpec>,
@@ -124,6 +126,9 @@ impl PresentedLayout {
 
     pub fn into_layout(self) -> LayoutOutput {
         LayoutOutput {
+            sticky_offsets: Default::default(),
+            sticky_layers: self.sticky_layers,
+            scroll_boxes: Default::default(),
             items: self.items,
             content_height: self.content_height,
             background: self.background,

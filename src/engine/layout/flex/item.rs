@@ -54,16 +54,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 )
             });
         let tag = node.tag_name().unwrap_or_default();
-        if (tag == "button"
-            && matches!(
-                original_style.display,
-                Display::Flex | Display::InlineFlex | Display::Grid
-            ))
-            || !matches!(
-                tag,
-                "img" | "image" | "input" | "textarea" | "button" | "svg"
-            )
-        {
+        if !matches!(tag, "img" | "image" | "input" | "textarea" | "svg") {
             return self.layout_block_with_content_height(
                 node,
                 x,
@@ -111,15 +102,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 },
             ),
             "input" | "textarea" => self.collect_input(
-                node,
-                &style,
-                &mut atoms,
-                InlineContainingBlock {
-                    width,
-                    height: containing_height,
-                },
-            ),
-            "button" => self.collect_button(
                 node,
                 &style,
                 &mut atoms,

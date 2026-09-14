@@ -6,6 +6,13 @@ impl DocumentRuntime {
         &mut self,
         input: PointerInput,
     ) -> Result<PointerInteraction, String> {
+        if let Some(outcome) = self.scrollbar_pointer(input)? {
+            return Ok(PointerInteraction {
+                outcome,
+                navigation: None,
+                cursor: None,
+            });
+        }
         let target = (input.phase != PointerPhase::Leave)
             .then(|| {
                 input
@@ -76,7 +83,7 @@ impl DocumentRuntime {
                 outcome.render_requested = true;
                 outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
                     roots: vec![self.page.dom.document.id()],
-                    impact: crate::engine::invalidation::MutationKind::State.impact(),
+                    impact: crate::engine::invalidation::MutationKind::PointerDesignation.impact(),
                     mutation_count: 0,
                     rebuild_style_rules: false,
                     removed_nodes: Vec::new(),
