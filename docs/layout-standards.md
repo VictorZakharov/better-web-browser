@@ -103,6 +103,17 @@ Crashes, overlapping/clipped content, broken shared columns, stale geometry and 
 corrupted scroll frames block acceptance, even when isolated tests pass. Hidden live
 captures and interaction checks must be reviewed before calling the PR ready.
 
+The `e4e4c71` release was inspected on the Main Page, Coron/Palawan climate table,
+Palawan infobox and the Yemen article, including a narrower Palawan viewport and
+real wheel input with reversals. These captures have no renderer exits or JavaScript
+errors, and the inspected views no longer show the reported label overlap, off-screen
+sidebar, overflowing infobox bars or missing flag/seal row. Palawan's table width is
+323.84 CSS pixels in both Breeze and Chrome; the flag/seal row is 111.78 versus 111.76.
+Evidence remains untracked in `target/wiki-regression/*-e4*`, with Chromium references
+in the same directory. This is a named browsing sample, not proof that every Wikipedia
+page matches Chrome; interactive maps, typography and full CSS conformance remain
+separate compatibility work. The following responsiveness limitation is still open.
+
 The same page's post-load scroll actions expose a separate responsiveness problem.
 Opt-in host profiling now retains bounded details for callbacks of at least 16ms,
 instead of discarding details below 100ms. The captured sidebar callbacks changed list

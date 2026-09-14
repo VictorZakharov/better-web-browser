@@ -30,6 +30,8 @@ mod pointer_buttons;
 mod presentation;
 #[path = "renderer_process/resize_observers.rs"]
 mod resize_observers;
+#[path = "renderer_process/startup.rs"]
+mod startup;
 #[path = "renderer_process/state.rs"]
 mod state;
 #[path = "renderer_process/state_backpressure.rs"]
@@ -49,7 +51,7 @@ mod xhr_reuse;
 
 use better_web_browser::engine::DisplayItem;
 use better_web_browser::renderer_process::{
-    RendererEvent, RendererExitReason, RendererSession, RendererState, StartupFault,
+    RendererEvent, RendererExitReason, RendererSession, RendererState,
 };
 use better_web_browser::renderer_protocol::{BrowsingContextId, TestCommand};
 use std::net::TcpListener;
@@ -344,33 +346,6 @@ fn malformed_frames_and_forced_abort_are_session_local_and_recoverable() {
     let mut replacement = RendererSession::launch(options()).expect("recover renderer session");
     replacement.ping(Duration::from_secs(1)).unwrap();
     replacement.shutdown().unwrap();
-}
-
-#[test]
-fn startup_faults_fail_closed_within_the_deadline() {
-    let _serial = SERIAL
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut warmup = RendererSession::launch(options()).expect("warm renderer infrastructure");
-    warmup.shutdown().expect("shutdown warmup renderer");
-    drop(warmup);
-    let before = process_handle_count();
-    for fault in [
-        StartupFault::Silent,
-        StartupFault::WrongNonce,
-        StartupFault::MalformedFrame,
-        StartupFault::OversizedFrame,
-        StartupFault::IncompatibleVersion,
-    ] {
-        let mut launch = options();
-        launch.startup_timeout = Duration::from_millis(200);
-        launch.startup_fault = Some(fault);
-        let started = Instant::now();
-        let result = RendererSession::launch(launch);
-        assert!(result.is_err(), "startup fault was accepted: {fault:?}");
-        assert!(started.elapsed() < Duration::from_secs(3));
-    }
-    assert_handle_count_returns_to(before);
 }
 
 #[test]
