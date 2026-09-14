@@ -292,7 +292,7 @@ coverage and must not be presented as a performance regression or speedup by the
 
 ### Banked checkpoint
 
-The latest fresh-profile hidden release capture has the article and map visible at 1.0s.
+The banked fresh-profile hidden release capture has the article and map visible at 1.0s.
 Appearance radio controls are absent in the 2.5s capture and present at 3.0s (actual capture
 times 2500.540 and 3000.545ms). That banks a roughly three-second visual initialization
 checkpoint, versus the earlier 5-6s samples. This is a live-page, 500ms-sampled observation,
@@ -339,3 +339,49 @@ or a controlled statistical speedup. Reports are `load-literal-before-*` and
 checkpoint and the outstanding under-two-second target are unchanged.
 The final PNGs from both baseline runs and the first/third post-change runs are byte-identical;
 the inspected three-second post-change frame retains the article, map and radio controls.
+
+### Dirty-scope ownership and non-rendered geometry (2026-09-14)
+
+Node moves now invalidate only connected old/new parents. Detached staging fragments no
+longer leave missing roots in the rendering work list; moving a connected child into a
+detached holder still requests removal rendering and evicts its old style entries. These
+three regressions failed before the change. Script elements still participate in structural
+selectors: insertion/removal can change a following element's `:first-child` geometry.
+The former blanket script-cleanup skip was replaced with that explicit contract, following
+the [DOM insertion/removal algorithms](https://dom.spec.whatwg.org/#concept-node-insert).
+
+A possible stylesheet mutation keeps its DOM dirty roots until the style consumer checks
+the effective inputs. Exact shared identity includes text, order, source URLs, shadow scope
+and media environment; a document-base change also prevents reuse. Identical rules refresh
+only those dirty subtrees, not cached selector results. Changed inputs still refresh the
+whole document. Both paths prune detached/unassigned composed-tree styles and generated
+pseudos. Tests compare inherited values, sibling matching, generated content, stylesheet
+removal and synchronous geometry reads against a fresh cascade.
+
+After refreshing styles, changes confined to unchanged `display:none` subtrees can reuse
+layout. This does not suppress script, resource discovery, metadata or accessibility
+presentations. Reveals, geometry/removal changes, global rule refreshes, unknown/mixed roots,
+base-URL definitions, non-HTML content and fullscreen descendants retain the normal path.
+`visibility:hidden` and `opacity:0` do not qualify: they still generate boxes under
+[CSS Display](https://drafts.csswg.org/css-display/#valdef-display-none).
+
+A clean release rebuild of banked commit `473097c` was compared with the candidate in three
+alternating pairs, with no concurrent compiler/tests, fresh profiles, the same 125% DPI
+viewport and navigation-anchored 500ms screenshots. Every final PNG is byte-identical to
+the banked capture. The candidate's 2.5s frame was visually inspected: its Appearance controls
+are absent at 2.0s and present at 2.5s. All slower samples are retained.
+
+| Measurement | Banked build | Candidate |
+| --- | --- | --- |
+| First final-equivalent viewport samples | 3.0 / 3.5 / 3.0s | 3.0 / 2.5 / 3.5s |
+| Median visual completion sample | 3.0s | 3.0s |
+| Median renderer CPU | 2,547ms | 2,266ms |
+| Median cumulative style/resource time | 611ms | 526ms |
+| Median cumulative layout-phase time | 884ms | 923ms |
+
+These small, variable live-page samples show lower median CPU/style work, not a proven
+visual-loading speedup or Chrome parity. Three earlier candidate captures were 3.0/2.5/2.5s;
+they are not substituted for the slower paired results. The under-two-second target remains
+open. Evidence is in ignored `target/wiki-regression/load-paired-{before,after}-*.json` and
+filmstrips. The legacy `full_layout_rebuilds` field counts render-requested presentations,
+including retained layouts, and is **not** used to claim fewer layout executions here.

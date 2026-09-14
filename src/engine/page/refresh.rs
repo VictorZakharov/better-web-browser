@@ -264,13 +264,13 @@ impl Page {
                 (styles, stats)
             }
             Some((_, _, mut styles)) => {
-                let stats = styles.rebuild_rules_for_media_environment(
+                let stats = styles.refresh_rules_after_invalidation(
                     &self.dom,
                     &self.base_url,
                     &self.stylesheet_sources,
                     self.media_environment
                         .with_viewport(viewport_width, viewport_height),
-                    &invalidation.removed_nodes,
+                    invalidation,
                 );
                 (styles, stats)
             }

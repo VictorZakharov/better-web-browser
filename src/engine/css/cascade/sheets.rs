@@ -4,6 +4,7 @@ use crate::engine::css::media::MediaEnvironment;
 use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
 
+mod invalidation;
 mod owners;
 mod parsed;
 #[cfg(test)]
@@ -40,29 +41,7 @@ impl StyleSet {
         let viewport_changed = self.viewport_width != environment.viewport_width
             || self.viewport_height != environment.viewport_height
             || self.resolution_dppx != environment.resolution_dppx;
-        // Full rule changes also invalidate entries which are no longer in the composed tree.
-        // Keeping them would make later explicit queries reuse stale unassigned light-DOM styles.
-        // A full refresh need not carry an incremental removal log, so prune detached entries too.
-        let composed = Node::composed_descendants(&dom.document)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>();
-        let previous_count = self.styles.len();
-        let previous_generated_count = self.generated_nodes.len();
-        self.styles.retain(|node, _| composed.contains(node));
-        self.pseudo_styles
-            .retain(|(origin, _), _| composed.contains(origin));
-        self.generated_nodes
-            .retain(|(origin, _), _| composed.contains(origin));
-        let generated = self
-            .generated_nodes
-            .values()
-            .flat_map(Node::descendants)
-            .map(|node| node.id())
-            .collect::<HashSet<_>>();
-        self.generated_styles
-            .retain(|node, _| generated.contains(node));
-        let removed_styles = previous_count - self.styles.len();
-        let removed_generated = previous_generated_count != self.generated_nodes.len();
+        let (removed_styles, removed_generated) = self.prune_uncomposed_styles(dom);
         self.compiled = collect(&dom.document, base_url, external_stylesheets, environment);
         self.document_base_url = base_url.to_string();
         self.viewport_width = environment.viewport_width;

@@ -256,10 +256,28 @@ impl HostState {
         self.task_started = Some(Instant::now());
     }
 
-    pub(super) fn extend_invalidation_root(&mut self, target: &NodeRef) {
-        self.pending_invalidation.extend(&self.document, target);
+    pub(super) fn invalidate_previous_parent(
+        &mut self,
+        target: &NodeRef,
+        moved: &NodeRef,
+        kind: MutationKind<'_>,
+    ) {
+        // Pre-insertion removes the child from its old parent. Only a connected old parent
+        // affects rendering; detached staging fragments must not widen the dirty root set.
+        // Conversely, moving into a detached tree must still render the connected removal.
+        // https://dom.spec.whatwg.org/#concept-node-insert
+        if !self.mutation_requires_render(target) {
+            return;
+        }
+        self.invalidate_style_rules_for_mutation(Some(target), kind);
+        self.pending_invalidation
+            .record(&self.document, Some(target), kind);
         self.pending_layout_invalidation
-            .extend(&self.document, target);
+            .record(&self.document, Some(target), kind);
+        if !self.is_connected(moved) {
+            self.record_removed_subtree(moved);
+        }
+        self.timers.request_render();
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {

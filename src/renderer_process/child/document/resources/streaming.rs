@@ -155,7 +155,11 @@ impl DocumentRuntime {
         let style_time = style_started.elapsed();
         self.start_presentational_preloads(connection)?;
         let layout_started = Instant::now();
-        if needs_present {
+        if needs_present
+            && !self
+                .page
+                .invalidation_is_nonrendered(&outcome.invalidation, &style)
+        {
             self.rebuild_layout();
         }
         let current_load = self.text.borrow_mut().finish_load_report(PageLoadReport {

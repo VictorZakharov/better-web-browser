@@ -3,6 +3,7 @@ mod media;
 mod parsing;
 mod preload;
 mod refresh;
+mod rendering;
 mod resource_events;
 mod resources;
 mod scripts;

@@ -56,6 +56,7 @@ mod published_geometry;
 mod ranges;
 mod request_state;
 mod resize_observer;
+mod scoped_invalidation;
 mod selectors;
 mod shadow_dom;
 mod svg;

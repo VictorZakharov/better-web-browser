@@ -182,10 +182,6 @@ impl DocumentRuntime {
         // Script execution, console output, storage/cookie traffic, and worker progress are not
         // visual invalidations. Sending a complete display-list snapshot for those tasks made
         // timer-heavy pages continuously serialize, install, and repaint an unchanged document.
-        let mut needs_present = resources_changed
-            || media_changed
-            || outcome.render_requested
-            || (self.rendering.dirty && !self.rendering_is_blocked());
         let style_started = Instant::now();
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
@@ -204,12 +200,23 @@ impl DocumentRuntime {
             StyleRefreshStats::default()
         };
         let style_time = style_started.elapsed();
+        let mut needs_present = resources_changed
+            || media_changed
+            || outcome.render_requested
+            || (self.rendering.dirty && !self.rendering_is_blocked());
         // A rendering checkpoint can discover resources in newly-created shadow trees. Start the
         // browser fetch now, but do not wait inside this renderer task. The response path installs
         // the completed batch and presents the resulting layout without blocking heartbeats.
         self.start_presentational_preloads(connection)?;
         let layout_started = Instant::now();
-        if resources_changed || outcome.render_requested {
+        // Reuse only box geometry. A hidden DOM change can still update the document title
+        // or an accessibility name, so keep the regular presentation/metadata path.
+        if resources_changed
+            || (outcome.render_requested
+                && !self
+                    .page
+                    .invalidation_is_nonrendered(&outcome.invalidation, &style))
+        {
             connection.report_renderer_task_stage(format!(
                 "rebuilding layout for {}",
                 self.page.source_url
@@ -220,11 +227,15 @@ impl DocumentRuntime {
         let layout_time = layout_started.elapsed();
         if needs_present && !self.diagnostic_selectors.is_empty() {
             outcome.diagnostics.push(format!(
-                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms",
+                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {}",
                 style_time.as_secs_f64() * 1000.0,
                 style.element_style_time.as_secs_f64() * 1000.0,
                 style.pseudo_style_time.as_secs_f64() * 1000.0,
                 layout_time.as_secs_f64() * 1000.0,
+                style.changed_styles,
+                style.recomputed_styles,
+                style.full_rebuild,
+                outcome.invalidation.roots.len(),
             ));
         }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {

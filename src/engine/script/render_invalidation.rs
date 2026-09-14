@@ -16,13 +16,14 @@ impl PendingInvalidation {
         &mut self,
         document: &NodeRef,
         target: Option<&NodeRef>,
-        mut kind: MutationKind<'_>,
+        kind: MutationKind<'_>,
     ) {
-        if rebuilds_style_rules(target, kind) {
-            kind = MutationKind::Stylesheet;
-        }
+        let rebuild_rules = rebuilds_style_rules(target, kind);
         self.impact = self.impact.union(kind.impact());
-        self.rebuild_style_rules |= matches!(kind, MutationKind::Stylesheet);
+        if rebuild_rules {
+            self.impact = self.impact.union(MutationKind::Stylesheet.impact());
+        }
+        self.rebuild_style_rules |= rebuild_rules;
         let Some(target) = target else {
             return;
         };
@@ -33,8 +34,10 @@ impl PendingInvalidation {
             | MutationKind::PointerDesignation => target
                 .shadow_including_parent()
                 .unwrap_or_else(|| target.clone()),
-            MutationKind::ChildList => target.clone(),
-            MutationKind::Stylesheet | MutationKind::Viewport => document.clone(),
+            // Keep the DOM mutation's scope even when rules may need rebuilding. The style
+            // consumer widens to the document only if the effective rule inputs changed.
+            MutationKind::ChildList | MutationKind::Stylesheet => target.clone(),
+            MutationKind::Viewport => document.clone(),
         };
         self.extend(document, &root);
     }
