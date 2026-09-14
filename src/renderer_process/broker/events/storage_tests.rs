@@ -50,3 +50,58 @@ fn teardown_releases_a_storage_writer_waiting_for_space() {
     drop(receiver);
     producer.join().unwrap().unwrap();
 }
+
+fn fill_storage_slots(sender: &EventSender) {
+    for version in 1..=MAX_QUEUED_RENDERER_EVENTS {
+        sender
+            .send(RendererEvent::StorageMutation(StorageMutationRequest {
+                document: DocumentId::new(1).unwrap(),
+                mutation: StorageMutation {
+                    area: StorageAreaKind::Local,
+                    expected_version: version as u64,
+                    operation: StorageOperation::Clear,
+                },
+            }))
+            .unwrap();
+    }
+}
+
+#[test]
+fn trailing_event_waits_behind_a_full_storage_queue() {
+    let (sender, receiver) = bounded();
+    fill_storage_slots(&sender);
+    let (finished_tx, finished_rx) = mpsc::channel();
+    let producer = std::thread::spawn(move || {
+        sender
+            .send(RendererEvent::Diagnostic {
+                code: 0,
+                text: "barrier".into(),
+            })
+            .unwrap();
+        finished_tx.send(()).unwrap();
+    });
+    assert!(finished_rx.recv_timeout(Duration::from_millis(50)).is_err());
+    for version in 1..=MAX_QUEUED_RENDERER_EVENTS {
+        let RendererEvent::StorageMutation(request) =
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap()
+        else {
+            panic!("barrier overtook a storage mutation");
+        };
+        assert_eq!(request.mutation.expected_version, version as u64);
+    }
+    assert!(
+        matches!(receiver.recv_timeout(Duration::from_secs(2)).unwrap(), RendererEvent::Diagnostic { text, .. } if text == "barrier")
+    );
+    finished_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    producer.join().unwrap();
+}
+
+#[test]
+fn teardown_releases_the_event_after_a_full_storage_queue() {
+    let (sender, receiver) = bounded();
+    fill_storage_slots(&sender);
+    let producer = std::thread::spawn(move || sender.send(RendererEvent::Unresponsive));
+    drop(receiver);
+    // The receiver may close before or after the producer obtains the lock.
+    let _ = producer.join().unwrap();
+}

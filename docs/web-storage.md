@@ -36,6 +36,8 @@ remains possible after exhaustion; deleting both projected areas can add at most
 of key bytes. The broker applies byte-based backpressure at 32 MiB instead of dropping storage
 events. UTF-16 native buffers can use up to twice the quota-byte count. None of these limits
 change the origin's persistent quota, and no new dependency or site-specific rule is involved.
+Trailing presentations and diagnostics also wait for a queue slot after coalescing, preserving
+FIFO barriers when storage fills the event queue. The nonblocking teardown path stays nonblocking.
 
 Adjacent same-document, same-area intents within the existing 32-event UI turn are committed
 together. Every version is checked in order; other event kinds remain ordering barriers. One
@@ -74,7 +76,8 @@ instead of sharing the default browser profile. The upstream tests and timeout l
 All 23 files pass, covering 1,240 upstream assertions. With isolated profiles held constant, the
 two quota-independence stress files changed from timeouts (14.15 / 20.05 seconds) to passing
 in 2.81 / 3.18 seconds after batching. These are single local test runs, not navigation benchmarks.
-The complete curated gate passes 215 files / 2,126 assertions. A second Wikipedia process reused
+The complete curated gate passes 215 files / 2,126 assertions, including a debug-build run with
+eight parallel jobs. A second Wikipedia process reused
 the saved profile and activated the Climate anchor without JavaScript errors or a storage warning;
 its table screenshot remained readable without overlapping rows.
 

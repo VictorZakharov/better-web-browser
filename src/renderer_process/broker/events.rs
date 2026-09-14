@@ -62,11 +62,15 @@ impl EventSender {
         ) {
             self.send_lossless(event)
         } else {
-            self.try_send(event)
+            self.send_coalesced(event, true)
         }
     }
 
-    pub(super) fn try_send(&self, mut event: RendererEvent) -> Result<(), ProtocolError> {
+    pub(super) fn try_send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+        self.send_coalesced(event, false)
+    }
+
+    fn send_coalesced(&self, mut event: RendererEvent, wait: bool) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
             .state
@@ -138,10 +142,23 @@ impl EventSender {
             }
             event => event,
         };
-        if state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
-            return Err(ProtocolError::InvalidPayload(
-                "browser renderer-event queue exhausted",
-            ));
+        while state.receiver_open && state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
+            if !wait {
+                return Err(ProtocolError::InvalidPayload(
+                    "browser renderer-event queue exhausted",
+                ));
+            }
+            // A storage/fetch burst may fill every slot before its trailing
+            // presentation or diagnostic arrives. Preserve that FIFO barrier
+            // with backpressure too; a full valid queue is not a protocol error.
+            state = self
+                .queue
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        if !state.receiver_open {
+            return Ok(());
         }
         state.events.push_back(event);
         let notify = state.notification.request();
