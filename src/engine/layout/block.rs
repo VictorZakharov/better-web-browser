@@ -73,7 +73,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             automatic_width,
             used_inline_size,
         );
-        if style.display == Display::Table {
+        if style.display.is_table() {
             border_box_width = self.table_used_width(
                 node,
                 border_box_width,
@@ -196,7 +196,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     specified_height,
                     &style,
                 ),
-                Display::Table => self.layout_table(
+                Display::Table | Display::InlineTable => self.layout_table(
                     node,
                     content_x,
                     content_y,
@@ -225,7 +225,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         } else {
             (content_bottom - content_y).max(0.0)
         };
-        let used_content_height = if style.display == Display::Table {
+        let used_content_height = if style.display.is_table() {
             natural_content_height
         } else {
             specified_height.unwrap_or(natural_content_height)
@@ -236,22 +236,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         content_height = content_height.max(minimum_height);
         content_height = table::cell_content_height(&style, content_height, natural_content_height);
-        if !matches!(
-            style.display,
-            Display::Flex | Display::InlineFlex | Display::Grid | Display::Table
-        ) {
-            let offset = table::content_offset(&style, content_height - natural_content_height);
-            if offset != 0.0 {
-                // Move the in-flow content as a unit, before resolving positioned
-                // children against the unshifted containing block.
-                self.translate_layout_subtree(
-                    Some(node),
-                    in_flow_paint_start,
-                    self.output.items.len(),
-                    0.0,
-                    offset,
-                );
-            }
+        let offset = table::content_offset(&style, content_height - natural_content_height);
+        if offset != 0.0 {
+            // Move in-flow content before resolving positioned children against
+            // the unshifted containing block.
+            self.translate_layout_subtree(
+                Some(node),
+                in_flow_paint_start,
+                self.output.items.len(),
+                0.0,
+                offset,
+            );
         }
         let border_box_height = borders.top
             + padding.top

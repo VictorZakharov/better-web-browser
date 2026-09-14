@@ -17,7 +17,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut pending_space = false;
         let mut adjoining = super::margins::MarginStrut::default();
         let mut absorb_start = parent_profile.absorb_start;
-        if node.tag_name() == Some("li") && style.list_style_type != ListStyleType::None {
+        if node.tag_name() == Some("li")
+            && style.display == Display::Block
+            && style.list_style_type != ListStyleType::None
+        {
             atoms.push(InlineAtom::Text {
                 text: "• ".into(),
                 font: FontSpec::from_style(style),

@@ -116,8 +116,45 @@ Table-cell `vertical-align: top/middle/bottom` now moves in-flow paint and desce
 geometry together without shifting cell backgrounds or resize boxes. HTML row-group
 defaults and row/cell UA inheritance, author declarations, CSS-wide values, CSSOM
 serialization and layout invalidation retain that alignment. Baseline matching, inline
-vertical-align shifts, column/column-group constraints, anonymous CSS table fixup and
+vertical-align shifts, column/column-group constraints and
 complete collapsed-border conflict resolution remain outside this slice.
+
+### Atomic inline boxes and anonymous CSS tables (2026-09-14)
+
+The broader browsing sample found two additional blockers after the climate-table
+repair: Rust's infobox expanded across the article, and CSS-table figures on the
+periodic-table page disappeared. These are independent engine defects, not page rules.
+
+Inline-block/inline-flex contents now use the shared block formatter for intrinsic
+contributions, shrink-to-fit sizing, wrapping, block children and painted geometry.
+Adjacent atomic boxes have soft wrapping opportunities without requiring literal
+spaces; boundary wrapping uses the surrounding common ancestor's `white-space`,
+not an individual inline-block's internal wrapping policy. Ordinary decorated inline
+boxes do not acquire atomic wrapping opportunities. Explicit word/joining controls
+and common nonbreaking characters suppress adjacent breaks; this is not a complete
+Unicode line-breaking implementation or inline baseline-alignment claim.
+
+CSS table captions, row/header/footer groups, columns and inline-table display roles
+are retained by the cascade. A per-layout box tree generates missing tables, rows
+and cells around consecutive content, suppresses irrelevant table whitespace, and
+flattens `display:contents` without mutating the DOM or its node allocation budget.
+Synthetic box identities are removed from published geometry; real descendant
+geometry follows the normalized subtree during translations. Columns still lack
+complete sizing/background propagation and header/footer reordering is not yet covered.
+Owned regressions compare painted and geometry-only output, including DOM identity,
+mixed cells, captions, translated descendants and float exclusion widths.
+
+Responsive images preserve distinct min/max-content contributions for cyclic
+percentage width constraints: a percentage maximum can compress the minimum, but
+does not erase the preferred image width. HTML presentational hints enter before
+author declarations, allowing explicit CSS `height:auto` to override an HTML height
+attribute and preserve the decoded image ratio. Both inline and block image paths
+are tested. These contracts follow [CSS table fixup](https://www.w3.org/TR/CSS22/tables.html#anonymous-boxes),
+[atomic inline wrapping](https://www.w3.org/TR/css-text-3/#line-break-details), and
+[cyclic percentage contributions](https://www.w3.org/TR/css-sizing-3/#cyclic-percentage-contribution).
+
+Visual acceptance for this extension remains pending until fresh release captures
+of the expanded browsing sample are reviewed; unit-test success is not acceptance.
 
 The live table also exposed a generic wrapping defect: whitespace outside a nowrap span
 lost its break opportunity, and line fitting considered only the next atom rather than

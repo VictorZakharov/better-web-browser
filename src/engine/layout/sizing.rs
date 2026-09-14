@@ -98,6 +98,10 @@ pub(super) fn is_block_level(display: Display) -> bool {
             | Display::Table
             | Display::TableRow
             | Display::TableCell
+            | Display::TableCaption
+            | Display::TableRowGroup
+            | Display::TableHeaderGroup
+            | Display::TableFooterGroup
     )
 }
 
@@ -278,19 +282,17 @@ pub(super) fn resolve_svg_replaced_length(
 }
 
 pub(super) fn resolve_replaced_length(
-    node: &NodeRef,
-    attribute: &str,
+    _node: &NodeRef,
+    _attribute: &str,
     css: Length,
     percentage_basis: Option<f32>,
     font_size: f32,
 ) -> Option<f32> {
-    let css = resolve_replaced_css_length(css, percentage_basis, font_size);
-    css.or_else(|| {
-        node.attr(attribute)
-            .and_then(|value| value.trim_end_matches("px").parse::<f32>().ok())
-    })
-    .filter(|value| value.is_finite())
-    .map(|value| value.max(0.0))
+    // HTML dimensions have already entered the cascade as presentational hints.
+    // Falling back to the attribute here would undo an author's explicit auto.
+    resolve_replaced_css_length(css, percentage_basis, font_size)
+        .filter(|value| value.is_finite())
+        .map(|value| value.max(0.0))
 }
 
 fn resolve_replaced_css_length(

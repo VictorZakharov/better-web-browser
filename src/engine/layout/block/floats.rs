@@ -86,6 +86,7 @@ pub(in crate::engine::layout) fn establishes_context(style: &ComputedStyle) -> b
                 | Display::InlineFlex
                 | Display::Grid
                 | Display::Table
+                | Display::InlineTable
                 | Display::TableCell
         )
         || style.overflow_establishes_formatting_context()

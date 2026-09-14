@@ -34,9 +34,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> (f32, f32) {
         let grid = Grid::new(node, self.styles);
         let columns = self.table_columns(&grid, basis);
+        let mut caption_minimum = 0.0_f32;
+        for caption in table_captions(node, self.styles) {
+            caption_minimum = caption_minimum.max(self.float_intrinsic_widths(&caption, None).0);
+        }
         (
-            columns.iter().map(|c| c.minimum).sum(),
-            columns.iter().map(|c| c.preferred).sum(),
+            columns
+                .iter()
+                .map(|c| c.minimum)
+                .sum::<f32>()
+                .max(caption_minimum),
+            columns
+                .iter()
+                .map(|c| c.preferred)
+                .sum::<f32>()
+                .max(caption_minimum),
         )
     }
 

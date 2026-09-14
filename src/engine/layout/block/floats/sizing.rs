@@ -23,9 +23,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             insets,
             style.box_sizing,
         );
-        let (mut minimum, mut preferred) = if let Some(width) = specified {
-            (width, width)
-        } else if matches!(
+        let (mut minimum, mut preferred) = if matches!(
             node.tag_name(),
             Some("img" | "image" | "video" | "svg" | "input" | "textarea" | "select")
         ) {
@@ -41,9 +39,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: None,
                 },
             );
-            let (lo, hi) = self.float_inline_widths(&atoms, basis);
+            let (lo, hi) = self.float_inline_widths(&atoms, percentage_basis);
             // Replaced/control atoms already include their own insets and margins.
             (lo - margin, hi - margin)
+        } else if let Some(width) = specified {
+            (width, width)
         } else {
             let (minimum, preferred) = self.intrinsic_content_widths(node, percentage_basis);
             (minimum + insets, preferred + insets)
@@ -68,6 +68,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             minimum = minimum.max(lower);
             preferred = preferred.max(lower);
         }
+        if matches!(style.display, Display::Table | Display::InlineTable) {
+            // A table cannot be smaller than its grid's minimum contribution. The
+            // float exclusion must reserve the same width that table layout uses.
+            let table_minimum = self.intrinsic_content_widths(node, percentage_basis).0 + insets;
+            minimum = minimum.max(table_minimum);
+            preferred = preferred.max(table_minimum);
+        }
         let widths = (minimum.max(0.0) + margin, preferred.max(0.0) + margin);
         self.intrinsic_widths
             .insert(node.id(), percentage_basis, true, widths);
@@ -87,7 +94,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return widths;
         }
         let basis = percentage_basis.unwrap_or(0.0);
-        if self.styles.get(node).display == Display::Table {
+        if matches!(
+            self.styles.get(node).display,
+            Display::Table | Display::InlineTable
+        ) {
             let widths = self.table_intrinsic_widths(node, basis);
             self.intrinsic_widths
                 .insert(node.id(), percentage_basis, false, widths);
@@ -105,7 +115,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             if is_block_level(child_style.display) {
-                let (lo, hi) = self.float_inline_widths(&atoms, basis);
+                let (lo, hi) = self.float_inline_widths(&atoms, percentage_basis);
                 minimum = minimum.max(lo);
                 preferred = preferred.max(hi);
                 atoms.clear();
@@ -127,20 +137,25 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
             }
         }
-        let (lo, hi) = self.float_inline_widths(&atoms, basis);
+        let (lo, hi) = self.float_inline_widths(&atoms, percentage_basis);
         let widths = (minimum.max(lo), preferred.max(hi));
         self.intrinsic_widths
             .insert(node.id(), percentage_basis, false, widths);
         widths
     }
 
-    fn float_inline_widths(&mut self, atoms: &[InlineAtom], basis: f32) -> (f32, f32) {
+    fn float_inline_widths(
+        &mut self,
+        atoms: &[InlineAtom],
+        basis: impl Into<Option<f32>>,
+    ) -> (f32, f32) {
+        let basis = basis.into();
         self.begin_inline_measurement_context();
         let mut minimum = 0.0_f32;
         let mut preferred = 0.0_f32;
         let mut run = 0.0_f32;
         let mut line = 0.0_f32;
-        for atom in atoms {
+        for (index, atom) in atoms.iter().enumerate() {
             if matches!(atom, InlineAtom::Break) {
                 minimum = minimum.max(run);
                 preferred = preferred.max(line);
@@ -148,14 +163,30 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line = 0.0;
                 continue;
             }
-            let measured = self.measure_atom(atom, line == 0.0, basis);
-            if measured.break_before && !measured.no_wrap {
-                minimum = minimum.max(run);
-                run = self.measure_atom(atom, true, basis).width;
+            let breaks = self.inline_break_before(atoms, index);
+            let (lo, hi) = if let InlineAtom::BlockBox { node, .. } = atom {
+                // Min-content uses the atomic box's minimum contribution, not its
+                // shrink-to-fit size at an arbitrary measurement containing width.
+                let (lo, hi) = self.float_intrinsic_widths(node, basis);
+                (lo, hi)
+            } else if let Some(widths) = self.replaced_intrinsic_widths(atom, basis) {
+                widths
             } else {
-                run += measured.width;
+                let measured = self.measure_atom(atom, line == 0.0, basis.unwrap_or(0.0));
+                let lo = if breaks {
+                    self.measure_atom(atom, true, basis.unwrap_or(0.0)).width
+                } else {
+                    measured.width
+                };
+                (lo, measured.width)
+            };
+            if breaks {
+                minimum = minimum.max(run);
+                run = lo;
+            } else {
+                run += lo;
             }
-            line += measured.width;
+            line += hi;
         }
         (minimum.max(run), preferred.max(line))
     }

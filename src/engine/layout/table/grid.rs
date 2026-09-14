@@ -16,7 +16,7 @@ pub(super) struct Grid {
 }
 
 impl Grid {
-    pub fn new(node: &NodeRef, styles: &StyleSet) -> Self {
+    pub fn new(node: &NodeRef, styles: &engine::box_tree::BoxTree<'_>) -> Self {
         let rows = table_rows(node, styles);
         let mut cells = Vec::new();
         // One occupancy entry per column, never a rows × columns allocation.
@@ -24,16 +24,16 @@ impl Grid {
         let mut group_end = 0;
         for (row, row_node) in rows.iter().enumerate() {
             if row == group_end {
-                let parent = row_node.parent().map(|node| node.id());
+                let parent = styles.parent(row_node).map(|node| node.id());
                 group_end = row + 1;
                 while group_end < rows.len()
-                    && rows[group_end].parent().map(|node| node.id()) == parent
+                    && styles.parent(&rows[group_end]).map(|node| node.id()) == parent
                 {
                     group_end += 1;
                 }
             }
             let mut column = 0;
-            for node in Node::composed_children(row_node) {
+            for node in styles.children(row_node) {
                 let html_cell = matches!(node.tag_name(), Some("td" | "th"));
                 if !(html_cell || styles.get(&node).display == Display::TableCell)
                     || styles.get(&node).display == Display::None

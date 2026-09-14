@@ -118,7 +118,8 @@ fn html_span_parsing_is_clamped_and_accepts_integer_prefixes() {
     );
     let styles = page.style_for_viewport(800.0, 600.0);
     let table = page.dom.elements_named("table").next().unwrap();
-    let grid = grid::Grid::new(&table, &styles);
+    let tree = engine::box_tree::BoxTree::new(&table, &styles);
+    let grid = grid::Grid::new(&table, &tree);
     assert_eq!(
         grid.cells
             .iter()

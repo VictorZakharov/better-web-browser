@@ -93,10 +93,11 @@ mod tests {
         );
         let node = page.dom.elements_named("main").next().unwrap();
         let styles = page.style(800.0);
+        let box_tree = box_tree::BoxTree::new(&page.dom.document, &styles);
         let mut measurer = CountingMeasurer::default();
         let mut engine = LayoutEngine {
             page: &page,
-            styles: &styles,
+            styles: &box_tree,
             measurer: &mut measurer,
             emit_paint: false,
             scroll_gutters: HashMap::new(),

@@ -25,7 +25,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             FLOAT_GROUP
         } else if style.opacity < 1.0
             || !style.transform.is_none()
-            || matches!(style.display, Display::InlineBlock | Display::InlineFlex)
+            || matches!(
+                style.display,
+                Display::InlineBlock | Display::InlineFlex | Display::InlineTable
+            )
             || matches!(node.tag_name(), Some("body" | "html"))
         {
             ATOMIC_GROUP

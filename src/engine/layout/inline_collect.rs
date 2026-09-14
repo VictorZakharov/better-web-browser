@@ -1,43 +1,6 @@
 use super::*;
+mod intrinsic;
 mod replaced_constraints;
-
-fn inline_child_containing_block(
-    style: &ComputedStyle,
-    parent: InlineContainingBlock,
-    viewport: RectF,
-) -> InlineContainingBlock {
-    // CSS 2.2 10.1: inline-block establishes a content-box containing block;
-    // an ordinary inline span does not establish a new percentage basis.
-    if !matches!(style.display, Display::InlineBlock | Display::InlineFlex) {
-        return parent;
-    }
-    let padding = style.padding.resolve(parent.width, style.font_size);
-    let border = style.border_width.resolve(parent.width, style.font_size);
-    let border_box = style.box_sizing == BoxSizing::BorderBox;
-    InlineContainingBlock {
-        width: style
-            .width
-            .resolve(parent.width, style.font_size)
-            .map(|width| {
-                (width
-                    - if border_box {
-                        padding.horizontal() + border.horizontal()
-                    } else {
-                        0.0
-                    })
-                .max(0.0)
-            })
-            .unwrap_or(parent.width),
-        height: resolve_content_height(
-            style.height,
-            parent.height,
-            viewport,
-            style.font_size,
-            padding.vertical() + border.vertical(),
-            style.box_sizing,
-        ),
-    }
-}
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn collect_inline(
@@ -117,11 +80,28 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "button" => self.collect_button(node, style, output, containing_block),
                     "svg" => self.collect_svg(node, style, output, containing_block),
                     _ => {
+                        if matches!(
+                            style.display,
+                            Display::InlineBlock | Display::InlineFlex | Display::InlineTable
+                        ) {
+                            if *pending_space {
+                                let parent = Node::composed_parent(node);
+                                let surrounding =
+                                    parent.as_ref().map(|n| self.styles.get(n)).unwrap_or(style);
+                                output.push(text_atom(" ".into(), surrounding, link.clone(), None));
+                                *pending_space = false;
+                            }
+                            // Atomic inline boxes have an independent formatting context,
+                            // including shrink-to-fit sizing, wrapping and block children.
+                            output.push(InlineAtom::BlockBox {
+                                node: node.clone(),
+                                height_basis: containing_block.height,
+                            });
+                            return;
+                        }
                         // CSS 2.2 §10.3.1: auto inline margins are zero, not a reason
                         // to wrap ordinary inline content in an atomic layout box.
-                        if matches!(style.display, Display::InlineBlock | Display::InlineFlex)
-                            || (style.display == Display::Inline
-                                && self.box_children(node).is_empty())
+                        if (style.display == Display::Inline && self.box_children(node).is_empty())
                             || !matches!(style.margin.left, Length::Auto | Length::Px(0.0))
                             || !matches!(style.margin.right, Length::Auto | Length::Px(0.0))
                             || style.padding != Edges::ZERO
@@ -136,11 +116,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             }
                             let mut children = Vec::new();
                             let mut child_pending_space = false;
-                            let child_containing_block = inline_child_containing_block(
-                                style,
-                                containing_block,
-                                self.viewport,
-                            );
                             for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,
@@ -148,7 +123,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                                     &mut children,
                                     &mut child_pending_space,
                                     honor_block_boundaries,
-                                    child_containing_block,
+                                    containing_block,
                                 );
                             }
                             output.push(InlineAtom::InlineBox {

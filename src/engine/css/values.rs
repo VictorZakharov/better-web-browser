@@ -66,40 +66,8 @@ impl ResolvedEdges {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Display {
-    None,
-    Contents,
-    Block,
-    FlowRoot,
-    Inline,
-    InlineBlock,
-    InlineFlex,
-    Flex,
-    Grid,
-    Table,
-    TableRow,
-    TableCell,
-}
-
-impl Display {
-    pub(crate) const fn css_keyword(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Contents => "contents",
-            Self::Block => "block",
-            Self::FlowRoot => "flow-root",
-            Self::Inline => "inline",
-            Self::InlineBlock => "inline-block",
-            Self::InlineFlex => "inline-flex",
-            Self::Flex => "flex",
-            Self::Grid => "grid",
-            Self::Table => "table",
-            Self::TableRow => "table-row",
-            Self::TableCell => "table-cell",
-        }
-    }
-}
+mod display;
+pub use display::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
@@ -352,7 +320,7 @@ impl ComputedStyle {
         }
     }
 
-    pub(super) fn inherit_from(parent: Option<&Self>) -> Self {
+    pub(crate) fn inherit_from(parent: Option<&Self>) -> Self {
         let mut style = Self::initial();
         if let Some(parent) = parent {
             style.color = parent.color;

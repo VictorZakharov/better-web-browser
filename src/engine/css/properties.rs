@@ -51,8 +51,15 @@ pub(super) fn apply_declaration(
                 "-webkit-box" => Display::Block,
                 "grid" | "-ms-grid" => Display::Grid,
                 "table" => Display::Table,
+                "inline-table" => Display::InlineTable,
                 "table-row" => Display::TableRow,
                 "table-cell" => Display::TableCell,
+                "table-caption" => Display::TableCaption,
+                "table-row-group" => Display::TableRowGroup,
+                "table-header-group" => Display::TableHeaderGroup,
+                "table-footer-group" => Display::TableFooterGroup,
+                "table-column" => Display::TableColumn,
+                "table-column-group" => Display::TableColumnGroup,
                 _ => style.display,
             };
         }

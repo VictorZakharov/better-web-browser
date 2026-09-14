@@ -1,5 +1,6 @@
 use super::*;
 mod block_measure;
+pub(super) mod box_tree;
 mod intrinsic_widths;
 
 #[cfg(test)]
@@ -121,9 +122,10 @@ fn layout_page_for_output<M: TextMeasurer>(
         };
         root = parent;
     }
+    let box_tree = box_tree::BoxTree::new(&root, styles);
     let mut engine = LayoutEngine {
         page,
-        styles,
+        styles: &box_tree,
         measurer,
         emit_paint,
         scroll_gutters: HashMap::new(),
@@ -176,6 +178,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         None,
     );
     inline_layout::geometry::finish(&root, styles, &mut engine.output);
+    box_tree.remove_anonymous_geometry(&mut engine.output);
     engine.output.content_height = metrics
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
@@ -192,7 +195,7 @@ fn layout_page_for_output<M: TextMeasurer>(
 
 pub(super) struct LayoutEngine<'a, M> {
     pub(super) page: &'a Page,
-    pub(super) styles: &'a StyleSet,
+    pub(super) styles: &'a box_tree::BoxTree<'a>,
     pub(super) measurer: &'a mut M,
     pub(super) emit_paint: bool,
     pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
@@ -233,42 +236,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if self.styles.get(node).display == Display::None {
             return Vec::new();
         }
-        fn append<M: TextMeasurer>(
-            engine: &LayoutEngine<'_, M>,
-            node: &NodeRef,
-            output: &mut Vec<NodeRef>,
-        ) {
-            let mut children = Vec::new();
-            if !node.is_generated_pseudo()
-                && let Some(before) = engine.styles.generated_pseudo(node, PseudoElement::Before)
-            {
-                children.push(before);
-            }
-            children.extend(Node::composed_children(node));
-            if !node.is_generated_pseudo()
-                && let Some(after) = engine.styles.generated_pseudo(node, PseudoElement::After)
-            {
-                children.push(after);
-            }
-            for child in children {
-                // Comments and processing instructions are DOM nodes, not CSS boxes.
-                // Their data must not interrupt adjoining margins or create flex items.
-                if !matches!(&child.data, NodeData::Element(_) | NodeData::Text(_)) {
-                    continue;
-                }
-                if child.element().is_some()
-                    && engine.styles.get(&child).display == Display::Contents
-                {
-                    append(engine, &child, output);
-                } else {
-                    output.push(child);
-                }
-            }
-        }
-
-        let mut output = Vec::new();
-        append(self, node, &mut output);
-        output
+        self.styles.children(node)
     }
 
     /// Returns children participating in a block formatting context. A boxless inline wrapper

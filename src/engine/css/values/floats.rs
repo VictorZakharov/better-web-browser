@@ -50,6 +50,7 @@ impl super::ComputedStyle {
             self.display = match self.display {
                 super::Display::Inline | super::Display::InlineBlock => super::Display::Block,
                 super::Display::InlineFlex => super::Display::Flex,
+                super::Display::InlineTable => super::Display::Table,
                 display => display,
             };
         }

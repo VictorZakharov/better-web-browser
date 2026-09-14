@@ -1,4 +1,5 @@
 use super::*;
+mod boundaries;
 pub(super) mod geometry;
 mod wrapping;
 
@@ -49,8 +50,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             let should_wrap = !line.is_empty()
                 && line_width + run_width > available
-                && measured.break_before
-                && !measured.no_wrap;
+                && self.inline_break_before(atoms, index);
             if should_wrap {
                 y = self.paint_line(
                     &line,
@@ -146,7 +146,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width,
                     height,
                     content_height: height,
-                    no_wrap: false,
+                    no_wrap: Node::composed_parent(node).is_some_and(|parent| {
+                        self.styles.get(&parent).white_space != WhiteSpace::Normal
+                    }),
                     break_before: true,
                 }
             }

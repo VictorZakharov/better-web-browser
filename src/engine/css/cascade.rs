@@ -220,6 +220,8 @@ impl StyleSet {
         style.root_font_size = root_font_size_for(&self.styles, node);
         apply_user_agent_defaults(node, &mut style, parent);
         let lower_origin = style.clone();
+        // HTML hints precede author rules, including an explicit width/height:auto.
+        apply_presentational_hints(node, &mut style);
 
         let matching = self.matching_rules(node, None);
         let inline_declarations = node
@@ -234,7 +236,6 @@ impl StyleSet {
             &matching,
             &inline_declarations,
         );
-        apply_presentational_hints(node, &mut style);
         style.resolve_relative_units(
             self.viewport_width,
             self.viewport_height,

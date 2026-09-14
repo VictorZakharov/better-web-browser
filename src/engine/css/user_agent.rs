@@ -8,11 +8,18 @@ pub(crate) fn user_agent_display(tag: &str) -> Display {
         "html" | "body" | "address" | "article" | "aside" | "blockquote" | "center" | "details"
         | "dialog" | "div" | "dl" | "fieldset" | "figcaption" | "figure" | "footer" | "form"
         | "dd" | "dt" | "header" | "hgroup" | "hr" | "li" | "main" | "menu" | "nav" | "ol"
-        | "p" | "pre" | "section" | "summary" | "ul" | "caption" | "h1" | "h2" | "h3" | "h4"
-        | "h5" | "h6" => Display::Block,
+        | "p" | "pre" | "section" | "summary" | "ul" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+            Display::Block
+        }
         "table" => Display::Table,
         "tr" => Display::TableRow,
         "td" | "th" => Display::TableCell,
+        "caption" => Display::TableCaption,
+        "tbody" => Display::TableRowGroup,
+        "thead" => Display::TableHeaderGroup,
+        "tfoot" => Display::TableFooterGroup,
+        "col" => Display::TableColumn,
+        "colgroup" => Display::TableColumnGroup,
         // HTML defines slot as a box-tree-transparent insertion point. Its assigned nodes retain
         // their own outer display and participate directly in the host's formatting context.
         "slot" => Display::Contents,

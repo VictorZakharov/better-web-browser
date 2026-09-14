@@ -1,6 +1,8 @@
 use super::*;
 #[cfg(test)]
 mod alignment_tests;
+#[cfg(test)]
+mod anonymous_tests;
 mod columns;
 mod grid;
 #[cfg(test)]
@@ -21,7 +23,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         containing_height: Option<f32>,
         _style: &ComputedStyle,
     ) -> f32 {
-        let captions = table_captions(node);
+        let captions = table_captions(node, self.styles);
         let (top_captions, bottom_captions): (Vec<_>, Vec<_>) = captions
             .into_iter()
             .filter(|caption| self.styles.get(caption).display != Display::None)
@@ -127,7 +129,14 @@ pub(super) fn cell_content_height(style: &ComputedStyle, used: f32, natural: f32
 }
 
 pub(super) fn content_offset(style: &ComputedStyle, free: f32) -> f32 {
-    if style.display == Display::TableCell {
+    if style.display.is_table()
+        || matches!(
+            style.display,
+            Display::Flex | Display::InlineFlex | Display::Grid
+        )
+    {
+        0.0
+    } else if style.display == Display::TableCell {
         style.vertical_align.cell_offset(free)
     } else {
         style.align_content.block_offset(free)
@@ -151,11 +160,18 @@ pub(super) fn resolved_table_borders(
     borders
 }
 
-pub(super) fn caption_outer_width(node: &NodeRef, percentage_basis: f32, styles: &StyleSet) -> f32 {
-    if styles.get(node).display != Display::Table {
+pub(super) fn caption_outer_width(
+    node: &NodeRef,
+    percentage_basis: f32,
+    styles: &engine::box_tree::BoxTree<'_>,
+) -> f32 {
+    if !matches!(
+        styles.get(node).display,
+        Display::Table | Display::InlineTable
+    ) {
         return 0.0;
     }
-    table_captions(node)
+    table_captions(node, styles)
         .into_iter()
         .filter_map(|caption| {
             let style = styles.get(&caption);
@@ -179,19 +195,17 @@ pub(super) fn caption_outer_width(node: &NodeRef, percentage_basis: f32, styles:
         .fold(0.0, f32::max)
 }
 
-fn table_captions(node: &NodeRef) -> Vec<NodeRef> {
-    Node::composed_children(node)
+fn table_captions(node: &NodeRef, styles: &engine::box_tree::BoxTree<'_>) -> Vec<NodeRef> {
+    styles
+        .children(node)
         .into_iter()
-        .filter(|child| child.tag_name() == Some("caption"))
+        .filter(|child| styles.get(child).display == Display::TableCaption)
         .collect()
 }
 
-fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
+fn table_rows(node: &NodeRef, styles: &engine::box_tree::BoxTree<'_>) -> Vec<NodeRef> {
     let mut rows = Vec::new();
-    let mut stack = Node::composed_children(node)
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>();
+    let mut stack = styles.children(node).into_iter().rev().collect::<Vec<_>>();
     while let Some(candidate) = stack.pop() {
         // A display:none row group removes its entire subtree from the box tree. Do not
         // inspect descendants: layout-only snapshots may defer their computed styles.
@@ -202,8 +216,8 @@ fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
         if styles.get(&candidate).display == Display::TableRow || candidate.tag_name() == Some("tr")
         {
             rows.push(candidate);
-        } else if matches!(candidate.tag_name(), Some("thead" | "tbody" | "tfoot")) {
-            stack.extend(Node::composed_children(&candidate).into_iter().rev());
+        } else if engine::box_tree::row_group(styles.get(&candidate).display) {
+            stack.extend(styles.children(&candidate).into_iter().rev());
         }
     }
     rows
