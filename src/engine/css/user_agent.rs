@@ -44,11 +44,30 @@ pub(crate) fn is_hidden_by_html_rendering(node: &NodeRef) -> bool {
     first_summary.is_none_or(|summary| summary.id() != node.id())
 }
 
-pub(super) fn apply_user_agent_defaults(node: &NodeRef, style: &mut ComputedStyle) {
+pub(super) fn apply_user_agent_defaults(
+    node: &NodeRef,
+    style: &mut ComputedStyle,
+    parent: Option<&ComputedStyle>,
+) {
     let Some(tag) = node.tag_name() else {
         return;
     };
     style.display = user_agent_display(tag);
+    // HTML's UA rules, not an inherited CSS property: row groups start in the
+    // middle and rows/cells inherit their parent's alignment below author rules.
+    // https://html.spec.whatwg.org/multipage/rendering.html#tables
+    if matches!(tag, "thead" | "tbody" | "tfoot")
+        || (tag == "tr" && node.parent().is_some_and(|p| p.tag_name() == Some("table")))
+    {
+        style.vertical_align = VerticalAlign::Middle;
+    } else if matches!(tag, "tr" | "td" | "th") {
+        style.vertical_align = parent.map_or(VerticalAlign::Middle, |p| p.vertical_align);
+    }
+    if matches!(tag, "thead" | "tbody" | "tfoot" | "tr" | "td" | "th")
+        && let Some(align) = node.attr("valign").and_then(|v| VerticalAlign::parse(&v))
+    {
+        style.vertical_align = align;
+    }
     match tag {
         "body" => style.margin = uniform_edges(Length::Px(8.0)),
         "p" => {

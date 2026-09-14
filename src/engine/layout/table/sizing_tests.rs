@@ -82,7 +82,8 @@ fn percentage_text_cell_does_not_starve_image_and_padding() {
         "cell boxes fill the shared row height"
     );
     let image = output.node_bounds[&page.dom.elements_named("img").next().unwrap().id()];
-    assert_eq!((image.x, image.y), (4.0, 2.0));
+    assert_eq!(image.x, 4.0);
+    assert!((image.y - (icon.height - image.height) / 2.0).abs() < 0.001);
     let text = output
         .items
         .iter()

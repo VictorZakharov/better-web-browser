@@ -54,11 +54,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
         let available_width = (containing_width - margins.horizontal()).max(0.0);
-        let caption_width = if style.display == Display::Table {
-            table::caption_outer_width(node, percentage_basis, self.styles)
-        } else {
-            0.0
-        };
+        let caption_width = table::caption_outer_width(node, percentage_basis, self.styles);
         let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
             image.outer_width(node, &style, percentage_basis, horizontal_insets)
         });
@@ -78,7 +74,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             used_inline_size,
         );
         if style.display == Display::Table {
-            border_box_width = border_box_width.max(caption_width);
+            border_box_width = self.table_used_width(
+                node,
+                border_box_width,
+                horizontal_insets,
+                caption_width,
+                used_inline_size.is_some(),
+            );
         }
         if style.width == Length::Auto
             && !authored_button
@@ -238,9 +240,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             style.display,
             Display::Flex | Display::InlineFlex | Display::Grid | Display::Table
         ) {
-            let offset = style
-                .align_content
-                .block_offset(content_height - natural_content_height);
+            let offset = table::content_offset(&style, content_height - natural_content_height);
             if offset != 0.0 {
                 // Move the in-flow content as a unit, before resolving positioned
                 // children against the unshifted containing block.

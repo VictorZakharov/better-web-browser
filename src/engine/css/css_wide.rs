@@ -206,6 +206,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "border-radius" => style.border_radius = source.border_radius,
         "border-collapse" => style.border_collapse = source.border_collapse,
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
+        "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),

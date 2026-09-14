@@ -1,4 +1,5 @@
 use super::*;
+mod wrapping;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn layout_inline_atoms(
@@ -11,12 +12,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         default_line_height: f32,
     ) -> f32 {
         self.begin_inline_measurement_context();
+        let runs = self.unbreakable_run_widths(atoms, width);
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
         let mut line_height = 0.0_f32;
         let (mut line_x, mut available) = self.floats.band(x, y, width, default_line_height);
 
-        for atom in atoms {
+        for (index, atom) in atoms.iter().enumerate() {
             if matches!(atom, InlineAtom::Break) {
                 y = self.paint_line(
                     &line,
@@ -34,17 +36,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let measured = self.measure_atom(atom, line.is_empty(), width);
+            let run_width = runs[index];
             if line.is_empty() {
                 (line_x, y, available) = self.floats.fit(
                     x,
                     y,
                     width,
-                    measured.width,
+                    run_width,
                     measured.height.max(default_line_height),
                 );
             }
             let should_wrap = !line.is_empty()
-                && line_width + measured.width > available
+                && line_width + run_width > available
                 && measured.break_before
                 && !measured.no_wrap;
             if should_wrap {
@@ -64,7 +67,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     x,
                     y,
                     width,
-                    measured.width,
+                    run_width,
                     measured.height.max(default_line_height),
                 );
             }

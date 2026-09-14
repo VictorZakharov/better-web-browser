@@ -78,6 +78,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
             }
             NodeData::Element(_) => {
+                // Collapsed whitespace outside a nowrap span retains its parent's
+                // wrapping opportunity; it is not part of the span's nowrap run.
+                if *pending_space
+                    && style.white_space == WhiteSpace::NoWrap
+                    && let Some(parent) = Node::composed_parent(node)
+                    && self.styles.get(&parent).white_space == WhiteSpace::Normal
+                {
+                    output.push(text_atom(
+                        " ".into(),
+                        self.styles.get(&parent),
+                        inherited_link.clone(),
+                        None,
+                    ));
+                    *pending_space = false;
+                }
                 let tag = node.tag_name().unwrap_or_default();
                 let link = if tag == "a" {
                     node.attr("href")

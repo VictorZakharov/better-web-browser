@@ -31,6 +31,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
     }
     let value = match property {
         "align-content" => style.align_content.css_text(),
+        "vertical-align" => style.vertical_align.css_keyword().to_string(),
         "background-color" => serialize_color(style.background_color),
         "border-top-color" | "border-right-color" | "border-bottom-color" | "border-left-color" => {
             serialize_color(style.resolved_border_colors()[values::borders::color_side(property)?])

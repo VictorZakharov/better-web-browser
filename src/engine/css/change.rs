@@ -52,6 +52,7 @@ impl ComputedStyle {
             && self.box_sizing == other.box_sizing
             && self.border_collapse == other.border_collapse
             && self.caption_side_bottom == other.caption_side_bottom
+            && self.vertical_align == other.vertical_align
             && self.list_style_type == other.list_style_type
             && self.grid_template_columns == other.grid_template_columns
             && self.grid_template_rows == other.grid_template_rows

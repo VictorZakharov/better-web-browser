@@ -9,7 +9,9 @@ mod line_height;
 pub(crate) use line_height::LineHeight;
 mod overflow;
 pub use overflow::Overflow;
+mod vertical_align;
 mod viewport;
+pub use vertical_align::VerticalAlign;
 
 use super::*;
 mod color;
@@ -250,6 +252,7 @@ pub struct ComputedStyle {
     pub box_sizing: BoxSizing,
     pub border_collapse: bool,
     pub caption_side_bottom: bool,
+    pub vertical_align: VerticalAlign,
     pub list_style_type: ListStyleType,
     pub grid_template_columns: String,
     pub grid_template_rows: String,
@@ -333,6 +336,7 @@ impl ComputedStyle {
             box_sizing: BoxSizing::ContentBox,
             border_collapse: false,
             caption_side_bottom: false,
+            vertical_align: VerticalAlign::Baseline,
             list_style_type: ListStyleType::Disc,
             grid_template_columns: String::new(),
             grid_template_rows: String::new(),

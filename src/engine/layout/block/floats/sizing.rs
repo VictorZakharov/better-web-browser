@@ -79,6 +79,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if let Some(widths) = self.intrinsic_widths.get(node.id(), basis, false) {
             return widths;
         }
+        if self.styles.get(node).display == Display::Table {
+            let widths = self.table_intrinsic_widths(node, basis);
+            self.intrinsic_widths
+                .insert(node.id(), basis, false, widths);
+            return widths;
+        }
         let mut minimum = 0.0_f32;
         let mut preferred = 0.0_f32;
         let mut atoms = Vec::new();

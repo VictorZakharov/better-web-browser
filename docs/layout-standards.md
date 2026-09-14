@@ -47,11 +47,33 @@ shared row heights and geometry-only/painted-layout parity.
 
 The reported Coron, Palawan climate table reproduced overlapping labels with its authored
 `height:16px`. Hidden captures before and after this correction show the overlap removed.
-This does not finish table layout: columns are still allocated independently per row,
-and automatic table width, span placement, and cell vertical alignment do not yet match
-Chromium. Those require separate table-grid work; no page-specific widths or selectors
-were added. Evidence is in ignored `target/wiki-regression/coron-table-{before,height}.png`
-and `coron-chrome.png`.
+The subsequent shared-grid correction replaces per-row width allocation. All rows use
+one set of min/max-content column constraints; column-spanning headers and footers
+contribute to those tracks, and row spans reserve slots within their row group. Zero
+row spans extend through the group. Span parsing follows HTML's integer-prefix rules
+and limits; occupancy storage is linear in columns rather than rows times columns.
+Automatic table widths shrink to max-content when it fits and never undercut min-content.
+Percentage preferences cannot starve other tracks' intrinsic minimums.
+
+Table-cell `vertical-align: top/middle/bottom` now moves in-flow paint and descendant
+geometry together without shifting cell backgrounds or resize boxes. HTML row-group
+defaults and row/cell UA inheritance, author declarations, CSS-wide values, CSSOM
+serialization and layout invalidation retain that alignment. Baseline matching, inline
+vertical-align shifts, column/column-group constraints, anonymous CSS table fixup and
+complete collapsed-border conflict resolution remain outside this slice.
+
+The live table also exposed a generic wrapping defect: whitespace outside a nowrap span
+lost its break opportunity, and line fitting considered only the next atom rather than
+the whole unbreakable run. Line fitting now measures runs across inline style boundaries;
+the parent-owned whitespace before a nowrap span remains a legal break. This prevents
+the rainy-days label from crossing the next cell without any page-specific widths or CSS.
+
+These implementation tests do not establish the PR's visual acceptance. The acceptance
+criterion is Wikipedia browsing without obvious broken rendering: compare loaded pages,
+article navigation, tables/infoboxes, sidebars, and repeated scrolling with Chromium.
+Crashes, overlapping/clipped content, broken shared columns, stale geometry and visibly
+corrupted scroll frames block acceptance, even when isolated tests pass. Hidden live
+captures and interaction checks must be reviewed before calling the PR ready.
 
 The same page's post-load scroll actions expose a separate responsiveness problem.
 Opt-in host profiling now retains bounded details for callbacks of at least 16ms,
@@ -169,7 +191,7 @@ breakpoint. At 1680px both use a 260px left sidebar and 948px article column; th
 scrollbar widths still differ. Live banners/content can also vary between requests.
 
 Further slices must cover remaining positioned paint-context ordering, broader grid track
-constraints and self-alignment, shared multi-row table columns/spans and vertical alignment,
+constraints and self-alignment, remaining table border/baseline/column-group behavior,
 broader form-control behavior, and the remaining page-initialization APIs. Native control artwork
 remains approximate. The owned `button-alignment.html` fixture checks intrinsic inline
 buttons, retained SVGs and positional block alignment independently of Wikipedia.

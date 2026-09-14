@@ -341,6 +341,11 @@ pub(super) fn apply_declaration(
         }
         "border-collapse" => style.border_collapse = value == "collapse",
         "caption-side" => style.caption_side_bottom = value == "bottom",
+        "vertical-align" => {
+            if let Some(align) = VerticalAlign::parse(value) {
+                style.vertical_align = align;
+            }
+        }
         "list-style" | "list-style-type" => {
             style.list_style_type = if value
                 .split_ascii_whitespace()
