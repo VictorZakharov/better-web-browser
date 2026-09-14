@@ -52,7 +52,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     .border_width
                     .resolve(basis, style.font_size)
                     .horizontal();
-            let (lo, hi) = self.intrinsic_content_widths(&cell.node, basis);
+            // A cell's content width depends on these tracks. Its descendants'
+            // cyclic percentages are intrinsic/auto here, definite during layout.
+            let (lo, hi) = self.intrinsic_content_widths(&cell.node, None);
             let length = if style.width != Length::Auto {
                 style.width
             } else {

@@ -347,6 +347,8 @@ pub(super) struct InlineBoxMetrics {
 #[derive(Debug, Clone)]
 pub(super) enum GridTrack {
     Auto,
+    MinContent,
+    MaxContent,
     Fixed(Length),
     Fraction(f32),
     MinMax(Box<GridTrack>, Box<GridTrack>),

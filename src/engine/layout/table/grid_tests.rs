@@ -1,6 +1,23 @@
 use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
+#[test]
+fn css_rows_and_cells_participate_without_html_table_tags_or_spans() {
+    let (page, output) = layout(
+        "<style>main{display:table;width:300px}section{display:table-row}span{display:table-cell;padding:0}</style><main><section><span id=a colspan=2><img width=80 height=60></span><span id=b><img width=40 height=100></span></section><section><span id=c>label</span><span id=d>value</span></section></main>",
+    );
+    let rect = |id| bounds(&page, &output, id);
+    assert!(rect("a").width >= 80.0);
+    assert!(rect("b").width >= 40.0);
+    assert_eq!(rect("a").height, 100.0);
+    assert_eq!(rect("b").height, 100.0);
+    assert_eq!(rect("a").width, rect("c").width);
+    assert_eq!(rect("b").x, rect("d").x);
+    assert_eq!(rect("a").right(), rect("b").x);
+    assert_eq!(rect("b").right(), 300.0);
+    assert_eq!(rect("c").y, rect("a").bottom());
+}
+
 fn layout(markup: &str) -> (Page, LayoutOutput) {
     let page = Page::parse(
         &format!(

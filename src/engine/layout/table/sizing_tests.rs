@@ -2,6 +2,34 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
+fn percentage_descendants_cannot_inflate_the_table_track_they_depend_on() {
+    for child in [
+        "<div style='width:100%'>short text</div>",
+        "<div style='width:100%'><i style='margin-left:auto;margin-right:auto'>An ordinary inline with automatic margins must still wrap inside the allocated table cell.</i></div>",
+        "<div style='width:calc(100% - 2px)'>short text</div>",
+        "<table style='width:100%'><tr><td>short text</td></tr></table>",
+    ] {
+        let page = Page::parse(
+            &format!(
+                "<style>body{{margin:0}}table{{width:320px;box-sizing:border-box;padding:3px;border:1px solid}}\
+                 td{{padding:4px 8px}}</style><table><tr><td>{child}</td></tr></table>"
+            ),
+            "https://example.test/",
+        );
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        let table = page.dom.elements_named("table").next().unwrap();
+        let cell = page.dom.elements_named("td").next().unwrap();
+        let table = output.node_bounds[&table.id()];
+        let cell = output.node_bounds[&cell.id()];
+        assert!((table.width - 320.0).abs() < 0.01, "{child}: {table:?}");
+        assert!(
+            cell.right() <= table.right(),
+            "{child}: {cell:?} outside {table:?}"
+        );
+    }
+}
+
+#[test]
 fn cell_height_is_a_minimum_that_cannot_clip_wrapped_content() {
     for display in ["table-cell", "block"] {
         let page = Page::parse(

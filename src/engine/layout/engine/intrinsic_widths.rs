@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Default)]
 pub(in crate::engine::layout) struct IntrinsicWidths {
-    entries: HashMap<(NodeId, u32, bool), (f32, f32)>,
+    entries: HashMap<(NodeId, Option<u32>, bool), (f32, f32)>,
     max_content: HashMap<(NodeId, Option<u32>), f32>,
 }
 
@@ -12,22 +12,25 @@ impl IntrinsicWidths {
     pub(in crate::engine::layout) fn get(
         &self,
         node: NodeId,
-        basis: f32,
+        basis: impl Into<Option<f32>>,
         outer: bool,
     ) -> Option<(f32, f32)> {
-        self.entries.get(&(node, basis.to_bits(), outer)).copied()
+        self.entries
+            .get(&(node, basis.into().map(f32::to_bits), outer))
+            .copied()
     }
 
     pub(in crate::engine::layout) fn insert(
         &mut self,
         node: NodeId,
-        basis: f32,
+        basis: impl Into<Option<f32>>,
         outer: bool,
         widths: (f32, f32),
     ) {
         // Wide/deep documents may probe many percentage bases; overflow just recomputes.
         if self.entries.len() + self.max_content.len() < crate::limits::MAX_DOM_NODES {
-            self.entries.insert((node, basis.to_bits(), outer), widths);
+            self.entries
+                .insert((node, basis.into().map(f32::to_bits), outer), widths);
         }
     }
 
@@ -73,6 +76,9 @@ mod tests {
         assert_eq!(cache.get(div.id(), 400.0, false), None);
         assert_eq!(cache.get(div.id(), 200.0, true), None);
         assert_eq!(cache.get(span.id(), 200.0, false), None);
+        cache.insert(div.id(), None, false, (10.0, 100.0));
+        assert_eq!(cache.get(div.id(), None, false), Some((10.0, 100.0)));
+        assert_eq!(cache.get(div.id(), 0.0, false), None);
         cache.insert_max_content(div.id(), None, 100.0);
         assert_eq!(cache.max_content(div.id(), None), Some(100.0));
         assert_eq!(cache.max_content(div.id(), Some(0.0)), None);

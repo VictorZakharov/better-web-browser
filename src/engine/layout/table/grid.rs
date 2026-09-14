@@ -34,7 +34,8 @@ impl Grid {
             }
             let mut column = 0;
             for node in Node::composed_children(row_node) {
-                if !matches!(node.tag_name(), Some("td" | "th"))
+                let html_cell = matches!(node.tag_name(), Some("td" | "th"));
+                if !(html_cell || styles.get(&node).display == Display::TableCell)
                     || styles.get(&node).display == Display::None
                 {
                     continue;
@@ -47,8 +48,19 @@ impl Grid {
                 if remaining == 0 {
                     break;
                 }
-                let columns = span(&node, "colspan", 1000).max(1).min(remaining);
-                let row_span = span(&node, "rowspan", 65534);
+                // Spanning attributes belong to HTML cells, not arbitrary CSS boxes.
+                let columns = if html_cell {
+                    span(&node, "colspan", 1000)
+                } else {
+                    1
+                }
+                .max(1)
+                .min(remaining);
+                let row_span = if html_cell {
+                    span(&node, "rowspan", 65534)
+                } else {
+                    1
+                };
                 let cell_rows = if row_span == 0 {
                     group_end - row
                 } else {

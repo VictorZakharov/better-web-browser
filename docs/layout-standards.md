@@ -35,6 +35,19 @@ Grid/table intrinsic block-size probes are isolated from published paint, hit-te
 ResizeObserver state. Per-layout caches reuse nested intrinsic measurements; the final
 layout publishes each node once. This is a correctness change, not a loading-speed claim.
 
+### Intrinsic grid columns and browsing acceptance (2026-09-14)
+
+The Main Page acceptance capture exposed an off-screen sidebar: the grid allocator
+treated `min-content` as empty `auto`, then assigned all space to the adjacent `fr`
+track. Grid parsing now retains `min-content` and `max-content` separately. Intrinsic
+item contributions establish content-sized tracks before finite growth limits and
+fractional expansion are resolved. `minmax(0, <length>)` retains a shrinkable base,
+and flexible tracks whose minimum exceeds their share freeze before redistribution.
+Spanning headings crossing a flexible track do not inflate the neighboring intrinsic
+sidebar. Generic regressions cover each case, with painted/geometry-only parity.
+This is the [CSS Grid intrinsic-track sizing](https://www.w3.org/TR/css-grid-1/#algo-content)
+slice, not a claim of complete Grid track sizing, auto-placement, or writing-mode support.
+
 ### Table cell minimum heights and post-load scrolling (2026-09-14)
 
 Under [CSS 2.2 table height layout](https://www.w3.org/TR/CSS22/tables.html#height-layout),
@@ -54,6 +67,21 @@ row spans extend through the group. Span parsing follows HTML's integer-prefix r
 and limits; occupancy storage is linear in columns rather than rows times columns.
 Automatic table widths shrink to max-content when it fits and never undercut min-content.
 Percentage preferences cannot starve other tracks' intrinsic minimums.
+
+Cell-content intrinsic measurements now retain an indefinite percentage basis. A
+percentage-width block or nested table cannot inflate the track that will supply its
+own width; cyclic preferred/max sizes act as their initial values and cyclic minima
+as zero during that measurement, following
+[CSS Sizing 3 section 5.2.1](https://www.w3.org/TR/css-sizing-3/#cyclic-percentage-contribution).
+The normal layout pass still resolves those percentages against the allocated cell.
+The cache distinguishes an indefinite basis from a definite zero. Regression tests
+cover percentage blocks, mixed `calc()` widths and nested percentage tables with
+cell padding; the live symptom was infobox bars extending beyond their table border.
+Automatic margins on non-replaced inline content resolve to zero rather than creating
+an unbreakable decorated box. This preserves wrapping in centered table footnotes.
+Explicit CSS `table-row` and `table-cell` boxes on ordinary elements now join the
+same grid as HTML rows/cells; HTML spanning attributes are not applied to arbitrary
+elements. This restores nested flag/seal rows without changing the page markup.
 
 Table-cell `vertical-align: top/middle/bottom` now moves in-flow paint and descendant
 geometry together without shifting cell backgrounds or resize boxes. HTML row-group

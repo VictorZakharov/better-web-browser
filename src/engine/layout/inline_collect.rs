@@ -117,11 +117,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "button" => self.collect_button(node, style, output, containing_block),
                     "svg" => self.collect_svg(node, style, output, containing_block),
                     _ => {
+                        // CSS 2.2 §10.3.1: auto inline margins are zero, not a reason
+                        // to wrap ordinary inline content in an atomic layout box.
                         if matches!(style.display, Display::InlineBlock | Display::InlineFlex)
                             || (style.display == Display::Inline
                                 && self.box_children(node).is_empty())
-                            || style.margin.left != Length::Px(0.0)
-                            || style.margin.right != Length::Px(0.0)
+                            || !matches!(style.margin.left, Length::Auto | Length::Px(0.0))
+                            || !matches!(style.margin.right, Length::Auto | Length::Px(0.0))
                             || style.padding != Edges::ZERO
                             || style.border_width != Edges::ZERO
                             || style.background_color.alpha > 0

@@ -199,7 +199,8 @@ fn table_rows(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
         if styles.get(&candidate).display == Display::None {
             continue;
         }
-        if candidate.tag_name() == Some("tr") {
+        if styles.get(&candidate).display == Display::TableRow || candidate.tag_name() == Some("tr")
+        {
             rows.push(candidate);
         } else if matches!(candidate.tag_name(), Some("thead" | "tbody" | "tfoot")) {
             stack.extend(Node::composed_children(&candidate).into_iter().rev());

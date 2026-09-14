@@ -1,4 +1,5 @@
 use super::*;
+mod columns;
 mod rows;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -33,9 +34,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .resolve(width, style.font_size)
             .unwrap_or(0.0)
             .max(0.0);
-        let column_widths =
-            resolve_grid_columns(&column_tracks, width, column_gap, style.font_size);
-        let column_count = column_widths.len().max(1);
+        let column_count = column_tracks.len().max(1);
 
         let mut placements = Vec::new();
         let mut automatic_index = 0_usize;
@@ -101,6 +100,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
         }
 
+        let column_widths = self.intrinsic_grid_columns(
+            &column_tracks,
+            &placements,
+            width,
+            column_gap,
+            style.font_size,
+        );
         let row_count = placements
             .iter()
             .map(|placement| placement.row_end)

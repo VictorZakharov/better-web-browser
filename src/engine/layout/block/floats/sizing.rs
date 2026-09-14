@@ -5,17 +5,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(in crate::engine::layout) fn float_intrinsic_widths(
         &mut self,
         node: &NodeRef,
-        basis: f32,
+        percentage_basis: impl Into<Option<f32>>,
     ) -> (f32, f32) {
-        if let Some(widths) = self.intrinsic_widths.get(node.id(), basis, true) {
+        let percentage_basis = percentage_basis.into();
+        if let Some(widths) = self.intrinsic_widths.get(node.id(), percentage_basis, true) {
             return widths;
         }
+        let basis = percentage_basis.unwrap_or(0.0);
         let style = self.styles.get(node).clone();
         let margin = style.margin.resolve(basis, style.font_size).horizontal();
         let insets = style.padding.resolve(basis, style.font_size).horizontal()
             + table::resolved_table_borders(node, &style, basis).horizontal();
         let specified = resolve_outer_size(
-            style.width,
+            intrinsic_constraint(style.width, percentage_basis, Length::Auto),
             basis,
             style.font_size,
             insets,
@@ -43,11 +45,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             // Replaced/control atoms already include their own insets and margins.
             (lo - margin, hi - margin)
         } else {
-            let (minimum, preferred) = self.intrinsic_content_widths(node, basis);
+            let (minimum, preferred) = self.intrinsic_content_widths(node, percentage_basis);
             (minimum + insets, preferred + insets)
         };
         if let Some(maximum) = resolve_outer_size(
-            style.max_width,
+            intrinsic_constraint(style.max_width, percentage_basis, Length::Auto),
             basis,
             style.font_size,
             insets,
@@ -57,7 +59,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             preferred = preferred.min(maximum);
         }
         if let Some(lower) = resolve_outer_size(
-            style.min_width,
+            intrinsic_constraint(style.min_width, percentage_basis, Length::Px(0.0)),
             basis,
             style.font_size,
             insets,
@@ -67,22 +69,28 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             preferred = preferred.max(lower);
         }
         let widths = (minimum.max(0.0) + margin, preferred.max(0.0) + margin);
-        self.intrinsic_widths.insert(node.id(), basis, true, widths);
+        self.intrinsic_widths
+            .insert(node.id(), percentage_basis, true, widths);
         widths
     }
 
     pub(in crate::engine::layout) fn intrinsic_content_widths(
         &mut self,
         node: &NodeRef,
-        basis: f32,
+        percentage_basis: impl Into<Option<f32>>,
     ) -> (f32, f32) {
-        if let Some(widths) = self.intrinsic_widths.get(node.id(), basis, false) {
+        let percentage_basis = percentage_basis.into();
+        if let Some(widths) = self
+            .intrinsic_widths
+            .get(node.id(), percentage_basis, false)
+        {
             return widths;
         }
+        let basis = percentage_basis.unwrap_or(0.0);
         if self.styles.get(node).display == Display::Table {
             let widths = self.table_intrinsic_widths(node, basis);
             self.intrinsic_widths
-                .insert(node.id(), basis, false, widths);
+                .insert(node.id(), percentage_basis, false, widths);
             return widths;
         }
         let mut minimum = 0.0_f32;
@@ -102,7 +110,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 preferred = preferred.max(hi);
                 atoms.clear();
                 space = false;
-                let (lo, hi) = self.float_intrinsic_widths(&child, basis);
+                let (lo, hi) = self.float_intrinsic_widths(&child, percentage_basis);
                 minimum = minimum.max(lo);
                 preferred = preferred.max(hi);
             } else {
@@ -122,7 +130,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let (lo, hi) = self.float_inline_widths(&atoms, basis);
         let widths = (minimum.max(lo), preferred.max(hi));
         self.intrinsic_widths
-            .insert(node.id(), basis, false, widths);
+            .insert(node.id(), percentage_basis, false, widths);
         widths
     }
 
@@ -150,5 +158,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             line += measured.width;
         }
         (minimum.max(run), preferred.max(line))
+    }
+}
+
+fn intrinsic_constraint(length: Length, basis: Option<f32>, initial: Length) -> Length {
+    // CSS Sizing 3 §5.2.1: cyclic percentages cannot inflate the ancestor whose
+    // intrinsic size supplies their basis. Actual layout resolves them normally.
+    if basis.is_none()
+        && (matches!(length, Length::Percent(_))
+            || matches!(length, Length::Calc { percent, .. } if percent != 0.0))
+    {
+        initial
+    } else {
+        length
     }
 }
