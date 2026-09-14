@@ -31,7 +31,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let composed_children = self.box_children(node);
         let mut items = Vec::new();
         let mut anonymous_atoms = Vec::new();
-        let mut pending_space = false;
+        let mut pending_space = None;
         for child in composed_children {
             if child.element().is_none() {
                 if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
@@ -52,7 +52,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if !anonymous_atoms.is_empty() {
                 let atoms = std::mem::take(&mut anonymous_atoms);
                 items.push(self.anonymous_flex_item(atoms, width));
-                pending_space = false;
+                pending_space = None;
             }
             let child_style = self.styles.get(&child).clone();
             if child_style.display == Display::None
@@ -166,7 +166,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut widest = 0.0_f32;
         let mut inline_atoms = Vec::new();
-        let mut pending_space = false;
+        let mut pending_space = None;
         for child in self.box_children(node) {
             let child_style = self.styles.get(&child).clone();
             if child.element().is_some()
@@ -178,7 +178,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         &std::mem::take(&mut inline_atoms),
                         available_width,
                     ));
-                    pending_space = false;
+                    pending_space = None;
                 }
                 // This is an intrinsic contribution, not flex main-size resolution.
                 // A descendant's zero flex basis must not erase its content width.
@@ -224,7 +224,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let available_width = percentage_basis.unwrap_or(0.0);
         let mut contributions = Vec::new();
         let mut anonymous_atoms = Vec::new();
-        let mut pending_space = false;
+        let mut pending_space = None;
         for child in self.box_children(node) {
             if child.element().is_none() {
                 if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
@@ -247,7 +247,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     &std::mem::take(&mut anonymous_atoms),
                     available_width,
                 ));
-                pending_space = false;
+                pending_space = None;
             }
             let child_style = self.styles.get(&child).clone();
             if child_style.display == Display::None

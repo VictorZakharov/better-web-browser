@@ -61,6 +61,9 @@ pub fn layout_geometry_with_style_viewport<M: TextMeasurer>(
         fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
             self.0.measure(text, font)
         }
+        fn text_geometry(&mut self, text: &str, font: &FontSpec) -> TextGeometry {
+            self.0.text_geometry(text, font)
+        }
     }
     layout_page_for_output(
         page,
@@ -128,6 +131,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         styles: &box_tree,
         measurer,
         emit_paint,
+        retain_fragments: true,
         scroll_gutters: HashMap::new(),
         measurement_cache: HashMap::new(),
         intrinsic_block_heights: HashMap::new(),
@@ -143,6 +147,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             height: viewport_height.max(1.0),
         },
         output: LayoutOutput {
+            fragments: Default::default(),
             sticky_offsets: HashMap::new(),
             sticky_layers: Vec::new(),
             scroll_boxes: HashMap::new(),
@@ -198,6 +203,7 @@ pub(super) struct LayoutEngine<'a, M> {
     pub(super) styles: &'a box_tree::BoxTree<'a>,
     pub(super) measurer: &'a mut M,
     pub(super) emit_paint: bool,
+    pub(super) retain_fragments: bool,
     pub(super) scroll_gutters: HashMap<NodeId, (bool, bool)>,
     pub(super) measurement_cache: HashMap<(usize, bool, u32), CachedAtomMeasurement>,
     intrinsic_block_heights: HashMap<block_measure::MeasureKey, f32>,

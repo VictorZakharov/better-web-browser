@@ -2,12 +2,18 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
+mod client_rect;
 
 pub(super) fn style_host_call(
     operation: &str,
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if matches!(operation, "clientRects" | "rangeTextRects") {
+        return Ok(Some(client_rect::client_rect_host_call(
+            operation, args, state,
+        )));
+    }
     if operation == "resizeObservation" {
         state.flush_layout_if_needed();
         let node = state.node(argument_id(args, 1));
@@ -32,60 +38,6 @@ pub(super) fn style_host_call(
             JsValue::from(state.media_environment.resolution_dppx as f64),
             JsValue::from(depth),
         ])));
-    }
-    if operation == "clientRect" {
-        state.flush_layout_if_needed();
-        let node = state.node(argument_id(args, 1));
-        let rect = node
-            .as_ref()
-            .filter(|node| state.is_connected(node))
-            .and_then(|node| state.layout_geometry.get(&node.id()).copied());
-        let value =
-            rect.map_or_else(JsValue::null, |mut rect| {
-                let scrolled = args.get(2).is_some_and(JsValue::to_boolean);
-                let offset =
-                    node.as_ref().map_or((0.0, 0.0), |node| {
-                        let own = state
-                            .sticky_offsets
-                            .get(&node.id())
-                            .copied()
-                            .unwrap_or_default();
-                        std::iter::successors(Node::composed_parent(node), Node::composed_parent)
-                            .fold((-own.0, -own.1), |(x, y), parent| {
-                                let (dx, dy) = state.scroll_boxes.get(&parent.id()).map_or(
-                                    (0.0, 0.0),
-                                    |scroll| {
-                                        scroll.clamp(
-                                            parent.scroll_offset.get().0,
-                                            parent.scroll_offset.get().1,
-                                        )
-                                    },
-                                );
-                                let (sx, sy) = state
-                                    .sticky_offsets
-                                    .get(&parent.id())
-                                    .copied()
-                                    .unwrap_or_default();
-                                (x + dx - sx, y + dy - sy)
-                            })
-                    });
-                let viewport_fixed = (scrolled || offset != (0.0, 0.0))
-                    && node
-                        .as_ref()
-                        .is_some_and(|node| state.is_viewport_fixed(node));
-                if !viewport_fixed {
-                    rect.x -= offset.0;
-                    rect.y -= offset.1;
-                }
-                JsValue::Array(vec![
-                    JsValue::from(rect.x as f64),
-                    JsValue::from(rect.y as f64),
-                    JsValue::from(rect.width as f64),
-                    JsValue::from(rect.height as f64),
-                    JsValue::from(viewport_fixed),
-                ])
-            });
-        return Ok(Some(value));
     }
     if operation == "cssSupports" {
         let condition = argument_string(args, 1)?;

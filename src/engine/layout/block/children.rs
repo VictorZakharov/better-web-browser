@@ -14,7 +14,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         parent_profile: super::margins::MarginProfile,
     ) -> f32 {
         let mut atoms = Vec::new();
-        let mut pending_space = false;
+        let mut pending_space = None;
         let mut adjoining = super::margins::MarginStrut::default();
         let mut absorb_start = parent_profile.absorb_start;
         if node.tag_name() == Some("li")
@@ -28,6 +28,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 link: None,
                 node_id: None,
                 source_node: None,
+                source_units: Vec::new(),
+                visible: style.visibility,
+                preserve_space: false,
                 line_height: style.line_height,
                 no_wrap: false,
             });
@@ -56,7 +59,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         absorb_start = false;
                     }
                     atoms.clear();
-                    pending_space = false;
+                    pending_space = None;
                 }
                 self.layout_float(child, x, y, width, containing_height);
             } else if is_block_level(child_style.display) {
@@ -75,7 +78,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         absorb_start = false;
                     }
                     atoms.clear();
-                    pending_space = false;
+                    pending_space = None;
                 }
                 let child_profile = self.block_margin_profile(child, width);
                 let mut margins = child_style.margin.resolve(width, child_style.font_size);

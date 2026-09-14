@@ -112,6 +112,7 @@ mod tests {
 
     fn output(items: Vec<DisplayItem>) -> LayoutOutput {
         LayoutOutput {
+            fragments: Default::default(),
             sticky_offsets: Default::default(),
             sticky_layers: Default::default(),
             scroll_boxes: Default::default(),

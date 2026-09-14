@@ -3,6 +3,7 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) fragments: Option<std::sync::Arc<crate::engine::layout::FragmentGeometry>>,
     pub(crate) sticky_offsets: Option<HashMap<NodeId, (f32, f32)>>,
     pub(crate) scroll_changed: bool,
     pub(crate) scroll_boxes: Option<HashMap<NodeId, crate::engine::layout::ScrollBox>>,
@@ -44,6 +45,7 @@ impl HostState {
         };
         if let Some(geometry) = flush(&invalidation, &mut metrics) {
             self.layout_geometry = geometry;
+            self.layout_fragments = metrics.fragments.take().unwrap_or_default();
         }
         if let Some(boxes) = metrics.resize_boxes {
             self.resize_boxes = boxes;

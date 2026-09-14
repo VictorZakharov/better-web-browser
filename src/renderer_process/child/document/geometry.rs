@@ -12,6 +12,18 @@ struct GeometryTextMeasurer<'a, M> {
 mod tests;
 
 impl<M: crate::engine::TextMeasurer> crate::engine::TextMeasurer for GeometryTextMeasurer<'_, M> {
+    fn text_geometry(
+        &mut self,
+        text: &str,
+        font: &crate::engine::FontSpec,
+    ) -> crate::engine::layout::TextGeometry {
+        let started = self.profile.then(std::time::Instant::now);
+        let result = self.inner.text_geometry(text, font);
+        if let Some(started) = started {
+            self.elapsed += started.elapsed();
+        }
+        result
+    }
     fn measure(&mut self, text: &str, font: &crate::engine::FontSpec) -> (f32, f32) {
         let started = self.profile.then(std::time::Instant::now);
         let result = self.inner.measure(text, font);
@@ -134,6 +146,7 @@ impl DocumentRuntime {
             metrics.layout = started.elapsed();
             metrics.content_height = Some(geometry.content_height);
             metrics.resize_boxes = Some(geometry.resize_boxes);
+            metrics.fragments = Some(geometry.fragments);
             metrics.scroll_boxes = Some(geometry.scroll_boxes);
             metrics.sticky_offsets = Some(geometry.sticky_offsets);
             geometry_ready = true;
@@ -155,6 +168,7 @@ impl DocumentRuntime {
         drop(text);
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
+            runtime.set_layout_fragments(&self.layout.fragments);
             runtime.set_resize_boxes(&self.layout.resize_boxes);
             runtime.set_scroll_boxes(&self.layout.scroll_boxes);
             runtime.set_sticky_offsets(&self.layout.sticky_offsets);

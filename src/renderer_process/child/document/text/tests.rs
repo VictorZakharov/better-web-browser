@@ -1,5 +1,37 @@
 use super::*;
 
+#[test]
+fn retained_advance_clusters_reuse_measurement_without_rasterizing() {
+    let mut text = RendererTextSystem::new(96);
+    let font = spec();
+    let measured = text.measure("a🌠e\u{301} שלום", &font);
+    assert!(text.take_pending_glyphs().is_empty());
+    let shaped_time = text.open_type_time;
+    let geometry = text.text_geometry("a🌠e\u{301} שלום", &font);
+    assert_eq!(
+        text.open_type_time, shaped_time,
+        "CSSOM reuses the measurement cache"
+    );
+    assert!(
+        text.take_pending_glyphs().is_empty(),
+        "geometry never requests pixels"
+    );
+    assert!((geometry.bounds.width - measured.0).abs() < 0.001);
+    assert!(geometry.bounds.height > 0.0);
+    assert!(geometry.clusters.iter().any(|c| c.start == 1 && c.end == 3));
+    assert!(geometry.clusters.iter().any(|c| c.rtl));
+    let painted = text.shape("a🌠e\u{301} שלום", &font);
+    assert_eq!(
+        painted.geometry, geometry,
+        "layout and paint consume identical advances"
+    );
+    assert_eq!(text.text_geometry("a🌠e\u{301} שלום", &font), geometry);
+    assert!(
+        shape_cache_entry_bytes(&ShapeKey::new("a🌠e\u{301} שלום", &font), &painted)
+            >= geometry_bytes(&geometry)
+    );
+}
+
 fn spec() -> FontSpec {
     FontSpec {
         family: "sans-serif".into(),

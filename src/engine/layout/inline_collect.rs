@@ -1,3 +1,5 @@
+use text_atoms::{collect_text_atoms, pending_space_atom};
+mod text_atoms;
 use super::*;
 mod intrinsic;
 mod replaced_constraints;
@@ -8,7 +10,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         node: &NodeRef,
         inherited_link: Option<(String, NodeId)>,
         output: &mut Vec<InlineAtom>,
-        pending_space: &mut bool,
+        pending_space: &mut fragments::PendingSpace,
         honor_block_boundaries: bool,
         containing_block: InlineContainingBlock,
     ) {
@@ -19,14 +21,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             || matches!(style.position, Position::Absolute | Position::Fixed)
             || style_collapses_overflow(style, self.viewport)
         {
-            return;
-        }
-        if !style.visibility {
-            // visibility:hidden suppresses painting but still generates layout boxes. Lazy
-            // images depend on that geometry before assigning src from an intersection callback.
-            if matches!(node.tag_name(), Some("img" | "image" | "video")) {
-                self.collect_image(node, style, inherited_link, output, containing_block);
-            }
             return;
         }
         match &node.data {
@@ -43,18 +37,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             NodeData::Element(_) => {
                 // Collapsed whitespace outside a nowrap span retains its parent's
                 // wrapping opportunity; it is not part of the span's nowrap run.
-                if *pending_space
+                if pending_space.is_some()
                     && style.white_space == WhiteSpace::NoWrap
                     && let Some(parent) = Node::composed_parent(node)
                     && self.styles.get(&parent).white_space == WhiteSpace::Normal
                 {
-                    output.push(text_atom(
-                        " ".into(),
+                    output.push(pending_space_atom(
+                        pending_space,
                         self.styles.get(&parent),
                         inherited_link.clone(),
-                        None,
                     ));
-                    *pending_space = false;
+                    *pending_space = None;
                 }
                 let tag = node.tag_name().unwrap_or_default();
                 let link = if tag == "a" {
@@ -68,7 +61,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 match tag {
                     "br" => {
                         output.push(InlineAtom::Break);
-                        *pending_space = false;
+                        *pending_space = None;
                     }
                     "img" | "image" | "video" => {
                         self.collect_image(node, style, link, output, containing_block)
@@ -84,12 +77,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             style.display,
                             Display::InlineBlock | Display::InlineFlex | Display::InlineTable
                         ) {
-                            if *pending_space {
+                            if pending_space.is_some() {
                                 let parent = Node::composed_parent(node);
                                 let surrounding =
                                     parent.as_ref().map(|n| self.styles.get(n)).unwrap_or(style);
-                                output.push(text_atom(" ".into(), surrounding, link.clone(), None));
-                                *pending_space = false;
+                                output.push(pending_space_atom(
+                                    pending_space,
+                                    surrounding,
+                                    link.clone(),
+                                ));
+                                *pending_space = None;
                             }
                             // Atomic inline boxes have an independent formatting context,
                             // including shrink-to-fit sizing, wrapping and block children.
@@ -110,12 +107,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             || style.background_image.is_some()
                             || style.mask_image.is_some()
                         {
-                            if *pending_space {
-                                output.push(text_atom(" ".into(), style, link.clone(), None));
-                                *pending_space = false;
+                            if pending_space.is_some() {
+                                output.push(pending_space_atom(pending_space, style, link.clone()));
+                                *pending_space = None;
                             }
                             let mut children = Vec::new();
-                            let mut child_pending_space = false;
+                            let mut child_pending_space = None;
                             for child in self.box_children(node).iter() {
                                 self.collect_inline(
                                     child,

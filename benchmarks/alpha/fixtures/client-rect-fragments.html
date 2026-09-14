@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CSSOM View fragment geometry</title>
+<style>
+  body { margin:32px; font:20px/28px Arial,sans-serif; color:#19324a; background:#edf3f8 }
+  h1 { font-size:26px }
+  #pane { position:absolute; left:32px; top:160px; width:240px; height:120px; overflow:auto; background:white }
+  #flow { width:180px; transform:translate(12px,8px) }
+  #spacer { height:220px }
+  #summary { position:absolute; left:32px; top:320px; width:700px; padding:16px; background:white }
+  #result { font-weight:bold }
+</style>
+<h1>CSSOM View: fragments and partial selections</h1>
+<p>Wrapped inline text keeps one rectangle per line. A Range measures only its selected text.</p>
+<div id="pane"><div id="flow"><span id="sample">alpha beta gamma delta epsilon zeta</span><div id="spacer"></div></div></div>
+<div id="summary"><p id="result">RUNNING</p><p id="details"></p></div>
+<script>
+  const sample = document.getElementById('sample'), pane = document.getElementById('pane');
+  const result = document.getElementById('result');
+  const pack = list => Array.from(list, r => [r.x,r.y,r.width,r.height].map(v => Math.round(v*100)/100));
+  const checks = [];
+  try {
+    const old = sample.getClientRects();
+    const range = document.createRange(); range.setStart(sample.firstChild,1); range.setEnd(sample.firstChild,4);
+    const partial = range.getClientRects();
+    checks.push(old instanceof DOMRectList, old.length > 1, partial.length === 1,
+      partial[0].width > 0, partial[0].width < old[0].width, partial[0].x > old[0].x);
+    result.dataset.inline = JSON.stringify(pack(old));
+    result.dataset.partial = JSON.stringify(pack(partial));
+    pane.scrollTop = 28;
+    const moved = sample.getClientRects();
+    checks.push(Math.abs(old[0].y-moved[0].y-28) < .01);
+    result.dataset.scrolled = JSON.stringify(pack(moved));
+    pane.scrollTop = 0;
+    sample.style.fontSize = '24px';
+    const changed = range.getBoundingClientRect();
+    checks.push(changed.width > partial[0].width);
+    sample.style.fontSize = '20px';
+    const detached = document.createElement('span');
+    checks.push(detached.getClientRects().length === 0);
+    const good = checks.every(Boolean);
+    result.textContent = good ? 'PASS' : 'FAIL';
+    result.dataset.result = good ? 'PASS' : 'FAIL';
+    document.getElementById('details').textContent = `${old.length} inline fragments; selected width ${partial[0].width.toFixed(2)} CSS px; scroll delta ${old[0].y-moved[0].y} CSS px`;
+    document.documentElement.dataset.fixtureReady = String(good);
+    console.log('fragment-fixture:' + JSON.stringify({good,checks,inline:pack(old),partial:pack(partial),scrolled:pack(moved)}));
+  } catch (error) { result.textContent = 'FAIL: '+error; result.dataset.result = 'FAIL'; throw error; }
+</script>

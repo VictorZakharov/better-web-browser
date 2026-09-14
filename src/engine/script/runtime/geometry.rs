@@ -1,6 +1,12 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_layout_fragments(
+        &mut self,
+        fragments: &std::sync::Arc<crate::engine::layout::FragmentGeometry>,
+    ) {
+        self.host.borrow_mut().layout_fragments = fragments.clone();
+    }
     pub(crate) fn set_sticky_offsets(&mut self, offsets: &HashMap<NodeId, (f32, f32)>) {
         let mut host = self.host.borrow_mut();
         host.sticky_offsets.clone_from(offsets);
@@ -32,6 +38,7 @@ impl ScriptRuntime {
     pub(crate) fn set_layout_geometry(&mut self, geometry: &HashMap<NodeId, RectF>) {
         let mut host = self.host.borrow_mut();
         host.layout_geometry.clone_from(geometry);
+        host.layout_fragments = Default::default();
         host.layout_geometry_version = host.document.subtree_mutation_version();
         host.pending_layout_invalidation
             .acknowledge_published_geometry();

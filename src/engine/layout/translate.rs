@@ -69,6 +69,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         // Translate their CSSOM bounds with the paint range while excluding unassigned/fallback
         // content that does not participate in these boxes.
         for descendant in self.styles.descendants(node) {
+            std::sync::Arc::make_mut(&mut self.output.fragments).translate(
+                descendant.id(),
+                offset_x,
+                offset_y,
+            );
             if let Some(scroll) = self.output.scroll_boxes.get_mut(&descendant.id()) {
                 scroll.port.x += offset_x;
                 scroll.port.y += offset_y;

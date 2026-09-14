@@ -4,12 +4,14 @@
 //! glyph placements and premultiplied raster assets over the validated presentation protocol.
 
 mod catalog;
+mod geometry;
 mod raster;
 mod shape;
 
 use self::catalog::FontCatalog;
 use self::raster::{GlyphRasterCache, RasterizedGlyph};
 use self::shape::TextShaper;
+use crate::engine::layout::{TextCluster, TextGeometry};
 use crate::engine::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer, WebFont};
 use crate::renderer_protocol::{PageLoadReport, PresentedGlyphRaster};
 use std::borrow::Cow;
@@ -38,7 +40,7 @@ pub(in crate::renderer_process::child) struct RendererTextSystem {
     rasters: GlyphRasterCache,
     shapes: HashMap<ShapeKey<'static>, ShapedText>,
     shape_cache_bytes: usize,
-    measurements: HashMap<ShapeKey<'static>, (f32, f32)>,
+    measurements: HashMap<ShapeKey<'static>, ((f32, f32), TextGeometry)>,
     measurement_cache_bytes: usize,
     dpi: u32,
     glyph_epoch: u64,
@@ -171,6 +173,7 @@ impl RendererTextSystem {
             raster_run_id: self.allocate_raster_run_id(),
             width: output.width,
             height: output.height,
+            geometry: output.geometry,
             ..ShapedText::default()
         };
         let raster_started = Instant::now();
@@ -206,14 +209,14 @@ impl RendererTextSystem {
         shaped
     }
 
-    fn measure_text(&mut self, text: &str, spec: &FontSpec) -> (f32, f32) {
+    fn measure_text(&mut self, text: &str, spec: &FontSpec) -> ((f32, f32), TextGeometry) {
         self.measure_calls = self.measure_calls.saturating_add(1);
         let key = ShapeKey::new(text, spec);
         if let Some(shaped) = self.shapes.get(&key) {
-            return (shaped.width, shaped.height);
+            return ((shaped.width, shaped.height), shaped.geometry.clone());
         }
         if let Some(measurement) = self.measurements.get(&key) {
-            return *measurement;
+            return measurement.clone();
         }
 
         // CSSOM View geometry needs shaped advances, not pixels. Keep HarfRust shaping so line
@@ -222,9 +225,9 @@ impl RendererTextSystem {
         let output = self.shaper.shape(&mut self.catalog, text, spec);
         self.font_select_time += output.font_select_time;
         self.open_type_time += output.open_type_time;
-        let measurement = (output.width, output.height);
+        let measurement = ((output.width, output.height), output.geometry);
         if text.len() <= MAX_CACHED_TEXT_BYTES {
-            let cached_bytes = measurement_cache_entry_bytes(&key);
+            let cached_bytes = measurement_cache_entry_bytes(&key) + geometry_bytes(&measurement.1);
             if cached_bytes <= MAX_MEASUREMENT_CACHE_BYTES {
                 if self.measurement_cache_bytes.saturating_add(cached_bytes)
                     > MAX_MEASUREMENT_CACHE_BYTES
@@ -233,7 +236,8 @@ impl RendererTextSystem {
                     self.measurement_cache_bytes = 0;
                 }
                 self.measurement_cache_bytes += cached_bytes;
-                self.measurements.insert(key.into_owned(), measurement);
+                self.measurements
+                    .insert(key.into_owned(), measurement.clone());
             }
         }
         measurement
@@ -254,6 +258,7 @@ fn shape_cache_entry_bytes(key: &ShapeKey, shaped: &ShapedText) -> usize {
         .saturating_add(key.text.len())
         .saturating_add(key.family.len())
         .saturating_add(std::mem::size_of::<ShapedText>())
+        .saturating_add(geometry_bytes(&shaped.geometry))
         .saturating_add(
             shaped
                 .glyphs
@@ -266,12 +271,23 @@ fn measurement_cache_entry_bytes(key: &ShapeKey) -> usize {
     std::mem::size_of::<ShapeKey>()
         .saturating_add(key.text.len())
         .saturating_add(key.family.len())
-        .saturating_add(std::mem::size_of::<(f32, f32)>())
+        .saturating_add(std::mem::size_of::<((f32, f32), TextGeometry)>())
+}
+
+fn geometry_bytes(geometry: &TextGeometry) -> usize {
+    geometry
+        .clusters
+        .len()
+        .saturating_mul(std::mem::size_of::<TextCluster>())
 }
 
 impl TextMeasurer for RendererTextSystem {
     fn measure(&mut self, text: &str, font: &FontSpec) -> (f32, f32) {
-        self.measure_text(text, font)
+        self.measure_text(text, font).0
+    }
+
+    fn text_geometry(&mut self, text: &str, font: &FontSpec) -> TextGeometry {
+        self.measure_text(text, font).1
     }
 
     fn shape(&mut self, text: &str, font: &FontSpec) -> ShapedText {

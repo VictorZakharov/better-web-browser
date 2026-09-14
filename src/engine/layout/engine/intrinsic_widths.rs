@@ -100,6 +100,7 @@ mod tests {
             styles: &box_tree,
             measurer: &mut measurer,
             emit_paint: false,
+            retain_fragments: false,
             scroll_gutters: HashMap::new(),
             measurement_cache: HashMap::new(),
             intrinsic_block_heights: HashMap::new(),

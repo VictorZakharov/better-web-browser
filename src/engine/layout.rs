@@ -29,7 +29,7 @@ mod tests_general;
 mod tests_pseudo;
 mod tracks;
 mod translate;
-use self::{forms::*, sizing::*, tracks::*};
+use self::{forms::*, model::*, sizing::*, tracks::*};
 use super::css::*;
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};
@@ -38,10 +38,10 @@ use engine::{BlockMetrics, LayoutEngine, UsedInlineSize};
 pub use engine::{
     layout_geometry_with_style_viewport, layout_page, layout_page_with_style_viewport,
 };
-use model::*;
 pub use model::{
-    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, LayoutOutput, PositionedGlyph,
-    RectF, ResizeBox, SelectOption, ShapedText, TextMeasurer,
+    ControlKind, ControlSpec, DisplayItem, FontSpec, FormSpec, FragmentGeometry, LayoutOutput,
+    PositionedGlyph, RectF, ResizeBox, SelectOption, ShapedText, TextCluster, TextGeometry,
+    TextMeasurer,
 };
 pub use scrolling::ScrollBox;
 use std::collections::HashMap;
