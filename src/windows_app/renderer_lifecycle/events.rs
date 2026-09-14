@@ -1,4 +1,3 @@
-use super::notifications::EVENTS_PER_TURN;
 use super::*;
 use crate::windows_app::navigation_transaction::PresentationDeadline;
 use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
@@ -36,13 +35,9 @@ impl BrowserState {
         let snapshot_and_events = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_session.as_ref().map(|session| {
                 let snapshot = session.snapshot();
-                let mut events = Vec::new();
-                for _ in 0..EVENTS_PER_TURN {
-                    match session.try_event() {
-                        Ok(Some(event)) => events.push(event),
-                        _ => break,
-                    }
-                }
+                let events = super::event_batch::collect(|accepts| {
+                    session.try_event_if(accepts).ok().flatten()
+                });
                 (
                     tab.title.clone(),
                     snapshot,
@@ -69,7 +64,8 @@ impl BrowserState {
             status.snapshot = Some(snapshot);
         });
 
-        for event in events {
+        let mut events = events.into_iter().peekable();
+        while let Some(event) = events.next() {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
                     if let Some(tab) = self.tabs.get_mut(id) {
@@ -192,9 +188,21 @@ impl BrowserState {
                     }
                 }
                 RendererEvent::StorageMutation(request) => {
+                    // Only combine adjacent intents in this bounded UI turn. Navigation,
+                    // presentation, and other-area events remain ordering barriers.
+                    let document = request.document;
+                    let area = request.mutation.area;
+                    let mut requests = vec![request];
+                    while matches!(events.peek(), Some(RendererEvent::StorageMutation(next))
+                        if next.document == document && next.mutation.area == area)
+                    {
+                        if let Some(RendererEvent::StorageMutation(next)) = events.next() {
+                            requests.push(next);
+                        }
+                    }
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
-                        correction_error = state.apply_renderer_storage_mutation(request).err();
+                        correction_error = state.apply_renderer_storage_mutations(requests).err();
                     });
                     if let Some(error) = correction_error {
                         self.contain_page_engine_failure(id, error);

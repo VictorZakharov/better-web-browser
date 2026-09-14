@@ -36,6 +36,8 @@ mod startup;
 mod state;
 #[path = "renderer_process/state_backpressure.rs"]
 mod state_backpressure;
+#[path = "renderer_process/storage_values.rs"]
+mod storage_values;
 #[path = "renderer_process/streaming_fetch.rs"]
 mod streaming_fetch;
 #[path = "renderer_process/support.rs"]

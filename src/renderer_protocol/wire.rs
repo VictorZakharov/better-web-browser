@@ -58,6 +58,20 @@ impl WireWriter {
         self.bytes.extend_from_slice(value);
         Ok(())
     }
+
+    pub(super) fn storage_string(
+        &mut self,
+        value: &crate::storage::StorageString,
+    ) -> Result<(), ProtocolError> {
+        self.u32(
+            u32::try_from(value.units().len() * 2)
+                .map_err(|_| ProtocolError::InvalidPayload("storage string length"))?,
+        );
+        for unit in value.units() {
+            self.u16(*unit);
+        }
+        Ok(())
+    }
 }
 
 pub(super) struct WireReader<'a> {
@@ -135,5 +149,23 @@ impl<'a> WireReader<'a> {
             return Err(ProtocolError::InvalidPayload("wire byte budget"));
         }
         Ok(self.take(length)?.to_vec())
+    }
+
+    pub(super) fn storage_string(
+        &mut self,
+        maximum: usize,
+    ) -> Result<crate::storage::StorageString, ProtocolError> {
+        let length = self.u32()? as usize;
+        if length > maximum.saturating_mul(2) || !length.is_multiple_of(2) {
+            return Err(ProtocolError::InvalidPayload(
+                "storage string budget or encoding",
+            ));
+        }
+        let units = self
+            .take(length)?
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        Ok(crate::storage::StorageString::from_units(units))
     }
 }

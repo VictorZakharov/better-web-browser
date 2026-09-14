@@ -234,7 +234,8 @@ runs. Delayed asynchronous initialization, loading speed and post-load scroll
 responsiveness remain open; the long validation settle interval is not a measured
 page-load time or a performance pass. The subsequent
 [Performance Timeline slice](performance-timeline.md) removes the missing-observer exception;
-it does not claim to fix the storage warning or improve loading speed.
+it does not claim to fix the storage warning or improve loading speed. The later
+[Web Storage slice](web-storage.md) fixes the cache-value warning independently.
 
 ### Earlier checkpoint and remaining responsiveness work
 

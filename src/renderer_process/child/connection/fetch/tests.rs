@@ -109,8 +109,8 @@ fn complete_maximum_storage_snapshot_survives_full_ordinary_mailbox() {
             document,
             area: StorageAreaKind::Local,
             entry: StorageEntry {
-                key: index.to_string(),
-                value: String::new(),
+                key: index.to_string().into(),
+                value: "".into(),
             },
         });
         assert!(has_deferred_capacity(&pending, &entry));

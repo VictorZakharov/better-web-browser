@@ -1,4 +1,5 @@
-use crate::report::{ActualStatus, HarnessReport, Observation, RESULT_MARKER};
+use crate::report::{ActualStatus, Observation, RESULT_MARKER};
+use crate::result_transport::harness_report;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -54,6 +55,7 @@ pub(crate) fn run(browser: &Path, url: &str, settle_ms: u64, timeout_ms: u64) ->
         ])
         .env("BREEZE_HEADLESS_LARGE_STACK", "1")
         .env("BREEZE_REQUIRE_HIDDEN_BENCHMARK", "1")
+        .env("BREEZE_PROFILE_DIRECTORY", artifacts.root.join("profile"))
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr_file));
     configure_hidden(&mut command);
@@ -173,18 +175,6 @@ fn observe_benchmark(
         javascript_diagnostics: benchmark.javascript_diagnostics,
         process_stderr,
     }
-}
-
-fn harness_report(console: &[String]) -> Result<Option<HarnessReport>, String> {
-    let Some(payload) = console.iter().rev().find_map(|line| {
-        line.find(RESULT_MARKER)
-            .map(|index| &line[index + RESULT_MARKER.len()..])
-    }) else {
-        return Ok(None);
-    };
-    serde_json::from_str(payload)
-        .map(Some)
-        .map_err(|error| format!("parse testharness callback report: {error}"))
 }
 
 fn wait_for_child(

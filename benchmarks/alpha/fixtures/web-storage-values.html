@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Web Storage values and persistence</title>
+<style>
+body { font: 18px/1.5 sans-serif; max-width: 1000px; margin: 36px auto; color: #17212b; }
+h1 { font-size: 28px; } li { margin: 8px 0; } .pass { color: #146c43; } .fail { color: #b42318; }
+</style>
+<h1>Web Storage values and persistence</h1>
+<p>Large values, lossless DOMStrings, atomic rejection, and method/property equivalence.</p>
+<ol id="checks"></ol><p id="result">Running</p>
+<script>
+(() => {
+    const read = location.href.includes('?read');
+    const largeKey = 'k'.repeat(128 * 1024);
+    const largeValue = 'v'.repeat(512 * 1024);
+    const special = '\uD800\0\uDFFF\uD83C\uDF4D';
+    let passed = 0, failed = 0;
+    const check = (label, run) => {
+        const item = document.createElement('li');
+        try {
+            if (!run()) throw new Error('mismatch');
+            passed++; item.className = 'pass'; item.textContent = 'PASS: ' + label;
+        } catch (error) {
+            failed++; item.className = 'fail'; item.textContent = 'FAIL: ' + label + ' — ' + error.name + ': ' + error.message;
+        }
+        document.getElementById('checks').appendChild(item);
+    };
+    if (read) {
+        check('large key/value survive a new browser process', () => localStorage.getItem(largeKey) === largeValue);
+        check('isolated surrogates and NUL survive disk reload', () => localStorage.getItem(special) === special);
+        check('session storage is not persisted across browser restarts', () => sessionStorage.length === 0);
+    } else {
+        for (const name of ['localStorage', 'sessionStorage']) {
+            const storage = window[name]; storage.clear();
+            check(name + ': 128 KiB key / 512 KiB value', () => {
+                storage.setItem(largeKey, largeValue);
+                return storage.getItem(largeKey) === largeValue;
+            });
+            check(name + ': isolated surrogates and NUL', () => {
+                storage.setItem(special, special);
+                return storage.getItem(special) === special;
+            });
+            check(name + ': named access uses the same map', () => {
+                storage.named = 'value'; const valid = storage.getItem('named') === 'value';
+                delete storage.named; return valid && storage.getItem('named') === null;
+            });
+            check(name + ': quota failure preserves the previous value', () => {
+                storage.setItem('stable', 'original');
+                try { storage.setItem('stable', 'x'.repeat(8 * 1024 * 1024)); return false; }
+                catch (error) { return error.name === 'QuotaExceededError' && error instanceof DOMException && storage.getItem('stable') === 'original'; }
+            });
+            check(name + ': throwing string conversion is atomic', () => {
+                const marker = {};
+                try { storage.setItem('stable', { toString() { throw marker; } }); return false; }
+                catch (error) { return error === marker && storage.getItem('stable') === 'original'; }
+            });
+        }
+    }
+    const result = document.getElementById('result');
+    result.textContent = passed + ' passed / ' + failed + ' failed';
+    result.setAttribute('data-passed', String(passed)); result.setAttribute('data-failed', String(failed));
+    document.documentElement.dataset.fixtureReady = 'true';
+})();
+</script>

@@ -56,15 +56,21 @@ impl EventSender {
     pub(super) fn send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         if matches!(
             event,
-            RendererEvent::FetchBatch { .. } | RendererEvent::FetchAbort { .. }
+            RendererEvent::FetchBatch { .. }
+                | RendererEvent::FetchAbort { .. }
+                | RendererEvent::StorageMutation(_)
         ) {
-            self.send_lossless_fetch(event)
+            self.send_lossless(event)
         } else {
-            self.try_send(event)
+            self.send_coalesced(event, true)
         }
     }
 
-    pub(super) fn try_send(&self, mut event: RendererEvent) -> Result<(), ProtocolError> {
+    pub(super) fn try_send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+        self.send_coalesced(event, false)
+    }
+
+    fn send_coalesced(&self, mut event: RendererEvent, wait: bool) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
             .state
@@ -136,10 +142,23 @@ impl EventSender {
             }
             event => event,
         };
-        if state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
-            return Err(ProtocolError::InvalidPayload(
-                "browser renderer-event queue exhausted",
-            ));
+        while state.receiver_open && state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
+            if !wait {
+                return Err(ProtocolError::InvalidPayload(
+                    "browser renderer-event queue exhausted",
+                ));
+            }
+            // A storage/fetch burst may fill every slot before its trailing
+            // presentation or diagnostic arrives. Preserve that FIFO barrier
+            // with backpressure too; a full valid queue is not a protocol error.
+            state = self
+                .queue
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        if !state.receiver_open {
+            return Ok(());
         }
         state.events.push_back(event);
         let notify = state.notification.request();
@@ -149,7 +168,7 @@ impl EventSender {
         Ok(())
     }
 
-    fn send_lossless_fetch(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+    fn send_lossless(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
             .state
@@ -157,9 +176,11 @@ impl EventSender {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         while state.receiver_open
             && (state.events.len() >= MAX_QUEUED_RENDERER_EVENTS
-                || queued_fetch_batches(&state.events) >= MAX_QUEUED_RENDERER_FETCH_BATCHES)
+                || queued_fetch_batches(&state.events) >= MAX_QUEUED_RENDERER_FETCH_BATCHES
+                || storage_bytes(&state.events).saturating_add(event_storage_bytes(&event))
+                    > crate::limits::MAX_PENDING_STORAGE_BYTES)
         {
-            // A Fetch batch is valid page work, not a protocol violation. Apply bounded
+            // Fetch and storage writes are valid page work. Apply bounded
             // backpressure on the broker thread until the Win32 thread drains its event slot.
             // Closing the browser-side receiver releases this wait during renderer teardown.
             state = self
@@ -198,6 +219,17 @@ fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
         .iter()
         .filter(|event| matches!(event, RendererEvent::FetchBatch { .. }))
         .count()
+}
+
+fn event_storage_bytes(event: &RendererEvent) -> usize {
+    match event {
+        RendererEvent::StorageMutation(request) => request.mutation.byte_len(),
+        _ => 0,
+    }
+}
+
+fn storage_bytes(events: &VecDeque<RendererEvent>) -> usize {
+    events.iter().map(event_storage_bytes).sum()
 }
 
 fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
@@ -288,11 +320,21 @@ impl EventReceiver {
     }
 
     pub(super) fn try_recv(&self) -> Result<RendererEvent, mpsc::TryRecvError> {
+        self.try_recv_if(|_| true)
+    }
+
+    pub(super) fn try_recv_if(
+        &self,
+        accepts: impl FnOnce(&RendererEvent) -> bool,
+    ) -> Result<RendererEvent, mpsc::TryRecvError> {
         let mut state = self
             .queue
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.events.front().is_some_and(|event| !accepts(event)) {
+            return Err(mpsc::TryRecvError::Empty);
+        }
         let result = match state.events.pop_front() {
             Some(event) => Ok(event),
             None if state.receiver_open && state.sender_open => Err(mpsc::TryRecvError::Empty),
@@ -328,6 +370,8 @@ impl Drop for EventReceiver {
 #[cfg(test)]
 mod teardown_tests;
 
+#[cfg(test)]
+mod storage_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

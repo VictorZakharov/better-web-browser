@@ -50,14 +50,20 @@ impl BrowserState {
         Ok(())
     }
 
-    pub(super) fn apply_renderer_storage_mutation(
+    pub(super) fn apply_renderer_storage_mutations(
         &mut self,
-        request: StorageMutationRequest,
+        requests: Vec<StorageMutationRequest>,
     ) -> Result<(), String> {
+        let Some(request) = requests.first() else {
+            return Ok(());
+        };
         if !self.navigation.owns_document(request.document) {
             return Ok(());
         }
-        self.incidents.storage_mutations = self.incidents.storage_mutations.saturating_add(1);
+        self.incidents.storage_mutations = self
+            .incidents
+            .storage_mutations
+            .saturating_add(requests.len() as u64);
         self.incidents.record(
             "storage",
             format!(
@@ -67,10 +73,18 @@ impl BrowserState {
         );
         let document_url = self.reader_url.clone();
         let result = match request.mutation.area {
-            StorageAreaKind::Local => self.local_storage.apply(&document_url, &request.mutation),
-            StorageAreaKind::Session => {
-                self.session_storage.apply(&document_url, &request.mutation)
-            }
+            StorageAreaKind::Local => self.local_storage.apply_batch(
+                &document_url,
+                &requests
+                    .iter()
+                    .map(|request| request.mutation.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            StorageAreaKind::Session => requests.iter().try_fold(false, |changed, request| {
+                self.session_storage
+                    .apply(&document_url, &request.mutation)
+                    .map(|next| changed || next)
+            }),
         };
         match result {
             Ok(_) => {

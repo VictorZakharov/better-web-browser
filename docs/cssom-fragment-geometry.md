@@ -76,7 +76,7 @@ navigation had no renderer failure or missing-rectangle exception; the climate-t
 rows remained readable without overlap.
 Separate PerformanceObserver and storage warnings remained at this checkpoint.
 The subsequent [Performance Timeline slice](performance-timeline.md) removes the missing-observer
-exception; the ResourceLoader storage warning remains separate.
+exception; the subsequent [Web Storage slice](web-storage.md) fixes the ResourceLoader value path.
 
 ## Remaining boundaries
 

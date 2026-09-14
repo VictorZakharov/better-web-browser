@@ -14,18 +14,6 @@
         back() {}, forward() {}, go() {}
     };
 
-    const storage = area => {
-        return {
-            get length() { return host('storageLength', area); },
-            key(index) { return host('storageKey', area, Number(index) >>> 0); },
-            getItem(key) { return host('storageGet', area, String(key)); },
-            setItem(key, value) { host('storageSet', area, String(key), String(value)); },
-            removeItem(key) { host('storageRemove', area, String(key)); },
-            clear() { host('storageClear', area); }
-        };
-    };
-    windowObject.localStorage = storage('local');
-    windowObject.sessionStorage = storage('session');
     windowObject.navigator = {
         userAgent: host('userAgent'),
         appName: 'Netscape',

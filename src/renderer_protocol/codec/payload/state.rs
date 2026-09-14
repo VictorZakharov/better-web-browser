@@ -34,8 +34,8 @@ pub(super) fn encode_browser_state(
             item.validate()?;
             writer.u64(item.document.get());
             writer.u8(area_tag(item.area));
-            writer.string(&item.entry.key)?;
-            writer.string(&item.entry.value)?;
+            writer.storage_string(&item.entry.key)?;
+            writer.storage_string(&item.entry.value)?;
             0x0135
         }
         BrowserMessage::StorageSnapshotEnd(end) => {
@@ -80,8 +80,8 @@ pub(super) fn decode_browser_state(
                 document: DocumentId::new(reader.u64()?)?,
                 area: decode_area(reader.u8()?)?,
                 entry: StorageEntry {
-                    key: reader.string(MAX_STORAGE_KEY_BYTES)?,
-                    value: reader.string(MAX_STORAGE_VALUE_BYTES)?,
+                    key: reader.storage_string(MAX_STORAGE_KEY_BYTES)?,
+                    value: reader.storage_string(MAX_STORAGE_VALUE_BYTES)?,
                 },
             };
             item.validate()?;
@@ -121,12 +121,12 @@ pub(super) fn encode_renderer_state(
             match &request.mutation.operation {
                 StorageOperation::Set { key, value } => {
                     writer.u8(1);
-                    writer.string(key)?;
-                    writer.string(value)?;
+                    writer.storage_string(key)?;
+                    writer.storage_string(value)?;
                 }
                 StorageOperation::Remove { key } => {
                     writer.u8(2);
-                    writer.string(key)?;
+                    writer.storage_string(key)?;
                 }
                 StorageOperation::Clear => writer.u8(3),
             }
@@ -164,11 +164,11 @@ pub(super) fn decode_renderer_state(
             let expected_version = nonzero(reader.u64()?, "storage mutation")?;
             let operation = match reader.u8()? {
                 1 => StorageOperation::Set {
-                    key: reader.string(MAX_STORAGE_KEY_BYTES)?,
-                    value: reader.string(MAX_STORAGE_VALUE_BYTES)?,
+                    key: reader.storage_string(MAX_STORAGE_KEY_BYTES)?,
+                    value: reader.storage_string(MAX_STORAGE_VALUE_BYTES)?,
                 },
                 2 => StorageOperation::Remove {
-                    key: reader.string(MAX_STORAGE_KEY_BYTES)?,
+                    key: reader.storage_string(MAX_STORAGE_KEY_BYTES)?,
                 },
                 3 => StorageOperation::Clear,
                 _ => return Err(ProtocolError::InvalidPayload("storage mutation operation")),

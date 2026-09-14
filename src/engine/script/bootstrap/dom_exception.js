@@ -74,4 +74,39 @@
     Object.defineProperty(globalThis, 'DOMException', {
         value: DOMException, writable: true, configurable: true,
     });
+    // https://webidl.spec.whatwg.org/#quotaexceedederror
+    const quotaSlots = new WeakMap();
+    class QuotaExceededError extends DOMException {
+        constructor(message = '', options = {}) {
+            if (typeof message === 'symbol') throw new TypeError('Invalid exception message');
+            const text = String(message);
+            if (options != null && !['object', 'function'].includes(typeof options)) {
+                throw new TypeError('Invalid quota options');
+            }
+            const values = {};
+            for (const key of ['quota', 'requested']) {
+                const value = options?.[key];
+                values[key] = value === undefined ? null : +value;
+                if (values[key] !== null && !Number.isFinite(values[key])) {
+                    throw new TypeError('Quota values must be finite');
+                }
+            }
+            super(text, 'QuotaExceededError');
+            quotaSlots.set(this, values);
+        }
+    }
+    for (const key of ['quota', 'requested']) {
+        Object.defineProperty(QuotaExceededError.prototype, key, {
+            get() {
+                if (!quotaSlots.has(this)) throw new TypeError('Incompatible QuotaExceededError receiver');
+                return quotaSlots.get(this)[key];
+            }, enumerable: true, configurable: true,
+        });
+    }
+    Object.defineProperty(QuotaExceededError.prototype, Symbol.toStringTag, {
+        value: 'QuotaExceededError', configurable: true,
+    });
+    Object.defineProperty(globalThis, 'QuotaExceededError', {
+        value: QuotaExceededError, writable: true, configurable: true,
+    });
 })();

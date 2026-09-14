@@ -132,12 +132,13 @@ impl<R: Read> FrameReader<R> {
             inner,
             session,
             next_sequence: 1,
-            max_payload: MAX_FRAME_PAYLOAD,
+            max_payload: MAX_FRAME_PAYLOAD.max(crate::limits::MAX_STORAGE_FRAME_BYTES),
         }
     }
 
     pub fn with_max_payload(mut self, maximum: usize) -> Self {
-        self.max_payload = maximum.min(MAX_FRAME_PAYLOAD);
+        self.max_payload =
+            maximum.min(MAX_FRAME_PAYLOAD.max(crate::limits::MAX_STORAGE_FRAME_BYTES));
         self
     }
 
@@ -270,6 +271,7 @@ impl Direction {
 
 fn payload_limit(kind: u16) -> usize {
     match kind {
+        0x0134 | 0x0135 => crate::limits::MAX_STORAGE_FRAME_BYTES,
         // Document, request, response, and presentation body chunks are the only bulk frames.
         0x0103 | 0x0106 | 0x0113 | 0x0114 | 0x0160 => MAX_FRAME_PAYLOAD,
         _ => MAX_CONTROL_PAYLOAD,

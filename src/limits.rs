@@ -36,9 +36,13 @@ pub const MAX_PERSISTED_COOKIE_BYTES: usize = 16 * 1024 * 1024;
 
 pub const MAX_STORAGE_ORIGINS: usize = 256;
 pub const MAX_STORAGE_ENTRIES_PER_ORIGIN: usize = 1_024;
-pub const MAX_STORAGE_KEY_BYTES: usize = 4 * 1024;
-pub const MAX_STORAGE_VALUE_BYTES: usize = 192 * 1024;
 pub const MAX_STORAGE_BYTES_PER_ORIGIN: usize = 5 * 1024 * 1024;
+// UTF-8-equivalent quota bytes; lone surrogates cost three bytes (see StorageString).
+pub const MAX_STORAGE_KEY_BYTES: usize = MAX_STORAGE_BYTES_PER_ORIGIN;
+pub const MAX_STORAGE_VALUE_BYTES: usize = MAX_STORAGE_BYTES_PER_ORIGIN;
+pub const MAX_PENDING_STORAGE_BYTES: usize = 32 * 1024 * 1024;
+// Dedicated storage frames carry one quota-bounded entry plus fixed wire metadata.
+pub const MAX_STORAGE_FRAME_BYTES: usize = 2 * MAX_STORAGE_BYTES_PER_ORIGIN + 26;
 pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
 
 pub const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;

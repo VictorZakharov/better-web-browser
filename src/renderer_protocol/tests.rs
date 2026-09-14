@@ -281,8 +281,8 @@ fn state_messages_reject_oversized_values_before_writing() {
         document,
         area: StorageAreaKind::Local,
         entry: StorageEntry {
-            key: "x".repeat(crate::limits::MAX_STORAGE_KEY_BYTES + 1),
-            value: String::new(),
+            key: "x".repeat(crate::limits::MAX_STORAGE_KEY_BYTES + 1).into(),
+            value: "".into(),
         },
     });
     assert!(matches!(

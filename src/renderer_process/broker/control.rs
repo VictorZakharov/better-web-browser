@@ -67,6 +67,19 @@ impl RendererSession {
         }
     }
 
+    /// Consume only an accepted front event; never skip an ordering barrier.
+    /// The predicate runs under the queue lock and must not re-enter the session.
+    pub fn try_event_if(
+        &self,
+        accepts: impl FnOnce(&RendererEvent) -> bool,
+    ) -> Result<Option<RendererEvent>, String> {
+        match self.events.try_recv_if(accepts) {
+            Ok(event) => Ok(Some(event)),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => Err("renderer broker has exited".into()),
+        }
+    }
+
     /// Installs a nonblocking, non-panicking event-loop wake callback. Already queued
     /// events wake immediately. The callback runs outside the queue lock and must
     /// not consume events itself. Register once before starting document work.

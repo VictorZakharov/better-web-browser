@@ -50,7 +50,8 @@ for machine-readable `data-status`/`data-sequence` diagnostics.
 
 The live Coron, Palawan Wikipedia run no longer reports the formerly caught
 `PerformanceObserver is not defined` exception. ResourceLoader's unrelated `invalid storage
-value` warning remains. This feature is not a page-load speedup measurement or a claim of
+value` warning remained at that checkpoint; the subsequent [Web Storage slice](web-storage.md)
+fixes the value path. This feature is not a page-load speedup measurement or a claim of
 pixel-identical rendering.
 
 ## Explicit boundaries

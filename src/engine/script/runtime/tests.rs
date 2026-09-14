@@ -9,6 +9,7 @@ mod document_lifecycle;
 mod dynamic_readiness;
 mod idle;
 mod scheduling;
+mod storage_values;
 mod timeouts;
 
 #[test]
