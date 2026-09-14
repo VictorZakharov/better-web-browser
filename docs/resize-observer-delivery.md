@@ -43,8 +43,8 @@ The reference run uses unified-headless Chromium, muted audio, and an isolated t
 | Fixture assertion | FAIL | PASS | PASS |
 
 The 18 selected upstream ResizeObserver files improve from 10 passing on the merged baseline
-to 18 passing, without expected-failure allowances. The complete curated gate is 145 files /
-753 harness subtests. Local tests additionally cover branding, fractional DPR, cancellation,
+to 18 passing, without expected-failure allowances. The complete curated gate is 153 files /
+765 harness subtests. Local tests additionally cover branding, fractional DPR, cancellation,
 callback microtasks/exceptions, first presentation, late registration, and animation-frame ordering.
 Screenshots confirm the component result, not whole-browser visual parity: surrounding line-height
 and vertical spacing still differ from Chromium. These are compatibility results, **not load-time

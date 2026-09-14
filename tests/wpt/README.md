@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 145 curated cases run with one offline command:
+After the fixtures exist, all 153 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -38,6 +38,12 @@ per case. JavaScript `.any.js` and `.window.js` files run in a generated Window 
 curated set intentionally avoids WPT server substitutions and special hostnames. A manifest can
 list immutable relative support files from the same pinned upstream checkout; expanding into tests
 that need WPT server behavior should use the official WPT server rather than ad-hoc emulation.
+
+The runner explicitly requests 100% device scale and rejects a report at another scale. Several
+upstream assertions assume that environment: at 125%, Chrome also snaps a 1 CSS-pixel border to
+0.8 CSS pixels and produces different classic-scrollbar geometry. This is test-environment control,
+not a change to normal browsing, which continues to use the monitor's DPI. Other hidden comparisons
+can request `-DeviceScaleFactor` (1–4) with `scripts/run-hidden-benchmark.ps1`; omitting it keeps native DPI.
 
 CI passes `-BuildProfile debug -Jobs 8`: conformance is not a performance measurement, and benchmark
 processes launched by this runner request an explicitly sized headless UI-thread stack so large
@@ -53,15 +59,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 145 passing files
-and 753 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 153 passing files
+and 765 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 145 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 153 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -75,6 +81,7 @@ follows:
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
 | CSS cascade, selectors, and layout | 28 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
+| CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
 | Custom Elements | 1 | Registry isolation, definition lookup, and when-defined promises |

@@ -21,6 +21,7 @@ pub(super) struct BrowserState {
     pub(super) content_brush: Hbrush,
     pub(super) omnibox_brush: Hbrush,
     pub(super) dpi: u32,
+    pub(super) dpi_override: Option<u32>,
     pub(super) chrome: ChromeLayout,
     pub(super) processing_background_tab: bool,
     pub(super) suppress_page_control_focus: bool,
@@ -59,6 +60,7 @@ impl BrowserState {
             app,
             tabs,
             LaunchOptions {
+                dpi_override: None,
                 startup_url: None,
                 open_task_manager: false,
                 benchmark: None,
@@ -80,6 +82,7 @@ impl BrowserState {
             content_brush: unsafe { CreateSolidBrush(rgb(250, 250, 248)) },
             omnibox_brush: unsafe { CreateSolidBrush(CHROME_THEME.field) },
             dpi: DEFAULT_DPI,
+            dpi_override: options.dpi_override,
             chrome: ChromeLayout::default(),
             processing_background_tab: false,
             suppress_page_control_focus: false,

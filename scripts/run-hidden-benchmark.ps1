@@ -22,6 +22,8 @@ param(
     [int] $WindowWidth = 1280,
     [ValidateRange(240, 4320)]
     [int] $WindowHeight = 720,
+    [ValidateRange(1, 4)]
+    [double] $DeviceScaleFactor,
     [ValidatePattern('^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$')]
     [string] $Locale = 'en-US',
     [switch] $FreshProfile,
@@ -110,6 +112,10 @@ function ConvertTo-WindowsCommandLineArgument {
 $arguments = [System.Collections.Generic.List[string]]::new()
 $arguments.Add('--benchmark')
 $arguments.Add($Url)
+if ($PSBoundParameters.ContainsKey('DeviceScaleFactor')) {
+    $arguments.Add('--device-scale-factor')
+    $arguments.Add($DeviceScaleFactor.ToString([Globalization.CultureInfo]::InvariantCulture))
+}
 $arguments.Add('--output')
 $arguments.Add($outputPath)
 $arguments.Add('--settle-ms')

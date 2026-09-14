@@ -11,9 +11,11 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 static NEXT_ARTIFACT_ID: AtomicU64 = AtomicU64::new(0);
+pub(crate) const DEVICE_SCALE_FACTOR: u32 = 1;
 
 #[derive(Deserialize)]
 struct BenchmarkReport {
+    device_scale_factor: f64,
     error: Option<String>,
     http_status: u32,
     #[serde(default)]
@@ -41,6 +43,8 @@ pub(crate) fn run(browser: &Path, url: &str, settle_ms: u64, timeout_ms: u64) ->
         .args([
             "--benchmark",
             url,
+            "--device-scale-factor",
+            &DEVICE_SCALE_FACTOR.to_string(),
             "--output",
             path_text(&artifacts.report),
             "--settle-ms",
@@ -49,6 +53,7 @@ pub(crate) fn run(browser: &Path, url: &str, settle_ms: u64, timeout_ms: u64) ->
             RESULT_MARKER,
         ])
         .env("BREEZE_HEADLESS_LARGE_STACK", "1")
+        .env("BREEZE_REQUIRE_HIDDEN_BENCHMARK", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr_file));
     configure_hidden(&mut command);
@@ -111,6 +116,18 @@ fn observe_benchmark(
     benchmark: BenchmarkReport,
     process_stderr: Option<String>,
 ) -> Observation {
+    // Border snapping and classic scrollbar sizes depend on scale. Reject a mismatched
+    // environment instead of blaming a standards test or silently accepting native DPI.
+    if benchmark.device_scale_factor != f64::from(DEVICE_SCALE_FACTOR) {
+        return crash_with_stderr(
+            started,
+            format!(
+                "WPT requires device scale {DEVICE_SCALE_FACTOR}, browser reported {}",
+                benchmark.device_scale_factor
+            ),
+            process_stderr,
+        );
+    }
     let harness = match harness_report(&benchmark.javascript_console) {
         Ok(harness) => harness,
         Err(detail) => {
@@ -277,6 +294,17 @@ impl Drop for Artifacts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_a_browser_report_at_the_wrong_scale() {
+        let benchmark = serde_json::from_str::<BenchmarkReport>(
+            r#"{"device_scale_factor":1.25,"http_status":200}"#,
+        )
+        .unwrap();
+        let result = observe_benchmark(Instant::now(), benchmark, None);
+        assert_eq!(result.actual, ActualStatus::Crash);
+        assert!(result.detail.unwrap().contains("browser reported 1.25"));
+    }
 
     #[test]
     fn parses_a_marker_after_the_console_level_prefix() {
