@@ -61,6 +61,7 @@
                 v: bytesToBase64(value.__bytes), y: value.type,
                 n: value.name, m: value.lastModified
             };
+            if (value instanceof QuotaExceededError) return { t: 'quota-error', id, m: value.message, q: value.quota, r: value.requested };
             if (value instanceof Error) return { t: 'error', id, n: value.name, m: value.message, s: value.stack };
             const prototype = Object.getPrototypeOf(value);
             if (prototype !== Object.prototype && prototype !== null) return fail();
@@ -97,6 +98,9 @@
                 else return fail();
             } else if (node.t === 'blob') value = new Blob([base64ToBytes(node.v)], { type: node.y });
             else if (node.t === 'file') value = new File([base64ToBytes(node.v)], node.n, { type: node.y, lastModified: node.m });
+            else if (node.t === 'quota-error') value = new QuotaExceededError(node.m, {
+                ...(node.q === null ? {} : { quota: node.q }), ...(node.r === null ? {} : { requested: node.r }),
+            });
             else if (node.t === 'error') { value = new Error(node.m); value.name = node.n; value.stack = node.s; }
             else if (node.t === 'object') value = node.n ? Object.create(null) : {};
             else return fail();

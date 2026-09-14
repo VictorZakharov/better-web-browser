@@ -50,8 +50,8 @@ impl IncomingStorage {
         }
         let bytes = self
             .bytes
-            .checked_add(item.entry.key.len())
-            .and_then(|total| total.checked_add(item.entry.value.len()))
+            .checked_add(item.entry.key.byte_len())
+            .and_then(|total| total.checked_add(item.entry.value.byte_len()))
             .ok_or_else(|| "storage snapshot byte length overflow".to_string())?;
         if bytes > MAX_STORAGE_BYTES_PER_ORIGIN {
             return Err("storage snapshot exceeded its byte budget".into());
@@ -358,7 +358,7 @@ mod tests {
                     area: StorageAreaKind::Local,
                     entry: StorageEntry {
                         key: "x".into(),
-                        value: String::new(),
+                        value: "".into(),
                     },
                 })
                 .is_err()

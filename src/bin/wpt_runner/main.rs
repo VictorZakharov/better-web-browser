@@ -2,6 +2,7 @@ mod browser;
 mod cli;
 mod manifest;
 mod report;
+mod result_transport;
 mod server;
 mod wrapper;
 

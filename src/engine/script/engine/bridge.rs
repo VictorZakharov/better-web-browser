@@ -113,6 +113,24 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    // Check lengths before copying untrusted strings into native allocations.
+    if matches!(
+        operation.as_str(),
+        "storageGet" | "storageSet" | "storageRemove"
+    ) {
+        let units: usize = (2..arguments.length())
+            .filter_map(|index| v8::Local::<v8::String>::try_from(arguments.get(index)).ok())
+            .map(|value| value.length())
+            .sum();
+        if units > crate::limits::MAX_STORAGE_BYTES_PER_ORIGIN {
+            return_value.set(match operation.as_str() {
+                "storageSet" => v8::Boolean::new(scope, false).into(),
+                "storageGet" => v8::null(scope).into(),
+                _ => v8::undefined(scope).into(),
+            });
+            return;
+        }
+    }
     if operation == "arrayBufferDetach" {
         let value = arguments.get(1);
         let Ok(buffer) = v8::Local::<v8::ArrayBuffer>::try_from(value) else {
@@ -142,7 +160,16 @@ fn host_call_callback(
     let bridge_started = bridge.profile_start();
     let mut values = Vec::with_capacity(arguments.length() as usize);
     for index in 0..arguments.length() {
-        match value_from_v8(scope, arguments.get(index)) {
+        let value = if index >= 2
+            && matches!(
+                operation.as_str(),
+                "storageGet" | "storageSet" | "storageRemove"
+            ) {
+            storage_value_from_v8(scope, arguments.get(index))
+        } else {
+            value_from_v8(scope, arguments.get(index))
+        };
+        match value {
             Ok(value) => values.push(value),
             Err(error) => {
                 throw_error(scope, error);
@@ -225,6 +252,11 @@ pub(super) fn value_to_v8<'s>(
         JsValue::String(value) => v8::String::new(scope, value)
             .ok_or_else(|| allocation_error("string"))?
             .into(),
+        JsValue::Utf16(value) => {
+            v8::String::new_from_two_byte(scope, value.units(), v8::NewStringType::Normal)
+                .ok_or_else(|| allocation_error("storage string"))?
+                .into()
+        }
         JsValue::Bytes(value) => {
             let backing = v8::ArrayBuffer::new_backing_store_from_vec(value.clone()).make_shared();
             let buffer = v8::ArrayBuffer::with_backing_store(scope, &backing);
@@ -274,4 +306,19 @@ fn allocation_error(value: &str) -> JsError {
         kind: JsErrorKind::Range,
         message: format!("V8 could not allocate {value}"),
     }
+}
+
+fn storage_value_from_v8(
+    scope: &mut v8::PinScope,
+    value: v8::Local<v8::Value>,
+) -> JsResult<JsValue> {
+    let value = v8::Local::<v8::String>::try_from(value).map_err(|_| JsError {
+        kind: JsErrorKind::Type,
+        message: "storage bridge requires already-converted DOMStrings".into(),
+    })?;
+    let mut units = vec![0; value.length()];
+    value.write_v2(scope, 0, &mut units, v8::WriteFlags::empty());
+    Ok(JsValue::Utf16(crate::storage::StorageString::from_units(
+        units,
+    )))
 }

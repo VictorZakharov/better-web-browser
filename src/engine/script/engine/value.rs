@@ -77,6 +77,7 @@ pub(in crate::engine::script) enum JsValue {
     Boolean(bool),
     Number(f64),
     String(String),
+    Utf16(crate::storage::StorageString),
     Bytes(Vec<u8>),
     Array(Vec<JsValue>),
     Object(Vec<(String, JsValue)>),
@@ -118,6 +119,7 @@ impl JsValue {
             Self::Boolean(value) => *value,
             Self::Number(value) => *value != 0.0 && !value.is_nan(),
             Self::String(value) => !value.is_empty(),
+            Self::Utf16(value) => !value.units().is_empty(),
             Self::Bytes(_) | Self::Array(_) | Self::Object(_) => true,
         }
     }
@@ -136,6 +138,7 @@ impl JsValue {
             Self::Boolean(value) => value.to_string(),
             Self::Number(value) => value.to_string(),
             Self::String(value) => value.clone(),
+            Self::Utf16(value) => String::from_utf16_lossy(value.units()),
             Self::Bytes(_) => "[object Uint8Array]".into(),
             Self::Array(values) => values
                 .iter()

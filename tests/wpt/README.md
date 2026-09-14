@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 192 curated cases run with one offline command:
+After the fixtures exist, all 215 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -61,15 +61,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 192 passing files
-and 886 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 215 passing files
+and 2,126 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 192 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 215 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -83,6 +83,7 @@ follows:
 | URLs | 5 | URL and URLSearchParams bindings |
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
+| Web Storage | 23 | Lossless strings, method/named access, conversions, quotas, enumeration, and independent areas |
 | CSS cascade, selectors, and layout | 28 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
 | CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |
@@ -96,6 +97,10 @@ limited to upstream testharness files that are deterministic in a plain loopback
 exercise implemented alpha surfaces. Tests needing special WPT hosts, server substitutions,
 testdriver, HTTPS, or additional support servers remain outside this focused gate; they are not
 silently copied or rewritten.
+
+Every case uses an isolated temporary profile. Large testharness completion reports are split into
+bounded, ordered console chunks and reassembled without omitting subtests; malformed or missing
+chunks fail the case. The ordinary renderer IPC text limits and upstream test timeouts are unchanged.
 
 ## Discovery sample
 

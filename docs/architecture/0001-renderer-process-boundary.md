@@ -266,7 +266,8 @@ compatibility evidence.
 | Resource | Initial ceiling | Enforcement |
 |---|---:|---|
 | IPC control payload | 256 KiB | Reject frame before payload allocation |
-| IPC payload, any kind | 8 MiB | Close session on a larger declared length |
+| Other bulk IPC payload | 8 MiB | Close session on a larger declared length |
+| Storage entry/mutation payload | 10 MiB + 26 bytes | UTF-16 wire bound plus 5 MiB origin validation; see [Web Storage](../web-storage.md) |
 | Navigation/presentation transfer chunk | 1 MiB | Sender chunks; receiver validates offset and declared total |
 | Fetch response chunk | 64 KiB | Producer and consumer reject a larger stream chunk |
 | Queued browser commands | 8 | UI uses nonblocking enqueue; reject overflow |

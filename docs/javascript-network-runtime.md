@@ -57,8 +57,10 @@ request.
 
 Persistent cookies and origin-scoped `localStorage` are owned and versioned by the browser process.
 `sessionStorage` is owned by its top-level tab and is never serialized. Renderer realms receive only
-document-scoped projections and submit typed mutation requests; the browser always replies with the
-resulting authoritative snapshot. See
+document-scoped projections and submit typed mutation requests; rejected storage mutations trigger
+an authoritative correction, while accepted writes need no redundant snapshot echo. The
+[Web Storage value contract](web-storage.md) covers lossless strings, named properties, quotas,
+large-value transport, batched persistence, and profile migration. See
 [ADR 0004](architecture/0004-browser-state-and-fetch-broker.md) for persistence, quotas, and the
 `cookie_store` dependency evaluation.
 

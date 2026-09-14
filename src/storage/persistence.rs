@@ -4,10 +4,10 @@ use super::*;
 use crate::limits::{MAX_PERSISTED_STORAGE_BYTES, MAX_STORAGE_ORIGINS};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct PersistedStorage {
@@ -19,7 +19,7 @@ struct PersistedStorage {
 struct PersistedOrigin {
     origin: String,
     version: u64,
-    entries: Vec<(String, String)>,
+    entries: Vec<(StorageString, StorageString)>,
 }
 
 pub(super) fn load(path: &Path) -> Result<LocalStorageState, StorageError> {
@@ -32,12 +32,15 @@ pub(super) fn load(path: &Path) -> Result<LocalStorageState, StorageError> {
 
 pub(super) fn encode(state: &LocalStorageState) -> Result<Vec<u8>, StorageError> {
     let disk = PersistedStorage::from_state(state);
-    let bytes = serde_json::to_vec_pretty(&disk)
-        .map_err(|error| StorageError::Persistence(error.to_string()))?;
-    if bytes.len() > MAX_PERSISTED_STORAGE_BYTES {
-        return Err(StorageError::QuotaExceeded);
-    }
-    Ok(bytes)
+    let mut output = BoundedOutput(Vec::new());
+    serde_json::to_writer(&mut output, &disk).map_err(|error| {
+        if error.is_io() {
+            StorageError::QuotaExceeded
+        } else {
+            StorageError::Persistence(error.to_string())
+        }
+    })?;
+    Ok(output.0)
 }
 
 pub(super) fn write(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
@@ -45,11 +48,15 @@ pub(super) fn write(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
 }
 
 fn load_file(path: &Path) -> Result<Option<LocalStorageState>, StorageError> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let file = match File::open(path) {
+        Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(StorageError::Persistence(error.to_string())),
     };
+    let mut bytes = Vec::new();
+    file.take(MAX_PERSISTED_STORAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| StorageError::Persistence(error.to_string()))?;
     if bytes.len() > MAX_PERSISTED_STORAGE_BYTES {
         return Err(StorageError::QuotaExceeded);
     }
@@ -81,7 +88,9 @@ impl PersistedStorage {
     }
 
     fn into_state(self) -> Result<LocalStorageState, StorageError> {
-        if self.format_version != FORMAT_VERSION || self.origins.len() > MAX_STORAGE_ORIGINS {
+        if !matches!(self.format_version, 1 | FORMAT_VERSION)
+            || self.origins.len() > MAX_STORAGE_ORIGINS
+        {
             return Err(StorageError::Invalid("storage file metadata"));
         }
         let mut origins = HashMap::with_capacity(self.origins.len());
@@ -132,4 +141,19 @@ fn write_recoverable(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
 fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("bak")
+}
+
+struct BoundedOutput(Vec<u8>);
+
+impl Write for BoundedOutput {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.0.len().saturating_add(bytes.len()) > MAX_PERSISTED_STORAGE_BYTES {
+            return Err(std::io::Error::other("storage file quota exceeded"));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

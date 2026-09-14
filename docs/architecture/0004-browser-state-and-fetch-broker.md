@@ -127,7 +127,8 @@ length-declared chunks. Subresource responses are progressive from WinHTTP throu
 | Resource | Ceiling | Failure behavior |
 | --- | ---: | --- |
 | IPC control payload | 256 KiB | Reject frame before unbounded allocation |
-| IPC frame payload | 8 MiB | Close renderer session |
+| Other bulk IPC frame payload | 8 MiB | Close renderer session |
+| Storage entry/mutation frame | 10 MiB + 26 bytes | UTF-16 wire bound; also enforce 5 MiB origin quota |
 | Fetch response chunk | 64 KiB | Reject stream contract |
 | Queued Fetch chunks | 8 | Backpressure network worker |
 | Queued browser commands | 8 | Reject without blocking the UI |
@@ -153,9 +154,11 @@ The source of truth for these values is `src/limits.rs`.
   `Response` body is still assembled by the renderer before its current stream object consumes it.
 - Synchronous WinHTTP cancellation is cooperative around platform calls and between chunks; a call
   already inside WinHTTP may run until its configured timeout.
-- Cross-document `storage` event broadcast, storage property-name traps, dynamic imports/import
+- Cross-document `storage` event broadcast, dynamic imports/import
   maps, Shared/Service Workers, and the wider browser API surface remain separate compatibility
   work.
+- Storage property-name traps, lossless strings, bounded large values, and atomic batched
+  persistence are now covered by [Web Storage values](../web-storage.md).
 - These stores are early browser implementations, not a security audit or a claim of complete
   RFC/HTML conformance.
 

@@ -35,6 +35,20 @@
             },
             tests: results
         };
-        console.log(marker + JSON.stringify(report));
+        // ASCII JSON also prevents chunk boundaries from splitting surrogate pairs.
+        const payload = JSON.stringify(report).replace(/[\u007f-\uffff]/g,
+            unit => '\\u' + unit.charCodeAt(0).toString(16).padStart(4, '0'));
+        // Keep each diagnostic within the normal IPC text limit. Large upstream
+        // files still report every subtest; the reader rejects missing chunks.
+        if (payload.length <= 8192) {
+            console.log(marker + payload);
+        } else {
+            const count = Math.ceil(payload.length / 8192);
+            if (count > 128) throw new Error('WPT callback report exceeds transport budget');
+            for (let index = 0; index < count; index++) {
+                console.log('__BREEZE_WPT_CHUNK__' + JSON.stringify({ index, data: payload.slice(index * 8192, (index + 1) * 8192) }));
+            }
+            console.log(marker + JSON.stringify({ chunks: count }));
+        }
     });
 })();

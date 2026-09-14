@@ -56,9 +56,11 @@ impl EventSender {
     pub(super) fn send(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         if matches!(
             event,
-            RendererEvent::FetchBatch { .. } | RendererEvent::FetchAbort { .. }
+            RendererEvent::FetchBatch { .. }
+                | RendererEvent::FetchAbort { .. }
+                | RendererEvent::StorageMutation(_)
         ) {
-            self.send_lossless_fetch(event)
+            self.send_lossless(event)
         } else {
             self.try_send(event)
         }
@@ -149,7 +151,7 @@ impl EventSender {
         Ok(())
     }
 
-    fn send_lossless_fetch(&self, event: RendererEvent) -> Result<(), ProtocolError> {
+    fn send_lossless(&self, event: RendererEvent) -> Result<(), ProtocolError> {
         let mut state = self
             .queue
             .state
@@ -157,9 +159,11 @@ impl EventSender {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         while state.receiver_open
             && (state.events.len() >= MAX_QUEUED_RENDERER_EVENTS
-                || queued_fetch_batches(&state.events) >= MAX_QUEUED_RENDERER_FETCH_BATCHES)
+                || queued_fetch_batches(&state.events) >= MAX_QUEUED_RENDERER_FETCH_BATCHES
+                || storage_bytes(&state.events).saturating_add(event_storage_bytes(&event))
+                    > crate::limits::MAX_PENDING_STORAGE_BYTES)
         {
-            // A Fetch batch is valid page work, not a protocol violation. Apply bounded
+            // Fetch and storage writes are valid page work. Apply bounded
             // backpressure on the broker thread until the Win32 thread drains its event slot.
             // Closing the browser-side receiver releases this wait during renderer teardown.
             state = self
@@ -198,6 +202,17 @@ fn queued_fetch_batches(events: &VecDeque<RendererEvent>) -> usize {
         .iter()
         .filter(|event| matches!(event, RendererEvent::FetchBatch { .. }))
         .count()
+}
+
+fn event_storage_bytes(event: &RendererEvent) -> usize {
+    match event {
+        RendererEvent::StorageMutation(request) => request.mutation.byte_len(),
+        _ => 0,
+    }
+}
+
+fn storage_bytes(events: &VecDeque<RendererEvent>) -> usize {
+    events.iter().map(event_storage_bytes).sum()
 }
 
 fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::DocumentId> {
@@ -328,6 +343,8 @@ impl Drop for EventReceiver {
 #[cfg(test)]
 mod teardown_tests;
 
+#[cfg(test)]
+mod storage_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

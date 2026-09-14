@@ -1,7 +1,7 @@
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn unique_storage(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+pub(super) fn unique_storage(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -11,7 +11,11 @@ fn unique_storage(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     (directory, path)
 }
 
-fn mutation(area: StorageAreaKind, version: u64, operation: StorageOperation) -> StorageMutation {
+pub(super) fn mutation(
+    area: StorageAreaKind,
+    version: u64,
+    operation: StorageOperation,
+) -> StorageMutation {
     StorageMutation {
         area,
         expected_version: version,
@@ -207,7 +211,7 @@ fn exhausted_versions_reject_changes_without_mutating_state() {
         },
     );
     assert!(matches!(area.apply(&change), Err(StorageError::Invalid(_))));
-    assert_eq!(area.get("stable"), Some("value"));
+    assert_eq!(area.get(&"stable".into()), Some(&"value".into()));
 
     let noop = mutation(
         StorageAreaKind::Local,

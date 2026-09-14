@@ -69,7 +69,8 @@ impl BrowserState {
             status.snapshot = Some(snapshot);
         });
 
-        for event in events {
+        let mut events = events.into_iter().peekable();
+        while let Some(event) = events.next() {
             match event {
                 RendererEvent::Diagnostic { code, text } => {
                     if let Some(tab) = self.tabs.get_mut(id) {
@@ -192,9 +193,21 @@ impl BrowserState {
                     }
                 }
                 RendererEvent::StorageMutation(request) => {
+                    // Only combine adjacent intents in this bounded UI turn. Navigation,
+                    // presentation, and other-area events remain ordering barriers.
+                    let document = request.document;
+                    let area = request.mutation.area;
+                    let mut requests = vec![request];
+                    while matches!(events.peek(), Some(RendererEvent::StorageMutation(next))
+                        if next.document == document && next.mutation.area == area)
+                    {
+                        if let Some(RendererEvent::StorageMutation(next)) = events.next() {
+                            requests.push(next);
+                        }
+                    }
                     let mut correction_error = None;
                     self.process_for_tab(id, |state| {
-                        correction_error = state.apply_renderer_storage_mutation(request).err();
+                        correction_error = state.apply_renderer_storage_mutations(requests).err();
                     });
                     if let Some(error) = correction_error {
                         self.contain_page_engine_failure(id, error);

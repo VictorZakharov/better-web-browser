@@ -3,6 +3,7 @@
 use super::binding_helpers::*;
 use super::*;
 
+mod storage;
 mod task_scheduling;
 
 pub(super) fn dispatch_host_call(
@@ -11,6 +12,9 @@ pub(super) fn dispatch_host_call(
     state: &mut HostState,
 ) -> JsResult<JsValue> {
     if let Some(value) = task_scheduling::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = storage::dispatch(operation, args, state)? {
         return Ok(value);
     }
     super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;
@@ -191,42 +195,6 @@ pub(super) fn dispatch_host_call(
             state.set_cookie(argument_string(args, 1)?);
             Ok(JsValue::undefined())
         }
-        "storageLength" => {
-            let area = storage_area(args, 1)?;
-            Ok(JsValue::from(state.storage_len(area) as u32))
-        }
-        "storageKey" => {
-            let area = storage_area(args, 1)?;
-            let index = argument_id(args, 2) as usize;
-            Ok(state
-                .storage_key(area, index)
-                .map_or_else(JsValue::null, |value| js_string(value.to_string())))
-        }
-        "storageGet" => {
-            let area = storage_area(args, 1)?;
-            let key = argument_string(args, 2)?;
-            Ok(state
-                .storage_get(area, &key)
-                .map_or_else(JsValue::null, |value| js_string(value.to_string())))
-        }
-        "storageSet" => {
-            let area = storage_area(args, 1)?;
-            let key = argument_string(args, 2)?;
-            let value = argument_string(args, 3)?;
-            state.storage_set(area, key, value).map_err(storage_error)?;
-            Ok(JsValue::undefined())
-        }
-        "storageRemove" => {
-            let area = storage_area(args, 1)?;
-            let key = argument_string(args, 2)?;
-            state.storage_remove(area, key).map_err(storage_error)?;
-            Ok(JsValue::undefined())
-        }
-        "storageClear" => {
-            let area = storage_area(args, 1)?;
-            state.storage_clear(area).map_err(storage_error)?;
-            Ok(JsValue::undefined())
-        }
         "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
         "resolveUrl" => {
             let value = argument_string(args, 1)?;
@@ -279,20 +247,4 @@ pub(super) fn dispatch_host_call(
             .with_message(format!("unsupported browser host operation: {operation}"))
             .into()),
     }
-}
-
-fn storage_area(args: &[JsValue], index: usize) -> JsResult<crate::storage::StorageAreaKind> {
-    match argument_string(args, index)?.as_str() {
-        "local" => Ok(crate::storage::StorageAreaKind::Local),
-        "session" => Ok(crate::storage::StorageAreaKind::Session),
-        _ => Err(JsNativeError::typ()
-            .with_message("invalid Web Storage area")
-            .into()),
-    }
-}
-
-fn storage_error(error: crate::storage::StorageError) -> engine::JsError {
-    JsNativeError::error()
-        .with_message(error.to_string())
-        .into()
 }

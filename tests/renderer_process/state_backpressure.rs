@@ -33,7 +33,7 @@ fn web_storage_correction_survives_saturated_command_queue() {
                     version,
                     entries: vec![StorageEntry {
                         key: "marker".into(),
-                        value: format!("accepted-{version}"),
+                        value: format!("accepted-{version}").into(),
                     }],
                 },
             )
