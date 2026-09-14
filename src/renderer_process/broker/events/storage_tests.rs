@@ -105,3 +105,30 @@ fn teardown_releases_the_event_after_a_full_storage_queue() {
     // The receiver may close before or after the producer obtains the lock.
     let _ = producer.join().unwrap();
 }
+
+#[test]
+fn conditional_receive_never_skips_or_discards_a_front_barrier() {
+    let (sender, receiver) = bounded();
+    sender
+        .send(RendererEvent::Diagnostic {
+            code: 1,
+            text: "barrier".into(),
+        })
+        .unwrap();
+    sender.send(mutation(1)).unwrap();
+    assert!(matches!(
+        receiver.try_recv_if(|event| matches!(event, RendererEvent::StorageMutation(_))),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+    assert_eq!(receiver.pending(), 2);
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::Diagnostic { .. }
+    ));
+    assert!(matches!(
+        receiver
+            .try_recv_if(|event| matches!(event, RendererEvent::StorageMutation(_)))
+            .unwrap(),
+        RendererEvent::StorageMutation(_)
+    ));
+}

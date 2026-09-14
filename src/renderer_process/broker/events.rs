@@ -320,11 +320,21 @@ impl EventReceiver {
     }
 
     pub(super) fn try_recv(&self) -> Result<RendererEvent, mpsc::TryRecvError> {
+        self.try_recv_if(|_| true)
+    }
+
+    pub(super) fn try_recv_if(
+        &self,
+        accepts: impl FnOnce(&RendererEvent) -> bool,
+    ) -> Result<RendererEvent, mpsc::TryRecvError> {
         let mut state = self
             .queue
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.events.front().is_some_and(|event| !accepts(event)) {
+            return Err(mpsc::TryRecvError::Empty);
+        }
         let result = match state.events.pop_front() {
             Some(event) => Ok(event),
             None if state.receiver_open && state.sender_open => Err(mpsc::TryRecvError::Empty),

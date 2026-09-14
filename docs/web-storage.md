@@ -39,8 +39,11 @@ change the origin's persistent quota, and no new dependency or site-specific rul
 Trailing presentations and diagnostics also wait for a queue slot after coalescing, preserving
 FIFO barriers when storage fills the event queue. The nonblocking teardown path stays nonblocking.
 
-Adjacent same-document, same-area intents within the existing 32-event UI turn are committed
-together. Every version is checked in order; other event kinds remain ordering barriers. One
+Adjacent same-document, same-area intents are committed together. The normal UI drain remains
+32 events; a trailing storage transaction can extend to 256 intents / 1 MiB of quota bytes using
+only already-queued entries. The front event is checked before removal, so the extension never
+consumes another document, area, or event kind. Large entries already in the normal drain do not
+qualify for an extension. Every version is checked in order. One
 localStorage batch produces one file rotation/flush. A failed batch restores the previous map and
 version while still holding the transaction lock. The renderer's optimistic map is repaired through
 the existing authoritative snapshot path if browser-side persistence rejects an intent.
@@ -77,7 +80,9 @@ All 23 files pass, covering 1,240 upstream assertions. With isolated profiles he
 two quota-independence stress files changed from timeouts (14.15 / 20.05 seconds) to passing
 in 2.81 / 3.18 seconds after batching. These are single local test runs, not navigation benchmarks.
 The complete curated gate passes 215 files / 2,126 assertions, including a debug-build run with
-eight parallel jobs. A second Wikipedia process reused
+eight parallel jobs. In that debug configuration, extending the bounded adjacent batch reduced
+the quota-independence cases from 7.57 / 5.77 seconds to 2.36 / 2.32 seconds in local single runs;
+the upstream tests and deadlines were not changed. A second Wikipedia process reused
 the saved profile and activated the Climate anchor without JavaScript errors or a storage warning;
 its table screenshot remained readable without overlapping rows.
 

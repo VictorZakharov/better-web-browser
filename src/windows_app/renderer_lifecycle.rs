@@ -1,5 +1,6 @@
 //! Nonblocking ownership of one sandboxed renderer lifecycle per browser tab.
 
+mod event_batch;
 mod events;
 pub(super) mod notifications;
 

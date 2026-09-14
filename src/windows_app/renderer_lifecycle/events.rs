@@ -1,4 +1,3 @@
-use super::notifications::EVENTS_PER_TURN;
 use super::*;
 use crate::windows_app::navigation_transaction::PresentationDeadline;
 use better_web_browser::renderer_process::{RendererEvent, RendererExitReason, RendererState};
@@ -36,13 +35,9 @@ impl BrowserState {
         let snapshot_and_events = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_session.as_ref().map(|session| {
                 let snapshot = session.snapshot();
-                let mut events = Vec::new();
-                for _ in 0..EVENTS_PER_TURN {
-                    match session.try_event() {
-                        Ok(Some(event)) => events.push(event),
-                        _ => break,
-                    }
-                }
+                let events = super::event_batch::collect(|accepts| {
+                    session.try_event_if(accepts).ok().flatten()
+                });
                 (
                     tab.title.clone(),
                     snapshot,
