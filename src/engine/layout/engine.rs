@@ -175,6 +175,7 @@ fn layout_page_for_output<M: TextMeasurer>(
         Some(viewport_height.max(1.0)),
         None,
     );
+    inline_layout::geometry::finish(&root, styles, &mut engine.output);
     engine.output.content_height = metrics
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))

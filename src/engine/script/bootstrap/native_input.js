@@ -112,6 +112,7 @@
         configurable: false,
         value(input) {
             switch (input.kind) {
+                case 'fragmentNavigation': navigateLocation(input.url, false); return true;
                 case 'wheel': return nativeTarget(input.target).dispatchEvent(markTrusted(new WheelEvent('wheel', {
                     bubbles: true, cancelable: true, composed: true, view: windowObject,
                     clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,

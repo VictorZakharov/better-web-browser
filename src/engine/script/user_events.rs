@@ -66,6 +66,9 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             .unwrap_or(0)
     };
     match event {
+        UserInputEvent::FragmentNavigation { url } => {
+            serde_json::json!({ "kind": "fragmentNavigation", "url": url })
+        }
         UserInputEvent::Wheel {
             target: node,
             x,

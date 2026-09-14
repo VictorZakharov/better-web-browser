@@ -228,6 +228,7 @@ pub(super) enum InlineAtom {
         color: Color,
         link: Option<String>,
         node_id: Option<NodeId>,
+        source_node: Option<NodeId>,
         line_height: f32,
         no_wrap: bool,
     },

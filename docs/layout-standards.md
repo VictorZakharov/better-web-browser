@@ -35,6 +35,35 @@ Grid/table intrinsic block-size probes are isolated from published paint, hit-te
 ResizeObserver state. Per-layout caches reuse nested intrinsic measurements; the final
 layout publishes each node once. This is a correctness change, not a loading-speed claim.
 
+### Hyperlink activation and section navigation (2026-09-14)
+
+Browsing acceptance caught a contents link selecting its label without moving the article.
+Hyperlink default actions now resolve the nearest DOM anchor after cancelable input
+dispatch; they no longer depend on a link-bearing text paint command. Block anchors,
+padding, images and nested children therefore retain their link action. Modified clicks
+still request another tab, rather than scrolling the current document.
+
+Same-document fragment links and `location.hash`/fragment `assign`/`replace` update the
+retained realm, URL/history and scroll position without a network reload. Fragment lookup
+tries literal IDs/named anchors before percent-decoded UTF-8, preserves literal `+`, and
+handles empty fragments, `top`, missing targets and nested scrollports. `hashchange`
+events carry old/new URLs and are queued after the synchronous update. Reader and page
+URL snapshots remain consistent at the renderer protocol boundary. Generic retained-realm
+and isolated-renderer tests cover these contracts against the
+[HTML fragment algorithms](https://html.spec.whatwg.org/multipage/browsing-the-web.html#scroll-to-the-fragment).
+
+The live check also exposed missing geometry for unadorned inline headings. Layout now
+retains text-source bounds separately from hyperlink interaction IDs and aggregates their
+inline ancestor bounds after final positioning. Painted and geometry-only layouts publish
+the same multi-line union, including nested formatting and transformed ancestors. Existing
+atomic/decorated boxes and containing blocks keep their own geometry rather than expanding
+to include overflowing descendants. This supplies both DOM rectangle queries and section
+scrolling; it does not implement per-line `getClientRects()` fragmentation.
+
+This is not complete navigation conformance: initial cross-document fragment scrolling,
+same-document Back/Forward restoration, target-focus/`:target` styling, ancestor revealing,
+scroll margins/padding and vertical-writing-mode alignment remain separate work.
+
 ### Intrinsic grid columns and browsing acceptance (2026-09-14)
 
 The Main Page acceptance capture exposed an off-screen sidebar: the grid allocator

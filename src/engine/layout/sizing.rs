@@ -82,6 +82,7 @@ pub(super) fn text_atom(
         color: style.color,
         link,
         node_id: interaction_node,
+        source_node,
         line_height: style.line_height,
         no_wrap: style.white_space == WhiteSpace::NoWrap,
     }

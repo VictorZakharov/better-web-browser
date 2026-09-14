@@ -180,9 +180,9 @@
     const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
     const location = {
         get href() { return currentUrl; },
-        set href(value) { currentUrl = host('navigate', String(value)); },
+        set href(value) { navigateLocation(value, false); },
         assign(value) { this.href = value; },
-        replace(value) { this.href = value; },
+        replace(value) { navigateLocation(value, true); },
         reload() { host('navigate', currentUrl); },
         toString() { return currentUrl; },
         get protocol() { return parseUrl(currentUrl).protocol; },
@@ -191,6 +191,10 @@
         get pathname() { return parseUrl(currentUrl).pathname; },
         get search() { return parseUrl(currentUrl).search; },
         get hash() { return parseUrl(currentUrl).hash; },
+        set hash(value) {
+            const target = host('setWebUrlComponent', currentUrl, 'hash', String(value) || '#');
+            if (target !== currentUrl) navigateLocation(target, false);
+        },
         get origin() { const parsed = parseUrl(currentUrl); return parsed.protocol + '//' + parsed.host; }
     };
     windowObject.location = location;

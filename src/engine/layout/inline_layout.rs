@@ -1,4 +1,5 @@
 use super::*;
+pub(super) mod geometry;
 mod wrapping;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {

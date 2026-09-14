@@ -34,6 +34,7 @@ mod element_scrolling;
 mod embedded_elements;
 mod events;
 mod forms;
+mod fragment_navigation;
 mod fullscreen;
 mod hyperlinks;
 mod intersection_observer;

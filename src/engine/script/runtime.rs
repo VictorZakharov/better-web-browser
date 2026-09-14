@@ -29,6 +29,10 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    pub(crate) fn document_url(&self) -> String {
+        self.host.borrow().document_url.clone()
+    }
+
     pub fn new(document: NodeRef, document_url: &str) -> Self {
         Self::new_with_character_set(document, document_url, "UTF-8")
     }

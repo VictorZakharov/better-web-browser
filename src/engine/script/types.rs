@@ -191,6 +191,9 @@ pub struct UserInputModifiers {
 
 #[derive(Debug, Clone)]
 pub enum UserInputEvent {
+    FragmentNavigation {
+        url: String,
+    },
     Wheel {
         target: Option<NodeRef>,
         x: f32,

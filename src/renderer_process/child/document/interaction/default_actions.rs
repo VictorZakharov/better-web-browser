@@ -16,8 +16,52 @@ impl DocumentRuntime {
         if self.script_runtime.is_none() && input.button == PointerButton::Primary {
             checkable::activate(&target.node, &self.page.dom.document, outcome);
         }
-        if let Some(url) = target.link.as_ref() {
-            return Ok(Some((url.clone(), navigation_disposition(input))));
+        // The DOM activation target, not the presence of a text paint command, owns a link.
+        // This also covers block anchors, images, padding and nested inline descendants.
+        let link = self.link_for_node(&target.node);
+        if let Some(url) = link {
+            let disposition = navigation_disposition(input);
+            let current = self
+                .script_runtime
+                .as_ref()
+                .map(ScriptRuntime::document_url)
+                .unwrap_or_else(|| self.page.source_url.clone());
+            if disposition == NavigationDisposition::CurrentTab
+                && crate::engine::fragment_navigation::is_same_document(&current, &url)
+            {
+                if self.script_runtime.is_some() {
+                    let fragment =
+                        self.dispatch_user_input(UserInputEvent::FragmentNavigation {
+                            url: url.clone(),
+                        })?;
+                    merge_outcome(outcome, fragment.outcome, self.page.dom.document.id());
+                } else {
+                    outcome.viewport_scroll_y =
+                        crate::engine::fragment_navigation::scroll_to_fragment(
+                            &self.page.dom.document,
+                            &url,
+                            &self.layout.node_bounds,
+                            &self.layout.scroll_boxes,
+                            self.layout.content_height - self.viewport.height,
+                        );
+                    if let Some(y) = outcome.viewport_scroll_y {
+                        self.page.dom.document.scroll_offset.set((0.0, y));
+                    }
+                    if current != url {
+                        outcome
+                            .history_actions
+                            .push(crate::engine::script::ScriptHistoryAction {
+                                url: url.clone(),
+                                replace: false,
+                            });
+                    }
+                    outcome.render_requested = true;
+                }
+                self.reader.source_url.clone_from(&url);
+                self.page.source_url = url;
+                return Ok(None);
+            }
+            return Ok(Some((url, disposition)));
         }
         let Some(control) = target.control.as_ref() else {
             return Ok(None);

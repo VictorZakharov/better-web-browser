@@ -24,6 +24,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 color: style.color,
                 link: None,
                 node_id: None,
+                source_node: None,
                 line_height: style.line_height,
                 no_wrap: false,
             });

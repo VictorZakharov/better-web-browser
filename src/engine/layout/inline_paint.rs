@@ -52,13 +52,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 color,
                 link,
                 node_id,
+                source_node,
                 ..
             } => {
                 let text = measured.text.unwrap_or_default();
+                // Geometry-only layout must publish the same inline fragments as painting.
+                let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
+                if !text.is_empty()
+                    && let Some(id) = source_node
+                {
+                    inline_layout::geometry::include(
+                        &mut self.output.node_bounds,
+                        *id,
+                        RectF {
+                            x,
+                            y: text_y,
+                            width: measured.width,
+                            height: measured.content_height,
+                        },
+                    );
+                }
                 if self.emit_paint && !text.is_empty() {
                     let shaped = self.measurer.shape(text, font);
                     // CSS 2.2 10.8.1: split extra line leading above and below the font.
-                    let text_y = atom_y + (measured.height - measured.content_height) / 2.0;
                     self.output.items.push(DisplayItem::Text {
                         rect: RectF {
                             x,
