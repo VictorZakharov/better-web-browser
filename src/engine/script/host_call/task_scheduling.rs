@@ -70,7 +70,7 @@ pub(super) fn dispatch(
                 argument_id(args, 1),
                 state.timers.now(),
                 next_task,
-                state.idle_blocked(),
+                state.idle_deadline_blocked(),
             ))
         }
         "timerCancel" => {

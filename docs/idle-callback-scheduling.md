@@ -16,10 +16,11 @@ and [Web IDL conversions](https://webidl.spec.whatwg.org/#es-unsigned-long).
 | Reposting | Another ordinary delayed timer | Only eligible in a later idle period, after older runnable callbacks |
 | Busy tasks | Renderer time could disappear at acknowledgement | Apply elapsed time before selecting tasks; retain the shell's dispatch-time clock across replies |
 
-Each idle callback and its microtask checkpoint return control to the embedder. Accepted native
+Each callback running during an idle period and its microtask checkpoint return control to the embedder. Accepted native
 input, fetch/worker completions, media and document lifecycle tasks, and rendering-observer work interrupt
 the current idle period. Ready dynamic scripts and unsubmitted fetch/worker work prevent starting
-an idle period. Expired timeout callbacks remain eligible under load. Callback exceptions reach
+an idle period. Expired timeout callbacks remain eligible under load and can share the ordinary
+bounded task slice, retaining a separate microtask checkpoint for each. Callback exceptions reach
 the global error event. Document cancellation destroys the realm and its queued idle work.
 
 `IdleDeadline` has private, read-only timeout state and receiver-checked accessors. Remaining time
@@ -27,6 +28,13 @@ never uses a page-overridden clock and is rounded down to millisecond precision,
 current Performance clock's resolution. Timeout conversion uses Web IDL `unsigned long`; zero
 does not request timeout delivery. A timeout registered partway through a callback starts at that
 registration point, rather than at the callback's beginning.
+
+A callback's own DOM mutation does not exhaust its active deadline. Dirty rendering state blocks
+admission of another idle callback, while the current callback retains the original monotonic
+budget and upcoming-task bound. Delivered input/network/rendering tasks still end the period.
+This distinction was corrected during the September 14 loading work: a regression test previously
+observed zero immediately after an attribute mutation. The same headless Chrome fixture retained
+15.3 ms of an initial 15.5 ms budget. Neither value is hard-coded in Breeze.
 
 ## Verification
 

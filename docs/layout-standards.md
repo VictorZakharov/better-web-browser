@@ -245,3 +245,76 @@ would not implement its inline-fragment contract. PerformanceObserver warnings a
 The current head passes 1,196 local tests (4 intentional ignores), Clippy, formatting and
 source-size checks. The WPT figures above are from the earlier form/layout head and have
 not been rerun for this scrolling/performance follow-up.
+
+## Further loading work (2026-09-14)
+
+The 5-6 second Appearance-panel result above is the previous published head, not the
+acceptance target. The target remains a fully initialized first viewport in under two
+seconds, judged from navigation-anchored screenshots with the controls present. A low
+page-ready counter alone does not satisfy it.
+
+The next optimizations remove repeated engine work without suppressing author scripts,
+changing stylesheet blocking, relaxing timeouts, or special-casing Wikipedia:
+
+- Selector candidate lists are partitioned by element/pseudo target. A bounded,
+  mutation-versioned ancestor-key filter rejects impossible matches before expensive
+  structural checks. Possible matches still use the complete selector matcher; tests
+  cover collisions, adoption, reparenting and shadow boundaries.
+- Unmatched generated pseudos no longer resolve full computed values. Explicit CSSOM
+  pseudo queries still resolve initial/inherited values, and later matching rules create
+  or remove generated boxes normally.
+- Ready timer tasks share the existing bounded execution slice, retaining a microtask
+  checkpoint after each callback and synchronous layout for geometry reads. Expired
+  idle callbacks are queued tasks outside an idle period; genuine idle callbacks still
+  yield to the embedder. This follows the
+  [idle-callback timeout contract](https://w3c.github.io/requestidlecallback/#the-idledeadline-interface),
+  not an extended idle deadline or a larger callback budget.
+- Active idle deadlines no longer report zero merely because their own callback changed
+  the DOM. Admission of another idle callback still waits for pending rendering. The
+  active deadline retains its original wall-clock/next-task bounds, and actual delivered
+  input/network/rendering tasks still interrupt it. The regression fails before the fix
+  and passes afterward; the equivalent hidden Chrome fixture retained 15.3ms after a
+  mutation from an initial 15.5ms budget (these are fixture observations, not constants).
+- Publishing a layout snapshot does not eagerly build a second style cache for a
+  hypothetical JavaScript geometry read. The read builds it when needed.
+- Text cache hits borrow their lookup keys; intrinsic measurement does not copy raster
+  glyph payloads. Only painted text requests those payloads, with unchanged shaping
+  metrics. Width contributions are reused within one layout pass and its sizing probes;
+  exact percentage bases, including indefinite versus zero, remain distinct. A new pass
+  starts cold so changed DOM, styles, fonts and image dimensions cannot reuse old widths.
+
+Runtime style/resource refreshes now contribute to the style-time counter. Previously
+only initial loading contributed there, understating style work. Streaming Fetch script
+timing also stops before style/layout processing instead of counting that work twice.
+The opt-in checkpoint diagnostic separates style/resources, element/pseudo resolution,
+and layout costs. Old and new style/script totals therefore have different accounting
+coverage and must not be presented as a performance regression or speedup by themselves.
+
+### Banked checkpoint
+
+The latest fresh-profile hidden release capture has the article and map visible at 1.0s.
+Appearance radio controls are absent in the 2.5s capture and present at 3.0s (actual capture
+times 2500.540 and 3000.545ms). That banks a roughly three-second visual initialization
+checkpoint, versus the earlier 5-6s samples. This is a live-page, 500ms-sampled observation,
+not a precise completion timestamp or a guarantee across network/cache states. The earlier
+Chrome reference already had its controls in the first capture, around 0.6s actual time.
+
+| Latest Breeze measurement | Result |
+| --- | --- |
+| First complete Appearance-panel sample, navigation start | 3.0s |
+| Harness page-ready, process start (not visual completion) | 898ms |
+| Cumulative style/resource refresh | 556ms |
+| Cumulative layout | 927ms |
+| Cumulative JavaScript | 268ms |
+| Renderer CPU | 2,344ms |
+
+Measurements are retained locally in `target/wiki-regression/load-deadline-1.json` and its
+navigation-anchored filmstrip. These generated artifacts are not committed. Repeated style
+and layout checkpoints remain the largest measured engine costs; **the under-two-second
+target and Chrome loading parity are still open**.
+
+Checkpoint validation: `cargo test --all-targets --quiet`, Clippy with warnings denied,
+formatting, and the source-size gate pass. The 12 unchanged upstream idle-callback files
+also pass all 22 assertions at pinned WPT revision
+`f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476`. This does not imply the broader WPT suite was
+rerun or that all web-platform scheduling behavior is conformant.

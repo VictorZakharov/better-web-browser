@@ -186,6 +186,7 @@ impl DocumentRuntime {
             || media_changed
             || outcome.render_requested
             || (self.rendering.dirty && !self.rendering_is_blocked());
+        let style_started = Instant::now();
         let style = if outcome.render_requested {
             connection.report_renderer_task_stage(format!(
                 "refreshing styles for {}",
@@ -202,6 +203,7 @@ impl DocumentRuntime {
         } else {
             StyleRefreshStats::default()
         };
+        let style_time = style_started.elapsed();
         // A rendering checkpoint can discover resources in newly-created shadow trees. Start the
         // browser fetch now, but do not wait inside this renderer task. The response path installs
         // the completed batch and presents the resulting layout without blocking heartbeats.
@@ -215,9 +217,20 @@ impl DocumentRuntime {
             self.rebuild_layout();
         }
         needs_present |= self.deliver_geometry_observers(&mut outcome, connection)?;
+        let layout_time = layout_started.elapsed();
+        if needs_present && !self.diagnostic_selectors.is_empty() {
+            outcome.diagnostics.push(format!(
+                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms",
+                style_time.as_secs_f64() * 1000.0,
+                style.element_style_time.as_secs_f64() * 1000.0,
+                style.pseudo_style_time.as_secs_f64() * 1000.0,
+                layout_time.as_secs_f64() * 1000.0,
+            ));
+        }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {
             script_micros: micros(script_time),
-            layout_micros: micros(layout_started.elapsed()),
+            style_micros: micros(style_time),
+            layout_micros: micros(layout_time),
             ..PageLoadReport::default()
         });
         if needs_present {

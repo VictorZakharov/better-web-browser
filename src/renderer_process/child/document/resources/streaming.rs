@@ -128,6 +128,7 @@ impl DocumentRuntime {
         self.start_pending_fetches(connection)?;
         connection.send_state_mutations(self.id, &mut outcome)?;
 
+        let script_time = started.elapsed();
         let needs_present = outcome.render_requested;
         let next_timer_micros = self.next_timer_micros();
         let reports_runtime_change = outcome.executed != 0
@@ -141,6 +142,7 @@ impl DocumentRuntime {
             || !outcome.history_actions.is_empty()
             || outcome.runtime_stopped
             || !outcome.invalidation.is_empty();
+        let style_started = Instant::now();
         let style = if needs_present {
             self.page.refresh_resources_after_invalidation_for_viewport(
                 self.viewport.style_width,
@@ -150,13 +152,15 @@ impl DocumentRuntime {
         } else {
             StyleRefreshStats::default()
         };
+        let style_time = style_started.elapsed();
         self.start_presentational_preloads(connection)?;
         let layout_started = Instant::now();
         if needs_present {
             self.rebuild_layout();
         }
         let current_load = self.text.borrow_mut().finish_load_report(PageLoadReport {
-            script_micros: micros(started.elapsed()),
+            script_micros: micros(script_time),
+            style_micros: micros(style_time),
             layout_micros: micros(layout_started.elapsed()),
             ..PageLoadReport::default()
         });

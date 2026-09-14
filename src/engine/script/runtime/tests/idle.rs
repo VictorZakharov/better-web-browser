@@ -15,6 +15,58 @@ fn tick(runtime: &mut ScriptRuntime, advance_ms: u64) {
 }
 
 #[test]
+fn own_dom_mutations_do_not_expire_the_running_idle_deadline() {
+    let (dom, mut runtime) = start(
+        r#"
+        requestIdleCallback(deadline => {
+            const before = deadline.timeRemaining();
+            document.body.dataset.changed = 'yes';
+            const after = deadline.timeRemaining();
+            document.body.dataset.result = String(before > 0 && after > 0 && after <= before);
+        });
+    "#,
+    );
+    tick(&mut runtime, 0);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
+fn expired_idle_tasks_share_a_bounded_slice_with_separate_microtask_checkpoints() {
+    let (dom, mut runtime) = start(
+        r#"
+        const order = [];
+        for (let i = 0; i < 3; i++) requestIdleCallback(deadline => {
+            order.push(i + ':' + deadline.didTimeout + ':' + deadline.timeRemaining());
+            queueMicrotask(() => {
+                order.push('microtask' + i);
+                document.body.dataset.order = order.join('|');
+            });
+        }, {timeout: 100});
+    "#,
+    );
+    let body = dom.elements_named("body").next().unwrap();
+    let result = runtime.advance_time(Duration::from_millis(200), 2);
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(
+        body.attr("data-order").as_deref(),
+        Some("0:true:0|microtask0|1:true:0|microtask1")
+    );
+    let result = runtime.advance_time(Duration::ZERO, 2);
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(
+        body.attr("data-order").as_deref(),
+        Some("0:true:0|microtask0|1:true:0|microtask1|2:true:0|microtask2")
+    );
+}
+
+#[test]
 fn media_tasks_interrupt_idle_periods_and_finish_microtasks_before_idle_resumes() {
     let (dom, mut runtime) = start(
         r#"
