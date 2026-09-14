@@ -6,6 +6,17 @@ pub(super) fn dispatch(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "performanceNow" => JsValue::from(state.performance_clock.now()),
+        "performanceTimeOrigin" => JsValue::from(state.performance_clock.time_origin()),
+        "performanceTaskSchedule" => {
+            let id = argument_id(args, 1);
+            let handle =
+                state
+                    .timers
+                    .queue_task(TaskSource::PerformanceTimeline, Duration::ZERO, id);
+            state.timer_handles.insert(id, handle);
+            JsValue::from(id)
+        }
         "resizeObserverSchedule" => {
             state.resize_observers_pending = true;
             JsValue::undefined()

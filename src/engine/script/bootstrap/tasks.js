@@ -12,7 +12,7 @@
         scheduleOperation = 'timerSchedule') => {
         const id = nextTimer++;
         delay = Math.max(0, Number(delay) || 0);
-        timers.set(id, { callback, repeat, args, label, cancelable: scheduleOperation !== 'mediaTaskSchedule' });
+        timers.set(id, { callback, repeat, args, label, cancelable: scheduleOperation === 'timerSchedule' });
         host(scheduleOperation, id, delay, repeat);
         return id;
     };
@@ -83,6 +83,12 @@
         const message = error?.message === undefined ? String(error) : String(error.message);
         const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
         if (windowObject.dispatchEvent(event)) host('console', 'error', `Uncaught ${source} exception: ` + message);
+    };
+    // Consumed and removed by the shared Window/Worker timing bootstrap, before author scripts.
+    globalThis.__performanceHooks = {
+        queue: callback => queueTimer(callback, 0, false, [], 'PerformanceObserver delivery', 'performanceTaskSchedule'),
+        report: error => reportGlobalException(error, 'PerformanceObserver'),
+        install: value => { iframeWindow.performance = value; }
     };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');

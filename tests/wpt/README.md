@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 153 curated cases run with one offline command:
+After the fixtures exist, all 192 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -34,7 +34,9 @@ After the fixtures exist, all 153 curated cases run with one offline command:
 Use `-Filter "DOM events"` for a single area or a path substring. Use `-SkipBuild` only after both
 release binaries are current. `-Jobs 4` runs four isolated hidden processes concurrently. The
 command starts a loopback-only static server and launches a fresh hidden Breeze benchmark process
-per case. JavaScript `.any.js` and `.window.js` files run in a generated Window test page. This first
+per case. JavaScript `.any.js` and `.window.js` files run in a generated Window test page. Upstream
+`// META: script=` dependencies load unchanged, in declared order, resolved against the test's URL;
+external-origin dependencies are refused. These wrappers do not run Worker variants. This first
 curated set intentionally avoids WPT server substitutions and special hostnames. A manifest can
 list immutable relative support files from the same pinned upstream checkout; expanding into tests
 that need WPT server behavior should use the official WPT server rather than ad-hoc emulation.
@@ -59,15 +61,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 153 passing files
-and 765 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 192 passing files
+and 886 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 153 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 192 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -77,6 +79,7 @@ follows:
 | Events, Abort API, event loop, and animation frames | 23 | Dispatch semantics, cancellation, listeners, microtasks, and rendering callbacks |
 | Idle callbacks | 12 | Deadline caps, timeout races while busy, cancellation, exceptions, and FIFO/repost fairness |
 | Resize observers | 18 | Content/border boxes, padding, box selection, inline transitions, callback lifetime, depth and error handling, and observer ordering |
+| Performance Timeline and User Timing | 39 | Asynchronous/buffered observation, filtering, buffer lifetime, mark/measure dictionaries, structured details, and monotonic clocks |
 | URLs | 5 | URL and URLSearchParams bindings |
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |

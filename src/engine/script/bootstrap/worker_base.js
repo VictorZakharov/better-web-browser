@@ -247,20 +247,29 @@
     Object.assign(globalThis, { TextEncoder, TextDecoder });
 
     const timers = new Map(); let nextTimer = 1;
-    const queueTimer = (callback, delay, repeat, args) => {
-        const id = nextTimer++; timers.set(id, { callback, repeat, args });
-        host('timerSchedule', id, Math.max(0, Number(delay) || 0), repeat); return id;
+    const queueTimer = (callback, delay, repeat, args, operation = 'timerSchedule') => {
+        const id = nextTimer++; timers.set(id, { callback, repeat, args, cancelable: operation === 'timerSchedule' });
+        host(operation, id, Math.max(0, Number(delay) || 0), repeat); return id;
     };
     globalThis.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
     globalThis.setInterval = (callback, delay, ...args) => queueTimer(callback, delay, true, args);
-    globalThis.clearTimeout = globalThis.clearInterval = id => { timers.delete(Number(id)); host('timerCancel', Number(id)); };
+    globalThis.clearTimeout = globalThis.clearInterval = id => {
+        id = Number(id); if (timers.get(id)?.cancelable === false) return;
+        timers.delete(id); host('timerCancel', id);
+    };
     globalThis.__runTimer = id => {
         const timer = timers.get(Number(id)); if (!timer) return;
         if (!timer.repeat) timers.delete(Number(id));
         if (typeof timer.callback === 'function') timer.callback(...timer.args); else (0, eval)(String(timer.callback));
     };
-    const started = Date.now();
-    globalThis.performance = { timeOrigin: started, now: () => Date.now() - started };
+    globalThis.__performanceHooks = {
+        queue: callback => queueTimer(callback, 0, false, [], 'performanceTaskSchedule'),
+        report: error => {
+            const message = error?.message === undefined ? String(error) : String(error.message);
+            const event = markTrusted(new ErrorEvent('error', {cancelable: true, message, error}));
+            if (globalThis.dispatchEvent(event)) host('console', 'error', 'Uncaught PerformanceObserver exception: ' + message);
+        }
+    };
     globalThis.queueMicrotask = callback => Promise.resolve().then(callback);
     globalThis.navigator = { userAgent: host('userAgent'), language: 'en-CA', languages: ['en-CA', 'en'], onLine: true, hardwareConcurrency: 1 };
     globalThis.location = new URL(host('workerLocation'));

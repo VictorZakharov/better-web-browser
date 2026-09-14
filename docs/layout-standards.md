@@ -232,7 +232,9 @@ value`); these are not described as zero JavaScript errors. Appearance controls
 were absent in some 15-second-settle captures and present in the extended fresh
 runs. Delayed asynchronous initialization, loading speed and post-load scroll
 responsiveness remain open; the long validation settle interval is not a measured
-page-load time or a performance pass.
+page-load time or a performance pass. The subsequent
+[Performance Timeline slice](performance-timeline.md) removes the missing-observer exception;
+it does not claim to fix the storage warning or improve loading speed.
 
 ### Earlier checkpoint and remaining responsiveness work
 

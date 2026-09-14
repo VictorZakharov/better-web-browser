@@ -1,0 +1,66 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Performance Timeline and User Timing</title>
+<style>
+body { margin: 40px; max-width: 1000px; font: 18px/1.6 Arial, sans-serif; color: #172b40; }
+h1 { font-size: 30px; }
+#result { padding: 20px; background: #edf3f7; border: 1px solid #b6c7d6; }
+li { margin: 12px 0; }
+.pass { color: #165a35; }
+</style>
+<h1>Performance Timeline and User Timing</h1>
+<p>Original cross-browser contract fixture. No network measurements or simulated entries.</p>
+<div id="result" data-status="pending">Running asynchronous checks…</div>
+<ol id="checks"></ol>
+<script>
+(async () => {
+    const result = document.querySelector('#result'), checks = document.querySelector('#checks');
+    let count = 0;
+    const check = (condition, text) => {
+        if (!condition) throw Error(text);
+        const item = document.createElement('li'); item.textContent = 'PASS — ' + text;
+        item.className = 'pass'; checks.appendChild(item); count++;
+    };
+    try {
+        performance.clearMarks(); performance.clearMeasures();
+        const detail = {nested:{value:1}};
+        const mark = performance.mark('start', {startTime:10, detail});
+        detail.nested.value = 9;
+        check(mark.detail.nested.value === 1 && mark instanceof PerformanceMark, 'Mark details are cloned');
+        const span = performance.measure('span', {start:10, end:25});
+        const negative = performance.measure('negative', {end:4, duration:10});
+        check(span.duration === 15 && negative.startTime === -6, 'Explicit and derived measure timestamps');
+        const sequence = ['script'];
+        await new Promise(resolve => {
+            new PerformanceObserver((list, observer) => {
+                sequence.push('observer'); observer.disconnect();
+                check(list.getEntries().length === 1 && list.getEntries()[0] === mark,
+                    'Buffered observer receives the retained mark'); resolve();
+            }).observe({type:'mark', buffered:true});
+            Promise.resolve().then(() => sequence.push('microtask'));
+        });
+        check(sequence.join() === 'script,microtask,observer', 'Delivery follows the microtask checkpoint');
+        const drained = new PerformanceObserver(() => { throw Error('Drained observer fired'); });
+        drained.observe({type:'mark'});
+        performance.mark('queued', {startTime:20});
+        performance.clearMarks();
+        check(drained.takeRecords().length === 1 && drained.takeRecords().length === 0,
+            'takeRecords drains independently of clearMarks');
+        drained.disconnect();
+        check(Object.isFrozen(PerformanceObserver.supportedEntryTypes) &&
+            ['mark','measure'].every(type => PerformanceObserver.supportedEntryTypes.includes(type)),
+            'Supported types are frozen and include real User Timing entries');
+        const before = performance.now(), origin = performance.timeOrigin, dateNow = Date.now;
+        try { Date.now = () => -1e10; check(performance.now() >= before && performance.timeOrigin === origin,
+            'Monotonic clock is independent of Date.now'); } finally { Date.now = dateNow; }
+        check(performance.getEntriesByType('mark').length === 0 && performance.getEntriesByType('measure').length === 2,
+            'Entry types and clear operations remain independent');
+        result.dataset.status = 'pass'; result.dataset.sequence = sequence.join(',');
+        result.textContent = count + ' / ' + count + ' checks passed';
+        document.documentElement.dataset.fixtureReady = 'true';
+    } catch (error) {
+        result.dataset.status = 'fail'; result.textContent = 'FAIL: ' + error.message;
+        console.error(error);
+    }
+})();
+</script>

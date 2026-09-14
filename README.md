@@ -171,10 +171,10 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 153-file Web Platform Test suite covers 765 upstream harness subtests across HTML
+A pinned, curated 192-file Web Platform Test suite covers 886 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
-Web IDL, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 765 selected
+Web IDL, User Timing/PerformanceObserver, and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
+after preparing that checkout, the suite runs offline with one hidden command. All 886 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -188,6 +188,11 @@ gate, not Breeze's whole-platform pass rate. A separate discovery sample records
 known failures across nearby unsupported behavior. See
 [tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
 provenance, licensing, expectation policy, filtering, and exact execution contract.
+
+Window and dedicated Worker realms deliver real marks and measures through asynchronous
+`PerformanceObserver` tasks, including buffered observation and cloned entry details. The
+[timing compatibility contract](docs/performance-timeline.md) documents the monotonic clock,
+supported entry types, and the remaining Resource/Navigation/Paint/Long Task boundaries.
 
 A second in-repository parser suite runs selected WPT tree-construction fixtures directly against
 the engine-owned DOM. It covers implied elements, foster parenting, adoption-agency repair,

@@ -74,7 +74,9 @@ DPI. See [the runner contract](../tests/wpt/README.md#run-the-suite).
 The live Coron, Palawan check, Climate anchor activation, and ordinary Palawan link
 navigation had no renderer failure or missing-rectangle exception; the climate-table
 rows remained readable without overlap.
-Separate PerformanceObserver and storage warnings remain.
+Separate PerformanceObserver and storage warnings remained at this checkpoint.
+The subsequent [Performance Timeline slice](performance-timeline.md) removes the missing-observer
+exception; the ResourceLoader storage warning remains separate.
 
 ## Remaining boundaries
 

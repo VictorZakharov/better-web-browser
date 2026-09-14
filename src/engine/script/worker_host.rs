@@ -21,6 +21,7 @@ pub(super) struct WorkerHostState {
     pub(super) module_evaluation_pending: bool,
     pub(super) module_evaluation_completion: Option<Result<(), String>>,
     pub(super) timers: EventLoopScheduler<u32>,
+    pub(super) performance_clock: super::performance_clock::PerformanceClock,
     pub(super) timer_handles: HashMap<u32, TaskHandle>,
     pub(super) imported_script_bytes: usize,
 }
@@ -51,6 +52,7 @@ impl WorkerHostState {
             module_evaluation_pending: false,
             module_evaluation_completion: None,
             timers: EventLoopScheduler::new(),
+            performance_clock: Default::default(),
             timer_handles: HashMap::new(),
             imported_script_bytes: 0,
         }
@@ -94,6 +96,17 @@ pub(super) fn dispatch_worker_host_call(
     state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
     match operation {
+        "performanceNow" => Ok(JsValue::from(state.performance_clock.now())),
+        "performanceTimeOrigin" => Ok(JsValue::from(state.performance_clock.time_origin())),
+        "performanceTaskSchedule" => {
+            let id = argument_id(args, 1);
+            let handle =
+                state
+                    .timers
+                    .queue_task(TaskSource::PerformanceTimeline, Duration::ZERO, id);
+            state.timer_handles.insert(id, handle);
+            Ok(JsValue::from(id))
+        }
         "workerModuleComplete" => {
             let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
             let reason = argument_string(args, 3)?;

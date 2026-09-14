@@ -54,6 +54,7 @@ mod network;
 mod network_body;
 mod network_diagnostics;
 mod nodes;
+mod performance;
 mod pointer_hover;
 mod published_geometry;
 mod ranges;

@@ -39,7 +39,6 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/platform.js"),
     include_str!("bootstrap/viewport_scrolling.js"),
     include_str!("bootstrap/fragment_navigation.js"),
-    include_str!("bootstrap/performance.js"),
     include_str!("bootstrap/media_queries.js"),
     include_str!("bootstrap/native_input.js"),
     include_str!("bootstrap/pointer_boundary.js"),
@@ -62,6 +61,9 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
     include_str!("bootstrap/structured_clone.js"),
+    include_str!("bootstrap/performance.js"),
+    include_str!("bootstrap/user_timing.js"),
+    include_str!("bootstrap/performance_observer.js"),
     include_str!("bootstrap/channel_messaging.js"),
     include_str!("bootstrap/workers.js"),
 );

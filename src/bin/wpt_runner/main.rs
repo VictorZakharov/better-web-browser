@@ -3,6 +3,7 @@ mod cli;
 mod manifest;
 mod report;
 mod server;
+mod wrapper;
 
 use cli::Cli;
 use manifest::Manifest;
