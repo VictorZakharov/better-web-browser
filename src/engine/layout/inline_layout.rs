@@ -1,5 +1,6 @@
 use super::*;
 mod boundaries;
+mod fragment_collection;
 pub(super) mod geometry;
 mod wrapping;
 
@@ -157,11 +158,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 font,
                 line_height,
                 no_wrap,
+                preserve_space,
                 ..
             } => {
-                let break_before = text.chars().next().is_some_and(char::is_whitespace);
-                let text = if line_start {
-                    text.trim_start()
+                let break_before = !preserve_space && text.starts_with(' ');
+                let text = if line_start && !preserve_space {
+                    text.trim_start_matches(' ')
                 } else {
                     text.as_str()
                 };

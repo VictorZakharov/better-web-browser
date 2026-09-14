@@ -17,6 +17,14 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "css/cssom-view/cssom-getClientRects.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/cssom-getClientRects-002.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/ttwf-js-cssomview-getclientrects-length.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/getClientRects-inline-atomic-child.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/getClientRects-inline-inline-child.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/range-bounding-client-rect-with-nested-text.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/range-client-rects-surrogate-indexing.html", "area": "CSSOM fragment geometry", "expected": "pass" },
+    { "path": "css/cssom-view/range-bounding-client-rect-with-display-contents.html", "area": "CSSOM fragment geometry", "expected": "pass" },
     { "path": "resize-observer/calculate-depth-for-node.html", "area": "Resize observers", "expected": "pass" },
     { "path": "resize-observer/change-layout-in-error.html", "area": "Resize observers", "expected": "pass" },
     { "path": "resize-observer/observe-001.html", "area": "Resize observers", "expected": "pass" },

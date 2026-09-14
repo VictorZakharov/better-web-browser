@@ -54,6 +54,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             self.floats = floats.clone();
             for child in Node::composed_descendants(node) {
+                std::sync::Arc::make_mut(&mut self.output.fragments).remove(child.id());
                 self.output.node_bounds.remove(&child.id());
                 self.output.resize_boxes.remove(&child.id());
                 self.output.scroll_boxes.remove(&child.id());

@@ -29,6 +29,20 @@ pub(in crate::engine::layout) fn finish(
     // Existing atomic/decorated inline boxes already own their border geometry. Do not
     // enlarge them with overflowing descendants, or enlarge any containing block.
     let explicit: std::collections::HashSet<_> = output.node_bounds.keys().copied().collect();
+    for (&id, &rect) in &output.node_bounds {
+        // Decorated inline atoms already own a real border box. Their descendants' font
+        // bands must not replace that border area. Empty, undecorated inlines retain a caret band.
+        if rect.width > 0.0
+            && styles
+                .styles
+                .get(&id)
+                .is_some_and(|style| style.display == Display::Inline)
+        {
+            std::sync::Arc::make_mut(&mut output.fragments)
+                .elements
+                .remove(&id);
+        }
+    }
     let nodes: Vec<_> = Node::composed_descendants(root).collect();
     for node in nodes.into_iter().rev() {
         let Some(rect) = output.node_bounds.get(&node.id()).copied() else {

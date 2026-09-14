@@ -12,13 +12,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         line_width: f32,
         line_height: f32,
     ) -> f32 {
+        let fragments = std::sync::Arc::make_mut(&mut self.output.fragments);
+        fragments.next_line += 1;
+        let line_id = fragments.next_line;
         let mut cursor_x = match align {
             TextAlign::Start => x,
             TextAlign::Center => x + ((width - line_width) / 2.0).max(0.0),
             TextAlign::End => x + (width - line_width).max(0.0),
         };
         for measured in line {
-            self.paint_atom(measured, cursor_x, y, line_height, width);
+            self.paint_atom(measured, cursor_x, y, line_height, width, line_id);
             cursor_x += measured.width;
         }
         y + line_height
@@ -31,7 +34,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y: f32,
         line_height: f32,
         containing_width: f32,
+        line_id: u64,
     ) {
+        self.record_atom_fragments(measured, x, y, line_height, line_id);
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         match measured.atom {
             InlineAtom::BlockBox { node, height_basis } => {
@@ -53,6 +58,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 link,
                 node_id,
                 source_node,
+                visible,
                 ..
             } => {
                 let text = measured.text.unwrap_or_default();
@@ -72,7 +78,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         },
                     );
                 }
-                if self.emit_paint && !text.is_empty() {
+                if self.emit_paint && *visible && !text.is_empty() {
                     let shaped = self.measurer.shape(text, font);
                     // CSS 2.2 10.8.1: split extra line leading above and below the font.
                     self.output.items.push(DisplayItem::Text {
@@ -176,7 +182,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         edges(spec.border_width),
                     ),
                 );
-                if !self.emit_paint {
+                if !self.emit_paint
+                    || self
+                        .styles
+                        .node(spec.node_id)
+                        .is_some_and(|node| !self.styles.get(&node).visibility)
+                {
                     return;
                 }
                 let mut spec = spec.as_ref().clone();
@@ -251,7 +262,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }
                 let radius =
                     resolve_border_radius(style.border_radius, border_rect, style.font_size);
-                if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none()
+                if self.emit_paint
+                    && style.visibility
+                    && style.background_color.alpha > 0
+                    && style.mask_image.is_none()
                 {
                     self.output.items.push(DisplayItem::SolidRect {
                         rect: border_rect,
@@ -262,6 +276,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 if self.emit_paint
+                    && style.visibility
                     && let Some(tile_rect) = self.background_tile_rect(style, border_rect)
                     && let Some(url) = style.background_image.as_ref()
                 {
@@ -274,6 +289,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 if self.emit_paint
+                    && style.visibility
                     && let Some(url) = style.mask_image.as_ref()
                 {
                     self.output.items.push(DisplayItem::Image {
@@ -284,6 +300,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     });
                 }
                 if self.emit_paint
+                    && style.visibility
                     && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
                     && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
                 {
@@ -331,6 +348,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         content_y,
                         content_height.max(child.height),
                         content_width,
+                        line_id,
                     );
                     child_x += child.width;
                 }

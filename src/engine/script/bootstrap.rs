@@ -50,6 +50,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/intersection_observer.js"),
     include_str!("bootstrap/idle_callbacks.js"),
     include_str!("bootstrap/resize_observer_entries.js"),
+    include_str!("bootstrap/geometry_interfaces.js"),
     include_str!("bootstrap/resize_observer.js"),
     include_str!("bootstrap/tasks.js"),
     include_str!("bootstrap/crypto.js"),

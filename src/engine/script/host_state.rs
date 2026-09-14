@@ -75,6 +75,7 @@ pub(super) struct HostState {
     pub(super) offset_parent_styles: Option<(u64, StyleSet)>,
     /// Latest renderer layout border boxes, exposed through CSSOM View geometry APIs.
     pub(super) layout_geometry: HashMap<NodeId, RectF>,
+    pub(super) layout_fragments: std::sync::Arc<crate::engine::layout::FragmentGeometry>,
     pub(super) scroll_boxes: HashMap<NodeId, crate::engine::layout::ScrollBox>,
     pub(super) sticky_offsets: HashMap<NodeId, (f32, f32)>,
     pub(super) geometry_scroll_offset: (f32, f32),
@@ -152,6 +153,7 @@ impl HostState {
             computed_styles: None,
             offset_parent_styles: None,
             layout_geometry: HashMap::new(),
+            layout_fragments: Default::default(),
             scroll_boxes: HashMap::new(),
             sticky_offsets: HashMap::new(),
             geometry_scroll_offset: (0.0, 0.0),

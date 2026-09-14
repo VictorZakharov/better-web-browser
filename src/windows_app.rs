@@ -83,7 +83,6 @@ pub fn run() -> Result<(), String> {
         // Per-monitor V2 keeps the custom chrome crisp as windows move between displays.
         // A failure is harmless when a host process has already selected a DPI mode.
         SetProcessDpiAwarenessContext(-4_isize as Handle);
-        let initial_dpi = GetDpiForSystem().max(DEFAULT_DPI);
         let instance = GetModuleHandleW(null());
         if instance.is_null() {
             return Err(last_error("locate application module"));
@@ -109,6 +108,7 @@ pub fn run() -> Result<(), String> {
         )?;
 
         let options = LaunchOptions::parse(process_started)?;
+        let initial_dpi = options.initial_dpi();
         let benchmark_is_hidden = options.benchmark.is_some();
         let (window_width_dip, window_height_dip) = options.window_dimensions();
         let metrics = Arc::new(BrowserMetrics::default());

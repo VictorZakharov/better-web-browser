@@ -139,6 +139,7 @@ impl PresentedLayout {
                 .collect(),
             node_bounds: Default::default(),
             resize_boxes: Default::default(),
+            fragments: Default::default(),
             node_paint_order: Default::default(),
         }
     }

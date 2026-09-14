@@ -58,7 +58,8 @@ inline ancestor bounds after final positioning. Painted and geometry-only layout
 the same multi-line union, including nested formatting and transformed ancestors. Existing
 atomic/decorated boxes and containing blocks keep their own geometry rather than expanding
 to include overflowing descendants. This supplies both DOM rectangle queries and section
-scrolling; it does not implement per-line `getClientRects()` fragmentation.
+scrolling. The subsequent [fragment-geometry slice](cssom-fragment-geometry.md) adds
+per-line `getClientRects()` and partial text Range rectangles.
 
 This is not complete navigation conformance: initial cross-document fragment scrolling,
 same-document Back/Forward restoration, target-focus/`:target` styling, ancestor revealing,
@@ -462,9 +463,9 @@ renderer exits or uncaught script errors; sampled scrolled and return-to-top fra
 the panels positioned correctly. This does not establish a universal scrolling FPS bound:
 script-driven nested scroll and geometry flushes can still do expensive work.
 
-The user's incident also contains missing `Element.getClientRects()` errors. That separate
-fragment-geometry API is not implemented by this change; returning one bounding rectangle
-would not implement its inline-fragment contract. PerformanceObserver warnings also remain.
+The user's incident also contained missing `Element.getClientRects()` errors. The subsequent
+[fragment-geometry slice](cssom-fragment-geometry.md) implements retained inline/text
+fragments rather than substituting a bounding rectangle. PerformanceObserver warnings remain.
 The current head passes 1,196 local tests (4 intentional ignores), Clippy, formatting and
 source-size checks. The WPT figures above are from the earlier form/layout head and have
 not been rerun for this scrolling/performance follow-up.

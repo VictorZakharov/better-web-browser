@@ -34,7 +34,7 @@ pub(super) struct ChromeLayout {
 
 impl BrowserState {
     pub(super) unsafe fn create_controls(&mut self) -> Result<(), String> {
-        self.dpi = window_dpi(self.window);
+        self.dpi = self.dpi_override.unwrap_or_else(|| window_dpi(self.window));
         self.fonts = Some(Fonts::create(self.dpi)?);
         let button_style = BS_OWNERDRAW | WS_TABSTOP;
         self.controls.back = self.create_control("BUTTON", "Back", button_style, ID_BACK);
@@ -117,7 +117,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn apply_dpi(&mut self, dpi: u32) -> Result<(), String> {
-        let dpi = dpi.max(DEFAULT_DPI);
+        let dpi = self.dpi_override.unwrap_or(dpi).max(DEFAULT_DPI);
         if dpi == self.dpi {
             return Ok(());
         }

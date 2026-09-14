@@ -47,10 +47,6 @@
         if (!parent) throw new DOMException('Node has no parent', 'InvalidNodeTypeError');
         return { parent, index: nodeIndex(node) };
     };
-    const rangeRect = () => ({
-        x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0,
-        toJSON() { return this; }
-    });
 
     const abstractRangeToken = {};
     class AbstractRange {
@@ -209,8 +205,8 @@
             while (holder.firstChild) fragment.appendChild(holder.firstChild);
             return fragment;
         }
-        getClientRects() { return []; }
-        getBoundingClientRect() { return rangeRect(); }
+        getClientRects() { return makeRectList(rangeClientRects(this)); }
+        getBoundingClientRect() { return boundingRect(rangeClientRects(this)); }
         toString() {
             if (this.collapsed) return '';
             if (this.startContainer === this.endContainer && this.startContainer instanceof CharacterData)

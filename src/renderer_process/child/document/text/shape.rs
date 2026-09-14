@@ -2,6 +2,7 @@
 
 use super::catalog::{FontCatalog, SelectedFont};
 use crate::engine::FontSpec;
+use crate::engine::layout::{RectF, TextCluster, TextGeometry};
 use harfrust::{Direction, ShaperData, ShaperInstance, UnicodeBuffer, Variation};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -18,6 +19,8 @@ pub(super) struct ShapedGlyph {
 }
 
 pub(super) struct ShapeOutput {
+    pending_clusters: Vec<TextCluster>,
+    pub(super) geometry: TextGeometry,
     pub(super) width: f32,
     pub(super) height: f32,
     pub(super) glyphs: Vec<ShapedGlyph>,
@@ -54,6 +57,11 @@ impl TextShaper {
         let size = spec.size.clamp(1.0, 768.0);
         let height = (size * 1.2).max(size);
         let mut output = ShapeOutput {
+            pending_clusters: Vec::new(),
+            geometry: TextGeometry {
+                layout_height: height,
+                ..TextGeometry::default()
+            },
             width: 0.0,
             height,
             glyphs: Vec::new(),
@@ -64,6 +72,7 @@ impl TextShaper {
             return output;
         }
 
+        let utf16_offsets = super::geometry::utf16_offsets(text);
         let bidi = BidiInfo::new(text, None);
         for paragraph in &bidi.paragraphs {
             let (_, visual_runs) = bidi.visual_runs(paragraph, paragraph.range.clone());
@@ -77,23 +86,25 @@ impl TextShaper {
                 }
                 for run in font_runs {
                     let shape_started = Instant::now();
-                    self.shape_font_run(text, spec, height, run, &mut output);
+                    self.shape_font_run(text, &utf16_offsets, spec, height, run, &mut output);
                     output.open_type_time += shape_started.elapsed();
                 }
             }
         }
+        output.geometry.clusters = std::mem::take(&mut output.pending_clusters).into();
         output
     }
 
     fn shape_font_run(
         &mut self,
         text: &str,
+        utf16_offsets: &[u32],
         spec: &FontSpec,
         line_height: f32,
         run: FontRun,
         output: &mut ShapeOutput,
     ) {
-        let run_text = &text[run.range];
+        let run_text = &text[run.range.clone()];
         let Ok(font_ref) =
             harfrust::FontRef::from_index(run.font.font.blob.as_ref(), run.font.font.index)
         else {
@@ -139,6 +150,14 @@ impl TextShaper {
         let infos = glyph_buffer.glyph_infos();
         let positions = glyph_buffer.glyph_positions();
         let mut cursor = output.width;
+        let mut cluster_left = cursor;
+        let mut boundaries: Vec<_> = infos.iter().map(|info| info.cluster as usize).collect();
+        boundaries.push(run_text.len());
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        let band = super::geometry::font_band(&run.font, spec.size, line_height);
+        // Accumulate advance boxes, never glyph ink/raster bounds. HarfRust cluster
+        // offsets are UTF-8 bytes; the DOM exposes UTF-16 boundary points.
         for (index, (info, position)) in infos.iter().zip(positions).enumerate() {
             let Ok(glyph_id) = u16::try_from(info.glyph_id) else {
                 continue;
@@ -162,9 +181,29 @@ impl TextShaper {
                 {
                     cursor += spec.word_spacing;
                 }
+                let index = boundaries.binary_search(&(info.cluster as usize)).unwrap();
+                output.pending_clusters.push(TextCluster {
+                    start: utf16_offsets[run.range.start + boundaries[index]],
+                    end: utf16_offsets[run.range.start + boundaries[index + 1]],
+                    rtl: run.rtl,
+                    rect: RectF {
+                        x: cluster_left.min(cursor),
+                        y: band.y,
+                        width: (cursor - cluster_left).abs(),
+                        height: band.height,
+                    },
+                });
+                cluster_left = cursor;
             }
         }
         output.width = cursor.max(output.width);
+        output.geometry.bounds = super::geometry::union_bands(
+            output.geometry.bounds,
+            RectF {
+                width: output.width,
+                ..band
+            },
+        );
         self.buffer = Some(glyph_buffer.clear());
     }
 }

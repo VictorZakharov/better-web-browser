@@ -9,9 +9,14 @@ pub(in crate::windows_app) struct LaunchOptions {
     pub(in crate::windows_app) startup_url: Option<String>,
     pub(in crate::windows_app) open_task_manager: bool,
     pub(in crate::windows_app) benchmark: Option<BenchmarkRun>,
+    pub(in crate::windows_app) dpi_override: Option<u32>,
 }
 
 impl LaunchOptions {
+    pub(in crate::windows_app) unsafe fn initial_dpi(&self) -> u32 {
+        self.dpi_override
+            .unwrap_or_else(|| unsafe { GetDpiForSystem().max(DEFAULT_DPI) })
+    }
     pub(in crate::windows_app) fn parse(process_started: Instant) -> Result<Self, String> {
         Self::parse_from(process_started, std::env::args().skip(1))
     }
@@ -45,10 +50,18 @@ impl LaunchOptions {
         let mut navigation_delay_ms = 0_u64;
         let mut window_width_dip = None;
         let mut window_height_dip = None;
+        let mut dpi_override = None;
 
         while let Some(argument) = arguments.next() {
             match argument.as_str() {
                 "--benchmark" => benchmark_url = Some(required(&mut arguments, &argument)?),
+                "--device-scale-factor" => {
+                    let scale = number::<f64>(&mut arguments, &argument)?;
+                    if !scale.is_finite() || !(1.0..=4.0).contains(&scale) {
+                        return Err("--device-scale-factor must be between 1 and 4".into());
+                    }
+                    dpi_override = Some((scale * f64::from(DEFAULT_DPI)).round() as u32);
+                }
                 "--output" => output = Some(PathBuf::from(required(&mut arguments, &argument)?)),
                 "--screenshot" => {
                     screenshot = Some(PathBuf::from(required(&mut arguments, &argument)?));
@@ -180,6 +193,9 @@ impl LaunchOptions {
             }
             Some(benchmark)
         } else {
+            if dpi_override.is_some() {
+                return Err("--device-scale-factor requires --benchmark".into());
+            }
             if screenshot.is_some() {
                 return Err("--screenshot requires --benchmark".to_string());
             }
@@ -214,6 +230,7 @@ impl LaunchOptions {
             startup_url,
             open_task_manager,
             benchmark,
+            dpi_override,
         })
     }
 }
@@ -234,156 +251,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn endurance_settle_is_bounded_but_can_outlive_a_short_video() {
-        for (requested, expected) in [(245_000_u64, 245_000_u64), (900_000, 600_000)] {
-            let options = LaunchOptions::parse_from(
-                Instant::now(),
-                [
-                    "--benchmark".to_string(),
-                    "https://example.test".to_string(),
-                    "--output".to_string(),
-                    "report.json".to_string(),
-                    "--settle-ms".to_string(),
-                    requested.to_string(),
-                ],
-            )
-            .unwrap();
-            assert_eq!(
-                options.benchmark.unwrap().settle,
-                Duration::from_millis(expected)
-            );
-        }
-    }
-
-    #[test]
-    fn parses_reproducible_hidden_viewport_and_diagnostics() {
-        let options = LaunchOptions::parse_from(
-            Instant::now(),
-            [
-                "--benchmark",
-                "https://example.com",
-                "--output",
-                "result.json",
-                "--window-width",
-                "1920",
-                "--window-height",
-                "1080",
-                "--early-scroll-trace",
-                "--diagnostic-selector",
-                "#main",
-                "--completion-marker",
-                "__DONE__",
-            ]
-            .into_iter()
-            .map(str::to_string),
-        )
-        .unwrap();
-        let benchmark = options.benchmark.unwrap();
-        assert_eq!(
-            (benchmark.window_width_dip, benchmark.window_height_dip),
-            (1920, 1080)
-        );
-        assert!(benchmark.early_scroll.is_some());
-        assert_eq!(benchmark.diagnostic_selectors, ["#main"]);
-        assert_eq!(benchmark.completion_marker.as_deref(), Some("__DONE__"));
-    }
-
-    #[test]
-    fn parses_navigation_anchored_filmstrip_options() {
-        let options = LaunchOptions::parse_from(
-            Instant::now(),
-            [
-                "--benchmark",
-                "https://example.test",
-                "--output",
-                "report.json",
-                "--filmstrip-directory",
-                "frames",
-                "--filmstrip-interval-ms",
-                "500",
-                "--filmstrip-duration-ms",
-                "5000",
-            ]
-            .into_iter()
-            .map(str::to_string),
-        )
-        .unwrap();
-        let filmstrip = options.benchmark.unwrap().filmstrip.unwrap();
-        assert_eq!(filmstrip.interval, Duration::from_millis(500));
-        assert_eq!(filmstrip.duration, Duration::from_secs(5));
-        assert_eq!(filmstrip.frame_count, 10);
-    }
-
-    #[test]
-    fn parses_ordered_hidden_navigation_sequence() {
-        let options = LaunchOptions::parse_from(
-            Instant::now(),
-            [
-                "--benchmark",
-                "https://example.test/first",
-                "--output",
-                "result.json",
-                "--navigate-after-ready",
-                "https://example.test/second",
-                "--navigate-after-ready",
-                "https://example.test/final",
-                "--activate-link-after-ready",
-                "https://example.test/clicked",
-                "--activate-selector-after-ready",
-                "button.play",
-                "--move-after-ready",
-                "320,180",
-                "--click-after-ready",
-                "320,180",
-                "--scroll-after-ready",
-                "800",
-                "--key-after-ready",
-                "k,KeyK",
-                "--scroll-after-ready",
-                "0",
-                "--navigation-delay-ms",
-                "750",
-            ]
-            .into_iter()
-            .map(str::to_string),
-        )
-        .unwrap();
-        let benchmark = options.benchmark.unwrap();
-        assert_eq!(
-            benchmark.navigation_targets,
-            [
-                BenchmarkNavigation::Address("https://example.test/second".to_string()),
-                BenchmarkNavigation::Address("https://example.test/final".to_string()),
-                BenchmarkNavigation::ActivateLink("https://example.test/clicked".to_string()),
-                BenchmarkNavigation::ActivateSelector("button.play".to_string()),
-                BenchmarkNavigation::MovePoint { x: 320, y: 180 },
-                BenchmarkNavigation::ClickPoint { x: 320, y: 180 },
-                BenchmarkNavigation::ScrollTo { y: 800 },
-                BenchmarkNavigation::Key {
-                    key: "k".to_string(),
-                    code: "KeyK".to_string(),
-                },
-                BenchmarkNavigation::ScrollTo { y: 0 },
-            ]
-        );
-        assert_eq!(benchmark.diagnostic_selectors, ["button.play"]);
-        assert_eq!(benchmark.navigation_delay, Duration::from_millis(750));
-    }
-
-    #[test]
-    fn rejects_navigation_sequence_outside_hidden_benchmark_mode() {
-        let error = LaunchOptions::parse_from(
-            Instant::now(),
-            ["--navigate-after-ready", "https://example.test/second"]
-                .into_iter()
-                .map(str::to_string),
-        )
-        .err()
-        .expect("interactive navigation sequence is rejected");
-        assert!(error.contains("require --benchmark"));
-    }
-}
+mod tests;

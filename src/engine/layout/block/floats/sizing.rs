@@ -32,7 +32,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 node,
                 None,
                 &mut atoms,
-                &mut false,
+                &mut None,
                 true,
                 InlineContainingBlock {
                     width: basis,
@@ -106,7 +106,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut minimum = 0.0_f32;
         let mut preferred = 0.0_f32;
         let mut atoms = Vec::new();
-        let mut space = false;
+        let mut space = None;
         for child in self.block_formatting_children(node) {
             let child_style = self.styles.get(&child);
             if child_style.display == Display::None
@@ -119,7 +119,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 minimum = minimum.max(lo);
                 preferred = preferred.max(hi);
                 atoms.clear();
-                space = false;
+                space = None;
                 let (lo, hi) = self.float_intrinsic_widths(&child, percentage_basis);
                 minimum = minimum.max(lo);
                 preferred = preferred.max(hi);
