@@ -1,6 +1,5 @@
-//! CSS 2.2 Appendix E: normal block decoration precedes floats, then inline content.
-//! Geometry stays in flow order. Renderer-local markers retain ownership while layout moves
-//! flex/grid/positioned subtrees, and are consumed only after all geometry is final.
+//! CSS 2.2 Appendix E paint phases, with positioned descendants escaping non-contexts.
+//! Geometry stays in flow order; local markers survive transforms and flex/grid placement.
 //! https://www.w3.org/TR/CSS22/zindex.html#painting-order
 use super::super::*;
 
@@ -15,21 +14,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !self.emit_paint {
             return;
         }
-        let kind = if style.position != Position::Static {
-            if style.z_index.is_some_and(|level| level < 0) {
+        let effect_context = style.opacity < 1.0 || !style.transform.is_none();
+        let positioned = style.position != Position::Static;
+        let root = matches!(node.tag_name(), Some("body" | "html"));
+        let isolates = root
+            || effect_context
+            || matches!(style.position, Position::Fixed | Position::Sticky)
+            || (positioned && style.z_index.is_some());
+        let level = if positioned {
+            style.z_index.unwrap_or(0)
+        } else {
+            0
+        };
+        let kind = if positioned || effect_context {
+            if level < 0 {
                 NEGATIVE_GROUP
             } else {
                 POSITIONED_GROUP
             }
         } else if style.float != Float::None {
             FLOAT_GROUP
-        } else if style.opacity < 1.0
-            || !style.transform.is_none()
+        } else if root
             || matches!(
                 style.display,
                 Display::InlineBlock | Display::InlineFlex | Display::InlineTable
             )
-            || matches!(node.tag_name(), Some("body" | "html"))
         {
             ATOMIC_GROUP
         } else {
@@ -40,11 +49,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             DisplayItem::PaintBoundary {
                 kind,
                 entering: true,
+                level,
+                isolates,
+                node_id: None,
             },
         );
         self.output.items.push(DisplayItem::PaintBoundary {
             kind,
             entering: false,
+            level,
+            isolates,
+            node_id: None,
         });
     }
 }
@@ -57,13 +72,37 @@ enum Phase {
     Content,
     Positioned,
 }
+
+#[derive(Default)]
+struct Contents {
+    items: Vec<DisplayItem>,
+    nodes: Vec<NodeId>,
+}
+impl Contents {
+    fn append(&mut self, other: Self) {
+        self.items.extend(other.items);
+        self.nodes.extend(other.nodes);
+    }
+}
 struct Chunk {
     phase: Phase,
-    items: Vec<DisplayItem>,
+    level: i32,
+    escapes: bool,
+    content: Contents,
+}
+impl Chunk {
+    fn new(phase: Phase, content: Contents) -> Self {
+        Self {
+            phase,
+            level: 0,
+            escapes: false,
+            content,
+        }
+    }
 }
 
-// Clips do not establish stacking contexts. Splitting a clip into balanced groups in each
-// phase preserves clipping when a descendant's background and text surround a sibling float.
+// Clips do not establish stacking contexts. Each escaped paint chunk keeps a balanced
+// clip pair, so moving it in z order cannot remove an ancestor's clipping constraint.
 fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     while let Some(item) = items.next() {
@@ -79,10 +118,15 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
             DisplayItem::PaintBoundary {
                 kind,
                 entering: true,
+                level,
+                isolates,
+                node_id,
             } => {
                 let children = parse(items);
-                let (phase, content) = if kind == DECORATION {
-                    (Phase::Background, flatten(children))
+                if kind == DECORATION {
+                    let mut content = flatten(children);
+                    content.nodes.extend(node_id);
+                    chunks.push(Chunk::new(Phase::Background, content));
                 } else {
                     let phase = match kind {
                         FLOAT_GROUP => Phase::Float,
@@ -90,94 +134,112 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                         POSITIONED_GROUP => Phase::Positioned,
                         _ => Phase::Content,
                     };
-                    (phase, order_context(children))
-                };
-                chunks.push(Chunk {
-                    phase,
-                    items: content,
-                });
+                    // Inline-blocks, floats and z-index:auto are atomic for their normal
+                    // contents, not stacking contexts for their positioned descendants.
+                    let (escaping, local): (Vec<_>, Vec<_>) = children
+                        .into_iter()
+                        .partition(|child| !isolates && child.escapes);
+                    chunks.push(Chunk {
+                        phase,
+                        level,
+                        escapes: isolates || matches!(phase, Phase::Negative | Phase::Positioned),
+                        content: order_context(local),
+                    });
+                    chunks.extend(escaping);
+                }
             }
             DisplayItem::BeginClip { bounds } => {
                 let mut children = parse(items);
                 if children.is_empty() {
-                    children.push(Chunk {
-                        phase: Phase::Content,
-                        items: Vec::new(),
-                    });
+                    children.push(Chunk::new(Phase::Content, Contents::default()));
                 }
                 for mut child in children {
-                    child.items.insert(0, DisplayItem::BeginClip { bounds });
-                    child.items.push(DisplayItem::EndClip { bounds });
+                    child
+                        .content
+                        .items
+                        .insert(0, DisplayItem::BeginClip { bounds });
+                    child.content.items.push(DisplayItem::EndClip { bounds });
                     chunks.push(child);
                 }
             }
             DisplayItem::BeginOpacity { bounds, opacity } => {
                 let mut content = order_context(parse(items));
-                content.insert(0, DisplayItem::BeginOpacity { bounds, opacity });
-                content.push(DisplayItem::EndOpacity { bounds });
-                chunks.push(Chunk {
-                    phase: Phase::Content,
-                    items: content,
-                });
+                content
+                    .items
+                    .insert(0, DisplayItem::BeginOpacity { bounds, opacity });
+                content.items.push(DisplayItem::EndOpacity { bounds });
+                chunks.push(Chunk::new(Phase::Content, content));
             }
             DisplayItem::NodeBoundary {
                 node_id,
                 entering: true,
             } => {
                 let mut content = order_context(parse(items));
-                content.insert(
+                content.items.insert(
                     0,
                     DisplayItem::NodeBoundary {
                         node_id,
                         entering: true,
                     },
                 );
-                content.push(DisplayItem::NodeBoundary {
+                content.items.push(DisplayItem::NodeBoundary {
                     node_id,
                     entering: false,
                 });
-                chunks.push(Chunk {
-                    phase: Phase::Content,
-                    items: content,
-                });
+                chunks.push(Chunk::new(Phase::Content, content));
             }
             item => {
                 if let Some(last) = chunks
                     .last_mut()
-                    .filter(|last| last.phase == Phase::Content)
+                    .filter(|last| last.phase == Phase::Content && !last.escapes)
                 {
-                    last.items.push(item);
+                    last.content.items.push(item);
                 } else {
-                    chunks.push(Chunk {
-                        phase: Phase::Content,
-                        items: vec![item],
-                    });
+                    chunks.push(Chunk::new(
+                        Phase::Content,
+                        Contents {
+                            items: vec![item],
+                            nodes: Vec::new(),
+                        },
+                    ));
                 }
             }
         }
     }
     chunks
 }
-fn flatten(chunks: Vec<Chunk>) -> Vec<DisplayItem> {
-    chunks.into_iter().flat_map(|chunk| chunk.items).collect()
+
+fn flatten(chunks: Vec<Chunk>) -> Contents {
+    let mut result = Contents::default();
+    for chunk in chunks {
+        result.append(chunk.content);
+    }
+    result
 }
-fn order_context(mut chunks: Vec<Chunk>) -> Vec<DisplayItem> {
-    // A context's own background is below its negative descendants; normal descendant
-    // backgrounds are above them. Empty decoration markers preserve that distinction.
-    let own = if chunks
+fn order_context(mut chunks: Vec<Chunk>) -> Contents {
+    // The context's own background precedes its negative descendants; other backgrounds
+    // follow them. Stable sorting preserves tree order for equal stack levels.
+    let mut own = if chunks
         .first()
         .is_some_and(|chunk| chunk.phase == Phase::Background)
     {
-        chunks.remove(0).items
+        chunks.remove(0).content
     } else {
-        Vec::new()
+        Contents::default()
     };
-    chunks.sort_by_key(|chunk| chunk.phase);
-    own.into_iter().chain(flatten(chunks)).collect()
+    chunks.sort_by_key(|chunk| (chunk.phase, chunk.level));
+    own.append(flatten(chunks));
+    own
 }
-pub(in crate::engine::layout) fn finalize(items: &mut Vec<DisplayItem>) {
-    *items = flatten(parse(&mut std::mem::take(items).into_iter()));
+pub(in crate::engine::layout) fn finalize(output: &mut LayoutOutput) {
+    let content = flatten(parse(&mut std::mem::take(&mut output.items).into_iter()));
+    output.items = content.items;
+    // Hit-test geometry must follow the same final order as visible paint, including
+    // backgrounds without text (popup padding is interactive too).
+    output.node_paint_order = content.nodes;
 }
 
+#[cfg(test)]
+mod stacking_tests;
 #[cfg(test)]
 mod tests;

@@ -5,6 +5,7 @@ pub(super) mod floats;
 pub(super) mod margins;
 pub(super) mod paint_order;
 mod positioned;
+mod positioned_width;
 mod replaced;
 mod sizing;
 
@@ -60,6 +61,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         });
         let automatic_width = if authored_button && style.width == Length::Auto {
             self.button_fit_content_width(node, percentage_basis, available_width)
+        } else if block_image.is_none()
+            && style.width == Length::Auto
+            && matches!(style.position, Position::Absolute | Position::Fixed)
+        {
+            self.positioned_auto_width(node, &style, containing_width, horizontal_insets, margins)
         } else if caption_width > 0.0 {
             caption_width
         } else {
@@ -81,23 +87,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 caption_width,
                 used_inline_size.is_some(),
             );
-        }
-        if style.width == Length::Auto
-            && !authored_button
-            && matches!(style.position, Position::Absolute | Position::Fixed)
-        {
-            let positioning_width = if style.position == Position::Fixed {
-                self.viewport.width
-            } else {
-                containing_width
-            };
-            if let (Some(left), Some(right)) = (
-                style.left.resolve(positioning_width, style.font_size),
-                style.right.resolve(positioning_width, style.font_size),
-            ) {
-                border_box_width =
-                    (positioning_width - left - right - margins.horizontal()).max(0.0);
-            }
         }
         border_box_width = border_box_width.max(0.0);
 

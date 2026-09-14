@@ -140,6 +140,9 @@ pub enum DisplayItem {
     PaintBoundary {
         kind: u8,
         entering: bool,
+        level: i32,
+        isolates: bool,
+        node_id: Option<NodeId>,
     },
     /// Renderer-local anchors survive paint-group reordering and are stripped before IPC.
     NodeBoundary {

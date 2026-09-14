@@ -18,6 +18,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output.items.push(DisplayItem::PaintBoundary {
                 kind: super::paint_order::DECORATION,
                 entering: true,
+                level: 0,
+                isolates: false,
+                node_id: (!node.is_generated_pseudo()).then_some(node.id()),
             });
         }
         let (x, border_y, border_box_width) = (rect.x, rect.y, rect.width);
@@ -96,6 +99,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             self.output.items.push(DisplayItem::PaintBoundary {
                 kind: super::paint_order::DECORATION,
                 entering: false,
+                level: 0,
+                isolates: false,
+                node_id: None,
             });
         }
         BlockDecoration {

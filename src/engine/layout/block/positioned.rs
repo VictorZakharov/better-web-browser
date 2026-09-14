@@ -65,6 +65,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 // select the initial containing block in resolve_block_position.
                 let item_start = self.output.items.len();
                 let node_start = self.output.node_paint_order.len();
+                let containing_block = if child_style.position == Position::Fixed {
+                    self.viewport
+                } else {
+                    containing_block
+                };
                 self.layout_block(
                     &child,
                     containing_block.x,

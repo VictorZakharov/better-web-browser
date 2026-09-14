@@ -43,7 +43,7 @@ fn block_backgrounds_and_borders_are_below_floats_but_inline_content_is_above() 
 #[test]
 fn positioned_groups_keep_their_css_levels_around_normal_backgrounds_and_floats() {
     let output = layout(
-        "<div style='position:relative;background:white'><div style='position:absolute;z-index:-1;background:yellow;width:20px;height:20px'></div><aside style='float:right;width:20px;height:20px;background:red'></aside><p style='background:blue'>text</p><div style='position:absolute;z-index:1;background:green;width:20px;height:20px'></div></div>",
+        "<div style='position:relative;z-index:0;background:white'><div style='position:absolute;z-index:-1;background:yellow;width:20px;height:20px'></div><aside style='float:right;width:20px;height:20px;background:red'></aside><p style='background:blue'>text</p><div style='position:absolute;z-index:1;background:green;width:20px;height:20px'></div></div>",
     );
     let colors = [
         Color::WHITE,

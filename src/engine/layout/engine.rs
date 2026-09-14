@@ -178,12 +178,12 @@ fn layout_page_for_output<M: TextMeasurer>(
         None,
     );
     inline_layout::geometry::finish(&root, styles, &mut engine.output);
-    box_tree.remove_anonymous_geometry(&mut engine.output);
     engine.output.content_height = metrics
         .bottom
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
-    block::paint_order::finalize(&mut engine.output.items);
+    block::paint_order::finalize(&mut engine.output);
+    box_tree.remove_anonymous_geometry(&mut engine.output);
     engine.output.update_sticky_positions(
         page,
         viewport_width,

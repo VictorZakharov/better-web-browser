@@ -153,8 +153,39 @@ are tested. These contracts follow [CSS table fixup](https://www.w3.org/TR/CSS22
 [atomic inline wrapping](https://www.w3.org/TR/css-text-3/#line-break-details), and
 [cyclic percentage contributions](https://www.w3.org/TR/css-sizing-3/#cyclic-percentage-contribution).
 
-Visual acceptance for this extension remains pending until fresh release captures
-of the expanded browsing sample are reviewed; unit-test success is not acceptance.
+Fresh release captures of the expanded browsing sample have now been reviewed;
+the named coverage and its limits are recorded below. Unit-test success alone is
+not visual acceptance.
+
+### Responsive menus: insertion, positioned sizing and paint order (2026-09-14)
+
+Opening the contents menu in a narrow viewport exposed additional generic failures.
+`insertAdjacentElement` now implements all four positions through the normal DOM
+pre-insertion path, preserving identity, adoption, mutation records, live collections
+and custom-element reactions. Invalid arguments/positions and hierarchy violations
+fail before tree mutation. `insertAdjacentText` creates literal text in the receiver's
+document; it no longer serializes/reparses existing children. Tests cover disconnected
+receivers, fragment parents and case-insensitive positions under the
+[DOM insert-adjacent algorithm](https://dom.spec.whatwg.org/#insert-adjacent).
+
+Automatic non-replaced absolute widths shrink to fit unless both horizontal insets
+are definite. The shared min/max constraint pass also applies to the stretched case;
+fixed boxes use the viewport percentage basis. Intrinsic content can exceed a narrow
+trigger's containing block without being clipped to the trigger width. This implements
+the [CSS 2.2 automatic positioned-width rules](https://www.w3.org/TR/CSS22/visudet.html#abs-non-replaced-width),
+not intrinsic `width:min-content`/`max-content` keyword parsing or complete static-position
+and bidi alignment. The observed menu uses the supported min/max constraints after its
+unsupported width keyword falls back to auto.
+
+Paint assembly distinguishes real stacking contexts from inline-blocks, floats and
+positioned `z-index:auto` ancestors. Positioned descendants escape those non-context
+groups and sort by numeric stack level, retaining tree order for ties. Integer z-index,
+opacity, transforms and fixed/sticky contexts retain isolation. Ancestor clips remain
+balanced around escaped chunks. Final node hit-test order is assembled with the paint
+order, including popup backgrounds/padding, before renderer-local markers are stripped.
+Regressions contrast auto versus zero, negative levels, nested non-context wrappers,
+opacity/transform isolation and clipping, following
+[CSS 2.2 Appendix E](https://www.w3.org/TR/CSS22/zindex.html#painting-order).
 
 The live table also exposed a generic wrapping defect: whitespace outside a nowrap span
 lost its break opportunity, and line fitting considered only the next atom rather than
@@ -169,7 +200,42 @@ Crashes, overlapping/clipped content, broken shared columns, stale geometry and 
 corrupted scroll frames block acceptance, even when isolated tests pass. Hidden live
 captures and interaction checks must be reviewed before calling the PR ready.
 
-The `e4e4c71` release was inspected on the Main Page, Coron/Palawan climate table,
+### Reviewed browsing sample (2026-09-14)
+
+The final candidate includes anonymous-table/atomic-inline sizing, adjacent DOM
+insertion, positioned shrink-to-fit widths and non-context paint-order corrections.
+All runs use the guarded hidden release harness with fresh profiles; Chromium
+references use unified headless mode and muted audio. Generated evidence remains
+in ignored `target/wiki-regression/`, not in the source tree or commits.
+
+| Page / interaction | Reviewed result | Local evidence prefix |
+| --- | --- | --- |
+| Main Page | Article columns and Appearance panel remain inside the viewport; no overlapping text | `final-stack-main` |
+| Coron, Palawan / Climate | All monthly columns align; wrapped row labels remain within their cells, including rainy days and humidity; source footer stays below the grid | `final-stack-coron` |
+| Rust (programming language) | Infobox no longer expands across article text; nested atomic links wrap and image proportions are retained | `final-stack-rust`, `rust-sidebar-final` |
+| Periodic table | Both CSS-table figures are visible and proportionate beside readable article text | `final-stack-periodic`, `periodic-sidebar-final` |
+| Palawan / narrow contents menu | Opaque popup paints above the article, with 232px width matching the Chrome reference; activating Government updates the URL fragment and scrolls to that section | `final-stack-menu`, `final-stack-menu-navigation`, `chrome-menu-open` |
+| Yemen article / down-down-up-up wheel input | Inspected 500ms-sampled frames show stable article/infobox columns and sidebars during reversal, without stale displaced content | `final-stack-yemen`, `final-stack-yemen-film` |
+
+The reported overlap/collapsed-column/missing-figure/menu-paint failures are absent
+in these reviewed views. This is a representative browsing sample, not a guarantee
+for every Wikipedia page or pixel-perfect Chromium parity. Article-to-article link
+activation (Coron to Palawan) was also checked in `palawan-navigation-check` before
+the final stacking change; the final menu-to-section check exercises the updated
+paint/hit-order path.
+
+Final runs have no renderer exits, harness failures or reported uncaught script
+errors. Console diagnostics still contain caught exceptions for missing
+`PerformanceObserver` and ResourceLoader storage-cache writes (`invalid storage
+value`); these are not described as zero JavaScript errors. Appearance controls
+were absent in some 15-second-settle captures and present in the extended fresh
+runs. Delayed asynchronous initialization, loading speed and post-load scroll
+responsiveness remain open; the long validation settle interval is not a measured
+page-load time or a performance pass.
+
+### Earlier checkpoint and remaining responsiveness work
+
+The earlier `e4e4c71` release was inspected on the Main Page, Coron/Palawan climate table,
 Palawan infobox and the Yemen article, including a narrower Palawan viewport and
 real wheel input with reversals. These captures have no renderer exits or JavaScript
 errors, and the inspected views no longer show the reported label overlap, off-screen
@@ -219,9 +285,9 @@ inline content and nonnegative positioned groups, following
 [CSS 2.2 Appendix E](https://www.w3.org/TR/CSS22/zindex.html#painting-order).
 Paint ownership survives geometry reordering; clip groups stay balanced when split across
 phases, and opacity groups remain atomic. The owned `paint-phases.html` fixture compares
-the border/float overlap with Chrome. It also exposes a separate, still-unfixed absolute
-shrink-to-fit width difference; matching paint order does not establish matching geometry.
-Positioned descendants escaping float/auto-z-index pseudo-contexts remain a separate gap.
+the border/float overlap with Chrome. The subsequent positioned-width and paint-order
+slices above address automatic shrink-to-fit sizing and descendants escaping non-context
+ancestors. These corrections do not establish complete positioning/stacking conformance.
 
 Viewport wheel defaults retain relative distance through IPC and output coalescing, then
 use the browser's smooth-scroll target. They do not reuse a stale input-time absolute

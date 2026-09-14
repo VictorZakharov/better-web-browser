@@ -203,7 +203,7 @@ fn positioned_stack_levels_surround_in_flow_content_and_keep_source_order() {
     let page = Page::parse(
         r#"<style>
             body { margin: 0 }
-            .host { position: relative; width: 100px; height: 100px }
+            .host { position: relative; z-index: 0; width: 100px; height: 100px }
             .layer { position: absolute; inset: 0; width: 100px; height: 100px }
             #minus-one { z-index: -1; background: #ff0000 }
             #minus-two { z-index: -2; background: #ffff00 }
