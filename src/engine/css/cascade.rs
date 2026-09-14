@@ -37,6 +37,7 @@ pub struct StyleSet {
     generated_nodes: HashMap<(NodeId, PseudoElement), NodeRef>,
     generated_styles: HashMap<NodeId, ComputedStyle>,
     compiled: std::rc::Rc<sheets::CompiledRules>,
+    ancestor_filters: std::cell::RefCell<super::selector_match::AncestorFilterCache>,
     defer_nonrendered_descendants: bool,
     deferred_fullscreen_roots: HashSet<NodeId>,
     document_base_url: String,
@@ -160,6 +161,7 @@ impl StyleSet {
             generated_nodes: HashMap::new(),
             generated_styles: HashMap::new(),
             compiled,
+            ancestor_filters: std::cell::RefCell::default(),
             defer_nonrendered_descendants: false,
             deferred_fullscreen_roots: HashSet::new(),
             document_base_url: document_base_url.to_string(),
@@ -276,7 +278,7 @@ impl StyleSet {
         let mut matching = self
             .compiled
             .index
-            .candidates(node)
+            .candidates(node, pseudo)
             .into_iter()
             .filter_map(|index| self.compiled.rules.get(index))
             .filter(|rule| rule.pseudo == pseudo)
@@ -285,13 +287,13 @@ impl StyleSet {
         let ancestors = std::cell::OnceCell::new();
         matching.retain(|rule| {
             if !super::selector_match::AncestorFilter::needed(&rule.selector) {
-                return selector_matches(&rule.selector, node);
-            }
-            super::selector_match::compound_matches(rule.selector.compounds.last().unwrap(), node)
-                && ancestors
-                    .get_or_init(|| super::selector_match::AncestorFilter::new(node))
+                selector_matches(&rule.selector, node)
+            } else {
+                ancestors
+                    .get_or_init(|| self.ancestor_filters.borrow_mut().for_node(node))
                     .may_match(&rule.selector)
-                && selector_matches(&rule.selector, node)
+                    && selector_matches(&rule.selector, node)
+            }
         });
         matching.sort_by(|left, right| {
             left.selector

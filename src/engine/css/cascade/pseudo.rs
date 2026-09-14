@@ -39,6 +39,9 @@ impl StyleSet {
         origin: &NodeRef,
         origin_style: &ComputedStyle,
     ) -> bool {
+        if origin.element().is_none() {
+            return false;
+        }
         let mut layout_changed = false;
         if origin.attr("placeholder").is_some() {
             let key = (origin.id(), PseudoElement::Placeholder);
@@ -56,8 +59,11 @@ impl StyleSet {
                     .get(&node.id())
                     .map(|style| (style.clone(), node.text_content()))
             });
-            let (style, matched) = self.compute_pseudo_style(origin, pseudo, origin_style);
-            if matched {
+            // Most elements have no generated-content rule. Resolve inheritance and values only
+            // for matching rules; explicit CSSOM queries still compute initial/inherited values.
+            let matching = self.matching_rules(origin, Some(pseudo));
+            if !matching.is_empty() {
+                let style = self.compute_pseudo_style_from_rules(pseudo, origin_style, &matching);
                 self.install_pseudo(origin, pseudo, style);
             } else {
                 self.remove_pseudo(origin.id(), pseudo);
@@ -94,6 +100,19 @@ impl StyleSet {
         pseudo: PseudoElement,
         origin_style: &ComputedStyle,
     ) -> (ComputedStyle, bool) {
+        let matching = self.matching_rules(origin, Some(pseudo));
+        (
+            self.compute_pseudo_style_from_rules(pseudo, origin_style, &matching),
+            !matching.is_empty(),
+        )
+    }
+
+    fn compute_pseudo_style_from_rules(
+        &self,
+        pseudo: PseudoElement,
+        origin_style: &ComputedStyle,
+        matching: &[&Rule],
+    ) -> ComputedStyle {
         // Tree-abiding pseudo-elements inherit from their originating element and otherwise use
         // initial values. They do not receive element UA defaults, presentational hints, or the
         // originating element's inline style.
@@ -106,15 +125,7 @@ impl StyleSet {
             style.color = Color::rgb(117, 117, 117);
         }
         let lower_origin = style.clone();
-        let matching = self.matching_rules(origin, Some(pseudo));
-        let matched = !matching.is_empty();
-        self.apply_author_cascade(
-            &mut style,
-            Some(origin_style),
-            &lower_origin,
-            &matching,
-            &[],
-        );
+        self.apply_author_cascade(&mut style, Some(origin_style), &lower_origin, matching, &[]);
         // Generated pseudo-elements are flex/grid items just like real children. CSS Display
         // blockifies their outer display type at computed-value time, including nonexistent
         // pseudos queried through getComputedStyle.
@@ -140,7 +151,7 @@ impl StyleSet {
         style.blockify_float();
         style.resolve_line_height(self.viewport_width, self.viewport_height);
         style.snap_border_widths(self.resolution_dppx);
-        (style, matched)
+        style
     }
 
     fn install_pseudo(&mut self, origin: &NodeRef, pseudo: PseudoElement, style: ComputedStyle) {

@@ -1,6 +1,6 @@
 //! Selector matching against DOM nodes.
 mod ancestor_filter;
-pub(super) use ancestor_filter::AncestorFilter;
+pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
 use super::*;
 

@@ -29,6 +29,11 @@ fn keys(target: &CompoundSelector) -> Vec<Key<'_>> {
 
 #[derive(Debug, Default)]
 pub(super) struct RuleIndex {
+    targets: [CandidateIndex; 4],
+}
+
+#[derive(Debug, Default)]
+struct CandidateIndex {
     universal: Vec<usize>,
     by_id: HashMap<String, Vec<usize>>,
     by_class: HashMap<String, Vec<usize>>,
@@ -49,6 +54,7 @@ impl RuleIndex {
         }
         let mut index = Self::default();
         for (rule_index, rule) in rules.iter().enumerate() {
+            let bucket = &mut index.targets[target_index(rule.pseudo)];
             let Some(target) = rule.selector.compounds.last() else {
                 continue;
             };
@@ -56,12 +62,12 @@ impl RuleIndex {
             // selector matcher still decides applicability, including scope and attribute values.
             let selected = keys(target).into_iter().min_by_key(|key| frequency[key]);
             let (map, value) = match selected {
-                Some(Key::Id(value)) => (&mut index.by_id, value),
-                Some(Key::Class(value)) => (&mut index.by_class, value),
-                Some(Key::Tag(value)) => (&mut index.by_tag, value),
-                Some(Key::Attribute(value)) => (&mut index.by_attribute, value),
+                Some(Key::Id(value)) => (&mut bucket.by_id, value),
+                Some(Key::Class(value)) => (&mut bucket.by_class, value),
+                Some(Key::Tag(value)) => (&mut bucket.by_tag, value),
+                Some(Key::Attribute(value)) => (&mut bucket.by_attribute, value),
                 None => {
-                    index.universal.push(rule_index);
+                    bucket.universal.push(rule_index);
                     continue;
                 }
             };
@@ -70,7 +76,22 @@ impl RuleIndex {
         index
     }
 
-    pub(super) fn candidates(&self, node: &NodeRef) -> Vec<usize> {
+    pub(super) fn candidates(&self, node: &NodeRef, pseudo: Option<PseudoElement>) -> Vec<usize> {
+        self.targets[target_index(pseudo)].candidates(node)
+    }
+}
+
+fn target_index(pseudo: Option<PseudoElement>) -> usize {
+    match pseudo {
+        None => 0,
+        Some(PseudoElement::Before) => 1,
+        Some(PseudoElement::After) => 2,
+        Some(PseudoElement::Placeholder) => 3,
+    }
+}
+
+impl CandidateIndex {
+    fn candidates(&self, node: &NodeRef) -> Vec<usize> {
         let Some(element) = node.element() else {
             return Vec::new();
         };
@@ -125,7 +146,7 @@ mod tests {
 
     #[test]
     fn candidate_index_preserves_full_scan_matches_across_mutations() {
-        let css = "*{} [hidden]{} [data-state=on]{} [DATA-STATE]{} .shared.component{} div.shared{} #target{} :is(.x,[hidden]){} :not([hidden]){} main > .shared{} .before + div{} a:link{} .shared::before{}";
+        let css = "*{} [hidden]{} [data-state=on]{} [DATA-STATE]{} .shared.component{} div.shared{} #target{} :is(.x,[hidden]){} :not([hidden]){} main > .shared{} .before + div{} a:link{} .shared::before{} #target::after{} [hidden]::placeholder{}";
         let mut rules = Vec::new();
         parse_stylesheet(
             css,
@@ -154,18 +175,28 @@ mod tests {
                 _ => {}
             }
             for node in Node::descendants(&dom.document) {
-                let expected = rules
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, rule)| selector_match::selector_matches(&rule.selector, &node))
-                    .map(|(i, _)| i)
-                    .collect::<Vec<_>>();
-                let actual = index
-                    .candidates(&node)
-                    .into_iter()
-                    .filter(|i| selector_match::selector_matches(&rules[*i].selector, &node))
-                    .collect::<Vec<_>>();
-                assert_eq!(actual, expected, "step {step}, node {:?}", node.id());
+                for pseudo in [
+                    None,
+                    Some(PseudoElement::Before),
+                    Some(PseudoElement::After),
+                    Some(PseudoElement::Placeholder),
+                ] {
+                    let expected = rules
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, rule)| {
+                            rule.pseudo == pseudo
+                                && selector_match::selector_matches(&rule.selector, &node)
+                        })
+                        .map(|(i, _)| i)
+                        .collect::<Vec<_>>();
+                    let actual = index
+                        .candidates(&node, pseudo)
+                        .into_iter()
+                        .filter(|i| selector_match::selector_matches(&rules[*i].selector, &node))
+                        .collect::<Vec<_>>();
+                    assert_eq!(actual, expected, "step {step}, node {:?}", node.id());
+                }
             }
         }
     }
@@ -188,6 +219,11 @@ mod tests {
         let dom = dom::parse("<div class='shared component-17' data-flag-17></div>");
         let node = dom.elements_named("div").next().unwrap();
         assert_eq!(rules.len(), 400);
-        assert_eq!(index.candidates(&node).len(), 2);
+        assert_eq!(index.candidates(&node, None).len(), 2);
+        assert!(
+            index
+                .candidates(&node, Some(PseudoElement::Before))
+                .is_empty()
+        );
     }
 }
