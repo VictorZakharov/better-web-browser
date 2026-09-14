@@ -187,7 +187,6 @@
                 for (const child of [...holder.childNodes]) this.parentNode.insertBefore(child, reference);
             }
         }
-        insertAdjacentText(position, text) { this.insertAdjacentHTML(position, String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;')); }
         get href() { const value = this.getAttribute('href'); return value == null ? '' : host('resolveUrl', value); }
         set href(value) { this.setAttribute('href', value); }
         get src() { const value = this.getAttribute('src'); return value == null ? '' : host('resolveUrl', value); }
