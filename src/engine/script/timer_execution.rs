@@ -123,7 +123,9 @@ pub(super) fn settle_timer_slice(
         let mut callback_diagnostics = Vec::new();
         host.borrow_mut()
             .append_host_call_diagnostics(&mut callback_diagnostics);
-        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(100) {
+        // Opt-in host diagnostics must expose callbacks that already miss a 60 Hz
+        // frame, not just 100 ms stalls. The host keeps each report bounded.
+        if callback_result.is_err() || callback_elapsed >= Duration::from_millis(16) {
             outcome.diagnostics.extend(
                 callback_diagnostics.into_iter().map(|diagnostic| {
                     format!("JavaScript timer {timer_id} ({label}): {diagnostic}")

@@ -97,6 +97,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 }
 
+pub(super) fn cell_content_height(style: &ComputedStyle, used: f32, natural: f32) -> f32 {
+    // CSS 2.2 17.5.3: a cell's height is a minimum, never a content cap.
+    // https://www.w3.org/TR/CSS22/tables.html#height-layout
+    if style.display == Display::TableCell {
+        used.max(natural)
+    } else {
+        used
+    }
+}
+
 pub(super) fn resolved_table_borders(
     node: &NodeRef,
     style: &ComputedStyle,

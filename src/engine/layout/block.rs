@@ -233,6 +233,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             content_height = content_height.min(maximum_height);
         }
         content_height = content_height.max(minimum_height);
+        content_height = table::cell_content_height(&style, content_height, natural_content_height);
         if !matches!(
             style.display,
             Display::Flex | Display::InlineFlex | Display::Grid | Display::Table

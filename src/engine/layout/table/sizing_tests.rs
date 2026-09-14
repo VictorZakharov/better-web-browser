@@ -2,6 +2,64 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
+fn cell_height_is_a_minimum_that_cannot_clip_wrapped_content() {
+    for display in ["table-cell", "block"] {
+        let page = Page::parse(
+            &format!(
+                "<style>body{{margin:0}}table{{width:160px}}\
+                 th,td{{padding:2px;border:1px solid;line-height:20px;font-size:16px}}\
+                 th{{height:16px;display:{display}}}</style>\
+                 <table><tr><th>Long header<br>second line<br>third line</th>\
+                 <td>value</td></tr><tr><td id=next>next row</td></tr></table>"
+            ),
+            "https://example.test/",
+        );
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        let geometry =
+            layout_geometry_with_style_viewport(&page, 800.0, 600.0, 800.0, &mut FixedMeasurer);
+        assert_eq!(output.node_bounds, geometry.node_bounds);
+        assert_eq!(output.resize_boxes, geometry.resize_boxes);
+        let header = page.dom.elements_named("th").next().unwrap();
+        let bounds = output.node_bounds[&header.id()];
+        let next = Node::descendants(&page.dom.document)
+            .find(|node| node.attr("id").as_deref() == Some("next"))
+            .unwrap();
+        let next = output.node_bounds[&next.id()];
+        if display == "table-cell" {
+            assert!(bounds.height >= 66.0, "wrapped cell must grow: {bounds:?}");
+            for item in &output.items {
+                if let DisplayItem::Text { rect, text, .. } = item
+                    && matches!(text.trim(), "third" | "line")
+                {
+                    assert!(
+                        rect.bottom() <= next.y,
+                        "{text}: {rect:?} overlaps {next:?}"
+                    );
+                }
+            }
+        } else {
+            assert_eq!(bounds.height, 26.0, "ordinary blocks retain fixed height");
+        }
+    }
+}
+
+#[test]
+fn taller_specified_cell_height_stretches_every_cell_and_moves_the_next_row() {
+    let page = Page::parse(
+        "<style>body{margin:0}table{width:160px}td{padding:2px;border:1px solid;\
+         line-height:20px;font-size:16px}</style><table>\
+         <tr><td style='height:100px'>short</td><td>peer</td></tr>\
+         <tr><td>next</td></tr></table>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let cells = page.dom.elements_named("td").collect::<Vec<_>>();
+    assert_eq!(output.node_bounds[&cells[0].id()].height, 106.0);
+    assert_eq!(output.node_bounds[&cells[1].id()].height, 106.0);
+    assert_eq!(output.node_bounds[&cells[2].id()].y, 106.0);
+}
+
+#[test]
 fn percentage_text_cell_does_not_starve_image_and_padding() {
     let page = Page::parse(
         r#"<style>

@@ -1,6 +1,6 @@
 # Layout compatibility: measured standards slices
 
-Updated 2026-09-13. Wikipedia is a regression example, not a source of special-case
+Updated 2026-09-14. Wikipedia is a regression example, not a source of special-case
 selectors or layout rules. These changes do **not** establish pixel-perfect Wikipedia
 rendering or complete implementation of CSS Grid, tables, buttons, or legacy collections.
 
@@ -34,6 +34,36 @@ positions. The remaining difference is not represented as a pass.
 Grid/table intrinsic block-size probes are isolated from published paint, hit-test, and
 ResizeObserver state. Per-layout caches reuse nested intrinsic measurements; the final
 layout publishes each node once. This is a correctness change, not a loading-speed claim.
+
+### Table cell minimum heights and post-load scrolling (2026-09-14)
+
+Under [CSS 2.2 table height layout](https://www.w3.org/TR/CSS22/tables.html#height-layout),
+a cell's specified `height` is a minimum, not a fixed content cap. Intrinsic probes and
+final layout now retain the natural content height even when the authored height is
+smaller. Shared row backgrounds, border boxes, ResizeObserver boxes and subsequent row
+positions use that expanded height. Ordinary block boxes keep fixed-height behavior.
+Regression tests cover wrapped text, explicit line breaks, taller specified cells,
+shared row heights and geometry-only/painted-layout parity.
+
+The reported Coron, Palawan climate table reproduced overlapping labels with its authored
+`height:16px`. Hidden captures before and after this correction show the overlap removed.
+This does not finish table layout: columns are still allocated independently per row,
+and automatic table width, span placement, and cell vertical alignment do not yet match
+Chromium. Those require separate table-grid work; no page-specific widths or selectors
+were added. Evidence is in ignored `target/wiki-regression/coron-table-{before,height}.png`
+and `coron-chrome.png`.
+
+The same page's post-load scroll actions expose a separate responsiveness problem.
+Opt-in host profiling now retains bounded details for callbacks of at least 16ms,
+instead of discarding details below 100ms. The captured sidebar callbacks changed list
+item classes and then read element scrolling geometry: synchronous layouts took roughly
+25-40ms, followed by paintable layouts of roughly 29-48ms. Text measurement contributed
+roughly 2.7-3.4ms to the synchronous layouts. These timings identify redundant full-page
+work, not a demonstrated scrolling fix. Reuse must preserve mutations between reads,
+resource/font changes, viewport changes, scroll offsets and observer semantics.
+The page-ready scroll trace did not exercise this post-load callback sequence and is not
+substituted for the user's reported interaction. Evidence is in ignored
+`target/wiki-regression/coron-scroll-profile.json`.
 
 The repository-owned `scroll-containers.html` fixture additionally checks direct and
 wrapped sticky boxes after a 150px element scroll. Headless Chrome reports top positions
