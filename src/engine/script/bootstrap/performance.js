@@ -1,145 +1,85 @@
-    // Performance Timeline and User Timing keep a per-realm entry buffer. Entries returned from
-    // retrieval methods are snapshots, while each PerformanceEntry remains immutable.
-    const performanceTimeOrigin = Date.now();
-    const performanceEntries = [];
-
+// Shared Window/Worker Performance Timeline. Continued by user_timing.js and performance_observer.js.
+(() => {
+    'use strict';
+    const host = globalThis.__hostCall;
+    const hooks = globalThis.__performanceHooks;
+    delete globalThis.__performanceHooks;
+    const serialize = globalThis.__serializeClone, deserialize = globalThis.__deserializeClone;
+    const cloneDetail = value => value === undefined ? null : deserialize(serialize(value));
+    const now = () => host('performanceNow');
+    const timeOrigin = host('performanceTimeOrigin');
+    const entries = [], entryState = new WeakMap(), performanceBrand = new WeakSet();
+    const token = {};
+    const domString = value => {
+        if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to DOMString');
+        return String(value);
+    };
+    const dictionary = value => {
+        if (value == null) return {};
+        if (typeof value !== 'object' && typeof value !== 'function') throw new TypeError('Expected dictionary');
+        return value;
+    };
+    const finite = value => {
+        const number = +value;
+        if (!Number.isFinite(number)) throw new TypeError('Timestamp must be finite');
+        return number;
+    };
+    const requireArgument = count => { if (!count) throw new TypeError('Missing required argument'); };
+    const brand = (map, receiver) => {
+        const state = map.get(receiver);
+        if (!state) throw new TypeError('Illegal invocation');
+        return state;
+    };
+    const checkPerformance = receiver => {
+        if (receiver !== undefined && receiver !== globalThis && !performanceBrand.has(receiver))
+            throw new TypeError('Illegal invocation');
+    };
+    const filterEntries = (buffer, name, type) => buffer.filter(entry => {
+        const state = entryState.get(entry);
+        return (name === undefined || state.name === name) && (type === undefined || state.entryType === type);
+    }).sort((a,b) => entryState.get(a).startTime - entryState.get(b).startTime);
+    const clearEntries = (type, name) => {
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const state = entryState.get(entries[i]);
+            if (state.entryType === type && (name === undefined || state.name === name)) entries.splice(i, 1);
+        }
+    };
     class PerformanceEntry {
-        constructor(name, entryType, startTime, duration) {
-            this.name = String(name);
-            this.entryType = entryType;
-            this.startTime = startTime;
-            this.duration = duration;
+        constructor(secret, state) {
+            if (secret !== token) throw new TypeError('Illegal constructor');
+            entryState.set(this, state);
         }
+        get name() { return brand(entryState, this).name; }
+        get entryType() { return brand(entryState, this).entryType; }
+        get startTime() { return brand(entryState, this).startTime; }
+        get duration() { return brand(entryState, this).duration; }
         toJSON() {
-            return {
-                name: this.name,
-                entryType: this.entryType,
-                startTime: this.startTime,
-                duration: this.duration
-            };
+            const {name, entryType, startTime, duration} = brand(entryState, this);
+            return {name, entryType, startTime, duration};
         }
     }
-
-    class PerformanceMark extends PerformanceEntry {
-        constructor(name, options = {}) {
-            options = Object(options || {});
-            const startTime = options.startTime === undefined
-                ? performance.now()
-                : Number(options.startTime);
-            if (!Number.isFinite(startTime) || startTime < 0)
-                throw new TypeError('Performance mark startTime must be a finite non-negative number');
-            super(name, 'mark', startTime, 0);
-            this.detail = options.detail ?? null;
+    const legacyNames = new Set(('navigationStart unloadEventStart unloadEventEnd redirectStart redirectEnd ' +
+        'fetchStart domainLookupStart domainLookupEnd connectStart connectEnd secureConnectionStart ' +
+        'requestStart responseStart responseEnd domLoading domInteractive domContentLoadedEventStart ' +
+        'domContentLoadedEventEnd domComplete loadEventStart loadEventEnd').split(' '));
+    const isWindow = typeof globalThis.document === 'object';
+    // No invented Navigation Timing entries. Only the realm origin is currently available.
+    const timingValues = Object.fromEntries([...legacyNames].map(name =>
+        [name, name === 'navigationStart' ? timeOrigin : 0]));
+    const legacyTiming = Object.freeze({...timingValues, toJSON() { return {...timingValues}; }});
+    const timestamp = value => {
+        if (typeof value !== 'string') {
+            const result = finite(value);
+            if (result < 0) throw new TypeError('Timestamp must be non-negative');
+            return result;
         }
-        toJSON() { return { ...super.toJSON(), detail: this.detail }; }
-    }
-
-    const performanceMeasureToken = {};
-    class PerformanceMeasure extends PerformanceEntry {
-        constructor(token, name, startTime, duration, detail) {
-            if (token !== performanceMeasureToken) throw new TypeError('Illegal constructor');
-            super(name, 'measure', startTime, duration);
-            this.detail = detail;
+        if (isWindow && legacyNames.has(value)) {
+            if (!legacyTiming[value]) throw new DOMException('Timing attribute is unavailable', 'InvalidAccessError');
+            return legacyTiming[value] - timeOrigin;
         }
-        toJSON() { return { ...super.toJSON(), detail: this.detail }; }
-    }
-
-    function latestMarkTime(name) {
-        name = String(name);
-        for (let index = performanceEntries.length - 1; index >= 0; index--) {
-            const entry = performanceEntries[index];
-            if (entry.entryType === 'mark' && entry.name === name) return entry.startTime;
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const state = entryState.get(entries[i]);
+            if (state.entryType === 'mark' && state.name === value) return state.startTime;
         }
-        throw new DOMException(`The mark '${name}' does not exist`, 'SyntaxError');
-    }
-
-    function timestamp(value, fallback) {
-        if (value === undefined) return fallback;
-        if (typeof value === 'string') return latestMarkTime(value);
-        const result = Number(value);
-        if (!Number.isFinite(result) || result < 0)
-            throw new TypeError('Performance timestamps must be finite non-negative numbers');
-        return result;
-    }
-
-    class Performance {
-        get timeOrigin() { return performanceTimeOrigin; }
-        get timing() { return this.__timing ||= { navigationStart: performanceTimeOrigin }; }
-        now() { return Math.max(0, Date.now() - performanceTimeOrigin); }
-        getEntries() {
-            return performanceEntries.slice().sort((left, right) => left.startTime - right.startTime);
-        }
-        getEntriesByType(type) {
-            type = String(type);
-            return this.getEntries().filter(entry => entry.entryType === type);
-        }
-        getEntriesByName(name, type) {
-            name = String(name);
-            return this.getEntries().filter(entry => entry.name === name &&
-                (type === undefined || entry.entryType === String(type)));
-        }
-        mark(name, options = {}) {
-            const entry = new PerformanceMark(name, options);
-            performanceEntries.push(entry);
-            return entry;
-        }
-        clearMarks(name) {
-            this.__clear('mark', name);
-        }
-        measure(name, startOrOptions = {}, endMark) {
-            let startTime;
-            let endTime;
-            let detail = null;
-            if (typeof startOrOptions === 'string') {
-                startTime = latestMarkTime(startOrOptions);
-                endTime = endMark === undefined ? this.now() : latestMarkTime(endMark);
-            } else {
-                const options = Object(startOrOptions || {});
-                detail = options.detail ?? null;
-                if (options.duration !== undefined) {
-                    const duration = timestamp(options.duration, 0);
-                    if (options.start !== undefined) {
-                        startTime = timestamp(options.start, 0);
-                        endTime = startTime + duration;
-                    } else {
-                        endTime = timestamp(options.end, this.now());
-                        startTime = endTime - duration;
-                    }
-                } else {
-                    startTime = timestamp(options.start, 0);
-                    endTime = timestamp(options.end, this.now());
-                }
-            }
-            if (startTime < 0 || endTime < startTime)
-                throw new TypeError('Performance measure duration cannot be negative');
-            const entry = new PerformanceMeasure(
-                performanceMeasureToken, name, startTime, endTime - startTime, detail);
-            performanceEntries.push(entry);
-            return entry;
-        }
-        clearMeasures(name) { this.__clear('measure', name); }
-        clearResourceTimings() { this.__clear('resource'); }
-        setResourceTimingBufferSize(_size) {}
-        __clear(type, name) {
-            for (let index = performanceEntries.length - 1; index >= 0; index--) {
-                const entry = performanceEntries[index];
-                if (entry.entryType === type && (name === undefined || entry.name === String(name)))
-                    performanceEntries.splice(index, 1);
-            }
-        }
-    }
-
-    Object.defineProperty(PerformanceEntry.prototype, Symbol.toStringTag,
-        { value: 'PerformanceEntry', configurable: true });
-    Object.defineProperty(PerformanceMark.prototype, Symbol.toStringTag,
-        { value: 'PerformanceMark', configurable: true });
-    Object.defineProperty(PerformanceMeasure.prototype, Symbol.toStringTag,
-        { value: 'PerformanceMeasure', configurable: true });
-    Object.defineProperty(Performance.prototype, Symbol.toStringTag,
-        { value: 'Performance', configurable: true });
-    windowObject.PerformanceEntry = PerformanceEntry;
-    windowObject.PerformanceMark = PerformanceMark;
-    windowObject.PerformanceMeasure = PerformanceMeasure;
-    windowObject.Performance = Performance;
-    windowObject.performance = new Performance();
-    iframeWindow.performance = windowObject.performance;
+        throw new DOMException(`The mark '${value}' does not exist`, 'SyntaxError');
+    };

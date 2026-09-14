@@ -188,10 +188,10 @@ fn route(root: &Path, tests: &[TestCase], request_path: &str) -> Response {
         && let Some(test) = tests.get(index)
         && test.needs_wrapper()
     {
-        return ok(
-            "text/html; charset=utf-8",
-            wrapper_html(&test.path).into_bytes(),
-        );
+        return match crate::wrapper::load(root, &test.path) {
+            Ok(html) => ok("text/html; charset=utf-8", html.into_bytes()),
+            Err(message) => error_response(500, &message),
+        };
     }
     let relative = match safe_relative_path(request_path) {
         Ok(path) => path,
@@ -213,15 +213,6 @@ fn wrapper_index(path: &str) -> Option<usize> {
         .strip_suffix(".html")?
         .parse()
         .ok()
-}
-
-fn wrapper_html(test_path: &str) -> String {
-    format!(
-        "<!doctype html><meta charset=utf-8><title>{test_path}</title>\
-         <script src=/resources/testharness.js></script>\
-         <script src=/resources/testharnessreport.js></script>\
-         <script src=/{test_path}></script><div id=log></div>"
-    )
 }
 
 fn safe_relative_path(request_path: &str) -> Result<PathBuf, &'static str> {

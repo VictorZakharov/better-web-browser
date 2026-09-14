@@ -2,8 +2,7 @@
 //!
 //! The HTML event-loop model permits multiple task sources to share one task queue while
 //! requiring tasks from a given source to retain their enqueue order. A single queue ordered by
-//! due time and insertion sequence gives Breeze a deterministic starting point without coupling
-//! scheduling to the JavaScript runtime or the Windows message pump.
+//! due time and insertion sequence stays independent of the JS runtime and Windows message pump.
 //!
 //! Specification references:
 //! - <https://html.spec.whatwg.org/multipage/webappapis.html#event-loops>
@@ -21,6 +20,7 @@ pub enum TaskSource {
     IdleTask,
     Networking,
     MediaElement,
+    PerformanceTimeline,
     UserInteraction,
     Lifecycle,
     DomManipulation,
