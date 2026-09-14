@@ -46,6 +46,8 @@ pub(super) struct Declaration {
     pub(super) name: String,
     pub(super) value: String,
     pub(super) important: bool,
+    // Parsed declarations are immutable; shared rule payloads reuse this token preparation.
+    pub(super) literal_value: std::cell::OnceCell<Option<String>>,
 }
 
 #[cfg(test)]
@@ -295,6 +297,7 @@ pub(super) fn parse_declarations(body: &str) -> Vec<Declaration> {
                 name,
                 value: value.to_string(),
                 important,
+                literal_value: std::cell::OnceCell::new(),
             })
         })
         .take(MAX_CSS_DECLARATIONS_PER_RULE)

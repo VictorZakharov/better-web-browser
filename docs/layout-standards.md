@@ -318,3 +318,24 @@ formatting, and the source-size gate pass. The 12 unchanged upstream idle-callba
 also pass all 22 assertions at pinned WPT revision
 `f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476`. This does not imply the broader WPT suite was
 rerun or that all web-platform scheduling behavior is conformant.
+
+### Literal declaration preparation
+
+The next measured candidate reuses token serialization for immutable declarations without
+`var()`, instead of reconstructing their strings on every matched element and refresh.
+This does not cache computed lengths, colors, URLs or element-dependent values. Tokenization
+detects escaped function names and nested references; strings containing the text `var(`
+are not references. Variable-bearing values continue to resolve against current custom
+properties, following [CSS Variables](https://www.w3.org/TR/css-variables-1/#using-variables).
+Each retained literal is capped at 4KiB; oversized values keep the uncached path. Cache
+ownership follows the existing bounded parsed stylesheet lifetime, not a global map.
+
+Two fresh hidden baseline runs recorded 670/653ms of cumulative style refresh; three runs
+with literal preparation recorded 603/777/606ms. The 777ms run was also slower in layout
+(1,286ms versus roughly 1,010-1,044ms in the other runs) and JavaScript. These samples
+suggest a modest style-phase reduction, not another demonstrated visual-loading milestone
+or a controlled statistical speedup. Reports are `load-literal-before-*` and
+`load-literal-after-*` under the same ignored evidence directory. The three-second banked
+checkpoint and the outstanding under-two-second target are unchanged.
+The final PNGs from both baseline runs and the first/third post-change runs are byte-identical;
+the inspected three-second post-change frame retains the article, map and radio controls.

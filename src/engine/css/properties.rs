@@ -8,28 +8,23 @@ pub(super) use helpers::{parse_text_spacing, parse_text_spacing_for_viewport};
 
 pub(super) fn apply_declaration(
     style: &mut ComputedStyle,
-    declaration: &Declaration,
+    declaration: (&str, &str),
     parent: Option<&ComputedStyle>,
     lower_origin: &ComputedStyle,
     base_url: &str,
     viewport_width: f32,
     viewport_height: f32,
 ) {
-    let value = declaration.value.trim();
+    let (name, value) = declaration;
+    let value = value.trim();
     let inherited_font_size = parent
         .map(|style| style.font_size)
         .unwrap_or_else(|| ComputedStyle::initial().font_size);
     let root_font_size = style.root_font_size;
-    if super::css_wide::apply_css_wide_keyword(
-        style,
-        &declaration.name,
-        value,
-        parent,
-        lower_origin,
-    ) {
+    if super::css_wide::apply_css_wide_keyword(style, name, value, parent, lower_origin) {
         return;
     }
-    match declaration.name.as_str() {
+    match name {
         "content" => {
             if let Some(content) = GeneratedContent::parse(value) {
                 style.generated_content = content;
@@ -246,9 +241,9 @@ pub(super) fn apply_declaration(
         | "border-top-color"
         | "border-right-color"
         | "border-bottom-color"
-        | "border-left-color" => style.apply_border_color(&declaration.name, value),
+        | "border-left-color" => style.apply_border_color(name, value),
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
-            style.apply_border_shorthand(&declaration.name, value)
+            style.apply_border_shorthand(name, value)
         }
         "border-radius" => {
             if let Some(radius) = value
@@ -286,7 +281,7 @@ pub(super) fn apply_declaration(
                 .map(str::trim)
                 .any(|token| matches!(token, "transform" | "perspective" | "filter"));
         }
-        "overflow" | "overflow-x" | "overflow-y" => style.apply_overflow(&declaration.name, value),
+        "overflow" | "overflow-x" | "overflow-y" => style.apply_overflow(name, value),
         "align-content" => {
             if let Some(alignment) = ContentAlignment::parse(value) {
                 style.align_content = alignment;
