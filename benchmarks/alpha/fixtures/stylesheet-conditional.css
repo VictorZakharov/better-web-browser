@@ -1,0 +1,2 @@
+@import "stylesheet-unused.css" supports(not (display: block));
+#result { color: green; }

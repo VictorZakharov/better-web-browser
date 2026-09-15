@@ -138,3 +138,25 @@ fn parser_created_body_link_blocks_following_script_but_not_prior_content() {
     driver.until_text("body sheet settled");
     driver.session.shutdown().unwrap();
 }
+
+#[test]
+fn false_supports_import_is_not_fetched_and_does_not_fail_the_parent() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(
+        "<!doctype html><p id=status>pending</p><script>const sheet=document.createElement('link');sheet.rel='stylesheet';sheet.href='/root.css';sheet.onload=()=>document.getElementById('status').textContent='parent loaded';sheet.onerror=()=>{throw Error('nonrequested import must not fail')};document.head.appendChild(sheet);</script>",
+    );
+    driver.until_text("pending");
+    driver.advance();
+    driver.until_idle();
+    // CSS Cascade 5 forbids fetching a supports-false import. A nonexistent resource
+    // behind that condition must not turn successful parent loading into an error.
+    driver.respond_bytes(
+        "root.css",
+        b"@import 'missing.css' supports(not (display: block)); p{color:green}",
+        "text/css",
+        200,
+    );
+    driver.until_text("parent loaded");
+    assert_eq!(driver.requests.len(), 1);
+    driver.session.shutdown().unwrap();
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Conditional import pending</title>
+<p id="result">Waiting for conditional import</p>
+<script>
+const link = document.createElement('link');
+link.rel = 'stylesheet';
+link.href = 'stylesheet-conditional.css';
+function complete(event) {
+    const result = document.getElementById('result');
+    const requests = performance.getEntriesByType('resource').map(entry => entry.name);
+    result.dataset.event = event.type;
+    result.dataset.requests = JSON.stringify(requests);
+    result.textContent = 'Parent event: ' + event.type + '; requests: ' + JSON.stringify(requests);
+    document.title = 'Conditional import ' + event.type;
+}
+link.onload = complete;
+link.onerror = complete;
+document.head.appendChild(link);
+</script>

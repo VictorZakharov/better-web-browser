@@ -171,11 +171,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 219-file Web Platform Test suite covers 2,167 upstream harness subtests across HTML
+A pinned, curated 220-file Web Platform Test suite covers 2,169 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
-and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,167 selected
+and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
+after preparing that checkout, the suite runs offline with one hidden command. All 2,169 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
