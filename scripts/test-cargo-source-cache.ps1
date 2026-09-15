@@ -50,5 +50,21 @@ foreach ($index in 0..3) {
 }
 Expect-Rejection { & $cacheScript -Mode Restore -SourceDirectory (Join-Path $root 'evil-output') -ArchiveDirectory $evilBundles }
 if (Test-Path -LiteralPath (Join-Path $root 'escaped.txt')) { throw 'Cache archive escaped its destination.' }
-Expect-Rejection { & $cacheScript -Mode Restore -SourceDirectory (Join-Path $root 'broken-output') -ArchiveDirectory $source }
-Write-Host "Cargo source cache tests passed: $($files.Count) byte-identical files, existing/missing/nested/archive/traversal rejection."
+$brokenBundles = Join-Path $root 'broken'
+[IO.Directory]::CreateDirectory($brokenBundles) | Out-Null
+foreach ($index in 0..3) { [IO.File]::WriteAllText((Join-Path $brokenBundles "sources-$index.zip"), 'not a ZIP') }
+Expect-Rejection { & $cacheScript -Mode Restore -SourceDirectory (Join-Path $root 'broken-output') -ArchiveDirectory $brokenBundles }
+
+$duplicateBundles = Join-Path $root 'duplicate'
+[IO.Directory]::CreateDirectory($duplicateBundles) | Out-Null
+foreach ($index in 0..3) {
+    $zip = [IO.Compression.ZipFile]::Open((Join-Path $duplicateBundles "sources-$index.zip"), [IO.Compression.ZipArchiveMode]::Create)
+    try { $zip.CreateEntry('same-file.txt') | Out-Null } finally { $zip.Dispose() }
+}
+Expect-Rejection { & $cacheScript -Mode Restore -SourceDirectory (Join-Path $root 'duplicate-output') -ArchiveDirectory $duplicateBundles }
+
+$link = Join-Path $root 'linked-source'
+New-Item -ItemType Junction -Path $link -Target $source | Out-Null
+Expect-Rejection { & $cacheScript -Mode Create -SourceDirectory $link -ArchiveDirectory (Join-Path $root 'linked-bundles') }
+Expect-Rejection { & $cacheScript -Mode Restore -SourceDirectory (Join-Path $link 'new') -ArchiveDirectory $bundles }
+Write-Host "Cargo source cache tests passed: $($files.Count) byte-identical files, empty/Unicode paths, missing/nested/existing/corrupt/duplicate/traversal/linked-path rejection."
