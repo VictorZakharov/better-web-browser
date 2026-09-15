@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $gate = Join-Path $PSScriptRoot 'assert-ci-results.ps1'
-$names = @('source', 'lint', 'test', 'wpt', 'alpha', 'dependencies', 'harness')
+$names = @('source', 'lint', 'test', 'live', 'wpt', 'alpha', 'dependencies', 'harness')
 $tests = 0
 function Check-Gate {
     param([hashtable] $Arguments, [bool] $Pass)
@@ -19,7 +19,7 @@ foreach ($policy in @(
 )) {
     $workers = @{}
     foreach ($name in $names) {
-        $workers[$name] = if ($policy.markdown -or ($name -eq 'alpha' -and $policy.event -eq 'pull_request')) {
+        $workers[$name] = if ($policy.markdown -or ($name -in @('alpha', 'wpt', 'live') -and $policy.event -eq 'pull_request')) {
             'skipped'
         } else { 'success' }
     }

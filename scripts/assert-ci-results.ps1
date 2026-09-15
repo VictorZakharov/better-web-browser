@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$required = @('source', 'lint', 'test', 'wpt', 'alpha', 'dependencies', 'harness')
+$required = @('source', 'lint', 'test', 'live', 'wpt', 'alpha', 'dependencies', 'harness')
 if ($ClassificationResult -ne 'success') { throw 'Change classification did not succeed.' }
 if ($Workers.Count -ne $required.Count -or
     @($required | Where-Object { -not $Workers.ContainsKey($_) }).Count -ne 0) {
@@ -23,7 +23,7 @@ $expected = if ($RunWindows -ceq 'false' -and $MarkdownOnly -ceq 'true') {
     throw "Invalid change-classification outputs: run_windows='$RunWindows', markdown_only='$MarkdownOnly'."
 }
 foreach ($name in $required) {
-    $workerExpected = if ($name -eq 'alpha' -and $EventName -eq 'pull_request') { 'skipped' } else { $expected }
+    $workerExpected = if ($name -in @('alpha', 'wpt', 'live') -and $EventName -eq 'pull_request') { 'skipped' } else { $expected }
     if ($Workers[$name] -cne $workerExpected) {
         throw "Worker '$name' must be '$workerExpected', received '$($Workers[$name])'."
     }

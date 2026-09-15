@@ -7,35 +7,15 @@ runs:
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
         version: v0.17.0
-    # Cache one file so the cache action does not extract tens of thousands of
-    # registry source files through MSYS tar. Native .NET extraction happens below.
-    - name: Restore Cargo registry archive
-      id: registry
+    - name: Restore Cargo registry cache
       uses: actions/cache@v6
       with:
-        path: ${{ runner.temp }}/cargo-registry.zip
-        key: windows-cargo-registry-zip-v1-${{ hashFiles('Cargo.lock') }}
+        path: |
+          ~/.cargo/registry/cache
+          ~/.cargo/registry/index
+        key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          windows-cargo-registry-zip-v1-
-    - name: Extract Cargo registry with native Windows paths
-      shell: pwsh
-      run: |
-        $archive = Join-Path $env:RUNNER_TEMP 'cargo-registry.zip'
-        $registry = Join-Path $env:USERPROFILE '.cargo/registry'
-        if (Test-Path -LiteralPath $archive) {
-          $clock = [Diagnostics.Stopwatch]::StartNew()
-          [IO.Compression.ZipFile]::ExtractToDirectory($archive, $registry, $true)
-          Write-Host ("Registry extraction: {0:N2}s" -f $clock.Elapsed.TotalSeconds)
-        }
+          windows-cargo-registry-v4-
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug
-    - name: Pack populated registry for later runs
-      if: steps.registry.outputs.cache-hit != 'true'
-      shell: pwsh
-      run: |
-        $archive = Join-Path $env:RUNNER_TEMP 'cargo-registry.zip'
-        $registry = Join-Path $env:USERPROFILE '.cargo/registry'
-        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }
-        # The cache service compresses this file; avoid compressing it twice.
-        [IO.Compression.ZipFile]::CreateFromDirectory($registry, $archive, [IO.Compression.CompressionLevel]::NoCompression, $false)

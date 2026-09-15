@@ -100,8 +100,6 @@ jobs:
           - suite: renderer
             # These tests share one AppContainer profile and already take SERIAL.
             arguments: --test renderer_process -- --test-threads=1
-          - suite: live runtime
-            arguments: --test live_runtime
           - suite: Windows integration
             arguments: >-
               --bin better-web-browser
@@ -117,10 +115,21 @@ jobs:
         shell: pwsh
         run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
 
+  live-runtime:
+    name: Live browser end-to-end
+    needs: changes
+    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/windows-rust
+      - name: Test the full browser headlessly
+        run: cargo test --locked --test live_runtime
+
   wpt:
     name: Curated WPT
     needs: changes
-    if: ${{ needs.changes.outputs.run_windows != 'false' }}
+    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
@@ -204,6 +213,7 @@ jobs:
       - source
       - lint
       - test
+      - live-runtime
       - wpt
       - alpha-compatibility
       - dependency-policy
@@ -221,6 +231,7 @@ jobs:
           SOURCE_RESULT: ${{ needs.source.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          LIVE_RESULT: ${{ needs.live-runtime.result }}
           WPT_RESULT: ${{ needs.wpt.result }}
           ALPHA_RESULT: ${{ needs.alpha-compatibility.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
@@ -230,6 +241,7 @@ jobs:
             source = $env:SOURCE_RESULT
             lint = $env:LINT_RESULT
             test = $env:TEST_RESULT
+            live = $env:LIVE_RESULT
             wpt = $env:WPT_RESULT
             alpha = $env:ALPHA_RESULT
             dependencies = $env:DEPENDENCY_RESULT
