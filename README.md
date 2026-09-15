@@ -34,6 +34,7 @@ Current page support includes:
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
+- [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
 - Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata

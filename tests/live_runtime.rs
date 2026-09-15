@@ -20,6 +20,8 @@ mod dynamic_scripts;
 mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/inline_handlers.rs"]
+mod inline_handlers;
 #[path = "live_runtime/media_controls.rs"]
 mod media_controls;
 #[path = "live_runtime/navigation.rs"]

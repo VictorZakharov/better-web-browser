@@ -168,8 +168,9 @@ Keep reports, profiles and screenshots in ignored output directories.
   script-blocking versus render-blocking state remain the next stylesheet slice.
 - Custom-element construction is notified at parser script/EOF checkpoints, not
   at every individual token. Full parser custom-element reactions, parser-originated
-  MutationObserver records, every callback-cleanup boundary, event-handler content
-  attributes, and nested browsing-context loading still need dedicated coverage.
+  MutationObserver records, every callback-cleanup boundary, and nested browsing-context loading
+  still need dedicated coverage. [Event-handler content attributes](html-event-handlers.md) now
+  cover parser-created elements and later html/body attribute merges.
 - Standalone `Page`/script test helpers still use a completed DOM. The production
   isolated renderer and hidden browser use the retained parser; standalone helpers
   are not evidence of incremental parsing correctness.

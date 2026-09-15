@@ -54,7 +54,7 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 | --- | --- | --- | --- |
 | 4 | Remaining parser work: synchronous, re-entrant insertion. [Streaming main-response decoding and charset replay](streaming-html-navigation.md) are implemented; buffered writes still enter the tokenizer after the caller returns. | `document/parsing.rs`, `dom/incremental.rs`, `mutation_host/document_write.rs` | Same-script reads and nested written-script execution match the insertion-point algorithm. |
 | 5 | [Stylesheet dependency loading and separate script/paint gates](stylesheet-loading-dependencies.md) are implemented for the documented subset. Full stylesheet-set selection and imported CSSOM objects remain. | `page/stylesheets.rs`, `css/imports.rs`, renderer resource loader | Extend owned loading/cascade checks to preferred/alternate sets and imported-rule identity/mutation. |
-| 6 | HTML event-handler content attributes. JavaScript-assigned handlers work; `onload="..."` in the fixture did not. | `bootstrap/events.js`, DOM attributes/construction | Parse, set, replace, remove, scope, listener ordering and exception behavior for content attributes; not a special-case script `onload` implementation. |
+| 6 | [HTML event-handler content attributes](html-event-handlers.md) now cover parsing, mutation, lazy compilation, scope, ordering, cancellation and body/window forwarding. Remaining boundaries include CSP and broader browsing-context/realm behavior. | `bootstrap/event_handlers.js`, native V8 compilation, DOM attributes/construction | Continue with policy and browsing-context slices; do not infer their completion from handler names being present. |
 
 These should be cohesive changes with owned positive and negative fixtures, relevant
 WPT-derived contracts, and headless Chromium comparisons. Do not combine unrelated
@@ -99,8 +99,8 @@ is claimed from these short runs.
 `benchmarks/alpha/fixtures/async-script-readiness.html` uses a two-second first response,
 a 100 ms shared fast response, and two owners of a failed response. The fixture server
 accepts bounded `?delay_ms=0..10000` requests without blocking unrelated responses.
-The fixture intentionally uses JavaScript-assigned event handlers; content attributes
-remain the separate gap listed above.
+The historical fixture intentionally uses JavaScript-assigned event handlers. Content attributes
+are now verified separately by the [inline-handler slice](html-event-handlers.md).
 
 Start `scripts/serve-alpha-fixtures.ps1` with a `-ReadyFile` from a hidden process.
 Run Breeze only through `scripts/run-hidden-benchmark.ps1` with `-FreshProfile`,

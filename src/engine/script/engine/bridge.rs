@@ -113,6 +113,10 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    if operation == "compileEventHandler" {
+        super::event_handlers::compile(scope, arguments, return_value);
+        return;
+    }
     // Check lengths before copying untrusted strings into native allocations.
     if matches!(
         operation.as_str(),

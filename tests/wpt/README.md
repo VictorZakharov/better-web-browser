@@ -11,6 +11,12 @@ external checkout retains the upstream source, history, metadata, and license. B
 `reporter.js` is an original adapter which uses testharness.js's documented result and completion
 callbacks; it replaces `/resources/testharnessreport.js` only for these hidden local runs.
 
+Event-handler tests also use WPT's externally checked-in WebIDL2 build
+(`e6d8ab852ec4e76596f6e308eb7f2efc8b613bfd`,
+[MIT license](https://github.com/w3c/webidl2.js/blob/e6d8ab852ec4e76596f6e308eb7f2efc8b613bfd/LICENSE)).
+The local server mirrors upstream's `/resources/WebIDLParser.js` URL alias; no dependency
+or third-party source is added to Breeze's production build.
+
 ## Prepare fixtures once
 
 Choose a location outside this repository:
@@ -25,7 +31,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 219 curated cases run with one offline command:
+After the fixtures exist, all curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt

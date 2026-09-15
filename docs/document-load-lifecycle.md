@@ -100,8 +100,9 @@ remain separate work. Existing listener dispatch also does not model every HTML
 callback-cleanup microtask checkpoint within a single event dispatch. The implemented
 checkpoints here separate document lifecycle tasks and readiness changes from window load.
 
-Do not infer full script-element error classification or HTML event-handler content attributes
-from this change. Continue with the [loading standards sequence](loading-standards.md).
+Do not infer full script-element error classification from this change. HTML event-handler
+content attributes are now covered by their [own slice](html-event-handlers.md).
+Continue with the [loading standards sequence](loading-standards.md).
 
 Follow-up: the [deferred/module readiness slice](deferred-script-readiness.md) removes
 the parser-prepared defer/module first-presentation barrier and synchronous graph

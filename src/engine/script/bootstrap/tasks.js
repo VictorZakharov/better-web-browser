@@ -79,10 +79,17 @@
             animationFrameTimer = null;
         }
     };
-    const reportGlobalException = (error, source = 'microtask') => {
+    let reportingGlobalException = false;
+    const reportGlobalException = (error, source = 'microtask', target = windowObject, filename = '') => {
         const message = error?.message === undefined ? String(error) : String(error.message);
-        const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error }));
-        if (windowObject.dispatchEvent(event)) host('console', 'error', `Uncaught ${source} exception: ` + message);
+        const event = markTrusted(new ErrorEvent('error', { cancelable: true, message, error, filename }));
+        let uncanceled = true;
+        if (!reportingGlobalException) {
+            reportingGlobalException = true;
+            try { uncanceled = target.dispatchEvent(event); }
+            finally { reportingGlobalException = false; }
+        }
+        if (uncanceled) host('console', 'error', 'Uncaught ' + source + ' exception: ' + message);
     };
     // Consumed and removed by the shared Window/Worker timing bootstrap, before author scripts.
     globalThis.__performanceHooks = {
@@ -311,5 +318,7 @@
         takeRecords() { return this.records.splice(0); }
     };
     windowObject.__wrap = wrap;
+    // Body/frameset attributes target Window even if author code never requests a DOM wrapper.
+    document.querySelectorAll('body,frameset');
     refreshWindowNamedProperties();
 })();

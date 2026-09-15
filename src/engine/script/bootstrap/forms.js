@@ -309,8 +309,8 @@
     }
     function associatedForm(element) {
         const explicit = element.getAttribute('form');
-        if (explicit) {
-            const form = document.getElementById(explicit);
+        if (explicit !== null && element.localName !== 'img') {
+            const form = element.ownerDocument.getElementById(explicit);
             return form?.localName === 'form' ? form : null;
         }
         for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {

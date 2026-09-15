@@ -33,6 +33,7 @@ mod cssom_view_scroll;
 mod custom_elements;
 mod element_scrolling;
 mod embedded_elements;
+mod event_handler_attributes;
 mod events;
 mod forms;
 mod fragment_geometry;
