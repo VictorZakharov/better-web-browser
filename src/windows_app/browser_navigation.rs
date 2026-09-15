@@ -206,44 +206,74 @@ impl BrowserState {
             .spawn(move || {
                 let _request = metrics.begin_request();
                 let started = Instant::now();
-                let result = (|| -> Result<LoadedPage, String> {
-                    let client = http_client;
-                    let response =
-                        fetch_navigation(&client, &url, &fetch_signal, referrer.as_deref())?;
-                    let network_time = started.elapsed();
-                    let bytes = response.body.len() as u64;
-                    let final_url = response.final_url().as_str().to_string();
-                    let status = response.status;
-                    let content_type = response.content_type().unwrap_or_default().to_string();
-                    let body = response.body.into_bytes();
-                    metrics.record_success(bytes, 0);
-                    Ok(LoadedPage {
-                        body,
-                        final_url,
-                        status,
-                        content_type,
-                        bytes,
-                        network_time,
-                    })
-                })();
-                if result.is_err() {
+                let post = |result| {
+                    let pointer = Box::into_raw(Box::new(LoadMessage { generation, result }));
+                    let posted = tab_router.destination(id).is_some_and(|window| unsafe {
+                        PostMessageW(
+                            window as Hwnd,
+                            WM_APP_PAGE_LOADED,
+                            id.get() as usize,
+                            pointer as isize,
+                        ) != 0
+                    });
+                    if !posted {
+                        unsafe {
+                            drop(Box::from_raw(pointer));
+                        }
+                    }
+                    posted
+                };
+                let stream = better_web_browser::renderer_process::NavigationBody::default();
+                let result =
+                    (|| -> Result<super::document_activation::NavigationResult, String> {
+                        let client = http_client;
+                        let mut response =
+                            fetch_navigation(&client, &url, &fetch_signal, referrer.as_deref())?;
+                        let network_time = started.elapsed();
+                        let final_url = response
+                            .url_list
+                            .last()
+                            .ok_or("navigation response has no URL")?
+                            .as_str()
+                            .to_string();
+                        let status = response.status;
+                        let content_type = response
+                            .headers
+                            .get("content-type")
+                            .unwrap_or_default()
+                            .to_string();
+                        if !post(Ok(super::document_activation::NavigationResult::Headers(
+                            LoadedPage {
+                                stream: Some(stream.clone()),
+                                body: Vec::new(),
+                                final_url,
+                                status,
+                                content_type,
+                                bytes: 0,
+                                network_time,
+                            },
+                        ))) {
+                            return Err("navigation destination closed".into());
+                        }
+                        let mut bytes = 0;
+                        while let Some(chunk) =
+                            response.next_chunk().map_err(|error| error.to_string())?
+                        {
+                            bytes += chunk.len() as u64;
+                            stream.append(&chunk)?;
+                        }
+                        stream.finish(Ok(()));
+                        metrics.record_success(bytes, 0);
+                        Ok(super::document_activation::NavigationResult::Complete {
+                            bytes,
+                            network_time: started.elapsed(),
+                        })
+                    })();
+                if let Err(error) = &result {
+                    stream.finish(Err(error.clone()));
                     metrics.record_failure();
                 }
-                let message = Box::new(LoadMessage { generation, result });
-                let pointer = Box::into_raw(message);
-                let posted = tab_router.destination(id).is_some_and(|window| unsafe {
-                    PostMessageW(
-                        window as Hwnd,
-                        WM_APP_PAGE_LOADED,
-                        id.get() as usize,
-                        pointer as isize,
-                    ) != 0
-                });
-                if !posted {
-                    unsafe {
-                        drop(Box::from_raw(pointer));
-                    }
-                }
+                post(result);
             });
         if let Err(error) = navigation_thread {
             if let Some(tab) = self.tabs.get_mut(id) {
@@ -295,12 +325,14 @@ fn fetch_navigation(
     url: &str,
     signal: &FetchSignal,
     referrer: Option<&str>,
-) -> Result<winhttp::HttpResponse, String> {
+) -> Result<winhttp::StreamingFetchResponse, String> {
     let mut request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
     if let Some(referrer) = referrer {
         request.referrer =
             Referrer::Url(FetchUrl::parse(referrer).map_err(|error| error.to_string())?);
     }
     let request = request.with_signal(signal.clone());
-    client.fetch(request).map_err(|error| error.to_string())
+    client
+        .fetch_stream(request)
+        .map_err(|error| error.to_string())
 }

@@ -8,13 +8,25 @@ impl DocumentRuntime {
         state: DocumentState,
         body: Vec<u8>,
         connection: &mut ChildConnection,
-        mut text: RendererTextSystem,
+        text: RendererTextSystem,
     ) -> Result<LoadResult, String> {
         let parse_started = Instant::now();
         let decoded = crate::winhttp::decode_document(
             &body,
             (!start.content_type.is_empty()).then_some(start.content_type.as_str()),
         );
+        Self::load_source(start, state, decoded, None, connection, text, parse_started)
+    }
+
+    pub(super) fn load_source(
+        start: DocumentStart,
+        state: DocumentState,
+        mut decoded: crate::winhttp::DecodedText,
+        mut navigation: Option<navigation::StreamingInput>,
+        connection: &mut ChildConnection,
+        mut text: RendererTextSystem,
+        parse_started: Instant,
+    ) -> Result<LoadResult, String> {
         // The HTML Standard permits speculative parsing to start eligible fetches while the
         // authoritative parser continues. Bytes are cached, but execution is admitted only when
         // that parser reaches the actual element. A speculative response cannot prepare a script:
@@ -27,13 +39,23 @@ impl DocumentRuntime {
             preloads.deferred,
         )?;
         let html_parse_started = Instant::now();
+        let mut parser = navigation::make_parser(&decoded.text, navigation.as_ref())?;
+        let first_step = loop {
+            let step = parser.advance();
+            if let crate::engine::dom::incremental::ParserStep::Encoding(label) = &step {
+                if let Some(input) = navigation.as_mut()
+                    && let Some(replay) = input.decoder.change_encoding(label)
+                {
+                    decoded = replay;
+                    input.source.clone_from(&decoded.text);
+                    parser = navigation::make_parser(&decoded.text, Some(input))?;
+                }
+                continue;
+            }
+            break step;
+        };
+        let parser_active = !matches!(first_step, crate::engine::dom::incremental::ParserStep::End);
         let reader = crate::document::parse_html(&decoded.text, &start.url);
-        let mut parser = crate::engine::dom::incremental::HtmlParser::new(&decoded.text);
-        let first_step = parser.advance();
-        let parser_active = matches!(
-            first_step,
-            crate::engine::dom::incremental::ParserStep::Script(_)
-        );
         let mut page = Page::from_dom(parser.dom().clone(), &start.url);
         page.scripts.clear();
         page.hide_scripted_noscript();
@@ -81,6 +103,7 @@ impl DocumentRuntime {
             deferred_network_load: PageLoadReport::default(),
             workers: RendererWorkers::new(),
             parser_scripts,
+            navigation,
             parser: parser_active.then_some(parsing::DocumentParser {
                 parser,
                 next: Some(first_step),
@@ -128,7 +151,7 @@ impl DocumentRuntime {
         let document = runtime.id;
         let mut outcome = ScriptOutcome::default();
         if runtime.parser.is_some() {
-            let (script_runtime, initial) = runtime
+            let (mut script_runtime, initial) = runtime
                 .page
                 .start_parser_runtime(
                     state.cookie_version,
@@ -139,9 +162,20 @@ impl DocumentRuntime {
                     runtime.script_layout_flush_callback(),
                 )
                 .map_err(|error| error.to_string())?;
+            if let Some(state) = runtime
+                .navigation
+                .as_mut()
+                .and_then(|input| input.script_state.take())
+            {
+                script_runtime.restore_restart_state(state);
+            }
             runtime.script_runtime = Some(script_runtime);
             outcome = initial;
             runtime.advance_parser(connection, &mut outcome)?;
+            if runtime.encoding_restart_pending() {
+                connection.send_state_mutations(document, &mut outcome)?;
+                return runtime.restart_encoding(connection);
+            }
         }
         runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;

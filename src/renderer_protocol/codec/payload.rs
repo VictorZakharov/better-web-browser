@@ -49,6 +49,8 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
             7
         }
         BrowserMessage::BeginDocument(_)
+        | BrowserMessage::BeginStreamingDocument(_)
+        | BrowserMessage::AbortDocument { .. }
         | BrowserMessage::DocumentChunk(_)
         | BrowserMessage::EndDocument(_)
         | BrowserMessage::FetchResponseStart(_)
@@ -132,9 +134,8 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             Ok(BrowserMessage::Shutdown)
         }
         7 => Ok(BrowserMessage::ProtocolFailure(decode_text(payload)?)),
-        0x0101 | 0x0103 | 0x0105 | 0x0111 | 0x0113 | 0x0115 | 0x0117 | 0x0121 | 0x0123 | 0x0125 => {
-            decode_browser_document(kind, payload)
-        }
+        0x0101 | 0x0103 | 0x0105 | 0x0107 | 0x0109 | 0x0111 | 0x0113 | 0x0115 | 0x0117 | 0x0121
+        | 0x0123 | 0x0125 => decode_browser_document(kind, payload),
         0x0131 | 0x0133 | 0x0135 | 0x0137 => decode_browser_state(kind, payload),
         0x0138 => storage_sync::decode(payload).map(BrowserMessage::StorageSync),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 => {

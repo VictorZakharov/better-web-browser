@@ -71,7 +71,12 @@ impl BrowserState {
             bytes: page.bytes,
             network_time: page.network_time,
         };
-        match session.load_document(start, state, page.body) {
+        let submission = if let Some(stream) = page.stream {
+            session.load_streaming_document(start, state, stream)
+        } else {
+            session.load_document(start, state, page.body)
+        };
+        match submission {
             Ok(()) => {
                 self.watch_storage_events(self.id, session, &storage_subscription);
                 self.storage_subscription = Some((document, storage_subscription));

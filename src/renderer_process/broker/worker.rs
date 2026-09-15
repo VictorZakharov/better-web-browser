@@ -2,6 +2,7 @@ mod commands;
 mod deadlines;
 mod document;
 mod incoming;
+mod navigation;
 mod stream;
 mod video;
 
@@ -42,12 +43,17 @@ pub(super) enum BrokerCommand {
 }
 
 pub(super) enum LifecycleCommand {
-    LoadDocument {
+    Streaming {
+        start: Box<DocumentStart>,
+        state: DocumentState,
+        body: super::NavigationBody,
+    },
+    Buffered {
         start: Box<DocumentStart>,
         state: DocumentState,
         body: Vec<u8>,
     },
-    CancelDocument(DocumentId),
+    Cancel(DocumentId),
 }
 
 pub(super) struct BrokerResources {
@@ -95,6 +101,7 @@ struct Broker {
     incoming_presentation: Option<IncomingPresentation>,
     incoming_video: crate::renderer_protocol::VideoFrameAssembler,
     active_document: Option<DocumentId>,
+    navigation: Option<navigation::OutgoingNavigation>,
     retired_document: Option<DocumentId>,
     outgoing_fetch: HashMap<u64, stream::OutgoingFetch>,
     fetch_response_streaming: HashMap<u64, bool>,
@@ -120,6 +127,7 @@ impl Broker {
             incoming_presentation: None,
             incoming_video: Default::default(),
             active_document: None,
+            navigation: None,
             retired_document: None,
             outgoing_fetch: HashMap::new(),
             fetch_response_streaming: HashMap::new(),
@@ -139,6 +147,7 @@ impl Broker {
             self.process_document_clock();
             self.process_messages();
             self.process_fetch_stream();
+            self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();
                 break;

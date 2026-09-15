@@ -41,6 +41,7 @@ pub(in crate::renderer_process::child) struct FetchState {
     completed: HashMap<u64, BrowserFetchResponse>,
     completed_order: VecDeque<u64>,
     batch_bytes: HashMap<u64, usize>,
+    retired_through: u64,
 }
 
 impl FetchState {
@@ -105,6 +106,18 @@ impl FetchState {
         &mut self,
         message: BrowserMessage,
     ) -> Result<Option<ScriptFetchDelivery>, String> {
+        let id = match &message {
+            BrowserMessage::FetchResponseStart(head) => head.request_id,
+            BrowserMessage::FetchResponseChunk(chunk) => chunk.transfer_id,
+            BrowserMessage::FetchResponseEnd(end) => end.request_id,
+            BrowserMessage::FetchResponseAbort(abort) => abort.request_id,
+            _ => return Err("non-Fetch message reached the Fetch assembler".into()),
+        };
+        // IDs are allocated monotonically by the connection, not by the new JS realm.
+        // Already queued replies may arrive after a charset restart cancels their owner.
+        if id <= self.retired_through && !self.requests.contains_key(&id) {
+            return Ok(None);
+        }
         match message {
             BrowserMessage::FetchResponseStart(head) => self.start(head),
             BrowserMessage::FetchResponseChunk(chunk) => self.chunk(chunk),
@@ -341,13 +354,17 @@ impl FetchState {
         Ok(responses)
     }
 
-    pub(super) fn cancel_document(&mut self, document: DocumentId) {
-        let request_ids = self
-            .requests
+    pub(super) fn document_requests(&self, document: DocumentId) -> Vec<u64> {
+        self.requests
             .iter()
             .filter_map(|(id, request)| (request.document == document).then_some(*id))
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    pub(super) fn cancel_document(&mut self, document: DocumentId) {
+        let request_ids = self.document_requests(document);
         for request_id in request_ids {
+            self.retired_through = self.retired_through.max(request_id);
             if let Some(request) = self.requests.remove(&request_id) {
                 self.cleanup_batch(request.batch_id);
             }

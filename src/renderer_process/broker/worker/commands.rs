@@ -10,12 +10,17 @@ impl Broker {
                 Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
             };
             match command {
-                LifecycleCommand::LoadDocument { start, state, body } => {
+                LifecycleCommand::Streaming { start, state, body } => {
+                    if let Err(error) = self.begin_navigation(*start, state, body) {
+                        self.protocol_failure(error);
+                    }
+                }
+                LifecycleCommand::Buffered { start, state, body } => {
                     if let Err(error) = self.send_document(*start, state, body) {
                         self.protocol_failure(error);
                     }
                 }
-                LifecycleCommand::CancelDocument(document) => self.cancel_document(document),
+                LifecycleCommand::Cancel(document) => self.cancel_document(document),
             }
         }
     }
@@ -211,6 +216,7 @@ impl Broker {
         }
         if self.active_document == Some(document) {
             self.active_document = None;
+            self.navigation = None;
             self.document_load_deadline = None;
             self.retired_document = Some(document);
             self.outgoing_fetch.clear();

@@ -214,6 +214,65 @@ fn streams_before_completion_and_cancels_between_chunks() {
 }
 
 #[test]
+fn small_content_length_response_progress_matches_socket_control() {
+    use std::io::{Read, Write};
+    let raw_sent = Arc::new(AtomicUsize::new(0));
+    let raw_observed = Arc::clone(&raw_sent);
+    let raw_server = LoopbackServer::start(move |_| {
+        TestResponse::new(200, vec![b'x'; 8 * 24])
+            .streamed(24, Duration::from_millis(150))
+            .count_chunks(Arc::clone(&raw_observed))
+    });
+    let mut raw = std::net::TcpStream::connect(format!("127.0.0.1:{}", raw_server.port())).unwrap();
+    raw.write_all(b"GET /raw HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    let mut bytes = Vec::new();
+    loop {
+        let mut byte = [0];
+        raw.read_exact(&mut byte).unwrap();
+        bytes.push(byte[0]);
+        if bytes.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
+    let mut byte = [0];
+    raw.read_exact(&mut byte).unwrap();
+    let socket_progressed_before_eof = raw_sent.load(Ordering::Acquire) < 8;
+    drop(raw);
+    drop(raw_server);
+    let chunks_sent = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&chunks_sent);
+    let server = LoopbackServer::start(move |_| {
+        TestResponse::new(200, vec![b'x'; 8 * 24])
+            .streamed(24, Duration::from_millis(150))
+            .count_chunks(Arc::clone(&observed))
+    });
+    let client = client();
+    let mut response = client
+        .fetch_stream(FetchRequest::navigation(&server.url("/small")).unwrap())
+        .unwrap();
+    let first = response.next_chunk().unwrap().unwrap();
+    assert!(!first.is_empty());
+    if socket_progressed_before_eof {
+        assert!(
+            chunks_sent.load(Ordering::Acquire) < 8,
+            "WinHTTP buffered a prefix that the socket control delivered before EOF"
+        );
+    } else {
+        // Host HTTP filters may buffer small Content-Length responses even on raw TCP.
+        // This run verifies byte integrity only; it is not latency acceptance evidence.
+        eprintln!(
+            "small Content-Length latency check unavailable: raw TCP control buffered to EOF"
+        );
+    }
+    let mut received = first;
+    while let Some(chunk) = response.next_chunk().unwrap() {
+        received.extend(chunk);
+    }
+    assert_eq!(received, vec![b'x'; 8 * 24]);
+}
+
+#[test]
 fn keeps_http_errors_distinct_from_network_failures() {
     let server = LoopbackServer::start(|_| TestResponse::new(503, b"retry later".to_vec()));
     let client = client();

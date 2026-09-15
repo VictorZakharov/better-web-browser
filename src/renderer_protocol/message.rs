@@ -135,6 +135,11 @@ pub enum BrowserMessage {
     Shutdown,
     ProtocolFailure(String),
     BeginDocument(DocumentStart),
+    BeginStreamingDocument(DocumentStart),
+    AbortDocument {
+        document: DocumentId,
+        message: String,
+    },
     DocumentChunk(TransferChunk),
     EndDocument(DocumentId),
     CookieSnapshot(CookieStateSnapshot),

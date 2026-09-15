@@ -10,6 +10,7 @@ mod interaction;
 mod load;
 mod media;
 mod media_environment;
+mod navigation;
 mod parser_scripts;
 mod parsing;
 mod rendering;
@@ -48,6 +49,7 @@ pub(super) enum LoadResult {
 }
 
 pub(super) enum AdvanceResult {
+    EncodingRestart,
     Presentation(Box<RendererPresentation>),
     Runtime(Box<RendererRuntimeUpdate>),
 }
@@ -72,6 +74,7 @@ pub(super) struct DocumentRuntime {
     workers: RendererWorkers,
     parser_scripts: parser_scripts::ParserScripts,
     parser: Option<parsing::DocumentParser>,
+    navigation: Option<navigation::StreamingInput>,
     pending_dynamic_script_fetch: Vec<PendingDynamicScriptFetch>,
     pending_resource_preloads: Vec<PendingResourceFetch>,
     resource_render_pending: bool,
