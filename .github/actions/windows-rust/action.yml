@@ -1,5 +1,9 @@
 name: Windows Rust dependencies
 description: Restore compiler and registry caches without caching workspace build outputs
+inputs:
+  populate-source-cache:
+    description: Publish a missing source image from one worker only
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -16,6 +20,36 @@ runs:
         key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           windows-cargo-registry-v4-
+    # Keep the 24,000 small source files inside one filesystem image: extracting
+    # them separately on every Windows VM dominates warm dependency preparation.
+    - name: Restore Cargo source volume
+      id: sources
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/cargo-source-volume/registry.vhdx
+        key: windows-cargo-volume-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'scripts/cargo-source-volume*.ps1') }}
+    - name: Mount Cargo source volume
+      if: steps.sources.outputs.cache-hit == 'true'
+      shell: pwsh
+      run: ./scripts/cargo-source-volume.ps1 -Mode Mount
+    - name: Create missing Cargo source volume
+      if: steps.sources.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: ./scripts/cargo-source-volume.ps1 -Mode Create
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug
+    - name: Flush Cargo source volume before caching
+      if: inputs.populate-source-cache == 'true' && steps.sources.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: ./scripts/cargo-source-volume.ps1 -Mode Unmount
+    - name: Publish Cargo source volume
+      if: inputs.populate-source-cache == 'true' && steps.sources.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/cargo-source-volume/registry.vhdx
+        key: ${{ steps.sources.outputs.cache-primary-key }}
+    - name: Remount populated Cargo source volume
+      if: inputs.populate-source-cache == 'true' && steps.sources.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: ./scripts/cargo-source-volume.ps1 -Mode Mount
