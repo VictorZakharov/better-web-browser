@@ -6,6 +6,9 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+#[path = "streaming_fetch/progressive.rs"]
+mod progressive;
+
 #[test]
 fn xhr_receives_incremental_progress_without_blocking_renderer_commands() {
     let _serial = SERIAL

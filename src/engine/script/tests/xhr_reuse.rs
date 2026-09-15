@@ -130,7 +130,8 @@ fn xhr_reopen_from_loadstart_starts_only_the_replacement() {
     );
     let outcome = runtime.complete_fetch_with_loader(id, Ok(test_response(b"new")), None);
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert!(outcome.fetch_actions.is_empty());
+    assert!(matches!(outcome.fetch_actions.as_slice(),
+        [ScriptFetchAction::Consume { id: consumed, total: 3 }] if *consumed == id));
     assert_eq!(
         dom.elements_named("div").next().unwrap().text_content(),
         "new"

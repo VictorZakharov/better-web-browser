@@ -87,7 +87,12 @@ impl RendererSession {
     }
 
     pub fn fetch_response_sink(&self, document: DocumentId) -> FetchResponseSink {
-        FetchResponseSink::new(document, self.fetch_stream.clone(), self.wake.clone())
+        FetchResponseSink::new(
+            document,
+            self.fetch_stream.clone(),
+            self.wake.clone(),
+            Arc::clone(&self.fetch_flow),
+        )
     }
 
     pub fn update_cookie_snapshot(&self, snapshot: CookieStateSnapshot) -> Result<(), String> {

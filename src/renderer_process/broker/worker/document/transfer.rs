@@ -14,6 +14,7 @@ impl Broker {
             return Err("document transfer length does not match its declaration".into());
         }
         self.outgoing_fetch.clear();
+        self.resources().fetch_flow.clear();
         self.fetch_response_streaming.clear();
         self.writer()
             .send_browser(&BrowserMessage::BeginDocument(start.clone()))

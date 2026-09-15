@@ -109,6 +109,25 @@ impl WorkerRuntime {
         outcome
     }
 
+    pub fn deliver_fetch_event(
+        &mut self,
+        id: u32,
+        event: ScriptFetchEvent,
+    ) -> WorkerRuntimeOutcome {
+        let mut outcome = WorkerRuntimeOutcome::default();
+        if self.host.borrow().closed {
+            return outcome;
+        }
+        if let Err(error) = super::network::deliver_event(&mut self.context, id, event) {
+            outcome
+                .errors
+                .push(format!("deliver Worker Fetch event: {error}"));
+        }
+        self.settle_module_evaluation(&mut outcome);
+        self.collect(&mut outcome);
+        outcome
+    }
+
     pub fn advance_time(
         &mut self,
         advance: Duration,

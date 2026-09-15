@@ -6,8 +6,8 @@
         constructor(stream) { this.__stream = stream; }
         get desiredSize() {
             const stream = this.__stream;
-            return stream.__state !== 'readable' || stream.__closeRequested
-                ? null : stream.__highWaterMark - stream.__queue.length;
+            if (stream.__state === 'errored') return null;
+            return stream.__state === 'closed' ? 0 : stream.__highWaterMark - stream.__queueSize;
         }
         enqueue(chunk) {
             const stream = this.__stream;
@@ -15,7 +15,15 @@
                 throw new TypeError('ReadableStream is not in a state that permits enqueue');
             const pending = stream.__reads.shift();
             if (pending) pending.resolve({ value: chunk, done: false });
-            else stream.__queue.push(chunk);
+            else {
+                let size;
+                try {
+                    size = Number(stream.__size(chunk));
+                    if (!Number.isFinite(size) || size < 0) throw new RangeError('Invalid chunk size');
+                } catch (error) { stream.__finishError(error); throw error; }
+                stream.__queue.push({ value: chunk, size });
+                stream.__queueSize += size;
+            }
             stream.__pullIfNeeded();
         }
         close() {
@@ -39,7 +47,8 @@
             if (!stream) return typeError('Reader was released');
             stream.__disturb();
             if (stream.__queue.length) {
-                const value = stream.__queue.shift();
+                const { value, size } = stream.__queue.shift();
+                stream.__queueSize = Math.max(0, stream.__queueSize - size);
                 if (stream.__closeRequested && !stream.__queue.length) stream.__finishClose();
                 else stream.__pullIfNeeded();
                 return Promise.resolve({ value, done: false });
@@ -72,6 +81,9 @@
             if (source.type !== undefined) throw new RangeError('Only default ReadableStream sources are supported');
             this.__state = 'readable'; this.__storedError = undefined;
             this.__queue = []; this.__reads = []; this.__reader = null;
+            this.__queueSize = 0;
+            this.__size = strategy.size === undefined ? (() => 1) : strategy.size;
+            if (typeof this.__size !== 'function') throw new TypeError('size must be callable');
             this.__disturbed = false; this.__closeRequested = false;
             this.__started = false; this.__pulling = false; this.__pullAgain = false;
             this.__source = source;
@@ -103,7 +115,7 @@
             if (!this.__disturbed) { this.__disturbed = true; this.__onDisturb?.(); }
         }
         __cancel(reason) {
-            this.__disturb(); this.__queue.length = 0;
+            this.__disturb(); this.__queue.length = 0; this.__queueSize = 0;
             if (this.__state === 'closed') return Promise.resolve();
             if (this.__state === 'errored') return Promise.reject(this.__storedError);
             this.__finishClose();
@@ -119,7 +131,7 @@
         }
         __finishError(reason) {
             if (this.__state !== 'readable') return;
-            this.__state = 'errored'; this.__storedError = reason; this.__queue.length = 0;
+            this.__state = 'errored'; this.__storedError = reason; this.__queue.length = 0; this.__queueSize = 0;
             for (const pending of this.__reads.splice(0)) pending.reject(reason);
             this.__closeReject(reason);
         }
@@ -131,7 +143,9 @@
             this.__pulling = true;
             let result;
             try { result = this.__source.pull(this.__controller); }
-            catch (error) { this.__pulling = false; this.__finishError(error); return; }
+            // The underlying pull algorithm is promise-returning, including thrown errors.
+            // Preserve its microtask ordering relative to an already fulfilled read.
+            catch (error) { result = Promise.reject(error); }
             Promise.resolve(result).then(() => {
                 this.__pulling = false;
                 if (this.__pullAgain) { this.__pullAgain = false; this.__pullIfNeeded(); }
@@ -140,25 +154,51 @@
         __tee(cloneSecondBranch) {
             if (this.locked) throw new TypeError('ReadableStream is locked');
             const reader = this.getReader(); const branches = [{}, {}];
+            let reading = false, readAgain = false, resolveCancel;
+            const cancellation = new Promise(resolve => { resolveCancel = resolve; });
+            const fail = error => {
+                for (const branch of branches) if (!branch.cancelled) branch.controller.error(error);
+                if (branches.some(branch => !branch.cancelled)) resolveCancel();
+            };
+            // Streams' default tee is demand driven. A slow branch may retain data requested
+            // by its faster peer, but two idle branches must not drain the transport eagerly.
+            const pull = () => {
+                if (reading) { readAgain = true; return; }
+                reading = true;
+                reader.read().then(({ value, done }) => {
+                    if (done) {
+                        reading = false;
+                        for (const branch of branches) if (!branch.cancelled) branch.controller.close();
+                        if (branches.some(branch => !branch.cancelled)) resolveCancel();
+                        return;
+                    }
+                    readAgain = false;
+                    let secondValue = value;
+                    if (cloneSecondBranch && !branches[1].cancelled) {
+                        try { secondValue = structuredClone(value); }
+                        catch (error) {
+                            for (const branch of branches) if (!branch.cancelled) branch.controller.error(error);
+                            resolveCancel(reader.cancel(error)); return;
+                        }
+                    }
+                    if (!branches[0].cancelled) branches[0].controller.enqueue(value);
+                    if (!branches[1].cancelled) branches[1].controller.enqueue(secondValue);
+                    reading = false;
+                    if (readAgain) pull();
+                }, error => { reading = false; fail(error); });
+            };
             const streams = branches.map(branch => new ReadableStream({
                 start(controller) { branch.controller = controller; },
-                cancel() { branch.cancelled = true; if (branches.every(item => item.cancelled)) return reader.cancel(); }
-            }));
-            const pump = () => reader.read().then(({ value, done }) => {
-                if (done) { for (const branch of branches) if (!branch.cancelled) branch.controller.close(); return; }
-                let secondValue = value;
-                if (cloneSecondBranch && !branches[1].cancelled) {
-                    try { secondValue = structuredClone(value); }
-                    catch (error) {
-                        for (const branch of branches) if (!branch.cancelled) branch.controller.error(error);
-                        return reader.cancel(error);
-                    }
+                pull,
+                cancel(reason) {
+                    branch.cancelled = true; branch.reason = reason;
+                    if (branches.every(item => item.cancelled))
+                        resolveCancel(reader.cancel(branches.map(item => item.reason)));
+                    return cancellation;
                 }
-                if (!branches[0].cancelled) branches[0].controller.enqueue(value);
-                if (!branches[1].cancelled) branches[1].controller.enqueue(secondValue);
-                return pump();
-            }, error => { for (const branch of branches) if (!branch.cancelled) branch.controller.error(error); });
-            pump(); return streams;
+            }));
+            reader.closed.catch(fail);
+            return streams;
         }
         tee() { return this.__tee(false); }
         pipeTo(destination) {

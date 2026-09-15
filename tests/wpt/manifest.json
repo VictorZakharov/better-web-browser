@@ -11,6 +11,10 @@
     "expectations": "forbidden"
   },
   "support": [
+    "streams/resources/rs-utils.js",
+    "streams/resources/test-utils.js",
+    "streams/resources/recording-streams.js",
+    "streams/resources/rs-test-templates.js",
     "performance-timeline/performanceobservers.js",
     "user-timing/resources/user-timing-helper.js",
     "dom/nodes/pre-insertion-validation-hierarchy.js",
@@ -19,6 +23,8 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "streams/readable-streams/tee.any.js", "area": "Readable streams", "expected": "pass" },
+    { "path": "streams/readable-streams/floating-point-total-queue-size.any.js", "area": "Readable streams", "expected": "pass" },
     { "path": "webstorage/event_constructor.window.js", "area": "Web Storage", "expected": "pass" },
     { "path": "webstorage/event_initstorageevent.window.js", "area": "Web Storage", "expected": "pass" },
     { "path": "webstorage/storage_supported_property_names.window.js", "area": "Web Storage", "expected": "pass" },

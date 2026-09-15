@@ -1,8 +1,10 @@
 //! Per-request validation and buffered-versus-streaming response ownership.
 
 use super::*;
+mod delivery;
 use crate::limits::{MAX_RENDERER_FETCH_BATCH_BODY_BYTES, MAX_RESPONSE_BODY_BYTES};
 use crate::renderer_protocol::{FetchResponseHead, StreamingTransferAssembler, TransferChunk};
+pub(in crate::renderer_process::child) use delivery::ScriptFetchDelivery;
 use std::collections::HashMap;
 
 struct BufferedResponse {
@@ -31,39 +33,6 @@ struct StreamingResponse {
     received: u32,
 }
 
-#[derive(Debug)]
-pub(in crate::renderer_process::child) enum ScriptFetchDelivery {
-    Head {
-        document: DocumentId,
-        head: FetchResponseHead,
-    },
-    Chunk {
-        document: DocumentId,
-        request_id: u64,
-        bytes: Vec<u8>,
-    },
-    End {
-        document: DocumentId,
-        request_id: u64,
-    },
-    Abort {
-        document: DocumentId,
-        request_id: u64,
-        error: crate::renderer_protocol::BrowserFetchError,
-    },
-}
-
-impl ScriptFetchDelivery {
-    pub(in crate::renderer_process::child) fn document(&self) -> DocumentId {
-        match self {
-            Self::Head { document, .. }
-            | Self::Chunk { document, .. }
-            | Self::End { document, .. }
-            | Self::Abort { document, .. } => *document,
-        }
-    }
-}
-
 #[derive(Default)]
 pub(in crate::renderer_process::child) struct FetchState {
     requests: HashMap<u64, TrackedRequest>,
@@ -75,6 +44,21 @@ pub(in crate::renderer_process::child) struct FetchState {
 }
 
 impl FetchState {
+    pub(super) fn buffered_credit(
+        &self,
+        message: &BrowserMessage,
+    ) -> Option<(DocumentId, u64, u32)> {
+        let BrowserMessage::FetchResponseChunk(chunk) = message else {
+            return None;
+        };
+        let tracked = self.requests.get(&chunk.transfer_id)?;
+        (tracked.delivery == Delivery::Buffered).then_some((
+            tracked.document,
+            chunk.transfer_id,
+            chunk.offset.checked_add(chunk.bytes.len() as u32)?,
+        ))
+    }
+
     pub(super) fn register(
         &mut self,
         document: DocumentId,

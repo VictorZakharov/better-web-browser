@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Progressive Fetch</title>
+<style>body{font:18px system-ui;margin:32px;max-width:1000px}pre{white-space:pre-wrap;background:#edf5f0;padding:20px}</style>
+<h1>Progressive Fetch: document and worker</h1>
+<p>An owned loopback server sends headers, a first chunk, then a delayed final chunk.
+The phase endpoint proves whether each realm consumed data before EOF.</p>
+<pre id="result">Running…</pre>
+<script src="/progressive-fetch.js"></script>

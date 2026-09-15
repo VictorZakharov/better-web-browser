@@ -24,7 +24,7 @@
         return new Promise((resolve, reject) => {
             const operation = {
                 id: null, request, resolve, reject, responseStarted: false,
-                completed: false, controller: null
+                completed: false, controller: null, received: 0, consumed: 0
             };
             operation.abort = () => {
                 if (operation.completed) return;
@@ -80,15 +80,25 @@
         if (metadata.status >= 400) reportFailure(id, 'HTTP ' + metadata.status);
         let stream = null;
         if (!nullBody) {
+            const windowBytes = Number(host('fetchBufferLimit'));
             stream = new ReadableStream({
                 start(controller) { operation.controller = controller; },
+                pull(controller) {
+                    if (operation.completed) return;
+                    const queued = Math.max(0, windowBytes - controller.desiredSize);
+                    const consumed = operation.received - queued;
+                    if (consumed > operation.consumed) {
+                        operation.consumed = consumed;
+                        host('fetchConsumed', operation.id, consumed);
+                    }
+                },
                 cancel() {
                     if (!operation.completed) {
                         finish(operation);
                         host('fetchAbort', operation.id);
                     }
                 }
-            });
+            }, { highWaterMark: windowBytes, size: chunk => chunk.byteLength });
         }
         operation.responseStarted = true;
         operation.resolve(Response.__fromNetwork(metadata, stream, nullBody));
@@ -99,6 +109,7 @@
         if (!operation || operation.completed || !operation.responseStarted || !operation.controller) return;
         // The host creates a fresh Uint8Array for every IPC chunk. The stream owns that
         // value after enqueue, so copying it here only doubles large-response allocation.
+        operation.received += body.byteLength;
         operation.controller.enqueue(body);
     };
 

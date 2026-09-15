@@ -180,6 +180,16 @@ pub(super) fn dispatch_worker_host_call(
             });
             Ok(JsValue::from(id))
         }
+        "fetchBufferLimit" => Ok(JsValue::from(
+            crate::limits::MAX_FETCH_STREAM_WINDOW_BYTES as u32,
+        )),
+        "fetchConsumed" => {
+            state.fetch_actions.push(ScriptFetchAction::Consume {
+                id: argument_id(args, 1),
+                total: argument_id(args, 2),
+            });
+            Ok(JsValue::undefined())
+        }
         "fetchAbort" => {
             state.fetch_actions.push(ScriptFetchAction::Abort {
                 id: argument_id(args, 1),

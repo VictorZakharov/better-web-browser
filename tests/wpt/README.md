@@ -25,7 +25,7 @@ Network access is needed only to create or update this external checkout.
 
 ## Run the suite
 
-After the fixtures exist, all 215 curated cases run with one offline command:
+After the fixtures exist, all 219 curated cases run with one offline command:
 
 ```powershell
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
@@ -61,15 +61,15 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 215 passing files
-and 2,126 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is 219 passing files
+and 2,167 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 215 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 219 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -82,8 +82,9 @@ follows:
 | Performance Timeline and User Timing | 39 | Asynchronous/buffered observation, filtering, buffer lifetime, mark/measure dictionaries, structured details, and monotonic clocks |
 | URLs | 5 | URL and URLSearchParams bindings |
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
+| Readable streams | 2 | Demand-driven tee, cancellation, error ordering, and floating-point queue-size accounting |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
-| Web Storage | 23 | Lossless strings, method/named access, conversions, quotas, enumeration, and independent areas |
+| Web Storage | 25 | Lossless strings, method/named access, conversions, quotas, enumeration, independent areas, and storage-event construction |
 | CSS cascade, selectors, and layout | 28 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
 | CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |

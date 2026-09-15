@@ -19,6 +19,14 @@ impl Broker {
         requests: &[RendererFetchRequest],
     ) -> Result<(), ProtocolError> {
         for request in requests {
+            self.resources()
+                .fetch_flow
+                .register(
+                    request.head.document,
+                    request.head.request_id,
+                    request.head.initiator == FetchInitiator::ScriptApi,
+                )
+                .map_err(|_| ProtocolError::InvalidPayload("duplicate Fetch flow identity"))?;
             if self
                 .fetch_response_streaming
                 .insert(
@@ -109,6 +117,7 @@ impl Broker {
                     .map_err(|error| error.to_string())?;
             }
             FetchStreamEvent::End { document, end } => {
+                self.resources().fetch_flow.retire(document, end.request_id);
                 if self.active_document != Some(document) {
                     return Ok(());
                 }
@@ -124,6 +133,9 @@ impl Broker {
                     .map_err(|error| error.to_string())?;
             }
             FetchStreamEvent::Abort { document, abort } => {
+                self.resources()
+                    .fetch_flow
+                    .retire(document, abort.request_id);
                 if self.active_document != Some(document) {
                     return Ok(());
                 }

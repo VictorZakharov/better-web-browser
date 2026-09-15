@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "streaming_network/progressive.rs"]
+mod progressive;
+
 const STREAMING_HTML: &str = r#"<!doctype html>
 <title>streaming pending</title>
 <style>

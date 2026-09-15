@@ -151,7 +151,7 @@ impl ChildConnection {
                 | BrowserMessage::FetchResponseChunk(_)
                 | BrowserMessage::FetchResponseEnd(_)
                 | BrowserMessage::FetchResponseAbort(_)) => {
-                    if let Some(delivery) = self.fetches.handle(message)? {
+                    if let Some(delivery) = self.handle_fetch_message(message)? {
                         self.pending_fetch_deliveries.push_back(delivery);
                     }
                 }
@@ -178,7 +178,27 @@ impl ChildConnection {
         &mut self,
         message: BrowserMessage,
     ) -> Result<Option<ScriptFetchDelivery>, String> {
-        self.fetches.handle(message)
+        let credit = self.fetches.buffered_credit(&message);
+        let delivery = self.fetches.handle(message)?;
+        if let Some((document, request_id, total)) = credit {
+            self.consume_fetch(document, request_id, total)?;
+        }
+        Ok(delivery)
+    }
+
+    pub(in crate::renderer_process::child) fn consume_fetch(
+        &mut self,
+        document: DocumentId,
+        request_id: u64,
+        total: u32,
+    ) -> Result<(), String> {
+        self.writer
+            .send_renderer(&RendererMessage::FetchResponseConsumed {
+                document,
+                request_id,
+                total,
+            })
+            .map_err(|error| error.to_string())
     }
 
     pub(in crate::renderer_process::child) fn abort_fetch(

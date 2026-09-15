@@ -19,7 +19,7 @@ impl DocumentRuntime {
             .iter()
             .filter_map(|action| match action {
                 ScriptFetchAction::Abort { id } => Some(*id),
-                ScriptFetchAction::Start { .. } => None,
+                ScriptFetchAction::Start { .. } | ScriptFetchAction::Consume { .. } => None,
             })
             .collect::<HashSet<_>>();
 
@@ -36,6 +36,14 @@ impl DocumentRuntime {
         let mut requests = Vec::new();
         let mut started = Vec::new();
         for action in actions {
+            if let ScriptFetchAction::Consume { id, total } = &action
+                && let Some((&wire_id, _)) = self
+                    .active_script_fetches
+                    .iter()
+                    .find(|(_, script)| **script == *id)
+            {
+                connection.consume_fetch(self.id, wire_id, *total)?;
+            }
             if let ScriptFetchAction::Start { id, request } = action
                 && !aborted.contains(&id)
             {
@@ -103,6 +111,10 @@ impl DocumentRuntime {
                 )
             }
         };
+        if self.workers.owns_fetch(request_id) {
+            self.workers.deliver_fetch(request_id, event);
+            return Ok(None);
+        }
         let Some(script_id) = self.active_script_fetches.get(&request_id).copied() else {
             return Ok(None);
         };

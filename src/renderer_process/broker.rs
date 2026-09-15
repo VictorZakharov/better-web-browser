@@ -5,6 +5,7 @@ mod clock;
 mod control;
 mod diagnostics;
 mod events;
+mod flow;
 mod outbound;
 mod queue_depth;
 mod session;
@@ -117,6 +118,7 @@ pub struct RendererSession {
     state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
+    fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,
     incoming_depth: QueueDepth,
     outbound_diagnostics: outbound::Diagnostics,
@@ -224,6 +226,8 @@ impl RendererSession {
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let fetch_flow = Arc::new(flow::FetchFlow::default());
+        let worker_fetch_flow = Arc::clone(&fetch_flow);
         let (events_tx, events_rx) = events::bounded();
         let worker_shared = Arc::clone(&shared);
         let worker_options = options.clone();
@@ -250,6 +254,7 @@ impl RendererSession {
                     state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
+                    fetch_flow: worker_fetch_flow,
                     events: events_tx,
                     wake: worker_wake,
                     shared: worker_shared,
@@ -266,6 +271,7 @@ impl RendererSession {
             state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
+            fetch_flow,
             events: events_rx,
             incoming_depth,
             outbound_diagnostics,

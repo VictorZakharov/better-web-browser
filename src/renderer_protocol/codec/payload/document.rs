@@ -147,6 +147,16 @@ pub(super) fn encode_renderer_document(
             writer.u64(*request_id);
             0x010a
         }
+        RendererMessage::FetchResponseConsumed {
+            document,
+            request_id,
+            total,
+        } => {
+            writer.u64(document.get());
+            writer.u64(*request_id);
+            writer.u32(*total);
+            0x010c
+        }
         RendererMessage::PresentationStart {
             document,
             revision,
@@ -235,6 +245,11 @@ pub(super) fn decode_renderer_document(
         },
         0x0106 => RendererMessage::FetchRequestChunk(decode_chunk(&mut reader)?),
         0x0108 => RendererMessage::FetchRequestEnd(nonzero(reader.u64()?, "Fetch request")?),
+        0x010c => RendererMessage::FetchResponseConsumed {
+            document: DocumentId::new(reader.u64()?)?,
+            request_id: nonzero(reader.u64()?, "Fetch consumption")?,
+            total: reader.u32()?,
+        },
         0x010a => RendererMessage::FetchRequestAbort {
             document: DocumentId::new(reader.u64()?)?,
             request_id: nonzero(reader.u64()?, "Fetch request")?,
