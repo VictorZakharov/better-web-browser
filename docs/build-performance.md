@@ -42,7 +42,7 @@ claims still require a canonical release build from the exact source head.
 
 ## GitHub Actions feedback
 
-### September 15 PR policy
+### September 15 PR policy (#155)
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain
 source/format checks, Clippy, all core tests, renderer smoke tests, focused Windows integration tests,
@@ -73,14 +73,15 @@ combinations. Only a PR may skip these three broad suites, and only a confirmed 
 may skip the remaining workers. Main always requires the full suite. The final PR path runs 1,246
 Rust tests; moving broader integration coverage to main is a deliberate speed/coverage tradeoff.
 
-Compiler-level sccache and Cargo package/index caches remain enabled; `target` is not cached.
+In PR #155, compiler-level sccache and Cargo package/index caches remained enabled; `target` was not cached.
 Rust stays pinned by `rust-toolchain.toml`, including Clippy and rustfmt. V8 metadata is restricted to
 the requested Windows target instead of unpacking other platforms' dependencies. Direct registry
 directory caching through the cache action's MSYS tar was measured and rejected: a 124 MiB cache
 took 27–43 seconds to extract on ordinary samples and 133 seconds on one worker. A native ZIP
 experiment also regressed on its warm run (78 seconds extracting), so extracted sources are not
-cached. Rust installation stays sequential: an attempted overlap caused a component-install
-conflict and was removed. These rejected experiments are not part of the final workflow.
+cached in that revision. Rust installation stays sequential: an attempted overlap caused a
+component-install conflict and was removed. Those serial-extraction and background-install
+experiments are not part of the current workflow.
 
 The September 15 baseline was [PR #154's final run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35017147276):
 **4m47s** from workflow start to completion of `windows`. The slowest visual worker took 4m28s;
@@ -107,6 +108,47 @@ Core became the critical path: the first run spent 95 seconds in dependency meta
 and the repeat's core worker finished 25 seconds after Windows integration. The subsequent target
 rebalance moves the sixteen WPT-runner unit tests to that integration worker without reducing
 coverage. These results do not establish reliable sub-three-minute feedback.
+
+### Cargo-source filesystem cache (#156)
+
+The essential PR checks and complete main suite from #155 are unchanged. This follow-up targets
+dependency preparation, not test coverage, compiler options, or runner size. V8 contributes 15,317
+of the 24,433 files in the hosted Windows registry-source snapshot. Serial extraction of these
+small files dominated the earlier setup measurements.
+
+The shared Windows action caches only `registry/src` inside one dynamically expanding NTFS
+filesystem image (4 GiB capacity), mounted at Cargo's normal source directory. A warm worker
+restores one image instead of recreating thousands of individual files. Cargo package
+archives/indexes and compiler-level sccache remain separate and unchanged. The cache never
+contains `target`, Cargo credentials, or global Cargo configuration. Its exact key includes
+`Cargo.lock`, the pinned Rust toolchain configuration, and both volume helpers; it has no
+partial-key fallback. Cargo's source-cache layout is not a stable API, so a toolchain/helper
+change intentionally repopulates this cache.
+
+Only the core worker populates a missing source image using ordinary Cargo dependency resolution.
+It detaches the image to flush and unlock it before saving, then remounts it for compilation.
+Other cold workers use ordinary Cargo preparation without creating duplicate images. A first
+cache fill or dependency change can therefore take longer than a warm run. Cache hits are writable
+for Cargo compatibility but never saved back; each disposable VM owns its restored copy.
+
+Disk operations refuse developer machines and self-hosted runners. The image and mount paths are
+fixed children of the hosted runner's temporary/profile directories. Creation refuses an existing
+image, mounting requires an empty directory, and unexpected reparse points are rejected. DiskPart
+only creates/formats a new virtual image: it never selects or clears a physical disk. Later
+operations resolve that exact image, verify its non-system disk, single partition, NTFS filesystem,
+and label, and use the Storage cmdlets. The hosted VM discards the attached image when the job ends.
+Local tests exercise path/command validation and the execution guard without invoking disk tools;
+hosted compilation/tests exercise the actual create, detach, restore, and mount lifecycle.
+
+The preceding four-ZIP parallel-extraction experiment was rejected. Local extraction of 15,317
+V8 files improved from 7.30s to 3.20s, but hosted results did not follow: the
+[cache-fill run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35029585793)
+passed in **3m12s**, then the
+[cache-hit run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35029800702)
+passed in **3m43s**. The latter spent 29.47s (lint), 37.76s (core), and 79.40s (renderer) extracting
+the same sources. Parallel ZIP extraction is not retained. The preceding merged PR #155's
+[final source-change run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35025572639)
+took **3m55s**. These are workflow-start-to-required-`windows` measurements, not sums of job times.
 
 ### Historical measurements
 
@@ -186,6 +228,10 @@ hits for the native-engine and workspace build graph.
 
 - [Cargo build profiles](https://doc.rust-lang.org/cargo/reference/profiles.html)
 - [Cargo test target selection](https://doc.rust-lang.org/cargo/commands/cargo-test.html)
+- [Cargo home and registry caching](https://doc.rust-lang.org/cargo/guide/cargo-home.html)
+- [Windows virtual disk images](https://learn.microsoft.com/en-us/windows/win32/vstor/about-vhd)
+- [Mount-DiskImage](https://learn.microsoft.com/en-us/powershell/module/storage/mount-diskimage?view=windowsserver2025-ps)
+- [DiskPart script error handling](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/diskpart-scripts-and-examples)
 - [rustc linker options](https://doc.rust-lang.org/rustc/codegen-options/index.html#linker)
 - [GitHub Actions dependency caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
 - [GitHub-hosted runner software](https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md)
