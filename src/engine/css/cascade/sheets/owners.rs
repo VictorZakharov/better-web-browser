@@ -32,8 +32,10 @@ pub(super) fn append(
         }) {
             continue;
         }
-        let (source, sheet_base) = if node.tag_name() == Some("style") {
-            (node.text_content(), base_url.to_string())
+        let (source, sheet_base, imports) = if node.tag_name() == Some("style") {
+            let source = node.text_content();
+            let imports = crate::engine::css::imports::parse(&source);
+            (source, base_url.to_string(), imports)
         } else {
             if !node
                 .attr("rel")
@@ -45,15 +47,29 @@ pub(super) fn append(
             }
             let Some(url) = node
                 .attr("href")
-                .and_then(|href| crate::navigation::resolve_url(base_url, &href))
+                .filter(|href| !href.trim().is_empty())
+                .and_then(|href| crate::engine::css::imports::resolve(base_url, &href))
             else {
                 continue;
             };
             let Some(resource) = loaded.get(url.as_str()) else {
                 continue;
             };
-            (resource.source.clone(), resource.base_url.clone())
+            (
+                resource.source.clone(),
+                resource.base_url.clone(),
+                resource.imports.clone(),
+            )
         };
+        let expansion =
+            crate::engine::css::imports::expand(&sheet_base, &imports, resources, environment);
+        for imported in expansion.sheets {
+            inputs.push(SheetInput {
+                source: imported.source.clone(),
+                base_url: imported.base_url.clone(),
+                scope,
+            });
+        }
         inputs.push(SheetInput {
             source,
             base_url: sheet_base,

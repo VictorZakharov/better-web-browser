@@ -87,3 +87,33 @@ fn repeated_link_owners_share_payload_but_keep_each_tree_position() {
         Color::rgb(0, 128, 0)
     );
 }
+
+#[test]
+fn imports_precede_parent_rules_and_repeat_at_each_import_position() {
+    let dom = dom::parse(
+        "<style>@import 'a.css'; @import 'b.css'; @import 'a.css'; p{width:123px}</style><p>text</p>",
+    );
+    let sources = [
+        StylesheetSource::linked("https://example.test/a.css", "@import 'child.css';".into()),
+        StylesheetSource::linked(
+            "https://example.test/b.css",
+            "p{color:blue;width:456px}".into(),
+        ),
+        StylesheetSource::linked(
+            "https://example.test/child.css",
+            "p{color:red;width:789px}".into(),
+        ),
+    ];
+    let target = dom.elements_named("p").next().unwrap();
+    let result = styles(&dom, &sources);
+    assert_eq!(result.get(&target).color, Color::rgb(255, 0, 0));
+    assert_eq!(result.get(&target).width, Length::Px(123.0));
+    dom.elements_named("style")
+        .next()
+        .unwrap()
+        .set_attr("media", "print");
+    assert_ne!(
+        styles(&dom, &sources).get(&target).color,
+        Color::rgb(255, 0, 0)
+    );
+}

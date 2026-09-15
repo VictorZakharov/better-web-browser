@@ -6,6 +6,7 @@ use crate::engine::dom::{Node, NodeId, NodeRef};
 
 pub(super) struct RenderBlocking {
     links: HashMap<NodeId, NodeRef>,
+    scripts: HashMap<NodeId, NodeRef>,
     started: Instant,
     pub(super) dirty: bool,
 }
@@ -13,6 +14,7 @@ impl Default for RenderBlocking {
     fn default() -> Self {
         Self {
             links: HashMap::new(),
+            scripts: HashMap::new(),
             started: Instant::now(),
             dirty: false,
         }
@@ -27,14 +29,27 @@ impl DocumentRuntime {
             .next()
             .map_or_else(Vec::new, |head| {
                 Node::descendants(&head)
-                    .filter(|node| node.tag_name() == Some("link"))
+                    .filter(crate::engine::page::is_stylesheet)
                     .collect()
             })
     }
-    pub(super) fn record_parser_stylesheets(&mut self, previous: &[NodeRef]) {
-        for node in self.head_links() {
-            if !previous.iter().any(|old| old.id() == node.id()) && self.stylesheet_pending(&node) {
-                self.rendering.links.insert(node.id(), node);
+    pub(super) fn stylesheet_nodes(&self) -> Vec<NodeRef> {
+        Node::descendants(&self.page.dom.document)
+            .filter(crate::engine::page::is_stylesheet)
+            .collect()
+    }
+    pub(super) fn record_parser_stylesheets(&mut self, previous: &[(NodeId, u64)]) {
+        let head = self.head_links();
+        for node in self.stylesheet_nodes() {
+            if !previous.contains(&(node.id(), node.subtree_mutation_version()))
+                && self.stylesheet_pending(&node)
+            {
+                // HTML's script-blocking set includes parser-created body links and style
+                // imports, unlike implicit head-only first-presentation blocking.
+                self.rendering.scripts.insert(node.id(), node.clone());
+                if head.iter().any(|candidate| candidate.id() == node.id()) {
+                    self.rendering.links.insert(node.id(), node);
+                }
             }
         }
     }
@@ -42,6 +57,14 @@ impl DocumentRuntime {
         // Admission and release are lifecycle operations. A link that has finished, been
         // disabled, or disconnected must not become a blocker again after body insertion.
         let head_links = self.head_links();
+        let scripts = std::mem::take(&mut self.rendering.scripts);
+        self.rendering.scripts = scripts
+            .into_iter()
+            .filter(|(_, node)| {
+                Node::tree_root(node).id() == self.page.dom.document.id()
+                    && self.stylesheet_pending(node)
+            })
+            .collect();
         let previous = std::mem::take(&mut self.rendering.links);
         self.rendering.links = previous
             .into_iter()
@@ -75,41 +98,30 @@ impl DocumentRuntime {
         })
     }
     fn stylesheet_pending(&self, node: &NodeRef) -> bool {
-        let rel = node.attr("rel").unwrap_or_default();
-        if !rel
-            .split_ascii_whitespace()
-            .any(|v| v.eq_ignore_ascii_case("stylesheet"))
-            || rel
-                .split_ascii_whitespace()
-                .any(|v| v.eq_ignore_ascii_case("alternate"))
-            || node.attr("disabled").is_some()
-            || node
-                .attr("type")
-                .is_some_and(|v| !v.is_empty() && !v.eq_ignore_ascii_case("text/css"))
-        {
-            return false;
-        }
-        if !crate::engine::css::media::media_matches_for_environment(
-            &node.attr("media").unwrap_or_default(),
-            MediaEnvironment::new(
-                self.viewport.style_width,
-                self.viewport.height,
-                self.viewport.dpi as f32 / 96.0,
-                self.prefers_dark_color_scheme,
-            ),
-        ) {
-            return false;
-        }
-        let Some(url) = node
-            .attr("href")
-            .filter(|v| !v.is_empty())
-            .and_then(|value| self.page.resolve_resource_url(&value))
-        else {
-            return false;
-        };
-        !self
-            .loaded_resources
-            .contains(&PageResource::Stylesheet { url })
+        self.page.stylesheet_applies(node)
+            && self
+                .page
+                .stylesheet_dependencies(node)
+                .urls
+                .iter()
+                .any(|url| {
+                    let resource = PageResource::Stylesheet { url: url.clone() };
+                    !self.loaded_resources.contains(&resource)
+                        && (self.page.resources.contains(&resource)
+                            || self
+                                .page
+                                .resources
+                                .iter()
+                                .filter(|r| matches!(r, PageResource::Stylesheet { .. }))
+                                .count()
+                                < crate::limits::MAX_STYLESHEETS)
+                })
+    }
+    pub(super) fn parser_stylesheets_pending(&self) -> bool {
+        self.rendering.scripts.values().any(|node| {
+            Node::tree_root(node).id() == self.page.dom.document.id()
+                && self.stylesheet_pending(node)
+        })
     }
     pub(super) fn rendering_deadline(&self) -> Option<u64> {
         self.rendering_is_blocked().then(|| {

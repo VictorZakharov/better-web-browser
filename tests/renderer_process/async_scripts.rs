@@ -21,6 +21,8 @@ mod dynamic;
 mod parsing;
 #[path = "async_scripts/rendering.rs"]
 mod rendering;
+#[path = "async_scripts/stylesheets.rs"]
+mod stylesheets;
 
 #[test]
 fn async_scripts_execute_ready_elements_and_fail_each_owner_without_waiting_for_slow_fetch() {
@@ -143,7 +145,7 @@ fn resources_discovered_by_a_ready_script_do_not_wait_for_the_slow_script_batch(
             event => panic!("unexpected event: {event:?}"),
         }
     }
-    driver.respond("late.css", "#status { color: green; }", 200);
+    driver.respond_bytes("late.css", b"#status { color: green; }", "text/css", 200);
     driver.until_text("late stylesheet ready");
     driver.session.shutdown().unwrap();
 }

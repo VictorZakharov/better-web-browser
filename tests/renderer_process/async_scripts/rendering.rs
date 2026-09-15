@@ -1,6 +1,6 @@
 use super::*;
 
-fn blocked_until_request(driver: &mut Driver, suffix: &str) {
+pub(super) fn blocked_until_request(driver: &mut Driver, suffix: &str) {
     for _ in 0..30 {
         if driver.requests.keys().any(|url| url.ends_with(suffix)) {
             return;

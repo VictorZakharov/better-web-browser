@@ -52,8 +52,9 @@ resetting the anchor at first paint would restart expired idle-callback timeouts
 
 This implements a bounded part of the [HTML render-blocking mechanism](https://html.spec.whatwg.org/multipage/dom.html#render-blocking-mechanism)
 and [stylesheet processing](https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet).
-Recursive `@import` blocking, complete stylesheet-set selection, render-blocking
-scripts and animation-frame/rendering-opportunity alignment remain incomplete.
+[Recursive import loading and separate parser-script gates](stylesheet-loading-dependencies.md)
+are now implemented for the documented subset. Complete stylesheet-set selection,
+render-blocking scripts and animation-frame/rendering-opportunity alignment remain incomplete.
 
 ## Regression evidence
 

@@ -76,16 +76,24 @@ pub(super) fn collect(
         &mut inputs,
         RuleScope::Document,
     );
-    inputs.extend(
-        external_stylesheets
-            .iter()
-            .filter(|source| source.owner_url.is_none())
-            .map(|source| SheetInput {
+    for source in external_stylesheets
+        .iter()
+        .filter(|source| source.owner_url.is_none())
+    {
+        let imports = crate::engine::css::imports::expand(
+            &source.base_url,
+            &source.imports,
+            external_stylesheets,
+            environment,
+        );
+        for source in imports.sheets.into_iter().chain(std::iter::once(source)) {
+            inputs.push(SheetInput {
                 source: source.source.clone(),
                 base_url: source.base_url.clone(),
                 scope: RuleScope::Document,
-            }),
-    );
+            });
+        }
+    }
     append_adopted(document, environment, &mut inputs, RuleScope::Document);
     for shadow in Node::shadow_including_descendants(document)
         .filter(|node| matches!(node.data, NodeData::ShadowRoot(_)))

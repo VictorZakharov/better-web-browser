@@ -36,7 +36,11 @@ impl DocumentRuntime {
                 self.execute_pending_parser_script(connection, outcome)?;
             }
             self.update_render_blockers();
-            let previous_links = self.head_links();
+            let previous_links = self
+                .stylesheet_nodes()
+                .iter()
+                .map(|node| (node.id(), node.subtree_mutation_version()))
+                .collect::<Vec<_>>();
             let parser = self.parser.as_mut().expect("active parser");
             let pending_checkpoint = parser.next.is_some();
             let previous_version = parser.parser.dom().mutation_version();
@@ -57,6 +61,7 @@ impl DocumentRuntime {
                 .errors
                 .replace(parser.parser.dom().errors.borrow().clone());
             if dom_changed {
+                self.page.discover_parsed_resources();
                 self.record_parser_stylesheets(&previous_links);
                 if let Some(runtime) = self.script_runtime.as_mut() {
                     runtime.set_quirks_mode(
@@ -69,7 +74,6 @@ impl DocumentRuntime {
                         self.page.dom.document.id(),
                     );
                 }
-                self.page.discover_parsed_resources();
                 if let Some(url) = self.page.immediate_refresh_url() {
                     outcome.navigation_url = Some(url);
                     break;
@@ -123,12 +127,5 @@ impl DocumentRuntime {
             }
         }
         Ok(())
-    }
-
-    pub(super) fn parser_stylesheets_pending(&self) -> bool {
-        self.page.resources.iter().any(|resource| {
-            matches!(resource, PageResource::Stylesheet { .. })
-                && !self.loaded_resources.contains(resource)
-        })
     }
 }

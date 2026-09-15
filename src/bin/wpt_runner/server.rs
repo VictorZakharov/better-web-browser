@@ -1,4 +1,5 @@
 use crate::manifest::TestCase;
+mod metadata;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Component, Path, PathBuf};
@@ -165,7 +166,7 @@ fn handle_connection(
     write_response(
         stream,
         response.status,
-        response.content_type,
+        &response.content_type,
         &response.body,
         method == "HEAD",
     )
@@ -173,7 +174,7 @@ fn handle_connection(
 
 struct Response {
     status: u16,
-    content_type: &'static str,
+    content_type: String,
     body: Vec<u8>,
 }
 
@@ -203,7 +204,15 @@ fn route(root: &Path, tests: &[TestCase], request_path: &str) -> Response {
         _ => return error_response(404, "fixture not found"),
     };
     match std::fs::read(&canonical) {
-        Ok(body) => ok(content_type(&canonical), body),
+        Ok(body) => match metadata::content_type(root, &canonical) {
+            Ok(Some(content_type)) => Response {
+                status: 200,
+                content_type,
+                body,
+            },
+            Ok(None) => ok(content_type(&canonical), body),
+            Err(message) => error_response(500, &message),
+        },
         Err(_) => error_response(500, "fixture could not be read"),
     }
 }
@@ -333,7 +342,7 @@ fn write_response(
 fn ok(content_type: &'static str, body: Vec<u8>) -> Response {
     Response {
         status: 200,
-        content_type,
+        content_type: content_type.into(),
         body,
     }
 }
@@ -341,7 +350,7 @@ fn ok(content_type: &'static str, body: Vec<u8>) -> Response {
 fn error_response(status: u16, message: &str) -> Response {
     Response {
         status,
-        content_type: "text/plain; charset=utf-8",
+        content_type: "text/plain; charset=utf-8".into(),
         body: message.as_bytes().to_vec(),
     }
 }

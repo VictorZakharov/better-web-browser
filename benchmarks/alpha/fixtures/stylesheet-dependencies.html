@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stylesheet dependencies pending</title>
+<script>
+const start = performance.now();
+const marks = {};
+function mark(name) {
+    marks[name] = Math.round(performance.now() - start);
+    console.log('STYLESHEET_' + name + '_MS=' + marks[name]);
+}
+window.addEventListener('load', () => {
+    mark('WINDOW_LOAD');
+    const result = document.getElementById('result');
+    const pass = marks.PARSER >= 1400 && marks.LINK_LOAD >= 1400 && marks.ASYNC < 1400
+        && getComputedStyle(result).fontWeight === '700';
+    result.textContent = pass ? 'PASS: imports settled before parser and load' : 'FAIL: stylesheet dependency ordering';
+    result.dataset.marks = JSON.stringify(marks);
+    document.title = pass ? 'Stylesheet dependencies complete' : 'Stylesheet dependencies failed';
+});
+</script>
+<link id="blocking" rel="stylesheet" href="stylesheet-parent.css?delay_ms=100">
+<script async src="stylesheet-observer.js?delay_ms=100"></script>
+<body>
+<main>
+  <h1>Stylesheet dependency loading</h1>
+  <p>The panel below must be styled on its first visible presentation.</p>
+  <section id="result">Waiting for all imported CSS</section>
+  <p>A fast asynchronous script stays runnable while CSS holds the parser and first paint.</p>
+</main>
+<script>mark('PARSER');</script>
