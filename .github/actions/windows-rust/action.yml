@@ -2,7 +2,7 @@ name: Windows Rust dependencies
 description: Restore compiler and registry caches without caching workspace build outputs
 inputs:
   populate-source-cache:
-    description: Let one worker populate a missing source cache without delaying every cold worker
+    description: Publish a missing source image from one worker only
     default: 'false'
 runs:
   using: composite

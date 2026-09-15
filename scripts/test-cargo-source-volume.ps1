@@ -6,10 +6,10 @@ $ErrorActionPreference = 'Stop'
 $root = Join-Path $PSScriptRoot "../target/source-volume-test-$([Guid]::NewGuid().ToString('N'))"
 $root = [IO.Path]::GetFullPath($root)
 $temporary = Join-Path $root 'temp'
-$profile = Join-Path $root 'profile'
+$testProfile = Join-Path $root 'profile'
 [IO.Directory]::CreateDirectory($temporary) | Out-Null
-[IO.Directory]::CreateDirectory($profile) | Out-Null
-$arguments = @{ TemporaryDirectory = $temporary; ProfileDirectory = $profile }
+[IO.Directory]::CreateDirectory($testProfile) | Out-Null
+$arguments = @{ TemporaryDirectory = $temporary; ProfileDirectory = $testProfile }
 function Expect-Rejection {
     param([scriptblock] $Action)
     $rejected = $false
@@ -18,7 +18,7 @@ function Expect-Rejection {
 }
 $plan = Get-CargoSourceVolumePlan -Mode Create @arguments
 if ($plan.Image -ne (Join-Path $temporary 'cargo-source-volume/registry.vhdx') -or
-    $plan.Mount -ne (Join-Path $profile '.cargo/registry/src')) { throw 'Unexpected volume paths.' }
+    $plan.Mount -ne (Join-Path $testProfile '.cargo/registry/src')) { throw 'Unexpected volume paths.' }
 $commands = $plan.CreationScript -split "`r`n"
 if ($commands.Count -ne 5 -or $commands[0] -ne "create vdisk file=`"$($plan.Image)`" maximum=4096 type=expandable" -or
     $commands[1] -ne 'attach vdisk' -or $commands[2] -ne 'create partition primary' -or
@@ -26,9 +26,9 @@ if ($commands.Count -ne 5 -or $commands[0] -ne "create vdisk file=`"$($plan.Imag
     $commands[4] -ne "assign mount=`"$($plan.Mount)`"") { throw 'Unexpected virtual-image creation commands.' }
 Expect-Rejection { Get-CargoSourceVolumePlan -Mode Mount @arguments }
 Expect-Rejection { Get-CargoSourceVolumePlan -Mode Unmount @arguments }
-Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory '.' -ProfileDirectory $profile }
-Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory "$temporary`nattach vdisk" -ProfileDirectory $profile }
-Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory ($temporary + '"') -ProfileDirectory $profile }
+Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory '.' -ProfileDirectory $testProfile }
+Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory "$temporary`nattach vdisk" -ProfileDirectory $testProfile }
+Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create -TemporaryDirectory ($temporary + '"') -ProfileDirectory $testProfile }
 [IO.Directory]::CreateDirectory((Split-Path $plan.Image)) | Out-Null
 [IO.File]::WriteAllText($plan.Image, 'a fixture, never mounted')
 Expect-Rejection { Get-CargoSourceVolumePlan -Mode Create @arguments }
@@ -37,7 +37,7 @@ Get-CargoSourceVolumePlan -Mode Mount @arguments | Out-Null
 [IO.File]::WriteAllText((Join-Path $plan.Mount 'existing.txt'), 'preserve')
 Expect-Rejection { Get-CargoSourceVolumePlan -Mode Mount @arguments }
 $linkedProfile = Join-Path $root 'linked'
-New-Item -ItemType Junction -Path $linkedProfile -Target $profile | Out-Null
+New-Item -ItemType Junction -Path $linkedProfile -Target $testProfile | Out-Null
 Expect-Rejection { Get-CargoSourceVolumePlan -Mode Mount -TemporaryDirectory $temporary -ProfileDirectory $linkedProfile }
 if ([IO.File]::ReadAllText((Join-Path $plan.Mount 'existing.txt')) -ne 'preserve') { throw 'Existing files changed.' }
 # Do not invoke any Storage cmdlet or DiskPart locally, even for the positive cases.

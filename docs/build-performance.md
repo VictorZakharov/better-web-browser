@@ -151,6 +151,30 @@ the same sources. Parallel ZIP extraction is not retained. The preceding merged 
 [final source-change run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35025572639)
 took **3m55s**. These are workflow-start-to-required-`windows` measurements, not sums of job times.
 
+The final volume configuration's
+[cold-source-cache run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35031297688/attempts/1)
+passed in **2m56s**, 59 seconds (25.1%) below that baseline. Every source-changing PR check ran;
+this was not the Markdown-only skip path. Windows integration setup took 34s, versus 109s in the
+earlier ordinary-directory sample. Core setup took 54s including creating and publishing the
+cache, then compilation took 75s and its 1,080 passing tests took 12.12s. The image cache occupied
+about 65 MiB compressed; its 4 GiB capacity is not a preallocated download.
+
+The unchanged configuration's
+[warm repeat](https://github.com/VictorZakharov/better-web-browser/actions/runs/35031297688/attempts/2)
+also passed, in **2m36s** (33.6% below the 3m55s baseline). The cold and warm attempts ran the same
+1,246 passing Rust tests, Clippy, dependency policy, source/format/CI-policy checks, and Chromium
+harness tests. These measurements include the classifier, runner allocation, setup, and final
+required gate; they do not subtract those costs to claim a shorter wall clock.
+
+Do not confuse this with a guaranteed service deadline. An earlier image-cache
+[warm run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35031002318) passed in
+**6m18s** because the harness job waited from 22:27:00Z until 22:32:02Z for a hosted runner.
+Its Rust workers all passed; source-image mounting took 4.09–4.44s on the measured integration/core
+workers. Another [experimental run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35030831622)
+failed the existing three-second media frame-sequence decode deadline on a worker that still used
+ordinary source extraction. That failure remains recorded, not counted as a timing success; the
+deadline/assertions are unchanged and the later final configuration passed that test.
+
 ### Historical measurements
 
 End-to-end time is measured from each workflow attempt's `run_started_at` timestamp through
