@@ -3,26 +3,39 @@ description: Restore compiler and registry caches without caching workspace buil
 runs:
   using: composite
   steps:
-    - name: Start pinned Rust setup alongside cache restore
-      shell: pwsh
-      run: |
-        # The rustup proxy installs rust-toolchain.toml's version. Cargo below waits
-        # on rustup's lock and reports any setup failure; no toolchain is unpinned.
-        Start-Process -FilePath (Get-Command rustc).Source -ArgumentList '--version' -WindowStyle Hidden -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'rust-setup.stdout') -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'rust-setup.stderr')
     - name: Configure compiler cache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
         version: v0.17.0
-    - name: Restore Cargo registry cache
+    # Cache one file so the cache action does not extract tens of thousands of
+    # registry source files through MSYS tar. Native .NET extraction happens below.
+    - name: Restore Cargo registry archive
+      id: registry
       uses: actions/cache@v6
       with:
-        path: |
-          ~/.cargo/registry/cache
-          ~/.cargo/registry/index
-          ~/.cargo/registry/src
-        key: windows-cargo-registry-v5-${{ hashFiles('Cargo.lock') }}
+        path: ${{ runner.temp }}/cargo-registry.zip
+        key: windows-cargo-registry-zip-v1-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          windows-cargo-registry-v5-
+          windows-cargo-registry-zip-v1-
+    - name: Extract Cargo registry with native Windows paths
+      shell: pwsh
+      run: |
+        $archive = Join-Path $env:RUNNER_TEMP 'cargo-registry.zip'
+        $registry = Join-Path $env:USERPROFILE '.cargo/registry'
+        if (Test-Path -LiteralPath $archive) {
+          $clock = [Diagnostics.Stopwatch]::StartNew()
+          [IO.Compression.ZipFile]::ExtractToDirectory($archive, $registry, $true)
+          Write-Host ("Registry extraction: {0:N2}s" -f $clock.Elapsed.TotalSeconds)
+        }
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug
+    - name: Pack populated registry for later runs
+      if: steps.registry.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $archive = Join-Path $env:RUNNER_TEMP 'cargo-registry.zip'
+        $registry = Join-Path $env:USERPROFILE '.cargo/registry'
+        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }
+        # The cache service compresses this file; avoid compressing it twice.
+        [IO.Compression.ZipFile]::CreateFromDirectory($registry, $archive, [IO.Compression.CompressionLevel]::NoCompression, $false)
