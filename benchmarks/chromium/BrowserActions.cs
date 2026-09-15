@@ -28,15 +28,16 @@ internal static class BrowserActions
                 throw new InvalidOperationException(
                     $"Chromium link was not presented: {expectedUrl}");
             }
+            var navigation = cdp.ReadUntilAsync(root =>
+                root.TryGetProperty("method", out var method) &&
+                method.GetString() == "Page.loadEventFired", timeout);
             nextId = await DispatchClickAsync(
                 cdp,
                 point.GetProperty("x").GetDouble(),
                 point.GetProperty("y").GetDouble(),
                 timeout,
                 nextId);
-            await cdp.ReadUntilAsync(root =>
-                root.TryGetProperty("method", out var method) &&
-                method.GetString() == "Page.loadEventFired", timeout);
+            await navigation;
         }
         if (options.ClickAfterReady is { } click)
         {

@@ -1,6 +1,6 @@
 # Loading standards: implementation sequence
 
-Updated 2026-09-09. This is a code-backed loading-pipeline inventory, not a claim
+Updated 2026-09-15. This is a code-backed loading-pipeline inventory, not a claim
 that HTML loading is conformant or a percentage of the web platform implemented.
 YouTube is a supplementary compatibility check, not the definition of correctness.
 
@@ -52,7 +52,7 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 4 | Remaining parser work: streaming main-response decoding and synchronous, re-entrant insertion. Script-boundary pause/resume is implemented; the response body is still complete at parser startup, and buffered writes enter the tokenizer after the caller returns. | `document/parsing.rs`, `dom/incremental.rs`, `mutation_host/document_write.rs` | A withheld response tail cannot delay prefix/script progress; encoding restart is correct; same-script reads and nested written-script execution match the insertion-point algorithm. |
+| 4 | Remaining parser work: synchronous, re-entrant insertion. [Streaming main-response decoding and charset replay](streaming-html-navigation.md) are implemented; buffered writes still enter the tokenizer after the caller returns. | `document/parsing.rs`, `dom/incremental.rs`, `mutation_host/document_write.rs` | Same-script reads and nested written-script execution match the insertion-point algorithm. |
 | 5 | Stylesheet script-blocking versus render-blocking state. [Initial head-link render gating](float-clear-and-first-paint.md) now separates paint from event-loop progress. Precise script-blocking state, stylesheet-set selection and imports remain. | `page/refresh.rs`, `page/resources.rs`, renderer resource loader | Delayed matching/nonmatching sheets, media changes, errors and imported sheets have separate fetch, cascade, script and render assertions. |
 | 6 | HTML event-handler content attributes. JavaScript-assigned handlers work; `onload="..."` in the fixture did not. | `bootstrap/events.js`, DOM attributes/construction | Parse, set, replace, remove, scope, listener ordering and exception behavior for content attributes; not a special-case script `onload` implementation. |
 
@@ -69,8 +69,8 @@ its 250 ms idle monitor to discover queued events. Drains are bounded, and remai
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
 Retained parser ownership now removes the whole-DOM-before-script startup barrier.
-Streaming response parsing, re-entrant writes and precise stylesheet blocking remain
-the next boundaries. Deferred/module readiness and document lifecycle separation are
+Main-response parsing now progresses before EOF. Re-entrant writes and precise stylesheet
+blocking remain the next boundaries. Deferred/module readiness and document lifecycle separation are
 implemented for the currently admitted resource paths; this is not a complete HTML
 navigation implementation.
 

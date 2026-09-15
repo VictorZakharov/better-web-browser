@@ -80,8 +80,8 @@ This is a usable core, not the entire browser API surface:
 
 - default-reader network streams are progressive; byte-stream/BYOB readers and full WritableStream,
   TransformStream, and pipe cancellation/backpressure semantics remain incomplete;
-- upload bodies, the main navigation response, and script sources still require complete buffered
-  input at their respective consumers; this response-stream slice does not make them progressive;
+- upload bodies and script sources still require complete buffered input at their respective
+  consumers. [Main HTML navigation](streaming-html-navigation.md) now decodes/parses progressively;
 - synchronous XHR on `Window` is intentionally rejected; `responseXML` remains `null` until the
   XML/HTML `DOMParser` path exists;
 - static module graphs are supported, while network-discovered dynamic `import()`, import maps, and

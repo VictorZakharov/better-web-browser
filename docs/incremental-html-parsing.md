@@ -2,7 +2,9 @@
 
 Updated 2026-09-09. This slice replaces the renderer's whole-DOM-before-script
 startup path with a retained HTML tokenizer/tree builder. It is not complete HTML
-streaming or complete `document.write()` support.
+streaming or complete `document.write()` support at that revision. The subsequent
+[main-response streaming slice](streaming-html-navigation.md) adds progressive decoding,
+network EOF, and charset restart handling; synchronous writes remain incomplete.
 
 ## Implemented contract
 
@@ -154,9 +156,9 @@ Keep reports, profiles and screenshots in ignored output directories.
 
 ## Remaining boundaries
 
-- The browser still transfers the complete main response before this parser starts.
-  Streaming decoding/tokenization during main-response delivery and encoding
-  restart rules remain work; generic `page_ready_ms` is not visual completion.
+- Main-response transfer now starts the parser before EOF; see
+  [streaming navigation](streaming-html-navigation.md). Generic `page_ready_ms`
+  still denotes first presentation, not visual completion or window load.
 - [Synchronous `document.write()` re-entry](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document.write()),
   nested execution before the call returns, `document.open()/close()`, parser pause
   flags and destructive-write policy are not complete. A same-script read immediately
