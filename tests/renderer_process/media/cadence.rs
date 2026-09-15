@@ -1,4 +1,7 @@
 use super::*;
+use better_web_browser::renderer_protocol::{
+    DocumentInput, InputModifiers, KeyPhase, KeyboardInput,
+};
 use std::time::Instant;
 
 #[test]
@@ -77,13 +80,12 @@ fn busy_callback(expect_timeout: bool) {
           buffer.addEventListener('updateend', () => source.endOfStream(), {{once:true}});
           buffer.appendBuffer(Uint8Array.from(atob('{encoded}'), c => c.charCodeAt(0)));
         }}, {{once:true}});
-        source.addEventListener('sourceended', () => movie.play().then(() => {{
-          setTimeout(() => {{
-            const start = performance.now();
-            while (performance.now() - start < {busy_ms}) {{}}
-            console.log('__BUSY_CALLBACK_COMPLETED__');
-          }}, 200);
-        }}));
+        source.addEventListener('sourceended', () => movie.play());
+        document.addEventListener('keydown', () => {{
+          const start = performance.now();
+          while (performance.now() - start < {busy_ms}) {{}}
+          console.log('__BUSY_CALLBACK_COMPLETED__');
+        }}, {{once:true}});
         movie.src = URL.createObjectURL(source);
         </script>"#
     );
@@ -119,8 +121,19 @@ fn busy_callback(expect_timeout: bool) {
             event => panic!("unexpected startup event: {event:?}"),
         }
     }
+    // Start the deliberate hang only after the video producer is running. Advancing
+    // startup timers must not race the first decoded frame against a busy callback.
     session
-        .advance_time(document, Duration::from_millis(250), 1)
+        .send_input(DocumentInput::Keyboard(KeyboardInput {
+            document,
+            sequence: 1,
+            phase: KeyPhase::Down,
+            key: "a".into(),
+            code: "KeyA".into(),
+            repeat: false,
+            modifiers: InputModifiers::default(),
+            target: None,
+        }))
         .unwrap();
     let started = Instant::now();
     let mut frames_during_callback = 0;
