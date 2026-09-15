@@ -54,9 +54,13 @@ function Expand-V8Archive {
 
 Push-Location $repoRoot
 try {
-    $metadataText = cargo metadata --format-version 1 --locked
+    # Avoid unpacking dependencies belonging only to unrelated target platforms.
+    $platform = if ([string]::IsNullOrWhiteSpace($Target)) { 'x86_64-pc-windows-msvc' } else { $Target }
+    $metadataClock = [Diagnostics.Stopwatch]::StartNew()
+    $metadataText = cargo metadata --format-version 1 --locked --filter-platform $platform
     if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed while preparing V8' }
     $metadata = $metadataText | ConvertFrom-Json
+    Write-Host ("V8 dependency metadata: {0:N2}s" -f $metadataClock.Elapsed.TotalSeconds)
     $v8Package = $metadata.packages |
         Where-Object { $_.name -eq 'v8' -and $_.version -eq $v8Version } |
         Select-Object -First 1

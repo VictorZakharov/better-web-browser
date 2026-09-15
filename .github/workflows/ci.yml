@@ -69,6 +69,9 @@ jobs:
       - name: Test change classifier
         shell: pwsh
         run: ./scripts/test-classify-ci-changes.ps1
+      - name: Test CI gate and coverage policy
+        shell: pwsh
+        run: ./scripts/test-ci-policy.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -79,24 +82,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Configure compiler cache
-        uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: v0.17.0
-      - name: Restore Cargo registry cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-registry-v4-
-      - name: Prepare V8 build path
-        shell: pwsh
-        run: ./scripts/prepare-v8.ps1 -Profile debug
+      - uses: ./.github/actions/windows-rust
       - name: Lint
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.suite }})
@@ -109,31 +97,22 @@ jobs:
         include:
           - suite: core
             arguments: --lib --bin wpt-runner
+          - suite: renderer
+            arguments: --test renderer_process
           - suite: Windows integration
             arguments: >-
               --bin better-web-browser
               --test hostile_input --test html_parser_conformance
-              --test live_runtime --test renderer_process
+              --test live_runtime --test media_process --test fullscreen_layout
     steps:
       - uses: actions/checkout@v7
-      - name: Configure compiler cache
-        uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: v0.17.0
-      - name: Restore Cargo registry cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-registry-v4-
-      - name: Prepare V8 build path
-        shell: pwsh
-        run: ./scripts/prepare-v8.ps1 -Profile debug
+      - uses: ./.github/actions/windows-rust
       - name: Test
-        run: cargo test ${{ matrix.arguments }}
+        run: cargo test --locked ${{ matrix.arguments }}
+      - name: Test bounded hidden-benchmark timeout diagnostics
+        if: matrix.suite == 'Windows integration'
+        shell: pwsh
+        run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
 
   wpt:
     name: Curated WPT
@@ -142,22 +121,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Configure compiler cache
-        uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: v0.17.0
-      - name: Restore Cargo registry cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-registry-v4-
-      - name: Prepare V8 build path
-        shell: pwsh
-        run: ./scripts/prepare-v8.ps1 -Profile debug
+      - uses: ./.github/actions/windows-rust
       - name: Restore pinned WPT fixtures
         id: wpt-cache
         uses: actions/cache@v6
@@ -173,6 +137,16 @@ jobs:
       - name: Run curated WPT suite headlessly
         shell: pwsh
         run: ./scripts/run-wpt.ps1 -WptRoot (Join-Path $env:RUNNER_TEMP 'wpt') -BuildProfile debug -Jobs 8
+
+  harness:
+    name: Chromium harness self-tests
+    needs: changes
+    if: ${{ needs.changes.outputs.run_windows != 'false' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test shadow-aware Chromium capture classifier
+        run: dotnet run --project benchmarks/chromium-tests/ChromiumBaseline.Tests.csproj -c Release
 
   dependency-policy:
     name: Dependency policy
@@ -208,41 +182,19 @@ jobs:
         shard: [0, 1]
     steps:
       - uses: actions/checkout@v7
-      - name: Configure compiler cache
-        uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: v0.17.0
-      - name: Restore Cargo registry cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-          key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-registry-v4-
-      - name: Prepare V8 build path
-        shell: pwsh
-        run: ./scripts/prepare-v8.ps1 -Profile debug
+      - uses: ./.github/actions/windows-rust
       - name: Build alpha browser
         run: cargo build --locked --bin better-web-browser
-      - name: Test bounded hidden-benchmark timeout diagnostics
-        shell: pwsh
-        run: ./scripts/test-hidden-benchmark-timeout.ps1 -Browser target/debug/better-web-browser.exe
+
       - name: Build Chromium baseline harness
         run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
-      - name: Test shadow-aware Chromium capture classifier
-        run: dotnet run --project benchmarks/chromium-tests/ChromiumBaseline.Tests.csproj -c Release
       - name: Run deterministic public-alpha matrix headlessly
         shell: pwsh
-        run: >-
-          ./benchmarks/run-alpha.ps1
-          -BuildProfile debug
-          -Iterations 1
-          -ShardIndex ${{ matrix.shard }}
-          -ShardCount 2
-          -SkipBuild
-          -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          $fixtures = @(./scripts/select-ci-alpha-fixtures.ps1 -EventName $env:CI_EVENT_NAME)
+          ./benchmarks/run-alpha.ps1 -Fixture $fixtures -BuildProfile debug -Iterations 1 -ShardIndex ${{ matrix.shard }} -ShardCount 2 -SkipBuild -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
 
   windows:
     name: windows
@@ -255,10 +207,12 @@ jobs:
       - wpt
       - alpha-compatibility
       - dependency-policy
+      - harness
     runs-on: ubuntu-latest
     steps:
-      - name: Require every Windows worker
-        shell: bash
+      - uses: actions/checkout@v7
+      - name: Require every worker
+        shell: pwsh
         env:
           CLASSIFICATION_RESULT: ${{ needs.changes.result }}
           RUN_WINDOWS: ${{ needs.changes.outputs.run_windows }}
@@ -269,28 +223,14 @@ jobs:
           WPT_RESULT: ${{ needs.wpt.result }}
           ALPHA_RESULT: ${{ needs.alpha-compatibility.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
+          HARNESS_RESULT: ${{ needs.harness.result }}
         run: |
-          if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
-            echo "Change classification did not succeed: $CLASSIFICATION_RESULT"
-            exit 1
-          fi
-
-          if [[ "$RUN_WINDOWS" == "false" && "$MARKDOWN_ONLY" == "true" ]]; then
-            if [[ "$SOURCE_RESULT" == "skipped" && "$LINT_RESULT" == "skipped" && "$TEST_RESULT" == "skipped" && "$WPT_RESULT" == "skipped" && "$ALPHA_RESULT" == "skipped" && "$DEPENDENCY_RESULT" == "skipped" ]]; then
-              echo "Markdown-only pull request: Windows workers were safely skipped."
-              exit 0
-            fi
-            echo "Markdown-only classification had unexpected worker results."
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT; dependencies: $DEPENDENCY_RESULT"
-            exit 1
-          fi
-
-          if [[ "$RUN_WINDOWS" != "true" || "$MARKDOWN_ONLY" != "false" ]]; then
-            echo "Invalid change-classification outputs: run_windows='$RUN_WINDOWS', markdown_only='$MARKDOWN_ONLY'"
-            exit 1
-          fi
-
-          if [[ "$SOURCE_RESULT" != "success" || "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" || "$WPT_RESULT" != "success" || "$ALPHA_RESULT" != "success" || "$DEPENDENCY_RESULT" != "success" ]]; then
-            echo "Source: $SOURCE_RESULT; lint: $LINT_RESULT; test: $TEST_RESULT; WPT: $WPT_RESULT; alpha: $ALPHA_RESULT; dependencies: $DEPENDENCY_RESULT"
-            exit 1
-          fi
+          ./scripts/assert-ci-results.ps1 -ClassificationResult $env:CLASSIFICATION_RESULT -RunWindows $env:RUN_WINDOWS -MarkdownOnly $env:MARKDOWN_ONLY -Workers @{
+            source = $env:SOURCE_RESULT
+            lint = $env:LINT_RESULT
+            test = $env:TEST_RESULT
+            wpt = $env:WPT_RESULT
+            alpha = $env:ALPHA_RESULT
+            dependencies = $env:DEPENDENCY_RESULT
+            harness = $env:HARNESS_RESULT
+          }
