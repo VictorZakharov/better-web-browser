@@ -1,7 +1,6 @@
 name: CI
 
 env:
-  CARGO_BUILD_JOBS: 8
   CARGO_INCREMENTAL: 0
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
@@ -61,7 +60,7 @@ jobs:
     name: Source and formatting
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
       - name: Enforce source-file size
@@ -80,7 +79,7 @@ jobs:
     name: Lint
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
@@ -91,7 +90,7 @@ jobs:
     name: Test (${{ matrix.suite }})
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +121,7 @@ jobs:
     name: Curated WPT
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
@@ -146,7 +145,7 @@ jobs:
     name: Chromium harness self-tests
     needs: changes
     if: ${{ needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
       - name: Test shadow-aware Chromium capture classifier
@@ -179,7 +178,7 @@ jobs:
     needs: changes
     # Keep the full visual/performance matrix on main, off the PR critical path.
     if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 6
     strategy:
       fail-fast: false
