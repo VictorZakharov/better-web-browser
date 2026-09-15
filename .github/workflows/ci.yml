@@ -72,9 +72,9 @@ jobs:
       - name: Test CI gate and coverage policy
         shell: pwsh
         run: ./scripts/test-ci-policy.ps1
-      - name: Test Cargo source cache integrity
+      - name: Test Cargo source volume safety
         shell: pwsh
-        run: ./scripts/test-cargo-source-cache.ps1
+        run: ./scripts/test-cargo-source-volume.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 
