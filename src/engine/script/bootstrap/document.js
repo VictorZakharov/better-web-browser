@@ -118,6 +118,7 @@
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
+                interfaceName === 'storageevent' ? new StorageEvent('') :
                 interfaceName === 'messageevent' ? new MessageEvent('') : new Event('');
             event.__initialized = false;
             return event;

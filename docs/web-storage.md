@@ -1,6 +1,7 @@
-# Web Storage values, quotas, and persistence
+# Web Storage values, quotas, persistence, and events
 
-This slice implements the value and mutation contract for `localStorage` and `sessionStorage`.
+This implements the value/mutation contract for `localStorage` and `sessionStorage`, plus the
+`StorageEvent` interface foundation described below. Cross-tab broadcasting is not yet connected.
 It is not a claim of full Web Storage conformance or a measured page-load speedup.
 
 ## Contract and implementation
@@ -79,7 +80,7 @@ instead of sharing the default browser profile. The upstream tests and timeout l
 All 23 files pass, covering 1,240 upstream assertions. With isolated profiles held constant, the
 two quota-independence stress files changed from timeouts (14.15 / 20.05 seconds) to passing
 in 2.81 / 3.18 seconds after batching. These are single local test runs, not navigation benchmarks.
-The complete curated gate passes 215 files / 2,126 assertions, including a debug-build run with
+At completion of the value/persistence slice, the curated gate passed 215 files / 2,126 assertions, including a debug-build run with
 eight parallel jobs. In that debug configuration, extending the bounded adjacent batch reduced
 the quota-independence cases from 7.57 / 5.77 seconds to 2.36 / 2.32 seconds in local single runs;
 the upstream tests and deadlines were not changed. A second Wikipedia process reused
@@ -97,3 +98,41 @@ third-party partitioning, and policy/opaque-origin access-denial behavior remain
 JavaScript observes an optimistic synchronous projection: a returned `setItem` is not a promise that
 disk I/O has already completed. Browser-side failure repairs that projection asynchronously.
 The selected WPT files are not a whole-spec pass rate.
+
+## Cross-tab synchronization follow-up (in progress)
+
+[Issue #149](https://github.com/VictorZakharov/better-web-browser/issues/149) tracks same-origin
+tab synchronization and queued `storage` events. The initial implementation adds:
+
+- `StorageEvent` construction, read-only branded payload accessors, Web IDL dictionary conversion,
+  legacy `initStorageEvent`, `document.createEvent("StorageEvent")`, and the Window `onstorage`
+  event-handler attribute. `key`, `oldValue`, and `newValue` retain exact UTF-16 code units; `url`
+  converts to a USVString without resolving a relative string.
+- `LocalStorage::apply_batch_with_changes`, which records each actual operation under the same
+  lock as the mutation and durable commit. Repeated changes within a batch remain separate;
+  no-op operations and rejected transactions expose no records. The existing boolean-only
+  application path does not allocate records. This API is not yet connected to tab broadcasting.
+
+The next step is separating a renderer's pending-write acknowledgements from the shared origin's
+version, followed by bounded recipient routing and DOM-manipulation task delivery. A snapshot
+replacement alone would erase pending optimistic writes. Cross-tab events, navigation/closed-tab
+delivery tests, and session-storage scope coverage are **not complete**. The `StorageEvent`
+interface's presence must not be used as evidence that tabs are already synchronized.
+
+The original `benchmarks/alpha/fixtures/storage-event-interface.html` tests only construction and
+synthetic dispatch. It deliberately retains the DOM
+[event-initialization](https://dom.spec.whatwg.org/#concept-event-initialize) assertion that legacy
+initialization resets `target` to null. The headless Chrome comparison retains the old target,
+matching its current [Event::initEvent implementation](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/dom/events/event.cc).
+This difference is recorded rather than excluded from the fixture.
+
+| Initial event-interface check | Previous release | Current branch | Headless Chrome 152.0.7977.83 |
+|---|---:|---:|---:|
+| Original construction/dispatch fixture | 0/26 | 26/26 | 25/26 (target reset differs) |
+| Upstream event constructor / legacy initializer | Not selected | 2 files / 11 assertions pass | Not run |
+| Cross-tab synchronization / trusted event delivery | Missing | Not connected | Not tested in this slice |
+
+The curated release gate now passes 217 files / 2,137 assertions with no expected failures.
+Six owned mutation-record tests cover intermediate values, no-op suppression, exact strings,
+quota/stale-version rollback, failed persistence, and origin/area isolation. No page-load
+performance claim is made for this interface foundation.

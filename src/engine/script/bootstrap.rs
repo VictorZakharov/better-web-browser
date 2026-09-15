@@ -38,6 +38,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/cssom_adoption.js"),
     include_str!("bootstrap/platform.js"),
     include_str!("bootstrap/storage.js"),
+    include_str!("bootstrap/storage_event.js"),
     include_str!("bootstrap/viewport_scrolling.js"),
     include_str!("bootstrap/fragment_navigation.js"),
     include_str!("bootstrap/media_queries.js"),

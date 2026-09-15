@@ -19,6 +19,8 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "webstorage/event_constructor.window.js", "area": "Web Storage", "expected": "pass" },
+    { "path": "webstorage/event_initstorageevent.window.js", "area": "Web Storage", "expected": "pass" },
     { "path": "webstorage/storage_supported_property_names.window.js", "area": "Web Storage", "expected": "pass" },
     { "path": "webstorage/storage_enumerate.window.js", "area": "Web Storage", "expected": "pass" },
     { "path": "webstorage/storage_set_value_enumerate.window.js", "area": "Web Storage", "expected": "pass" },
