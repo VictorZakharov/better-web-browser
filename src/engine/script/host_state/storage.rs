@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::storage::{
-    StorageAreaKind, StorageAreaSnapshot, StorageAreaState, StorageError, StorageMutation,
-    StorageOperation, StorageString,
+    StorageAreaKind, StorageAreaSnapshot, StorageError, StorageOperation, StorageProjection,
+    StorageString,
 };
 
 impl HostState {
@@ -12,8 +12,8 @@ impl HostState {
         local: StorageAreaSnapshot,
         session: StorageAreaSnapshot,
     ) -> Result<(), StorageError> {
-        self.local_storage = StorageAreaState::from_snapshot(local)?;
-        self.session_storage = StorageAreaState::from_snapshot(session)?;
+        self.local_storage = StorageProjection::from_snapshot(local)?;
+        self.session_storage = StorageProjection::from_snapshot(session)?;
         self.storage_updates.clear();
         Ok(())
     }
@@ -23,14 +23,14 @@ impl HostState {
         area: StorageAreaKind,
         snapshot: StorageAreaSnapshot,
     ) -> Result<(), StorageError> {
-        *self.storage_mut(area) = StorageAreaState::from_snapshot(snapshot)?;
+        *self.storage_mut(area) = StorageProjection::from_snapshot(snapshot)?;
         self.storage_updates
-            .retain(|mutation| mutation.area != area);
+            .retain(|write| write.mutation.area != area);
         Ok(())
     }
 
     pub(in crate::engine::script) fn storage_len(&self, area: StorageAreaKind) -> usize {
-        self.storage(area).len()
+        self.storage(area).view().len()
     }
 
     pub(in crate::engine::script) fn storage_key(
@@ -38,7 +38,7 @@ impl HostState {
         area: StorageAreaKind,
         index: usize,
     ) -> Option<&StorageString> {
-        self.storage(area).key(index)
+        self.storage(area).view().key(index)
     }
 
     pub(in crate::engine::script) fn storage_get(
@@ -46,7 +46,7 @@ impl HostState {
         area: StorageAreaKind,
         key: &StorageString,
     ) -> Option<&StorageString> {
-        self.storage(area).get(key)
+        self.storage(area).view().get(key)
     }
 
     pub(in crate::engine::script) fn storage_set(
@@ -78,43 +78,24 @@ impl HostState {
         area: StorageAreaKind,
         operation: StorageOperation,
     ) -> Result<(), StorageError> {
-        let expected_version = self.storage(area).version();
-        let mutation = StorageMutation {
-            area,
-            expected_version,
-            operation,
-        };
-        if !self.storage(area).operation_changes(&mutation.operation) {
-            return Ok(());
-        }
-        let queued_bytes: usize = self
-            .storage_updates
-            .iter()
-            .map(StorageMutation::byte_len)
-            .sum();
-        // Exhaustion must not prevent removeItem/clear from freeing storage.
-        // After sets are blocked, at most two origin quotas of keys can be removed.
-        if matches!(mutation.operation, StorageOperation::Set { .. })
-            && (queued_bytes.saturating_add(mutation.byte_len())
-                > crate::limits::MAX_PENDING_STORAGE_BYTES
-                || self.storage_updates.len() >= crate::limits::MAX_QUEUED_BROWSER_WRITES)
-        {
-            return Err(StorageError::QuotaExceeded);
-        }
-        if self.storage_mut(area).apply(&mutation)? {
-            self.storage_updates.push(mutation);
+        let url = self.document_url.clone();
+        if let Some(write) = self.storage_mut(area).write(area, &url, operation)? {
+            self.storage_updates.push(write);
         }
         Ok(())
     }
 
-    fn storage(&self, area: StorageAreaKind) -> &StorageAreaState {
+    fn storage(&self, area: StorageAreaKind) -> &StorageProjection {
         match area {
             StorageAreaKind::Local => &self.local_storage,
             StorageAreaKind::Session => &self.session_storage,
         }
     }
 
-    fn storage_mut(&mut self, area: StorageAreaKind) -> &mut StorageAreaState {
+    pub(in crate::engine::script) fn storage_mut(
+        &mut self,
+        area: StorageAreaKind,
+    ) -> &mut StorageProjection {
         match area {
             StorageAreaKind::Local => &mut self.local_storage,
             StorageAreaKind::Session => &mut self.session_storage,

@@ -1,8 +1,16 @@
 //! Browser-owned Web Storage state, quotas, snapshots, and recoverable persistence.
 
 mod area;
+mod changes;
+mod coordinator;
 mod persistence;
+mod projection;
+mod synchronization;
 pub use area::StorageAreaState;
+pub use changes::StorageChange;
+pub use coordinator::{StorageCoordinator, StorageSubscription};
+pub use projection::StorageProjection;
+pub use synchronization::{StorageUpdate, StorageWrite};
 mod string;
 pub use string::StorageString;
 
@@ -202,54 +210,7 @@ impl LocalStorage {
         url: &str,
         mutations: &[StorageMutation],
     ) -> Result<bool, StorageError> {
-        if mutations
-            .iter()
-            .any(|mutation| mutation.area != StorageAreaKind::Local)
-        {
-            return Err(StorageError::Invalid("local storage mutation area"));
-        }
-        let origin = storage_origin(url)?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| StorageError::Persistence("storage lock is poisoned".into()))?;
-        // Hold the transaction lock through persistence. Readers cannot observe a
-        // write that subsequently fails, nor can another writer bypass rollback.
-        let previous = state.origins.get(&origin).cloned();
-        let result = (|| {
-            let mut changed = false;
-            for mutation in mutations {
-                changed |= apply_to_origin(&mut state.origins, origin.clone(), mutation)?;
-            }
-            if changed && let Some(path) = &self.path {
-                let bytes = persistence::encode(&state)?;
-                persistence::write(path, &bytes)?;
-            }
-            Ok(changed)
-        })();
-        match result {
-            Err(error) => {
-                match previous {
-                    Some(area) => {
-                        state.origins.insert(origin.clone(), area);
-                    }
-                    None => {
-                        state.origins.remove(&origin);
-                    }
-                }
-                if matches!(error, StorageError::Stale(_)) {
-                    return Err(StorageError::Stale(
-                        state
-                            .origins
-                            .get(&origin)
-                            .map(StorageAreaState::snapshot)
-                            .unwrap_or_else(StorageAreaSnapshot::empty),
-                    ));
-                }
-                Err(error)
-            }
-            success => success,
-        }
+        self.transact(url, mutations, None)
     }
 }
 
@@ -291,5 +252,7 @@ fn validate_bytes(bytes: usize) -> Result<(), StorageError> {
 
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod sync_tests;
 #[cfg(test)]
 mod tests;

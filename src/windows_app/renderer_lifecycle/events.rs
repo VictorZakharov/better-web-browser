@@ -28,6 +28,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn poll_renderer(&mut self, id: TabId) {
+        if let Err(error) = self.pump_storage_updates(id) {
+            self.contain_page_engine_failure(id, error);
+        }
         self.flush_renderer_inputs_for(id);
         if let Some(tab) = self.tabs.get_mut(id) {
             tab.renderer_input_poll_budget = tab.renderer_input_poll_budget.saturating_sub(1);
@@ -35,9 +38,13 @@ impl BrowserState {
         let snapshot_and_events = self.tabs.get_mut(id).and_then(|tab| {
             tab.renderer_session.as_ref().map(|session| {
                 let snapshot = session.snapshot();
-                let events = super::event_batch::collect(|accepts| {
-                    session.try_event_if(accepts).ok().flatten()
-                });
+                let events = if tab.deferred_renderer_events.is_empty() {
+                    super::event_batch::collect(|accepts| {
+                        session.try_event_if(accepts).ok().flatten()
+                    })
+                } else {
+                    tab.deferred_renderer_events.drain(..).collect()
+                };
                 (
                     tab.title.clone(),
                     snapshot,
@@ -190,22 +197,24 @@ impl BrowserState {
                 RendererEvent::StorageMutation(request) => {
                     // Only combine adjacent intents in this bounded UI turn. Navigation,
                     // presentation, and other-area events remain ordering barriers.
-                    let document = request.document;
-                    let area = request.mutation.area;
-                    let mut requests = vec![request];
-                    while matches!(events.peek(), Some(RendererEvent::StorageMutation(next))
-                        if next.document == document && next.mutation.area == area)
-                    {
-                        if let Some(RendererEvent::StorageMutation(next)) = events.next() {
-                            requests.push(next);
-                        }
-                    }
-                    let mut correction_error = None;
+                    let requests = super::event_batch::storage_transaction(request, &mut events);
+                    let mut applied = Ok(true);
                     self.process_for_tab(id, |state| {
-                        correction_error = state.apply_renderer_storage_mutations(requests).err();
+                        applied = state.apply_renderer_storage_mutations(&requests);
                     });
-                    if let Some(error) = correction_error {
-                        self.contain_page_engine_failure(id, error);
+                    match applied {
+                        Ok(false) => {
+                            if let Some(tab) = self.tabs.get_mut(id) {
+                                tab.deferred_renderer_events.extend(
+                                    requests.into_iter().map(RendererEvent::StorageMutation),
+                                );
+                                tab.deferred_renderer_events.extend(events);
+                            }
+                            exit = None;
+                            break;
+                        }
+                        Err(error) => self.contain_page_engine_failure(id, error),
+                        Ok(true) => {}
                     }
                 }
                 RendererEvent::Exited(renderer_exit) => {
@@ -276,6 +285,8 @@ impl BrowserState {
             let recovery = self.tabs.get_mut(id).and_then(|tab| {
                 let recovery = tab.navigation.renderer_exited();
                 if recovery.is_some() {
+                    tab.storage_subscription = None;
+                    tab.deferred_renderer_events.clear();
                     tab.renderer_session.take();
                     tab.renderer_clock_pending = false;
                     tab.renderer_work_pending = false;

@@ -9,7 +9,7 @@ use super::input::{
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
-    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
+    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart, StorageSync,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;
@@ -141,6 +141,7 @@ pub enum BrowserMessage {
     StorageSnapshotStart(StorageSnapshotStart),
     StorageSnapshotEntry(StorageSnapshotEntry),
     StorageSnapshotEnd(StorageSnapshotEnd),
+    StorageSync(StorageSync),
     FetchResponseStart(FetchResponseHead),
     FetchResponseChunk(TransferChunk),
     FetchResponseEnd(FetchResponseEnd),

@@ -1,0 +1,77 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cross-tab Web Storage contract</title>
+<style>
+body { font: 18px/1.6 sans-serif; max-width: 900px; margin: 40px auto; color: #182536; }
+h1 { font-size: 30px; } #result { padding: 16px; background: #edf3fa; font-weight: bold; }
+li { margin: 5px 0; } .pass { color: #126d36; } .fail { color: #ac2020; }
+</style>
+<h1>Cross-tab Web Storage</h1>
+<p>Two independent same-origin tabs; a fresh profile is required. Open this page first,
+then the same URL with <code>?role=writer</code> in a companion tab.</p>
+<p id="result">Waiting for the companion tab...</p>
+<ol id="checks"></ol>
+<script>
+(() => {
+    const writer = new URL(location.href).searchParams.get('role') === 'writer';
+    const source = new URL(location.href); source.search = '?role=writer'; source.hash = '';
+    const reader = new URL(location.href); reader.search = ''; reader.hash = '';
+    const key = '\uD800\0\uDFFF';
+    const expected = [[key,null,'one'],[key,'one','two'],[key,'two',null],['empty',null,''],[null,null,null]];
+    let count = 0, failed = false;
+    const assert = (condition, message) => { if (!condition) throw Error(message); };
+    const fail = error => {
+        failed = true;
+        document.getElementById('result').textContent = 'FAIL: ' + error.message;
+        document.getElementById('result').className = 'fail';
+        document.documentElement.dataset.fixtureReady = 'true';
+        console.error('storage-sync:FAIL:' + error.message);
+    };
+    const complete = () => {
+        if (failed) return;
+        const checks = ['Five mutations arrive in order with exact UTF-16 payloads',
+            'Events are trusted, non-bubbling, non-cancelable Window events',
+            'storageArea is the recipient localStorage object', 'url identifies the writing document',
+            'Unchanged set, missing remove, and empty clear produce no events',
+            'sessionStorage is isolated between top-level tabs',
+            'The writing window receives no echo', 'A recipient can write a reply from its event handler'];
+        for (const label of checks) {
+            const item = document.createElement('li'); item.textContent = label; item.className = 'pass';
+            document.getElementById('checks').appendChild(item);
+        }
+        document.getElementById('result').textContent = 'PASS: 8 cross-tab contracts';
+        document.getElementById('result').className = 'pass';
+        document.documentElement.dataset.fixtureReady = 'true';
+        console.log('storage-sync:PASS:8');
+    };
+    onstorage = event => {
+        try {
+            assert(!failed && event.isTrusted && !event.bubbles && !event.cancelable && !event.composed
+                && event.target === window && event.currentTarget === window, 'event flags or target');
+            assert(event.storageArea === localStorage, 'recipient storageArea');
+            assert(event.url === (writer ? reader.href : source.href), 'source URL');
+            if (writer) {
+                assert(count++ === 0 && event.key === 'reply' && event.newValue === 'received', 'writer echo');
+                localStorage.setItem('done', 'writer verified');
+                complete();
+            } else if (count < expected.length) {
+                assert(JSON.stringify([event.key,event.oldValue,event.newValue]) === JSON.stringify(expected[count++]), 'payload/order');
+                assert(sessionStorage.getItem('private') === null, 'sessionStorage leaked');
+                if (count === expected.length) localStorage.setItem('reply', 'received');
+            } else {
+                assert(count++ === expected.length && event.key === 'done' && event.newValue === 'writer verified', 'extra event or missing reply');
+                complete();
+            }
+        } catch (error) { fail(error); }
+    };
+    if (writer) {
+        try {
+            assert(localStorage.length === 0, 'fixture requires fresh storage');
+            localStorage.setItem(key, 'one'); localStorage.setItem(key, 'one');
+            localStorage.setItem(key, 'two'); localStorage.removeItem(key); localStorage.removeItem(key);
+            localStorage.setItem('empty', ''); localStorage.clear(); localStorage.clear();
+            sessionStorage.setItem('private', 'writer only');
+        } catch (error) { fail(error); }
+    }
+})();
+</script>

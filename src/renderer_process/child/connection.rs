@@ -2,6 +2,7 @@
 
 mod fetch;
 mod media;
+mod mutations;
 mod runtime;
 mod state;
 mod writer;
@@ -221,6 +222,7 @@ impl ChildConnection {
             BrowserMessage::StorageSnapshotStart(start) => self.document_state_start(start),
             BrowserMessage::StorageSnapshotEntry(entry) => self.document_state_entry(entry),
             BrowserMessage::StorageSnapshotEnd(end) => self.document_state_end(end),
+            BrowserMessage::StorageSync(sync) => self.synchronize_storage(sync),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

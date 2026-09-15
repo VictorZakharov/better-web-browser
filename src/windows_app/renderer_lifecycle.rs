@@ -114,6 +114,8 @@ impl BrowserState {
 
     pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
         let session = self.tabs.get_mut(id).and_then(|tab| {
+            tab.storage_subscription = None;
+            tab.deferred_renderer_events.clear();
             tab.renderer_launch_receiver.take();
             tab.renderer_clock_pending = false;
             tab.renderer_work_pending = false;
@@ -308,6 +310,11 @@ impl BrowserState {
                 || tab.renderer_work_pending
                 || tab.renderer_input_poll_budget > 0
                 || !tab.pending_renderer_inputs.is_empty()
+                || !tab.deferred_renderer_events.is_empty()
+                || tab
+                    .storage_subscription
+                    .as_ref()
+                    .is_some_and(|(_, subscription)| subscription.has_pending())
                 || tab.renderer_next_timer.is_some()
                 || tab
                     .renderer_session

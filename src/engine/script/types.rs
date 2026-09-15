@@ -5,7 +5,7 @@ use super::workers::ScriptWorkerAction;
 use crate::engine::dom::NodeRef;
 use crate::engine::invalidation::RenderInvalidation;
 use crate::fetch::{CredentialsMode, ReferrerPolicy, RequestMode};
-use crate::storage::StorageMutation;
+use crate::storage::StorageWrite;
 use std::time::Duration;
 
 // Lifecycle dispatch no longer runs timers reentrantly. Six 250 ms slices retain the former
@@ -114,7 +114,8 @@ pub struct ScriptOutcome {
     pub viewport_wheel_delta_y: f32,
     pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
-    pub storage_updates: Vec<StorageMutation>,
+    pub storage_updates: Vec<StorageWrite>,
+    pub storage_event_receipts: Vec<(crate::storage::StorageAreaKind, u64)>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,

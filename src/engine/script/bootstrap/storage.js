@@ -1,7 +1,8 @@
     // HTML Storage + Web IDL legacy named properties. Both syntaxes use the
     // same native map; methods inherited from the prototype remain visible.
+    const storageAreas = new WeakMap();
     (() => {
-        const areas = new WeakMap();
+        const areas = storageAreas;
         const areaFor = receiver => {
             if (!areas.has(receiver)) throw new TypeError('Incompatible Storage receiver');
             return areas.get(receiver);

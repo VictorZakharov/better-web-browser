@@ -43,6 +43,11 @@ pub const MAX_STORAGE_VALUE_BYTES: usize = MAX_STORAGE_BYTES_PER_ORIGIN;
 pub const MAX_PENDING_STORAGE_BYTES: usize = 32 * 1024 * 1024;
 // Dedicated storage frames carry one quota-bounded entry plus fixed wire metadata.
 pub const MAX_STORAGE_FRAME_BYTES: usize = 2 * MAX_STORAGE_BYTES_PER_ORIGIN + 26;
+pub const MAX_STORAGE_WRITE_FRAME_BYTES: usize = MAX_STORAGE_FRAME_BYTES + MAX_URL_BYTES + 12;
+// A change can contain both the previous and the replacement full-quota value.
+// ASCII has the largest ratio of UTF-16 wire bytes to quota bytes (2:1).
+pub const MAX_STORAGE_SYNC_FRAME_BYTES: usize =
+    4 * MAX_STORAGE_BYTES_PER_ORIGIN + MAX_URL_BYTES + 64;
 pub const MAX_PERSISTED_STORAGE_BYTES: usize = 64 * 1024 * 1024;
 
 pub const MAX_SCRIPT_BYTES: usize = 16 * 1024 * 1024;

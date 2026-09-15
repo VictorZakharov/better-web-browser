@@ -73,4 +73,18 @@ Breeze is launched only through `scripts/run-hidden-benchmark.ps1`. Chromium use
 
 ## Interpretation
 
+### Cross-tab storage fixture
+
+`alpha/fixtures/storage-sync.html` is an original two-tab behavioral fixture, separate from the
+single-page alpha matrix. Serve it with `scripts/serve-alpha-fixtures.ps1`, then run the Chromium
+harness with `--url <server>/storage-sync.html --companion-url <server>/storage-sync.html?role=writer
+--require-fixture-ready --screenshot <output.png>`. The companion opens after the reader's load
+event in the same fresh, muted, headless process/profile; neither uses the user's Chrome profile.
+Check the visible `PASS: 8 cross-tab contracts` verdict (fixture readiness alone can also signal a
+reported failure). `cargo test --test renderer_process storage_sync` runs the same fixture in two
+real isolated Breeze renderers and also verifies navigation and full-quota event payloads. See
+[Web Storage](../docs/web-storage.md) for the contract and known scope boundaries.
+
+### Scope
+
 Breeze owns HTML, CSS, layout, images/SVG/fonts, forms, a subset JavaScript runtime, painting, and a contained non-DRM H.264/AAC playback path, but Chromium implements substantially more of the web platform. Canvas, broader media formats and DRM, accessibility, cross-site isolation, and broad standards coverage remain incomplete. Results are development evidence for the controlled paths above, not a universal claim that Breeze is faster than or compatible with Chromium.

@@ -30,6 +30,7 @@ internal sealed class Options
     public required string Output { get; init; }
     public required string ChromePath { get; init; }
     public string? Screenshot { get; init; }
+    public string? CompanionUrl { get; init; }
     public string? FilmstripDirectory { get; init; }
     public int FilmstripIntervalMs { get; init; } = 500;
     public int FilmstripDurationMs { get; init; } = 10_000;
@@ -90,6 +91,11 @@ internal sealed class Options
             throw new ArgumentException("--url must be absolute.");
         }
         var chrome = values.GetValueOrDefault("--chrome") ?? FindChrome();
+        var companion = values.GetValueOrDefault("--companion-url");
+        if (companion is not null && !Uri.TryCreate(companion, UriKind.Absolute, out _))
+        {
+            throw new ArgumentException("--companion-url must be absolute.");
+        }
         if (!File.Exists(chrome))
         {
             throw new FileNotFoundException("Chromium executable was not found.", chrome);
@@ -118,6 +124,7 @@ internal sealed class Options
             Output = Required("--output"),
             ChromePath = Path.GetFullPath(chrome),
             Screenshot = values.GetValueOrDefault("--screenshot"),
+            CompanionUrl = companion,
             FilmstripDirectory = filmstripDirectory is null ? null : Path.GetFullPath(filmstripDirectory),
             FilmstripIntervalMs = filmstripIntervalMs,
             FilmstripDurationMs = filmstripDurationMs,

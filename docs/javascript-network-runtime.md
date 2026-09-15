@@ -71,6 +71,7 @@ This is a usable core, not the entire browser API surface:
 - subresource responses are read incrementally by WinHTTP and cross renderer IPC with bounded
   backpressure, but the JavaScript realm currently receives the completed body rather than a
   progressively delivered `Response.body` stream;
+  [issue #150](https://github.com/VictorZakharov/better-web-browser/issues/150) tracks this next slice;
 - synchronous XHR on `Window` is intentionally rejected; `responseXML` remains `null` until the
   XML/HTML `DOMParser` path exists;
 - static module graphs are supported, while network-discovered dynamic `import()`, import maps, and

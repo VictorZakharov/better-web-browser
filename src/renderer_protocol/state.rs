@@ -135,13 +135,43 @@ impl CookieMutation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StorageMutationRequest {
     pub document: DocumentId,
+    pub sequence: u64,
+    pub source_url: String,
     pub mutation: StorageMutation,
 }
 
 impl StorageMutationRequest {
     pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.sequence == 0 || self.source_url.len() > crate::limits::MAX_URL_BYTES {
+            return Err(ProtocolError::InvalidPayload("storage write identity"));
+        }
         self.mutation
             .validate()
             .map_err(|_| ProtocolError::InvalidPayload("storage mutation"))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StorageSync {
+    pub document: DocumentId,
+    pub update: crate::storage::StorageUpdate,
+}
+
+impl StorageSync {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        self.update
+            .validate()
+            .map_err(|_| ProtocolError::InvalidPayload("storage synchronization"))
+    }
+
+    pub fn receipt(&self) -> StateSnapshotApplied {
+        StateSnapshotApplied {
+            document: self.document,
+            version: self.update.version,
+            kind: match self.update.area {
+                StorageAreaKind::Local => StateSnapshotKind::LocalStorage,
+                StorageAreaKind::Session => StateSnapshotKind::SessionStorage,
+            },
+        }
     }
 }

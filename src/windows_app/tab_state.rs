@@ -57,6 +57,10 @@ pub(super) struct BrowserTab {
     pub(super) document_fetch: FetchController,
     pub(super) renderer_fetches: renderer_fetch::RendererFetchRegistry,
     pub(super) session_storage: SessionStorage,
+    pub(super) storage_subscription:
+        Option<(DocumentId, better_web_browser::storage::StorageSubscription)>,
+    pub(super) deferred_renderer_events:
+        std::collections::VecDeque<better_web_browser::renderer_process::RendererEvent>,
     pub(super) renderer_session: Option<RendererSession>,
     pub(super) last_renderer_snapshot: Option<RendererSnapshot>,
     pub(super) renderer_launch_receiver: Option<mpsc::Receiver<Result<RendererSession, String>>>,
@@ -115,6 +119,8 @@ impl BrowserTab {
             document_fetch: FetchController::new(),
             renderer_fetches: renderer_fetch::RendererFetchRegistry::default(),
             session_storage: SessionStorage::default(),
+            storage_subscription: None,
+            deferred_renderer_events: Default::default(),
             renderer_session: None,
             last_renderer_snapshot: None,
             renderer_launch_receiver: None,
@@ -145,6 +151,8 @@ impl BrowserTab {
     }
 
     pub(super) fn mark_crashed(&mut self, status: String) {
+        self.storage_subscription = None;
+        self.deferred_renderer_events.clear();
         if let Some(session) = self.renderer_session.as_ref() {
             self.retain_failure_snapshot(session.snapshot());
         }

@@ -21,7 +21,7 @@ impl Broker {
     }
 
     pub(super) fn process_presentation_acknowledgement(&mut self) {
-        if self.resources().state_updates.has_pending() {
+        if self.resources().state_updates.blocks_tasks() {
             return;
         }
         if !self.writer().has_page_command_capacity() {
@@ -40,7 +40,7 @@ impl Broker {
     }
 
     pub(super) fn process_document_clock(&mut self) {
-        if self.resources().state_updates.has_pending() {
+        if self.resources().state_updates.blocks_tasks() {
             return;
         }
         if !self.writer().has_page_command_capacity() {
@@ -55,7 +55,7 @@ impl Broker {
     }
 
     pub(super) fn process_viewport_update(&mut self) {
-        if self.resources().state_updates.has_pending() {
+        if self.resources().state_updates.blocks_tasks() {
             return;
         }
         if !self.writer().has_page_command_capacity() {
@@ -77,7 +77,7 @@ impl Broker {
     }
 
     pub(super) fn process_commands(&mut self) {
-        if self.resources().state_updates.has_pending() {
+        if self.resources().state_updates.blocks_tasks() {
             return;
         }
         for _ in 0..crate::limits::MAX_QUEUED_BROWSER_COMMANDS {
@@ -249,6 +249,7 @@ impl OutgoingStateUpdate {
         let document = update.document();
         let acknowledgement = update.acknowledgement();
         let messages = match update {
+            StateUpdate::Sync(sync) => VecDeque::from([BrowserMessage::StorageSync(sync)]),
             StateUpdate::Cookie(snapshot) => {
                 VecDeque::from([BrowserMessage::CookieSnapshot(snapshot)])
             }

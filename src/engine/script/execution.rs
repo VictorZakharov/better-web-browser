@@ -5,6 +5,7 @@ use super::timer_execution::{
     TimerSlice, append_timer_summary, settle_startup_timer_slice, settle_timer_slice,
 };
 use super::*;
+mod bindings;
 
 const SCRIPT_TASK_TIMER_SLICE: Duration = Duration::from_millis(16);
 pub fn execute(document: NodeRef, document_url: &str, scripts: &[ScriptInput]) -> ScriptOutcome {
@@ -43,17 +44,8 @@ pub(super) fn execute_inner(
     request_document_lifecycle: bool,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
-    if let Err(error) = context.initialize_iframe_realm(IFRAME_REALM_BOOTSTRAP) {
-        outcome
-            .errors
-            .push(format!("initialize iframe browser bindings: {error}"));
-        return outcome;
-    }
-
-    if let Err(error) = context.eval(Source::from_bytes(super::bootstrap::BROWSER_BOOTSTRAP)) {
-        outcome
-            .errors
-            .push(format!("initialize browser bindings: {error}"));
+    if let Err(error) = bindings::initialize(context) {
+        outcome.errors.push(error);
         return outcome;
     }
 
@@ -374,25 +366,3 @@ pub(super) fn evaluate_script(
     }
     succeeded
 }
-
-const IFRAME_REALM_BOOTSTRAP: &str = r#"
-globalThis.window = globalThis;
-globalThis.self = globalThis;
-if (typeof String.prototype.substr !== 'function') {
-    Object.defineProperty(String.prototype, 'substr', {
-        configurable: true,
-        writable: true,
-        value(start, length) {
-            const string = String(this);
-            const size = string.length;
-            let from = Number(start) || 0;
-            from = from < 0 ? Math.max(size + Math.ceil(from), 0) : Math.min(Math.floor(from), size);
-            if (length === undefined) return string.slice(from);
-            let count = Number(length);
-            if (Number.isNaN(count) || count <= 0) return '';
-            if (count !== Infinity) count = Math.floor(count);
-            return string.slice(from, Math.min(from + count, size));
-        }
-    });
-}
-"#;

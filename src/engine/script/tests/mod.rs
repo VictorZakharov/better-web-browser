@@ -63,6 +63,7 @@ mod resize_observer;
 mod scoped_invalidation;
 mod selectors;
 mod shadow_dom;
+mod storage_event;
 mod svg;
 mod tasks;
 mod template_inertness;

@@ -5,6 +5,7 @@ use super::watchdog::ExecutionWatchdog;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
+mod hooks;
 mod module_preparation;
 
 static INITIALIZE_V8: Once = Once::new();
@@ -15,6 +16,7 @@ pub(in crate::engine::script) struct Context {
     watchdog: ExecutionWatchdog,
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
+    private_hooks: HashMap<String, v8::Global<v8::Function>>,
     isolate: v8::OwnedIsolate,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
@@ -50,6 +52,7 @@ impl Context {
         Ok(Self {
             watchdog,
             context,
+            private_hooks: HashMap::new(),
             isolate,
             next_module_promise: 1,
             module_promises: HashMap::new(),
@@ -123,16 +126,21 @@ impl Context {
         arguments: &[JsValue],
     ) -> JsResult<JsValue> {
         let context = self.context.clone();
+        let captured = self.private_hooks.get(name).cloned();
         self.watchdog.run(&mut self.isolate, |isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
             v8::tc_scope!(let tc, scope);
             let key = v8::String::new(tc, name).ok_or_else(|| allocation_error("function name"))?;
-            let value = context
-                .global(tc)
-                .get(tc, key.into())
-                .ok_or_else(|| caught_error(tc, "read global function"))?;
+            let value = if let Some(captured) = &captured {
+                v8::Local::new(tc, captured).into()
+            } else {
+                context
+                    .global(tc)
+                    .get(tc, key.into())
+                    .ok_or_else(|| caught_error(tc, "read global function"))?
+            };
             let function = v8::Local::<v8::Function>::try_from(value).map_err(|_| JsError {
                 kind: JsErrorKind::Type,
                 message: format!("{name} hook is unavailable"),

@@ -8,6 +8,17 @@ use crate::renderer_protocol::{
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot};
 
 impl RendererSession {
+    pub fn try_synchronize_storage(
+        &self,
+        document: DocumentId,
+        update: crate::storage::StorageUpdate,
+    ) -> Result<bool, String> {
+        let result = self
+            .state_updates
+            .try_send_sync(crate::renderer_protocol::StorageSync { document, update });
+        self.wake.notify();
+        result
+    }
     fn disconnected_error(&self) -> String {
         // Input may beat the UI's exit-event drain. The broker publishes its terminal
         // snapshot before dropping command receivers; preserve that authoritative cause.

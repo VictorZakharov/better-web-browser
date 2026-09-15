@@ -95,6 +95,16 @@ internal static class ChromeRun
             result.PageReadyMs = stopwatch.Elapsed.TotalMilliseconds;
             result.NavigationMs = (stopwatch.Elapsed - navigationStarted).TotalMilliseconds;
             result.Error = navigationError;
+            if (options.CompanionUrl is { } companion)
+            {
+                // The primary document has installed its listeners before a second,
+                // same-profile tab starts. Both remain in this owned headless process.
+                await cdp.CallAsync(nextId++, "Target.createTarget", new
+                {
+                    url = companion,
+                    background = true
+                }, timeout);
+            }
 
             nextId = await BrowserActions.RunAsync(cdp, options, timeout, nextId);
 

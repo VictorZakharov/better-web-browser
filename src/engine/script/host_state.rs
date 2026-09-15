@@ -10,7 +10,7 @@ mod scripts;
 mod storage;
 mod task_scheduling;
 
-use crate::storage::{StorageAreaState, StorageMutation};
+use crate::storage::{StorageProjection, StorageWrite};
 
 #[derive(Debug)]
 pub(super) struct PendingModuleEvaluation {
@@ -49,9 +49,10 @@ pub(super) struct HostState {
     pub(super) cookie_header: String,
     pub(super) cookie_version: u64,
     pub(super) cookie_updates: Vec<String>,
-    pub(super) local_storage: StorageAreaState,
-    pub(super) session_storage: StorageAreaState,
-    pub(super) storage_updates: Vec<StorageMutation>,
+    pub(super) local_storage: StorageProjection,
+    pub(super) session_storage: StorageProjection,
+    pub(super) storage_updates: Vec<StorageWrite>,
+    pub(super) storage_event: Option<super::runtime::document_lifecycle::StorageEventTask>,
     pub(super) executed: usize,
     pub(super) diagnostics: Vec<String>,
     pub(super) host_call_profile: super::host_profiling::HostCallProfile,
@@ -129,9 +130,10 @@ impl HostState {
             cookie_header: String::new(),
             cookie_version: 1,
             cookie_updates: Vec::new(),
-            local_storage: StorageAreaState::default(),
-            session_storage: StorageAreaState::default(),
+            local_storage: StorageProjection::default(),
+            session_storage: StorageProjection::default(),
             storage_updates: Vec::new(),
+            storage_event: None,
             executed: 0,
             diagnostics: Vec::new(),
             host_call_profile: super::host_profiling::HostCallProfile::default(),

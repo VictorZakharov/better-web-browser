@@ -1,0 +1,180 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>StorageEvent interface contract</title>
+<style>
+body { font: 16px/1.4 sans-serif; margin: 24px; color: #202124; background: white; }
+h1 { font-size: 24px; } #result { padding: 12px; background: #edf5ef; }
+li { margin: 4px 0; } .fail { color: #b00020; }
+</style>
+<h1>StorageEvent interface</h1>
+<p>This fixture tests event construction and dispatch, not cross-tab broadcasting.</p>
+<p id="result">Running</p><ol id="checks"></ol>
+<script>
+const checks = [];
+const check = (name, run) => {
+  try { run(); checks.push({ name, pass: true }); }
+  catch (error) { checks.push({ name, pass: false, error: String(error) }); }
+};
+const equal = (actual, expected) => {
+  if (!Object.is(actual, expected)) throw new Error('expected ' + String(expected) + ', got ' + String(actual));
+};
+const throws = (run, name = 'TypeError') => {
+  try { run(); } catch (error) { equal(error.name, name); return; }
+  throw new Error('missing ' + name);
+};
+check('Window exposes StorageEvent with Event inheritance', () => {
+  const e = new StorageEvent('storage');
+  equal(e instanceof Event, true); equal(e instanceof StorageEvent, true);
+  equal(Object.prototype.toString.call(e), '[object StorageEvent]');
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'StorageEvent');
+  equal(descriptor.enumerable, false); equal(descriptor.configurable, true); equal(descriptor.writable, true);
+});
+check('Construction requires new and one argument', () => {
+  throws(() => StorageEvent('x')); throws(() => new StorageEvent()); equal(StorageEvent.length, 1);
+});
+check('Defaults are null payloads, empty URL and false flags', () => {
+  const e = new StorageEvent('x');
+  for (const key of ['key', 'oldValue', 'newValue', 'storageArea']) equal(e[key], null);
+  equal(e.url, ''); equal(e.bubbles, false); equal(e.cancelable, false); equal(e.composed, false);
+});
+check('Explicit undefined type is converted, undefined fields use defaults', () => {
+  const e = new StorageEvent(undefined, { key: undefined, url: undefined });
+  equal(e.type, 'undefined'); equal(e.key, null); equal(e.url, '');
+});
+check('Null type and URL are strings, nullable fields remain null', () => {
+  const e = new StorageEvent(null, { key: null, oldValue: null, newValue: null, url: null });
+  equal(e.type, 'null'); equal(e.url, 'null'); equal(e.key, null);
+});
+check('Null dictionaries are allowed; primitive dictionaries are rejected', () => {
+  equal(new StorageEvent('x', null).key, null);
+  for (const init of [1, true, 'x', Symbol(), 1n]) throws(() => new StorageEvent('x', init));
+});
+check('DOMString fields preserve NUL and isolated surrogates', () => {
+  const value = '\0\ud800a\udfff\ud83c\udf4d';
+  const e = new StorageEvent(value, { key: value, oldValue: value, newValue: value });
+  for (const key of ['type', 'key', 'oldValue', 'newValue']) equal(e[key], value);
+});
+check('URL converts isolated surrogates to replacement characters', () => {
+  equal(new StorageEvent('x', { url: '\ud800/\udfff/\ud83c\udf4d' }).url, '\ufffd/\ufffd/\ud83c\udf4d');
+});
+check('URL strings are not resolved or normalized', () => {
+  equal(new StorageEvent('x', { url: '../relative path#x' }).url, '../relative path#x');
+});
+check('Both genuine storage areas retain identity', () => {
+  for (const area of [localStorage, sessionStorage]) equal(new StorageEvent('x', { storageArea: area }).storageArea, area);
+});
+check('Storage area branding rejects forgeries and wrapper proxies', () => {
+  for (const area of [{}, Object.create(Storage.prototype), new Proxy(localStorage, {}), 1]) {
+    throws(() => new StorageEvent('x', { storageArea: area }));
+  }
+});
+check('Payload accessors are read-only and brand-checked', () => {
+  const e = new StorageEvent('x', { key: 'original' });
+  for (const key of ['key', 'oldValue', 'newValue', 'url', 'storageArea']) {
+    const descriptor = Object.getOwnPropertyDescriptor(StorageEvent.prototype, key);
+    equal(descriptor.set, undefined); equal(descriptor.enumerable, true); equal(descriptor.configurable, true);
+    throws(() => descriptor.get.call({}));
+  }
+  e.key = 'changed'; equal(e.key, 'original');
+});
+check('IDL dictionary getters run once in inheritance and lexical order', () => {
+  const order = [];
+  const init = new Proxy({}, { get(_, key) { order.push(key); return undefined; } });
+  new StorageEvent({ toString() { order.push('type'); return 'x'; } }, init);
+  equal(order.join(','), 'type,bubbles,cancelable,composed,key,newValue,oldValue,storageArea,url');
+});
+check('Throwing dictionary conversion does not access later members', () => {
+  let accessed = false;
+  const error = new Error('conversion');
+  try {
+    new StorageEvent('x', { get key() { throw error; }, get url() { accessed = true; } });
+    throw new Error('missing exception');
+  } catch (caught) { equal(caught, error); }
+  equal(accessed, false);
+});
+check('Symbols fail all non-nullable string conversions', () => {
+  throws(() => new StorageEvent(Symbol()));
+  for (const key of ['key', 'oldValue', 'newValue', 'url']) throws(() => new StorageEvent('x', { [key]: Symbol() }));
+});
+check('Inherited dictionary members are converted', () => {
+  const e = new StorageEvent('x', Object.create({ key: 7, newValue: false, composed: 1 }));
+  equal(e.key, '7'); equal(e.newValue, 'false'); equal(e.composed, true);
+});
+check('Synthetic events remain untrusted', () => {
+  const e = new StorageEvent('x'); equal(e.isTrusted, false);
+  new EventTarget().dispatchEvent(e); equal(e.isTrusted, false);
+});
+check('Legacy initialization requires a branded receiver and a type', () => {
+  const e = new StorageEvent('x'); equal(e.initStorageEvent.length, 1);
+  throws(() => e.initStorageEvent()); throws(() => e.initStorageEvent.call({}, 'x'));
+});
+check('Legacy defaults replace previous payloads', () => {
+  const e = new StorageEvent('x', { key: 'old', url: 'old', storageArea: localStorage });
+  const original = Event.prototype.initEvent;
+  try {
+    Event.prototype.initEvent = () => { throw new Error('public override must not run'); };
+    equal(e.initStorageEvent('next'), undefined);
+  } finally { Event.prototype.initEvent = original; }
+  equal(e.type, 'next'); equal(e.key, null); equal(e.url, ''); equal(e.storageArea, null);
+});
+check('Legacy initialization sets all arguments with their IDL types', () => {
+  const e = new StorageEvent('x');
+  e.initStorageEvent(null, 1, 1, 2, null, false, '\ud800', sessionStorage);
+  equal(e.type, 'null'); equal(e.bubbles, true); equal(e.cancelable, true);
+  equal(e.key, '2'); equal(e.oldValue, null); equal(e.newValue, 'false');
+  equal(e.url, '\ufffd'); equal(e.storageArea, sessionStorage);
+});
+check('Failed legacy conversion leaves all previous state intact', () => {
+  const e = new StorageEvent('original', { key: 'old', cancelable: true }); e.preventDefault();
+  throws(() => e.initStorageEvent('new', false, false, 'new', null, null, 'new', {}));
+  equal(e.type, 'original'); equal(e.key, 'old'); equal(e.cancelable, true); equal(e.defaultPrevented, true);
+});
+check('Legacy initialization resets cancellation and target after dispatch', () => {
+  // DOM initialize-event explicitly clears target. Chrome currently retains it;
+  // keep the standards assertion rather than hide that reference discrepancy.
+  // https://dom.spec.whatwg.org/#concept-event-initialize
+  const e = new StorageEvent('x', { cancelable: true }); e.preventDefault();
+  const target = new EventTarget(); target.dispatchEvent(e); equal(e.target, target);
+  e.initStorageEvent('y'); equal(e.target, null); equal(e.defaultPrevented, false);
+});
+check('Legacy initialization during dispatch converts but does not mutate', () => {
+  const e = new StorageEvent('x', { key: 'old' }); const target = new EventTarget(); let ran = false, observed;
+  target.addEventListener('x', () => {
+    e.initStorageEvent('y', false, false, { toString() { ran = true; return 'new'; } });
+    observed = { type: e.type, key: e.key, error: null };
+    try { e.initStorageEvent('y', false, false, Symbol()); } catch (error) { observed.error = error.name; }
+  });
+  target.dispatchEvent(e); equal(ran, true);
+  equal(observed.type, 'x'); equal(observed.key, 'old'); equal(observed.error, 'TypeError');
+});
+check('document.createEvent produces an uninitialized StorageEvent', () => {
+  const e = document.createEvent('sToRaGeEvEnT'); equal(e instanceof StorageEvent, true);
+  equal(e.key, null); equal(e.type, '');
+  throws(() => new EventTarget().dispatchEvent(e), 'InvalidStateError');
+  e.initStorageEvent('x'); equal(new EventTarget().dispatchEvent(e), true);
+});
+check('Window onstorage uses the event-listener registration order', () => {
+  const order = []; const first = () => order.push('first'); const last = () => order.push('last');
+  let observedArea;
+  addEventListener('storage', first); onstorage = () => order.push('old'); addEventListener('storage', last);
+  onstorage = event => { observedArea = event.storageArea; order.push('replacement'); };
+  dispatchEvent(new StorageEvent('storage', { storageArea: localStorage }));
+  equal(order.join(','), 'first,replacement,last'); equal(observedArea, localStorage);
+  onstorage = null; removeEventListener('storage', first); removeEventListener('storage', last);
+});
+check('StorageEvent subclasses keep their payload brand', () => {
+  class Derived extends StorageEvent {}
+  const e = new Derived('x', { key: 'derived' }); equal(e.key, 'derived'); equal(e instanceof Derived, true);
+});
+const passed = checks.filter(check => check.pass).length;
+const result = document.getElementById('result');
+result.textContent = passed + '/' + checks.length + ' checks passed';
+result.dataset.failures = String(checks.length - passed);
+result.dataset.total = String(checks.length);
+for (const check of checks) {
+  const row = document.createElement('li'); row.textContent = (check.pass ? 'PASS ' : 'FAIL ') + check.name + (check.error ? ': ' + check.error : '');
+  if (!check.pass) row.className = 'fail'; document.getElementById('checks').appendChild(row);
+}
+console.log('StorageEvent fixture: ' + result.textContent);
+document.documentElement.dataset.fixtureReady = 'true';
+</script>
