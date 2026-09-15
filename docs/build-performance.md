@@ -45,11 +45,14 @@ claims still require a canonical release build from the exact source head.
 ### September 15 PR policy
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain
-source/format checks, Clippy, core and renderer tests, focused Windows integration tests,
+source/format checks, Clippy, all core tests, renderer smoke tests, focused Windows integration tests,
 dependency advisories/licenses/bans/sources and notice verification, and Chromium harness self-tests.
 The fixed `windows-2022` hosted image uses the default Cargo build concurrency. Rust executables
 run in three independent PR workers: core, renderer, and the remaining
-Windows integration targets. The renderer suite runs with one test thread because it shares a
+Windows integration targets. PRs select fourteen renderer contracts covering containment, recovery,
+native input/navigation, first paint, and video ownership/watchdogs. The selector verifies every
+exact test name before execution, so renamed tests cannot silently become zero-test passes.
+Main runs all 123 renderer tests. The renderer suite runs with one test thread because it shares a
 single AppContainer profile and already serializes its sessions. Its media cadence test starts the
 deliberately blocking JavaScript callback only after receiving the first decoded frame, so startup
 timer advancement cannot trigger the hang prematurely. Watchdog assertions are unchanged.
@@ -65,7 +68,8 @@ regressions can first be detected after merge. Run relevant local integration te
 matrix before reviewing those changes. The checked-in aggregate policy rejects failed, cancelled,
 missing, and incorrectly skipped workers; 142 policy cases cover the accepted and rejected result
 combinations. Only a PR may skip these three broad suites, and only a confirmed Markdown-only PR
-may skip the remaining workers. Main always requires the full suite.
+may skip the remaining workers. Main always requires the full suite. The final PR path runs 1,246
+Rust tests; moving broader integration coverage to main is a deliberate speed/coverage tradeoff.
 
 Compiler-level sccache and Cargo package/index caches remain enabled; `target` is not cached.
 Rust stays pinned by `rust-toolchain.toml`, including Clippy and rustfmt. V8 metadata is restricted to
@@ -89,7 +93,8 @@ The rejected native-archive configuration's first run passed in 3m23s, but its w
 passed in **3m26s**, running 1,355 Rust tests (one pre-existing ignored test). This is 1m21s faster
 than the baseline but does **not** meet the requested sub-three-minute target. Its critical renderer
 worker spent 62 seconds resolving/unpacking dependencies and installing Rust, 57 seconds compiling,
-and 32 seconds testing. The full local release visual matrix passed all twelve fixtures; an earlier
+and 32 seconds testing. A repeat passed in 3m14s. These samples preceded the final fourteen-test
+renderer smoke selection. The full local release visual matrix passed all twelve fixtures; an earlier
 full hosted run passed all 1,396 Rust tests and 220 curated WPT cases / 2,169 subtests. Runner
 queueing, dependency changes, and cold builds remain variable.
 

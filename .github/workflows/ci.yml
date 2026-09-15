@@ -109,7 +109,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
       - name: Test
+        if: github.event_name != 'pull_request' || matrix.suite != 'renderer'
         run: cargo test --locked ${{ matrix.arguments }}
+      - name: Test essential renderer contracts
+        if: github.event_name == 'pull_request' && matrix.suite == 'renderer'
+        shell: pwsh
+        run: ./scripts/test-renderer-smoke.ps1
       - name: Test bounded hidden-benchmark timeout diagnostics
         if: matrix.suite == 'Windows integration'
         shell: pwsh
