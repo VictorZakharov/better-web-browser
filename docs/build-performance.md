@@ -125,10 +125,11 @@ contains `target`, Cargo credentials, or global Cargo configuration. Its exact k
 partial-key fallback. Cargo's source-cache layout is not a stable API, so a toolchain/helper
 change intentionally repopulates this cache.
 
-Only the core worker populates a missing source image using ordinary Cargo dependency resolution.
-It detaches the image to flush and unlock it before saving, then remounts it for compilation.
-Other cold workers use ordinary Cargo preparation without creating duplicate images. A first
-cache fill or dependency change can therefore take longer than a warm run. Cache hits are writable
+On a cache miss, each worker resolves dependencies normally into a new temporary image. This
+also puts cold extraction on the runner's temporary-data disk. Only the core worker publishes the
+cache: it detaches the image to flush and unlock it before saving, then remounts it for compilation.
+Other cold workers keep their images attached without packing/uploading. A first cache fill or
+dependency change can therefore take longer than a warm run. Cache hits are writable
 for Cargo compatibility but never saved back; each disposable VM owns its restored copy.
 
 Disk operations refuse developer machines and self-hosted runners. The image and mount paths are

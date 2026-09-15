@@ -27,13 +27,13 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: ${{ runner.temp }}/cargo-source-volume/registry.vhdx
-        key: windows-cargo-volume-v1-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'scripts/cargo-source-volume*.ps1') }}
+        key: windows-cargo-volume-v2-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'scripts/cargo-source-volume*.ps1') }}
     - name: Mount Cargo source volume
       if: steps.sources.outputs.cache-hit == 'true'
       shell: pwsh
       run: ./scripts/cargo-source-volume.ps1 -Mode Mount
     - name: Create missing Cargo source volume
-      if: inputs.populate-source-cache == 'true' && steps.sources.outputs.cache-hit != 'true'
+      if: steps.sources.outputs.cache-hit != 'true'
       shell: pwsh
       run: ./scripts/cargo-source-volume.ps1 -Mode Create
     - name: Prepare V8 build path
