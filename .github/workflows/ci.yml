@@ -173,7 +173,8 @@ jobs:
   alpha-compatibility:
     name: Public alpha compatibility (${{ matrix.shard }})
     needs: changes
-    if: ${{ needs.changes.outputs.run_windows != 'false' }}
+    # Keep the full visual/performance matrix on main, off the PR critical path.
+    if: ${{ github.event_name == 'push' && needs.changes.outputs.run_windows != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 6
     strategy:
@@ -190,11 +191,7 @@ jobs:
         run: dotnet build benchmarks/chromium/ChromiumBaseline.csproj -c Release
       - name: Run deterministic public-alpha matrix headlessly
         shell: pwsh
-        env:
-          CI_EVENT_NAME: ${{ github.event_name }}
-        run: |
-          $fixtures = @(./scripts/select-ci-alpha-fixtures.ps1 -EventName $env:CI_EVENT_NAME)
-          ./benchmarks/run-alpha.ps1 -Fixture $fixtures -BuildProfile debug -Iterations 1 -ShardIndex ${{ matrix.shard }} -ShardCount 2 -SkipBuild -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
+        run: ./benchmarks/run-alpha.ps1 -BuildProfile debug -Iterations 1 -ShardIndex ${{ matrix.shard }} -ShardCount 2 -SkipBuild -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
 
   windows:
     name: windows
@@ -214,6 +211,7 @@ jobs:
       - name: Require every worker
         shell: pwsh
         env:
+          CI_EVENT_NAME: ${{ github.event_name }}
           CLASSIFICATION_RESULT: ${{ needs.changes.result }}
           RUN_WINDOWS: ${{ needs.changes.outputs.run_windows }}
           MARKDOWN_ONLY: ${{ needs.changes.outputs.markdown_only }}
@@ -225,7 +223,7 @@ jobs:
           DEPENDENCY_RESULT: ${{ needs.dependency-policy.result }}
           HARNESS_RESULT: ${{ needs.harness.result }}
         run: |
-          ./scripts/assert-ci-results.ps1 -ClassificationResult $env:CLASSIFICATION_RESULT -RunWindows $env:RUN_WINDOWS -MarkdownOnly $env:MARKDOWN_ONLY -Workers @{
+          ./scripts/assert-ci-results.ps1 -EventName $env:CI_EVENT_NAME -ClassificationResult $env:CLASSIFICATION_RESULT -RunWindows $env:RUN_WINDOWS -MarkdownOnly $env:MARKDOWN_ONLY -Workers @{
             source = $env:SOURCE_RESULT
             lint = $env:LINT_RESULT
             test = $env:TEST_RESULT
