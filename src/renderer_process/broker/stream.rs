@@ -5,6 +5,7 @@ use crate::renderer_protocol::{
     BrowserFetchError, DocumentId, FetchResponseAbort, FetchResponseEnd, FetchResponseHead,
     TransferChunk,
 };
+use std::sync::Arc;
 use std::sync::mpsc;
 
 #[derive(Clone)]
@@ -12,6 +13,7 @@ pub struct FetchResponseSink {
     document: DocumentId,
     sender: mpsc::SyncSender<FetchStreamEvent>,
     wake: super::wake::BrokerWake,
+    flow: Arc<super::flow::FetchFlow>,
 }
 
 pub(super) enum FetchStreamEvent {
@@ -38,11 +40,13 @@ impl FetchResponseSink {
         document: DocumentId,
         sender: mpsc::SyncSender<FetchStreamEvent>,
         wake: super::wake::BrokerWake,
+        flow: Arc<super::flow::FetchFlow>,
     ) -> Self {
         Self {
             document,
             sender,
             wake,
+            flow,
         }
     }
 
@@ -60,6 +64,12 @@ impl FetchResponseSink {
         if chunk.bytes.is_empty() || chunk.bytes.len() > MAX_FETCH_STREAM_CHUNK_BYTES {
             return Err("Fetch response chunk exceeded its contract".into());
         }
+        self.flow.reserve(
+            self.document,
+            chunk.transfer_id,
+            chunk.offset,
+            chunk.bytes.len(),
+        )?;
         self.send(FetchStreamEvent::Chunk {
             document: self.document,
             chunk,
@@ -74,6 +84,32 @@ impl FetchResponseSink {
                 total_length,
             },
         })
+    }
+
+    /// Avoid reading ahead when a response is paused. Cancellation is an error, not backpressure.
+    pub fn has_chunk_capacity(&self, request_id: u64) -> Result<bool, String> {
+        self.flow
+            .has_capacity(self.document, request_id, MAX_FETCH_STREAM_CHUNK_BYTES)
+    }
+
+    /// Returns the unchanged chunk when the caller must park this response and service others.
+    pub fn try_chunk(&self, chunk: TransferChunk) -> Result<Option<TransferChunk>, String> {
+        if chunk.bytes.is_empty() || chunk.bytes.len() > MAX_FETCH_STREAM_CHUNK_BYTES {
+            return Err("Fetch response chunk exceeded its contract".into());
+        }
+        if !self.flow.try_reserve(
+            self.document,
+            chunk.transfer_id,
+            chunk.offset,
+            chunk.bytes.len(),
+        )? {
+            return Ok(Some(chunk));
+        }
+        self.send(FetchStreamEvent::Chunk {
+            document: self.document,
+            chunk,
+        })?;
+        Ok(None)
     }
 
     pub fn abort(&self, request_id: u64, error: BrowserFetchError) -> Result<(), String> {
@@ -103,10 +139,14 @@ mod tests {
     #[test]
     fn producer_blocks_when_the_bounded_stream_queue_is_full() {
         let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let flow = Arc::new(super::super::flow::FetchFlow::default());
+        flow.register(DocumentId::new(1).unwrap(), 1, false)
+            .unwrap();
         let sink = FetchResponseSink::new(
             DocumentId::new(1).unwrap(),
             sender,
             super::super::wake::BrokerWake::default(),
+            flow,
         );
         for offset in 0..MAX_QUEUED_FETCH_STREAM_CHUNKS {
             sink.chunk(TransferChunk {

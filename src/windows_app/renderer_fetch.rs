@@ -1,5 +1,6 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
+mod pump;
 mod registry;
 mod scheduler;
 
@@ -55,7 +56,7 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         .map(|request| {
             let request_id = request.head.request_id;
             let request_signal = registry.register(document, request_id);
-            (request, signal.any(&request_signal))
+            pump::Job::Request(request, signal.any(&request_signal))
         })
         .collect::<Vec<_>>();
     std::thread::Builder::new()
@@ -64,32 +65,30 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
             let started = Instant::now();
             // Keep every available network slot useful. Partitioning requests into fixed waves
             // lets one slow media or font response prevent later styles and images from starting.
-            let bytes = scheduler::execute_bounded(
-                requests,
-                MAX_PARALLEL_RENDERER_FETCHES,
-                |(request, request_signal)| {
-                    let request_id = request.head.request_id;
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        execute(
-                            &client,
-                            &request_signal,
-                            &sink,
-                            document,
-                            &document_url,
-                            request,
-                        )
-                    }));
-                    registry.complete(document, request_id);
-                    result.unwrap_or_else(|_| {
+            let bytes =
+                scheduler::execute_bounded(requests, MAX_PARALLEL_RENDERER_FETCHES, |job| {
+                    let request_id = job.id();
+                    let started = job.started();
+                    let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        job.step(&client, &sink, document, &document_url)
+                    }))
+                    .unwrap_or_else(|_| {
                         let error = FetchError::new(
                             FetchErrorKind::Network,
                             "browser Fetch worker panicked",
                         );
-                        let _ = send_failure(&sink, request_id, &error);
-                        0
-                    })
-                },
-            );
+                        if started {
+                            let _ = sink.abort(request_id, wire_error(&error));
+                        } else {
+                            let _ = send_failure(&sink, request_id, &error);
+                        }
+                        scheduler::Step::Done(0)
+                    });
+                    if matches!(step, scheduler::Step::Done(_)) {
+                        registry.complete(document, request_id);
+                    }
+                    step
+                });
             let completion = Box::new(RendererFetchCompletion {
                 document,
                 bytes,
@@ -110,32 +109,6 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         })
         .map(|_| ())
         .map_err(|error| format!("start renderer Fetch worker: {error}"))
-}
-
-fn execute(
-    client: &winhttp::HttpClient,
-    signal: &FetchSignal,
-    sink: &FetchResponseSink,
-    document: DocumentId,
-    document_url: &str,
-    request: RendererFetchRequest,
-) -> u64 {
-    let request_id = request.head.request_id;
-    let result = (|| {
-        request
-            .validate()
-            .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
-        validate_document_identity(document, request.head.document)?;
-        let request = reconstruct(document_url, request)?.with_signal(signal.clone());
-        client.fetch_stream(request)
-    })();
-    match result {
-        Ok(response) => stream_response(sink, request_id, response),
-        Err(error) => {
-            let _ = send_failure(sink, request_id, &error);
-            0
-        }
-    }
 }
 
 fn validate_document_identity(active: DocumentId, requested: DocumentId) -> Result<(), FetchError> {
@@ -218,60 +191,6 @@ fn trusted_referrer(document_url: &str, requested: FetchReferrer) -> Result<Refe
                 ));
             }
             Ok(Referrer::Url(requested))
-        }
-    }
-}
-
-fn stream_response(
-    sink: &FetchResponseSink,
-    request_id: u64,
-    mut response: winhttp::StreamingFetchResponse,
-) -> u64 {
-    let head = FetchResponseHead {
-        request_id,
-        result: FetchResponseResult::Success {
-            response_type: response_type(response.response_type),
-            urls: response
-                .url_list
-                .iter()
-                .map(|url| url.as_str().to_string())
-                .collect(),
-            status: response.status,
-            headers: response
-                .headers
-                .iter()
-                .map(|header| (header.name().to_string(), header.value().to_string()))
-                .collect(),
-        },
-    };
-    if sink.start(head).is_err() {
-        return 0;
-    }
-    let mut total = 0_u32;
-    loop {
-        match response.next_chunk() {
-            Ok(Some(bytes)) => {
-                let length = bytes.len() as u32;
-                if sink
-                    .chunk(TransferChunk {
-                        transfer_id: request_id,
-                        offset: total,
-                        bytes,
-                    })
-                    .is_err()
-                {
-                    return u64::from(total);
-                }
-                total = total.saturating_add(length);
-            }
-            Ok(None) => {
-                let _ = sink.end(request_id, total);
-                return u64::from(total);
-            }
-            Err(error) => {
-                let _ = sink.abort(request_id, wire_error(&error));
-                return u64::from(total);
-            }
         }
     }
 }

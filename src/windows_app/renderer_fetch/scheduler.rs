@@ -1,32 +1,77 @@
 //! Bounded, work-conserving scheduling for one renderer-owned Fetch batch.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+pub(super) enum Step<T> {
+    Ready(T),
+    Parked(T),
+    Done(u64),
+}
 
 pub(super) fn execute_bounded<T, F>(items: Vec<T>, parallelism: usize, execute: F) -> u64
 where
     T: Send,
-    F: Fn(T) -> u64 + Sync,
+    F: Fn(T) -> Step<T> + Sync,
 {
     if items.is_empty() || parallelism == 0 {
         return 0;
     }
     let worker_count = items.len().min(parallelism);
-    let queue = Mutex::new(VecDeque::from(items));
+    let remaining = items.len();
+    let queue = Mutex::new((
+        items
+            .into_iter()
+            .map(|item| (Instant::now(), item))
+            .collect::<VecDeque<_>>(),
+        remaining,
+    ));
+    let changed = Condvar::new();
     let total = AtomicU64::new(0);
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
             scope.spawn(|| {
                 loop {
-                    let item = queue
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .pop_front();
-                    let Some(item) = item else {
-                        break;
+                    let item = {
+                        let mut state = queue.lock().unwrap_or_else(|p| p.into_inner());
+                        loop {
+                            if state.1 == 0 {
+                                return;
+                            }
+                            if let Some(index) =
+                                state.0.iter().position(|(due, _)| *due <= Instant::now())
+                            {
+                                break state.0.remove(index).unwrap().1;
+                            }
+                            let wait = state
+                                .0
+                                .iter()
+                                .map(|(due, _)| due.saturating_duration_since(Instant::now()))
+                                .min()
+                                .unwrap_or(Duration::from_millis(5));
+                            state = changed
+                                .wait_timeout(state, wait)
+                                .unwrap_or_else(|p| p.into_inner())
+                                .0;
+                        }
                     };
-                    total.fetch_add(execute(item), Ordering::Relaxed);
+                    let step = execute(item);
+                    let mut state = queue.lock().unwrap_or_else(|p| p.into_inner());
+                    match step {
+                        Step::Ready(item) => state.0.push_back((Instant::now(), item)),
+                        // Backpressure parks a response, not a network worker. A bounded poll also
+                        // notices document retirement without adding one thread per response.
+                        Step::Parked(item) => state
+                            .0
+                            .push_back((Instant::now() + Duration::from_millis(5), item)),
+                        Step::Done(bytes) => {
+                            state.1 -= 1;
+                            total.fetch_add(bytes, Ordering::Relaxed);
+                        }
+                    }
+                    changed.notify_all();
                 }
             });
         }
@@ -56,7 +101,7 @@ mod tests {
                             ready = changed.wait(ready).unwrap();
                         }
                     }
-                    u64::from(item) + 1
+                    Step::Done(u64::from(item) + 1)
                 })
             });
 
@@ -76,5 +121,21 @@ mod tests {
             changed.notify_one();
             assert_eq!(worker.join().unwrap(), 6);
         });
+    }
+
+    #[test]
+    fn parked_bodies_do_not_occupy_slots_needed_by_later_requests() {
+        let ready = std::sync::atomic::AtomicBool::new(false);
+        let bytes = execute_bounded((0..17).collect(), 8, |id| {
+            if id == 16 {
+                ready.store(true, Ordering::Release);
+            }
+            if ready.load(Ordering::Acquire) {
+                Step::Done(1)
+            } else {
+                Step::Parked(id)
+            }
+        });
+        assert_eq!(bytes, 17);
     }
 }

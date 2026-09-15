@@ -204,6 +204,11 @@ pub enum RendererMessage {
         document: DocumentId,
         request_id: u64,
     },
+    FetchResponseConsumed {
+        document: DocumentId,
+        request_id: u64,
+        total: u32,
+    },
     PresentationStart {
         document: DocumentId,
         revision: u64,
