@@ -25,7 +25,9 @@ The document and dedicated-worker globals share:
 Fetch and XHR emit typed actions from the owning realm. The renderer serializes bounded intent
 fields; the browser reconstructs each request from its authoritative document URL, applies the
 shared Fetch policy, and runs WinHTTP. Response heads and bounded chunks cross a backpressured IPC
-stream before completion is routed to the originating context, document, realm, and request ID. A
+stream to the originating context, document, realm, and request ID. Both document and dedicated-worker
+Fetch promises resolve on exposed response headers; default readers receive chunks before EOF.
+Worker timers and messages continue while a body is downloading. A
 completion for a navigated or closed document is discarded. Abort removes the pending JavaScript
 operation immediately and cancels further browser-side work at the next safe transport boundary.
 
@@ -64,14 +66,22 @@ large-value transport, batched persistence, and profile migration. See
 [ADR 0004](architecture/0004-browser-state-and-fetch-broker.md) for persistence, quotas, and the
 `cookie_store` dependency evaluation.
 
+## Progressive response bodies
+
+Response delivery, default-reader consumption, teeing, and cancellation share one transport path;
+see [the progressive Fetch contract and verification](progressive-fetch.md). Consumption receipts
+bound each active script response to 256 KiB of unconsumed delivered data and each renderer to 4 MiB
+of aggregate in-flight credit. Parked bodies yield their network scheduling slots. These limits do
+not cap application-retained arrays or the slower branch of a clone after a faster branch reads.
+
 ## Deliberate current boundaries
 
 This is a usable core, not the entire browser API surface:
 
-- subresource responses are read incrementally by WinHTTP and cross renderer IPC with bounded
-  backpressure, but the JavaScript realm currently receives the completed body rather than a
-  progressively delivered `Response.body` stream;
-  [issue #150](https://github.com/VictorZakharov/better-web-browser/issues/150) tracks this next slice;
+- default-reader network streams are progressive; byte-stream/BYOB readers and full WritableStream,
+  TransformStream, and pipe cancellation/backpressure semantics remain incomplete;
+- upload bodies, the main navigation response, and script sources still require complete buffered
+  input at their respective consumers; this response-stream slice does not make them progressive;
 - synchronous XHR on `Window` is intentionally rejected; `responseXML` remains `null` until the
   XML/HTML `DOMParser` path exists;
 - static module graphs are supported, while network-discovered dynamic `import()`, import maps, and

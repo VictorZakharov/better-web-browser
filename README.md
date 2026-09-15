@@ -34,7 +34,7 @@ Current page support includes:
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [first-paint blocking](docs/float-clear-and-first-paint.md), CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
-- JavaScript Fetch/XHR, body and stream primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
+- Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, persistent RFC-oriented cookies, CORS/preflight checks, bounded backpressured renderer streams, and document-wide cancellation
@@ -171,11 +171,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 215-file Web Platform Test suite covers 2,126 upstream harness subtests across HTML
+A pinned, curated 219-file Web Platform Test suite covers 2,167 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,126 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,167 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -225,7 +225,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | JavaScript and browser APIs | A bounded retained V8 realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists and tab-scoped `sessionStorage` does not. Cross-document `storage` events, storage property-name traps, partitioned state, and user-facing data controls remain incomplete. |
-| ◩ | JavaScript Fetch and XHR | Cookies, Fetch/XHR, abort signals, body primitives, and stream primitives are implemented. Network responses now stream incrementally and with backpressure from WinHTTP across renderer IPC, but the JavaScript realm still receives each completed body rather than a progressively delivered network stream. |
+| ◩ | JavaScript Fetch and XHR | Document and dedicated-worker Fetch bodies stream progressively through default readers, with byte-based backpressure, cloning, and cancellation. Fetch/XHR and Body primitives are implemented; BYOB, streaming uploads, and complete pipe/transform semantics remain incomplete. See the [streaming contract and measurements](docs/progressive-fetch.md). |
 | ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Script scheduling | Parser suspension/resumption, independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented. Initial matching head stylesheets block paint without blocking the event loop. Main-response streaming, `document.write()` re-entry and full rendering-opportunity semantics remain incomplete. |

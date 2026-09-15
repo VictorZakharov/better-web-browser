@@ -150,8 +150,10 @@ The source of truth for these values is `src/limits.rs`.
 
 - Persistent authority no longer exists in the renderer, and direct renderer networking remains
   denied by AppContainer launch policy and integration tests.
-- Browser-side networking and IPC delivery are progressive and backpressured. The JavaScript
-  `Response` body is still assembled by the renderer before its current stream object consumes it.
+- Document and dedicated-worker default-reader `Response.body` delivery is progressive through
+  JavaScript. Monotonic consumption receipts apply byte-based backpressure across IPC; parked
+  responses yield network slots so later headers can start. See [the streaming contract](../progressive-fetch.md)
+  for queue bounds, clone retention, validation, and remaining BYOB/upload/navigation limitations.
 - Synchronous WinHTTP cancellation is cooperative around platform calls and between chunks; a call
   already inside WinHTTP may run until its configured timeout.
 - Cross-document `storage` event broadcast, dynamic imports/import
