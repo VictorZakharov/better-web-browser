@@ -30,7 +30,7 @@ fn html(test_path: &str, source: &str) -> Result<String, String> {
         "<!doctype html><meta charset=utf-8><base href=\"{path}\"><title>{path}</title>\
          <script src=/resources/testharness.js></script>\
          <script src=/resources/testharnessreport.js></script>{scripts}\
-         <script src=\"{path}\"></script><div id=log></div>"
+         <div id=log></div><script src=\"{path}\"></script>"
     ))
 }
 
@@ -62,6 +62,8 @@ mod tests {
             .unwrap();
         let test = result.find("src=\"/user-timing/mark.any.js\"").unwrap();
         assert!(helper < other && other < test);
+        // Match upstream WindowHandler: the log div creates body before the test runs.
+        assert!(result.find("<div id=log>").unwrap() < test);
         assert!(result.contains("<base href=\"/user-timing/mark.any.js\">"));
     }
 

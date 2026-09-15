@@ -2,6 +2,7 @@
 
 mod bridge;
 mod crypto;
+mod event_handlers;
 mod modules;
 mod runtime;
 mod value;

@@ -185,6 +185,7 @@
             refreshWindowNamedPropertyValues([oldValue, newValue]);
     };
     const queueAttributeMutation = (element, record, oldValue, newValue) => {
+        eventHandlerAttributeChanged(element, record, newValue);
         queueMutationRecord(element, 'attributes', {
             attributeName: record.localName,
             attributeNamespace: record.namespace,

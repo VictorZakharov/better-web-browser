@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>HTML event handler controls</title>
+<style>
+  body { margin:24px; font:18px Arial,sans-serif; color:#183149; background:#edf3f8 }
+  button { width:260px; height:60px; font:18px Arial,sans-serif }
+  output { display:block; margin-top:24px; padding:16px; background:white; white-space:pre-wrap }
+</style>
+<body onload="record('body load: '+(this===window))">
+<button id="action" onclick="record('markup click: '+event.isTrusted); return false">Run inline handler</button>
+<output id="result">Waiting for a native click</output>
+<script>
+  const records=[];
+  function record(value) { records.push(value); }
+  const button=document.getElementById('action');
+  window.addEventListener('load',()=>record('window listener'));
+  button.addEventListener('click',event=>{
+    record('default canceled: '+event.defaultPrevented);
+    const original=button.onclick;
+    button.setAttribute('onclick',"record('replacement')");
+    const changed=button.onclick!==original;
+    button.onclick();
+    button.removeAttribute('onclick');
+    record('removed: '+(button.onclick===null));
+    const expected=['body load: true','window listener','markup click: true',
+      'default canceled: true','replacement','removed: true'];
+    const good=changed && JSON.stringify(records)===JSON.stringify(expected);
+    document.getElementById('result').textContent=(good?'PASS':'FAIL')+'\n'+records.join('\n');
+    document.documentElement.dataset.fixtureReady=good?'true':'false';
+    console.log('inline-handlers '+JSON.stringify({good,records}));
+  });
+</script>

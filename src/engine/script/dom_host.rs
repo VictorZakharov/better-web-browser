@@ -298,13 +298,23 @@ fn node_name(state: &HostState, node: &NodeRef) -> String {
 
 fn node_metadata(state: &HostState, node: &NodeRef) -> String {
     format!(
-        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
         node_type(state, Some(node)),
         node_name(state, node),
         node.tag_name().unwrap_or_default(),
         node.namespace_uri().unwrap_or_default(),
         if matches!(node.data, NodeData::ShadowRoot(_)) {
             "shadow"
+        } else {
+            ""
+        },
+        if node.element().is_some_and(|element| {
+            element.attrs.borrow().iter().any(|attribute| {
+                attribute.name.ns.as_ref().is_empty()
+                    && attribute.name.local.as_ref().starts_with("on")
+            })
+        }) {
+            "handlers"
         } else {
             ""
         },

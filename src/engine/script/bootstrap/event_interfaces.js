@@ -94,3 +94,13 @@
         }
         getTargetRanges() { return []; }
     }
+    const beforeUnloadConstructionToken = {};
+    class BeforeUnloadEvent extends Event {
+        constructor(token) {
+            if (token !== beforeUnloadConstructionToken) throw new TypeError('Illegal constructor');
+            super('');
+            this.__returnValue = '';
+        }
+        get returnValue() { return this.__returnValue; }
+        set returnValue(value) { this.__returnValue = '' + value; }
+    }

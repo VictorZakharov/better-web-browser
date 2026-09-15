@@ -123,21 +123,9 @@
         }
     }
     const listenerStore = new WeakMap();
-    const eventHandlerStore = new WeakMap();
     const proxyStorage = new WeakMap();
     const storageProxy = new WeakMap();
     const legacyEventTargets = new WeakMap();
-    const eventHandlerTypes = (
-        'abort auxclick beforeinput beforematch beforetoggle blur cancel canplay canplaythrough change ' +
-        'click close command contextlost contextmenu contextrestored copy cuechange cut dblclick drag ' +
-        'dragend dragenter dragleave dragover dragstart drop durationchange emptied encrypted ended error focus freeze ' +
-        'formdata input invalid keydown keypress keyup load loadeddata loadedmetadata loadstart mousedown ' +
-        'mouseenter mouseleave mousemove mouseout mouseover mouseup pointerover pointerenter pointerdown ' +
-        'pointermove pointerup pointercancel pointerout pointerleave gotpointercapture lostpointercapture ' +
-        'paste pause play playing progress ratechange ' +
-        'readystatechange reset resize resume scroll scrollend securitypolicyviolation seeked seeking select slotchange stalled submit ' +
-        'suspend timeupdate toggle unload visibilitychange volumechange waiting wheel message'
-    ).split(/\s+/);
 
     const storageFor = target => proxyStorage.get(target) || target;
     const receiverFor = target => storageProxy.get(target) || target;
@@ -169,12 +157,13 @@
         const listeners = listenersFor(target);
         if (listeners.some(listener => !listener.removed && listener.type === type &&
             listener.callback === callback && listener.capture === flattened.capture)) return;
-        listeners.push({ type, callback, ...flattened, removed: false });
+        const listener = { type, callback, ...flattened, removed: false };
+        listeners.push(listener);
+        return listener;
     };
 
     const reportListenerException = error => {
-        const detail = error?.stack || error?.message || String(error);
-        host('console', 'error', 'Uncaught event listener exception: ' + detail);
+        reportGlobalException(error, 'event listener');
     };
     const invokeListeners = (receiver, event, phase, capture) => {
         if (event.__stopped) return;
@@ -257,53 +246,6 @@
         return path;
     };
 
-    const getEventHandler = (target, type) => eventHandlerStore.get(target)?.get(type)?.value || null;
-    const setEventHandler = (target, type, value) => {
-        value = typeof value === 'function' ? value : null;
-        let handlers = eventHandlerStore.get(target);
-        let handler = handlers?.get(type);
-        if (!value) {
-            if (handler) {
-                handler.value = null;
-                removeListener(target, handler.listener);
-                handlers.delete(type);
-            }
-            return;
-        }
-        if (handler) {
-            handler.value = value;
-            return;
-        }
-        if (!handlers) eventHandlerStore.set(target, handlers = new Map());
-        // HTML activates one non-capture listener slot. Replacing its callback must not move that
-        // slot relative to addEventListener() registrations.
-        // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-idl-attributes
-        handler = { value, listener: null };
-        handler.listener = function(event) {
-            const result = handler.value?.call(this, event);
-            if (result === false) event.preventDefault();
-        };
-        handlers.set(type, handler);
-        addListener(target, type, handler.listener, false);
-    };
-    const defineEventHandler = (receiver, storage, type) => {
-        const name = 'on' + type;
-        if (Object.getOwnPropertyDescriptor(receiver, name)?.configurable === false) return;
-        Object.defineProperty(receiver, name, {
-            configurable: true,
-            enumerable: true,
-            get() { return getEventHandler(storage ? storageFor(storage) : storageFor(this), type); },
-            set(value) { setEventHandler(storage ? storageFor(storage) : storageFor(this), type, value); }
-        });
-    };
-    const installEventHandlerAttributes = receiver => {
-        for (const type of eventHandlerTypes) defineEventHandler(receiver, null, type);
-    };
-    const installEventTargetProxy = (storage, proxy) => {
-        proxyStorage.set(proxy, storage);
-        storageProxy.set(storage, proxy);
-        for (const type of eventHandlerTypes) defineEventHandler(proxy, storage, type);
-    };
 
     class EventTarget {
         addEventListener(type, callback, options) {

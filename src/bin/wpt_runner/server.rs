@@ -179,6 +179,13 @@ struct Response {
 }
 
 fn route(root: &Path, tests: &[TestCase], request_path: &str) -> Response {
+    // Match upstream tools/serve/serve.py's legacy parser URL rewrite. The bytes stay
+    // unmodified in the pinned, external WPT checkout.
+    let request_path = if request_path == "/resources/WebIDLParser.js" {
+        "/resources/webidl2/lib/webidl2.js"
+    } else {
+        request_path
+    };
     if request_path == "/resources/testharnessreport.js" {
         return ok(
             "text/javascript; charset=utf-8",
@@ -373,27 +380,4 @@ fn content_type(path: &Path) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_plain_and_encoded_traversal() {
-        assert!(safe_relative_path("/../secret").is_err());
-        assert!(safe_relative_path("/%2e%2e/secret").is_err());
-        assert!(safe_relative_path("/..%5csecret").is_err());
-    }
-
-    #[test]
-    fn accepts_an_upstream_resource_path() {
-        assert_eq!(
-            safe_relative_path("/resources/testharness.js").unwrap(),
-            PathBuf::from("resources/testharness.js")
-        );
-    }
-
-    #[test]
-    fn recognizes_only_numeric_wrapper_routes() {
-        assert_eq!(wrapper_index("/__breeze_wpt/12.html"), Some(12));
-        assert_eq!(wrapper_index("/__breeze_wpt/test.html"), None);
-    }
-}
+mod tests;

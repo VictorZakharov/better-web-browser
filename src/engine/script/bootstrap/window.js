@@ -1,6 +1,7 @@
     // Window exposure, named access, iframe views, and window messaging.
     const windowEvents = new EventTarget();
     const windowObject = globalThis;
+    Object.assign(windowObject, { HTMLBodyElement, HTMLFrameSetElement, BeforeUnloadEvent });
     const windowConstructionToken = {};
     class Window extends EventTarget {
         constructor(token) {

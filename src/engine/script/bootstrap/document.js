@@ -12,6 +12,8 @@
         'param plaintext rb rtc shadow spacer strike tt xmp'
     ).split(/\s+/));
     const htmlElementConstructor = localName => {
+        if (localName === 'body') return HTMLBodyElement;
+        if (localName === 'frameset') return HTMLFrameSetElement;
         if (localName === 'div') return HTMLDivElement;
         if (localName === 'title') return HTMLTitleElement;
         if (localName === 'style') return HTMLStyleElement;
@@ -118,6 +120,7 @@
         createEvent(type) {
             const interfaceName = String(type).toLowerCase();
             const event = interfaceName === 'customevent' ? new CustomEvent('') :
+                interfaceName === 'beforeunloadevent' ? new BeforeUnloadEvent(beforeUnloadConstructionToken) :
                 interfaceName === 'storageevent' ? new StorageEvent('') :
                 interfaceName === 'messageevent' ? new MessageEvent('') : new Event('');
             event.__initialized = false;
@@ -183,6 +186,7 @@
     globalThis.__parserDomChanged = ids => {
         parserCollectionEpoch++;
         for (const node of list(ids)) maybeUpgradeCustomElement(node);
+        refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
     };
     installEventHandlerAttributes(Document.prototype);
@@ -215,6 +219,7 @@
         else if (type === 8) node = new Comment(id, type, metadata[1], null, null);
         else node = new Text(id, type, metadata[1], null, null);
         cache.set(id, node);
+        if (metadata[5] === 'handlers') initializeEventHandlerAttributes(node);
         return node;
     }
 

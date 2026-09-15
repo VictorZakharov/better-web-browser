@@ -11,6 +11,9 @@
     "expectations": "forbidden"
   },
   "support": [
+    "resources/webidl2/lib/webidl2.js",
+    "resources/webidl2/lib/webidl2.js.headers",
+    "interfaces/html.idl",
     "html/semantics/document-metadata/the-link-element/resources/stylesheet-bad-mime-type.css",
     "html/semantics/document-metadata/the-link-element/resources/stylesheet-bad-mime-type.css.headers",
     "html/semantics/document-metadata/the-link-element/resources/stylesheet-bad-mime-type-empty.css",
@@ -27,6 +30,18 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "html/webappapis/scripting/events/body-onload.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-all-global-events.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-handleEvent-ignored.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-processing-algorithm.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-removal.window.js", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-sourcetext.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/event-handler-spec-example.window.js", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/inline-event-handler-ordering.html", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/invalid-uncompiled-raw-handler-compiled-late.window.js", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/invalid-uncompiled-raw-handler-compiled-once.window.js", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/invalid-uncompiled-raw-handler-keeps-position.window.js", "area": "HTML event handlers", "expected": "pass" },
+    { "path": "html/webappapis/scripting/events/compile-event-handler-symbol-unscopables.html", "area": "HTML event handlers", "expected": "pass" },
     { "path": "html/semantics/document-metadata/the-link-element/stylesheet-bad-mime-type.html", "area": "Stylesheet loading", "expected": "pass" },
     { "path": "streams/readable-streams/tee.any.js", "area": "Readable streams", "expected": "pass" },
     { "path": "streams/readable-streams/floating-point-total-queue-size.any.js", "area": "Readable streams", "expected": "pass" },
