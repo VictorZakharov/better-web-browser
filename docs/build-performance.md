@@ -42,6 +42,74 @@ claims still require a canonical release build from the exact source head.
 
 ## GitHub Actions feedback
 
+### September 15 PR policy
+
+The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain
+source/format checks, Clippy, all core tests, renderer smoke tests, focused Windows integration tests,
+dependency advisories/licenses/bans/sources and notice verification, and Chromium harness self-tests.
+The fixed `windows-2022` hosted image uses the default Cargo build concurrency. Rust executables
+run in three independent PR workers: core, renderer, and the remaining
+Windows integration targets. WPT-runner unit tests run with Windows integration, leaving the large
+library test executable alone on the core worker to balance compilation/linking time.
+PRs select fourteen renderer contracts covering containment, recovery,
+native input/navigation, first paint, and video ownership/watchdogs. The selector verifies every
+exact test name before execution, so renamed tests cannot silently become zero-test passes.
+Main runs all 123 renderer tests. The renderer suite runs with one test thread because it shares a
+single AppContainer profile and already serializes its sessions. Its media cadence test starts the
+deliberately blocking JavaScript callback only after receiving the first decoded frame, so startup
+timer advancement cannot trigger the hang prematurely. Watchdog assertions are unchanged.
+`media_process` and `fullscreen_layout` are explicitly included; the previous CI target list omitted
+those two executables. Valid media-decoding fixtures allow three seconds for cold OS codec startup;
+failure-containment commands retain their 750 ms deadline, and startup-fault tests retain 200 ms.
+The hidden-benchmark timeout self-test runs once, not on both visual shards.
+
+The full twelve-fixture Breeze-versus-Chromium visual/performance matrix, curated WPT, and
+`live_runtime` end-to-end tests now run only on pushes to `main`. No fixture or assertion was
+deleted. This is an intentional coverage tradeoff: PR feedback is shorter, but broader integration
+regressions can first be detected after merge. Run relevant local integration tests and the release
+matrix before reviewing those changes. The checked-in aggregate policy rejects failed, cancelled,
+missing, and incorrectly skipped workers; 142 policy cases cover the accepted and rejected result
+combinations. Only a PR may skip these three broad suites, and only a confirmed Markdown-only PR
+may skip the remaining workers. Main always requires the full suite. The final PR path runs 1,246
+Rust tests; moving broader integration coverage to main is a deliberate speed/coverage tradeoff.
+
+Compiler-level sccache and Cargo package/index caches remain enabled; `target` is not cached.
+Rust stays pinned by `rust-toolchain.toml`, including Clippy and rustfmt. V8 metadata is restricted to
+the requested Windows target instead of unpacking other platforms' dependencies. Direct registry
+directory caching through the cache action's MSYS tar was measured and rejected: a 124 MiB cache
+took 27–43 seconds to extract on ordinary samples and 133 seconds on one worker. A native ZIP
+experiment also regressed on its warm run (78 seconds extracting), so extracted sources are not
+cached. Rust installation stays sequential: an attempted overlap caused a component-install
+conflict and was removed. These rejected experiments are not part of the final workflow.
+
+The September 15 baseline was [PR #154's final run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35017147276):
+**4m47s** from workflow start to completion of `windows`. The slowest visual worker took 4m28s;
+Windows integration took 3m57s. A four-fixture PR-smoke experiment still took 4m23s on its first run
+and 4m36s on its repeat, so fixture reduction alone was rejected. The first run failed two media
+startup timeouts; the repeat passed. A subsequent source-cache experiment also exposed a cold
+font/watchdog timeout. No failed run counts as successful performance evidence.
+
+The rejected native-archive configuration's first run passed in 3m23s, but its warm repeat took
+4m02s and failed a media startup assertion. The three-worker policy's
+[first run](https://github.com/VictorZakharov/better-web-browser/actions/runs/35023279509/attempts/1)
+passed in **3m26s**, running 1,355 Rust tests (one pre-existing ignored test). This is 1m21s faster
+than the baseline but does **not** meet the requested sub-three-minute target. Its critical renderer
+worker spent 62 seconds resolving/unpacking dependencies and installing Rust, 57 seconds compiling,
+and 32 seconds testing. A repeat passed in 3m14s. These samples preceded the final fourteen-test
+renderer smoke selection. The full local release visual matrix passed all twelve fixtures; an earlier
+full hosted run passed all 1,396 Rust tests and 220 curated WPT cases / 2,169 subtests. Runner
+queueing, dependency changes, and cold builds remain variable.
+
+The renderer-smoke configuration passed in
+[3m59s](https://github.com/VictorZakharov/better-web-browser/actions/runs/35024549149/attempts/1)
+and [3m22s](https://github.com/VictorZakharov/better-web-browser/actions/runs/35024549149/attempts/2).
+Core became the critical path: the first run spent 95 seconds in dependency metadata/unpacking,
+and the repeat's core worker finished 25 seconds after Windows integration. The subsequent target
+rebalance moves the sixteen WPT-runner unit tests to that integration worker without reducing
+coverage. These results do not establish reliable sub-three-minute feedback.
+
+### Historical measurements
+
 End-to-end time is measured from each workflow attempt's `run_started_at` timestamp through
 completion of the required `windows` aggregate gate. Each sample is a fresh GitHub-hosted Windows
 VM running the full source-change path; GitHub's rounded duration labels are not used for the
@@ -55,7 +123,7 @@ calculation.
 | [Final sample 3](https://github.com/VictorZakharov/better-web-browser/actions/runs/31970249397/attempts/3) | 2m20s | Lint 2m02s; Windows integration 1m58s; curated WPT 1m49s |
 | **Final median** | **2m20s** | 31s (18.1%) faster than the 2m51s baseline |
 
-The workflow keeps source/formatting, Clippy, two test shards, and curated WPT independent. The
+At that revision, the workflow kept source/formatting, Clippy, two test shards, and curated WPT independent. The
 required `windows` and `Linear PR history` names are unchanged. Markdown-only pull requests still
 take the checked-in fail-safe classifier path and skip every Windows worker; pushes to `main` run the
 full suite.
@@ -82,7 +150,7 @@ Breeze build profile so debug-profile regression signals cannot be mistaken for 
 claims. The job has a six-minute hard limit; distributable binaries and published benchmark claims
 continue to use `release`.
 
-Material changes from the baseline are:
+Material changes in that historical experiment were:
 
 - compiler outputs remain in the compiler-level sccache backend;
 - Cargo package archives, index data, and extracted registry sources share one content-addressed
@@ -95,7 +163,7 @@ Material changes from the baseline are:
 - curated WPT runs eight hidden browser cases concurrently, while every Breeze launch retains its
   `CREATE_NO_WINDOW` path.
 
-### Remaining critical path
+### Historical remaining critical path
 
 The original compile/test path's initial sub-two-minute target is not yet met; its measured median
 misses it by 20 seconds. The later public-alpha gate now determines pull-request wall clock at

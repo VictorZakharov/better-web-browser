@@ -19,20 +19,27 @@ Every checked-in page, stylesheet, script, and SVG is original project material.
 | `layout-matrix` | Flex, grid, table, float, overflow | Layout and visual checks |
 | `media-fonts` | Raster data URL, SVG, and system webfont | Resource and visual checks |
 | `async-mutation` | Delayed DOM/class/text mutation | Settle and visual checks |
+| `custom-elements` | Autonomous custom-element bootstrap | Upgrade and visual checks |
+| `shadow-components` | Nested roots, slots, scoped styles, composed events | Shadow-aware structural and visual checks |
+| `constructed-stylesheets` | Shared stylesheet adoption and live rule changes | Scoped cascade and visual checks |
 
 Run the same local matrix used by CI:
 
-CI runs two independent workers with `-ShardIndex 0 -ShardCount 2` and
+On pushes to `main`, CI runs two independent workers with `-ShardIndex 0 -ShardCount 2` and
 `-ShardIndex 1 -ShardCount 2`. Shards partition the selected fixtures by their matrix index,
 so every fixture runs once, including newly added fixtures. Both workers must pass the
-required `windows` gate. Local runs default to the complete matrix; each shard should use
+required `windows` gate on main. PRs skip this benchmark to shorten feedback; the aggregate gate
+allows that skip only for a PR, while retaining core, renderer, focused Windows integration tests,
+and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main.
+Visual changes still warrant local comparison before review, since main-only CI can discover a
+visual regression after merge. Local runs default to the complete matrix; each shard should use
 its own output directory when running concurrently.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
 ```
 
-Use `-Fixture layout-matrix,media-fonts` for a focused run, `-OutputDirectory <path>` to select the artifact location, or `-SkipBuild` only when both selected outputs are already current. Pull-request CI passes `-BuildProfile debug`: it preserves every compatibility assertion while reusing the same compiler-cache inputs as the core, integration, and WPT workers instead of adding a release-LTO build to the critical path. Measurements from that profile are regression signals, not publishable performance claims. `compare.ps1` is a compatibility alias for the same runner.
+Use `-Fixture layout-matrix,media-fonts` for a focused run, `-OutputDirectory <path>` to select the artifact location, or `-SkipBuild` only when both selected outputs are already current. Main CI passes `-BuildProfile debug`: it preserves every compatibility assertion while reusing the same compiler-cache inputs as the core, integration, and WPT workers instead of adding a release-LTO build to the critical path. Measurements from that profile are regression signals, not publishable performance claims. `compare.ps1` is a compatibility alias for the same runner.
 
 The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
@@ -43,7 +50,7 @@ The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
 ## Controlled comparison contract
 
-- Canonical evidence runs both browsers on the same machine from release builds. Pull-request CI uses Breeze's `debug` profile and the release Chromium harness; its timing fields are regression signals only. Every browser remains hidden and gets a new temporary profile for every sample. Cache is disabled in Chromium; the loopback server sends `Cache-Control: no-store`.
+- Canonical evidence runs both browsers on the same machine from release builds. Main CI uses Breeze's `debug` profile and the release Chromium harness; its timing fields are regression signals only. Every browser remains hidden and gets a new temporary profile for every sample. Cache is disabled in Chromium; the loopback server sends `Cache-Control: no-store`.
 - The matrix fixes the outer Breeze window, `en-US` locale, settle period, scroll sample count, and fixture bytes. Breeze's observed content viewport and Windows scale factor are then applied to Chromium. Fractional Windows scaling requires at most a two-CSS-pixel viewport tolerance because CDP accepts integer dimensions and Chromium quantizes device pixels.
 - Breeze launches only through `scripts/run-hidden-benchmark.ps1`, which fail-closes unless the actual child command line contains `--benchmark`. A harness timeout still writes bounded partial JSON with its failure kind, safe URLs, process tree and cleanup result, bounded/redacted diagnostics, and screenshot availability before returning an error. Chromium launches with the exact `--headless` flag, `CreateNoWindow`, a fresh profile, and a visible-window check.
 - Local captures must be nonblank and structurally populated. Chromium records light-DOM text/elements separately from flattened composed text/elements, authored shadow roots, accessibility nodes, and painted-pixel evidence. A painted Shadow DOM page is valid even when light-DOM `innerText` is empty; a truly empty document or Chromium error surface still fails. Breeze must report HTTP 200, one visible `#main`, retained draw items, no JavaScript errors, page-ready no slower than two times Chromium load, and successful early-scroll acceptance where configured.
