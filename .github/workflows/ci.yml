@@ -72,6 +72,9 @@ jobs:
       - name: Test CI gate and coverage policy
         shell: pwsh
         run: ./scripts/test-ci-policy.ps1
+      - name: Test Cargo source cache integrity
+        shell: pwsh
+        run: ./scripts/test-cargo-source-cache.ps1
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -109,6 +112,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
+        with:
+          populate-source-cache: ${{ matrix.suite == 'core' }}
       - name: Test
         if: github.event_name != 'pull_request' || matrix.suite != 'renderer'
         run: cargo test --locked ${{ matrix.arguments }}
