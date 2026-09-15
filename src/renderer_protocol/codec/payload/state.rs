@@ -118,6 +118,8 @@ pub(super) fn encode_renderer_state(
             writer.u64(request.document.get());
             writer.u8(area_tag(request.mutation.area));
             writer.u64(request.mutation.expected_version);
+            writer.u64(request.sequence);
+            writer.string(&request.source_url)?;
             match &request.mutation.operation {
                 StorageOperation::Set { key, value } => {
                     writer.u8(1);
@@ -162,6 +164,8 @@ pub(super) fn decode_renderer_state(
             let document = DocumentId::new(reader.u64()?)?;
             let area = decode_area(reader.u8()?)?;
             let expected_version = nonzero(reader.u64()?, "storage mutation")?;
+            let sequence = nonzero(reader.u64()?, "storage sequence")?;
+            let source_url = reader.string(crate::limits::MAX_URL_BYTES)?;
             let operation = match reader.u8()? {
                 1 => StorageOperation::Set {
                     key: reader.storage_string(MAX_STORAGE_KEY_BYTES)?,
@@ -175,6 +179,8 @@ pub(super) fn decode_renderer_state(
             };
             let request = StorageMutationRequest {
                 document,
+                sequence,
+                source_url,
                 mutation: StorageMutation {
                     area,
                     expected_version,
@@ -199,14 +205,14 @@ pub(super) fn decode_renderer_state(
     Ok(message)
 }
 
-fn area_tag(area: StorageAreaKind) -> u8 {
+pub(super) fn area_tag(area: StorageAreaKind) -> u8 {
     match area {
         StorageAreaKind::Local => 1,
         StorageAreaKind::Session => 2,
     }
 }
 
-fn decode_area(tag: u8) -> Result<StorageAreaKind, ProtocolError> {
+pub(super) fn decode_area(tag: u8) -> Result<StorageAreaKind, ProtocolError> {
     match tag {
         1 => Ok(StorageAreaKind::Local),
         2 => Ok(StorageAreaKind::Session),

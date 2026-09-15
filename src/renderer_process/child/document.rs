@@ -129,6 +129,18 @@ impl DocumentRuntime {
         Ok(())
     }
 
+    pub(super) fn synchronize_storage(
+        &mut self,
+        update: crate::storage::StorageUpdate,
+    ) -> Result<bool, String> {
+        match self.script_runtime.as_mut() {
+            Some(runtime) => runtime
+                .synchronize_storage(update)
+                .map_err(|error| error.to_string()),
+            None => Ok(false),
+        }
+    }
+
     pub(super) fn into_text(mut self) -> RendererTextSystem {
         self.script_runtime.take();
         let mut text = match Rc::try_unwrap(self.text) {

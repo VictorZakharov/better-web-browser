@@ -74,3 +74,11 @@
         value: StorageEvent, writable: true, configurable: true,
     });
     defineEventHandler(windowObject, windowEvents, 'storage');
+    const storageEventAreas = { local: windowObject.localStorage, session: windowObject.sessionStorage };
+    const storageEventDispatch = Function.call.bind(windowObject.dispatchEvent, windowObject);
+    // Captured by the embedder and removed from the global before page scripts run.
+    windowObject.__dispatchStorageEvent = (area, key, oldValue, newValue, url) => {
+        const event = new StorageEvent('storage');
+        storageEventSlots.set(event, { key, oldValue, newValue, url, storageArea: storageEventAreas[area] });
+        storageEventDispatch(markTrusted(event));
+    };

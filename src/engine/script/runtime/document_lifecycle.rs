@@ -10,9 +10,15 @@ enum Readiness {
     Complete,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum DocumentTask {
     DomContentLoaded,
     WindowLoad,
+}
+
+pub(in crate::engine::script) struct StorageEventTask {
+    pub(in crate::engine::script) update: crate::storage::StorageUpdate,
+    predecessor: Option<DocumentTask>,
 }
 
 #[derive(Default)]
@@ -24,6 +30,20 @@ pub(in crate::engine::script) struct DocumentLoad {
 }
 
 impl DocumentLoad {
+    pub(in crate::engine::script) fn storage_event(
+        &self,
+        update: crate::storage::StorageUpdate,
+        scripts_pending: bool,
+    ) -> StorageEventTask {
+        // Storage, DCL and load share the DOM-manipulation task source. Remember
+        // an already-queued readiness task, not a readiness condition met later.
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-end
+        StorageEventTask {
+            update,
+            predecessor: self.task(scripts_pending),
+        }
+    }
+
     fn task(&self, scripts_pending: bool) -> Option<DocumentTask> {
         match self.readiness {
             Readiness::Interactive if self.parsing_finished && !self.deferred_scripts_pending => {
@@ -65,6 +85,20 @@ pub(in crate::engine::script) fn run_one(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
 ) -> bool {
+    let can_run_storage = {
+        let state = host.borrow();
+        state.navigation_url.is_none()
+            && state.storage_event.as_ref().is_some_and(|task| {
+                task.predecessor.is_none()
+                    || task.predecessor
+                        != state
+                            .document_load
+                            .task(!state.pending_dynamic_scripts.is_empty())
+            })
+    };
+    if can_run_storage && super::storage::run_one(context, host, outcome) {
+        return true;
+    }
     let task = {
         let mut state = host.borrow_mut();
         if state.navigation_url.is_some() {
@@ -127,6 +161,10 @@ impl ScriptRuntime {
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
         host.pending_media_actions.clear();
+        host.storage_event = None;
+        host.storage_updates.clear();
+        host.local_storage = Default::default();
+        host.session_storage = Default::default();
         host.module_loader.clear();
     }
 
@@ -192,10 +230,11 @@ impl ScriptRuntime {
         let state = self.host.borrow();
         self.is_active()
             && state.navigation_url.is_none()
-            && state
-                .document_load
-                .task(!state.pending_dynamic_scripts.is_empty())
-                .is_some()
+            && (state.storage_event.is_some()
+                || state
+                    .document_load
+                    .task(!state.pending_dynamic_scripts.is_empty())
+                    .is_some())
     }
 
     pub(super) fn advance_document_task(&mut self, elapsed: Duration) -> ScriptOutcome {

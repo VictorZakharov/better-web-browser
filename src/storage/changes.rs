@@ -14,7 +14,7 @@ pub struct StorageChange {
 }
 
 impl StorageChange {
-    fn before(area: Option<&StorageAreaState>, operation: &StorageOperation) -> Self {
+    pub(super) fn before(area: Option<&StorageAreaState>, operation: &StorageOperation) -> Self {
         let (key, new_value) = match operation {
             StorageOperation::Set { key, value } => (Some(key.clone()), Some(value.clone())),
             StorageOperation::Remove { key } => (Some(key.clone()), None),

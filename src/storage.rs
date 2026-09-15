@@ -2,9 +2,15 @@
 
 mod area;
 mod changes;
+mod coordinator;
 mod persistence;
+mod projection;
+mod synchronization;
 pub use area::StorageAreaState;
 pub use changes::StorageChange;
+pub use coordinator::{StorageCoordinator, StorageSubscription};
+pub use projection::StorageProjection;
+pub use synchronization::{StorageUpdate, StorageWrite};
 mod string;
 pub use string::StorageString;
 
@@ -246,5 +252,7 @@ fn validate_bytes(bytes: usize) -> Result<(), StorageError> {
 
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod sync_tests;
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,6 @@ use super::*;
 use better_web_browser::renderer_protocol::{
     CookieMutation, CookieStateSnapshot, StorageMutationRequest,
 };
-use better_web_browser::storage::StorageAreaKind;
 
 impl BrowserState {
     pub(super) fn apply_renderer_cookie_mutation(
@@ -52,72 +51,78 @@ impl BrowserState {
 
     pub(super) fn apply_renderer_storage_mutations(
         &mut self,
-        requests: Vec<StorageMutationRequest>,
-    ) -> Result<(), String> {
+        requests: &[StorageMutationRequest],
+    ) -> Result<bool, String> {
         let Some(request) = requests.first() else {
-            return Ok(());
+            return Ok(true);
         };
         if !self.navigation.owns_document(request.document) {
-            return Ok(());
+            return Ok(true);
         }
-        self.incidents.storage_mutations = self
-            .incidents
-            .storage_mutations
-            .saturating_add(requests.len() as u64);
-        self.incidents.record(
-            "storage",
-            format!(
-                "{:?} mutation received at version {}",
-                request.mutation.area, request.mutation.expected_version
-            ),
-        );
-        let document_url = self.reader_url.clone();
-        let result = match request.mutation.area {
-            StorageAreaKind::Local => self.local_storage.apply_batch(
-                &document_url,
-                &requests
-                    .iter()
-                    .map(|request| request.mutation.clone())
-                    .collect::<Vec<_>>(),
-            ),
-            StorageAreaKind::Session => requests.iter().try_fold(false, |changed, request| {
-                self.session_storage
-                    .apply(&document_url, &request.mutation)
-                    .map(|next| changed || next)
-            }),
+        let app = self.app.clone();
+        let tab = self.tabs.active_mut();
+        let Some((document, subscription)) = &tab.storage_subscription else {
+            return Err("active document has no Web Storage subscription".into());
         };
-        match result {
-            Ok(_) => {
-                // Both sides applied the same validated operation at the same version. Echoing a
-                // full origin snapshot here is redundant and can turn a mutation burst into
-                // megabytes of correction traffic. Only rejection requires authoritative repair.
-                return Ok(());
-            }
-            Err(error) => {
-                self.status_text = format!("Web Storage update failed: {error}");
-            }
+        if *document != request.document {
+            return Ok(true);
         }
-        let snapshot = match request.mutation.area {
-            StorageAreaKind::Local => self.local_storage.snapshot(&document_url),
-            StorageAreaKind::Session => self.session_storage.snapshot(&document_url),
+        if requests.iter().any(|request| request.document != *document) {
+            return Err("storage batch crosses document identity".into());
         }
-        .map_err(|error| format!("read Web Storage state: {error}"))?;
-        if let Some(session) = self.renderer_session.as_ref() {
-            session
-                .update_storage_snapshot(request.document, request.mutation.area, snapshot)
-                .map_err(|error| format!("synchronize Web Storage: {error}"))?;
-            let telemetry = session.snapshot();
-            self.incidents.record(
+        let writes = requests
+            .iter()
+            .map(|request| better_web_browser::storage::StorageWrite {
+                sequence: request.sequence,
+                source_url: request.source_url.clone(),
+                mutation: request.mutation.clone(),
+            })
+            .collect::<Vec<_>>();
+        let applied = app
+            .storage_coordinator
+            .apply(subscription, &writes, &mut tab.session_storage)
+            .map_err(|error| format!("synchronize Web Storage: {error}"))?;
+        if applied {
+            if let Some(error) = subscription.take_error() {
+                tab.status_text = format!("Web Storage update failed: {error}");
+                tab.incidents.record("storage", &tab.status_text);
+            }
+            tab.incidents.storage_mutations = tab
+                .incidents
+                .storage_mutations
+                .saturating_add(writes.len() as u64);
+            tab.incidents.record(
                 "storage",
-                format!(
-                    "authoritative {:?} state queued; pending={}, submitted={}, coalesced={}",
-                    request.mutation.area,
-                    telemetry.pending_state_updates,
-                    telemetry.submitted_state_updates,
-                    telemetry.coalesced_state_updates
-                ),
+                format!("{} ordered writes committed or acknowledged", writes.len()),
             );
         }
-        Ok(())
+        Ok(applied)
+    }
+
+    pub(super) fn pump_storage_updates(&mut self, id: super::tabs::TabId) -> Result<(), String> {
+        let Some(tab) = self.tabs.get_mut(id) else {
+            return Ok(());
+        };
+        let Some((document, subscription)) = &tab.storage_subscription else {
+            return Ok(());
+        };
+        if !tab.navigation.owns_document(*document) {
+            tab.storage_subscription = None;
+            return Ok(());
+        }
+        let Some(session) = &tab.renderer_session else {
+            return Ok(());
+        };
+        let mut error = None;
+        subscription.take_if(|update| {
+            match session.try_synchronize_storage(*document, update.clone()) {
+                Ok(accepted) => accepted,
+                Err(detail) => {
+                    error = Some(detail);
+                    false
+                }
+            }
+        });
+        error.map_or(Ok(()), Err)
     }
 }

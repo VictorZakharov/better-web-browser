@@ -2,9 +2,8 @@
 
 use crate::limits::MAX_STORAGE_BYTES_PER_ORIGIN;
 use crate::renderer_protocol::{
-    CookieMutation, CookieStateSnapshot, DocumentId, DocumentState, RendererMessage,
-    StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest, StorageSnapshotEnd,
-    StorageSnapshotEntry, StorageSnapshotStart,
+    CookieStateSnapshot, DocumentId, DocumentState, RendererMessage, StateSnapshotApplied,
+    StateSnapshotKind, StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
 use crate::storage::{StorageAreaKind, StorageAreaSnapshot, StorageEntry};
 
@@ -193,6 +192,34 @@ impl IncomingStorageUpdate {
 }
 
 impl super::ChildConnection {
+    pub(super) fn synchronize_storage(
+        &mut self,
+        sync: crate::renderer_protocol::StorageSync,
+    ) -> Result<(), String> {
+        sync.validate().map_err(|error| error.to_string())?;
+        let receipt = sync.receipt();
+        if self.failed_document == Some(sync.document) {
+            return self.send_state_snapshot_applied(receipt);
+        }
+        let queued = self
+            .document
+            .as_mut()
+            .filter(|runtime| runtime.id() == sync.document)
+            .ok_or_else(|| "storage synchronization document is not active".to_string())?
+            .synchronize_storage(sync.update)?;
+        if queued {
+            // A new event-loop turn, not reentrant script execution during IPC application.
+            self.pending
+                .push_back(crate::renderer_protocol::BrowserMessage::AdvanceTime {
+                    document: sync.document,
+                    elapsed_micros: 0,
+                    max_callbacks: 1,
+                });
+            Ok(())
+        } else {
+            self.send_state_snapshot_applied(receipt)
+        }
+    }
     pub(in crate::renderer_process::child) fn document_state_cookie(
         &mut self,
         snapshot: CookieStateSnapshot,
@@ -290,49 +317,13 @@ impl super::ChildConnection {
         self.send_state_snapshot_applied(applied)
     }
 
-    fn send_state_snapshot_applied(&mut self, applied: StateSnapshotApplied) -> Result<(), String> {
+    pub(super) fn send_state_snapshot_applied(
+        &mut self,
+        applied: StateSnapshotApplied,
+    ) -> Result<(), String> {
         self.writer
             .send_renderer(&RendererMessage::StateSnapshotApplied(applied))
             .map_err(|error| error.to_string())
-    }
-
-    pub(in crate::renderer_process::child) fn send_state_mutations(
-        &mut self,
-        document: DocumentId,
-        outcome: &mut crate::engine::ScriptOutcome,
-    ) -> Result<(), String> {
-        for action in outcome.fullscreen_actions.drain(..) {
-            self.writer
-                .send_renderer(&RendererMessage::FullscreenRequest(
-                    crate::renderer_protocol::FullscreenRequest {
-                        document,
-                        request_id: action.request_id,
-                        action: if action.enter {
-                            crate::renderer_protocol::FullscreenAction::Enter
-                        } else {
-                            crate::renderer_protocol::FullscreenAction::Exit
-                        },
-                    },
-                ))
-                .map_err(|error| error.to_string())?;
-        }
-        for assignment in outcome.cookie_updates.drain(..) {
-            self.writer
-                .send_renderer(&RendererMessage::CookieMutation(CookieMutation {
-                    document,
-                    assignment,
-                }))
-                .map_err(|error| error.to_string())?;
-        }
-        for mutation in outcome.storage_updates.drain(..) {
-            self.writer
-                .send_renderer(&RendererMessage::StorageMutation(StorageMutationRequest {
-                    document,
-                    mutation,
-                }))
-                .map_err(|error| error.to_string())?;
-        }
-        Ok(())
     }
 }
 

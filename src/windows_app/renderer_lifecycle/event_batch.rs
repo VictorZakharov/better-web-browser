@@ -1,6 +1,29 @@
 //! Fair event turns with byte/count-bounded adjacent storage transactions.
 use super::notifications::EVENTS_PER_TURN;
 use better_web_browser::renderer_process::RendererEvent;
+use better_web_browser::renderer_protocol::StorageMutationRequest;
+
+pub(super) fn storage_transaction(
+    first: StorageMutationRequest,
+    events: &mut std::iter::Peekable<impl Iterator<Item = RendererEvent>>,
+) -> Vec<StorageMutationRequest> {
+    let document = first.document;
+    let area = first.mutation.area;
+    let mut bytes = first.mutation.byte_len() + first.source_url.len();
+    let mut requests = vec![first];
+    // Old values add at most the initial 5 MiB map plus preceding writes.
+    // Keep the transaction below an empty recipient queue's 32 MiB capacity.
+    while matches!(events.peek(), Some(RendererEvent::StorageMutation(next))
+        if next.document == document && next.mutation.area == area
+            && bytes + next.mutation.byte_len() + next.source_url.len() <= 8 * 1024 * 1024)
+    {
+        if let Some(RendererEvent::StorageMutation(next)) = events.next() {
+            bytes += next.mutation.byte_len() + next.source_url.len();
+            requests.push(next);
+        }
+    }
+    requests
+}
 
 const STORAGE_BATCH_ITEMS: usize = 256;
 const STORAGE_BATCH_BYTES: usize = 1024 * 1024;
@@ -64,6 +87,8 @@ mod tests {
 
     fn storage(document: u64, area: StorageAreaKind, bytes: usize) -> RendererEvent {
         RendererEvent::StorageMutation(StorageMutationRequest {
+            sequence: 1,
+            source_url: "https://example.com/".into(),
             document: DocumentId::new(document).unwrap(),
             mutation: StorageMutation {
                 area,

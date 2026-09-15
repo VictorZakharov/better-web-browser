@@ -6,6 +6,27 @@ pub(in crate::windows_app) const WM_APP_RENDERER_EVENTS: u32 = WM_APP + 18;
 pub(super) const EVENTS_PER_TURN: usize = 32;
 
 impl BrowserState {
+    pub(in crate::windows_app) fn watch_storage_events(
+        &self,
+        id: TabId,
+        session: &RendererSession,
+        subscription: &better_web_browser::storage::StorageSubscription,
+    ) {
+        let router = self.app.tab_router.clone();
+        let session_id = session.snapshot().session_id;
+        subscription.set_notifier(move || {
+            if let Some(window) = router.destination(id) {
+                unsafe {
+                    PostMessageW(
+                        window as Hwnd,
+                        WM_APP_RENDERER_EVENTS,
+                        id.get() as usize,
+                        session_id as isize,
+                    );
+                }
+            }
+        });
+    }
     pub(super) fn watch_renderer_events(&self, id: TabId, session: &RendererSession) {
         let router = self.app.tab_router.clone();
         let session_id = session.snapshot().session_id;

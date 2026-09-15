@@ -2,6 +2,7 @@ mod document;
 mod fetch;
 mod input;
 mod state;
+mod storage_sync;
 
 use self::document::{
     decode_browser_document, decode_renderer_document, encode_browser_document,
@@ -21,6 +22,9 @@ use crate::renderer_protocol::{
 };
 
 pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>), ProtocolError> {
+    if let BrowserMessage::StorageSync(sync) = message {
+        return storage_sync::encode(sync).map(|bytes| (0x0138, bytes));
+    }
     let mut payload = Vec::new();
     let kind = match message {
         BrowserMessage::Hello {
@@ -63,6 +67,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         | BrowserMessage::StorageSnapshotStart(_)
         | BrowserMessage::StorageSnapshotEntry(_)
         | BrowserMessage::StorageSnapshotEnd(_) => return encode_browser_state(message),
+        BrowserMessage::StorageSync(_) => unreachable!("encoded above"),
         BrowserMessage::Test(command) => {
             match command {
                 TestCommand::InternalError => payload.push(10),
@@ -131,6 +136,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
             decode_browser_document(kind, payload)
         }
         0x0131 | 0x0133 | 0x0135 | 0x0137 => decode_browser_state(kind, payload),
+        0x0138 => storage_sync::decode(payload).map(BrowserMessage::StorageSync),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 => {
             decode_browser_input(kind, payload)
         }

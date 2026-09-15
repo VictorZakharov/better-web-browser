@@ -31,6 +31,8 @@ fn storage_frames_round_trip_full_quota_and_isolated_surrogates() {
         browser
     );
     let renderer = RendererMessage::StorageMutation(StorageMutationRequest {
+        sequence: 1,
+        source_url: "https://example.com/".into(),
         document: DocumentId::new(1).unwrap(),
         mutation: StorageMutation {
             area: StorageAreaKind::Local,
@@ -55,6 +57,7 @@ fn storage_frames_round_trip_full_quota_and_isolated_surrogates() {
 fn storage_headers_reject_excess_before_reading_the_payload() {
     for (kind, limit) in [
         (0x0135_u16, crate::limits::MAX_STORAGE_FRAME_BYTES),
+        (0x0138, crate::limits::MAX_STORAGE_SYNC_FRAME_BYTES),
         (0x0133, MAX_CONTROL_PAYLOAD),
     ] {
         let mut header = [0_u8; HEADER_LENGTH];
@@ -77,4 +80,38 @@ fn malformed_utf16_lengths_are_rejected_without_allocating() {
         let mut reader = super::wire::WireReader::new(&bytes);
         assert!(reader.storage_string(1024).is_err());
     }
+}
+
+#[test]
+fn storage_change_round_trips_two_full_quota_values_and_nulls() {
+    use crate::storage::{StorageChange, StorageUpdate};
+    let value: StorageString = "x"
+        .repeat(crate::limits::MAX_STORAGE_BYTES_PER_ORIGIN - 1)
+        .into();
+    let update = StorageUpdate {
+        area: StorageAreaKind::Local,
+        version: 8,
+        acknowledgement: 0,
+        source_url: "https://example.com/path?query#fragment".into(),
+        change: Some(StorageChange {
+            version: 8,
+            key: Some("k".into()),
+            old_value: Some(value.clone()),
+            new_value: Some(value),
+        }),
+    };
+    let message = BrowserMessage::StorageSync(StorageSync {
+        document: DocumentId::new(1).unwrap(),
+        update,
+    });
+    let mut writer = FrameWriter::new(Vec::new(), session());
+    writer.send_browser(&message).unwrap();
+    let bytes = writer.into_inner();
+    assert!(bytes.len() > crate::limits::MAX_STORAGE_FRAME_BYTES);
+    assert_eq!(
+        FrameReader::new(Cursor::new(bytes), session())
+            .read_browser()
+            .unwrap(),
+        message
+    );
 }

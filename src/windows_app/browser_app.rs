@@ -43,7 +43,7 @@ pub(super) struct BrowserApplication {
     pub(super) instance: Hinstance,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
-    pub(super) local_storage: Arc<better_web_browser::storage::LocalStorage>,
+    pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
     pub(super) prefers_dark_color_scheme: Cell<bool>,
@@ -57,13 +57,16 @@ impl BrowserApplication {
         metrics: Arc<BrowserMetrics>,
     ) -> Result<Rc<Self>, String> {
         let profile = super::profile::directory()?;
+        let local_storage = Arc::new(
+            better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
+                .map_err(|error| error.to_string())?,
+        );
         Ok(Rc::new(Self {
             instance,
             metrics,
             http_client: Arc::new(winhttp::HttpClient::with_profile(&profile)?),
-            local_storage: Arc::new(
-                better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
-                    .map_err(|error| error.to_string())?,
+            storage_coordinator: better_web_browser::storage::StorageCoordinator::new(
+                local_storage,
             ),
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),

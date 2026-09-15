@@ -246,6 +246,12 @@ corrections are discarded; a correction transfer already written to the child pi
 validated and drained, then ignored by the failed document. This expected asynchronous race must
 not be reclassified as unsolicited IPC or escalate a contained page failure into renderer exit.
 
+Ordered `StorageSync` records share that lane but never coalesce. Each source sequence is
+acknowledged separately from the origin version; foreign changes hold one in-flight slot until
+their queued storage-event task completes. Task progress is allowed while that receipt is pending.
+The browser-owned coordinator reserves bounded recipient capacity before durable commit. See
+[Web Storage](../web-storage.md) for replica rebasing, lifecycle retirement, and acceptance evidence.
+
 There is deliberately no generic “invoke browser API”, “execute script”, “set arbitrary header”, or
 “paint native handle” message. New browser authority requires a named message, validation rules, a
 budget, tests, and review of this ownership table.
@@ -267,7 +273,8 @@ compatibility evidence.
 |---|---:|---|
 | IPC control payload | 256 KiB | Reject frame before payload allocation |
 | Other bulk IPC payload | 8 MiB | Close session on a larger declared length |
-| Storage entry/mutation payload | 10 MiB + 26 bytes | UTF-16 wire bound plus 5 MiB origin validation; see [Web Storage](../web-storage.md) |
+| Storage entry payload | 10 MiB + 26 bytes | UTF-16 wire bound plus 5 MiB origin validation |
+| Storage mutation / synchronization payload | Entry limit + URL/sequence metadata / 20 MiB + URL/metadata | Separate per-kind limits for full old/new UTF-16 values; see [Web Storage](../web-storage.md) |
 | Navigation/presentation transfer chunk | 1 MiB | Sender chunks; receiver validates offset and declared total |
 | Fetch response chunk | 64 KiB | Producer and consumer reject a larger stream chunk |
 | Queued browser commands | 8 | UI uses nonblocking enqueue; reject overflow |
@@ -330,9 +337,12 @@ the browser UI.
 
 At document creation the browser provides the non-`HttpOnly` cookie view and permitted storage
 snapshot needed by synchronous APIs. Renderer mutations are requests, not durable writes. The
-browser applies URL/origin and attribute rules, updates persistent state, then returns a corrected
-versioned snapshot to the requesting active document. An outdated cache version cannot overwrite a
-newer browser value. Cross-document `storage` events remain follow-up compatibility work.
+browser applies URL/origin and attribute rules and updates persistent state. Cookies use corrected
+versioned snapshots. Storage uses independent source-sequence acknowledgements and ordered
+origin-version changes, rebasing them beneath pending synchronous writes. Same-origin top-level
+tabs receive queued trusted `storage` events; the writer receives no echo. Stale cached versions
+are not compare-and-swap preconditions for Web Storage. Separate browser-instance synchronization
+and executable iframe broadcast scope remain follow-up work.
 
 ### Presentation and controls
 

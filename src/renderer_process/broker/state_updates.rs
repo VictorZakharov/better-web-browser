@@ -1,8 +1,10 @@
-//! Coalesced browser-authoritative cookie and Web Storage corrections.
+//! Browser-authoritative state corrections and ordered Web Storage delivery.
 //!
 //! Page-generated command bursts must not make durable browser state look like a renderer
 //! failure. Corrections therefore use three newest-wins slots instead of competing for the
 //! ordinary bounded input/viewport command channel.
+//! Storage deltas never coalesce: one admitted delta holds its slot until the
+//! renderer acknowledges the local write or finishes the foreign event task.
 
 use crate::renderer_protocol::{
     CookieStateSnapshot, DocumentId, StateSnapshotApplied, StateSnapshotKind,
@@ -13,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub(super) enum StateUpdate {
+    Sync(crate::renderer_protocol::StorageSync),
     Cookie(CookieStateSnapshot),
     Storage {
         document: DocumentId,
@@ -24,6 +27,7 @@ pub(super) enum StateUpdate {
 impl StateUpdate {
     pub(super) fn document(&self) -> DocumentId {
         match self {
+            Self::Sync(sync) => sync.document,
             Self::Cookie(snapshot) => snapshot.document,
             Self::Storage { document, .. } => *document,
         }
@@ -31,6 +35,7 @@ impl StateUpdate {
 
     pub(super) fn acknowledgement(&self) -> StateSnapshotApplied {
         match self {
+            Self::Sync(sync) => sync.receipt(),
             Self::Cookie(snapshot) => StateSnapshotApplied {
                 document: snapshot.document,
                 kind: StateSnapshotKind::Cookie,
@@ -82,6 +87,7 @@ pub(super) struct Snapshot {
 struct State {
     pending: VecDeque<StateUpdate>,
     in_flight: bool,
+    in_flight_blocks_tasks: bool,
     submitted: u64,
     coalesced: u64,
     receiver_open: bool,
@@ -109,6 +115,24 @@ pub(super) fn bounded() -> (Sender, Receiver) {
 }
 
 impl Sender {
+    pub(super) fn try_send_sync(
+        &self,
+        sync: crate::renderer_protocol::StorageSync,
+    ) -> Result<bool, String> {
+        sync.validate().map_err(|error| error.to_string())?;
+        let mut state = lock(&self.state);
+        if !state.receiver_open {
+            return Err("renderer broker has exited".into());
+        }
+        // One outstanding record across the pipe and the recipient's task queue.
+        // No coalescing, and no acknowledgement until a foreign event task completes.
+        if state.in_flight || !state.pending.is_empty() {
+            return Ok(false);
+        }
+        state.pending.push_back(StateUpdate::Sync(sync));
+        state.submitted = state.submitted.saturating_add(1);
+        Ok(true)
+    }
     pub(super) fn send_cookie(&self, snapshot: CookieStateSnapshot) -> Result<(), String> {
         snapshot.validate().map_err(|error| error.to_string())?;
         self.send(StateUpdate::Cookie(snapshot))
@@ -175,6 +199,9 @@ impl Receiver {
         }
         let update = state.pending.pop_front();
         state.in_flight = update.is_some();
+        state.in_flight_blocks_tasks = update
+            .as_ref()
+            .is_some_and(|update| !matches!(update, StateUpdate::Sync(_)));
         update
     }
 
@@ -182,9 +209,13 @@ impl Receiver {
         lock(&self.state).in_flight = false;
     }
 
-    pub(super) fn has_pending(&self) -> bool {
+    pub(super) fn blocks_tasks(&self) -> bool {
         let state = lock(&self.state);
-        state.in_flight || !state.pending.is_empty()
+        if state.in_flight {
+            state.in_flight_blocks_tasks
+        } else {
+            !state.pending.is_empty()
+        }
     }
 
     pub(super) fn discard_document(&self, document: DocumentId) {

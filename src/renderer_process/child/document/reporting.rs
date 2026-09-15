@@ -33,6 +33,9 @@ pub(super) fn merge_outcome(
     target.history_actions.append(&mut source.history_actions);
     target.cookie_updates.append(&mut source.cookie_updates);
     target.storage_updates.append(&mut source.storage_updates);
+    target
+        .storage_event_receipts
+        .append(&mut source.storage_event_receipts);
     target.fetch_actions.append(&mut source.fetch_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target

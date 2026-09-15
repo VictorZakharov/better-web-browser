@@ -237,6 +237,8 @@ fn state_and_stream_messages_round_trip() {
             assignment: "theme=light; Path=/".into(),
         }),
         RendererMessage::StorageMutation(StorageMutationRequest {
+            sequence: 1,
+            source_url: "https://example.com/".into(),
             document,
             mutation: StorageMutation {
                 area: StorageAreaKind::Session,

@@ -4,6 +4,8 @@ use crate::storage::{StorageAreaKind, StorageMutation, StorageOperation};
 
 fn mutation(version: u64) -> RendererEvent {
     RendererEvent::StorageMutation(StorageMutationRequest {
+        sequence: 1,
+        source_url: "https://example.com/".into(),
         document: DocumentId::new(1).unwrap(),
         mutation: StorageMutation {
             area: StorageAreaKind::Local,
@@ -55,6 +57,8 @@ fn fill_storage_slots(sender: &EventSender) {
     for version in 1..=MAX_QUEUED_RENDERER_EVENTS {
         sender
             .send(RendererEvent::StorageMutation(StorageMutationRequest {
+                sequence: 1,
+                source_url: "https://example.com/".into(),
                 document: DocumentId::new(1).unwrap(),
                 mutation: StorageMutation {
                     area: StorageAreaKind::Local,

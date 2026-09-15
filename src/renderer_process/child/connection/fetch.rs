@@ -233,6 +233,7 @@ fn is_state_transfer(message: &BrowserMessage) -> bool {
     matches!(
         message,
         BrowserMessage::CookieSnapshot(_)
+            | BrowserMessage::StorageSync(_)
             | BrowserMessage::StorageSnapshotStart(_)
             | BrowserMessage::StorageSnapshotEntry(_)
             | BrowserMessage::StorageSnapshotEnd(_)
