@@ -13,18 +13,9 @@ mod playback;
 #[path = "media_process/support.rs"]
 mod support;
 
-use support::{capture_frame_if_requested, decode_base64, sha256};
+use support::{capture_frame_if_requested, decode_base64, decode_options, options, sha256};
 
 static SERIAL: Mutex<()> = Mutex::new(());
-
-fn options() -> MediaLaunchOptions {
-    let mut options = MediaLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
-    options.test_mode = true;
-    options.startup_timeout = Duration::from_secs(3);
-    options.command_timeout = Duration::from_millis(750);
-    options.shutdown_timeout = Duration::from_secs(1);
-    options
-}
 
 #[test]
 fn contained_worker_proves_media_foundation_h264_and_aac_availability() {
@@ -83,7 +74,8 @@ fn contained_worker_decodes_owned_h264_aac_mp4_to_nv12_and_pcm() {
         ],
         "vendored WPT fixture does not match its pinned SHA-256"
     );
-    let mut session = MediaSession::launch(options()).expect("launch contained media worker");
+    let mut session =
+        MediaSession::launch(decode_options()).expect("launch contained media worker");
     let decoded = session
         .decode_owned_fixture_frame(&fixture)
         .expect("decode owned WPT MP4 fixture");
@@ -173,7 +165,8 @@ fn contained_worker_advances_an_acknowledged_video_frame_sequence() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fixture = decode_base64(include_str!("fixtures/media/test-1s.mp4.base64"));
-    let mut session = MediaSession::launch(options()).expect("launch contained media worker");
+    let mut session =
+        MediaSession::launch(decode_options()).expect("launch contained media worker");
     let playback = session
         .decode_owned_fixture_frames(&fixture, 6)
         .expect("decode advancing video frame sequence");

@@ -3,6 +3,12 @@ description: Restore compiler and registry caches without caching workspace buil
 runs:
   using: composite
   steps:
+    - name: Start pinned Rust setup alongside cache restore
+      shell: pwsh
+      run: |
+        # The rustup proxy installs rust-toolchain.toml's version. Cargo below waits
+        # on rustup's lock and reports any setup failure; no toolchain is unpinned.
+        Start-Process -FilePath (Get-Command rustc).Source -ArgumentList '--version' -WindowStyle Hidden -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'rust-setup.stdout') -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'rust-setup.stderr')
     - name: Configure compiler cache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
@@ -13,9 +19,10 @@ runs:
         path: |
           ~/.cargo/registry/cache
           ~/.cargo/registry/index
-        key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
+          ~/.cargo/registry/src
+        key: windows-cargo-registry-v5-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          windows-cargo-registry-v4-
+          windows-cargo-registry-v5-
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug

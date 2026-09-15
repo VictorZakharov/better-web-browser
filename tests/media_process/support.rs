@@ -1,9 +1,27 @@
+use super::{Duration, MediaLaunchOptions};
 use better_web_browser::media_process::DecodedMediaFrame;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Security::Cryptography::{
     BCRYPT_ALG_HANDLE, BCRYPT_SHA256_ALGORITHM, BCryptCloseAlgorithmProvider, BCryptHash,
     BCryptOpenAlgorithmProvider,
 };
+
+pub(super) fn options() -> MediaLaunchOptions {
+    let mut options = MediaLaunchOptions::new(env!("CARGO_BIN_EXE_better-web-browser"));
+    options.test_mode = true;
+    options.startup_timeout = Duration::from_secs(3);
+    options.command_timeout = Duration::from_millis(750);
+    options.shutdown_timeout = Duration::from_secs(1);
+    options
+}
+
+pub(super) fn decode_options() -> MediaLaunchOptions {
+    let mut options = options();
+    // Valid-fixture checks cover decoded pixels/frames, not cold OS codec startup latency.
+    // Retain the shorter deadline above for the separate failure-containment tests.
+    options.command_timeout = options.startup_timeout;
+    options
+}
 
 pub(super) fn decode_base64(input: &str) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len() / 4 * 3);
