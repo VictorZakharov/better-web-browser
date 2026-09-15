@@ -37,7 +37,7 @@ mod mutation_host;
 mod network;
 mod performance_clock;
 mod render_invalidation;
-mod runtime;
+pub(crate) mod runtime;
 mod runtime_guard;
 mod shadow_host;
 mod style_cache;

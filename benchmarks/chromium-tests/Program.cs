@@ -1,4 +1,5 @@
 using ChromiumBaseline;
+using System.Text.Json;
 
 internal static class Program
 {
@@ -18,6 +19,22 @@ internal static class Program
                 """);
             Assert(light.Error is null, $"light DOM control failed: {light.Error}");
             Assert(light.BodyTextLength >= 20, "light DOM control did not expose light-DOM text");
+            using (var filmstrip = JsonDocument.Parse(await File.ReadAllTextAsync(
+                Path.Combine(root, "light-film", "manifest.json"))))
+            {
+                var manifest = filmstrip.RootElement;
+                Assert(manifest.GetProperty("source").GetString() == "compositor_screencast_latest_frame",
+                    "filmstrip must identify its compositor sampling source");
+                var frames = manifest.GetProperty("frames").EnumerateArray().ToArray();
+                Assert(frames.Length == 4, "filmstrip did not complete all four wall-clock samples");
+                Assert(frames.All(frame => frame.GetProperty("error").ValueKind == JsonValueKind.Null),
+                    "filmstrip reported a failed sample");
+                Assert(frames.Any(frame => frame.GetProperty("source_frame_ms").GetDouble() >= 0),
+                    "filmstrip never received a frame after navigation");
+                foreach (var frame in frames)
+                    Assert(File.Exists(Path.Combine(root, "light-film", frame.GetProperty("file").GetString()!)),
+                        "filmstrip sample file is missing");
+            }
 
             var open = await CaptureAsync(chrome, root, "open-shadow", ShadowFixture("open"));
             Assert(open.Error is null, $"open Shadow DOM page failed: {open.Error}");
@@ -101,6 +118,9 @@ internal static class Program
             ChromePath = chrome,
             ViewportWidth = 640,
             ViewportHeight = 400,
+            FilmstripDirectory = name == "light" ? Path.Combine(root, "light-film") : null,
+            FilmstripIntervalMs = 250,
+            FilmstripDurationMs = 1000,
             SettleMs = 100,
             TimeoutMs = 15_000
         };

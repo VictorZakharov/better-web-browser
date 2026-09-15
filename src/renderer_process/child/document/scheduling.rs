@@ -102,6 +102,10 @@ impl DocumentRuntime {
             self.page.source_url
         ))?;
         self.advance_parser(connection, &mut outcome)?;
+        if self.encoding_restart_pending() {
+            connection.send_state_mutations(self.id, &mut outcome)?;
+            return Ok(AdvanceResult::EncodingRestart);
+        }
         self.execute_pending_parser_script(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
         self.start_pending_fetches(connection)?;
@@ -250,6 +254,7 @@ impl DocumentRuntime {
                     match &mut presentation {
                         AdvanceResult::Presentation(value) => value.clock_advanced = true,
                         AdvanceResult::Runtime(value) => value.clock_advanced = true,
+                        AdvanceResult::EncodingRestart => {}
                     }
                     presentation
                 })

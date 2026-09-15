@@ -2,6 +2,41 @@ use super::*;
 use crate::renderer_protocol::{FetchResponseResult, FetchResponseType, TransferChunk};
 
 #[test]
+fn retired_replies_are_ignored_without_accepting_unknown_new_requests() {
+    let document = DocumentId::new(1).unwrap();
+    let mut state = FetchState::default();
+    state.register(document, 1, &[(10, false)]).unwrap();
+    state.cancel_document(document);
+    assert!(
+        state
+            .handle(BrowserMessage::FetchResponseStart(success_head(10)))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        state
+            .handle(BrowserMessage::FetchResponseChunk(TransferChunk {
+                transfer_id: 10,
+                offset: 0,
+                bytes: b"old".to_vec()
+            }))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        state
+            .handle(BrowserMessage::FetchResponseStart(success_head(11)))
+            .is_err()
+    );
+    state.register(document, 2, &[(11, false)]).unwrap();
+    assert!(
+        state
+            .handle(BrowserMessage::FetchResponseStart(success_head(11)))
+            .is_ok()
+    );
+}
+
+#[test]
 fn buffered_responses_preserve_completion_order_across_a_shared_batch() {
     let document = DocumentId::new(1).unwrap();
     let mut state = FetchState::default();

@@ -3,6 +3,7 @@
 mod fetch;
 mod media;
 mod mutations;
+mod navigation;
 mod runtime;
 mod state;
 mod writer;
@@ -36,6 +37,7 @@ pub(super) struct ChildConnection {
     pending_fetch_deliveries: VecDeque<ScriptFetchDelivery>,
     fetches: FetchState,
     incoming_document: Option<IncomingDocument>,
+    streaming_document: Option<(DocumentId, usize)>,
     incoming_storage_update: Option<IncomingStorageUpdate>,
     document: Option<DocumentRuntime>,
     // Browser-authoritative corrections can already be in the pipe when DocumentFailed retires
@@ -67,6 +69,7 @@ impl ChildConnection {
             pending_fetch_deliveries: VecDeque::new(),
             fetches: FetchState::default(),
             incoming_document: None,
+            streaming_document: None,
             incoming_storage_update: None,
             document: None,
             failed_document: None,
@@ -216,6 +219,10 @@ impl ChildConnection {
             ),
             BrowserMessage::Test(_) => Err("test command rejected".into()),
             BrowserMessage::BeginDocument(start) => self.begin_document(start),
+            BrowserMessage::BeginStreamingDocument(start) => self.begin_streaming_document(start),
+            BrowserMessage::AbortDocument { document, message } => {
+                self.abort_navigation(document, message)
+            }
             BrowserMessage::DocumentChunk(chunk) => self.document_chunk(chunk),
             BrowserMessage::EndDocument(document) => self.finish_document(document),
             BrowserMessage::CookieSnapshot(snapshot) => self.document_state_cookie(snapshot),
@@ -236,25 +243,7 @@ impl ChildConnection {
                 self.acknowledge_presentation(acknowledgement)
             }
             BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
-            BrowserMessage::CancelDocument(document) => {
-                self.retire_video();
-                self.cancel_document_fetches(document);
-                if self
-                    .incoming_storage_update
-                    .as_ref()
-                    .is_some_and(|update| update.document() == document)
-                {
-                    self.incoming_storage_update = None;
-                }
-                if self
-                    .document
-                    .as_ref()
-                    .is_some_and(|runtime| runtime.id() == document)
-                {
-                    self.prepared_text = self.document.take().map(DocumentRuntime::into_text);
-                }
-                Ok(())
-            }
+            BrowserMessage::CancelDocument(document) => self.cancel_navigation(document),
             message @ (BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)
             | BrowserMessage::FetchResponseEnd(_)
@@ -364,6 +353,7 @@ impl ChildConnection {
 }
 
 struct IncomingDocument {
+    decoder: Option<crate::winhttp::DocumentDecoder>,
     start: DocumentStart,
     state: IncomingDocumentState,
     body: TransferAssembler,

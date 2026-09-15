@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Streaming navigation pending</title>
+<link rel="stylesheet" href="/streaming-navigation.css"></head><body>
+<h1>Streaming HTML navigation</h1>
+<section id="prefix"><h2>Prefix received</h2><p>This styled content must appear while the server is withholding the document tail.</p></section>
+<p id="result">Waiting for the response tail…</p>
+<script>
+window.trace = ['prefix-' + document.readyState];
+window.prefixBeforeTail = document.getElementById('tail') === null;
+window.timerBeforeTail = false;
+setTimeout(() => { window.timerBeforeTail = document.getElementById('tail') === null; }, 0);
+document.addEventListener('DOMContentLoaded', () => {
+    trace.push('DCL');
+    const checks = [prefixBeforeTail, timerBeforeTail, window.externalBeforeTail === true,
+        window.tailWhileLoading === true, getComputedStyle(document.getElementById('prefix')).backgroundColor === 'rgb(220, 252, 231)'];
+    document.getElementById('result').textContent = (checks.every(Boolean) ? 'PASS' : 'FAIL') + ': ' + JSON.stringify(checks) + ' | ' + trace.join(',');
+    document.title = checks.every(Boolean) ? 'Streaming navigation PASS' : 'Streaming navigation FAIL';
+    document.documentElement.dataset.contract = checks.every(Boolean) ? 'pass' : 'fail';
+});
+</script>
+<script src="/streaming-navigation.js"></script>
+<!-- RESPONSE TAIL -->
+<section id="tail"><h2>Tail received</h2><p>The document is now complete. The prefix and external script should already have run.</p></section>
+<script>window.tailWhileLoading = document.readyState === 'loading'; trace.push('tail-' + document.readyState);</script>
+</body></html>

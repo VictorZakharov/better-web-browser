@@ -14,8 +14,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 impl ChildConnection {
-    fn send_document_update(&mut self, update: AdvanceResult) -> Result<(), String> {
+    pub(super) fn send_document_update(&mut self, update: AdvanceResult) -> Result<(), String> {
         match update {
+            AdvanceResult::EncodingRestart => Err("unsettled encoding restart".into()),
             AdvanceResult::Presentation(presentation) => self.send_presentation(&presentation),
             AdvanceResult::Runtime(update) => self
                 .writer
@@ -71,6 +72,10 @@ impl ChildConnection {
             Ok(Ok(Some(AdvanceResult::Presentation(presentation)))) => {
                 self.send_presentation(&presentation)?;
             }
+            Ok(Ok(Some(AdvanceResult::EncodingRestart))) => {
+                let result = runtime.restart_encoding(self);
+                return self.install_streamed_document(document, result);
+            }
             Ok(Ok(Some(AdvanceResult::Runtime(update)))) => self
                 .writer
                 .send_renderer(&RendererMessage::RuntimeUpdate(update))
@@ -98,6 +103,7 @@ impl ChildConnection {
         }
         self.failed_document = None;
         self.incoming_document = Some(IncomingDocument {
+            decoder: None,
             body: TransferAssembler::new(
                 start.document.get(),
                 start.body_length as usize,
@@ -111,6 +117,9 @@ impl ChildConnection {
     }
 
     pub(super) fn document_chunk(&mut self, chunk: TransferChunk) -> Result<(), String> {
+        if self.streaming_document.is_some() {
+            return self.navigation_chunk(chunk);
+        }
         self.incoming_document
             .as_mut()
             .ok_or_else(|| "unsolicited document chunk".to_string())?
@@ -120,6 +129,9 @@ impl ChildConnection {
     }
 
     pub(super) fn finish_document(&mut self, document: DocumentId) -> Result<(), String> {
+        if self.streaming_document.is_some() {
+            return self.navigation_end(document);
+        }
         let incoming = self
             .incoming_document
             .take()
@@ -181,6 +193,10 @@ impl ChildConnection {
             runtime.advance(elapsed, max_callbacks, self)
         }));
         match result {
+            Ok(Ok(AdvanceResult::EncodingRestart)) => {
+                let result = runtime.restart_encoding(self);
+                return self.install_streamed_document(document, result);
+            }
             Ok(Ok(AdvanceResult::Presentation(presentation))) => {
                 self.send_presentation(&presentation)?
             }
@@ -328,7 +344,7 @@ impl ChildConnection {
     }
 }
 
-fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
+pub(super) fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         format!("document task panicked: {message}")
     } else if let Some(message) = payload.downcast_ref::<String>() {

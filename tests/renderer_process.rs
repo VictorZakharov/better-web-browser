@@ -42,6 +42,8 @@ mod storage_sync;
 mod storage_values;
 #[path = "renderer_process/streaming_fetch.rs"]
 mod streaming_fetch;
+#[path = "renderer_process/streaming_navigation.rs"]
+mod streaming_navigation;
 #[path = "renderer_process/support.rs"]
 mod support;
 #[path = "renderer_process/termination.rs"]

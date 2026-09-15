@@ -1,6 +1,7 @@
 //! HTTP text decoding with BOM, header, and bounded HTML-meta charset detection.
 
 use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE};
+pub(crate) mod stream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedText {

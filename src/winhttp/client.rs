@@ -43,22 +43,15 @@ impl TransportBodyStream {
             return Ok(None);
         }
         self.signal.check()?;
-        // WinHttpReadData tries to fill a caller-provided buffer. Querying first is the
-        // documented progressive-consumption path and prevents a small response from being
-        // buffered to completion merely because our bounded IPC chunk is larger than it.
+        // Query first so ReadData consumes available bytes instead of filling our chunk budget.
         let mut available = 0_u32;
         check(
             unsafe { WinHttpQueryDataAvailable(self.request.0, &mut available) },
             "query available response data",
         )
         .map_err(FetchError::network)?;
-        let read_capacity = if available == 0 {
-            // A zero query can represent end-of-body. ReadData remains the authoritative EOF
-            // signal, as required by the WinHTTP contract.
-            1
-        } else {
-            (available as usize).min(MAX_FETCH_STREAM_CHUNK_BYTES)
-        };
+        // ReadData, not a zero availability query, is the authoritative EOF signal.
+        let read_capacity = (available.max(1) as usize).min(MAX_FETCH_STREAM_CHUNK_BYTES);
         let mut buffer = vec![0_u8; read_capacity];
         let mut bytes_read = 0_u32;
         check(
@@ -73,6 +66,7 @@ impl TransportBodyStream {
             "read response",
         )
         .map_err(FetchError::network)?;
+        self.signal.check()?;
         if bytes_read == 0 {
             self.finished = true;
             return Ok(None);

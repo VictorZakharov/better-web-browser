@@ -214,8 +214,23 @@ impl ChildConnection {
             .map_err(|error| error.to_string())
     }
 
-    pub(super) fn cancel_document_fetches(&mut self, document: DocumentId) {
+    pub(in crate::renderer_process::child) fn cancel_document_fetches(
+        &mut self,
+        document: DocumentId,
+    ) {
         self.fetches.cancel_document(document);
+    }
+
+    pub(in crate::renderer_process::child) fn retire_document_fetches(
+        &mut self,
+        document: DocumentId,
+    ) -> Result<(), String> {
+        for id in self.fetches.document_requests(document) {
+            self.abort_fetch(document, id)?;
+        }
+        self.cancel_document_fetches(document);
+        self.pending_fetch_deliveries.clear();
+        Ok(())
     }
 
     fn defer_while_fetching(&mut self, message: BrowserMessage) -> Result<(), String> {

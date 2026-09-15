@@ -4,7 +4,12 @@ use better_web_browser::renderer_protocol::{PageLoadReport, RuntimeReport};
 impl BrowserState {
     pub(super) fn network_incident(page: &LoadedPage) -> String {
         format!(
-            "network complete: {} (HTTP {}, {} bytes, {:.1} ms)",
+            "network {}: {} (HTTP {}, {} bytes, {:.1} ms)",
+            if page.stream.is_some() {
+                "headers"
+            } else {
+                "complete"
+            },
             page.final_url,
             page.status,
             page.bytes,

@@ -6,6 +6,7 @@ mod control;
 mod diagnostics;
 mod events;
 mod flow;
+mod navigation;
 mod outbound;
 mod queue_depth;
 mod session;
@@ -39,6 +40,7 @@ impl RendererExitReason {
         }
     }
 }
+pub use navigation::NavigationBody;
 use queue_depth::QueueDepth;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;

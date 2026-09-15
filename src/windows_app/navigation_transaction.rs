@@ -26,6 +26,7 @@ pub(super) enum PresentationDeadline {
 pub(super) struct NavigationTransaction {
     generation: u64,
     phase: NavigationPhase,
+    network_pending: bool,
     page: Option<LoadedPage>,
     document: Option<DocumentId>,
     first_presentation_deadline: Option<Instant>,
@@ -38,6 +39,7 @@ impl NavigationTransaction {
         Self {
             generation: 1,
             phase: NavigationPhase::WaitingForRenderer,
+            network_pending: false,
             page: Some(page),
             document: None,
             first_presentation_deadline: None,
@@ -64,6 +66,7 @@ impl NavigationTransaction {
     fn begin_fetch(&mut self) -> u64 {
         self.generation = self.generation.wrapping_add(1).max(1);
         self.phase = NavigationPhase::Fetching;
+        self.network_pending = true;
         self.page = None;
         self.document = None;
         self.first_presentation_deadline = None;
@@ -75,6 +78,7 @@ impl NavigationTransaction {
         if generation != self.generation || self.phase != NavigationPhase::Fetching {
             return false;
         }
+        self.network_pending = page.stream.is_some();
         self.page = Some(page);
         self.phase = NavigationPhase::WaitingForRenderer;
         true
@@ -84,6 +88,21 @@ impl NavigationTransaction {
         (self.phase == NavigationPhase::WaitingForRenderer)
             .then(|| self.page.clone())
             .flatten()
+    }
+
+    pub(super) fn network_complete(&mut self, bytes: u64, network_time: Duration) {
+        self.network_pending = false;
+        if self.phase == NavigationPhase::WaitingForFirstPresentation {
+            self.first_presentation_deadline = Some(Instant::now() + FIRST_PRESENTATION_TIMEOUT);
+        }
+        if let Some(page) = self.page.as_mut() {
+            page.bytes = bytes;
+            page.network_time = network_time;
+        }
+    }
+
+    pub(super) fn network_pending(&self) -> bool {
+        self.network_pending
     }
 
     pub(super) fn document_id(&self) -> Result<DocumentId, String> {
@@ -96,7 +115,8 @@ impl NavigationTransaction {
         }
         self.document = Some(document);
         self.phase = NavigationPhase::WaitingForFirstPresentation;
-        self.first_presentation_deadline = Some(now + FIRST_PRESENTATION_TIMEOUT);
+        self.first_presentation_deadline =
+            (!self.network_pending).then_some(now + FIRST_PRESENTATION_TIMEOUT);
         true
     }
 
@@ -145,6 +165,7 @@ impl NavigationTransaction {
             self.phase = NavigationPhase::WaitingForRenderer;
             PresentationDeadline::Retry
         } else {
+            self.network_pending = false;
             self.phase = NavigationPhase::Failed;
             self.page = None;
             PresentationDeadline::Failed
@@ -152,6 +173,7 @@ impl NavigationTransaction {
     }
 
     pub(super) fn fail(&mut self) {
+        self.network_pending = false;
         self.phase = NavigationPhase::Failed;
         self.page = None;
         self.document = None;
@@ -169,12 +191,13 @@ impl NavigationTransaction {
     }
 
     pub(super) fn is_loading(&self) -> bool {
-        matches!(
-            self.phase,
-            NavigationPhase::Fetching
-                | NavigationPhase::WaitingForRenderer
-                | NavigationPhase::WaitingForFirstPresentation
-        )
+        self.network_pending
+            || matches!(
+                self.phase,
+                NavigationPhase::Fetching
+                    | NavigationPhase::WaitingForRenderer
+                    | NavigationPhase::WaitingForFirstPresentation
+            )
     }
 }
 
@@ -184,6 +207,7 @@ mod tests {
 
     fn page() -> LoadedPage {
         LoadedPage {
+            stream: None,
             body: b"page".to_vec(),
             final_url: "https://example.test/".into(),
             status: 200,
@@ -228,6 +252,44 @@ mod tests {
         assert!(transaction.document_submitted(document, Instant::now()));
         assert!(transaction.mark_presented(document));
         assert!(transaction.page_for_submission().is_none());
+        assert!(!transaction.is_loading());
+    }
+
+    #[test]
+    fn slow_response_does_not_consume_the_renderer_deadline() {
+        let mut transaction = NavigationTransaction::new(page());
+        let generation = transaction.begin();
+        let mut streaming = page();
+        streaming.stream = Some(Default::default());
+        assert!(transaction.accept_page(generation, streaming));
+        let now = Instant::now();
+        let document = transaction.document_id().unwrap();
+        assert!(transaction.document_submitted(document, now));
+        assert_eq!(transaction.deadline(now + Duration::from_secs(60)), None);
+        assert!(transaction.is_loading());
+        transaction.network_complete(400, Duration::from_secs(60));
+        assert!(!transaction.network_pending());
+        assert!(transaction.first_presentation_deadline.is_some());
+        assert!(transaction.is_loading());
+        assert!(transaction.mark_presented(document));
+        assert!(!transaction.is_loading());
+    }
+
+    #[test]
+    fn early_paint_keeps_loading_until_eof_and_failure_clears_pending_network() {
+        let mut transaction = NavigationTransaction::new(page());
+        let generation = transaction.begin();
+        let mut streaming = page();
+        streaming.stream = Some(Default::default());
+        transaction.accept_page(generation, streaming);
+        let document = transaction.document_id().unwrap();
+        transaction.document_submitted(document, Instant::now());
+        transaction.mark_presented(document);
+        assert!(transaction.is_loading());
+        transaction.network_complete(400, Duration::from_secs(2));
+        assert!(!transaction.is_loading());
+        transaction.begin();
+        transaction.fail();
         assert!(!transaction.is_loading());
     }
 

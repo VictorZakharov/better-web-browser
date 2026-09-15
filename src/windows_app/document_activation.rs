@@ -13,6 +13,7 @@ use better_web_browser::renderer_protocol::{
 
 #[derive(Clone)]
 pub(super) struct LoadedPage {
+    pub(super) stream: Option<better_web_browser::renderer_process::NavigationBody>,
     pub(super) body: Vec<u8>,
     pub(super) final_url: String,
     pub(super) status: u16,
@@ -24,6 +25,7 @@ pub(super) struct LoadedPage {
 impl LoadedPage {
     pub(super) fn home() -> Self {
         Self {
+            stream: None,
             body: HOME_HTML.as_bytes().to_vec(),
             final_url: HOME_URL.into(),
             status: 200,
@@ -44,13 +46,18 @@ pub(super) struct RendererLoadMetrics {
 
 pub(super) struct LoadMessage {
     pub generation: u64,
-    pub result: Result<LoadedPage, String>,
+    pub result: Result<NavigationResult, String>,
+}
+
+pub(super) enum NavigationResult {
+    Headers(LoadedPage),
+    Complete { bytes: u64, network_time: Duration },
 }
 
 impl BrowserState {
     pub(super) unsafe fn finish_navigation(&mut self, message: LoadMessage) {
         match message.result {
-            Ok(page) => {
+            Ok(NavigationResult::Headers(page)) => {
                 let completed = Self::network_incident(&page);
                 if !self.navigation.accept_page(message.generation, page) {
                     return;
@@ -58,8 +65,42 @@ impl BrowserState {
                 self.incidents.record("navigation", completed);
                 self.submit_pending_renderer_document();
             }
+            Ok(NavigationResult::Complete {
+                bytes,
+                network_time,
+            }) => {
+                if message.generation != self.navigation.generation() {
+                    return;
+                }
+                self.navigation.network_complete(bytes, network_time);
+                if let Some(metrics) = self.renderer_load_metrics.as_mut() {
+                    metrics.bytes = bytes;
+                    metrics.network_time = network_time;
+                }
+                if let Some(benchmark) = self.benchmark.as_mut() {
+                    benchmark.network_time = network_time;
+                    benchmark.bytes = bytes;
+                }
+                self.incidents.record(
+                    "navigation",
+                    format!(
+                        "network complete: {bytes} bytes, {:.1} ms",
+                        network_time.as_secs_f64() * 1000.0
+                    ),
+                );
+            }
             Err(error) => {
                 if message.generation != self.navigation.generation() {
+                    return;
+                }
+                if self.navigation.active_document().is_some() {
+                    // The broker carries the same failure to the renderer. Retire the UI's
+                    // active transaction as well instead of leaving a partial page interactive.
+                    self.document_fetch.abort();
+                    self.contain_page_engine_failure(
+                        self.id,
+                        format!("navigation response failed: {error}"),
+                    );
                     return;
                 }
                 self.navigation.fail();

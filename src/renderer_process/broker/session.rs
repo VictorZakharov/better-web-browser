@@ -79,7 +79,7 @@ impl RendererSession {
         state: DocumentState,
         body: Vec<u8>,
     ) -> Result<(), String> {
-        self.send_lifecycle_command(worker::LifecycleCommand::LoadDocument {
+        self.send_lifecycle_command(worker::LifecycleCommand::Buffered {
             start: Box::new(start),
             state,
             body,
@@ -93,6 +93,20 @@ impl RendererSession {
             self.wake.clone(),
             Arc::clone(&self.fetch_flow),
         )
+    }
+
+    pub fn load_streaming_document(
+        &self,
+        start: DocumentStart,
+        state: DocumentState,
+        body: NavigationBody,
+    ) -> Result<(), String> {
+        body.subscribe(self.wake.clone());
+        self.send_lifecycle_command(worker::LifecycleCommand::Streaming {
+            start: Box::new(start),
+            state,
+            body,
+        })
     }
 
     pub fn update_cookie_snapshot(&self, snapshot: CookieStateSnapshot) -> Result<(), String> {
@@ -197,6 +211,6 @@ impl RendererSession {
     }
 
     pub fn cancel_document(&self, document: DocumentId) -> Result<(), String> {
-        self.send_lifecycle_command(worker::LifecycleCommand::CancelDocument(document))
+        self.send_lifecycle_command(worker::LifecycleCommand::Cancel(document))
     }
 }

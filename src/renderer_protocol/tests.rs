@@ -153,6 +153,37 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
     assert_eq!(decoded, message);
 
     let mut oversized = start;
+    let mut streaming = oversized.clone();
+    streaming.body_length = 0;
+    let message = BrowserMessage::BeginStreamingDocument(streaming.clone());
+    assert_eq!(
+        FrameReader::new(Cursor::new(encoded_browser(&message)), session())
+            .read_browser()
+            .unwrap(),
+        message
+    );
+    let message = BrowserMessage::AbortDocument {
+        document: streaming.document,
+        message: "response interrupted".into(),
+    };
+    assert_eq!(
+        FrameReader::new(Cursor::new(encoded_browser(&message)), session())
+            .read_browser()
+            .unwrap(),
+        message
+    );
+    let mut writer = FrameWriter::new(Vec::new(), session());
+    streaming.body_length = 1;
+    assert!(
+        writer
+            .send_browser(&BrowserMessage::BeginStreamingDocument(streaming))
+            .is_err()
+    );
+    let message = BrowserMessage::AbortDocument {
+        document: oversized.document,
+        message: "x".repeat(16 * 1024 + 1),
+    };
+    assert!(writer.send_browser(&message).is_err());
     oversized.diagnostic_selectors =
         vec!["*".into(); crate::limits::MAX_PAGE_DIAGNOSTIC_SELECTORS + 1];
     let mut writer = FrameWriter::new(Vec::new(), session());

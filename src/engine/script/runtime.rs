@@ -15,6 +15,8 @@ mod geometry;
 mod memory;
 mod module_preparation;
 mod parser;
+mod restart;
+pub(crate) use restart::RestartState;
 mod storage;
 
 /// Owns one document's JavaScript realm and all native state that must remain on the realm's

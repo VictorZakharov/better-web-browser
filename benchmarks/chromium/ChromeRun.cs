@@ -23,12 +23,6 @@ internal static class ChromeRun
             var pageSocket = await FindPageSocketAsync(port, timeout);
             using var cdp = new CdpConnection();
             await cdp.ConnectAsync(pageSocket, timeout);
-            using var filmstripCdp = options.FilmstripDirectory is null ? null : new CdpConnection();
-            if (filmstripCdp is not null)
-            {
-                await filmstripCdp.ConnectAsync(pageSocket, timeout);
-                await filmstripCdp.CallAsync(50_000, "Page.enable", null, timeout);
-            }
             var nextId = 1;
             await cdp.CallAsync(nextId++, "Page.enable", null, timeout);
             await cdp.CallAsync(nextId++, "Runtime.enable", null, timeout);
@@ -56,25 +50,11 @@ internal static class ChromeRun
             }
             var version = await cdp.CallAsync(nextId++, "Browser.getVersion", null, timeout);
             result.ChromeVersion = version.GetProperty("product").GetString() ?? string.Empty;
+            using var filmstrip = await FilmstripCapture.StartAsync(cdp, options, stopwatch, timeout);
 
-            var navigationStarted = stopwatch.Elapsed;
             const int navigationId = 1000;
-            await cdp.SendAsync(new
-            {
-                id = navigationId,
-                method = "Page.navigate",
-                @params = new { url = options.Url }
-            });
-            var filmstripTask = filmstripCdp is null
-                ? Task.CompletedTask
-                : FilmstripCapture.RunAsync(
-                    filmstripCdp,
-                    options,
-                    stopwatch,
-                    navigationStarted,
-                    timeout);
             string? navigationError = null;
-            await cdp.ReadUntilAsync(root =>
+            var navigationComplete = cdp.ReadUntilAsync(root =>
             {
                 if (root.TryGetProperty("id", out var id) && id.GetInt32() == navigationId &&
                     root.TryGetProperty("result", out var navigation) &&
@@ -92,6 +72,15 @@ internal static class ChromeRun
                 }
                 return root.TryGetProperty("method", out method) && method.GetString() == "Page.loadEventFired";
             }, timeout);
+            var navigationStarted = stopwatch.Elapsed;
+            await cdp.SendAsync(new
+            {
+                id = navigationId,
+                method = "Page.navigate",
+                @params = new { url = options.Url }
+            });
+            var filmstripTask = filmstrip?.RunAsync(navigationStarted, timeout) ?? Task.CompletedTask;
+            await navigationComplete;
             result.PageReadyMs = stopwatch.Elapsed.TotalMilliseconds;
             result.NavigationMs = (stopwatch.Elapsed - navigationStarted).TotalMilliseconds;
             result.Error = navigationError;

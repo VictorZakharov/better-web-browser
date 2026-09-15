@@ -36,6 +36,8 @@ mod resize_observers;
 mod scrolling;
 #[path = "live_runtime/stacking.rs"]
 mod stacking;
+#[path = "live_runtime/streaming_navigation.rs"]
+mod streaming_navigation;
 #[path = "live_runtime/streaming_network.rs"]
 mod streaming_network;
 #[path = "live_runtime/stylesheets.rs"]
