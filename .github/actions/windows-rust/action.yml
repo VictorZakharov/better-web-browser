@@ -13,10 +13,9 @@ runs:
         path: |
           ~/.cargo/registry/cache
           ~/.cargo/registry/index
-          ~/.cargo/registry/src
-        key: windows-cargo-registry-v5-${{ hashFiles('Cargo.lock') }}
+        key: windows-cargo-registry-v4-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          windows-cargo-registry-v5-
+          windows-cargo-registry-v4-
     - name: Prepare V8 build path
       shell: pwsh
       run: ./scripts/prepare-v8.ps1 -Profile debug

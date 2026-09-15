@@ -1,6 +1,7 @@
 name: CI
 
 env:
+  CARGO_BUILD_JOBS: 8
   CARGO_INCREMENTAL: 0
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
@@ -98,12 +99,15 @@ jobs:
           - suite: core
             arguments: --lib --bin wpt-runner
           - suite: renderer
-            arguments: --test renderer_process
+            # These tests share one AppContainer profile and already take SERIAL.
+            arguments: --test renderer_process -- --test-threads=1
+          - suite: live runtime
+            arguments: --test live_runtime
           - suite: Windows integration
             arguments: >-
               --bin better-web-browser
               --test hostile_input --test html_parser_conformance
-              --test live_runtime --test media_process --test fullscreen_layout
+              --test media_process --test fullscreen_layout
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
