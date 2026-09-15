@@ -134,6 +134,21 @@ these are unchanged upstream tests from the pinned checkout, not a whole-spec pa
 Iframe/window-opening broadcast WPTs require browsing-context capabilities outside this slice;
 they are not presented as passing coverage.
 
+The first #149 CI run exposed the two quota-independence stress files exceeding the existing
+two-second JavaScript watchdog under contention. The same failure reproduced locally with the
+full debug WPT suite, eight jobs, and the test process/children restricted to two logical CPUs.
+Profiling identified costly scalar decoding for quota accounting and quadratic replay of pending
+intents on otherwise neutral source acknowledgements. Direct UTF-16 quota counting preserves
+the old byte cost (checked against scalar decoding across all code units and surrogate boundaries).
+Acknowledging an identical oldest operation now advances the base without rebuilding an unchanged
+visible map; foreign changes and rejected operations still rebase.
+
+In local debug measurements, the representative script changed from 364 ms to 120 ms; draining
+a 3,002-intent journal changed from 5,929 ms to 62 ms. The constrained full WPT rerun passed all
+217 files / 2,137 assertions, with the formerly timed-out script at 427 ms instead of 2,072 ms.
+These are single diagnostic runs, not navigation benchmarks. Watchdog limits, WPT deadlines,
+parallelism, storage quotas, and upstream assertions were unchanged.
+
 ## Remaining boundaries
 
 Synchronization between separate browser application instances, executable iframe broadcast

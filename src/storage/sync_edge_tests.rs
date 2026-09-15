@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn long_local_journal_drains_to_the_authoritative_map() {
+    let local = Arc::new(LocalStorage::in_memory());
+    let hub = StorageCoordinator::new(Arc::clone(&local));
+    let (_, source) = hub.subscribe(URL).unwrap();
+    let mut projection = StorageProjection::default();
+    let mut writes = Vec::new();
+    for pass in 0..3 {
+        if pass > 0 {
+            writes.push(
+                projection
+                    .write(StorageAreaKind::Local, URL, StorageOperation::Clear)
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        for index in 0..1000 {
+            writes.push(
+                projection
+                    .write(
+                        StorageAreaKind::Local,
+                        URL,
+                        StorageOperation::Set {
+                            key: format!("key-{index}").into(),
+                            value: "x".repeat(4096).into(),
+                        },
+                    )
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+    }
+    let mut session = SessionStorage::default();
+    for batch in writes.chunks(128) {
+        assert!(hub.apply(&source, batch, &mut session).unwrap());
+    }
+    let updates = drain(&source, &mut projection);
+    assert_eq!(updates.len(), writes.len());
+    assert_eq!(projection.view().snapshot(), local.snapshot(URL).unwrap());
+}
+
+#[test]
 fn concurrent_quota_rejection_retires_only_the_rejected_intent_without_broadcast() {
     let local = Arc::new(LocalStorage::in_memory());
     let hub = StorageCoordinator::new(Arc::clone(&local));

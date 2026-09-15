@@ -76,6 +76,16 @@ impl StorageProjection {
         {
             return Err(StorageError::Invalid("storage acknowledgement order"));
         }
+        // Moving the oldest intent into the base is algebraically neutral when
+        // the authority accepted that same operation (or it was already a no-op).
+        // Do not clone/replay the entire remaining journal for each such receipt.
+        let preserves_projection = update.acknowledgement != 0
+            && self.pending.front().is_some_and(|write| {
+                update.change.as_ref().map_or_else(
+                    || !self.base.operation_changes(&write.mutation.operation),
+                    |change| change.operation() == write.mutation.operation,
+                )
+            });
         if let Some(change) = &update.change {
             if change.version
                 != self
@@ -106,6 +116,10 @@ impl StorageProjection {
             let write = self.pending.pop_front().expect("validated acknowledgement");
             self.pending_bytes -= write.mutation.byte_len() + write.source_url.len();
             self.acknowledged = update.acknowledgement;
+        }
+        if preserves_projection {
+            self.visible.version = self.base.version();
+            return Ok(());
         }
         self.visible = self.base.clone();
         // Concurrent accepted operations can temporarily exceed a local quota when
