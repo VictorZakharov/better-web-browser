@@ -96,13 +96,14 @@ jobs:
       matrix:
         include:
           - suite: core
-            arguments: --lib --bin wpt-runner
+            arguments: --lib
           - suite: renderer
             # These tests share one AppContainer profile and already take SERIAL.
             arguments: --test renderer_process -- --test-threads=1
           - suite: Windows integration
             arguments: >-
               --bin better-web-browser
+              --bin wpt-runner
               --test hostile_input --test html_parser_conformance
               --test media_process --test fullscreen_layout
     steps:

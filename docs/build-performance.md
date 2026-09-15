@@ -49,7 +49,9 @@ source/format checks, Clippy, all core tests, renderer smoke tests, focused Wind
 dependency advisories/licenses/bans/sources and notice verification, and Chromium harness self-tests.
 The fixed `windows-2022` hosted image uses the default Cargo build concurrency. Rust executables
 run in three independent PR workers: core, renderer, and the remaining
-Windows integration targets. PRs select fourteen renderer contracts covering containment, recovery,
+Windows integration targets. WPT-runner unit tests run with Windows integration, leaving the large
+library test executable alone on the core worker to balance compilation/linking time.
+PRs select fourteen renderer contracts covering containment, recovery,
 native input/navigation, first paint, and video ownership/watchdogs. The selector verifies every
 exact test name before execution, so renamed tests cannot silently become zero-test passes.
 Main runs all 123 renderer tests. The renderer suite runs with one test thread because it shares a
@@ -97,6 +99,14 @@ and 32 seconds testing. A repeat passed in 3m14s. These samples preceded the fin
 renderer smoke selection. The full local release visual matrix passed all twelve fixtures; an earlier
 full hosted run passed all 1,396 Rust tests and 220 curated WPT cases / 2,169 subtests. Runner
 queueing, dependency changes, and cold builds remain variable.
+
+The renderer-smoke configuration passed in
+[3m59s](https://github.com/VictorZakharov/better-web-browser/actions/runs/35024549149/attempts/1)
+and [3m22s](https://github.com/VictorZakharov/better-web-browser/actions/runs/35024549149/attempts/2).
+Core became the critical path: the first run spent 95 seconds in dependency metadata/unpacking,
+and the repeat's core worker finished 25 seconds after Windows integration. The subsequent target
+rebalance moves the sixteen WPT-runner unit tests to that integration worker without reducing
+coverage. These results do not establish reliable sub-three-minute feedback.
 
 ### Historical measurements
 
