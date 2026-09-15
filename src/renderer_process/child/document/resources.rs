@@ -4,6 +4,7 @@ pub(super) mod events;
 mod installation;
 mod lifecycle;
 mod streaming;
+mod stylesheets;
 
 use super::DocumentRuntime;
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
@@ -71,9 +72,12 @@ impl DocumentRuntime {
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        self.page.discover_stylesheet_dependencies();
         self.update_render_blockers();
         if self.dispatch_cached_resource_events()? {
-            self.resource_render_pending = true;
+            // Event handlers can enqueue nonvisual work. Receiving an event alone is
+            // not a style/layout change (notably an inline sheet's initial load event).
+            self.resource_event_pending = true;
         }
         if let Some(runtime) = self.script_runtime.as_mut() {
             self.parser_scripts.prepare_modules(runtime);

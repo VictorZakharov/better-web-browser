@@ -25,9 +25,10 @@ impl DocumentRuntime {
         }
         let targets = self.resource_events.pending(&self.page);
         let dispatched = !targets.is_empty();
-        if targets.iter().any(|(resource, event, _)| {
-            *event == "load" && matches!(resource, PageResource::Stylesheet { .. })
-        }) {
+        if targets
+            .iter()
+            .any(|(resource, event, _)| *event == "load" && resource.is_stylesheet())
+        {
             // A load handler must observe the sheet that has just joined the cascade,
             // through both computed-style reads and synchronous geometry queries.
             self.sync_script_layout_page();
@@ -39,21 +40,20 @@ impl DocumentRuntime {
             // An earlier completion callback may detach or retarget a later owner.
             if crate::engine::dom::Node::shadow_including_root(&target).id()
                 != self.page.dom.document.id()
-                || self.page.resource_event_key(&target).as_ref() != Some(&resource)
+                || state::Owner::for_node(&self.page, &target).as_ref() != Some(&resource)
             {
                 continue;
             }
             let image_dimensions = match &resource {
-                PageResource::Image { url } if event_type == "load" => self
+                state::Owner::External(PageResource::Image { url }) if event_type == "load" => self
                     .page
                     .images
                     .get(url)
                     .map(|image| (image.width, image.height))
                     .unwrap_or_default(),
-                PageResource::Image { .. } => (0, 0),
                 _ => (0, 0),
             };
-            let event = if matches!(resource, PageResource::Image { .. }) {
+            let event = if matches!(resource, state::Owner::External(PageResource::Image { .. })) {
                 crate::engine::UserInputEvent::ImageResource {
                     target,
                     event_type,

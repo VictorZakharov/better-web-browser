@@ -126,6 +126,7 @@ impl Page {
             }
         }
         let mut available_faces = Vec::new();
+        self.discover_stylesheet_dependencies();
         for source in &self.stylesheet_sources {
             available_faces.extend(discover_font_faces(&source.source, &source.base_url));
         }

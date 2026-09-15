@@ -111,6 +111,7 @@ impl DocumentRuntime {
             pending_dynamic_script_fetch: Vec::new(),
             pending_resource_preloads: pending_deferred.into_iter().collect(),
             resource_render_pending: false,
+            resource_event_pending: false,
             resource_style_refresh_pending: false,
             lifecycle: crate::renderer_protocol::DocumentLifecycle::Active,
             accessibility: RendererAccessibility::default(),

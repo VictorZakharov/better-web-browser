@@ -112,7 +112,7 @@ fn stylesheet_wait_suspends_blocking_script_without_preventing_async_execution()
     driver.advance();
     driver.until_idle();
     driver.respond("defer.js", "mark('defer-'+document.readyState);", 200);
-    driver.respond("slow.css", "#status { color: green; }", 200);
+    driver.respond_bytes("slow.css", b"#status { color: green; }", "text/css", 200);
     driver.until_text("async|inline|defer-interactive");
     driver.session.shutdown().unwrap();
 }

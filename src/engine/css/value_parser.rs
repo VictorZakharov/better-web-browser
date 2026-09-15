@@ -1,6 +1,7 @@
 //! Length, calc(), and color parsing.
 
 use super::*;
+use cssparser::color::{parse_hash_color, parse_named_color};
 
 pub(crate) fn parse_length(value: &str) -> Option<Length> {
     let value = value.trim().trim_end_matches("!important").trim();

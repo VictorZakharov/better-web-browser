@@ -35,6 +35,7 @@ impl Page {
             scripts: Vec::new(),
             external_stylesheets: self.external_stylesheets.clone(),
             stylesheet_sources: self.stylesheet_sources.clone(),
+            stylesheet_discovery: None,
             cached_styles: None,
             images: layout_image_metadata(&self.images),
             inline_svg_versions: HashMap::new(),
@@ -57,6 +58,7 @@ impl Page {
         self.base_url = source.base_url.clone();
         self.external_stylesheets = source.external_stylesheets.clone();
         self.stylesheet_sources = source.stylesheet_sources.clone();
+        self.stylesheet_discovery = None;
         self.images = layout_image_metadata(&source.images);
         self.media_environment = source.media_environment;
         self.layout_viewport = source.layout_viewport;

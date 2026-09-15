@@ -14,6 +14,7 @@ pub(super) fn cssom_host_call(
     match operation {
         "stylesheetSource" => {
             let url = argument_string(args, 1)?;
+            let url = url.split('#').next().unwrap_or(&url);
             return Ok(Some(
                 state
                     .stylesheet_sources
@@ -25,7 +26,16 @@ pub(super) fn cssom_host_call(
         }
         "stylesheetSameOrigin" => {
             let url = argument_string(args, 1)?;
-            let same_origin = crate::fetch::Origin::parse(&url)
+            let url = url.split('#').next().unwrap_or(&url);
+            // A same-origin request can redirect to a cross-origin CSS response. Rule
+            // access follows the response origin, not the link's original href.
+            let final_url = state
+                .stylesheet_sources
+                .iter()
+                .rev()
+                .find(|source| source.url() == url)
+                .map_or(url, |source| source.base_url.as_str());
+            let same_origin = crate::fetch::Origin::parse(final_url)
                 .and_then(|origin| {
                     crate::fetch::Origin::parse(&state.document_url)
                         .map(|document_origin| origin.is_same_origin(&document_origin))
@@ -128,6 +138,35 @@ mod tests {
     use super::*;
     use crate::engine::dom;
     use crate::engine::script::binding_helpers::js_string;
+
+    #[test]
+    fn redirected_stylesheet_rule_access_uses_the_final_response_origin() {
+        let dom = dom::parse("<link rel=stylesheet href=sheet.css>");
+        let mut state = HostState::new(
+            dom.document.clone(),
+            "https://example.com/",
+            "UTF-8",
+            Rc::new(module_loader::WebModuleLoader::new()),
+        );
+        let mut sheet = crate::engine::css::StylesheetSource::linked(
+            "https://example.com/sheet.css",
+            "p{color:red}".into(),
+        );
+        sheet.base_url = "https://cdn.test/sheet.css".into();
+        state.replace_document_stylesheets(&[sheet]);
+        let args = [
+            JsValue::undefined(),
+            js_string("https://example.com/sheet.css#fragment".into()),
+        ];
+        assert!(matches!(
+            cssom_host_call("stylesheetSameOrigin", &args, &mut state).unwrap(),
+            Some(JsValue::Boolean(false))
+        ));
+        assert!(matches!(
+            cssom_host_call("stylesheetSource", &args, &mut state).unwrap(),
+            Some(JsValue::String(_))
+        ));
+    }
 
     #[test]
     fn native_snapshot_is_bounded_and_root_owned() {

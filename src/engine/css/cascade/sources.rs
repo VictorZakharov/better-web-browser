@@ -5,11 +5,13 @@ pub struct StylesheetSource {
     pub(crate) base_url: String,
     pub(crate) source: String,
     pub(crate) owner_url: Option<String>,
+    pub(crate) imports: Vec<crate::engine::css::imports::Import>,
 }
 
 impl StylesheetSource {
     pub(crate) fn injected(base_url: impl Into<String>, source: String) -> Self {
         Self {
+            imports: crate::engine::css::imports::parse(&source),
             base_url: base_url.into(),
             source,
             owner_url: None,
@@ -18,6 +20,7 @@ impl StylesheetSource {
 
     pub(crate) fn linked(url: &str, source: String) -> Self {
         Self {
+            imports: crate::engine::css::imports::parse(&source),
             base_url: url.into(),
             source,
             owner_url: Some(url.into()),

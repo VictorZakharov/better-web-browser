@@ -1,0 +1,5 @@
+@import "stylesheet-child.css?delay_ms=1500";
+@import "stylesheet-unused.css" supports(not (display: block));
+body { margin: 0; background: #f4f7fb; color: #16334b; font: 18px Arial, sans-serif; }
+main { max-width: 860px; margin: 64px auto; padding: 32px; }
+h1 { font-size: 32px; }

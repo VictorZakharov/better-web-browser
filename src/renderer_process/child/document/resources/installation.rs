@@ -42,6 +42,15 @@ impl DocumentRuntime {
                 retained |= self.dispatch_resource_event(&resource, "error")?;
                 continue;
             }
+            if matches!(resource, PageResource::Stylesheet { .. })
+                && !super::stylesheets::valid_response(&self.page, &response)
+            {
+                self.record_resource_diagnostic(format!(
+                    "{label}: response is not a CSS stylesheet (Content-Type mismatch)"
+                ));
+                retained |= self.dispatch_resource_event(&resource, "error")?;
+                continue;
+            }
             if let PageResource::Script { kind, .. } = &resource
                 && let Err(error) = validate_script_response(&response, *kind)
             {
@@ -60,12 +69,14 @@ impl DocumentRuntime {
             }
             let event_resource = resource.clone();
             let content_type = response.content_type().map(str::to_string);
+            let final_url = response.final_url().as_str().to_string();
             let bytes = response.body.into_bytes();
             let installed = match resource {
                 PageResource::Stylesheet { url } => self
                     .page
-                    .add_linked_stylesheet(
+                    .add_linked_stylesheet_response(
                         &url,
+                        &final_url,
                         crate::winhttp::decode_text(&bytes, content_type.as_deref()),
                     )
                     .then_some(())

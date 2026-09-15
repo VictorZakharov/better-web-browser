@@ -67,7 +67,8 @@ pub(super) fn discover_non_script_resources(
         }
         if let Some(url) = link
             .attr("href")
-            .and_then(|href| resolve_url(base_url, &href))
+            .filter(|href| !href.trim().is_empty())
+            .and_then(|href| crate::engine::css::imports::resolve(base_url, &href))
             && seen_stylesheets.insert(url.clone())
         {
             resources.push(PageResource::Stylesheet { url });

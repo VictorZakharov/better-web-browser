@@ -47,7 +47,8 @@ impl Page {
                 }) =>
             {
                 node.attr("href")
-                    .and_then(|href| resolve_url(&self.base_url, &href))
+                    .filter(|href| !href.trim().is_empty())
+                    .and_then(|href| super::super::css::imports::resolve(&self.base_url, &href))
                     .map(|url| PageResource::Stylesheet { url })
             }
             "img" | "image" => self.image_url(node).map(|url| PageResource::Image { url }),

@@ -7,10 +7,13 @@ impl DocumentRuntime {
             return None;
         }
         self.publish_document_load_readiness(
-            self.resource_render_pending || self.pending_async_outcome.render_requested,
+            self.resource_render_pending
+                || self.resource_event_pending
+                || self.pending_async_outcome.render_requested,
         );
         if self.has_pending_geometry_observers()
             || self.resource_render_pending
+            || self.resource_event_pending
             || (self.rendering.dirty && !self.rendering_is_blocked())
         {
             return Some(0);
@@ -68,6 +71,7 @@ impl DocumentRuntime {
                 next_timer_micros: None,
             })));
         }
+        self.resource_event_pending = false;
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
         // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
         if !self.rendering_is_blocked()

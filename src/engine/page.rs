@@ -8,6 +8,8 @@ mod resource_events;
 mod resources;
 mod scripts;
 mod snapshot;
+mod stylesheets;
+pub(crate) use stylesheets::is_stylesheet;
 mod svg;
 
 pub(crate) use self::media::MEDIA_VIDEO_PLACEHOLDER;
@@ -23,10 +25,9 @@ use super::script::{
     self, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime,
 };
 use crate::limits::{
-    MAX_CSS_SOURCE_BYTES, MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION,
-    MAX_DECODED_IMAGE_PIXELS, MAX_IMAGE_SOURCE_BYTES, MAX_INLINE_SVGS,
-    MAX_PAGE_IMAGES as MAX_IMAGES, MAX_SCRIPT_BYTES, MAX_STYLE_IMAGES, MAX_WEB_FONTS,
-    bounded_utf8_prefix,
+    MAX_DECODED_IMAGE_BYTES, MAX_DECODED_IMAGE_DIMENSION, MAX_DECODED_IMAGE_PIXELS,
+    MAX_IMAGE_SOURCE_BYTES, MAX_INLINE_SVGS, MAX_PAGE_IMAGES as MAX_IMAGES, MAX_SCRIPT_BYTES,
+    MAX_STYLE_IMAGES, MAX_WEB_FONTS, bounded_utf8_prefix,
 };
 use crate::navigation::resolve_url;
 use image::ImageReader;
@@ -92,6 +93,7 @@ pub struct Page {
     pub scripts: Vec<PageScript>,
     pub external_stylesheets: Vec<String>,
     stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
+    stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
     inline_svg_versions: HashMap<NodeId, u64>,
@@ -157,6 +159,7 @@ impl Page {
             scripts,
             external_stylesheets: Vec::new(),
             stylesheet_sources: Vec::new(),
+            stylesheet_discovery: None,
             cached_styles: None,
             images,
             inline_svg_versions,
@@ -166,6 +169,7 @@ impl Page {
             layout_viewport: (1280.0, 720.0),
         };
         page.install_embedded_images();
+        page.discover_stylesheet_dependencies();
         page
     }
 
@@ -192,25 +196,9 @@ impl Page {
         self.install_stylesheet(super::css::StylesheetSource::injected(source_url, css))
     }
 
+    #[cfg(test)]
     pub(crate) fn add_linked_stylesheet(&mut self, source_url: &str, css: String) -> bool {
         self.install_stylesheet(super::css::StylesheetSource::linked(source_url, css))
-    }
-
-    fn install_stylesheet(&mut self, mut source: super::css::StylesheetSource) -> bool {
-        let source_url = source.url();
-        let css = &source.source;
-        let (css, truncated) = bounded_utf8_prefix(css, MAX_CSS_SOURCE_BYTES);
-        if truncated {
-            self.diagnostics.push(format!(
-                "stylesheet {source_url} was truncated at {MAX_CSS_SOURCE_BYTES} bytes"
-            ));
-        }
-        let css = css.to_string();
-        self.cached_styles = None;
-        source.source = css.clone();
-        self.stylesheet_sources.push(source);
-        self.external_stylesheets.push(css);
-        true
     }
 
     pub fn add_font(

@@ -119,8 +119,9 @@ or timeouts. The small Content-Length latency limitation above remains explicit.
 
 ## Remaining standards work
 
-Synchronous re-entrant `document.write()`, exact stylesheet-set/import blocking,
-event-handler content attributes, parser custom-element reactions at every token,
+Synchronous re-entrant `document.write()` and complete stylesheet-set selection
+remain separate from the implemented [import dependency loading](stylesheet-loading-dependencies.md).
+Event-handler content attributes, parser custom-element reactions at every token,
 and nested browsing-context loading remain separate standards slices. This change
 does not claim to resolve the existing YouTube seeking or layout issues, nor does
 it claim a CPU/memory reduction or Wikipedia loading within a fixed Chrome margin.
