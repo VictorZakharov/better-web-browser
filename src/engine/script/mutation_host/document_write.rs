@@ -2,10 +2,9 @@
 use super::*;
 use std::path::Path;
 pub(in crate::engine::script) fn flush_document_write(state: &mut HostState) -> bool {
-    // The retained parser consumes captured writes at its insertion point after this script
-    // returns. Synchronous document.write re-entry (including nested evaluation before return)
-    // remains a separate contract; the old fragment helper is not a conforming replacement.
-    if state.capture_parser_writes || state.pending_document_write.is_empty() {
+    // Legacy completed-DOM helpers have no active parser. The production parser-insertion
+    // path lives in parser_writes; this fallback does not implement document.open/close.
+    if state.pending_document_write.is_empty() {
         return false;
     }
     let html = std::mem::take(&mut state.pending_document_write);

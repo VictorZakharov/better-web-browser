@@ -122,10 +122,11 @@ baseline SHA-256 is `B2D268BDFD6F41E7FD27BE9C1EDF7068E17191AEBCBEAC178209F0810B1
 ## Explicit remaining gaps
 
 The follow-up [parser suspension/resumption slice](incremental-html-parsing.md)
-replaces whole-DOM startup in the retained renderer. Streaming main-response input
-and synchronous `document.write()` re-entry remain incomplete. Stylesheet
-applicability and precise script-blocking sheet state remain a
-separate gap; this change does not claim those rules are complete. The follow-up
+replaces whole-DOM startup in the retained renderer. Subsequent
+[streaming main-response input](streaming-html-navigation.md),
+[active-parser synchronous writes](synchronous-document-write.md), and
+[stylesheet dependency loading](stylesheet-loading-dependencies.md) implement their
+documented subsets; they do not establish complete HTML loading conformance. The follow-up
 [first-paint gate](float-clear-and-first-paint.md) supports initial head stylesheet
 blocking, including explicit links admitted before body insertion, not render-blocking scripts.
 
@@ -133,6 +134,7 @@ This is parser-prepared classic/module readiness, not complete module support.
 Dynamic `import()`, import maps/attributes, dynamically inserted module elements,
 redirect-aware module identity/base URLs, and worker module loading need separate
 coverage. The existing worker loader remains synchronous. Full HTML callback
-cleanup checkpoints, inline event-handler content attributes and nested browsing
-context load accounting remain the previously documented gaps. No site-specific
+cleanup checkpoints and nested browsing-context load accounting remain separate gaps.
+[Inline event-handler content attributes](html-event-handlers.md) are now implemented
+for the documented scope. No site-specific
 selectors, URLs, security exemptions or shortened watchdogs are used.

@@ -14,7 +14,7 @@ pub(super) mod document_lifecycle;
 mod geometry;
 mod memory;
 mod module_preparation;
-mod parser;
+pub(crate) mod parser;
 mod restart;
 pub(crate) use restart::RestartState;
 mod storage;

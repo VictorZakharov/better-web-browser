@@ -1,41 +1,59 @@
 //! Incremental parser notifications for the retained document realm.
+pub(crate) use super::super::parser_writes::PrepareWrittenScript;
 use super::*;
-impl ScriptRuntime {
-    pub(crate) fn set_parser_write_capture(&mut self, capture: bool) {
-        self.host.borrow_mut().capture_parser_writes = capture;
-    }
 
-    pub(crate) fn take_parser_writes(&mut self) -> String {
-        let mut host = self.host.borrow_mut();
-        host.capture_parser_writes = false;
-        std::mem::take(&mut host.pending_document_write)
+pub(crate) struct ParserScriptResult {
+    pub outcome: ScriptOutcome,
+    pub parser: crate::engine::dom::incremental::HtmlParser,
+    pub prepared: Vec<(crate::engine::page::PageScript, bool)>,
+    pub stylesheets: Vec<NodeRef>,
+    pub mutated: bool,
+}
+
+impl ScriptRuntime {
+    pub(crate) fn execute_parser_script(
+        &mut self,
+        input: ScriptInput,
+        parser: crate::engine::dom::incremental::HtmlParser,
+        prepare: PrepareWrittenScript,
+        initial_count: usize,
+    ) -> ParserScriptResult {
+        self.host.borrow_mut().parser_write_session =
+            Some(super::super::parser_writes::ParserWriteSession {
+                parser,
+                prepare,
+                prepared: Vec::new(),
+                stylesheets: Vec::new(),
+                mutated: false,
+                initial_count,
+                root: input.node.id(),
+                insertion_point: false,
+                paused: false,
+                script_bytes: 0,
+                remaining_script_bytes: MAX_PAGE_SCRIPT_BYTES
+                    .saturating_sub(self.total_script_bytes.saturating_add(input.code.len())),
+            });
+        let outcome = self.execute_additional_with_loader(&[input], None);
+        let mut session = self.host.borrow_mut().parser_write_session.take().unwrap();
+        session.parser.finish_writes();
+        self.total_script_bytes = self.total_script_bytes.saturating_add(session.script_bytes);
+        ParserScriptResult {
+            outcome,
+            parser: session.parser,
+            prepared: session.prepared,
+            stylesheets: session.stylesheets,
+            mutated: session.mutated,
+        }
     }
 
     pub(crate) fn parser_dom_changed(&mut self) -> ScriptOutcome {
-        let document = self.host.borrow().document.clone();
         let ids = {
             let mut host = self.host.borrow_mut();
             host.begin_task();
             // Parser mutations bypass JS mutation recording. Invalidate the independent CSSOM
             // and synchronous-layout caches before constructors or the next script can query
             // newly inserted nodes/sheets; presentation invalidation alone arrives too late.
-            host.computed_styles = None;
-            host.offset_parent_styles = None;
-            host.layout_geometry_initialized = false;
-            host.pending_layout_invalidation.record(
-                &document,
-                Some(&document),
-                MutationKind::Stylesheet,
-            );
-            let new_elements = Node::descendants(&document)
-                .filter(|node| node.element().is_some() && !host.node_ids.contains_key(&node.id()))
-                .collect::<Vec<_>>();
-            host.register_subtree(&document);
-            new_elements
-                .iter()
-                .map(|node| host.id_for(node).to_string())
-                .collect::<Vec<_>>()
-                .join(",")
+            host.register_parser_changes()
         };
         let Some(context) = self.context.as_deref_mut() else {
             return inactive_runtime_outcome();

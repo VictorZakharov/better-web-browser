@@ -1,5 +1,6 @@
 //! Authoritative HTML input and parser-blocking script pause/resume ownership.
 use super::*;
+use crate::engine::dom::Node;
 use crate::engine::dom::incremental::{HtmlParser, ParserStep};
 
 pub(super) struct DocumentParser {
@@ -34,6 +35,13 @@ impl DocumentRuntime {
                     break;
                 }
                 self.execute_pending_parser_script(connection, outcome)?;
+                if self.parser_scripts.blocked() {
+                    self.start_presentational_preloads(connection)?;
+                    if started.elapsed() >= Duration::from_millis(8) {
+                        break;
+                    }
+                    continue;
+                }
             }
             self.update_render_blockers();
             let previous_links = self
@@ -127,5 +135,33 @@ impl DocumentRuntime {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn written_script_preparation(
+        &self,
+    ) -> crate::engine::script::runtime::parser::PrepareWrittenScript {
+        let page = Rc::clone(&self.script_layout_page);
+        let loaded = self
+            .loaded_resources
+            .iter()
+            .filter(|resource| matches!(resource, PageResource::Stylesheet { .. }))
+            .cloned()
+            .collect::<HashSet<_>>();
+        let admitted = self
+            .page
+            .resources
+            .iter()
+            .filter(|resource| matches!(resource, PageResource::Stylesheet { .. }))
+            .cloned()
+            .collect::<Vec<_>>();
+        Box::new(move |node, ordinal, stylesheets| {
+            let mut page = page.borrow_mut();
+            let script = page.prepare_parser_script_at(node, ordinal);
+            let blocked = stylesheets
+                .iter()
+                .filter(|node| Node::tree_root(node).id() == page.dom.document.id())
+                .any(|node| super::rendering::stylesheet_pending(&page, node, &loaded, &admitted));
+            (script, blocked)
+        })
     }
 }

@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Synchronous parser writes</title>
+<style>
+  body { margin:24px; font:18px Arial,sans-serif; color:#183149; background:#edf3f8 }
+  main { max-width:820px; padding:24px; background:white }
+  output { display:block; margin-top:24px; padding:16px; white-space:pre-wrap; background:#ffeded }
+  output[data-contract=pass] { background:#d9f5e5; color:#164a32 }
+  #written, #child { padding:8px; border-left:4px solid #138056; margin:12px 0 }
+</style>
+<body><main>
+<h1>Synchronous parser writes</h1>
+<p>The same insertion-point and execution-order checks run in both browsers.</p>
+<script id=outer>
+  window.trace=['outer'];
+  document.write('<div id=written>Markup is readable before write returns.</div>');
+  trace.push(document.getElementById('written') ? 'visible' : 'missing');
+  trace.push(document.getElementById('tail') === null ? 'tail absent' : 'tail early');
+  document.write('<script id=inner>trace.push(document.currentScript.id);' +
+    'document.write("<div id=child>Nested script created this child synchronously.</div>");' +
+    'trace.push(document.getElementById("child") ? "child" : "missing child");' +
+    'Promise.resolve().then(()=>trace.push("microtask"));<\/script>');
+  trace.push(document.currentScript.id);
+  document.write('<script src="parser-written-external.js?delay_ms=250"><\/script><i id=after>Resumed after external script.</i>');
+  trace.push(document.getElementById('after') === null ? 'paused' : 'not paused');
+  trace.push('return');
+</script>
+<p id=tail>Network tail follows the inserted markup.</p>
+<output id=result>Waiting for written external script.</output>
+<script>
+  trace.push(document.getElementById('after') ? 'resumed' : 'missing after');
+  const expected=['outer','visible','tail absent','inner','child','outer','paused','return',
+    'microtask','external','external child','resumed'];
+  const good=JSON.stringify(trace)===JSON.stringify(expected);
+  const result=document.getElementById('result');
+  result.dataset.contract=good?'pass':'fail';
+  result.textContent=(good?'PASS':'FAIL')+'\n'+trace.join(' → ');
+  document.title=(good?'PASS':'FAIL')+' — Synchronous parser writes';
+  document.documentElement.dataset.fixtureReady=good?'true':'false';
+  console.log('parser-writes '+JSON.stringify({good,trace}));
+</script>
+</main>

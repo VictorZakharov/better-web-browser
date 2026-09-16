@@ -59,6 +59,7 @@
     }
 
     let documentWriteRefreshQueued = false;
+    let throwOnDynamicMarkupInsertion = 0;
     const documentDefaultViews = new WeakMap();
     const documentReadiness = new WeakMap();
     const documentCollections = new WeakMap();
@@ -161,7 +162,14 @@
             if (target) target.dispatchEvent(markTrusted(new Event(String(type))));
         }
         write(...parts) {
-            host('documentWrite', parts.join(''));
+            const text = parts.map(value => {
+                if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
+                return String(value);
+            }).join('');
+            if (throwOnDynamicMarkupInsertion)
+                throw new DOMException('A parser-created custom element cannot write to the document', 'InvalidStateError');
+            if (writeIntoActiveParser(this, text)) return;
+            host('documentWrite', text);
             if (!documentWriteRefreshQueued) {
                 documentWriteRefreshQueued = true;
                 Promise.resolve().then(() => {
@@ -172,7 +180,7 @@
                 });
             }
         }
-        writeln(...parts) { this.write(parts.join('') + '\n'); }
+        writeln(...parts) { this.write(...parts, '\n'); }
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }
@@ -183,12 +191,13 @@
         set cookie(value) { host('cookieSet', String(value)); }
     }
     installParentNodeMembers(Document.prototype);
-    globalThis.__parserDomChanged = ids => {
+    const parserDomChanged = ids => {
         parserCollectionEpoch++;
-        for (const node of list(ids)) maybeUpgradeCustomElement(node);
+        for (const node of list(ids)) maybeUpgradeCustomElement(node, false, true);
         refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
     };
+    globalThis.__parserDomChanged = parserDomChanged;
     installEventHandlerAttributes(Document.prototype);
 
     function wrap(id) {
