@@ -94,6 +94,7 @@ impl Node {
         parent.children.borrow_mut().insert(index, child.clone());
         Node::checkable_subtree_inserted(&child);
         parent.mark_children_mutated();
+        Node::stylesheet_subtree_inserted(&child);
         true
     }
 
@@ -222,6 +223,7 @@ pub(super) fn append_node(parent: &NodeRef, child: NodeRef) {
     parent.children.borrow_mut().push(child.clone());
     Node::checkable_subtree_inserted(&child);
     parent.mark_children_mutated();
+    Node::stylesheet_subtree_inserted(&child);
 }
 
 pub(super) fn append_to_existing_text(node: &NodeRef, text: &str) -> bool {
@@ -248,6 +250,7 @@ pub(super) fn remove_from_parent(target: &NodeRef) {
     if let Some((parent, index)) = parent_and_index(target) {
         parent.children.borrow_mut().remove(index);
         target.parent.set(None);
+        Node::stylesheet_subtree_removed(target);
         parent.mark_children_mutated();
     }
 }
@@ -257,6 +260,7 @@ fn clear_children(node: &NodeRef) {
     let changed = !children.is_empty();
     for child in children.drain(..) {
         child.parent.set(None);
+        Node::stylesheet_subtree_removed(&child);
     }
     drop(children);
     if changed {

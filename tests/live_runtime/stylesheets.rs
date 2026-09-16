@@ -1,4 +1,6 @@
 use super::*;
+#[path = "stylesheet_cssom.rs"]
+mod cssom;
 
 #[test]
 fn a_new_link_to_an_already_loaded_stylesheet_gets_its_own_async_load_event() {

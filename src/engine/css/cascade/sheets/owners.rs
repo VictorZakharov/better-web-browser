@@ -18,7 +18,7 @@ pub(super) fn append(
         .filter_map(|source| source.owner_url.as_deref().map(|url| (url, source)))
         .collect();
     for node in Node::descendants(root) {
-        if !matches!(node.tag_name(), Some("style" | "link")) || node.attr("disabled").is_some() {
+        if !matches!(node.tag_name(), Some("style" | "link")) || Node::sheet_disabled(&node) {
             continue;
         }
         if node
@@ -27,12 +27,19 @@ pub(super) fn append(
         {
             continue;
         }
-        if node.attr("media").is_some_and(|query| {
-            !query.trim().is_empty() && !media::media_matches_for_environment(&query, environment)
-        }) {
+        let overrides = node.sheet_overrides();
+        let own = overrides.iter().find(|s| s.path.is_empty());
+        if own
+            .map(|s| s.media.clone())
+            .or_else(|| node.attr("media"))
+            .is_some_and(|query| {
+                !query.trim().is_empty()
+                    && !media::media_matches_for_environment(&query, environment)
+            })
+        {
             continue;
         }
-        let (source, sheet_base, imports) = if node.tag_name() == Some("style") {
+        let (mut source, sheet_base, mut imports) = if node.tag_name() == Some("style") {
             let source = node.text_content();
             let imports = crate::engine::css::imports::parse(&source);
             (source, base_url.to_string(), imports)
@@ -61,8 +68,17 @@ pub(super) fn append(
                 resource.imports.clone(),
             )
         };
-        let expansion =
-            crate::engine::css::imports::expand(&sheet_base, &imports, resources, environment);
+        if let Some(own) = own {
+            source.clone_from(&own.source);
+            imports = crate::engine::css::imports::parse(&source);
+        }
+        let expansion = crate::engine::css::imports::expand_owned(
+            &sheet_base,
+            &imports,
+            resources,
+            environment,
+            &overrides,
+        );
         for imported in expansion.sheets {
             inputs.push(SheetInput {
                 source: imported.source.clone(),

@@ -48,3 +48,46 @@ The original parser-custom-elements.html fixture matches hidden Chrome 153's exa
 attribute, connection, and microtask trace for network HTML and synchronous writes. Seven upstream
 parser tests (17 subtests) and six hidden integration regressions exercise this slice.
 Customized built-ins, scoped registries, and XML parser construction are not claimed here.
+
+## Stylesheet sets and imported CSSOM
+
+Titled document sheets choose the first preferred non-alternate set at
+association, not when a later JavaScript query happens to inspect the tree. Persistent sheets
+remain active, title matching is case-sensitive, and alternate sheets with the preferred title
+participate. Shadow-root sheets have no stylesheet-set title. Individual CSSStyleSheet.disabled changes update the native cascade without adding
+a disabled content attribute. Owner state is allocated lazily; ordinary DOM nodes do not carry
+an inline stylesheet graph.
+
+Each linked owner and import occurrence has independent CSSOM identity. CSSImportRule exposes
+href, media, supports/layer metadata, its parent sheet, and the imported sheet with ownerRule and
+parentStyleSheet links. Final response URLs are the bases for nested imports; response origins
+gate cssRules access. Removing a rule unlinks its parent, while existing JavaScript references
+retain the removed objects. Replacing a style element's text creates a new associated stylesheet.
+
+Ordinary and imported insertRule/deleteRule, declaration edits, media changes, and disabled flags
+invalidate computed style and presentation. They do not rewrite DOM text or the shared response
+cache. Bounded native snapshots identify import occurrences by path beneath their owner; another
+owner using identical network bytes remains independent. Dynamically inserted imports use the
+existing dependency loader, MIME checks, cycle/depth/occurrence limits, and completion pipeline.
+Downloaded sources are synchronized to the retained realm even after the owner's initial load
+event has fired. Constructed sheets retain their existing no-import restriction.
+
+Contract: [CSSOM stylesheet collections](https://drafts.csswg.org/cssom/#css-style-sheet-collections),
+[CSSImportRule](https://drafts.csswg.org/cssom/#the-cssimportrule-interface), and
+[CSS cascade imports](https://www.w3.org/TR/css-cascade-5/#at-import).
+
+The original stylesheet-ownership.html fixture agrees with unified-headless Chrome 153 on
+independent identities, parent links, imported-rule edits, media switching, deletion, insertion,
+source replacement, and the rendered preferred-set color. Two measured reference differences
+are retained explicitly: Chrome reports disabled=false for its inactive titled sheet, and setting
+disabled on its imported sheet does not remove that sheet's rendered rules. Breeze follows the
+CSSOM disabled-flag contract for both; this fixture is not an exact all-fields parity claim.
+Strict WPT includes both preferred-stylesheet insertion-order cases and imported-sheet identity.
+A hidden production-browser test inserts an import after load, waits for its network completion,
+then checks independent mutation and computed color.
+
+Remaining boundaries include HTTP Default-Style/meta selection, user-facing set selection,
+non-HTTP(S) stylesheet loading, full CSS encoding/CORS metadata, cascade-layer ordering, and
+the complete grouping/namespace/page-rule CSSOM. Layer metadata is exposed but layered imports
+are not incorrectly applied as unlayered CSS. This does not claim complete CSSOM conformance or
+a page-loading speedup.

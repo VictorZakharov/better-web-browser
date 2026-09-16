@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stylesheet ownership</title>
+<style>body{font:16px sans-serif;margin:24px}pre{white-space:pre-wrap}#target{padding:16px;border:1px solid}</style>
+<style id=left>@import "stylesheet-owned.css";</style>
+<style id=right>@import "stylesheet-owned.css";</style>
+<p id=target>Imported stylesheet cascade</p><pre id=result>Loading</pre>
+<script>
+addEventListener('load',()=>{
+  const facts=[], left=document.getElementById('left'), right=document.getElementById('right');
+  const a=left.sheet.cssRules[0], b=right.sheet.cssRules[0];
+  const color=()=>getComputedStyle(target).color;
+  facts.push(['identity',a.styleSheet!==b.styleSheet,a.styleSheet===a.styleSheet]);
+  facts.push(['ownership',a.styleSheet.ownerNode===null,a.styleSheet.ownerRule===a,
+    a.styleSheet.parentStyleSheet===left.sheet]);
+  facts.push(['initial',color()]);
+  b.styleSheet.cssRules[0].style.color='blue';
+  facts.push(['edit',color(),a.styleSheet.cssRules[0].style.color]);
+  b.media='print';facts.push(['media',color()]);
+  a.styleSheet.disabled=true;facts.push(['disabled',color()]);
+  a.styleSheet.disabled=false;
+  const child=a.styleSheet;left.sheet.deleteRule(0);
+  facts.push(['removed',child.parentStyleSheet===null,a.parentStyleSheet===null]);
+  right.sheet.insertRule('#target {color:green}',1);facts.push(['insert',color()]);
+  const old=right.sheet;right.textContent='#target{color:purple}';
+  facts.push(['replacement',right.sheet!==old,color()]);
+  const first=document.createElement('style');first.title='day';
+  first.textContent='#target{background-color:lime}';document.head.append(first);
+  const second=document.createElement('style');second.title='night';
+  second.textContent='#target{background-color:red}';document.head.prepend(second);
+  facts.push(['preferred',second.sheet.disabled,getComputedStyle(target).backgroundColor]);
+  result.setAttribute('data-facts',JSON.stringify(facts));
+  result.textContent=facts.map(fact=>JSON.stringify(fact)).join('\n');
+  document.title=JSON.stringify(facts);
+});
+</script>

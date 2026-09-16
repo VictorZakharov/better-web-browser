@@ -11,6 +11,8 @@
     "expectations": "forbidden"
   },
   "support": [
+    "css/cssom/support/import-rule.css",
+    "css/cssom/support/import-red.css",
     "custom-elements/resources/custom-elements-helpers.js",
     "dom/nodes/mutationobservers.js",
     "html/webappapis/dynamic-markup-insertion/document-write/005.js",
@@ -43,6 +45,9 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "css/cssom/preferred-stylesheet-order.html", "area": "CSSOM stylesheet sets", "expected": "pass" },
+    { "path": "css/cssom/preferred-stylesheet-reversed-order.html", "area": "CSSOM stylesheet sets", "expected": "pass" },
+    { "path": "css/cssom/cssimportrule-sheet-identity.html", "area": "CSSOM imported sheets", "expected": "pass" },
     { "path": "custom-elements/parser/parser-constructs-custom-elements.html", "area": "HTML parser custom elements", "expected": "pass" },
     { "path": "custom-elements/parser/parser-custom-element-in-foreign-content.html", "area": "HTML parser custom elements", "expected": "pass" },
     { "path": "custom-elements/parser/parser-constructs-custom-element-in-document-write.html", "area": "HTML parser custom elements", "expected": "pass" },

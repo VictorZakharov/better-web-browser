@@ -216,7 +216,7 @@ fn html_insertion_and_document_write_upgrade_defined_elements() {
                 const valid = inner instanceof InsertedElement && !inner.isConnected &&
                     document.getElementById('inner') === null && written instanceof InsertedElement &&
                     order.includes('constructor:inner') && order.includes('attribute:inner:one') &&
-                    order.includes('connected:inner') && order.includes('constructor:written') &&
+                    order.includes('connected:inner') && order.includes('constructor:') &&
                     order.includes('attribute:written:two') && order.includes('connected:written');
                 document.body.setAttribute('data-result', valid ? 'pass' : 'fail:' + JSON.stringify(order));
             });

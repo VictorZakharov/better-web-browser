@@ -2,6 +2,7 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
+mod owned;
 use crate::engine::AdoptedStyleSheet;
 use crate::limits::{
     MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES, MAX_ADOPTED_STYLESHEETS, MAX_CSS_SOURCE_BYTES,
@@ -11,6 +12,9 @@ pub(super) fn cssom_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = owned::call(operation, args, state)? {
+        return Ok(Some(value));
+    }
     match operation {
         "stylesheetSource" => {
             let url = argument_string(args, 1)?;

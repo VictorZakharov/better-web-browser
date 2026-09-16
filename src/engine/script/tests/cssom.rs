@@ -1,12 +1,12 @@
 use super::*;
 
-fn result(dom: &super::super::super::dom::Dom) -> Option<String> {
+pub(super) fn result(dom: &super::super::super::dom::Dom) -> Option<String> {
     dom.elements_named("body")
         .next()
         .and_then(|body| body.attr("data-result"))
 }
 
-fn execute_html_with_stylesheets(
+pub(super) fn execute_html_with_stylesheets(
     html: &str,
     stylesheets: Vec<(String, String)>,
 ) -> (super::super::super::dom::Dom, ScriptOutcome) {
@@ -51,8 +51,9 @@ fn document_stylesheets_are_live_same_object_and_owned_by_style_elements() {
             check('rules', sheet.cssRules.length === 1 &&
                 sheet.cssRules[0].selectorText === 'body');
             owner.textContent = 'main { display: block; }';
-            check('live-source', owner.sheet === sheet && list[0] === sheet &&
-                sheet.cssRules[0].selectorText === 'main');
+            check('new-source', owner.sheet !== sheet && list[0] === owner.sheet &&
+                owner.sheet.cssRules[0].selectorText === 'main' &&
+                sheet.cssRules[0].selectorText === 'body' && sheet.ownerNode === null);
             const second = document.createElement('style');
             second.textContent = 'p { color: blue; }';
             document.head.appendChild(second);

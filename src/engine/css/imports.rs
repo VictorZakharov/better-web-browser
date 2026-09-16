@@ -11,6 +11,14 @@ mod graph;
 #[path = "imports/tests.rs"]
 mod graph_tests;
 pub(crate) use graph::expand;
+pub(crate) use graph::expand_owned;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SheetOverride {
+    pub(crate) path: Vec<usize>,
+    pub(crate) source: String,
+    pub(crate) media: String,
+    pub(crate) disabled: bool,
+}
 pub(crate) fn resolve(base: &str, href: &str) -> Option<String> {
     let url = crate::navigation::resolve_url(base, href)?;
     Some(url.split('#').next().unwrap_or(&url).to_string())
@@ -22,16 +30,19 @@ const MAX_IMPORT_OCCURRENCES: usize = 256;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Import {
     pub(crate) href: String,
-    media: String,
-    supports: Option<String>,
+    pub(crate) media: String,
+    pub(crate) supports: Option<String>,
+    pub(crate) layer: Option<String>,
 }
 
 impl Import {
     pub(crate) fn matches(&self, environment: MediaEnvironment) -> bool {
-        self.supports.as_ref().is_none_or(|condition| {
-            super::supports::supports_matches(condition)
-                || super::supports::supports_matches(&format!("({condition})"))
-        }) && media_matches_for_environment(&self.media, environment)
+        self.layer.is_none()
+            && self.supports.as_ref().is_none_or(|condition| {
+                super::supports::supports_matches(condition)
+                    || super::supports::supports_matches(&format!("({condition})"))
+            })
+            && media_matches_for_environment(&self.media, environment)
     }
 }
 
@@ -77,6 +88,19 @@ impl<'i> AtRuleParser<'i> for ImportParser {
             return Err(input.new_custom_error(()));
         }
         let href = input.expect_url_or_string()?.to_string();
+        let layer = if input
+            .try_parse(|p| p.expect_ident_matching("layer"))
+            .is_ok()
+        {
+            Some(String::new())
+        } else if input
+            .try_parse(|p| p.expect_function_matching("layer"))
+            .is_ok()
+        {
+            Some(input.parse_nested_block(|p| condition_text(p, 0))?)
+        } else {
+            None
+        };
         let supports = if input
             .try_parse(|p| p.expect_function_matching("supports"))
             .is_ok()
@@ -85,13 +109,14 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         } else {
             None
         };
-        // Cascade layers remain unsupported by the rule compiler. Do not accidentally
-        // apply a layered import as unlayered CSS; its suffix is an invalid media list.
+        // Retain layer metadata for CSSOM, but matches() will not compile layered CSS
+        // as unlayered rules while the native cascade lacks layer ordering.
         let media = condition_text(input, 0)?;
         Ok(Some(Import {
             href,
             media,
             supports,
+            layer,
         }))
     }
 

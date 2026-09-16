@@ -39,6 +39,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/ranges.js"),
     include_str!("bootstrap/fullscreen.js"),
     include_str!("bootstrap/cssom.js"),
+    include_str!("bootstrap/cssom_sheets.js"),
+    include_str!("bootstrap/cssom_imports.js"),
     include_str!("bootstrap/cssom_document.js"),
     include_str!("bootstrap/cssom_adoption.js"),
     include_str!("bootstrap/platform.js"),

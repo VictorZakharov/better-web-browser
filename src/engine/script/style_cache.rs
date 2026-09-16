@@ -16,6 +16,14 @@ impl HostState {
         // Invalidate at the mutation, not from the renderer's accumulated dirty flag:
         // that flag can remain set after a script query has already rebuilt its rules.
         if render_invalidation::rebuilds_style_rules(target, kind) {
+            if let Some(target) = target
+                && matches!(
+                    kind,
+                    MutationKind::Attribute("title" | "rel" | "type" | "disabled")
+                )
+            {
+                Node::stylesheet_subtree_inserted(target);
+            }
             self.computed_styles = None;
             self.offset_parent_styles = None;
         }

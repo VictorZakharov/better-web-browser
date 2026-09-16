@@ -136,6 +136,7 @@ impl Dom {
         parent.children.borrow_mut().insert(index, child.clone());
         Node::checkable_subtree_inserted(&child);
         parent.mark_children_mutated();
+        Node::stylesheet_subtree_inserted(&child);
         self.queue_parser_record(record);
     }
 }
