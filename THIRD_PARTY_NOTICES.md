@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `e4667cb2441c95c07ed335ae3f4c2a6a86ff3864a06200f8346f68857a2df5d1`
-- Third-party packages: 193
+- Cargo.lock SHA-256: `27cbbf7b4ec472375adaebc010442de19f4845d5d1d9fb70dde1342c0a845f10`
+- Third-party packages: 195
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -188,6 +188,8 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `windows-threading` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
 | `winsafe` | 0.0.19 | MIT | [upstream](https://github.com/rodrigocfd/winsafe) |
 | `writeable` | 0.6.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `xml` | 1.4.0 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
+| `xmlparser` | 0.13.6 | MIT/Apache-2.0 | [upstream](https://github.com/RazrFalcon/xmlparser) |
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |
 | `yoke` | 0.8.3 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `yoke-derive` | 0.8.2 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
