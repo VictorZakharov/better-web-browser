@@ -258,3 +258,14 @@ fn module_map_caps_distinct_compiled_records_not_only_source_bytes() {
             .is_err()
     );
 }
+
+#[test]
+fn invalid_inserted_module_url_fires_error_without_sending_a_fetch() {
+    let (dom, mut runtime) = start(
+        "const s=document.createElement('script');s.type='module';s.src='http://[';s.onerror=()=>record('error');document.head.append(s);record('caller');",
+    );
+    assert!(runtime.take_module_requests().is_empty());
+    assert_eq!(log(&dom), "caller");
+    tick(&mut runtime);
+    assert_eq!(log(&dom), "caller|error");
+}

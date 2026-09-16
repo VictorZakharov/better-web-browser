@@ -87,7 +87,8 @@ impl HostState {
             options,
             ScriptKind::Module,
         );
-        if external.as_ref().is_some_and(|url| url.trim().is_empty())
+        if url.is_empty()
+            || external.as_ref().is_some_and(|url| url.trim().is_empty())
             || source
                 .as_ref()
                 .is_some_and(|code| code.len() > MAX_SCRIPT_BYTES)
