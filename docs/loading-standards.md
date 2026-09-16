@@ -53,9 +53,11 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
 | 4 | [Active-parser writes](synchronous-document-write.md), [streaming decoding](streaming-html-navigation.md), and [script-created document streams](document-streams-and-pre-wrap.md) are implemented for their documented subsets. | `document/parsing.rs`, `dom/incremental/writes.rs`, `script/document_streams.rs` | Extend lifecycle coverage to nested browsing contexts, unload/aborted parsers, CSP and Trusted Types. |
-| 5 | [Stylesheet dependency loading and separate script/paint gates](stylesheet-loading-dependencies.md) are implemented for the documented subset. Full stylesheet-set selection and imported CSSOM objects remain. | `page/stylesheets.rs`, `css/imports.rs`, renderer resource loader | Extend owned loading/cascade checks to preferred/alternate sets and imported-rule identity/mutation. |
+| 5 | [Stylesheet dependency loading and separate script/paint gates](stylesheet-loading-dependencies.md), plus [preferred sets and owned/imported CSSOM](parser-observation-and-cssom.md), are implemented for their documented subsets. | `page/stylesheets.rs`, `css/imports.rs`, renderer resource loader | Extend coverage to HTTP Default-Style/meta selection, user-facing set selection, encoding/CORS metadata, and cascade layers. |
 | 6 | [HTML event-handler content attributes](html-event-handlers.md) now cover parsing, mutation, lazy compilation, scope, ordering, cancellation and body/window forwarding. Remaining boundaries include CSP and broader browsing-context/realm behavior. | `bootstrap/event_handlers.js`, native V8 compilation, DOM attributes/construction | Continue with policy and browsing-context slices; do not infer their completion from handler names being present. |
 
+[Dynamic inline classic scripts](inline-scripts-and-table-geometry.md) now run synchronously
+through the existing realm and budgets; dynamic modules and policy remain.
 These should be cohesive changes with owned positive and negative fixtures, relevant
 WPT-derived contracts, and headless Chromium comparisons. Do not combine unrelated
 unsupported APIs into an unreviewable rewrite or advertise a feature based on its name

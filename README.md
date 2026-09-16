@@ -190,11 +190,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 306-file Web Platform Test suite covers 2,676 upstream harness subtests across HTML
+A pinned, curated 323-file Web Platform Test suite covers 2,708 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,653 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,708 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -207,8 +207,8 @@ documents replacement semantics, headless browser checks and the remaining compa
 
 The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
 regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression
-gate, not Breeze's whole-platform pass rate. A separate discovery sample records
-known failures across nearby unsupported behavior. See
+gate, not Breeze's whole-platform pass rate. Both former discovery cases are now strict regressions;
+[inline-script and table geometry limits](docs/inline-scripts-and-table-geometry.md) remain explicit. See
 [tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
 provenance, licensing, expectation policy, filtering, and exact execution contract.
 
@@ -250,7 +250,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | JavaScript Fetch and XHR | Document and dedicated-worker Fetch bodies stream progressively through default readers, with byte-based backpressure, cloning, and cancellation. Fetch/XHR and Body primitives are implemented; BYOB, streaming uploads, and complete pipe/transform semantics remain incomplete. See the [streaming contract and measurements](docs/progressive-fetch.md). |
 | ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
-| ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Synchronous dynamic inline-script insertion, customized built-ins, and the complete HTML rendering/event-loop model remain incomplete. |
+| ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), [synchronous dynamic inline classics](docs/inline-scripts-and-table-geometry.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Dynamic module insertion, customized built-ins, and the complete HTML rendering/event-loop model remain incomplete. |
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
