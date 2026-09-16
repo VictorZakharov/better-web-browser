@@ -43,7 +43,7 @@ impl HtmlParser {
                 return ParserStep::End;
             }
             match token {
-                TokenizerResult::Script(node) => return ParserStep::Script(node),
+                TokenizerResult::Script(step) => return step,
                 TokenizerResult::EncodingIndicator(label) => {
                     return ParserStep::Encoding(label.to_string());
                 }
@@ -55,7 +55,7 @@ impl HtmlParser {
 
     // Written input can be much larger than a network chunk. Retain token lookahead, but
     // bound each feed so node/depth enforcement also applies during one long write.
-    pub(super) fn feed_bounded(&self, input: &BufferQueue) -> (TokenizerResult<NodeRef>, bool) {
+    pub(super) fn feed_bounded(&self, input: &BufferQueue) -> (TokenizerResult<ParserStep>, bool) {
         let chunk = BufferQueue::default();
         let mut bytes = 0;
         while bytes < 4096 {

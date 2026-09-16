@@ -50,6 +50,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/native_input.js"),
     include_str!("bootstrap/pointer_boundary.js"),
     include_str!("bootstrap/custom_elements.js"),
+    include_str!("bootstrap/parser_custom_elements.js"),
     include_str!("bootstrap/url.js"),
     // Observer closures capture the private task exception reporter before
     // tasks.js closes the shared root IIFE; delivery begins only after bootstrap completes.

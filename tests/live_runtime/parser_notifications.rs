@@ -1,5 +1,7 @@
 //! Native parser records must be observable before a synchronous write returns.
 use super::parser_writes::run;
+#[path = "parser_custom_elements.rs"]
+mod custom_elements;
 
 #[test]
 fn parser_records_preserve_siblings_text_old_values_and_observer_identity() {

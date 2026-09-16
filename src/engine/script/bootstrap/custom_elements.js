@@ -27,6 +27,8 @@
     // callback; flattening all reactions into one queue breaks reflection guards used by Polymer.
     const elementReactionQueues = new WeakMap();
     const reactionStack = [];
+    let parserReactionCheckpoint = false;
+    let customElementCallbackDepth = 0;
     const invokeCustomElementReactions = elementQueue => {
         for (let elementIndex = 0; elementIndex < elementQueue.length; elementIndex++) {
             const element = elementQueue[elementIndex];
@@ -35,8 +37,14 @@
             elementReactionQueues.set(element, []);
             for (let reactionIndex = 0; reactionIndex < reactions.length; reactionIndex++) {
                 const reaction = reactions[reactionIndex];
+                customElementCallbackDepth++;
                 try { reaction.callback.apply(element, reaction.args); }
                 catch (error) { reportGlobalException(error); }
+                finally {
+                    customElementCallbackDepth--;
+                    if (parserReactionCheckpoint && !customElementCallbackDepth)
+                        host('parserMicrotaskCheckpoint');
+                }
             }
         }
     };
@@ -94,6 +102,7 @@
         Object.setPrototypeOf(element, definition.prototype);
         definition.constructionStack.push(element);
         if (parserInserted) throwOnDynamicMarkupInsertion++;
+        customElementCallbackDepth++;
         try {
             const constructed = new definition.constructor();
             if (constructed !== element)
@@ -104,6 +113,7 @@
             reportGlobalException(error);
             return element;
         } finally {
+            customElementCallbackDepth--;
             if (parserInserted) throwOnDynamicMarkupInsertion--;
             definition.constructionStack.pop();
         }
@@ -221,6 +231,7 @@
             state.definitionsByName.set(name, definition);
             state.definitionsByConstructor.set(constructor, definition);
             definitionsByConstructor.set(constructor, definition);
+            if (this === defaultCustomElementRegistry) host('parserDefineCustomElement', name);
             if (this === defaultCustomElementRegistry) upgradeCustomElementTree(document, this);
             const pending = state.whenDefined.get(name);
             if (pending) {

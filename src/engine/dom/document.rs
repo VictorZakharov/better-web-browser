@@ -10,6 +10,8 @@ use html5ever::{ParseOpts, parse_document};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+#[path = "parser_custom_elements.rs"]
+mod parser_custom_elements;
 #[path = "parser_mutations.rs"]
 pub(crate) mod parser_mutations;
 mod title;
@@ -24,6 +26,7 @@ pub struct Dom {
     pub quirks_mode: Cell<QuirksMode>,
     pub(super) observable_parser: bool,
     pub(crate) parser_mutations: Rc<RefCell<Vec<parser_mutations::ParserMutation>>>,
+    pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
 }
 
 impl Default for Dom {
@@ -42,6 +45,7 @@ impl Dom {
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             observable_parser: false,
             parser_mutations: Default::default(),
+            parser_elements: Default::default(),
         }
     }
 }

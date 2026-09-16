@@ -89,6 +89,8 @@ impl Dom {
     }
 
     pub(super) fn parser_remove(&self, node: &NodeRef) {
+        let node = self.resolve_parser_node(node);
+        let node = node.as_ref();
         let Some((parent, index)) = super::super::mutation::parent_and_index(node) else {
             return;
         };
@@ -104,6 +106,14 @@ impl Dom {
     }
 
     pub(super) fn parser_insert(&self, parent: &NodeRef, child: NodeRef, next: Option<&NodeRef>) {
+        let parent = self.resolve_parser_node(parent);
+        let parent = parent.as_ref();
+        if self.defer_parser_insertion(parent, &child, next) {
+            return;
+        }
+        let child = self.resolve_parser_node(&child).into_owned();
+        let next = next.map(|node| self.resolve_parser_node(node).into_owned());
+        let next = next.as_ref();
         self.parser_remove(&child);
         let index = next
             .and_then(|next| {

@@ -2,19 +2,21 @@
 //! https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
 use super::{Dom, NodeRef, budget, document::chunk_end};
 use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
+use html5ever::TokenizerResult;
 use html5ever::buffer_queue::BufferQueue;
-use html5ever::{ParseOpts, Parser, TokenizerResult, parse_document};
+mod driver;
 mod writes;
 
 pub(crate) enum ParserStep {
     Script(NodeRef),
+    CustomElement(NodeRef),
     Encoding(String),
     NeedInput,
     End,
 }
 
 pub(crate) struct HtmlParser {
-    parser: Parser<Dom>,
+    parser: driver::Driver,
     source: String,
     cursor: usize,
     ended: bool,
@@ -29,17 +31,22 @@ pub(crate) struct HtmlParser {
 impl HtmlParser {
     pub(crate) fn new(source: &str) -> Self {
         let (source, truncated) = bounded_utf8_prefix(source, MAX_HTML_INPUT_BYTES);
-        let mut options = ParseOpts::default();
-        options.tree_builder.scripting_enabled = true;
         let dom = Dom {
             observable_parser: true,
             ..Default::default()
         };
-        let parser = parse_document(dom, options);
+        let parser = driver::Driver::new(dom);
         if truncated {
-            parser.tokenizer.sink.sink.errors.borrow_mut().push(format!(
-                "safety limit: HTML input was truncated at {MAX_HTML_INPUT_BYTES} bytes"
-            ));
+            parser
+                .tokenizer
+                .sink
+                .builder
+                .sink
+                .errors
+                .borrow_mut()
+                .push(format!(
+                    "safety limit: HTML input was truncated at {MAX_HTML_INPUT_BYTES} bytes"
+                ));
         }
         Self {
             parser,
@@ -71,10 +78,9 @@ impl HtmlParser {
             quirks_mode: std::cell::Cell::new(html5ever::tree_builder::QuirksMode::NoQuirks),
             observable_parser: true,
             parser_mutations: Default::default(),
+            parser_elements: Default::default(),
         };
-        let mut options = ParseOpts::default();
-        options.tree_builder.scripting_enabled = true;
-        parser.parser = parse_document(dom, options);
+        parser.parser = driver::Driver::new(dom);
         parser
     }
 
@@ -101,7 +107,7 @@ impl HtmlParser {
     }
 
     pub(crate) fn dom(&self) -> &Dom {
-        &self.parser.tokenizer.sink.sink
+        &self.parser.tokenizer.sink.builder.sink
     }
 
     pub(crate) fn advance(&mut self) -> ParserStep {
@@ -121,13 +127,13 @@ impl HtmlParser {
             }
             let (token, more) = self.feed_bounded(&self.parser.input_buffer);
             match token {
-                TokenizerResult::Script(node) => {
+                TokenizerResult::Script(step) => {
                     if self.enforce_limits() {
                         self.parser.input_buffer.replace_with(Default::default());
                         self.cursor = self.source.len();
                         self.eof = true;
                     }
-                    return ParserStep::Script(node);
+                    return step;
                 }
                 TokenizerResult::Done => {}
                 TokenizerResult::EncodingIndicator(label) => {
@@ -201,6 +207,7 @@ mod tests {
                     ParserStep::Script(node) => scripts.push(node.text_content()),
                     ParserStep::NeedInput => break,
                     ParserStep::Encoding(_) => {}
+                    ParserStep::CustomElement(_) => panic!("test has no custom element registry"),
                     ParserStep::End => panic!("chunk exhaustion finalized HTML"),
                 }
             }

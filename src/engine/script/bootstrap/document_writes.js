@@ -5,6 +5,7 @@
             const next = host(stream ? 'parserStreamStep' : 'parserWriteStep', target.__id);
             if (!next) break;
             if (next.changed) parserDomChanged(next.ids, next.mutations);
+            if (next.customElement) constructParserElement(target, wrap(next.customElement));
             if (next.node) {
                 const prepared = host('parserWritePrepare', target.__id, next.node);
                 if (prepared) {

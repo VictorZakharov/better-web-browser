@@ -3,6 +3,7 @@ use super::binding_helpers::{argument_id, argument_string};
 use super::*;
 use crate::engine::dom::incremental::{HtmlParser, ParserStep};
 use crate::engine::page::PageScript;
+mod elements;
 
 pub(crate) type PrepareWrittenScript =
     Rc<RefCell<dyn FnMut(NodeRef, usize, &[NodeRef]) -> (Option<PageScript>, bool)>>;
@@ -31,6 +32,9 @@ pub(super) fn dispatch(
     args: &[JsValue],
     host: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = elements::dispatch(operation, args, host)? {
+        return Ok(Some(value));
+    }
     Ok(Some(match operation {
         "observeParserMutations" => {
             if let Some(node) = host.node(argument_id(args, 1)) {
@@ -129,6 +133,11 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
     } else {
         0
     };
+    let custom_element = if let ParserStep::CustomElement(node) = &step {
+        host.id_for(node)
+    } else {
+        0
+    };
     let ids = if changed {
         let ids = host.register_parser_changes_in(&target);
         host.record_mutation(Some(&target), MutationKind::Stylesheet);
@@ -139,6 +148,7 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
     Ok(JsValue::Object(vec![
         ("mutations".into(), parser_mutation_records(host, records)),
         ("node".into(), JsValue::from(node)),
+        ("customElement".into(), JsValue::from(custom_element)),
         ("ids".into(), JsValue::from(ids)),
         ("changed".into(), JsValue::from(changed)),
         ("ended".into(), JsValue::from(ended)),

@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Parser custom elements</title>
+<style>
+body { font: 16px Arial, sans-serif; margin: 32px; color: #172b3a; }
+h1 { font-size: 24px; }
+#result { white-space: pre-wrap; padding: 20px; background: #e5f5ea; }
+parser-probe { display: none; }
+</style>
+<h1>Parser custom-element construction</h1>
+<pre id="result">Waiting for parser checkpoints.</pre>
+<script>
+const trace=[];
+function record(phase, element) {
+    trace.push([phase, element.id, element.isConnected, element.childNodes.length]);
+}
+customElements.define('parser-probe', class extends HTMLElement {
+    static observedAttributes=['id'];
+    constructor() {
+        super();
+        record('construct', this);
+        queueMicrotask(() => record('construct job', this));
+    }
+    attributeChangedCallback() {
+        record('attribute', this);
+        queueMicrotask(() => record('attribute job', this));
+    }
+    connectedCallback() {
+        record('connect', this);
+        queueMicrotask(() => record('connect job', this));
+    }
+});
+document.write('<parser-probe id="written"><b>child</b></parser-probe>');
+trace.push(['write returned']);
+</script><parser-probe id="network"><b>child</b></parser-probe><script>
+trace.push(['next script']);
+addEventListener('load', () => {
+    const result=document.getElementById('result');
+    result.setAttribute('data-facts', JSON.stringify(trace));
+    result.textContent=trace.map(row => JSON.stringify(row)).join('\n');
+    document.title=JSON.stringify(trace);
+});
+</script>

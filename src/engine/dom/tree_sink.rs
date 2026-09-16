@@ -51,7 +51,7 @@ impl TreeSink for Dom {
         let template_contents = flags
             .template
             .then(|| Node::new_in(Rc::clone(&self.identity), NodeData::Document));
-        Node::new_in(
+        let node = Node::new_in(
             Rc::clone(&self.identity),
             NodeData::Element(ElementData {
                 name,
@@ -71,7 +71,9 @@ impl TreeSink for Dom {
                 script_force_async: std::cell::Cell::new(false),
                 script_started: std::cell::Cell::new(false),
             }),
-        )
+        );
+        self.parser_element_created(&node);
+        node
     }
 
     fn create_comment(&self, text: StrTendril) -> Self::Handle {
@@ -98,6 +100,8 @@ impl TreeSink for Dom {
     }
 
     fn append(&self, parent: &Self::Handle, child: NodeOrText<Self::Handle>) {
+        let parent = self.resolve_parser_node(parent);
+        let parent = parent.as_ref();
         if let NodeOrText::AppendText(text) = &child
             && let Some(previous) = parent.children.borrow().last()
             && self.parser_append_text(previous, text)
@@ -123,6 +127,8 @@ impl TreeSink for Dom {
         previous_element: &Self::Handle,
         child: NodeOrText<Self::Handle>,
     ) {
+        let element = self.resolve_parser_node(element);
+        let element = element.as_ref();
         if element.parent().is_some() {
             self.append_before_sibling(element, child);
         } else {
@@ -171,6 +177,8 @@ impl TreeSink for Dom {
     }
 
     fn append_before_sibling(&self, sibling: &Self::Handle, child: NodeOrText<Self::Handle>) {
+        let sibling = self.resolve_parser_node(sibling);
+        let sibling = sibling.as_ref();
         let (parent, index) =
             parent_and_index(sibling).expect("append_before_sibling called for a parentless node");
         if let NodeOrText::AppendText(text) = &child
@@ -225,6 +233,7 @@ impl TreeSink for Dom {
     }
 
     fn reparent_children(&self, node: &Self::Handle, new_parent: &Self::Handle) {
+        let node = self.resolve_parser_node(node);
         let children = node.children.borrow().clone();
         for child in children {
             self.parser_insert(new_parent, child, None);

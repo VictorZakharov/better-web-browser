@@ -121,6 +121,12 @@ fn host_call_callback(
         super::parser_scripts::run(scope, arguments);
         return;
     }
+    if operation == "parserMicrotaskCheckpoint" {
+        // Parser continuations invoke author callbacks from the bootstrap's private
+        // plumbing, not an author script. No HostState borrow may span these jobs.
+        scope.perform_microtask_checkpoint();
+        return;
+    }
     // Check lengths before copying untrusted strings into native allocations.
     if matches!(
         operation.as_str(),
