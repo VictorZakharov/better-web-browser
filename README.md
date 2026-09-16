@@ -35,6 +35,7 @@ Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
 - [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
+- [URL and native request resolution](docs/url-request-resolution.md), explicit public bases, live query parameters, and requests independent of author URL replacements
 - [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
@@ -74,7 +75,7 @@ from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against fourteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against fifteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
@@ -84,41 +85,52 @@ The visual benchmark runs on every push to `main`, not on pull requests. It requ
 
 ### Current measured snapshot — September 16, 2026
 
-Fresh hidden release / Chrome 153 trials compare the merged #165 executable with
-DOMParser and conservative hidden-removal geometry reuse: five runs per browser
-on Coron and three on Main Page and modern DuckDuckGo.
+Fresh hidden release / Chrome 153 trials compare merged #166 with the
+[URL/request correctness slice](docs/url-request-resolution.md): five runs per
+browser on Coron and three on Main Page and modern DuckDuckGo.
 
 | Page | Breeze first presentation | Chrome load | Working set B/C | Private memory B/C |
 |---|---:|---:|---:|---:|
-| Live Wikipedia Main Page | 588 ms | 648 ms | 160.5 / 645.4 MiB | 125.4 / 400.5 MiB |
-| Live Coron, Palawan | 615 ms | 718 ms | 210.9 / 678.7 MiB | 177.4 / 431.7 MiB |
+| Live Wikipedia Main Page | 745 ms | 784 ms | 164.2 / 649.0 MiB | 127.8 / 408.9 MiB |
+| Live Coron, Palawan | 659 ms | 781 ms | 201.0 / 679.0 MiB | 167.7 / 438.8 MiB |
 
 **These are different readiness milestones, not a browser speed ratio.** Chrome's
-navigation-relative FCP was 229 ms on Main Page and 260 ms on Coron; Breeze's first
+navigation-relative FCP was 269 ms on Main Page and 302 ms on Coron; Breeze's first
 presentation does not establish complete-page usability. Hidden-window creation
-was about 9 ms for Breeze versus 227–230 ms for Chrome debugger readiness, also not
+was 13–17 ms for Breeze versus 236–240 ms for Chrome debugger readiness, also not
 interactive startup parity. Process-tree memory covers different feature sets and
 can count shared resident pages more than once.
 
-Coron median layout/paint work decreased from **1,272 to 1,164 ms (8.5%)**;
-cumulative CPU was essentially unchanged and memory increased slightly. A matched
-trace confirms one hidden-head cleanup's layout stage dropping from **56.556 to
-0.006 ms**. All five early-scroll traces pass, with **5.2 ms median per-run p95**
-and zero scroll-only layout/style rebuilds. This is not a general loading-speed
-win: Coron first presentation increased from 568 to 615 ms, and Main Page CPU
-increased from 1.31 to 1.53 s. The earlier 17% layout/paint reduction did not repeat
-at that magnitude in the final series. Repeated full-document style/layout work
-remains substantially above Chrome.
+| Matched before/after measurement | Before | After |
+|---|---:|---:|
+| Failing assertions in the 16-file URL cluster | 133 / 472 | 0 / 472 |
+| Observed invalid-scheme console error, modern DDG | 3/3 runs | 0/3 runs |
+| Coron first presentation | 685 ms | 659 ms |
+| Coron layout/paint work | 1,187 ms | 1,195 ms |
+| Coron cumulative CPU | 7.84 s | 8.69 s |
+| Main Page first presentation | 658 ms | 745 ms |
+| Main Page layout/paint work | 388 ms | 474 ms |
 
-The [DOMParser slice](docs/detached-document-parsing.md) removes the missing-parser
-error in all three modern DuckDuckGo runs. The page still renders an incomplete
-shell and reports the pre-existing `Invalid scheme` error: **usable modern search
-is not established**, and the HTML fallback remains unchanged.
+This is a compatibility fix, **not a general performance improvement**. Coron CPU
+and Main Page first presentation/layout work increased in the final series.
+All five Coron early-scroll traces pass, with **6.3 ms median per-run p95** and
+zero scroll-only layout/style rebuilds. Full-document style/layout remains a
+profiling priority. A partly populated Appearance panel occurs at the observation
+point in both builds; longer captures populate all eight controls. One final Main
+Page run reports the existing attribute-iteration error, also observed in a baseline
+run. Neither limitation is claimed fixed.
 
-The [latest reassessment](docs/browser-performance-domparser-2026-09-16.md) records
-the before/after table, Chrome reference, validation, visual limits, and evidence.
-The [previous bootstrap assessment](docs/browser-performance-bootstrap-2026-09-16.md)
-retains the native-microtask improvement and its original measurements.
+Modern DuckDuckGo now has populated result content in all three final captures,
+without the observed invalid-scheme error or a renderer stop. The first URL-only
+build exposed a console-report overflow; bounded diagnostic transport fixes that
+crash while keeping operational updates intact. Visible layout problems and
+unverified search/navigation interactions remain, and Chrome receives a challenge:
+**full modern-search acceptance is not established**, so the HTML fallback stays.
+
+The [latest reassessment](docs/browser-performance-url-2026-09-16.md) records the
+before/after table, Chrome reference, validation, remaining failures and rejected
+runs. The [previous DOMParser assessment](docs/browser-performance-domparser-2026-09-16.md)
+retains its hidden-removal improvement and original measurements.
 
 ### Historical renderer text cold-path comparison
 
@@ -230,11 +242,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 369-file Web Platform Test suite covers 2,895 upstream harness subtests across HTML
+A pinned, curated 380-file Web Platform Test suite covers 3,354 upstream harness subtests across HTML
 and detached HTML/XML parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,895 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 3,354 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -242,13 +254,16 @@ subtests pass at the pinned revision, with no expected-failure, skip, or timeout
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
 ```
 
-The latest [document-stream and preserved-wrapping slice](docs/document-streams-and-pre-wrap.md)
-documents replacement semantics, headless browser checks and the remaining compatibility boundaries.
+The latest [URL/request slice](docs/url-request-resolution.md) documents native parsing,
+headless browser checks, and remaining parser boundaries. The earlier
+[document-stream slice](docs/document-streams-and-pre-wrap.md) records replacement semantics.
 
 The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
 regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression
 gate, not Breeze's whole-platform pass rate. Both former discovery cases are now strict regressions;
-[inline-script and table geometry limits](docs/inline-scripts-and-table-geometry.md) remain explicit. See
+the separate [URL parser discovery suite](docs/url-request-resolution.md) still reports 85 failing
+assertions across its three broader parser files, with no expected-failure masking.
+[Inline-script and table geometry limits](docs/inline-scripts-and-table-geometry.md) remain explicit. See
 [tests/wpt/README.md](tests/wpt/README.md) for the selection rationale, wptrunner evaluation,
 provenance, licensing, expectation policy, filtering, and exact execution contract.
 

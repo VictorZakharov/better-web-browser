@@ -62,13 +62,18 @@ The runner asks hidden Breeze instances to finish as soon as testharness emits t
 completion marker. The configured settle period is therefore a fail-safe deadline for a harness
 that never completes, rather than a fixed delay paid by every passing case.
 
+The original callback adapter chunks large reports across delayed tasks to respect
+the renderer's bounded diagnostic reports, including when a wakeup batches ready
+tasks. Upstream tests are unchanged. The reader requires every ordered chunk and
+the final completion marker; truncation cannot silently turn a partial report green.
+
 The console reports each case and `target/wpt/report.json` records the pinned revision, harness
 subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `pass`, `fail`,
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-325 passing files / 2,720 passing harness subtests (2026-09-16) with no failure, skip, timeout,
+380 passing files / 3,354 passing harness subtests (2026-09-16) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
@@ -76,7 +81,7 @@ manifest to be updated deliberately when compatibility changes.
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 325 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The selected files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -92,7 +97,9 @@ follows:
 | Idle callbacks | 12 | Deadline caps, timeout races while busy, cancellation, exceptions, and FIFO/repost fairness |
 | Resize observers | 18 | Content/border boxes, padding, box selection, inline transitions, callback lifetime, depth and error handling, and observer ordering |
 | Performance Timeline and User Timing | 39 | Asynchronous/buffered observation, filtering, buffer lifetime, mark/measure dictionaries, structured details, and monotonic clocks |
-| URLs | 5 | URL and URLSearchParams bindings |
+| URLs | 16 | Explicit-base statics, setter stripping, forgiving form decoding, and live URLSearchParams methods |
+| Detached document parsing | 8 | HTML/XML parser documents, encodings, doctypes, namespaces, and inert stylesheets |
+| Intersection observers | 36 | Geometry, clipping, thresholds, lifecycle, and asynchronous delivery |
 | Fetch and XMLHttpRequest | 31 | Headers, request/response objects, bodies, progress, guards, and CORS-facing behavior |
 | Readable streams | 2 | Demand-driven tee, cancellation, error ordering, and floating-point queue-size accounting |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
@@ -118,6 +125,14 @@ bounded, ordered console chunks and reassembled without omitting subtests; malfo
 chunks fail the case. The ordinary renderer IPC text limits and upstream test timeouts are unchanged.
 
 ## Discovery sample
+
+`url-parser-discovery.json` separately runs the complete upstream URL constructor,
+origin, and setter corpora. It intentionally keeps passing expectations and exits
+nonzero while parser-library gaps remain; those failures are not part of the green
+curated gate or a claimed whole-URL pass rate. See the
+[URL/request contract](../../docs/url-request-resolution.md) for the exact command
+and remaining file-URL, IDNA, and unusual-path boundaries. No upstream assertion is
+rewritten or skipped within either manifest.
 
 The active-parser write selection is `001.html`–`046.html`, `051.html` and
 `script_001.html`–`script_013.html` under `html/webappapis/dynamic-markup-insertion/document-write/`.

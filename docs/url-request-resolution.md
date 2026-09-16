@@ -58,9 +58,29 @@ keeps them runnable with passing expectations, so a failing command remains red:
 ./scripts/run-wpt.ps1 -WptRoot G:/Git/wpt-url-discovery -Manifest tests/wpt/url-parser-discovery.json -SkipBuild -Jobs 4
 ```
 
+The final discovery run records 1,500 passing and 85 failing assertions across
+those three files, with zero timeout/crash outcomes. The green curated URL cluster
+is 16 files / 472 assertions; the full curated suite is 380 files / 3,354 assertions.
+
 This does not add synchronous XHR, cross-origin workers, a complete Fetch/Worker
 implementation, or complete HTML base-element freezing across every lifecycle.
 Those policies and gaps are separate from fixing internal dependence on an author
 constructor. No dependency or third-party source was added. Live search usability
 and load performance require separate measurement; successful URL tests alone do
 not establish either.
+
+## Diagnostic-report containment
+
+The first release comparison after correcting URL resolution progressed further
+on modern DuckDuckGo, then stopped the renderer in all three runs: its console
+output exceeded the strict IPC report count. A field-specific diagnostic confirmed
+`runtime console count`; this was not a network failure or a successful page load.
+
+Diagnostic lanes (errors, console, and diagnostics) are now bounded before
+serialization, retaining their prefix and appending an explicit omission/truncation
+notice. Each lane stays within the existing 512-entry limit and a stricter 64 KiB
+aggregate text budget, with UTF-8-safe truncation. The wire decoder remains strict;
+cookies, history, navigation, and other operational updates are not dropped through
+this path. This bounds transported diagnostics, not all script-side allocation.
+Unit tests round-trip oversized reports through the real codec, and an isolated
+renderer test verifies that noisy author output cannot prevent the next page task.
