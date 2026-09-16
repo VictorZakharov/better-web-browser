@@ -64,26 +64,10 @@ if (-not (Test-Path -LiteralPath $chromiumDll -PathType Leaf)) { throw "Chromium
 
 $server = $null
 $baseUrl = $null
-$serverReady = Join-Path $resultDirectory 'fixture-server.txt'
-$serverOutput = Join-Path $resultDirectory 'fixture-server.out'
-$serverError = Join-Path $resultDirectory 'fixture-server.err'
+. (Join-Path $repoRoot 'scripts/alpha-fixture-server.ps1')
 if (-not $Live) {
-    # A forced shutdown cannot run the server's cleanup block, so never trust a
-    # marker left by an earlier run in the same output directory.
-    if (Test-Path -LiteralPath $serverReady) {
-        Remove-Item -LiteralPath $serverReady -Force
-    }
-    $server = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-        (Join-Path $repoRoot 'scripts\serve-alpha-fixtures.ps1'), '-ReadyFile', $serverReady
-    ) -WindowStyle Hidden -RedirectStandardOutput $serverOutput -RedirectStandardError $serverError -PassThru
-    $deadline = (Get-Date).AddSeconds(10)
-    while (-not (Test-Path -LiteralPath $serverReady)) {
-        if ($server.HasExited) { throw 'The alpha fixture server exited during startup.' }
-        if ((Get-Date) -gt $deadline) { throw 'The alpha fixture server did not become ready.' }
-        Start-Sleep -Milliseconds 50
-    }
-    $baseUrl = (Get-Content -LiteralPath $serverReady -Raw).Trim()
+    $server = Start-AlphaFixtureServer -OutputDirectory $resultDirectory
+    $baseUrl = $server.Url
 }
 
 function Get-Median {
@@ -233,10 +217,7 @@ try {
         }
     }
 } finally {
-    if ($null -ne $server -and -not $server.HasExited) {
-        Stop-Process -Id $server.Id -Force
-        $server.WaitForExit()
-    }
+    Stop-AlphaFixtureServer $server
 }
 
 $summary = [Collections.Generic.List[object]]::new()

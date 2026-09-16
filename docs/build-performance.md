@@ -42,6 +42,31 @@ claims still require a canonical release build from the exact source head.
 
 ## GitHub Actions feedback
 
+### September 16 loading reliability
+
+[Main run 35110050582](https://github.com/VictorZakharov/better-web-browser/actions/runs/35110050582)
+failed early-scroll acceptance and one alpha fixture-server startup. The scroll
+report had 0.796 ms p95 frame work but an 84.296 ms maximum input-to-paint delay;
+the strict time-to-smooth result was 2,048 ms against the unchanged 500 ms limit.
+That evidence does not isolate an engine bottleneck: other integration tests were
+launching browser/renderer trees on the same host during the measurement.
+
+`scripts/test-live-runtime.ps1` keeps functional tests parallel and runs the
+unchanged early-scroll acceptance separately afterward. Local verification passed
+80 functional cases (three pre-existing ignored) and the isolated scroll case.
+This removes a measurement contaminant, not evidence that every possible hosted
+timing failure is solved. The performance thresholds are not relaxed.
+
+The alpha launcher now uses the existing PowerShell 7 runtime with structured
+arguments, no console window, asynchronous stdout/stderr capture, and cleanup
+covering failed startup as well as normal completion. The server atomically
+publishes readiness. Startup still has a ten-second deadline; successful startup,
+spaced paths, stderr on failure, and killing a timed-out owned process are tested.
+Failed alpha jobs retain diagnostics for seven days. The original failure did not
+retain its startup output, so its precise cause cannot be asserted retrospectively.
+No PR checks are removed, and the required gate names and fast-PR/full-main split
+remain unchanged.
+
 ### September 15 PR policy (#155)
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain

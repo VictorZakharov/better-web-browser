@@ -77,7 +77,9 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($readyDirectory)) {
         [IO.Directory]::CreateDirectory($readyDirectory) | Out-Null
     }
-    [IO.File]::WriteAllText($readyPath, $prefix, [Text.UTF8Encoding]::new($false))
+    # Publish a complete marker atomically; existence must mean its URL is readable.
+    [IO.File]::WriteAllText($readyPath + '.tmp', $prefix, [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($readyPath + '.tmp', $readyPath)
     Write-Output "Alpha fixture server: $prefix"
 
     function Send-Fixture {
