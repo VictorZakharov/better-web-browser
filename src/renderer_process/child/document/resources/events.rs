@@ -22,7 +22,10 @@ impl DocumentRuntime {
             self.parser_scripts.complete(resource, None);
         }
         self.resource_events.complete(resource, event_type);
-        self.dispatch_cached_resource_events()
+        self.resource_event_pending |= self.dispatch_cached_resource_events()?;
+        // An event may enqueue network/timer work without changing any rendered box.
+        // Wake the scheduler independently of the visual invalidation it produced.
+        Ok(self.pending_async_outcome.render_requested)
     }
 
     pub(in crate::renderer_process::child::document) fn dispatch_cached_resource_events(

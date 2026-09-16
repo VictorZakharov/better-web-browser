@@ -121,7 +121,9 @@ impl DocumentRuntime {
             };
             match installed {
                 Ok(()) => {
-                    retained = true;
+                    // Fetching source alone does not change the rendered document. Its later
+                    // script task and load handlers carry their own DOM invalidation.
+                    retained |= !matches!(event_resource, PageResource::Script { .. });
                     self.resource_budget = self.resource_budget.saturating_sub(size);
                     retained |= self.dispatch_resource_event(&event_resource, "load")?;
                 }
