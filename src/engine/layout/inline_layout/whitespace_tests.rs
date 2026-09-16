@@ -66,3 +66,42 @@ fn pre_wrap_preserves_leading_spaces_and_empty_lines() {
     assert_eq!(result[1].1, 20.0);
     assert_eq!(result.last().unwrap().2, 50.0);
 }
+
+#[test]
+fn forced_line_end_spaces_hang_only_when_they_do_not_fit() {
+    for (text, width, expected_x) in [("aa  ", 80.0, 40.0), ("aa       ", 50.0, 30.0)] {
+        let page = Page::parse(
+            &format!(
+                "<style>body{{margin:0}}main{{width:{width}px;white-space:pre-wrap;text-align:right;font-size:20px}}</style><main>{text}</main>"
+            ),
+            "https://example.test/",
+        );
+        let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        assert_eq!(lines(&output)[0].1, expected_x, "{text:?}");
+    }
+}
+
+#[test]
+fn intrinsic_pre_wrap_width_excludes_trailing_spaces() {
+    let page = Page::parse(
+        "<style>body{margin:0}main{float:left;white-space:pre-wrap;font-size:20px}</style><main>aa bb     </main>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let node = page.dom.elements_named("main").next().unwrap();
+    assert_eq!(output.node_bounds[&node.id()].width, 50.0);
+}
+
+#[test]
+fn collapsed_space_before_pre_wrap_keeps_its_position_and_source_style() {
+    let result = lines(&render(
+        "normal",
+        "aa <span style='white-space:pre-wrap'>bb cc</span> dd",
+        200.0,
+    ));
+    assert_eq!(
+        result.iter().map(|r| r.0.as_str()).collect::<String>(),
+        "aa bb cc dd"
+    );
+    assert_eq!(result.iter().find(|r| r.0 == "bb ").unwrap().1, 30.0);
+}

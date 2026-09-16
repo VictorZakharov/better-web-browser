@@ -35,12 +35,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 );
             }
             NodeData::Element(_) => {
-                // Collapsed whitespace outside a nowrap span retains its parent's
-                // wrapping opportunity; it is not part of the span's nowrap run.
+                // A pending collapsed space keeps its surrounding style when entering
+                // nowrap or preserved text; do not lose it or carry it past the span.
                 if pending_space.is_some()
-                    && style.white_space == WhiteSpace::NoWrap
+                    && (style.white_space == WhiteSpace::NoWrap
+                        || style.white_space.preserves_spaces())
                     && let Some(parent) = Node::composed_parent(node)
-                    && self.styles.get(&parent).white_space == WhiteSpace::Normal
+                    && !self.styles.get(&parent).white_space.preserves_spaces()
                 {
                     output.push(pending_space_atom(
                         pending_space,
