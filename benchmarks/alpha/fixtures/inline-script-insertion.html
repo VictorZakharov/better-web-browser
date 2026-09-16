@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Inline script insertion</title>
+<style>body{font:16px sans-serif;margin:24px}pre{white-space:pre-wrap;background:#e5f5ea;padding:16px}</style>
+<h1>Dynamic inline script execution</h1><pre id=result>Running</pre>
+<script id=outer>
+window.facts=[];
+window.makeScript=(id,code)=>{const s=document.createElement('script');s.id=id;s.text=code;return s};
+const nested=makeScript('nested',`
+  facts.push(['nested',document.currentScript.id]);
+  document.body.append(makeScript('inner',"facts.push(['inner',document.currentScript.id])"));
+  facts.push(['restored',document.currentScript.id]);
+  Promise.resolve().then(()=>facts.push(['job',document.currentScript?.id||null]));
+`);
+document.body.append(nested);
+facts.push(['returned',document.currentScript.id]);
+nested.remove();document.body.append(nested);
+const empty=makeScript('filled','');document.body.append(empty);
+empty.text="facts.push(['filled',document.currentScript.id])";
+empty.text="facts.push(['incorrect rerun'])";
+const inert=document.createElement('div');
+inert.innerHTML='<script>facts.push(["incorrect innerHTML"]);<\/script>';
+document.body.append(inert);
+const fragment=document.createDocumentFragment();
+fragment.append(makeScript('first',"facts.push(['atomic',!!document.getElementById('second')]);document.getElementById('second').remove()"),
+  makeScript('second',"facts.push(['incorrect removed sibling'])"));
+document.body.append(fragment);
+const old=document.createElement('p');old.id='old';document.body.append(old);
+document.body.replaceChild(makeScript('replacement',"facts.push(['replacement',document.getElementById('old')===null])"),old);
+const childText=makeScript('child-text','');
+childText.append('facts.push(["child text"]);',document.createComment('throw Error("comment")'));
+document.body.append(childText);
+const shadowHost=document.createElement('div');document.body.append(shadowHost);
+shadowHost.attachShadow({mode:'open'}).append(makeScript('shadow','facts.push(["shadow",document.currentScript===null])'));
+addEventListener('load',()=>{
+  result.setAttribute('data-facts',JSON.stringify(facts));
+  result.textContent=facts.map(f=>JSON.stringify(f)).join('\n');
+  document.title=JSON.stringify(facts);
+});
+</script>

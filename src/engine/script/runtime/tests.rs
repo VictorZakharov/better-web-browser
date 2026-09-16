@@ -8,6 +8,7 @@ use std::time::Duration;
 mod document_lifecycle;
 mod dynamic_readiness;
 mod idle;
+mod inserted_scripts;
 mod scheduling;
 mod storage_sync;
 mod storage_values;

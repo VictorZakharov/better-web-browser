@@ -54,6 +54,8 @@ pub(super) struct HostState {
     pub(super) storage_updates: Vec<StorageWrite>,
     pub(super) storage_event: Option<super::runtime::document_lifecycle::StorageEventTask>,
     pub(super) executed: usize,
+    // Shared with the embedder: nested synchronous evaluation cannot borrow ScriptRuntime.
+    pub(super) script_bytes: Rc<std::cell::Cell<usize>>,
     pub(super) diagnostics: Vec<String>,
     pub(super) host_call_profile: super::host_profiling::HostCallProfile,
     pub(super) parser_write_session: Option<super::parser_writes::ParserWriteSession>,
@@ -135,6 +137,7 @@ impl HostState {
             storage_updates: Vec::new(),
             storage_event: None,
             executed: 0,
+            script_bytes: Default::default(),
             diagnostics: Vec::new(),
             host_call_profile: super::host_profiling::HostCallProfile::default(),
             parser_write_session: None,

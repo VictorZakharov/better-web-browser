@@ -22,6 +22,8 @@ mod flex_axes;
 mod fullscreen;
 #[path = "live_runtime/inline_handlers.rs"]
 mod inline_handlers;
+#[path = "live_runtime/inserted_scripts.rs"]
+mod inserted_scripts;
 #[path = "live_runtime/media_controls.rs"]
 mod media_controls;
 #[path = "live_runtime/navigation.rs"]
@@ -48,6 +50,8 @@ mod streaming_navigation;
 mod streaming_network;
 #[path = "live_runtime/stylesheets.rs"]
 mod stylesheets;
+#[path = "live_runtime/table_scrolling.rs"]
+mod table_scrolling;
 #[path = "live_runtime/window.rs"]
 mod window;
 #[path = "live_runtime/youtube.rs"]

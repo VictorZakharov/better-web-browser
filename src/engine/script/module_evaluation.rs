@@ -9,7 +9,7 @@ pub(super) fn evaluate_module(
     script: &ScriptInput,
     dispatch_load: bool,
     source_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
     if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
         outcome.errors.push(format!(
@@ -61,7 +61,7 @@ pub(super) fn evaluate_module(
                     continue;
                 }
             };
-            if total_bytes.saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES {
+            if total_bytes.get().saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES {
                 result = Err(format!(
                     "{url}: module graph exceeds the {} MiB JavaScript limit",
                     MAX_PAGE_SCRIPT_BYTES / 1024 / 1024
@@ -69,7 +69,7 @@ pub(super) fn evaluate_module(
                 continue;
             }
             if loader.add_source(url, source.clone()) {
-                *total_bytes += source.len();
+                total_bytes.set(total_bytes.get() + source.len());
             }
             loaded_any = true;
         }

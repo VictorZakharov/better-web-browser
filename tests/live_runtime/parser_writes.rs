@@ -3,11 +3,15 @@ use super::support::*;
 use std::{fs, net::TcpListener, thread, time::Duration};
 
 pub(super) fn run(source: &'static str) -> serde_json::Value {
+    run_with_args(source, &[])
+}
+
+pub(super) fn run_with_args(source: &'static str, args: &[&str]) -> serde_json::Value {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/writes", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_fixtures(listener, 1, |_| source));
     let artifacts = TestArtifacts::new();
-    let mut child = hidden_benchmark(&url, &artifacts, 900);
+    let mut child = hidden_benchmark_with_args(&url, &artifacts, 900, args);
     assert!(wait_for_child(&mut child, Duration::from_secs(20)).success());
     server.join().unwrap().unwrap();
     let report: serde_json::Value =

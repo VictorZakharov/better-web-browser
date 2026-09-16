@@ -11,6 +11,8 @@
     "expectations": "forbidden"
   },
   "support": [
+    "html/semantics/scripting-1/the-script-element/execution-timing/testlib/testlib.js",
+    "html/semantics/scripting-1/the-script-element/execution-timing/scripts/include-1.js",
     "css/cssom/support/import-rule.css",
     "css/cssom/support/import-red.css",
     "custom-elements/resources/custom-elements-helpers.js",
@@ -45,6 +47,91 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/089.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/090.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/124.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/127.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/128.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/129.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "dom/nodes/MutationObserver-document.html",
+      "area": "DOM and mutation",
+      "expected": "pass"
+    },
+    {
+      "path": "css/cssom-view/table-scroll-props.html",
+      "area": "CSS layout",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/013.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/016.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/037.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/048.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/056.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/057.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/058.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/059.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/execution-timing/060.html",
+      "area": "Dynamic inline classic scripts",
+      "expected": "pass"
+    },
     { "path": "css/cssom/preferred-stylesheet-order.html", "area": "CSSOM stylesheet sets", "expected": "pass" },
     { "path": "css/cssom/preferred-stylesheet-reversed-order.html", "area": "CSSOM stylesheet sets", "expected": "pass" },
     { "path": "css/cssom/cssimportrule-sheet-identity.html", "area": "CSSOM imported sheets", "expected": "pass" },

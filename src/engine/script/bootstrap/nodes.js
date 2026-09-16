@@ -32,7 +32,7 @@
             nextSibling: nodes[nodes.length - 1].nextSibling
         });
     };
-    const finishInsertion = records => withCustomElementReactions(() => {
+    const finishInsertion = (parent, records) => withCustomElementReactions(() => {
         for (const { node, wasConnected, oldDocument } of records) {
             if (wasConnected) disconnectCustomElementTree(node);
             if (oldDocument !== node.ownerDocument)
@@ -41,6 +41,7 @@
             // DOM insertion steps only try upgrading nodes that are connected. Inert template
             // fragments may be adopted into a detached cache without running constructors.
         }
+        insertedScriptSteps(parent, records.map(record => record.node));
     });
     const convertNodes = items => {
         const nodes = items.map(item =>
@@ -73,6 +74,7 @@
         }
         if (wasConnected) refreshWindowNamedProperties(removedChildren.concat(addedChildren));
         scheduleSlotChangeCheck();
+        scriptChildrenChanged(target);
     };
 
     class Node extends EventTarget {
@@ -120,6 +122,7 @@
             if (this.isConnected) for (const child of removedChildren) disconnectCustomElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(removedChildren);
             scheduleSlotChangeCheck();
+            scriptChildrenChanged(characterData ? this.parentNode : this);
         }
         get isConnected() {
             return this.getRootNode({ composed: true })?.nodeType === 9;
@@ -133,9 +136,9 @@
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
-            if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
             if (inserted) scheduleSlotChangeCheck();
+            if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }
         insertBefore(child, reference) {
@@ -149,34 +152,36 @@
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
-            if (inserted) finishInsertion(records);
             if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
             if (inserted) scheduleSlotChangeCheck();
+            if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }
         replaceChild(child, replaced) {
-            if (!(child instanceof Node)) throw new TypeError('replaceChild requires a Node');
-            if (!(replaced instanceof Node)) throw new TypeError('replaced child must be a Node');
-            if (replaced.parentNode !== this)
-                throw new DOMException('The node to replace is not a child', 'NotFoundError');
-            if (child === replaced) return replaced;
-            ensurePreInsertionValidity(child, this, replaced, [replaced]);
-            const addedNodes = child.nodeType === Node.DOCUMENT_FRAGMENT_NODE
-                ? [...child.childNodes] : [child];
-            const previousSibling = replaced.previousSibling;
-            const nextSibling = replaced.nextSibling;
-            withSuppressedMutationRecords(this, () => {
-                if (this.insertBefore(child, replaced) === null)
-                    throw new DOMException('The replacement cannot be inserted here', 'HierarchyRequestError');
-                this.removeChild(replaced);
+            return withScriptMutationBatch(() => {
+                if (!(child instanceof Node)) throw new TypeError('replaceChild requires a Node');
+                if (!(replaced instanceof Node)) throw new TypeError('replaced child must be a Node');
+                if (replaced.parentNode !== this)
+                    throw new DOMException('The node to replace is not a child', 'NotFoundError');
+                if (child === replaced) return replaced;
+                ensurePreInsertionValidity(child, this, replaced, [replaced]);
+                const addedNodes = child.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+                    ? [...child.childNodes] : [child];
+                const previousSibling = replaced.previousSibling;
+                const nextSibling = replaced.nextSibling;
+                withSuppressedMutationRecords(this, () => {
+                    if (this.insertBefore(child, replaced) === null)
+                        throw new DOMException('The replacement cannot be inserted here', 'HierarchyRequestError');
+                    this.removeChild(replaced);
+                });
+                queueMutationRecord(this, 'childList', {
+                    addedNodes,
+                    removedNodes: [replaced],
+                    previousSibling,
+                    nextSibling
+                });
+                return replaced;
             });
-            queueMutationRecord(this, 'childList', {
-                addedNodes,
-                removedNodes: [replaced],
-                previousSibling,
-                nextSibling
-            });
-            return replaced;
         }
         removeChild(child) {
             const namedAccessChanged = this.isConnected;
@@ -191,6 +196,7 @@
             if (wasConnected) disconnectCustomElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(child);
             scheduleSlotChangeCheck();
+            scriptChildrenChanged(this);
             return child;
         }
         contains(other) {

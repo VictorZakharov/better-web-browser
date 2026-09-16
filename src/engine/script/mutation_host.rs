@@ -3,6 +3,7 @@
 use super::binding_helpers::{append_html_fragment, argument_id, argument_string, node_label};
 use super::*;
 use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
+mod scripts;
 
 pub(super) fn mutation_host_call(
     operation: &str,
@@ -16,6 +17,7 @@ pub(super) fn mutation_host_call(
         return Ok(Some(value));
     }
     let value = match operation {
+        "prepareInsertedScript" => scripts::prepare(args, state)?,
         "appendChild" => append_child(args, state),
         "insertBefore" => insert_before(args, state),
         "removeChild" => remove_child(args, state),
@@ -97,7 +99,6 @@ fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
                 node_label(child),
                 node_label(parent)
             ));
-            state.queue_connected_scripts(child);
         }
     }
     JsValue::from(if changed {
@@ -141,9 +142,6 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
             state.invalidate_previous_parent(previous_parent, child, kind);
         }
         state.diagnose("insert node before sibling".into());
-        if let Some(child) = child.as_ref() {
-            state.queue_connected_scripts(child);
-        }
     }
     JsValue::from(if changed {
         child.map(|node| state.id_for(&node)).unwrap_or_default()

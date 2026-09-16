@@ -8,6 +8,8 @@
         }
         get defer() { return this.hasAttribute('defer'); }
         set defer(value) { this.toggleAttribute('defer', !!value); }
+        get noModule() { return this.hasAttribute('nomodule'); }
+        set noModule(value) { this.toggleAttribute('nomodule', !!value); }
         get text() { return this.textContent; }
         set text(value) { this.textContent = String(value); }
     }

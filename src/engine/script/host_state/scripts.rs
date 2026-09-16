@@ -2,20 +2,6 @@
 use super::*;
 
 impl HostState {
-    pub(in crate::engine::script) fn queue_connected_scripts(&mut self, root: &NodeRef) {
-        if !self.is_connected(root) {
-            return;
-        }
-        let mut stack = vec![root.clone()];
-        while let Some(node) = stack.pop() {
-            self.queue_dynamic_script(&node);
-            stack.extend(node.children.borrow().iter().rev().cloned());
-            if let Some(shadow) = node.shadow_root() {
-                stack.push(shadow);
-            }
-        }
-    }
-
     pub(in crate::engine::script) fn queue_dynamic_script(&mut self, node: &NodeRef) {
         if node.tag_name() != Some("script")
             || node.namespace_uri() != Some("http://www.w3.org/1999/xhtml")

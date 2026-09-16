@@ -17,14 +17,14 @@ fn preparing_graphs_never_evaluates_and_accounts_each_source_once() {
     runtime
         .install_module_dependency("https://example.test/dep.js", "export const x=1;")
         .unwrap();
-    let charged = runtime.total_script_bytes;
+    let charged = runtime.total_script_bytes.get();
     assert!(
         runtime
             .prepare_module_graph(url, source)
             .unwrap()
             .is_empty()
     );
-    assert_eq!(runtime.total_script_bytes, charged);
+    assert_eq!(runtime.total_script_bytes.get(), charged);
     assert_ne!(page.dom.title(), "executed");
     let input = ScriptInput {
         node: page.scripts[0].node.clone(),
@@ -40,7 +40,7 @@ fn preparing_graphs_never_evaluates_and_accounts_each_source_once() {
             .errors
             .is_empty()
     );
-    assert_eq!(runtime.total_script_bytes, charged);
+    assert_eq!(runtime.total_script_bytes.get(), charged);
     assert_eq!(page.dom.title(), "executed");
 }
 
@@ -48,7 +48,7 @@ fn preparing_graphs_never_evaluates_and_accounts_each_source_once() {
 fn compilation_cannot_bypass_the_total_script_budget() {
     let document = crate::engine::dom::parse_with_scripting("<p>unchanged</p>", true);
     let mut runtime = ScriptRuntime::new(document.document, "https://example.test/");
-    runtime.total_script_bytes = MAX_PAGE_SCRIPT_BYTES - 4;
+    runtime.total_script_bytes.set(MAX_PAGE_SCRIPT_BYTES - 4);
     assert!(
         runtime
             .prepare_module_graph("https://example.test/large.js", "void 0;")

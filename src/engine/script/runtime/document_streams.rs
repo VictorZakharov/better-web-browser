@@ -16,7 +16,7 @@ impl ScriptRuntime {
     pub(crate) fn set_stream_preparation(&mut self, prepare: PrepareWrittenScript) {
         let mut host = self.host.borrow_mut();
         host.document_streams.remaining_script_bytes =
-            Some(MAX_PAGE_SCRIPT_BYTES.saturating_sub(self.total_script_bytes));
+            Some(MAX_PAGE_SCRIPT_BYTES.saturating_sub(self.total_script_bytes.get()));
         let id = host.document.id();
         if let Some(session) = host.document_streams.parsers.get_mut(&id) {
             session.prepare = prepare.clone();
@@ -31,9 +31,10 @@ impl ScriptRuntime {
         let session = host.document_streams.parsers.get_mut(&id)?;
         let scripts = std::mem::take(&mut session.prepared);
         session.initial_count += scripts.len();
-        self.total_script_bytes += std::mem::take(&mut session.script_bytes);
+        self.total_script_bytes
+            .set(self.total_script_bytes.get() + std::mem::take(&mut session.script_bytes));
         session.remaining_script_bytes =
-            MAX_PAGE_SCRIPT_BYTES.saturating_sub(self.total_script_bytes);
+            MAX_PAGE_SCRIPT_BYTES.saturating_sub(self.total_script_bytes.get());
         Some(StreamUpdate {
             replaced,
             parsing: !session.parser.ended(),
