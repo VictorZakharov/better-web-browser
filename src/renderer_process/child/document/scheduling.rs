@@ -238,7 +238,7 @@ impl DocumentRuntime {
         let layout_time = layout_started.elapsed();
         if needs_present && !self.diagnostic_selectors.is_empty() {
             outcome.diagnostics.push(format!(
-                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {}",
+                "render checkpoint: style/resources {:.3} ms (elements {:.3}, pseudos {:.3}), layout {:.3} ms; styles {}/{} changed, full rebuild {}, dirty roots {} {:?}, removed styles {}, local removals {}",
                 style_time.as_secs_f64() * 1000.0,
                 style.element_style_time.as_secs_f64() * 1000.0,
                 style.pseudo_style_time.as_secs_f64() * 1000.0,
@@ -247,6 +247,9 @@ impl DocumentRuntime {
                 style.recomputed_styles,
                 style.full_rebuild,
                 outcome.invalidation.roots.len(),
+                outcome.invalidation.roots.iter().take(8).map(|id| self.page.dom.find_node(*id).and_then(|n| n.tag_name().map(str::to_owned))).collect::<Vec<_>>(),
+                style.removed_styles,
+                outcome.invalidation.removals_are_local,
             ));
         }
         let load = self.text.borrow_mut().finish_load_report(PageLoadReport {

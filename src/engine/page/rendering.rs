@@ -11,7 +11,7 @@ impl Page {
     ) -> bool {
         if stats.layout_changed
             || stats.full_rebuild
-            || stats.removed_styles != 0
+            || (stats.removed_styles != 0 && !invalidation.removals_are_local)
             || invalidation.roots.is_empty()
         {
             return false;
@@ -151,5 +151,33 @@ mod tests {
             ..RenderInvalidation::default()
         };
         assert!(!page.invalidation_is_nonrendered(&invalidation, &StyleRefreshStats::default()));
+    }
+
+    #[test]
+    fn inspected_hidden_removals_reuse_geometry_but_reveals_do_not() {
+        let mut page = Page::parse_scripted(
+            "<style>section:empty{display:block}</style><section style='display:none'><b>gone</b><i>remaining</i></section>",
+            "https://example.test/",
+        );
+        page.refresh_resources(800.0);
+        let root = page.dom.elements_named("section").next().unwrap();
+        let child = page.dom.elements_named("b").next().unwrap();
+        Node::remove_from_parent(&child);
+        let mut invalidation = RenderInvalidation {
+            roots: vec![root.id()],
+            removed_nodes: vec![child.id()],
+            removals_are_local: true,
+            impact: MutationKind::ChildList.impact(),
+            ..RenderInvalidation::default()
+        };
+        let stats = page.refresh_resources_after_invalidation(800.0, &invalidation);
+        assert!(stats.removed_styles > 0);
+        assert!(page.invalidation_is_nonrendered(&invalidation, &stats));
+        invalidation.removals_are_local = false;
+        assert!(!page.invalidation_is_nonrendered(&invalidation, &stats));
+        invalidation.removals_are_local = true;
+        root.set_attr("style", "display:block");
+        let stats = page.refresh_resources_after_invalidation(800.0, &invalidation);
+        assert!(!page.invalidation_is_nonrendered(&invalidation, &stats));
     }
 }

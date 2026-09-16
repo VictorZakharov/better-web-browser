@@ -106,6 +106,8 @@ pub struct RenderInvalidation {
     pub mutation_count: usize,
     pub rebuild_style_rules: bool,
     pub removed_nodes: Vec<NodeId>,
+    /// True only when removed subtrees were inspected for nonlocal rendering dependencies.
+    pub removals_are_local: bool,
 }
 
 impl RenderInvalidation {
@@ -116,6 +118,7 @@ impl RenderInvalidation {
             mutation_count: 1,
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
+            removals_are_local: false,
         }
     }
 
@@ -126,6 +129,7 @@ impl RenderInvalidation {
             mutation_count: 1,
             rebuild_style_rules: true,
             removed_nodes: Vec::new(),
+            removals_are_local: false,
         }
     }
 
@@ -154,6 +158,10 @@ impl RenderInvalidation {
         self.impact = self.impact.union(other.impact);
         self.mutation_count = self.mutation_count.saturating_add(other.mutation_count);
         self.rebuild_style_rules |= other.rebuild_style_rules;
+        if !other.removed_nodes.is_empty() {
+            self.removals_are_local = (self.removed_nodes.is_empty() || self.removals_are_local)
+                && other.removals_are_local;
+        }
         self.removed_nodes.append(&mut other.removed_nodes);
         self.removed_nodes.sort_unstable();
         self.removed_nodes.dedup();
@@ -194,6 +202,7 @@ mod tests {
             mutation_count: 1,
             rebuild_style_rules: false,
             removed_nodes: vec![left],
+            removals_are_local: true,
         };
         invalidation.merge_conservatively(
             RenderInvalidation {
@@ -202,6 +211,7 @@ mod tests {
                 mutation_count: 2,
                 rebuild_style_rules: false,
                 removed_nodes: vec![left, right],
+                removals_are_local: false,
             },
             document,
         );
@@ -211,5 +221,36 @@ mod tests {
         assert!(invalidation.impact.affects_paint());
         assert_eq!(invalidation.mutation_count, 3);
         assert_eq!(invalidation.removed_nodes, vec![left, right]);
+        assert!(!invalidation.removals_are_local);
+    }
+
+    #[test]
+    fn local_removal_evidence_survives_additions_but_not_unknown_removals() {
+        let document = NodeId::from_wire((1_u128 << 64) | 1).unwrap();
+        let child = NodeId::from_wire((1_u128 << 64) | 2).unwrap();
+        let addition = RenderInvalidation {
+            roots: vec![document],
+            ..RenderInvalidation::default()
+        };
+        let local = RenderInvalidation {
+            roots: vec![document],
+            removed_nodes: vec![child],
+            removals_are_local: true,
+            ..RenderInvalidation::default()
+        };
+        let mut combined = addition.clone();
+        combined.merge_conservatively(local, document);
+        assert!(combined.removals_are_local);
+        combined.merge_conservatively(addition, document);
+        assert!(combined.removals_are_local);
+        combined.merge_conservatively(
+            RenderInvalidation {
+                roots: vec![document],
+                removed_nodes: vec![child],
+                ..RenderInvalidation::default()
+            },
+            document,
+        );
+        assert!(!combined.removals_are_local);
     }
 }

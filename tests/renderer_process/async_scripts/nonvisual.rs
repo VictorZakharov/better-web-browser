@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn removing_completed_head_script_keeps_geometry_and_updates_metadata() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(
+        "<!doctype html><head><title>before</title><script id=quiet async src=/quiet.js></script></head><body><p>unchanged article</p>",
+    );
+    driver.until_text("unchanged article");
+    driver.advance();
+    driver.until_idle();
+    driver.respond(
+        "quiet.js",
+        "document.querySelector('#quiet').remove(); document.querySelector('title').firstChild.data='after';",
+        200,
+    );
+    let after = driver.until_text("unchanged article");
+    assert_eq!(after.title, "after");
+    assert_eq!(
+        after.load.text_measure_count, 0,
+        "hidden removal rebuilt article geometry"
+    );
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn downloaded_script_source_does_not_invalidate_layout_but_script_mutations_do() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut driver = Driver::new(
