@@ -123,7 +123,8 @@ fn detached_urls_are_snapshots_and_relative_links_follow_their_document_base() {
       first.location = 'https://other.test/';
       if (first.location !== null || document.URL !== second.URL) throw Error('inactive location');
       for (const newline of ['\n', '\r', '\r\n']) {
-        const xml = parser.parseFromString('<root xmlns:p="urn:p">'+newline+'<p:child xmlns:p="urn:p"/></root>', 'text/xml');
+        const xml = parser.parseFromString('\ufeff<root xmlns:xml="http://www.w3.org/XML/1998/namespace" xmlns:p="urn:p">'+newline+'<p:child xmlns:p="urn:p"/></root>', 'text/xml');
+        if (xml.documentElement.getAttribute('xmlns:xml') !== 'http://www.w3.org/XML/1998/namespace') throw Error('BOM namespace');
         if (xml.documentElement.firstElementChild.getAttribute('xmlns:p') !== 'urn:p') throw Error('newline namespace');
       }
     "#,

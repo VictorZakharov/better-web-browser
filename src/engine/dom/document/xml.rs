@@ -21,6 +21,9 @@ pub(crate) fn error_document(error: &str) -> NodeRef {
 }
 
 pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
+    // DOMParser receives an already-decoded string. Force UTF-8, but consume its
+    // optional leading BOM before the reader's encoding override disables sniffing.
+    let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let mut reader = ParserConfig::new()
         .ignore_comments(false)
         .allow_multiple_root_elements(false)
@@ -32,7 +35,7 @@ pub(crate) fn parse(input: &str) -> Result<NodeRef, String> {
         .max_data_length(MAX_HTML_INPUT_BYTES)
         .create_reader(input.as_bytes());
     let document = Node::create_document();
-    let declarations = namespaces::Declarations::new(input);
+    let mut declarations = namespaces::Declarations::new(input);
     let mut stack = vec![document.clone()];
     let mut namespaces = vec![::xml::namespace::Namespace::empty()];
     let mut count = 1usize;

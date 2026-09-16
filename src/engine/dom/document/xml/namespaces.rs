@@ -6,6 +6,7 @@ pub(super) struct Declarations<'a> {
     input: &'a str,
     lines: Vec<usize>,
     tags: std::collections::BTreeMap<usize, (usize, Vec<String>)>,
+    cursor: Option<(TextPosition, usize)>,
 }
 
 impl<'a> Declarations<'a> {
@@ -48,17 +49,53 @@ impl<'a> Declarations<'a> {
                 _ => {}
             }
         }
-        Self { input, lines, tags }
+        Self {
+            input,
+            lines,
+            tags,
+            cursor: None,
+        }
     }
 
-    pub(super) fn at(&self, position: TextPosition) -> Option<Vec<String>> {
+    pub(super) fn at(&mut self, position: TextPosition) -> Option<Vec<String>> {
         let line = *self.lines.get(position.row as usize)?;
-        let column = self.input[line..]
+        // Reader positions advance through the source. Continue from the previous lookup
+        // instead of rescanning a potentially huge minified line for every start element.
+        let (start, column) = self
+            .cursor
+            .filter(|(previous, _)| {
+                previous.row == position.row && previous.column <= position.column
+            })
+            .map_or((line, position.column), |(previous, offset)| {
+                (offset, position.column - previous.column)
+            });
+        let column = self.input[start..]
             .char_indices()
-            .nth(position.column as usize)
-            .map_or(self.input.len() - line, |(offset, _)| offset);
-        let offset = line + column;
+            .nth(column as usize)
+            .map_or(self.input.len() - start, |(offset, _)| offset);
+        let offset = start + column;
+        self.cursor = Some((position, offset));
         let (_, (end, declarations)) = self.tags.range(..=offset).next_back()?;
         (offset <= *end).then(|| declarations.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_positions_handle_unicode_repeated_lookups_and_all_xml_newlines() {
+        for newline in ["\n", "\r", "\r\n"] {
+            let source = format!("<r>é<a xmlns:p='urn:p'/><b/>{newline}<c xmlns:q='urn:q'/></r>");
+            let mut declarations = Declarations::new(&source);
+            let position = |row, column| TextPosition { row, column };
+            assert_eq!(declarations.at(position(0, 4)), Some(vec!["p".into()]));
+            assert_eq!(declarations.at(position(0, 4)), Some(vec!["p".into()]));
+            let next_column = source[..source.find("<b/>").unwrap()].chars().count() as u64;
+            assert_eq!(declarations.at(position(0, next_column)), Some(vec![]));
+            assert_eq!(declarations.at(position(1, 0)), Some(vec!["q".into()]));
+            assert_eq!(declarations.at(position(0, 4)), Some(vec!["p".into()]));
+        }
     }
 }
