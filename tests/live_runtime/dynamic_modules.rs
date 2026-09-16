@@ -74,7 +74,11 @@ fn dynamic_import_idle_wakeup_redirect_base_and_failed_fetch_retry() {
                 if retries.fetch_add(1, Ordering::SeqCst) == 0 {
                     FixtureResponse::html("not found").status(404, "Not Found")
                 } else {
-                    FixtureResponse::script("export const ok=true", Duration::ZERO)
+                    FixtureResponse::resource(
+                        "\u{feff}export const ok='🙂'",
+                        "text/javascript; charset=windows-1252",
+                        Duration::ZERO,
+                    )
                 }
             } else {
                 FixtureResponse::html(
@@ -82,7 +86,7 @@ fn dynamic_import_idle_wakeup_redirect_base_and_failed_fetch_retry() {
                   import('./redirect.js').then(async m=>{
                     if(m.answer!==42 || !m.base.endsWith('/assets/main.js') || (await m.later()).answer!==42)throw Error('base');
                     await import('./retry.js').then(()=>{throw Error('unexpected success')}, e=>{if(!(e instanceof TypeError))throw e});
-                    if(!(await import('./retry.js')).ok)throw Error('retry');
+                    if((await import('./retry.js')).ok!=='🙂')throw Error('retry encoding');
                     document.title='Redirect and retry PASS';
                   }).catch(e=>document.title='FAIL '+e);
                 </script>"#,

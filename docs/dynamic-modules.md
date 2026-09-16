@@ -18,6 +18,7 @@ claim of complete module or HTML loading conformance.
 - Import requests use CORS, JavaScript MIME validation, and the referring script's
   module credentials/referrer-policy options. The no-CORS transport credentials
   of ordinary classic scripts do not become cross-origin module credentials.
+  Dynamic module bodies decode as UTF-8, ignoring legacy transport charset labels.
 - Dynamic graph redirects retain the requested URL as module identity and use the
   final response URL for relative dependencies and `import.meta.url`. Inserted
   inline modules freeze the document base URL at preparation, while retaining
