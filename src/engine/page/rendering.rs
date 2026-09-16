@@ -27,7 +27,7 @@ impl Page {
             // Unknown roots and top-layer descendants always retain the regular layout path.
             if Node::shadow_including_descendants(&root).any(|node| {
                 node.is_fullscreen()
-                    || node.tag_name() == Some("base")
+                    || matches!(node.tag_name(), Some("base" | "slot"))
                     || node
                         .namespace_uri()
                         .is_some_and(|namespace| namespace != "http://www.w3.org/1999/xhtml")
@@ -122,6 +122,7 @@ mod tests {
         for contents in [
             "<svg><path d='M0 0L1 1'/></svg>",
             "<base href='https://other.test/'>",
+            "<slot>fallback</slot>",
         ] {
             let mut page = Page::parse_scripted(
                 "<section style='display:none'></section><aside>visible</aside>",

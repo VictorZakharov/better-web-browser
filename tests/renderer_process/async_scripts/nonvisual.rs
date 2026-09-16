@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn removing_hidden_slot_rebuilds_for_content_redistributed_to_a_visible_slot() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><head><script async src=/move.js></script></head>
+        <body><div id=host><p>slotted visible</p></div><p>ready</p><script>
+        const shadow = document.querySelector('#host').attachShadow({mode:'open'});
+        shadow.innerHTML = '<section style="display:none"><slot id="hidden"></slot></section><slot></slot>';
+        window.hiddenSlot = shadow.querySelector('#hidden');
+        </script>"#,
+    );
+    let before = driver.until_text("ready");
+    assert!(!painted_text(&before).contains("slotted visible"));
+    driver.respond("move.js", "hiddenSlot.remove()", 200);
+    driver.until_text("slotted visible");
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn removing_completed_head_script_keeps_geometry_and_updates_metadata() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let mut driver = Driver::new(

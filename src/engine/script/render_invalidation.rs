@@ -58,10 +58,10 @@ impl PendingInvalidation {
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
         for node in Node::shadow_including_descendants(root) {
             self.removed_nodes.insert(node.id());
-            // SVG definitions, base URLs, and top-layer content can affect boxes outside
+            // SVG definitions, slot redistribution, base URLs, and top-layer content affect boxes outside
             // an otherwise hidden subtree. Retain this evidence before losing connectivity.
             self.removed_global_dependency |= node.is_fullscreen()
-                || node.tag_name() == Some("base")
+                || matches!(node.tag_name(), Some("base" | "slot"))
                 || node
                     .namespace_uri()
                     .is_some_and(|ns| ns != "http://www.w3.org/1999/xhtml");
@@ -172,6 +172,7 @@ mod tests {
             ("<section><script></script></section>", true),
             ("<section><svg><defs/></svg></section>", false),
             ("<section><base href='/other/'></section>", false),
+            ("<section><slot></slot></section>", false),
         ] {
             let dom = dom::parse(source);
             let root = dom.elements_named("section").next().unwrap();
