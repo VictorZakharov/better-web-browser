@@ -2,6 +2,7 @@
 // prefix and subsequent network/worker extensions own independent IIFEs. V8 compiles the result.
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/dom_exception.js"),
+    include_str!("bootstrap/web_url.js"),
     include_str!("bootstrap/core.js"),
     include_str!("bootstrap/collections.js"),
     include_str!("bootstrap/events.js"),
@@ -78,4 +79,5 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/performance_observer.js"),
     include_str!("bootstrap/channel_messaging.js"),
     include_str!("bootstrap/workers.js"),
+    include_str!("bootstrap/url_cleanup.js"),
 );

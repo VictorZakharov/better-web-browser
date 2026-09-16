@@ -11,6 +11,10 @@
     "expectations": "forbidden"
   },
   "support": [
+    "common/subset-tests-by-key.js",
+    "url/resources/urltestdata.json",
+    "url/resources/urltestdata-javascript-only.json",
+    "url/resources/setters_tests.json",
     "intersection-observer/resources/intersection-observer-test-utils.js",
     "html/semantics/scripting-1/the-script-element/module/imports-a.js",
     "html/semantics/scripting-1/the-script-element/module/syntaxerror.js",
@@ -53,6 +57,17 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {"area":"URL","expected":"pass","path":"url/url-setters-stripping.any.js"},
+    {"area":"URL","expected":"pass","path":"url/url-statics-canparse.any.js"},
+    {"area":"URL","expected":"pass","path":"url/url-statics-parse.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlencoded-parser.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-constructor.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-delete.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-foreach.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-getall.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-size.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-sort.any.js"},
+    {"area":"URL","expected":"pass","path":"url/urlsearchparams-stringifier.any.js"},
     {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-html.html"},
     {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-xml.html"},
     {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-encoding.html"},

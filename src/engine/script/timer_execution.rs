@@ -37,7 +37,7 @@ pub(super) fn settle_startup_timer_slice(
         dynamic_script_loader,
         total_bytes,
         TimerSlice {
-            advance: STARTUP_TIMER_SLICE,
+            advance: types::STARTUP_TIMER_SLICE,
             max_callbacks: MAX_TIMER_CALLBACKS_PER_SLICE,
         },
         None,

@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "suite": "URL parser discovery (known failures, not the curated gate)",
+  "upstream": {
+    "repository": "https://github.com/web-platform-tests/wpt.git",
+    "revision": "f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476",
+    "license": "BSD-3-Clause"
+  },
+  "policy": { "minimum_subtests": 1, "expectations": "forbidden" },
+  "support": [
+    "common/subset-tests-by-key.js",
+    "url/resources/urltestdata.json",
+    "url/resources/urltestdata-javascript-only.json",
+    "url/resources/setters_tests.json"
+  ],
+  "tests": [
+    {"area":"URL parser discovery","expected":"pass","path":"url/url-constructor.any.js"},
+    {"area":"URL parser discovery","expected":"pass","path":"url/url-origin.any.js"},
+    {"area":"URL parser discovery","expected":"pass","path":"url/url-setters.any.js"}
+  ]
+}

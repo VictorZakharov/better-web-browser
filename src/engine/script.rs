@@ -48,6 +48,7 @@ mod task_mutation_profile;
 mod text_encoding_host;
 mod timer_execution;
 mod types;
+mod url_host;
 mod user_events;
 mod viewport_host;
 mod worker_bootstrap;
@@ -71,7 +72,6 @@ pub use types::{
     ScriptHistoryAction, ScriptInput, ScriptKind, ScriptMediaAction, ScriptMediaCommand,
     ScriptOutcome, UserInputEvent, UserInputModifiers, UserInputResult,
 };
-use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerRuntime, WorkerRuntimeOutcome};
 pub use workers::ScriptWorkerAction;

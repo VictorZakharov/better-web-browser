@@ -66,7 +66,7 @@
         ['VALIDATION_ERR', 16],
         ...Object.values(legacyCodes),
     ];
-    for (const [name, value] of constants) {
+    for (const [name, value] of constants.sort((left, right) => left[1] - right[1])) {
         const descriptor = { value, writable: false, enumerable: true, configurable: false };
         Object.defineProperty(DOMException, name, descriptor);
         Object.defineProperty(DOMException.prototype, name, descriptor);

@@ -1,6 +1,7 @@
 (() => {
     'use strict';
     const host = (...args) => __hostCall(...args);
+    const urlApi = globalThis.__urlInternals;
     const markTrusted = globalThis.__markTrustedEvent;
     const workers = new Map();
     const defineHandler = (prototype, type) => Object.defineProperty(prototype, 'on' + type, {
@@ -19,8 +20,11 @@
         constructor(url = missingWorkerUrl, options = {}) {
             super();
             if (url === missingWorkerUrl) throw new TypeError('Worker requires a script URL');
-            const resolvedUrl = new URL(String(url)).href;
-            if (new URL(resolvedUrl).origin !== location.origin)
+            const input = urlApi.usv(url);
+            let resolvedUrl;
+            try { resolvedUrl = urlApi.resolve(input); }
+            catch (_) { throw new DOMException('Invalid Worker URL', 'SyntaxError'); }
+            if (urlApi.parts(resolvedUrl).origin !== urlApi.origin())
                 throw new DOMException('Worker scripts must be same-origin', 'SecurityError');
             const normalized = {
                 type: options?.type === undefined ? 'classic' : String(options.type),

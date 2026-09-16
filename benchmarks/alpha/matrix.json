@@ -5,6 +5,7 @@
   "settle_ms": 800,
   "scroll_samples": 8,
   "fixtures": [
+    { "id": "url-resolution", "path": "/url-resolution.html", "role": "URL standards, live document bases, and native requests under author constructor replacement", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "dom-parser", "path": "/dom-parser.html", "role": "Detached HTML/XML parsing, inert scripts, and imported SVG CDATA", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "encyclopedia-article", "path": "/encyclopedia-article.html", "role": "Long-form Wikipedia-like article", "early_scroll": true, "max_visual_difference": 0.28, "live_url": "https://en.wikipedia.org/wiki/Web_browser" },
     { "id": "encyclopedia-main", "path": "/encyclopedia-main.html", "role": "Wikipedia main-page structure", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://en.wikipedia.org/wiki/Main_Page" },
