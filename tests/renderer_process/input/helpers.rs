@@ -107,7 +107,9 @@ fn assert_quiet_geometry_update(
     assert!(update.runtime.history_updates.is_empty());
     assert_eq!(update.runtime.dom_mutations, 0);
     assert!(!update.clock_advanced);
-    assert_eq!(update.next_timer_micros, Some(0));
+    // Sampling now happens before this update. Without active observers it can
+    // become idle here; a queued observer/lifecycle task still requests a wakeup.
+    assert!(matches!(update.next_timer_micros, None | Some(0)));
 }
 
 pub(super) fn assert_no_navigation(

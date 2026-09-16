@@ -31,32 +31,8 @@ pub(super) fn client_rect_host_call(
                     .collect()
             })
     };
-    // Layout retains document coordinates. Nested scroll offsets and sticky translations
-    // are applied here once per node; the JS realm applies its viewport scroll afterwards.
-    let own = state
-        .sticky_offsets
-        .get(&node.id())
-        .copied()
-        .unwrap_or_default();
-    let offset = std::iter::successors(Node::composed_parent(&node), Node::composed_parent).fold(
-        (-own.0, -own.1),
-        |(x, y), parent| {
-            let (dx, dy) = state
-                .scroll_boxes
-                .get(&parent.id())
-                .map_or((0.0, 0.0), |scroll| {
-                    scroll.clamp(parent.scroll_offset.get().0, parent.scroll_offset.get().1)
-                });
-            let (sx, sy) = state
-                .sticky_offsets
-                .get(&parent.id())
-                .copied()
-                .unwrap_or_default();
-            (x + dx - sx, y + dy - sy)
-        },
-    );
     let scrolled = args.get(4).is_some_and(JsValue::to_boolean);
-    let fixed = (scrolled || offset != (0.0, 0.0)) && state.is_viewport_fixed(&node);
+    let (offset, fixed) = scroll_adjustment(state, &node, scrolled);
     JsValue::Array(
         rects
             .into_iter()
@@ -77,7 +53,40 @@ pub(super) fn client_rect_host_call(
     )
 }
 
-fn css_pixel(value: f32) -> JsValue {
+pub(super) fn scroll_adjustment(
+    state: &mut HostState,
+    node: &NodeRef,
+    scrolled: bool,
+) -> ((f32, f32), bool) {
+    // Layout retains document coordinates. Nested scroll offsets and sticky translations
+    // are applied here once per node; the JS realm applies its viewport scroll afterwards.
+    let own = state
+        .sticky_offsets
+        .get(&node.id())
+        .copied()
+        .unwrap_or_default();
+    let offset = std::iter::successors(Node::composed_parent(node), Node::composed_parent).fold(
+        (-own.0, -own.1),
+        |(x, y), parent| {
+            let (dx, dy) = state
+                .scroll_boxes
+                .get(&parent.id())
+                .map_or((0.0, 0.0), |scroll| {
+                    scroll.clamp(parent.scroll_offset.get().0, parent.scroll_offset.get().1)
+                });
+            let (sx, sy) = state
+                .sticky_offsets
+                .get(&parent.id())
+                .copied()
+                .unwrap_or_default();
+            (x + dx - sx, y + dy - sy)
+        },
+    );
+    let fixed = (scrolled || offset != (0.0, 0.0)) && state.is_viewport_fixed(node);
+    (offset, fixed)
+}
+
+pub(super) fn css_pixel(value: f32) -> JsValue {
     // Publish a consistent subpixel grid rather than binary32 accumulation noise.
     // 1/64 CSS px is the layout precision used by Blink's LayoutUnit as well.
     // This applies to every renderer-backed rectangle, not particular pages or tests;

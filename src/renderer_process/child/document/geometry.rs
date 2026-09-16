@@ -45,11 +45,40 @@ impl DocumentRuntime {
                 .script_runtime
                 .as_ref()
                 .is_some_and(ScriptRuntime::has_pending_resize_observers)
+            || self.script_runtime.as_ref().is_some_and(|runtime| {
+                runtime.has_pending_intersection_observers() || runtime.has_intersection_task()
+            })
     }
 
     /// Settle observer mutations before presenting. The runtime performs the depth-bounded
     /// style/layout loop; only its final state needs a paintable display list.
     pub(super) fn deliver_geometry_observers(
+        &mut self,
+        outcome: &mut ScriptOutcome,
+        connection: &mut ChildConnection,
+    ) -> Result<bool, String> {
+        let changed = self.deliver_resize_observers(outcome, connection)?;
+        self.sample_intersection_observers(outcome);
+        Ok(changed)
+    }
+
+    pub(super) fn sample_intersection_observers(&mut self, outcome: &mut ScriptOutcome) {
+        if self.rendering_is_blocked() {
+            return;
+        }
+        let requested = std::mem::take(&mut self.geometry_observers_pending);
+        if let Some(runtime) = self.script_runtime.as_mut()
+            && (requested || runtime.has_pending_intersection_observers())
+        {
+            merge_outcome(
+                outcome,
+                runtime.gather_intersection_observers(),
+                self.page.dom.document.id(),
+            );
+        }
+    }
+
+    fn deliver_resize_observers(
         &mut self,
         outcome: &mut ScriptOutcome,
         connection: &mut ChildConnection,

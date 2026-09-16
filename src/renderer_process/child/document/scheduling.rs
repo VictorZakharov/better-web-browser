@@ -78,8 +78,8 @@ impl DocumentRuntime {
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
         // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
         if !self.rendering_is_blocked()
-            && std::mem::take(&mut self.geometry_observers_pending)
             && let Some(runtime) = self.script_runtime.as_mut()
+            && runtime.has_intersection_task()
         {
             merge_outcome(
                 &mut outcome,

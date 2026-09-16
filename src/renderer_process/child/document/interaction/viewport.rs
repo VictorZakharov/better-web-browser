@@ -34,11 +34,13 @@ impl DocumentRuntime {
         if !self.has_pending_geometry_observers() {
             return None;
         }
+        let mut outcome = ScriptOutcome::default();
+        self.sample_intersection_observers(&mut outcome);
         Some(RendererRuntimeUpdate {
             document: self.id,
             clock_advanced: false,
             runtime: runtime_report(
-                ScriptOutcome::default(),
+                outcome,
                 self.script_runtime.is_some(),
                 self.media_runtime_report(),
             ),

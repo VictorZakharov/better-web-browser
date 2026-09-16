@@ -1,6 +1,7 @@
 use super::*;
 
 mod lifecycle;
+mod snapshots;
 
 #[test]
 fn intersection_observer_is_exposed_on_the_window_global() {

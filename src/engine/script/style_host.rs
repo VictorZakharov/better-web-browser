@@ -3,12 +3,16 @@
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
 mod client_rect;
+mod intersection;
 
 pub(super) fn style_host_call(
     operation: &str,
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "intersectionGeometry" {
+        return Ok(Some(intersection::geometry(args, state)));
+    }
     if matches!(operation, "clientRects" | "rangeTextRects") {
         return Ok(Some(client_rect::client_rect_host_call(
             operation, args, state,

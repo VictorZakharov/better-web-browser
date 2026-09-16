@@ -21,6 +21,21 @@ pub(super) fn dispatch(
             state.resize_observers_pending = true;
             JsValue::undefined()
         }
+        "intersectionObserverSchedule" => {
+            state.intersection_observers_pending = true;
+            JsValue::undefined()
+        }
+        "intersectionObserverTask" => {
+            state.intersection_task_pending = true;
+            JsValue::undefined()
+        }
+        "intersectionObserverDelay" => {
+            let id = argument_id(args, 1);
+            let delay = argument_duration(args, 2);
+            let handle = state.timers.queue_task(TaskSource::Rendering, delay, id);
+            state.timer_handles.insert(id, handle);
+            JsValue::from(id)
+        }
         "resizeObserverDefer" => {
             state.resize_observers_pending = true;
             state.resize_observers_deferred = true;

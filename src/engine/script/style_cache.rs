@@ -151,7 +151,7 @@ impl HostState {
         (version, styles)
     }
 
-    fn take_offset_parent_styles(&mut self) -> (u64, StyleSet) {
+    pub(super) fn take_offset_parent_styles(&mut self) -> (u64, StyleSet) {
         let version = self.document.document_mutation_version();
         let styles = match self.offset_parent_styles.take() {
             Some((cached_version, styles)) if cached_version == version => styles,
