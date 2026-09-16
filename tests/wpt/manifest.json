@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "intersection-observer/resources/intersection-observer-test-utils.js",
     "html/semantics/scripting-1/the-script-element/module/imports-a.js",
     "html/semantics/scripting-1/the-script-element/module/syntaxerror.js",
     "html/semantics/scripting-1/the-script-element/module/bad-module-specifier.js",
@@ -52,6 +53,186 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {
+      "path": "intersection-observer/disconnect.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/display-none.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/edge-inclusive-intersection.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/empty-root-margin.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/multiple-thresholds.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/not-in-containing-block-chain.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/observer-attributes.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/observer-callback-arguments.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/observer-exceptions.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/observer-without-js-reference.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/padding-clip.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/reinsert-element.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/remove-element.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/root-margin-scroll-margin-units.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/same-document-no-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/same-document-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/same-document-with-document-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/same-document-zero-size-target.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-and-root-margin.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-4-val.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-dynamic.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-horizontal.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-nested-2.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-nested-3.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-nested.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-no-intersect.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-non-scrolling-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-not-contained.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-percent.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-with-border-outline.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin-zero.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/scroll-margin.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/shadow-content.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/target-is-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/unclipped-root.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
+    {
+      "path": "intersection-observer/zero-area-element-visible.html",
+      "area": "Intersection Observer",
+      "expected": "pass"
+    },
     {
       "path": "html/semantics/scripting-1/the-script-element/module/dynamic-import/dynamic-imports.html",
       "area": "Dynamic modules",

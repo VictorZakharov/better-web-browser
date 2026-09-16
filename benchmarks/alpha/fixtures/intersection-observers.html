@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Intersection observers: running</title>
+<style>
+body { margin:24px; font:16px Arial; color:#172b46; background:#f4f7fb }
+#main { max-width:1000px; padding:24px; background:white; border:1px solid #ccd7e5 }
+#stage { position:absolute; left:40px; top:220px }
+.port { width:200px; height:100px; overflow:hidden; border:5px solid #466995; padding:10px }
+.target { width:100px; height:100px; background:#38a185 }
+.spacer { height:80px }
+</style>
+<main id="main"><h1>IntersectionObserver geometry and delivery</h1><p id="status">Running owned standards contracts…</p><ol id="facts"></ol></main>
+<div id="stage"></div>
+<script>
+const facts = [], stage = document.getElementById('stage');
+const check = (name, passed, details='') => {
+  facts.push({name, passed:!!passed});
+  const line=document.createElement('li'); line.textContent=(passed?'PASS: ':'FAIL: ')+name+(details?' ('+details+')':'');
+  document.getElementById('facts').append(line);
+};
+const observe = (target, options={}) => new Promise(resolve => {
+  const observer = new IntersectionObserver(entries => { observer.disconnect(); resolve(entries[0]); }, options);
+  observer.observe(target);
+});
+const box = html => { stage.innerHTML=html; return document.getElementById('target'); };
+const near = (a,b) => Math.abs(a-b)<0.02;
+const setup = '<div class="port" id="root"><div class="spacer"></div><div class="target" id="target"></div></div>';
+(async () => {
+  let target=box(setup), root=document.getElementById('root');
+  let entry=await observe(target);
+  check('ancestor padding-box clipping', near(entry.intersectionRatio,0.3));
+  entry=await observe(target,{root});
+  check('explicit root excludes border', near(entry.rootBounds.width,220) && near(entry.rootBounds.height,120));
+  entry=await observe(target,{scrollMargin:'20px'});
+  check('nested scroll margin expands clip', near(entry.intersectionRatio,0.5));
+  entry=await observe(target,{root,rootMargin:'10px',scrollMargin:'20px'});
+  check('root and scroll margins combine', near(entry.intersectionRatio,0.6));
+  entry=await observe(target,{root,rootMargin:'10%',scrollMargin:'10%'});
+  check('rootBounds excludes scroll margin; percentages use undilated width',
+    near(entry.rootBounds.width,264) && near(entry.intersectionRatio,0.74),
+    `root=${entry.rootBounds.width} ratio=${entry.intersectionRatio}`);
+  root.style.overflow='clip';
+  entry=await observe(target,{scrollMargin:'100px'});
+  check('overflow clip is not a scrollport', near(entry.intersectionRatio,0.3));
+  target.getBoundingClientRect=()=>{throw Error('author geometry override called')};
+  entry=await observe(target);
+  check('native geometry ignores author overrides', near(entry.boundingClientRect.width,100));
+  target=box('<div class="port" id="root"><div class="target" id="target" style="position:absolute;top:0;left:0"></div></div>');
+  entry=await observe(target,{root:document.getElementById('root')});
+  check('explicit root must contain target in containing-block chain', !entry.isIntersecting);
+  target=box('<div class="target" id="target" style="display:none"></div>');
+  entry=await observe(target);
+  check('display none has no intersection', !entry.isIntersecting && entry.intersectionRatio===0);
+  target=box('<div class="target" id="target"></div>');
+  target.remove(); entry=await observe(target);
+  check('detached target has no intersection', !entry.isIntersecting);
+  target=box(setup); root=document.getElementById('root');
+  const transitions=[];
+  await new Promise(resolve => {
+    const observer=new IntersectionObserver(entries => {
+      transitions.push(entries[0].intersectionRatio);
+      if(transitions.length===1) root.scrollTop=70;
+      else { observer.disconnect(); resolve(); }
+    },{root,threshold:[0,0.5,1]}); observer.observe(target);
+  });
+  check('element scroll crosses threshold', near(transitions[0],0.3) && near(transitions[1],1));
+  target=box('<div class="target" id="target"></div>');
+  await new Promise(resolve => {
+    const first=new IntersectionObserver(() => { first.disconnect(); target.style.display='none'; });
+    const second=new IntersectionObserver(entries => {
+      second.disconnect(); check('callbacks receive pre-callback geometry snapshot', entries[0].isIntersecting); resolve();
+    }); first.observe(target); second.observe(target);
+  });
+  target=box('<div class="target" id="target"></div>');
+  await new Promise(resolve => {
+    let second;
+    const first=new IntersectionObserver(() => {
+      first.disconnect();
+      Promise.resolve().then(() => {
+        const queued=second.takeRecords(); second.disconnect();
+        check('microtask can drain another observer queued snapshot', queued.length===1 && queued[0].isIntersecting);
+        resolve();
+      });
+    });
+    second=new IntersectionObserver(() => check('drained observer must not be called',false));
+    first.observe(target); second.observe(target);
+  });
+  stage.remove();
+  const passed=facts.every(f=>f.passed);
+  document.title='Intersection observers '+(passed?'PASS':'FAIL');
+  document.getElementById('status').textContent=`${facts.filter(f=>f.passed).length}/${facts.length} contracts passed`;
+  document.getElementById('main').setAttribute('data-facts',JSON.stringify(facts));
+  document.documentElement.setAttribute('data-fixture-ready','true');
+})().catch(error => { document.title='Intersection observers FAIL'; document.getElementById('status').textContent=String(error); });
+</script>

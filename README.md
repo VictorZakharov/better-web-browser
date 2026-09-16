@@ -41,6 +41,7 @@ Current page support includes:
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
+- [IntersectionObserver geometry and queued snapshots](docs/intersection-observer-geometry.md), with containing-block overflow clips, nested scroll margins, and callback microtask checkpoints (remaining geometry and v2-visibility gaps are explicit)
 - Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static/dynamic document ECMAScript modules with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
@@ -79,6 +80,35 @@ The repository-owned public-alpha gate runs Breeze and unified-headless Chromium
 ```
 
 The visual benchmark runs on every push to `main`, not on pull requests. It requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. PRs retain core, renderer, and focused Windows integration tests, lint, formatting, dependency/security policy, and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main. Relevant local integration tests and visual comparisons remain necessary before review: deferred CI checks can first detect a regression after merge. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md), [CI policy and timings](docs/build-performance.md), and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
+
+### Current measured snapshot — September 16, 2026
+
+Fresh hidden release / Chrome 153 comparisons at implementation `0bdcd9e` passed
+all **36 owned fixture pairs** (three runs each). Selected three-run medians:
+
+| Page | Breeze first presentation | Chrome load | Working set B/C | Private memory B/C |
+|---|---:|---:|---:|---:|
+| Owned encyclopedia article | 221 ms | 495 ms | 63.5 / 558.6 MiB | 36.9 / 295.7 MiB |
+| Live Wikipedia Main Page | 742 ms | 868 ms | 163.6 / 647.7 MiB | 127.7 / 396.0 MiB |
+| Live Coron, Palawan | 596 ms | 832 ms | 202.0 / 682.3 MiB | 169.9 / 436.8 MiB |
+
+**These are different readiness milestones, not a browser speed ratio.** Chrome's
+navigation-relative FCP was 293 ms on Main Page and 270 ms on Coron; Breeze's first
+presentation is not proof that all useful content has loaded. Startup probes were
+about 12 ms for Breeze's hidden window versus 227–234 ms for Chrome's debugger on
+the selected owned cases—also different milestones, not interactive launch parity.
+
+Coron's early-scroll p95 was **6.5 ms**, all three traces passed, and scroll-only
+style/layout rebuilds stayed at zero. However, sampled cumulative CPU was **8.73 s
+for Breeze / 7.83 s for Chrome**; lower memory does not mean all rendering work is
+cheaper. Memory/CPU cover 2 versus 10 processes with different feature coverage.
+Same-day before/after loads were slower in both browsers' second batch: this PR
+does not establish a loading speedup. Modern DuckDuckGo still fails in Breeze and
+is not an accepted search baseline.
+
+The [full reassessment](docs/browser-performance-2026-09-16.md) includes all twelve
+fixtures, prior-PR comparisons, startup/memory/CPU definitions, live-site failures,
+scroll results, reproduction conditions, and remaining profiling targets.
 
 ### Historical renderer text cold-path comparison
 
@@ -190,11 +220,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 325-file Web Platform Test suite covers 2,720 upstream harness subtests across HTML
+A pinned, curated 361-file Web Platform Test suite covers 2,826 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,720 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,826 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell

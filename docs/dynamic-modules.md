@@ -61,7 +61,7 @@ of pixel-identical font metrics or complete browser compatibility.
 
 Two unmodified upstream dynamic-import WPT files contribute 12 assertions, including
 distinct-vs-shared parse, specifier, linking, and evaluation errors. The curated
-baseline is 325 files / 2,720 passing assertions, without expected failures.
+baseline at PR #163 was 325 files / 2,720 passing assertions, without expected failures.
 
 ## Remaining boundaries
 

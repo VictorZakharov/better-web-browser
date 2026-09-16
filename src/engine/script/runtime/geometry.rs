@@ -30,6 +30,18 @@ impl ScriptRuntime {
         let host = self.host.borrow();
         host.resize_observers_pending && !host.resize_observers_deferred
     }
+
+    pub(crate) fn has_pending_intersection_observers(&self) -> bool {
+        self.host.borrow().intersection_observers_pending
+    }
+
+    pub(crate) fn has_intersection_task(&self) -> bool {
+        self.host.borrow().intersection_task_pending
+    }
+
+    pub(crate) fn gather_intersection_observers(&mut self) -> ScriptOutcome {
+        self.notify_observers(false, false, true)
+    }
     pub(crate) fn set_layout_content_height(&mut self, height: f32) {
         self.host.borrow_mut().layout_content_height = height;
     }
@@ -52,18 +64,23 @@ impl ScriptRuntime {
     /// Runs the dedicated rendering-observer task against the latest layout snapshot.
     #[cfg(test)]
     pub(crate) fn notify_layout_changed(&mut self) -> ScriptOutcome {
-        self.notify_observers(true, true)
+        self.notify_observers(true, true, true)
     }
 
     pub(crate) fn notify_resize_observers(&mut self) -> ScriptOutcome {
-        self.notify_observers(true, false)
+        self.notify_observers(true, false, false)
     }
 
     pub(crate) fn notify_intersection_observers(&mut self) -> ScriptOutcome {
-        self.notify_observers(false, true)
+        self.notify_observers(false, true, false)
     }
 
-    fn notify_observers(&mut self, resize: bool, intersection: bool) -> ScriptOutcome {
+    fn notify_observers(
+        &mut self,
+        resize: bool,
+        intersection: bool,
+        gather: bool,
+    ) -> ScriptOutcome {
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -121,10 +138,24 @@ impl ScriptRuntime {
                     .errors
                     .push(format!("notify resize observers: {error}"));
             }
-            if intersection
-                && let Err(error) =
-                    context.eval(Source::from_bytes("__notifyIntersectionObservers();"))
-            {
+            let intersections = (|| -> JsResult<()> {
+                if gather {
+                    host.borrow_mut().intersection_observers_pending = false;
+                    context.eval(Source::from_bytes("__gatherIntersectionObservers();"))?;
+                }
+                if intersection {
+                    host.borrow_mut().intersection_task_pending = false;
+                    context.eval(Source::from_bytes("__beginIntersectionDelivery();"))?;
+                    while context
+                        .eval(Source::from_bytes("__broadcastIntersectionObserver()"))?
+                        .to_boolean()
+                    {
+                        context.run_jobs()?;
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(error) = intersections {
                 outcome
                     .errors
                     .push(format!("notify geometry observers: {error}"));
