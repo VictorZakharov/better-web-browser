@@ -30,6 +30,8 @@ mod pointer_buttons;
 mod presentation;
 #[path = "renderer_process/resize_observers.rs"]
 mod resize_observers;
+#[path = "renderer_process/runtime_reporting.rs"]
+mod runtime_reporting;
 #[path = "renderer_process/startup.rs"]
 mod startup;
 #[path = "renderer_process/state.rs"]

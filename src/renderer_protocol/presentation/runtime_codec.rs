@@ -9,9 +9,9 @@ pub(in crate::renderer_protocol) fn encode_runtime(
 ) -> Result<(), ProtocolError> {
     writer.u64(report.scripts_executed);
     writer.u64(report.dom_mutations);
-    encode_strings(writer, &report.errors)?;
-    encode_strings(writer, &report.console)?;
-    encode_strings(writer, &report.diagnostics)?;
+    encode_strings(writer, &report.errors, "runtime errors count")?;
+    encode_strings(writer, &report.console, "runtime console count")?;
+    encode_strings(writer, &report.diagnostics, "runtime diagnostics count")?;
     writer.bool(report.navigation_url.is_some());
     if let Some(url) = &report.navigation_url {
         writer.string(url)?;
@@ -35,7 +35,11 @@ pub(in crate::renderer_protocol) fn encode_runtime(
         writer.string(&update.url)?;
         writer.bool(update.replace);
     }
-    encode_strings(writer, &report.cookie_updates)?;
+    encode_strings(
+        writer,
+        &report.cookie_updates,
+        "runtime cookie updates count",
+    )?;
     writer.bool(report.runtime_active);
     writer.bool(report.runtime_stopped);
     writer.bool(report.render_requested);
@@ -167,9 +171,13 @@ fn decode_media_runtime(reader: &mut WireReader<'_>) -> Result<MediaRuntimeRepor
     })
 }
 
-fn encode_strings(writer: &mut WireWriter, values: &[String]) -> Result<(), ProtocolError> {
+fn encode_strings(
+    writer: &mut WireWriter,
+    values: &[String],
+    field: &'static str,
+) -> Result<(), ProtocolError> {
     if values.len() > MAX_RUNTIME_REPORT_ENTRIES {
-        return Err(ProtocolError::InvalidPayload("runtime report count"));
+        return Err(ProtocolError::InvalidPayload(field));
     }
     writer.u32(values.len() as u32);
     for value in values {

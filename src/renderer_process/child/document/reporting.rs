@@ -2,6 +2,10 @@ use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{ScriptOutcome, StyleRefreshStats};
 use crate::renderer_protocol::{HistoryUpdate, MediaRuntimeReport, RuntimeReport, StyleReport};
 use std::time::Duration;
+mod telemetry;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn merge_outcome(
     target: &mut ScriptOutcome,
@@ -54,9 +58,9 @@ pub(super) fn runtime_report(
     RuntimeReport {
         scripts_executed: outcome.executed as u64,
         dom_mutations: outcome.mutation_count as u64,
-        errors: std::mem::take(&mut outcome.errors),
-        console: std::mem::take(&mut outcome.console),
-        diagnostics: std::mem::take(&mut outcome.diagnostics),
+        errors: telemetry::bounded(std::mem::take(&mut outcome.errors), "errors"),
+        console: telemetry::bounded(std::mem::take(&mut outcome.console), "console"),
+        diagnostics: telemetry::bounded(std::mem::take(&mut outcome.diagnostics), "diagnostics"),
         navigation_url: outcome.navigation_url,
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
