@@ -4,8 +4,8 @@ This is an unsigned, Windows x64-only technical alpha for experimentation with B
 
 ## Acceptance evidence
 
-- The [public-alpha compatibility matrix](https://github.com/VictorZakharov/better-web-browser/blob/main/docs/alpha-compatibility.md) passes all 27 deterministic three-run Breeze/Chromium pairs. The same page records medians, early-scroll results, opt-in live evidence, and benchmark caveats.
-- The [curated WPT gate](https://github.com/VictorZakharov/better-web-browser/blob/main/tests/wpt/README.md) passes 80 upstream files and 570/570 harness subtests with no expectations, skips, or timeouts. A separate discovery sample records unsupported behavior; this is not a whole-platform conformance score.
+- The [initial public-alpha comparison](https://github.com/VictorZakharov/better-web-browser/blob/main/docs/alpha-compatibility.md) recorded 27 passing Breeze/Chromium pairs on 2026-08-24. This is historical evidence for the then-nine-fixture matrix, not the current twelve-fixture gate or the performance of a newly packaged executable.
+- The [curated WPT gate](https://github.com/VictorZakharov/better-web-browser/blob/main/tests/wpt/README.md) documents the current pinned selection and reproduction commands. The initial alpha's 80 files / 570 subtests are historical, not today's coverage. A separate discovery sample records unsupported behavior; neither selection is a whole-platform conformance score.
 - The [hostile-input and fuzz policy](https://github.com/VictorZakharov/better-web-browser/blob/main/docs/security-and-fuzzing.md) covers checked-in deterministic corpora on every source change and scheduled bounded libFuzzer campaigns. Current workflow status is available under [Fuzz](https://github.com/VictorZakharov/better-web-browser/actions/workflows/fuzz.yml).
 - Release smoke launches the packaged executable with Rust/Cargo paths removed, creates a new isolated profile, navigates a loopback page through an AppContainer renderer, verifies cookie and local-storage persistence, exercises renderer crash/reload recovery, and removes the portable test installation.
 
@@ -32,6 +32,13 @@ Normal launches store cookies and `localStorage` under `%LOCALAPPDATA%\Breeze`. 
 - Live-site behavior and benchmark numbers vary. The published medians apply only to the controlled feature-equivalent fixtures and are not a universal speed or compatibility claim.
 
 ## Reproduction and release authority
+
+Before publishing a new snapshot, rebuild the exact release commit and rerun the curated WPT,
+deterministic alpha matrix, and packaged release smoke. Retain their JSON reports and generated
+environment metadata. Any refreshed HTML5test observation must include a dated commit, command,
+fresh-profile/viewport conditions, diagnostics, and screenshot; never infer support from its score.
+Audit README counts against the manifests/reports and label older measurements historical rather
+than silently carrying them forward. Verify linked documentation and commands with the package.
 
 Release builds use the checked-in Rust 1.95.0 toolchain, locked dependencies, canonical Cargo `release` profile, Windows x64 target, deterministic archive ordering/timestamps, and commit/version metadata. `scripts/package-technical-alpha.ps1` produces the archive twice in CI and requires identical SHA-256 hashes.
 

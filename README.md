@@ -288,11 +288,26 @@ compatibility baseline: previous tests encountered anti-automation responses, wh
 with profile, network, and time. Breeze renders the actual response; it does not silently substitute
 another search provider. Passing a deterministic search fixture does not establish live Google support.
 
-The 2026-09-16 fresh-profile hidden release run rendered **285 / 588** on HTML5test,
+The 2026-09-16 fresh-profile hidden release run at
+[`cb50f83`](https://github.com/VictorZakharov/better-web-browser/commit/cb50f83247d42b1deeafcff6a47999915b1b8eb3)
+rendered **285 / 588** on HTML5test,
 with zero JavaScript errors and no renderer exit. This replaces the older 284-point observation;
 it does not imply that the site's layout is pixel-correct or that every detected API is complete.
 HTML5test is a capability inventory, not a percentage of browser completion or a conformance claim;
 specifications and individual Web Platform Tests define the implementation/regression contracts.
+
+Reproduce that snapshot on Windows x64 with the release build above (1280×720 hidden window,
+125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
+
+```powershell
+./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
+  -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
+  -SettleMs 5000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
+  -Output target/html5test/2026-09-16.json -Screenshot target/html5test/2026-09-16.png
+```
+
+New releases must refresh or explicitly date these observations using the
+[evidence checklist](docs/technical-alpha-release.md#reproduction-and-release-authority).
 
 YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
 video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.

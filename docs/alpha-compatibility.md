@@ -1,6 +1,8 @@
 # Public technical-alpha compatibility evidence
 
-This page records the reproducible acceptance evidence for the real-world alpha gate. The source of truth is `benchmarks/alpha/matrix.json`; methodology and rerun instructions are in [`benchmarks/README.md`](../benchmarks/README.md).
+This page records the historical 2026-08-24 alpha acceptance evidence, not current-HEAD timings.
+The matrix has since expanded from nine to twelve fixtures. The current source of truth is
+`benchmarks/alpha/matrix.json`; methodology and rerun instructions are in [`benchmarks/README.md`](../benchmarks/README.md).
 
 ## Deterministic gate result
 
@@ -43,7 +45,7 @@ Live evidence was collected separately on 2026-08-24 with one hidden fresh-profi
 | Wikipedia article | no report | — | — | no | — | Bounded Breeze timeout at 45 s |
 | Wikipedia main page | no report | — | — | no | — | Bounded Breeze timeout at 45 s |
 
-The Wikipedia timeouts are failures, not accepted error surfaces or performance exceptions. They do not weaken the deterministic Wikipedia-like gates; they document the current live-network result. Live perceptual values are diagnostics only because content, experiments, fonts, anti-automation behavior, and response ordering can differ between sequential browser requests.
+The Wikipedia timeouts were failures in that dated run, not accepted error surfaces or performance exceptions. They do not weaken the deterministic Wikipedia-like gates or establish current live behavior. Live perceptual values are diagnostics only because content, experiments, fonts, anti-automation behavior, and response ordering can differ between sequential browser requests.
 
 ## Claim boundary
 
