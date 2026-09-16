@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Native microtask bootstrap</title>
+  <link rel="stylesheet" href="/common.css">
+</head>
+<body>
+  <header class="site-header"><h1>Native microtask bootstrap</h1></header>
+  <main id="main" class="page">
+    <h2 id="status">Application pending</h2>
+    <p>The browser job queue must remain independent of a page's Promise implementation.</p>
+    <p id="ordering">Waiting for native jobs and mutation delivery.</p>
+  </main>
+  <script>
+    const NativePromise = Promise;
+    const order = [];
+    const text = document.createTextNode('');
+    new MutationObserver(() => order.push('mutation')).observe(text, {characterData: true});
+    NativePromise.resolve().then(() => order.push('promise'));
+    // Original minimal scheduler: using author Promise.then inside queueMicrotask recurses.
+    globalThis.Promise = {resolve() { return {then(callback) { queueMicrotask(callback); }}; }};
+    queueMicrotask(() => {
+      order.push('microtask');
+      text.data = 'changed';
+      queueMicrotask(() => {
+        globalThis.Promise = NativePromise;
+        if (order.join(',') !== 'promise,microtask,mutation') throw Error('wrong job order');
+        document.getElementById('ordering').textContent = 'Promise, microtask, mutation: passed';
+        document.getElementById('status').textContent = 'Application ready';
+        document.documentElement.dataset.fixtureReady = 'true';
+      });
+    });
+  </script>
+</body>
+</html>

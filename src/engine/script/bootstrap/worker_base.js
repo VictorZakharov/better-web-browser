@@ -262,15 +262,29 @@
         if (!timer.repeat) timers.delete(Number(id));
         if (typeof timer.callback === 'function') timer.callback(...timer.args); else (0, eval)(String(timer.callback));
     };
+    let reportingGlobalException = false;
+    const reportGlobalException = (error, source) => {
+        const message = error?.message === undefined ? String(error) : String(error.message);
+        const event = markTrusted(new ErrorEvent('error', {cancelable: true, message, error}));
+        let uncanceled = true;
+        if (!reportingGlobalException) {
+            reportingGlobalException = true;
+            try { uncanceled = globalThis.dispatchEvent(event); }
+            finally { reportingGlobalException = false; }
+        }
+        if (uncanceled) host('console', 'error', 'Uncaught ' + source + ' exception: ' + message);
+    };
     globalThis.__performanceHooks = {
         queue: callback => queueTimer(callback, 0, false, [], 'performanceTaskSchedule'),
-        report: error => {
-            const message = error?.message === undefined ? String(error) : String(error.message);
-            const event = markTrusted(new ErrorEvent('error', {cancelable: true, message, error}));
-            if (globalThis.dispatchEvent(event)) host('console', 'error', 'Uncaught PerformanceObserver exception: ' + message);
-        }
+        report: error => reportGlobalException(error, 'PerformanceObserver')
     };
-    globalThis.queueMicrotask = callback => Promise.resolve().then(callback);
+    globalThis.queueMicrotask = callback => {
+        if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
+        host('queueMicrotask', () => {
+            try { callback(); }
+            catch (error) { reportGlobalException(error, 'microtask'); }
+        });
+    };
     globalThis.navigator = { userAgent: host('userAgent'), language: 'en-CA', languages: ['en-CA', 'en'], onLine: true, hardwareConcurrency: 1 };
     globalThis.location = new URL(host('workerLocation'));
     globalThis.name = host('workerName');

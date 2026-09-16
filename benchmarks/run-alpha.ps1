@@ -87,6 +87,10 @@ function Assert-BreezeFixture {
     if ($null -ne $Record.error) { throw "$Id Breeze error: $($Record.error)" }
     if ([int] $Record.http_status -ne 200) { throw "$Id Breeze status was $($Record.http_status)." }
     if (@($Record.javascript_errors).Count -ne 0) { throw "$Id Breeze reported JavaScript errors." }
+    $ready = @($Record.diagnostics | Where-Object selector -eq 'html[data-fixture-ready=true]')
+    if ($ready.Count -ne 1 -or [int] $ready[0].total_matches -ne 1) {
+        throw "$Id Breeze fixture readiness marker was not observed."
+    }
     if ([int] $Record.retained_draw_items -lt 10) { throw "$Id Breeze retained too few draw items." }
     $main = @($Record.diagnostics | Where-Object selector -eq '#main')
     if ($main.Count -ne 1 -or [int] $main[0].total_matches -ne 1) { throw "$Id Breeze did not produce exactly one #main region." }
@@ -118,7 +122,7 @@ try {
                 WindowHeight = [int] $configuration.viewport.window_height
                 Locale = [string] $configuration.locale
                 FreshProfile = $true
-                DiagnosticSelector = @('#main')
+                DiagnosticSelector = @('#main', 'html[data-fixture-ready=true]')
             }
             if ([bool] $case.early_scroll) { $breezeArguments.EarlyScrollTrace = $true }
             & (Join-Path $repoRoot 'scripts\run-hidden-benchmark.ps1') @breezeArguments | Write-Host

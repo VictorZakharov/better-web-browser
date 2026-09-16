@@ -99,7 +99,7 @@
     };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
-        Promise.resolve().then(() => {
+        host('queueMicrotask', () => {
             try { callback(); }
             catch (error) { reportGlobalException(error); }
         });
@@ -229,7 +229,7 @@
     const queueMutationObserverMicrotask = () => {
         if (mutationObserverMicrotaskQueued) return;
         mutationObserverMicrotaskQueued = true;
-        Promise.resolve().then(() => {
+        host('queueMicrotask', () => {
             mutationObserverMicrotaskQueued = false;
             const notify = [...pendingMutationObservers];
             pendingMutationObservers.clear();
