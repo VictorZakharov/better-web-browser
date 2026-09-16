@@ -74,6 +74,17 @@ line breaking or bidi layout; those remain separate text-layout work.
   `#result[data-contract=pass]`, the rendered trace and the wrapped text are required.
   The earlier `synchronous-parser-writes.html` fixture remains a regression check.
 
+The release comparison used fresh profiles, scale 1 and a 1262 × 539 CSS-pixel
+content viewport. Both fixtures passed in Breeze and Chrome 153.0.8010.47; all four
+screenshots were inspected. The preserved-text box uses identical line breaks and
+282 × 170 bounds. Default font/line metrics still shift surrounding vertical
+positions slightly; this is not a pixel-perfect whole-page claim.
+
+Local checks passed: 1,103 library tests (one existing ignored test), all 123
+isolated-renderer tests, 66 live-browser tests (three existing ignored probes),
+strict all-target Clippy, formatting and source-size checks. The release WPT run
+passed all 295 files / 2,653 assertions with no failures, timeouts or crashes.
+
 ## Remaining boundaries
 
 Nested browsing-context/realm navigation, unload/aborted-parser handling, CSP and
