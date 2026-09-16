@@ -20,9 +20,14 @@
     html.cookie = 'detachedParserCookie=mustNotPersist';
     if (html.cookie !== '' || document.cookie.includes('detachedParserCookie=')) throw Error('detached cookie access');
     document.querySelector('#html').append(...html.body.childNodes);
-    const xml = parser.parseFromString('<svg xmlns="http://www.w3.org/2000/svg" width="260" height="70" viewBox="0 0 260 70"><rect width="260" height="70" rx="8" fill="#d8e8fa"/><circle cx="35" cy="35" r="18" fill="#2864a8"/><text x="66" y="42" font-size="18"><![CDATA[XML & SVG ready]]></text></svg>', 'image/svg+xml');
+    const xml = parser.parseFromString('<svg xmlns="http://www.w3.org/2000/svg" width="260" height="70" viewBox="0 0 260 70"><desc><![CDATA[XML & SVG ready]]></desc><rect width="260" height="70" rx="8" fill="#d8e8fa"/><circle cx="35" cy="35" r="18" fill="#2864a8"/></svg>', 'image/svg+xml');
     if (xml.documentElement.namespaceURI !== 'http://www.w3.org/2000/svg') throw Error('namespace lost');
     document.querySelector('#xml').append(document.importNode(xml.documentElement, true));
+    // SVG text painting is a separate renderer gap. Check actual CDATA painting in HTML.
+    const label = document.createElement('p');
+    label.append(document.importNode(xml.querySelector('desc').firstChild, true));
+    if (label.firstChild.nodeType !== 4) throw Error('CDATA identity lost');
+    document.querySelector('#xml').append(label);
     const broken = parser.parseFromString('<broken>', 'text/xml');
     if (!broken.getElementsByTagName('parsererror').length) throw Error('XML error missing');
     document.querySelector('#status').textContent = 'HTML, XML, and inert scripts: passed';

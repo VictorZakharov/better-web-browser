@@ -14,11 +14,12 @@ It is not a site-specific substitute or a string-search parser.
   internal entity text. Ill-formed input produces an XML `parsererror` document.
 - Parsed documents have their own content type, compatibility mode, and a snapshot
   of the calling document's URL. Their encoding is UTF-8 regardless of declarations
-  in the supplied string. They have no window or location and do not read/write the
+  in the supplied string; a leading Unicode byte-order mark is consumed. They have
+  no window or location and do not read/write the
   active page's cookies: HTML defines documents without a browsing context as
   [cookie-averse](https://html.spec.whatwg.org/multipage/dom.html#cookie-averse-document-object).
 - Node ownership, cloning/import/adoption, mutable XML character data, and adopted
-  SVG/CDATA rendering use the existing DOM and rendering paths. CDATA is represented
+  SVG geometry and HTML CDATA rendering use the existing DOM and rendering paths. CDATA is represented
   as its own node kind, not flattened into ordinary text.
 - XHR document responses share the parser but follow their separate
   [response-document contract](https://xhr.spec.whatwg.org/#document-response):
@@ -46,6 +47,9 @@ node-count, depth, and entity-recursion limits are enforced in addition to the
 realm's retained-node budget. These limits are hostile-input policy, not a claim
 of unrestricted XML conformance.
 
+Namespace source-position lookup advances from the previous position on long
+minified lines rather than rescanning each line prefix for every element.
+
 ## Evidence and remaining scope
 
 Eight unmodified upstream WPT files add 69 passing assertions for HTML/XML parsing,
@@ -65,3 +69,11 @@ contract is not a claim of complete XHR charset support. Namespace declarations
 inside entity-expanded markup use the semantic reader's namespace-difference
 fallback, which cannot preserve redundant declarations from entity replacement
 text. Modern-site acceptance remains separate from these platform tests.
+
+The initial fixture also exposed a pre-existing SVG renderer gap: SVG `<text>` is
+not painted (`resvg` text support is disabled). Its broad image-difference score
+passed despite the missing label, so that score was not accepted as proof of text
+fidelity. The final fixture separates imported SVG geometry from CDATA imported
+into an HTML paragraph; a renderer-process regression requires the CDATA text in
+the actual display list. SVG text rendering remains unsupported, not silently
+counted as parser coverage.

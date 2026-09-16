@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn detached_parser_nodes_paint_after_import_without_running_parsed_scripts() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut driver = Driver::new(include_str!(
+        "../../../benchmarks/alpha/fixtures/dom-parser.html"
+    ));
+    super::rendering::blocked_until_request(&mut driver, "common.css");
+    driver.respond_bytes(
+        "common.css",
+        include_bytes!("../../../benchmarks/alpha/fixtures/common.css"),
+        "text/css",
+        200,
+    );
+    let ready = driver.until_text("XML & SVG ready");
+    let text = painted_text(&ready);
+    assert!(text.contains("Imported article"), "{text}");
+    assert!(
+        text.contains("HTML, XML, and inert scripts: passed"),
+        "{text}"
+    );
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn parser_mutations_invalidate_cssom_and_synchronous_layout_before_the_next_script() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(
