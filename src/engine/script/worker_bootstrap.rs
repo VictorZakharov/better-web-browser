@@ -1,5 +1,6 @@
 pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/dom_exception.js"),
+    include_str!("bootstrap/web_url.js"),
     include_str!("bootstrap/worker_base.js"),
     include_str!("bootstrap/crypto.js"),
     include_str!("bootstrap/streams.js"),
@@ -14,4 +15,5 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/user_timing.js"),
     include_str!("bootstrap/performance_observer.js"),
     include_str!("bootstrap/worker_scope.js"),
+    include_str!("bootstrap/url_cleanup.js"),
 );

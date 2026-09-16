@@ -1,6 +1,7 @@
 (() => {
     'use strict';
     const host = (...args) => __hostCall(...args);
+    const urlApi = globalThis.__urlInternals;
     const markTrusted = globalThis.__markTrustedEvent;
     const data = globalThis.__networkData;
     const body = globalThis.__networkBody;
@@ -23,7 +24,6 @@
     ];
     const MAX_KEEPALIVE_BYTES = 64 * 1024;
     const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
-    const missingRequestInput = {};
 
     const abortSignalToken = {};
     const createAbortSignal = () => new AbortSignal(abortSignalToken);
@@ -102,8 +102,8 @@
     const hasRequestInit = init => requestInitMembers.some(name => init[name] !== undefined);
 
     class Request {
-        constructor(input = missingRequestInput, init = {}) {
-            if (input === missingRequestInput) throw new TypeError('Request requires an input');
+        constructor(input, init = {}) {
+            if (arguments.length < 1) throw new TypeError('Request requires an input');
             const source = input instanceof Request ? input : null;
             init = init == null ? {} : Object(init);
             if (init.window !== undefined && init.window !== null)
@@ -116,7 +116,7 @@
             // Fetch copies the associated request, not author-overridable Web IDL getters.
             // Reading source.url/method here can turn a local data request into an unrelated POST.
             // https://fetch.spec.whatwg.org/#dom-request
-            const url = new URL(source ? source.__url : String(input)).href;
+            const url = source ? source.__url : urlApi.resolve(input);
             if (hasCredentials(url)) throw new TypeError('Request URL cannot include credentials');
             this.__url = url;
             this.__method = normalizedMethod(optionValue(init, 'method', source?.__method ?? 'GET'));
@@ -131,10 +131,10 @@
             const fallbackPolicy = source && !initNotEmpty ? source.__referrerPolicy : '';
             const fallbackReferrer = source && !initNotEmpty ? source.__referrer : 'about:client';
             this.__referrerPolicy = enumValue(optionValue(init, 'referrerPolicy', fallbackPolicy), referrerPolicies, 'referrerPolicy');
-            this.__referrer = String(optionValue(init, 'referrer', fallbackReferrer));
+            this.__referrer = urlApi.usv(optionValue(init, 'referrer', fallbackReferrer));
             if (this.__referrer !== '' && this.__referrer !== 'about:client') {
-                this.__referrer = new URL(this.__referrer).href;
-                if (new URL(this.__referrer).origin !== new URL(location.href).origin)
+                this.__referrer = urlApi.resolve(this.__referrer);
+                if (urlApi.parts(this.__referrer).origin !== urlApi.origin())
                     this.__referrer = 'about:client';
             }
             this.__integrity = String(optionValue(init, 'integrity', source?.__integrity ?? ''));
@@ -244,9 +244,12 @@
         }
         static error() { return Response.__fromNetwork({ status: 0, statusText: '', responseType: 'error', url: '', redirected: false, headers: [] }, null, true); }
         static redirect(url, status = 302) {
+            if (arguments.length < 1) throw new TypeError('Response.redirect requires a URL');
+            url = urlApi.usv(url);
             status = Number(status);
+            const resolved = urlApi.resolve(url);
             if (![301, 302, 303, 307, 308].includes(status)) throw new RangeError('Invalid redirect status');
-            return new Response(null, { status, headers: { location: new URL(String(url)).href } });
+            return new Response(null, { status, headers: { location: resolved } });
         }
         static json(value, init = {}) {
             const body = JSON.stringify(value);

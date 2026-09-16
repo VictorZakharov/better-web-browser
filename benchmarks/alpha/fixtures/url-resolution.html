@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>URL and request resolution</title>
+<base href="/url-resources/">
+<style>body{font:16px Arial,sans-serif;margin:24px}#main{max-width:900px}li{margin:12px 0;padding:8px;background:#edf6ed}</style>
+</head><body><main id="main"><h1>URL and request resolution</h1>
+<p>Public URL parsing and internal network parsing have different base rules.</p>
+<ul id="results"></ul></main><script>
+(async()=>{
+    const list=document.getElementById('results');
+    const pass=(condition,label)=>{
+        if(!condition)throw Error(label);
+        const item=document.createElement('li');item.textContent=label;list.append(item);
+    };
+    const NativeURL=URL;
+    pass(!URL.canParse('data.txt') && URL.parse('data.txt')===null,'Relative public URLs require a base');
+    const url=new URL('data.txt',document.baseURI);
+    pass(url.pathname==='/url-resources/data.txt','Explicit URL base resolves correctly');
+    const iterator=url.searchParams.entries();url.search='?first=1&second=2';
+    pass(iterator.next().value[0]==='first','Query iterators follow the current URL');
+    globalThis.URL=class extends NativeURL {
+        constructor(input,base){
+            if(base===undefined && !/^[a-z][a-z0-9+.-]*:/i.test(String(input)))throw TypeError('Invalid scheme');
+            super(input,base);
+        }
+    };
+    const xhrText=await new Promise((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();xhr.open('GET','data.txt');
+        xhr.onload=()=>resolve(xhr.responseText.trim());xhr.onerror=()=>reject(Error('XHR failed'));xhr.send();
+    });
+    pass(xhrText==='resolved','XHR keeps working with a standards-compliant author URL');
+    globalThis.URL=class{constructor(){throw Error('Public URL is not an internal parser')}};
+    const text=await fetch('data.txt').then(response=>response.text());
+    pass(text.trim()==='resolved','Fetch uses the native URL parser and document base');
+    document.querySelector('base').href='/';
+    pass(new Request('data.txt').url===location.origin+'/data.txt','Request observes a changed document base');
+    pass(Response.redirect('next').headers.get('location')===location.origin+'/next','Redirect resolves using API settings');
+    const xhr=new XMLHttpRequest();let error;
+    try{xhr.open('GET','http://:bad')}catch(e){error=e}
+    pass(error?.name==='SyntaxError','Invalid XHR URLs report SyntaxError');
+    document.documentElement.setAttribute('data-fixture-ready','true');
+})().catch(error=>{document.getElementById('results').textContent='FAILED: '+error.message;console.error(error)});
+</script></body></html>

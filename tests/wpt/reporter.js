@@ -45,10 +45,16 @@
         } else {
             const count = Math.ceil(payload.length / 8192);
             if (count > 128) throw new Error('WPT callback report exceeds transport budget');
-            for (let index = 0; index < count; index++) {
+            let index = 0;
+            const emitChunk = () => {
                 console.log('__BREEZE_WPT_CHUNK__' + JSON.stringify({ index, data: payload.slice(index * 8192, (index + 1) * 8192) }));
-            }
-            console.log(marker + JSON.stringify({ chunks: count }));
+                index++;
+                if (index < count) setTimeout(emitChunk, 1);
+                else console.log(marker + JSON.stringify({ chunks: count }));
+            };
+            // A runtime wakeup can batch ready tasks. A positive delay leaves the
+            // next chunk pending for a later wakeup and its bounded report.
+            setTimeout(emitChunk, 1);
         }
     });
 })();

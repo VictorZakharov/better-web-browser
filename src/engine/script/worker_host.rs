@@ -95,6 +95,9 @@ pub(super) fn dispatch_worker_host_call(
     args: &[JsValue],
     state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = super::url_host::dispatch(operation, args)? {
+        return Ok(value);
+    }
     match operation {
         "performanceNow" => Ok(JsValue::from(state.performance_clock.now())),
         "performanceTimeOrigin" => Ok(JsValue::from(state.performance_clock.time_origin())),
@@ -127,37 +130,7 @@ pub(super) fn dispatch_worker_host_call(
                 resolve_url(&state.source_url, &value).unwrap_or(value),
             ))
         }
-        "strictResolveUrl" => {
-            let value = argument_string(args, 1)?;
-            let base = if args.len() > 2 {
-                argument_string(args, 2)?
-            } else {
-                state.source_url.clone()
-            };
-            let resolved = crate::navigation::resolve_web_url(&base, &value).ok_or_else(|| {
-                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
-            })?;
-            Ok(js_string(resolved))
-        }
-        "parseWebUrl" => {
-            let value = argument_string(args, 1)?;
-            let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
-                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
-            })?;
-            Ok(js_string(
-                serde_json::to_string(&parts).expect("URL parts serialize"),
-            ))
-        }
-        "setWebUrlComponent" => {
-            let value = argument_string(args, 1)?;
-            let component = argument_string(args, 2)?;
-            let input = argument_string(args, 3)?;
-            let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
-                .ok_or_else(|| {
-                    JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
-                })?;
-            Ok(js_string(resolved))
-        }
+        "apiBaseUrl" | "apiOriginUrl" => Ok(js_string(state.source_url.clone())),
         "workerLocation" => Ok(js_string(state.source_url.clone())),
         "workerName" => Ok(js_string(state.name.clone())),
         "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),

@@ -125,14 +125,6 @@ impl HostState {
         }
     }
 
-    pub(in crate::engine::script) fn script_base_url(&self) -> String {
-        Node::descendants(&self.document)
-            .filter(|node| node.tag_name() == Some("base"))
-            .find_map(|node| node.attr("href"))
-            .and_then(|href| crate::navigation::resolve_url(&self.document_url, &href))
-            .unwrap_or_else(|| self.document_url.clone())
-    }
-
     pub(in crate::engine::script) fn script_is_external(&self, node: &NodeRef) -> bool {
         self.prepared_script_external
             .get(&node.id())

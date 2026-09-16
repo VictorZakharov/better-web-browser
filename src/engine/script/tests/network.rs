@@ -8,10 +8,10 @@ use crate::fetch::{
 fn url_constructor_resolves_relative_inputs_and_rejects_invalid_urls() {
     let (dom, outcome) = execute_html(
         r#"<body><div></div><script>
-            const resolved = new URL('/path?q=1').href;
+            const resolved = new URL('/path?q=1', location.href).href;
             const request = new Request('/request');
             document.querySelector('div').textContent = [
-                resolved, URL.canParse('/other'), URL.canParse('http://:invalid'), request.url
+                resolved, URL.canParse('/other', location.href), URL.canParse('http://:invalid'), request.url
             ].join('|');
         </script></body>"#,
     );

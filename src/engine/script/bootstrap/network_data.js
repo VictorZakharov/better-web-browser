@@ -1,5 +1,6 @@
 (() => {
     'use strict';
+    const urlApi = globalThis.__urlInternals;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -326,8 +327,8 @@
         if (body instanceof ReadableStream) return { bytes: null, stream: body, type: '' };
         if (body instanceof Blob) return { bytes: new Uint8Array(body.__bytes), stream: null, type: body.type };
         if (body instanceof FormData) return multipartBody(body);
-        if (body instanceof URLSearchParams)
-            return { bytes: encoder.encode(body.toString()), stream: null, type: 'application/x-www-form-urlencoded;charset=UTF-8' };
+        if (urlApi.isParams(body))
+            return { bytes: encoder.encode(urlApi.serializeParams(body)), stream: null, type: 'application/x-www-form-urlencoded;charset=UTF-8' };
         const bytes = copyBytes(body);
         if (bytes) return { bytes, stream: null, type: '' };
         return { bytes: encoder.encode(String(body)), stream: null, type: 'text/plain;charset=UTF-8' };

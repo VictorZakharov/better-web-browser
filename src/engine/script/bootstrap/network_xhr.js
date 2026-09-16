@@ -1,6 +1,7 @@
 (() => {
     'use strict';
     const windowObject = globalThis;
+    const urlApi = globalThis.__urlInternals;
     const markTrusted = globalThis.__markTrustedEvent;
     const receiveResponse = globalThis.__receiveXhrResponse;
     delete globalThis.__receiveXhrResponse;
@@ -152,15 +153,20 @@
         __isCurrent(controller) { return this.__send && this.__controller === controller; }
 
         open(method, url, async = true, user = null, password = null) {
+            if (arguments.length < 2) throw new TypeError('open requires a method and URL');
+            method = byteString(method, 'Method');
+            url = urlApi.usv(url);
+            user = user === null ? null : urlApi.usv(user);
+            password = password === null ? null : urlApi.usv(password);
             method = normalizeMethod(method);
-            const parsed = new URL(String(url));
+            let parsed;
+            try { parsed = urlApi.resolve(url); }
+            catch (_) { throw new DOMException('Invalid request URL', 'SyntaxError'); }
             async = !!async;
-            user = user === null ? null : String(user);
-            password = password === null ? null : String(password);
             if (!async) throw new DOMException('Synchronous XMLHttpRequest is not supported', 'NotSupportedError');
             this.__cancelSilently();
             const wasOpened = this.__readyState === XMLHttpRequest.OPENED;
-            this.__method = method; this.__url = parsed.href;
+            this.__method = method; this.__url = parsed;
             this.__user = user; this.__password = password;
             this.__headers = new Headers(); this.__mime = null;
             this.__uploadComplete = true; this.__uploadTotal = 0;
@@ -271,7 +277,7 @@
         __requestError(type) {
             if (!this.__send) return;
             if (type !== 'abort' && failureDiagnostics++ < 32)
-                __hostCall('console', 'warn', 'XHR failed: ' + type + ' origin=' + new URL(this.__url).origin);
+                __hostCall('console', 'warn', 'XHR failed: ' + type + ' origin=' + urlApi.parts(this.__url).origin);
             const uploadIncomplete = !this.__uploadComplete;
             this.__uploadComplete = true;
             this.__clear();

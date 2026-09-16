@@ -11,6 +11,9 @@ pub(super) fn dispatch_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = super::url_host::dispatch(operation, args)? {
+        return Ok(value);
+    }
     if let Some(value) = task_scheduling::dispatch(operation, args, state)? {
         return Ok(value);
     }
@@ -199,37 +202,8 @@ pub(super) fn dispatch_host_call(
             let value = argument_string(args, 1)?;
             Ok(js_string(state.resolved_url(&value)))
         }
-        "strictResolveUrl" => {
-            let value = argument_string(args, 1)?;
-            let base = if args.len() > 2 {
-                argument_string(args, 2)?
-            } else {
-                state.document_url.clone()
-            };
-            let resolved = crate::navigation::resolve_web_url(&base, &value).ok_or_else(|| {
-                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
-            })?;
-            Ok(js_string(resolved))
-        }
-        "parseWebUrl" => {
-            let value = argument_string(args, 1)?;
-            let parts = crate::navigation::web_url_parts(&value).ok_or_else(|| {
-                JsNativeError::typ().with_message(format!("Invalid URL: {value}"))
-            })?;
-            Ok(js_string(
-                serde_json::to_string(&parts).expect("URL parts serialize"),
-            ))
-        }
-        "setWebUrlComponent" => {
-            let value = argument_string(args, 1)?;
-            let component = argument_string(args, 2)?;
-            let input = argument_string(args, 3)?;
-            let resolved = crate::navigation::set_web_url_component(&value, &component, &input)
-                .ok_or_else(|| {
-                    JsNativeError::typ().with_message(format!("Invalid URL {component}: {input}"))
-                })?;
-            Ok(js_string(resolved))
-        }
+        "apiBaseUrl" => Ok(js_string(state.script_base_url())),
+        "apiOriginUrl" => Ok(js_string(state.document_url.clone())),
         "navigate" => {
             let value = argument_string(args, 1)?;
             let resolved = state.resolved_url(&value);

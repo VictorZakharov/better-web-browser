@@ -1,5 +1,6 @@
 (() => {
     'use strict';
+    const urlApi = globalThis.__urlInternals;
     const host = (...args) => __hostCall(...args);
     const pending = new Map();
     let failureDiagnostics = 0;
@@ -7,7 +8,7 @@
         // Handled rejections still need diagnostic evidence. Never include request URLs,
         // response bodies, or server error text, which may contain credentials.
         if (failureDiagnostics++ < 32) {
-            const origin = new URL(pending.get(Number(id)).request.url).origin;
+            const origin = urlApi.parts(pending.get(Number(id)).request.url).origin;
             host('console', 'warn', 'Fetch ' + id + ' failed: ' + detail + ' origin=' + origin);
         }
     };

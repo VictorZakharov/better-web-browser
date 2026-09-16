@@ -157,7 +157,7 @@ pub(super) fn execute_inner(
     for _ in 0..2 {
         runtime::document_lifecycle::run_one(context, host, &mut outcome);
     }
-    for _ in 0..STARTUP_TIMER_PASSES {
+    for _ in 0..types::STARTUP_TIMER_PASSES {
         if defer_dynamic_scripts {
             let mut no_dynamic_script_loader = None;
             settle_startup_timer_slice(

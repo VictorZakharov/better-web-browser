@@ -1,5 +1,6 @@
 (() => {
     'use strict';
+    const urlApi = globalThis.__urlInternals;
     const data = globalThis.__networkData;
     const streamForBytes = bytes => new ReadableStream({
         start(controller) { controller.enqueue(new Uint8Array(bytes)); controller.close(); }
@@ -122,7 +123,7 @@
             return readBodyBytes(this).then(bytes => {
                 if (parsed.essence === 'application/x-www-form-urlencoded') {
                     const form = new FormData();
-                    for (const [name, value] of new URLSearchParams(data.decoder.decode(bytes))) form.append(name, value);
+                    for (const [name, value] of urlApi.parseFormBytes(bytes)) form.append(name, value);
                     return form;
                 }
                 if (parsed.essence === 'multipart/form-data') return multipartFormData(bytes, contentType);

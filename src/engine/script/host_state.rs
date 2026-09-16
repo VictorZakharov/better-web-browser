@@ -3,6 +3,7 @@
 use super::*;
 use crate::engine::MediaEnvironment;
 
+mod base_url;
 mod cookies;
 pub(crate) mod geometry;
 mod ownership;
@@ -27,6 +28,7 @@ pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) named_property_index: super::dom_host::NamedPropertyIndex,
     pub(super) document_url: String,
+    api_base_cache: RefCell<Option<base_url::CachedBaseUrl>>,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
     pub(super) stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
@@ -114,6 +116,7 @@ impl HostState {
             document,
             named_property_index: Default::default(),
             document_url: document_url.to_string(),
+            api_base_cache: RefCell::new(None),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),
             pointer_path: Vec::new(),
