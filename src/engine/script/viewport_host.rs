@@ -93,18 +93,27 @@ pub(super) fn viewport_host_call(
             JsValue::from(state.layout_viewport_width as f64),
             JsValue::from(state.layout_viewport_height as f64),
         ]),
-        "documentCompatMode" => {
-            js_string(
-                (if argument_id(args, 1) == state.id_for(&state.document.clone())
-                    && state.quirks_mode
-                {
-                    "BackCompat"
+        "documentCompatMode" => js_string(
+            (if state.node(argument_id(args, 1)).is_some_and(|node| {
+                if node.id() == state.document.id() {
+                    state.quirks_mode
                 } else {
-                    "CSS1Compat"
-                })
-                .to_string(),
-            )
-        }
+                    state
+                        .document_streams
+                        .parsers
+                        .get(&node.id())
+                        .is_some_and(|session| {
+                            session.parser.dom().quirks_mode.get()
+                                != html5ever::tree_builder::QuirksMode::NoQuirks
+                        })
+                }
+            }) {
+                "BackCompat"
+            } else {
+                "CSS1Compat"
+            })
+            .to_string(),
+        ),
         _ => return Ok(None),
     };
     Ok(Some(value))

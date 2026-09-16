@@ -172,17 +172,20 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 220-file Web Platform Test suite covers 2,169 upstream harness subtests across HTML
+A pinned, curated 295-file Web Platform Test suite covers 2,653 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,169 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,653 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
 ```
+
+The latest [document-stream and preserved-wrapping slice](docs/document-streams-and-pre-wrap.md)
+documents replacement semantics, headless browser checks and the remaining compatibility boundaries.
 
 The runner emits `target/wpt/report.json`, enforces the 200-subtest minimum, and fails on
 regressions, crashes, changed failure modes, and unexpected passes. This is a focused regression

@@ -221,6 +221,7 @@ impl DocumentRuntime {
         let Some(script) = script else {
             return Ok(());
         };
+        let parser_blocking = script.blocks_first_paint;
         if !self
             .script_runtime
             .as_ref()
@@ -262,9 +263,18 @@ impl DocumentRuntime {
                 cancelable: false,
             })?;
             merge_outcome(outcome, response.outcome, self.page.dom.document.id());
+            if parser_blocking && self.parser.is_none() {
+                if let Some(runtime) = self.script_runtime.as_mut() {
+                    merge_outcome(
+                        outcome,
+                        runtime.resume_document_stream(),
+                        self.page.dom.document.id(),
+                    );
+                }
+                self.collect_document_stream_changes();
+            }
             return Ok(());
         };
-        let parser_blocking = script.blocks_first_paint;
         let prepare =
             (parser_blocking && self.parser.is_some()).then(|| self.written_script_preparation());
         let mut written_stylesheets = Vec::new();
@@ -309,11 +319,19 @@ impl DocumentRuntime {
                 runtime.execute_additional_with_loader(&[input], None)
             };
             merge_outcome(outcome, result, self.page.dom.document.id());
+            if parser_blocking && self.parser.is_none() {
+                merge_outcome(
+                    outcome,
+                    runtime.resume_document_stream(),
+                    self.page.dom.document.id(),
+                );
+            }
         }
         if parser_changed {
             self.page.discover_parsed_resources();
             self.record_written_stylesheets(written_stylesheets);
         }
+        self.collect_document_stream_changes();
         Ok(())
     }
 }

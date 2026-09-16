@@ -77,8 +77,9 @@ after the outer return. Its executable SHA-256 was
 `2312D17E85A843C8D9F0CA84A441AE23673A8574A18655877416C5ED8581AF20`.
 Headless Chrome 153.0.8010.47 and the new release both passed the exact required trace.
 Both final screenshots were inspected: the success panel and inserted content
-are present. Breeze's long pre-wrapped trace remains on one line where Chrome
-wraps it; that existing text-layout difference is outside this parser contract.
+are present. That run exposed a pre-wrapped trace remaining on one line in Breeze.
+The follow-up [preserved wrapping and document-stream slice](document-streams-and-pre-wrap.md)
+addresses that difference and records fresh comparison evidence.
 
 Local verification passed: 1,096 library tests (one existing ignored test), 17
 WPT-runner tests, all 123 isolated-renderer tests, the complete 53-test live-browser
@@ -91,14 +92,14 @@ source-size gates passed. These are correctness checks, not a navigation benchma
 
 ## Deliberate remaining boundaries
 
-- `document.open()/close()` and destructive writes without an active insertion
-  point are a separate lifecycle contract. The old completed-DOM fallback remains;
-  it must not be used as evidence for active-parser conformance.
+- `document.open()/close()` and writes without an active insertion point now use
+  [script-created streams](document-streams-and-pre-wrap.md), replacing the old
+  completed-DOM fragment fallback. See that contract's explicit remaining boundaries.
 - Parser custom-element notifications still occur at script/input checkpoints,
   not every token. Full reaction timing, parser-originated MutationObserver records,
   callback cleanup boundaries and nested browsing-context/realm loading need
   dedicated slices.
-- CSP, Trusted Types, module destructive-write policy and complete stylesheet-set
+- CSP, Trusted Types, asynchronous module continuation policy and complete stylesheet-set
   selection are not implemented by this change.
 
 This is a generic loading correctness fix, not a YouTube workaround, a visual

@@ -58,7 +58,6 @@
         createHTMLDocument(title = '') { return wrap(host('createHtmlDocument', String(title))); }
     }
 
-    let documentWriteRefreshQueued = false;
     let throwOnDynamicMarkupInsertion = 0;
     const documentDefaultViews = new WeakMap();
     const documentReadiness = new WeakMap();
@@ -166,21 +165,26 @@
                 if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
                 return String(value);
             }).join('');
-            if (throwOnDynamicMarkupInsertion)
-                throw new DOMException('A parser-created custom element cannot write to the document', 'InvalidStateError');
+            checkDynamicMarkupTarget(this);
             if (writeIntoActiveParser(this, text)) return;
-            host('documentWrite', text);
-            if (!documentWriteRefreshQueued) {
-                documentWriteRefreshQueued = true;
-                Promise.resolve().then(() => {
-                    documentWriteRefreshQueued = false;
-                    markChildCollectionsChanged(document, document.body);
-                    upgradeCustomElementTree(document);
-                    refreshWindowNamedProperties();
-                });
-            }
+            if (host('ignoreDestructiveWrite')) return;
+            openDocumentStream(this);
+            writeIntoActiveParser(this, text);
         }
         writeln(...parts) { this.write(...parts, '\n'); }
+        open(...args) {
+            if (args.length >= 3) {
+                if (!(this instanceof Document)) throw new TypeError('Illegal invocation');
+                if (!this.defaultView) throw new DOMException('This document has no window', 'InvalidAccessError');
+                throw new DOMException('Opening auxiliary browsing contexts is not supported', 'NotSupportedError');
+            }
+            checkDynamicMarkupTarget(this);
+            return openDocumentStream(this);
+        }
+        close() {
+            checkDynamicMarkupTarget(this);
+            if (host('documentClose', this.__id)) pumpDocumentParser(this, true);
+        }
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }

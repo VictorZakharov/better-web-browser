@@ -1,5 +1,7 @@
 //! Exercise the same authored fixture used for the headless Chromium comparison.
 use super::support::*;
+#[path = "document_streams.rs"]
+mod streams;
 use std::{fs, net::TcpListener, thread, time::Duration};
 
 #[test]

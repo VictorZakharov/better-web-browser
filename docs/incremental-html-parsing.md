@@ -162,8 +162,9 @@ Keep reports, profiles and screenshots in ignored output directories.
   [streaming navigation](streaming-html-navigation.md). Generic `page_ready_ms`
   still denotes first presentation, not visual completion or window load.
 - [Active-parser writes](synchronous-document-write.md) now support same-script reads,
-  nested execution and parser pause/resumption. `document.open()/close()` and destructive
-  writes without an insertion point remain incomplete. Fragment insertion is not a substitute.
+  nested execution and parser pause/resumption. [Script-created streams](document-streams-and-pre-wrap.md)
+  now cover `document.open()/close()` and replacement without an insertion point;
+  nested browsing-context and policy boundaries remain explicitly documented.
 - Stylesheet waiting consumes the current conservative admitted stylesheet set.
   Disabled/media applicability, pending imports, alternate sheets and exact
   script-blocking versus render-blocking state remain the next stylesheet slice.

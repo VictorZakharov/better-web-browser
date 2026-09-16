@@ -123,7 +123,7 @@ pub(super) fn discover_non_script_resources(
     resources
 }
 
-pub(super) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> Option<PageScript> {
+pub(crate) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> Option<PageScript> {
     if node.namespace_uri() != Some("http://www.w3.org/1999/xhtml") {
         return None;
     }

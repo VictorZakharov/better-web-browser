@@ -18,8 +18,13 @@ impl ScriptRuntime {
         prepare: PrepareWrittenScript,
         initial_count: usize,
     ) -> ParserScriptResult {
+        let target = self.host.borrow().document.clone();
         self.host.borrow_mut().parser_write_session =
             Some(super::super::parser_writes::ParserWriteSession {
+                target,
+                script_created: false,
+                closed: false,
+                nesting: 0,
                 parser,
                 prepare,
                 prepared: Vec::new(),
@@ -29,6 +34,7 @@ impl ScriptRuntime {
                 root: input.node.id(),
                 insertion_point: false,
                 paused: false,
+                blocked_on: None,
                 script_bytes: 0,
                 remaining_script_bytes: MAX_PAGE_SCRIPT_BYTES
                     .saturating_sub(self.total_script_bytes.saturating_add(input.code.len())),

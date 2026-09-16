@@ -2,10 +2,7 @@
 
 use super::binding_helpers::{append_html_fragment, argument_id, argument_string, node_label};
 use super::*;
-use crate::limits::{MAX_DOCUMENT_WRITE_BYTES, MAX_DOM_TREE_MUTATIONS_PER_TASK};
-mod document_write;
-use document_write::queue_document_write;
-pub(super) use document_write::{eval_with_writes, flush_document_write};
+use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 
 pub(super) fn mutation_host_call(
     operation: &str,
@@ -13,6 +10,9 @@ pub(super) fn mutation_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     if let Some(value) = super::parser_writes::dispatch(operation, args, state)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = super::document_streams::dispatch(operation, args, state)? {
         return Ok(Some(value));
     }
     let value = match operation {
@@ -29,7 +29,6 @@ pub(super) fn mutation_host_call(
         "attrRemoveNs" => super::attribute_host::remove_attribute_ns(args, state)?,
         "innerHtmlSet" => set_inner_html(args, state)?,
         "innerHtmlAppend" => append_inner_html(args, state)?,
-        "documentWrite" => queue_document_write(args, state)?,
         _ => return Ok(None),
     };
     Ok(Some(value))
@@ -48,7 +47,7 @@ pub(super) fn enforce_tree_budget_for_operation(
             | "adoptNode"
             | "innerHtmlSet"
             | "innerHtmlAppend"
-            | "documentWrite"
+            | "documentOpen"
             | "parserWriteBegin"
             | "attachShadow"
             | "adoptedStyleSheetsSet"
@@ -349,11 +348,4 @@ fn subtree_contains_style(root: &NodeRef) -> bool {
     Node::shadow_including_descendants(root).any(|node| {
         matches!(node.tag_name(), Some("style" | "link")) || !node.adopted_stylesheets().is_empty()
     })
-}
-
-fn contains_ascii_tag(html: &str, tag: &str) -> bool {
-    let needle = format!("<{tag}");
-    html.as_bytes()
-        .windows(needle.len())
-        .any(|candidate| candidate.eq_ignore_ascii_case(needle.as_bytes()))
 }

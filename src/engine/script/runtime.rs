@@ -11,6 +11,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 mod completions;
 pub(super) mod document_lifecycle;
+mod document_streams;
 mod geometry;
 mod memory;
 mod module_preparation;

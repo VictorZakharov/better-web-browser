@@ -2,6 +2,11 @@
 use super::*;
 
 impl DocumentRuntime {
+    pub(in crate::renderer_process::child::document) fn abandon_document_load_resources(&mut self) {
+        for pending in &mut self.pending_resource_preloads {
+            pending.load_blockers.clear();
+        }
+    }
     pub(super) fn register_document_load_resources(&mut self) {
         if self.pending_resource_preloads.is_empty()
             || self

@@ -1,6 +1,6 @@
 # Loading standards: implementation sequence
 
-Updated 2026-09-15. This is a code-backed loading-pipeline inventory, not a claim
+Updated 2026-09-16. This is a code-backed loading-pipeline inventory, not a claim
 that HTML loading is conformant or a percentage of the web platform implemented.
 YouTube is a supplementary compatibility check, not the definition of correctness.
 
@@ -52,7 +52,7 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 4 | [Active-parser synchronous writes](synchronous-document-write.md), [streaming decoding and charset replay](streaming-html-navigation.md) are implemented. Document replacement and destructive writes remain. | `document/parsing.rs`, `dom/incremental/writes.rs`, `script/parser_writes.rs` | Extend lifecycle coverage to `document.open()/close()`, inactive insertion points and nested browsing contexts. |
+| 4 | [Active-parser writes](synchronous-document-write.md), [streaming decoding](streaming-html-navigation.md), and [script-created document streams](document-streams-and-pre-wrap.md) are implemented for their documented subsets. | `document/parsing.rs`, `dom/incremental/writes.rs`, `script/document_streams.rs` | Extend lifecycle coverage to nested browsing contexts, unload/aborted parsers, CSP and Trusted Types. |
 | 5 | [Stylesheet dependency loading and separate script/paint gates](stylesheet-loading-dependencies.md) are implemented for the documented subset. Full stylesheet-set selection and imported CSSOM objects remain. | `page/stylesheets.rs`, `css/imports.rs`, renderer resource loader | Extend owned loading/cascade checks to preferred/alternate sets and imported-rule identity/mutation. |
 | 6 | [HTML event-handler content attributes](html-event-handlers.md) now cover parsing, mutation, lazy compilation, scope, ordering, cancellation and body/window forwarding. Remaining boundaries include CSP and broader browsing-context/realm behavior. | `bootstrap/event_handlers.js`, native V8 compilation, DOM attributes/construction | Continue with policy and browsing-context slices; do not infer their completion from handler names being present. |
 
@@ -70,7 +70,8 @@ batches continue at low timer priority. Health/deadline polling remains as a fal
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
 Retained parser ownership now removes the whole-DOM-before-script startup barrier.
 Main-response parsing now progresses before EOF and active-parser writes re-enter synchronously.
-Document replacement and full stylesheet-set/CSSOM behavior remain boundaries.
+Script-created replacement now shares that tokenizer. Nested-context navigation
+and full stylesheet-set/CSSOM behavior remain boundaries.
 Deferred/module readiness and document lifecycle separation are
 implemented for the currently admitted resource paths; this is not a complete HTML
 navigation implementation.

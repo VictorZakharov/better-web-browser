@@ -41,6 +41,9 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/002.html", "area": "HTML document streams", "expected": "pass" },
+    { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/custom-element.window.js", "area": "HTML document streams", "expected": "pass" },
+    { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/type-argument.window.js", "area": "HTML document streams", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/document-write/001.html", "area": "HTML parser writes", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/document-write/002.html", "area": "HTML parser writes", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/document-write/003.html", "area": "HTML parser writes", "expected": "pass" },
