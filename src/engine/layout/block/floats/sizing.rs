@@ -155,12 +155,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut preferred = 0.0_f32;
         let mut run = 0.0_f32;
         let mut line = 0.0_f32;
+        let mut hanging = 0.0_f32;
         for (index, atom) in atoms.iter().enumerate() {
             if matches!(atom, InlineAtom::Break) {
-                minimum = minimum.max(run);
-                preferred = preferred.max(line);
+                minimum = minimum.max(run - hanging);
+                preferred = preferred.max(line - hanging);
                 run = 0.0;
                 line = 0.0;
+                hanging = 0.0;
                 continue;
             }
             let breaks = self.inline_break_before(atoms, index);
@@ -181,14 +183,15 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 (lo, measured.width)
             };
             if breaks {
-                minimum = minimum.max(run);
+                minimum = minimum.max(run - hanging);
                 run = lo;
             } else {
                 run += lo;
             }
             line += hi;
+            hanging = self.hanging_space_width(atom);
         }
-        (minimum.max(run), preferred.max(line))
+        (minimum.max(run - hanging), preferred.max(line - hanging))
     }
 }
 

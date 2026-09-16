@@ -199,8 +199,10 @@ pub(super) fn apply_declaration(
         "white-space" => {
             style.white_space = match value {
                 "nowrap" => WhiteSpace::NoWrap,
-                "pre" | "pre-wrap" => WhiteSpace::Pre,
-                _ => WhiteSpace::Normal,
+                "pre" => WhiteSpace::Pre,
+                "pre-wrap" => WhiteSpace::PreWrap,
+                "normal" => WhiteSpace::Normal,
+                _ => return,
             }
         }
         "text-decoration" | "text-decoration-line" => {

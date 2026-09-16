@@ -11,7 +11,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let measured = self.measure_atom(atom, false, basis);
-            widths[index] = measured.width + following;
+            widths[index] = measured.width + following
+                - if following == 0.0 {
+                    self.hanging_space_width(atom)
+                } else {
+                    0.0
+                };
             following = if self.inline_break_before(atoms, index) {
                 0.0
             } else {
@@ -19,6 +24,26 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             };
         }
         widths
+    }
+
+    pub(in crate::engine::layout) fn hanging_space_width(&mut self, atom: &InlineAtom) -> f32 {
+        // CSS Text §4.1.2: pre-wrap end-of-line spaces hang, so they do not force
+        // an otherwise fitting word onto another line or shift text alignment.
+        let InlineAtom::Text {
+            text,
+            font,
+            preserve_space: true,
+            no_wrap: false,
+            ..
+        } = atom
+        else {
+            return 0.0;
+        };
+        let trimmed = text.trim_end_matches([' ', '\t']);
+        if trimmed.len() == text.len() {
+            return 0.0;
+        }
+        self.measurer.measure(text, font).0 - self.measurer.measure(trimmed, font).0
     }
 }
 
