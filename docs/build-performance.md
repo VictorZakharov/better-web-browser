@@ -67,6 +67,12 @@ retain its startup output, so its precise cause cannot be asserted retrospective
 No PR checks are removed, and the required gate names and fast-PR/full-main split
 remain unchanged.
 
+PR #163's first hosted renderer smoke run exposed a separate setup-deadline bug:
+the video/watchdog test declared a ten-second first-frame deadline but unwrapped
+a two-second per-event receive timeout before sending the deliberate busy callback.
+The receive now uses the remaining setup deadline. The 500 ms watchdog, 150 ms
+kill grace, callback duration and frame-cadence assertions are unchanged.
+
 ### September 15 PR policy (#155)
 
 The required `windows` and `Linear PR history` names remain unchanged. Source-changing PRs retain
