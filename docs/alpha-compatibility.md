@@ -1,6 +1,8 @@
 # Public technical-alpha compatibility evidence
 
 This page records the historical 2026-08-24 alpha acceptance evidence, not current-HEAD timings.
+For the newer release/Chrome measurements and prior-PR comparison, see the
+[September 16 reassessment](browser-performance-2026-09-16.md).
 The matrix has since expanded from nine to twelve fixtures. The current source of truth is
 `benchmarks/alpha/matrix.json`; methodology and rerun instructions are in [`benchmarks/README.md`](../benchmarks/README.md).
 

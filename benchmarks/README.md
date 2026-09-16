@@ -50,6 +50,10 @@ The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
 ## Controlled comparison contract
 
+The [September 16 release reassessment](../docs/browser-performance-2026-09-16.md)
+records current three-run medians, startup-probe limitations, private/working memory,
+CPU and scrolling, plus live Wikipedia and failed modern DuckDuckGo evidence.
+
 - Canonical evidence runs both browsers on the same machine from release builds. Main CI uses Breeze's `debug` profile and the release Chromium harness; its timing fields are regression signals only. Every browser remains hidden and gets a new temporary profile for every sample. Cache is disabled in Chromium; the loopback server sends `Cache-Control: no-store`.
 - The matrix fixes the outer Breeze window, `en-US` locale, settle period, scroll sample count, and fixture bytes. Breeze's observed content viewport and Windows scale factor are then applied to Chromium. Fractional Windows scaling requires at most a two-CSS-pixel viewport tolerance because CDP accepts integer dimensions and Chromium quantizes device pixels.
 - Breeze launches only through `scripts/run-hidden-benchmark.ps1`, which fail-closes unless the actual child command line contains `--benchmark`. A harness timeout still writes bounded partial JSON with its failure kind, safe URLs, process tree and cleanup result, bounded/redacted diagnostics, and screenshot availability before returning an error. Chromium launches with the exact `--headless` flag, `CreateNoWindow`, a fresh profile, and a visible-window check.
