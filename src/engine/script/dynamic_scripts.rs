@@ -33,6 +33,9 @@ pub(super) fn drain_one_dynamic_script(
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
+    if super::dynamic_modules::run_one_import(context, host, outcome) {
+        return true;
+    }
     // Legacy synchronous embedders may supply already-available sources. The isolated renderer
     // never enters this adapter: it publishes completions and executes only ready elements.
     if !host.borrow().pending_dynamic_scripts.has_ready()
@@ -119,7 +122,9 @@ fn execute_prepared(
             return;
         }
     };
-    if total_bytes.get().saturating_add(code.len()) > MAX_PAGE_SCRIPT_BYTES {
+    if pending_script.kind == ScriptKind::Classic
+        && total_bytes.get().saturating_add(code.len()) > MAX_PAGE_SCRIPT_BYTES
+    {
         outcome.errors.push(format!(
             "{}: skipped because the page exceeds the {} MiB JavaScript limit",
             pending_script.source_url,
@@ -138,12 +143,14 @@ fn execute_prepared(
         }
         return;
     }
-    total_bytes.set(total_bytes.get() + code.len());
+    if pending_script.kind == ScriptKind::Classic {
+        total_bytes.set(total_bytes.get() + code.len());
+    }
     let script = ScriptInput {
         node: pending_script.node,
         source_url: pending_script.source_url,
         code,
-        kind: ScriptKind::Classic,
+        kind: pending_script.kind,
         fetch_options: pending_script.fetch_options,
         finish_lifecycle: false,
     };

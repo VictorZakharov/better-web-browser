@@ -41,7 +41,7 @@ Current page support includes:
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
-- Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
+- Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static/dynamic document ECMAScript modules with top-level await, and isolated classic/module dedicated workers
 - Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, persistent RFC-oriented cookies, CORS/preflight checks, bounded backpressured renderer streams, and document-wide cancellation
@@ -190,11 +190,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 323-file Web Platform Test suite covers 2,708 upstream harness subtests across HTML
+A pinned, curated 325-file Web Platform Test suite covers 2,720 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,708 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,720 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -248,9 +248,9 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists; `sessionStorage` is tab-scoped. Named properties preserve UTF-16 values, and same-origin tabs synchronize local storage with ordered `storage` events. Child-frame event scope, partitioned state, and user-facing data controls remain incomplete; see the [storage contract](docs/web-storage.md). |
 | ◩ | JavaScript Fetch and XHR | Document and dedicated-worker Fetch bodies stream progressively through default readers, with byte-based backpressure, cloning, and cancellation. Fetch/XHR and Body primitives are implemented; BYOB, streaming uploads, and complete pipe/transform semantics remain incomplete. See the [streaming contract and measurements](docs/progressive-fetch.md). |
-| ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
+| ◩ | ECMAScript modules | Static graphs, top-level `await`, and [dynamic document JavaScript modules](docs/dynamic-modules.md) are implemented. Import maps/attributes, other module types, and dynamic worker imports remain gaps. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
-| ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), [synchronous dynamic inline classics](docs/inline-scripts-and-table-geometry.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Dynamic module insertion, customized built-ins, and the complete HTML rendering/event-loop model remain incomplete. |
+| ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), [synchronous dynamic inline classics](docs/inline-scripts-and-table-geometry.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, [dynamic module insertion](docs/dynamic-modules.md), and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Customized built-ins and the complete HTML rendering/event-loop model remain incomplete. |
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |

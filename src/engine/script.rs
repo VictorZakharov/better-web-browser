@@ -19,6 +19,7 @@ mod bootstrap;
 mod cssom_host;
 mod document_streams;
 mod dom_host;
+mod dynamic_modules;
 mod dynamic_scripts;
 mod engine;
 mod execution;
@@ -74,7 +75,6 @@ use types::{STARTUP_TIMER_PASSES, STARTUP_TIMER_SLICE};
 pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerRuntime, WorkerRuntimeOutcome};
 pub use workers::ScriptWorkerAction;
-
 #[cfg(test)]
 #[path = "script/tests/mod.rs"]
 mod tests;

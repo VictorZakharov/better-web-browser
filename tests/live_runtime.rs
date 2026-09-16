@@ -14,6 +14,8 @@ mod authored_controls;
 mod deferred_scripts;
 #[path = "live_runtime/document_lifecycle.rs"]
 mod document_lifecycle;
+#[path = "live_runtime/dynamic_modules.rs"]
+mod dynamic_modules;
 #[path = "live_runtime/dynamic_scripts.rs"]
 mod dynamic_scripts;
 #[path = "live_runtime/flex_axes.rs"]

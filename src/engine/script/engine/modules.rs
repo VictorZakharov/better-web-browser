@@ -13,8 +13,9 @@ pub(super) enum EngineModuleEvaluation {
 }
 
 #[derive(Default)]
-struct ModuleRegistry {
-    by_url: RefCell<HashMap<String, v8::Global<v8::Module>>>,
+pub(super) struct ModuleRegistry {
+    pub by_url: RefCell<HashMap<String, v8::Global<v8::Module>>>,
+    pub errors: RefCell<HashMap<String, v8::Global<v8::Value>>>,
     url_by_script_id: RefCell<HashMap<i32, String>>,
 }
 
@@ -44,6 +45,29 @@ pub(super) fn evaluate(
     let mut missing = Vec::new();
 
     while let Some(url) = queue.pop_front() {
+        let imports = context
+            .get_slot::<super::dynamic_imports::Imports>()
+            .unwrap();
+        let inherited = imports.origins.borrow().get(root_url).cloned();
+        if let Some(mut origin) = inherited {
+            if url != root_url {
+                origin.base = url.clone();
+            }
+            imports
+                .origins
+                .borrow_mut()
+                .entry(url.clone())
+                .or_insert(origin);
+        }
+        let cached_error = registry.errors.borrow().get(&url).cloned();
+        if let Some(error) = cached_error {
+            let error = v8::Local::new(tc, error);
+            registry
+                .errors
+                .borrow_mut()
+                .insert(root_url.into(), v8::Global::new(tc, error));
+            return Err(type_error(error.to_rust_string_lossy(tc)));
+        }
         let cached = registry.by_url.borrow().get(&url).cloned();
         let module = if let Some(cached) = cached {
             v8::Local::new(tc, cached)
@@ -55,7 +79,22 @@ pub(super) fn evaluate(
                     .get(&url)
                     .expect("queued module source is present")
             };
-            compile_module(tc, &url, source)?
+            match compile_module(tc, &url, source) {
+                Ok(module) => module,
+                Err(error) => {
+                    if let Some(exception) = tc.exception() {
+                        registry
+                            .errors
+                            .borrow_mut()
+                            .insert(root_url.into(), v8::Global::new(tc, exception));
+                        registry
+                            .errors
+                            .borrow_mut()
+                            .insert(url.clone(), v8::Global::new(tc, exception));
+                    }
+                    return Err(error);
+                }
+            }
         };
         let script_id = module
             .script_id()
@@ -79,7 +118,16 @@ pub(super) fn evaluate(
                 return Err(type_error("source-phase module imports are not supported"));
             }
             let specifier = request.get_specifier().to_rust_string_lossy(tc);
-            let dependency = resolve_specifier(&url, &specifier).map_err(type_error)?;
+            if request.get_import_attributes().length() != 0 {
+                return Err(type_error("import attributes are not supported"));
+            }
+            let base = imports
+                .origins
+                .borrow()
+                .get(&url)
+                .map(|origin| origin.base.clone())
+                .unwrap_or_else(|| url.clone());
+            let dependency = resolve_specifier(&base, &specifier).map_err(type_error)?;
             if dependency != root_url
                 && !loaded_sources.contains_key(&dependency)
                 && !registry.by_url.borrow().contains_key(&dependency)
@@ -156,7 +204,7 @@ fn compile_module<'s>(
         .ok_or_else(|| caught_error(scope, "compile module"))
 }
 
-fn resolve_module<'s>(
+pub(super) fn resolve_module<'s>(
     context: v8::Local<'s, v8::Context>,
     specifier: v8::Local<'s, v8::String>,
     _import_attributes: v8::Local<'s, v8::FixedArray>,
@@ -170,6 +218,16 @@ fn resolve_module<'s>(
         .get(&referrer.script_id()?)
         .cloned()?;
     let specifier = specifier.to_rust_string_lossy(scope);
+    let base = context
+        .get_slot::<super::dynamic_imports::Imports>()
+        .and_then(|imports| {
+            imports
+                .origins
+                .borrow()
+                .get(&base)
+                .map(|origin| origin.base.clone())
+        })
+        .unwrap_or(base);
     let url = match resolve_specifier(&base, &specifier) {
         Ok(url) => url,
         Err(error) => {
@@ -198,6 +256,16 @@ pub(super) extern "C" fn initialize_import_meta(
     let Some(url) = registry.url_by_script_id.borrow().get(&script_id).cloned() else {
         return;
     };
+    let url = context
+        .get_slot::<super::dynamic_imports::Imports>()
+        .and_then(|imports| {
+            imports
+                .origins
+                .borrow()
+                .get(&url)
+                .map(|origin| origin.base.clone())
+        })
+        .unwrap_or(url);
     let Some(key) = v8::String::new(scope, "url") else {
         return;
     };

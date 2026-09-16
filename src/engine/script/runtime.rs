@@ -12,6 +12,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 mod completions;
 pub(super) mod document_lifecycle;
 mod document_streams;
+mod dynamic_modules;
+mod dynamic_scripts;
 mod geometry;
 mod memory;
 mod module_preparation;
@@ -159,41 +161,6 @@ impl ScriptRuntime {
         host.next_callback_due().map(|due| due.saturating_sub(now))
     }
 
-    pub fn has_pending_dynamic_scripts(&self) -> bool {
-        !self.host.borrow().pending_dynamic_scripts.is_empty()
-    }
-
-    pub fn pending_dynamic_script_requests(&self) -> Vec<DynamicScriptRequest> {
-        self.host.borrow().pending_dynamic_scripts.requests()
-    }
-
-    pub fn take_dynamic_script_requests(&mut self) -> Vec<DynamicScriptRequest> {
-        self.host
-            .borrow_mut()
-            .pending_dynamic_scripts
-            .take_requests()
-    }
-
-    /// Network completion publishes readiness; it never executes JavaScript reentrantly.
-    pub fn complete_dynamic_script(&mut self, node: NodeId, result: Result<String, String>) {
-        if self.is_active() {
-            self.host.borrow_mut().pending_dynamic_scripts.complete(
-                node,
-                result,
-                self.total_script_bytes.get(),
-            );
-        }
-    }
-
-    pub fn has_runnable_dynamic_scripts(&self) -> bool {
-        let host = self.host.borrow();
-        host.pending_dynamic_scripts.has_ready() || host.pending_dynamic_scripts.has_unrequested()
-    }
-
-    pub fn has_ready_dynamic_scripts(&self) -> bool {
-        self.host.borrow().pending_dynamic_scripts.has_ready()
-    }
-
     /// Advances the realm clock without selecting a timer task for execution.
     pub fn elapse_time(&mut self, advance: Duration) {
         let mut host = self.host.borrow_mut();
@@ -300,6 +267,7 @@ impl ScriptRuntime {
         };
         let has_dynamic_script = max_callbacks > 0
             && (host.borrow().pending_dynamic_scripts.has_ready()
+                || !host.borrow().module_jobs.ready.is_empty()
                 || (dynamic_script_loader.is_some()
                     && !host.borrow().pending_dynamic_scripts.is_empty()));
         let has_ready_timer = {

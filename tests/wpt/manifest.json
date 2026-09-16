@@ -11,6 +11,11 @@
     "expectations": "forbidden"
   },
   "support": [
+    "html/semantics/scripting-1/the-script-element/module/imports-a.js",
+    "html/semantics/scripting-1/the-script-element/module/syntaxerror.js",
+    "html/semantics/scripting-1/the-script-element/module/bad-module-specifier.js",
+    "html/semantics/scripting-1/the-script-element/module/instantiation-error-1.js",
+    "html/semantics/scripting-1/the-script-element/module/throw-error.js",
     "html/semantics/scripting-1/the-script-element/execution-timing/testlib/testlib.js",
     "html/semantics/scripting-1/the-script-element/execution-timing/scripts/include-1.js",
     "css/cssom/support/import-rule.css",
@@ -47,6 +52,16 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {
+      "path": "html/semantics/scripting-1/the-script-element/module/dynamic-import/dynamic-imports.html",
+      "area": "Dynamic modules",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/scripting-1/the-script-element/module/dynamic-import/dynamic-imports-script-error.html",
+      "area": "Dynamic modules",
+      "expected": "pass"
+    },
     {
       "path": "html/semantics/scripting-1/the-script-element/execution-timing/089.html",
       "area": "Dynamic inline classic scripts",

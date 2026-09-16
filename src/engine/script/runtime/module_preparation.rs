@@ -4,6 +4,12 @@ use super::*;
 mod tests;
 
 impl ScriptRuntime {
+    pub(crate) fn register_module_options(&mut self, url: &str, options: ScriptFetchOptions) {
+        if let Some(context) = self.context.as_mut() {
+            context.register_script_origin(url, url, options);
+        }
+    }
+
     pub(crate) fn prepare_module_graph(
         &mut self,
         url: &str,
@@ -28,6 +34,9 @@ impl ScriptRuntime {
     ) -> Result<(), String> {
         if self.host.borrow().module_loader.contains(url) {
             return Ok(());
+        }
+        if self.host.borrow().module_loader.len() >= crate::limits::MAX_PAGE_SCRIPTS {
+            return Err("module map exceeds the module-count limit".into());
         }
         if source.len() > MAX_SCRIPT_BYTES
             || self.total_script_bytes.get().saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES

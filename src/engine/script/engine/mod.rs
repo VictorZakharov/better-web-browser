@@ -2,6 +2,7 @@
 
 mod bridge;
 mod crypto;
+mod dynamic_imports;
 mod event_handlers;
 mod modules;
 mod parser_scripts;

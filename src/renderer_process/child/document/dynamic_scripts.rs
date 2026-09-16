@@ -1,4 +1,4 @@
-//! Nonblocking Fetch ownership for dynamically prepared external classic scripts.
+//! Nonblocking Fetch ownership for inserted scripts and document module graph jobs.
 
 use super::fetch::page_resource_request;
 use super::resources::decode_script_response;
@@ -9,6 +9,7 @@ use crate::renderer_process::child::connection::PendingFetchBatch;
 struct Owners {
     resource: PageResource,
     nodes: Vec<NodeId>,
+    module: bool,
 }
 
 pub(super) struct PendingDynamicScriptFetch {
@@ -50,6 +51,24 @@ impl DocumentRuntime {
                 Owners {
                     resource,
                     nodes: vec![script.node],
+                    module: false,
+                },
+            );
+        }
+        for (url, fetch_options) in runtime.take_module_requests() {
+            let resource = PageResource::Script {
+                url,
+                kind: ScriptKind::Module,
+                fetch_options,
+            };
+            let id = connection.allocate_request_id();
+            requests.push(page_resource_request(id, self.id, &resource));
+            by_request.insert(
+                id,
+                Owners {
+                    resource,
+                    nodes: Vec::new(),
+                    module: true,
                 },
             );
         }
@@ -70,8 +89,21 @@ impl DocumentRuntime {
                     .by_request
                     .remove(&response.head.request_id)
                     .ok_or_else(|| "dynamic script response has no prepared owner".to_string())?;
-                let result = decode_script_response(response, ScriptKind::Classic);
+                let kind = if owners.module {
+                    ScriptKind::Module
+                } else {
+                    ScriptKind::Classic
+                };
+                let result = decode_script_response(response, kind);
                 if let Some(runtime) = self.script_runtime.as_mut() {
+                    if owners.module {
+                        let PageResource::Script { url, .. } = owners.resource else {
+                            unreachable!()
+                        };
+                        runtime.complete_module_fetch(url, result);
+                        continue;
+                    }
+                    let result = result.map(|(_, source)| source);
                     for node in owners.nodes {
                         runtime.complete_dynamic_script(node, result.clone());
                     }

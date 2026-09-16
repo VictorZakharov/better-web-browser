@@ -131,8 +131,9 @@ documented subsets; they do not establish complete HTML loading conformance. The
 blocking, including explicit links admitted before body insertion, not render-blocking scripts.
 
 This is parser-prepared classic/module readiness, not complete module support.
-Dynamic `import()`, import maps/attributes, dynamically inserted module elements,
-redirect-aware module identity/base URLs, and worker module loading need separate
+The follow-up [dynamic module slice](dynamic-modules.md) adds document `import()`,
+inserted module elements, and redirect-aware dynamic graph bases. Import maps/attributes,
+parser-prepared redirect provenance, and asynchronous worker module loading need separate
 coverage. The existing worker loader remains synchronous. Full HTML callback
 cleanup checkpoints and nested browsing-context load accounting remain separate gaps.
 [Inline event-handler content attributes](html-event-handlers.md) are now implemented

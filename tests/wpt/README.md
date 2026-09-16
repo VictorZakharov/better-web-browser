@@ -68,7 +68,7 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-323 passing files / 2,708 passing harness subtests (2026-09-16) with no failure, skip, timeout,
+325 passing files / 2,720 passing harness subtests (2026-09-16) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
@@ -76,7 +76,7 @@ manifest to be updated deliberately when compatibility changes.
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 323 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 325 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -102,6 +102,7 @@ follows:
 | CSSOM stylesheet ownership | 3 | Preferred-set insertion order and per-occurrence imported-sheet identity |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
+| Dynamic modules | 2 | Native import promises and parse/specifier/link/evaluation error identity |
 | Custom Elements | 8 | Registry isolation, definition lookup, when-defined promises, parser construction, and reaction ordering |
 | Shadow DOM | 3 | Root connectivity, detached slot assignment, and composed event retargeting |
 
