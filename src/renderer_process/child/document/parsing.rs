@@ -83,7 +83,7 @@ impl DocumentRuntime {
                     );
                     merge_outcome(
                         outcome,
-                        runtime.parser_dom_changed(),
+                        runtime.parser_dom_changed(self.page.dom.take_parser_mutations()),
                         self.page.dom.document.id(),
                     );
                 }

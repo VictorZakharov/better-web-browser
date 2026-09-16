@@ -1,8 +1,6 @@
 //! html5ever tree-construction adapter for the owned DOM model.
 
-use super::super::mutation::{
-    append_node, append_to_existing_text, parent_and_index, remove_from_parent,
-};
+use super::super::mutation::parent_and_index;
 use super::super::node::{ElementData, Node, NodeData, NodeRef};
 use super::Dom;
 use crate::limits::MAX_HTML_PARSE_ERRORS;
@@ -12,7 +10,6 @@ use html5ever::{Attribute, ExpandedName, QualName};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::mem;
 use std::rc::Rc;
 
 impl TreeSink for Dom {
@@ -103,11 +100,11 @@ impl TreeSink for Dom {
     fn append(&self, parent: &Self::Handle, child: NodeOrText<Self::Handle>) {
         if let NodeOrText::AppendText(text) = &child
             && let Some(previous) = parent.children.borrow().last()
-            && append_to_existing_text(previous, text)
+            && self.parser_append_text(previous, text)
         {
             return;
         }
-        append_node(
+        self.parser_insert(
             parent,
             match child {
                 NodeOrText::AppendText(text) => Node::new_in(
@@ -116,6 +113,7 @@ impl TreeSink for Dom {
                 ),
                 NodeOrText::AppendNode(node) => node,
             },
+            None,
         );
     }
 
@@ -138,7 +136,7 @@ impl TreeSink for Dom {
         public_id: StrTendril,
         system_id: StrTendril,
     ) {
-        append_node(
+        self.parser_insert(
             &self.document,
             Node::new_in(
                 Rc::clone(&self.identity),
@@ -148,6 +146,7 @@ impl TreeSink for Dom {
                     system_id: system_id.to_string(),
                 },
             ),
+            None,
         );
     }
 
@@ -176,7 +175,7 @@ impl TreeSink for Dom {
             parent_and_index(sibling).expect("append_before_sibling called for a parentless node");
         if let NodeOrText::AppendText(text) = &child
             && index > 0
-            && append_to_existing_text(&parent.children.borrow()[index - 1], text)
+            && self.parser_append_text(&parent.children.borrow()[index - 1], text)
         {
             return;
         }
@@ -187,11 +186,7 @@ impl TreeSink for Dom {
             ),
             NodeOrText::AppendNode(node) => node,
         };
-        remove_from_parent(&child);
-        child.parent.set(Some(Rc::downgrade(&parent)));
-        parent.children.borrow_mut().insert(index, child.clone());
-        Node::checkable_subtree_inserted(&child);
-        parent.mark_mutated();
+        self.parser_insert(&parent, child, Some(sibling));
     }
 
     fn add_attrs_if_missing(&self, target: &Self::Handle, attrs: Vec<Attribute>) {
@@ -208,6 +203,16 @@ impl TreeSink for Dom {
             .filter(|attribute| !existing_names.contains(&attribute.name))
             .collect::<Vec<_>>();
         let changed = !missing.is_empty();
+        for attribute in &missing {
+            let mut record = self.parser_record(target, "attributes");
+            if let Some(record) = &mut record {
+                record.attribute = Some((
+                    attribute.name.local.to_string(),
+                    attribute.name.ns.to_string(),
+                ));
+            }
+            self.queue_parser_record(record);
+        }
         existing.extend(missing);
         drop(existing);
         if changed {
@@ -216,20 +221,14 @@ impl TreeSink for Dom {
     }
 
     fn remove_from_parent(&self, target: &Self::Handle) {
-        remove_from_parent(target);
+        self.parser_remove(target);
     }
 
     fn reparent_children(&self, node: &Self::Handle, new_parent: &Self::Handle) {
-        let mut children = node.children.borrow_mut();
-        for child in children.iter() {
-            child.parent.set(Some(Rc::downgrade(new_parent)));
+        let children = node.children.borrow().clone();
+        for child in children {
+            self.parser_insert(new_parent, child, None);
         }
-        new_parent
-            .children
-            .borrow_mut()
-            .extend(mem::take(&mut *children));
-        node.mark_mutated();
-        new_parent.mark_mutated();
     }
 
     fn is_mathml_annotation_xml_integration_point(&self, target: &Self::Handle) -> bool {

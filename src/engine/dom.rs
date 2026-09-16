@@ -1,7 +1,7 @@
 //! DOM facade: stable node identity, mutations, document queries, and HTML tree construction.
 mod budget;
 mod cloning;
-mod document;
+pub(crate) mod document;
 pub(crate) mod incremental;
 mod mutation;
 mod node;

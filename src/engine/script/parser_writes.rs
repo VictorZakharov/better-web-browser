@@ -32,6 +32,15 @@ pub(super) fn dispatch(
     host: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     Ok(Some(match operation {
+        "observeParserMutations" => {
+            if let Some(node) = host.node(argument_id(args, 1)) {
+                node.observe_parser_mutations(argument_id(args, 2) != 0);
+                if argument_id(args, 3) != 0 {
+                    node.observe_parser_old_text(argument_id(args, 2) != 0);
+                }
+            }
+            JsValue::undefined()
+        }
         "parserWriteBegin" => {
             let id = argument_id(args, 1);
             if host
@@ -111,6 +120,7 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
     let quirks =
         session.parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks;
     let ended = session.script_created && session.parser.ended();
+    let records = session.parser.dom().take_parser_mutations();
     if target.id() == host.document.id() {
         host.quirks_mode = quirks;
     }
@@ -127,6 +137,7 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
         String::new()
     };
     Ok(JsValue::Object(vec![
+        ("mutations".into(), parser_mutation_records(host, records)),
         ("node".into(), JsValue::from(node)),
         ("ids".into(), JsValue::from(ids)),
         ("changed".into(), JsValue::from(changed)),
@@ -216,4 +227,62 @@ impl HostState {
             .collect::<Vec<_>>()
             .join(",")
     }
+}
+
+pub(super) fn parser_mutation_records(
+    host: &mut HostState,
+    records: Vec<crate::engine::dom::document::parser_mutations::ParserMutation>,
+) -> JsValue {
+    JsValue::Array(
+        records
+            .into_iter()
+            .map(|record| {
+                let mut ids = |nodes: Vec<NodeRef>| {
+                    JsValue::Array(
+                        nodes
+                            .iter()
+                            .map(|node| JsValue::from(host.id_for(node)))
+                            .collect(),
+                    )
+                };
+                let ancestors = ids(record.ancestors);
+                let added = ids(record.added);
+                let removed = ids(record.removed);
+                JsValue::Object(vec![
+                    ("target".into(), JsValue::from(host.id_for(&record.target))),
+                    ("type".into(), JsValue::from(record.kind.to_owned())),
+                    ("ancestors".into(), ancestors),
+                    ("added".into(), added),
+                    ("removed".into(), removed),
+                    (
+                        "previous".into(),
+                        JsValue::from(record.previous.as_ref().map_or(0, |n| host.id_for(n))),
+                    ),
+                    (
+                        "next".into(),
+                        JsValue::from(record.next.as_ref().map_or(0, |n| host.id_for(n))),
+                    ),
+                    (
+                        "name".into(),
+                        record
+                            .attribute
+                            .as_ref()
+                            .map_or(JsValue::Null, |a| JsValue::from(a.0.clone())),
+                    ),
+                    (
+                        "namespace".into(),
+                        record
+                            .attribute
+                            .as_ref()
+                            .filter(|a| !a.1.is_empty())
+                            .map_or(JsValue::Null, |a| JsValue::from(a.1.clone())),
+                    ),
+                    (
+                        "oldValue".into(),
+                        record.old_value.map_or(JsValue::Null, JsValue::from),
+                    ),
+                ])
+            })
+            .collect(),
+    )
 }

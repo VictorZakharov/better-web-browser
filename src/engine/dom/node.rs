@@ -67,6 +67,8 @@ pub(super) struct NodeIdAllocator {
     next_local: Cell<u64>,
     allocated_nodes: Cell<usize>,
     pub(super) mutation_version: Cell<u64>,
+    pub(super) parser_observers: Cell<usize>,
+    pub(super) parser_old_text_observers: Cell<usize>,
 }
 
 impl NodeIdAllocator {
@@ -81,6 +83,8 @@ impl NodeIdAllocator {
             next_local: Cell::new(1),
             allocated_nodes: Cell::new(0),
             mutation_version: Cell::new(0),
+            parser_observers: Cell::new(0),
+            parser_old_text_observers: Cell::new(0),
         })
     }
 

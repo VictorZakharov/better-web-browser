@@ -2,7 +2,7 @@
 use super::support::*;
 use std::{fs, net::TcpListener, thread, time::Duration};
 
-fn run(source: &'static str) -> serde_json::Value {
+pub(super) fn run(source: &'static str) -> serde_json::Value {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/writes", listener.local_addr().unwrap());
     let server = thread::spawn(move || serve_fixtures(listener, 1, |_| source));

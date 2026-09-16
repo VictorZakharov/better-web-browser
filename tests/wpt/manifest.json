@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "dom/nodes/mutationobservers.js",
     "html/webappapis/dynamic-markup-insertion/document-write/005.js",
     "html/webappapis/dynamic-markup-insertion/document-write/006.js",
     "html/webappapis/dynamic-markup-insertion/document-write/007.js",
@@ -41,6 +42,7 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    { "path": "dom/nodes/MutationObserver-takeRecords.html", "area": "DOM mutation observers", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/002.html", "area": "HTML document streams", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/custom-element.window.js", "area": "HTML document streams", "expected": "pass" },
     { "path": "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/type-argument.window.js", "area": "HTML document streams", "expected": "pass" },

@@ -31,7 +31,11 @@ impl HtmlParser {
         let (source, truncated) = bounded_utf8_prefix(source, MAX_HTML_INPUT_BYTES);
         let mut options = ParseOpts::default();
         options.tree_builder.scripting_enabled = true;
-        let parser = parse_document(Dom::default(), options);
+        let dom = Dom {
+            observable_parser: true,
+            ..Default::default()
+        };
+        let parser = parse_document(dom, options);
         if truncated {
             parser.tokenizer.sink.sink.errors.borrow_mut().push(format!(
                 "safety limit: HTML input was truncated at {MAX_HTML_INPUT_BYTES} bytes"
@@ -65,6 +69,8 @@ impl HtmlParser {
             document,
             errors: Default::default(),
             quirks_mode: std::cell::Cell::new(html5ever::tree_builder::QuirksMode::NoQuirks),
+            observable_parser: true,
+            parser_mutations: Default::default(),
         };
         let mut options = ParseOpts::default();
         options.tree_builder.scripting_enabled = true;

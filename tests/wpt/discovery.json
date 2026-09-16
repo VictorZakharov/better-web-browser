@@ -12,6 +12,12 @@
   },
   "tests": [
     {
+      "path": "dom/nodes/MutationObserver-document.html",
+      "area": "HTML parser mutation observers",
+      "expected": "fail",
+      "reason": "Parser insertion and removal subtests pass; the dynamic inline script insertion subtest depends on synchronous execution of a script created with textContent, which remains unsupported."
+    },
+    {
       "path": "css/cssom-view/table-scroll-props.html",
       "area": "CSS layout",
       "expected": "fail",
