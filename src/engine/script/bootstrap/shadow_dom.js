@@ -42,7 +42,7 @@
     scheduleSlotChangeCheck = () => {
         if (slotCheckQueued) return;
         slotCheckQueued = true;
-        Promise.resolve().then(() => {
+        host('queueMicrotask', () => {
             slotCheckQueued = false;
             for (const root of trackedShadowRoots) {
                 for (const slot of root.querySelectorAll('slot')) {

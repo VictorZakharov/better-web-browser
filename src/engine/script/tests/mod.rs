@@ -52,6 +52,7 @@ mod media_source_initial;
 mod media_source_segments;
 mod media_source_tracks;
 mod metadata;
+mod microtasks;
 mod modules;
 mod mutations;
 mod network;

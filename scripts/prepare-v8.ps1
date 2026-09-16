@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('debug', 'release')]
+    [ValidateSet('debug', 'release', 'performance')]
     [string] $Profile = 'debug',
     [string] $Target
 )
@@ -97,7 +97,7 @@ try {
     [IO.Directory]::CreateDirectory($libraryDirectory) | Out-Null
     $library = Join-Path $libraryDirectory 'rusty_v8.lib'
     if (-not (Assert-V8Library -Path $library)) {
-        $candidateProfiles = @('debug', 'release') |
+        $candidateProfiles = @('debug', 'release', 'performance') |
             ForEach-Object { Join-Path (Join-Path $targetRoot $_) 'gn_out\obj\rusty_v8.lib' }
         $candidate = $candidateProfiles |
             Where-Object { $_ -ne $library -and (Test-Path -LiteralPath $_ -PathType Leaf) } |

@@ -8,6 +8,9 @@ The Chromium baseline is owned by this repository under `benchmarks/chromium` an
 
 Every checked-in page, stylesheet, script, and SVG is original project material. The fixtures imitate useful page roles without copying third-party page bodies or captures.
 
+Both browsers must observe the owned fixture's `data-fixture-ready="true"` marker.
+A nonblank shell or an empty uncaught-error list alone does not establish readiness.
+
 | Fixture | Compatibility role | Extra gate |
 |---|---|---|
 | `encyclopedia-article` | Long-form article, infobox, contents, references | Six-second early-scroll trace |
@@ -19,6 +22,7 @@ Every checked-in page, stylesheet, script, and SVG is original project material.
 | `layout-matrix` | Flex, grid, table, float, overflow | Layout and visual checks |
 | `media-fonts` | Raster data URL, SVG, and system webfont | Resource and visual checks |
 | `async-mutation` | Delayed DOM/class/text mutation | Settle and visual checks |
+| `native-microtasks` | Bootstrap with an author Promise scheduler | Native job ordering, mutation delivery, and readiness |
 | `custom-elements` | Autonomous custom-element bootstrap | Upgrade and visual checks |
 | `shadow-components` | Nested roots, slots, scoped styles, composed events | Shadow-aware structural and visual checks |
 | `constructed-stylesheets` | Shared stylesheet adoption and live rule changes | Scoped cascade and visual checks |

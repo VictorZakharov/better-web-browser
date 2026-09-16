@@ -131,6 +131,8 @@ impl DocumentRuntime {
             .as_ref()
             .is_some_and(ScriptRuntime::has_ready_document_task);
         if !render
+            && !self.resource_event_pending
+            && !self.pending_async_outcome.render_requested
             && !self
                 .parser_scripts
                 .has_ready_with_styles(!self.parser_stylesheets_pending())

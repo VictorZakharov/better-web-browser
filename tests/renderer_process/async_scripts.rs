@@ -17,6 +17,8 @@ mod deferred;
 mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
 mod dynamic;
+#[path = "async_scripts/nonvisual.rs"]
+mod nonvisual;
 #[path = "async_scripts/parsing.rs"]
 mod parsing;
 #[path = "async_scripts/rendering.rs"]

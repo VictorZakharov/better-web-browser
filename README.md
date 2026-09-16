@@ -39,7 +39,7 @@ Current page support includes:
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
-- A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
+- A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers, [native microtasks independent of author Promise implementations](docs/native-microtasks-and-resource-invalidation.md), navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
 - [IntersectionObserver geometry and queued snapshots](docs/intersection-observer-geometry.md), with containing-block overflow clips, nested scroll margins, and callback microtask checkpoints (remaining geometry and v2-visibility gaps are explicit)
 - Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static/dynamic document ECMAScript modules with top-level await, and isolated classic/module dedicated workers
@@ -73,7 +73,7 @@ from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against twelve deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against thirteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
@@ -83,32 +83,41 @@ The visual benchmark runs on every push to `main`, not on pull requests. It requ
 
 ### Current measured snapshot — September 16, 2026
 
-Fresh hidden release / Chrome 153 comparisons at implementation `0bdcd9e` passed
-all **36 owned fixture pairs** (three runs each). Selected three-run medians:
+Fresh hidden release / Chrome 153 trials alternate before/after/reference runs
+against the merged #164 release: five per browser on Coron, three on Main Page
+and modern DuckDuckGo. Current live medians:
 
 | Page | Breeze first presentation | Chrome load | Working set B/C | Private memory B/C |
 |---|---:|---:|---:|---:|
-| Owned encyclopedia article | 221 ms | 495 ms | 63.5 / 558.6 MiB | 36.9 / 295.7 MiB |
-| Live Wikipedia Main Page | 742 ms | 868 ms | 163.6 / 647.7 MiB | 127.7 / 396.0 MiB |
-| Live Coron, Palawan | 596 ms | 832 ms | 202.0 / 682.3 MiB | 169.9 / 436.8 MiB |
+| Live Wikipedia Main Page | 580 ms | 662 ms | 160.0 / 642.3 MiB | 124.4 / 396.9 MiB |
+| Live Coron, Palawan | 532 ms | 711 ms | 212.6 / 693.4 MiB | 179.7 / 442.6 MiB |
+
+The final owned matrix passed **39/39 pairs**, including an explicit ready-marker
+check in both browsers. A prior attempt's isolated startup timing failure is retained
+in the full report; the complete repeat passed without relaxing thresholds.
 
 **These are different readiness milestones, not a browser speed ratio.** Chrome's
-navigation-relative FCP was 293 ms on Main Page and 270 ms on Coron; Breeze's first
+navigation-relative FCP was 232 ms on Main Page and 260 ms on Coron; Breeze's first
 presentation is not proof that all useful content has loaded. Startup probes were
-about 12 ms for Breeze's hidden window versus 227–234 ms for Chrome's debugger on
-the selected owned cases—also different milestones, not interactive launch parity.
+about 9 ms for Breeze's hidden window versus 210–230 ms for Chrome's debugger on
+these pages—also different milestones, not interactive launch parity.
 
-Coron's early-scroll p95 was **6.5 ms**, all three traces passed, and scroll-only
-style/layout rebuilds stayed at zero. However, sampled cumulative CPU was **8.73 s
-for Breeze / 7.83 s for Chrome**; lower memory does not mean all rendering work is
-cheaper. Memory/CPU cover 2 versus 10 processes with different feature coverage.
-Same-day before/after loads were slower in both browsers' second batch: this PR
-does not establish a loading speedup. Modern DuckDuckGo still fails in Breeze and
-is not an accepted search baseline.
+Coron's early-scroll p95 was **5.0 ms**, all five traces passed, and scroll-only
+style/layout rebuilds stayed at zero. Sampled cumulative CPU was **8.14 s for
+Breeze / 6.11 s for Chrome**. Memory/CPU cover 2 versus 10 processes with different
+feature coverage. The nonvisual-resource fix removes a tested unnecessary-layout
+path, but live Coron style/layout medians are essentially unchanged: **no overall
+Wikipedia speedup is established**.
 
-The [full reassessment](docs/browser-performance-2026-09-16.md) includes all twelve
-fixtures, prior-PR comparisons, startup/memory/CPU definitions, live-site failures,
-scroll results, reproduction conditions, and remaining profiling targets.
+Modern DuckDuckGo's main module improved from a **2,014 ms watchdog timeout to
+108 ms**, and total JavaScript from **4.16 s to 0.82 s**, after fixing recursive
+microtask scheduling. It still renders an incomplete shell and encounters missing
+`DOMParser`; it is **not supported search yet**. The HTML fallback is unchanged.
+
+The [latest reassessment](docs/browser-performance-bootstrap-2026-09-16.md) contains
+the before/after table, startup/memory/CPU definitions, failures, reproduction, and
+remaining work. The [earlier assessment](docs/browser-performance-2026-09-16.md)
+preserves the previous twelve-fixture and historical PR comparisons.
 
 ### Historical renderer text cold-path comparison
 

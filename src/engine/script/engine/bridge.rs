@@ -113,6 +113,21 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    if operation == "queueMicrotask" {
+        // HTML microtasks share V8's job queue, not the author's replaceable Promise API.
+        // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#microtask-queuing
+        match v8::Local::<v8::Function>::try_from(arguments.get(1)) {
+            Ok(callback) => scope.enqueue_microtask(callback),
+            Err(_) => throw_error(
+                scope,
+                JsError {
+                    kind: JsErrorKind::Type,
+                    message: "queueMicrotask requires a callback".into(),
+                },
+            ),
+        }
+        return;
+    }
     if operation == "compileEventHandler" {
         super::event_handlers::compile(scope, arguments, return_value);
         return;

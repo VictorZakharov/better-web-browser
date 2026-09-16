@@ -1,6 +1,10 @@
 # Browser performance reassessment — 2026-09-16
 
-This replaces historical numbers as the current **measured snapshot**, not as a
+For the later interleaved before/after/reference trials and the diagnosed bootstrap
+blocker, see [the follow-up reassessment](browser-performance-bootstrap-2026-09-16.md).
+The numbers below preserve the earlier #164 snapshot, not current-HEAD timings.
+
+This replaced historical numbers as a **measured snapshot**, not as a
 claim of Chrome parity. Observer implementation revision: `0bdcd9e39912ff377e06959114113a9ea889f6e6`.
 Documentation-only follow-ups do not change that measured implementation.
 
