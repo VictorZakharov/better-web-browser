@@ -115,13 +115,13 @@ impl Node {
     }
 
     pub fn create_comment(contents: &str) -> NodeRef {
-        Node::new(NodeData::Comment(contents.to_string()))
+        Node::new(NodeData::Comment(RefCell::new(contents.to_string())))
     }
 
     pub fn create_comment_for(owner: &NodeRef, contents: &str) -> NodeRef {
         Node::new_in(
             Rc::clone(&owner.identity),
-            NodeData::Comment(contents.to_string()),
+            NodeData::Comment(RefCell::new(contents.to_string())),
         )
     }
 

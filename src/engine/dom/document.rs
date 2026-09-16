@@ -17,6 +17,7 @@ pub(crate) mod parser_mutations;
 mod title;
 #[path = "tree_sink.rs"]
 mod tree_sink;
+pub(crate) mod xml;
 
 #[derive(Debug, Clone)]
 pub struct Dom {

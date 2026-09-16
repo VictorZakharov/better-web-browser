@@ -2,8 +2,8 @@
 
 This page records the historical 2026-08-24 alpha acceptance evidence, not current-HEAD timings.
 For the newer release/Chrome measurements and prior-PR comparison, see the
-[September 16 follow-up reassessment](browser-performance-bootstrap-2026-09-16.md).
-The matrix has since expanded from nine to thirteen fixtures. The current source of truth is
+[September 16 DOMParser/hidden-removal reassessment](browser-performance-domparser-2026-09-16.md).
+The matrix has since expanded from nine to fourteen fixtures. The current source of truth is
 `benchmarks/alpha/matrix.json`; methodology and rerun instructions are in [`benchmarks/README.md`](../benchmarks/README.md).
 
 ## Deterministic gate result

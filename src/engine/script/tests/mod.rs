@@ -1,5 +1,7 @@
 use super::*;
 use crate::engine::dom;
+mod dom_parser;
+mod xhr_document;
 
 fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
     let dom = dom::parse_with_scripting(html, true);

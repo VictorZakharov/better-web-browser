@@ -234,7 +234,13 @@ fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let contents = argument_string(args, 2)?;
     let node = state.node(argument_id(args, 1));
     let mut kind = node.as_ref().map_or(MutationKind::CharacterData, |node| {
-        if matches!(&node.data, NodeData::Text(_) | NodeData::Comment(_)) {
+        if matches!(
+            &node.data,
+            NodeData::Text(_)
+                | NodeData::Cdata(_)
+                | NodeData::Comment(_)
+                | NodeData::ProcessingInstruction { .. }
+        ) {
             MutationKind::CharacterData
         } else {
             // Element.textContent replaces its child list, including the identity of any text
@@ -244,7 +250,15 @@ fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     });
     let removed = node
         .as_ref()
-        .filter(|node| !matches!(&node.data, NodeData::Text(_) | NodeData::Comment(_)))
+        .filter(|node| {
+            !matches!(
+                &node.data,
+                NodeData::Text(_)
+                    | NodeData::Cdata(_)
+                    | NodeData::Comment(_)
+                    | NodeData::ProcessingInstruction { .. }
+            )
+        })
         .map(|node| node.children.borrow().clone())
         .unwrap_or_default();
     if removed.iter().any(subtree_contains_style) {
@@ -254,9 +268,15 @@ fn set_text(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
         enforce_tree_budget(state)?;
     }
     if !contents.is_empty()
-        && node
-            .as_ref()
-            .is_some_and(|node| !matches!(&node.data, NodeData::Text(_) | NodeData::Comment(_)))
+        && node.as_ref().is_some_and(|node| {
+            !matches!(
+                &node.data,
+                NodeData::Text(_)
+                    | NodeData::Cdata(_)
+                    | NodeData::Comment(_)
+                    | NodeData::ProcessingInstruction { .. }
+            )
+        })
     {
         state.ensure_node_capacity(1)?;
     }

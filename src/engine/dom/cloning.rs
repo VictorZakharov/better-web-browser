@@ -37,6 +37,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             system_id: system_id.clone(),
         },
         NodeData::Text(text) => NodeData::Text(RefCell::new(text.borrow().clone())),
+        NodeData::Cdata(text) => NodeData::Cdata(RefCell::new(text.borrow().clone())),
         NodeData::Comment(contents) => NodeData::Comment(contents.clone()),
         NodeData::ProcessingInstruction { target, contents } => NodeData::ProcessingInstruction {
             target: target.clone(),

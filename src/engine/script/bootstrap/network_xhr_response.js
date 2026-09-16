@@ -1,6 +1,8 @@
 (() => {
     'use strict';
     const blobFromOwnedBytes = Blob.__fromOwnedBytes;
+    const parseDocumentResponse = globalThis.__parseXhrDocument;
+    delete globalThis.__parseXhrDocument;
     const concatBytes = chunks => {
         const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
         const bytes = new Uint8Array(length);
@@ -73,10 +75,11 @@
         } else if (xhr.__responseType === 'json') {
             try { xhr.__response = JSON.parse(xhr.__materializeResponseText()); }
             catch (_) { xhr.__response = null; }
-        } else if (xhr.__responseType === 'document') {
-            const parser = typeof DOMParser === 'function' ? new DOMParser() : null;
-            try { xhr.__response = xhr.__responseXML = parser?.parseFromString(xhr.__materializeResponseText(), contentType) || null; }
-            catch (_) { xhr.__response = xhr.__responseXML = null; }
+        } else if (xhr.__responseType === 'document' || xhr.__responseType === '') {
+            try {
+                xhr.__responseXML = parseDocumentResponse?.(xhr.__materializeResponseText(), contentType, xhr.__responseURL, xhr.__responseType === 'document') || null;
+            } catch (_) { xhr.__responseXML = null; }
+            if (xhr.__responseType === 'document') xhr.__response = xhr.__responseXML;
         }
         xhr.__finishSuccess(loaded, total);
     };

@@ -9,6 +9,7 @@ pub(super) struct PendingInvalidation {
     impact: InvalidationImpact,
     rebuild_style_rules: bool,
     removed_nodes: BTreeSet<NodeId>,
+    removed_global_dependency: bool,
 }
 
 impl PendingInvalidation {
@@ -55,8 +56,16 @@ impl PendingInvalidation {
     }
 
     pub(super) fn record_removed_subtree(&mut self, root: &NodeRef) {
-        self.removed_nodes
-            .extend(Node::shadow_including_descendants(root).map(|node| node.id()));
+        for node in Node::shadow_including_descendants(root) {
+            self.removed_nodes.insert(node.id());
+            // SVG definitions, slot redistribution, base URLs, and top-layer content affect boxes outside
+            // an otherwise hidden subtree. Retain this evidence before losing connectivity.
+            self.removed_global_dependency |= node.is_fullscreen()
+                || matches!(node.tag_name(), Some("base" | "slot"))
+                || node
+                    .namespace_uri()
+                    .is_some_and(|ns| ns != "http://www.w3.org/1999/xhtml");
+        }
     }
 
     pub(super) fn acknowledge_published_geometry(&mut self) {
@@ -73,6 +82,7 @@ impl PendingInvalidation {
             mutation_count,
             rebuild_style_rules: self.rebuild_style_rules,
             removed_nodes: self.removed_nodes.iter().copied().collect(),
+            removals_are_local: !self.removed_nodes.is_empty() && !self.removed_global_dependency,
         }
     }
 
@@ -154,6 +164,30 @@ mod tests {
         let invalidation = pending.snapshot(2);
         assert_eq!(invalidation.roots, vec![main.id()]);
         assert_eq!(invalidation.mutation_count, 2);
+    }
+
+    #[test]
+    fn removed_subtrees_retain_nonlocal_dependencies_until_consumed() {
+        for (source, local) in [
+            ("<section><script></script></section>", true),
+            ("<section><svg><defs/></svg></section>", false),
+            ("<section><base href='/other/'></section>", false),
+            ("<section><slot></slot></section>", false),
+        ] {
+            let dom = dom::parse(source);
+            let root = dom.elements_named("section").next().unwrap();
+            let mut pending = PendingInvalidation::default();
+            pending.record_removed_subtree(&root);
+            pending.acknowledge_published_geometry();
+            assert_eq!(pending.take(1).removals_are_local, local, "{source}");
+            assert!(!pending.snapshot(0).removals_are_local);
+        }
+        let dom = dom::parse("<main><p>fullscreen</p></main>");
+        let root = dom.elements_named("main").next().unwrap();
+        dom.elements_named("p").next().unwrap().set_fullscreen(true);
+        let mut pending = PendingInvalidation::default();
+        pending.record_removed_subtree(&root);
+        assert!(!pending.snapshot(1).removals_are_local);
     }
 
     #[test]

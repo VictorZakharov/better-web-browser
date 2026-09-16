@@ -29,7 +29,7 @@ pub(super) fn prepare(args: &[JsValue], state: &mut HostState) -> JsResult<JsVal
     // HTML uses child text content, excluding comments and nested elements.
     let mut code = String::new();
     for child in node.children.borrow().iter() {
-        if let NodeData::Text(text) = &child.data {
+        if let NodeData::Text(text) | NodeData::Cdata(text) = &child.data {
             if code.len().saturating_add(text.borrow().len()) > MAX_SCRIPT_BYTES {
                 return Err(JsNativeError::range()
                     .with_message("inline script exceeds the source byte limit")

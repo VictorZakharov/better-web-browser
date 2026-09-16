@@ -87,6 +87,7 @@ impl DocumentRuntime {
                     mutation_count: 0,
                     rebuild_style_rules: false,
                     removed_nodes: Vec::new(),
+                    removals_are_local: false,
                 };
             }
         }

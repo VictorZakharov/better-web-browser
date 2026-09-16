@@ -79,7 +79,7 @@ impl TreeSink for Dom {
     fn create_comment(&self, text: StrTendril) -> Self::Handle {
         Node::new_in(
             Rc::clone(&self.identity),
-            NodeData::Comment(text.to_string()),
+            NodeData::Comment(RefCell::new(text.to_string())),
         )
     }
 
@@ -94,7 +94,7 @@ impl TreeSink for Dom {
             Rc::clone(&self.identity),
             NodeData::ProcessingInstruction {
                 target: target.to_string(),
-                contents: data.to_string(),
+                contents: RefCell::new(data.to_string()),
             },
         )
     }

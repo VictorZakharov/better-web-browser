@@ -175,7 +175,6 @@ pub(super) fn dispatch_host_call(
                 closest.map(|node| state.id_for(&node)).unwrap_or_default(),
             ))
         }
-        "documentUrl" => Ok(js_string(state.document_url.clone())),
         "layoutRect" => {
             state.flush_layout_if_needed();
             let rect = state

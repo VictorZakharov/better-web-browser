@@ -114,7 +114,11 @@ impl Node {
     }
 
     pub fn set_text_content(node: &NodeRef, contents: &str) {
-        if let NodeData::Text(text) = &node.data {
+        if let NodeData::Text(text)
+        | NodeData::Cdata(text)
+        | NodeData::Comment(text)
+        | NodeData::ProcessingInstruction { contents: text, .. } = &node.data
+        {
             *text.borrow_mut() = contents.to_string();
             node.mark_mutated();
             return;

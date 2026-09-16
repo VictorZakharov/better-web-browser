@@ -221,7 +221,12 @@ pub(super) fn raw_children(node: &NodeRef, styles: &StyleSet) -> Vec<NodeRef> {
     {
         children.push(after);
     }
-    children.retain(|n| matches!(n.data, NodeData::Element(_) | NodeData::Text(_)));
+    children.retain(|n| {
+        matches!(
+            n.data,
+            NodeData::Element(_) | NodeData::Text(_) | NodeData::Cdata(_)
+        )
+    });
     children
 }
 
@@ -241,5 +246,5 @@ fn proper_table_child(display: Display) -> bool {
     internal(display) && display != Display::TableCell || display == Display::TableCaption
 }
 fn whitespace(node: &NodeRef) -> bool {
-    matches!(&node.data, NodeData::Text(text) if text.borrow().chars().all(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}')))
+    matches!(&node.data, NodeData::Text(text) | NodeData::Cdata(text) if text.borrow().chars().all(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}')))
 }
