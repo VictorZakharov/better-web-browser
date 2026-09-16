@@ -9,19 +9,21 @@
         append(...items) { this.appendChild(convertNodes(items)); },
         prepend(...items) { this.insertBefore(convertNodes(items), this.firstChild); },
         replaceChildren(...items) {
-            const removedNodes = [...this.childNodes];
-            let addedNodes;
-            const replacement = convertNodes(items);
-            ensurePreInsertionValidity(replacement, this, null, removedNodes);
-            withSuppressedMutationRecords(this, () => {
-                while (this.firstChild) this.removeChild(this.firstChild);
-                if (this.appendChild(replacement) === null)
-                    throw new DOMException('The replacement cannot be inserted here', 'HierarchyRequestError');
-                addedNodes = [...this.childNodes];
-            });
-            if (removedNodes.length || addedNodes.length) queueMutationRecord(this, 'childList', {
-                addedNodes,
-                removedNodes
+            return withScriptMutationBatch(() => {
+                const removedNodes = [...this.childNodes];
+                let addedNodes;
+                const replacement = convertNodes(items);
+                ensurePreInsertionValidity(replacement, this, null, removedNodes);
+                withSuppressedMutationRecords(this, () => {
+                    while (this.firstChild) this.removeChild(this.firstChild);
+                    if (this.appendChild(replacement) === null)
+                        throw new DOMException('The replacement cannot be inserted here', 'HierarchyRequestError');
+                    addedNodes = [...this.childNodes];
+                });
+                if (removedNodes.length || addedNodes.length) queueMutationRecord(this, 'childList', {
+                    addedNodes,
+                    removedNodes
+                });
             });
         },
         querySelector(selector) { return wrap(host('query', this.__id, String(selector))); },

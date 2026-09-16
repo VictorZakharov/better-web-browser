@@ -30,7 +30,7 @@ impl ScriptRuntime {
             return Ok(());
         }
         if source.len() > MAX_SCRIPT_BYTES
-            || self.total_script_bytes.saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES
+            || self.total_script_bytes.get().saturating_add(source.len()) > MAX_PAGE_SCRIPT_BYTES
         {
             return Err("module graph exceeds the JavaScript byte limit".into());
         }
@@ -40,7 +40,8 @@ impl ScriptRuntime {
             .module_loader
             .add_source(url.to_owned(), source.to_owned())
         {
-            self.total_script_bytes += source.len();
+            self.total_script_bytes
+                .set(self.total_script_bytes.get() + source.len());
         }
         Ok(())
     }

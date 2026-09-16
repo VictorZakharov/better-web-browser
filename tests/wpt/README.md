@@ -68,7 +68,7 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-306 passing files / 2,676 passing harness subtests (2026-09-16) with no failure, skip, timeout,
+323 passing files / 2,708 passing harness subtests (2026-09-16) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
@@ -76,7 +76,7 @@ manifest to be updated deliberately when compatibility changes.
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 306 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 323 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
@@ -86,7 +86,8 @@ follows:
 | Document streams | 3 | Document open/close, replacement, and parser state |
 | HTML event handlers | 12 | Compilation, scope, ordering, forwarding, mutation and errors |
 | Stylesheet loading | 1 | MIME rejection for nonempty and empty stylesheet responses |
-| DOM and mutation | 9 | Owned nodes, lookup, names, nested-document connectivity, hierarchy validation, atomic live mutation, and observer records |
+| DOM and mutation | 10 | Owned nodes, lookup, names, nested-document connectivity, hierarchy validation, atomic live mutation, and observer records |
+| Dynamic inline classic scripts | 15 | Synchronous insertion, empty/nonempty preparation, direct child text, movement, type/source changes, and nested/fragment execution order |
 | Events, Abort API, event loop, and animation frames | 23 | Dispatch semantics, cancellation, listeners, microtasks, and rendering callbacks |
 | Idle callbacks | 12 | Deadline caps, timeout races while busy, cancellation, exceptions, and FIFO/repost fairness |
 | Resize observers | 18 | Content/border boxes, padding, box selection, inline transitions, callback lifetime, depth and error handling, and observer ordering |
@@ -96,7 +97,7 @@ follows:
 | Readable streams | 2 | Demand-driven tee, cancellation, error ordering, and floating-point queue-size accounting |
 | Cookies | 1 | Document-cookie interaction with forbidden meta delivery |
 | Web Storage | 25 | Lossless strings, method/named access, conversions, quotas, enumeration, independent areas, and storage-event construction |
-| CSS cascade, selectors, and layout | 28 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
+| CSS cascade, selectors, and layout | 29 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
 | CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
 | CSSOM stylesheet ownership | 3 | Preferred-set insertion order and per-occurrence imported-sheet identity |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |
@@ -128,20 +129,19 @@ The broader ResizeObserver inventory is documented in
 [ResizeObserver delivery](../../docs/resize-observer-delivery.md#remaining-boundaries), including
 the cases intentionally outside this green gate. The selected 18 files are not a whole-spec pass rate.
 
-`discovery.json` is a separate, deliberately failing compatibility sample. Its two files cover
-table scrolling geometry and dynamic inline-script insertion during a mutation-observer test.
-The known file-level
-failure mode and reason are explicit, so an unexpected pass tells maintainers to promote newly
-supported coverage instead of masking it.
+Both former discovery cases, `MutationObserver-document.html` and `table-scroll-props.html`,
+now pass and are part of the strict gate. The obsolete failure manifest is retired. The table
+case was already green on merged main; only the dynamic inline-script case needed new execution
+support. Fifteen execution-timing files (`013`, `016`, `037`, `048`, `056`–`060`, `089`, `090`,
+`124`, and `127`–`129`) extend that script contract; their shared helper and support script remain
+in the external licensed WPT checkout.
 
-```powershell
-.\scripts\checkout-wpt.ps1 -Destination ..\wpt -Manifest .\tests\wpt\discovery.json
-.\scripts\run-wpt.ps1 -WptRoot ..\wpt -Manifest .\tests\wpt\discovery.json `
-  -Output .\target\wpt\discovery-report.json
-```
-
-The discovery result is an inventory, not a whole-platform pass rate. Restore the curated sparse
-selection by running the normal checkout command before the gated suite.
+See [inline scripts and table geometry](../../docs/inline-scripts-and-table-geometry.md) for the
+measured Chrome differences, including Chrome's four failing border-offset assertions in the
+pinned `table-client-props.html`. Existing passing coverage is not weakened to match that result.
+Future discovery manifests must document their actual observed non-pass and reason before use;
+there is currently no active expected-failure sample. None of these selections is a whole-platform
+pass rate.
 
 ## Runner decision
 

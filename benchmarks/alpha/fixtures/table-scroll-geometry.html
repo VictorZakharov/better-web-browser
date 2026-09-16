@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Table scrolling geometry</title>
+<style>
+body{font:16px sans-serif;margin:24px}
+.pane{width:180px;height:100px;border:2px solid #357;margin:12px;overflow:auto}
+table,.table{display:table;width:260px;height:180px;border:3px solid #357;border-spacing:0;padding:4px}
+caption,.caption{display:table-caption;height:30px;margin:10px 7px;background:#aee}
+td,.cell{display:table-cell;padding:0;background:#e5f5ea}
+.row{display:table-row}.group{display:table-row-group}
+pre{white-space:pre-wrap}
+</style>
+<h1>Table scroll areas and clamping</h1>
+<div id=cases></div><pre id=result>Running</pre>
+<script>
+addEventListener('load',()=>{
+ const facts=[],areas=[];
+ for(const name of ['top','bottom','collapsed','css-table']){
+   const pane=document.createElement('div');pane.className='pane';cases.append(pane);
+   pane.innerHTML=name==='css-table'
+     ? '<div class=table><div class=caption></div><div class=group><div class=row><div class=cell></div></div></div></div>'
+     : '<table><caption></caption><tbody><tr><td></td></tr></tbody></table>';
+   const table=pane.firstChild,caption=table.firstChild;
+   if(name==='bottom')caption.style.captionSide='bottom';
+   if(name==='collapsed')table.style.borderCollapse='collapse';
+   const before=table.getBoundingClientRect();
+   const geometry=[pane.clientWidth,pane.clientHeight,pane.scrollWidth,pane.scrollHeight,
+     table.clientWidth,table.clientHeight];
+   // Keep the known wrapper/grid interop differences visible, outside the shared
+   // Chrome/WPT contract asserted by this fixture's primary result.
+   areas.push([name,table.scrollWidth,table.scrollHeight,table.clientLeft,table.clientTop]);
+   pane.scrollTo(10000,10000);
+   const after=table.getBoundingClientRect();
+   const positive=[pane.scrollLeft,pane.scrollTop,before.x-after.x,before.y-after.y].map(v=>Math.round(v*100)/100);
+   pane.scrollTo(-100,-100);
+   facts.push([name,geometry,positive,[pane.scrollLeft,pane.scrollTop]]);
+ }
+ const table=document.createElement('table');
+ table.innerHTML='<caption></caption><tr><td></td></tr>';cases.append(table);
+ table.scrollTo(999,999);facts.push(['visible table offsets',table.scrollLeft,table.scrollTop]);
+ table.style.display='block';facts.push(['block table',table.clientWidth,table.clientHeight,table.clientLeft,table.clientTop]);
+ table.style.display='none';facts.push(['no box',table.clientWidth,table.clientHeight,table.scrollWidth,table.scrollHeight]);
+ result.dataset.facts=JSON.stringify(facts);result.dataset.tableAreas=JSON.stringify(areas);
+ result.textContent=facts.map(f=>JSON.stringify(f)).join('\n');
+ document.title=JSON.stringify(facts);
+});
+</script>

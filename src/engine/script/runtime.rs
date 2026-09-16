@@ -26,7 +26,7 @@ mod storage;
 pub struct ScriptRuntime {
     context: Option<Box<Context>>,
     pub(super) host: Rc<RefCell<HostState>>,
-    total_script_bytes: usize,
+    total_script_bytes: Rc<std::cell::Cell<usize>>,
     initialized: bool,
     prefer_timer_task: bool,
     last_heap_sample: Option<Instant>,
@@ -57,10 +57,11 @@ impl ScriptRuntime {
             Context::new(HostBridge::Document(Rc::downgrade(&host)))
                 .expect("the V8 document realm can be initialized"),
         );
+        let total_script_bytes = host.borrow().script_bytes.clone();
         Self {
             context: Some(context),
             host,
-            total_script_bytes: 0,
+            total_script_bytes,
             initialized: false,
             prefer_timer_task: true,
             last_heap_sample: None,
@@ -100,7 +101,7 @@ impl ScriptRuntime {
                 scripts,
                 context,
                 &host,
-                &mut self.total_script_bytes,
+                &self.total_script_bytes,
                 &mut dynamic_script_loader,
                 defer_dynamic_scripts,
                 request_document_lifecycle,
@@ -136,7 +137,7 @@ impl ScriptRuntime {
                 scripts,
                 context,
                 &host,
-                &mut self.total_script_bytes,
+                &self.total_script_bytes,
                 &mut dynamic_script_loader,
             )
         }));
@@ -179,7 +180,7 @@ impl ScriptRuntime {
             self.host.borrow_mut().pending_dynamic_scripts.complete(
                 node,
                 result,
-                self.total_script_bytes,
+                self.total_script_bytes.get(),
             );
         }
     }
@@ -320,7 +321,7 @@ impl ScriptRuntime {
                     &host,
                     &mut outcome,
                     &mut no_dynamic_script_loader,
-                    &mut self.total_script_bytes,
+                    &self.total_script_bytes,
                     TimerSlice {
                         advance,
                         max_callbacks: if has_dynamic_script { 1 } else { max_callbacks },
@@ -337,7 +338,7 @@ impl ScriptRuntime {
                     &host,
                     &mut outcome,
                     &mut dynamic_script_loader,
-                    &mut self.total_script_bytes,
+                    &self.total_script_bytes,
                 );
             }
             outcome

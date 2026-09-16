@@ -23,10 +23,9 @@ Chrome 153 on exact record metadata, text coalescing, foster parenting, and obse
 ordering. Hidden integration tests also cover synchronous writes and document replacement.
 Upstream `MutationObserver-takeRecords.html` is part of the strict curated gate.
 
-The upstream `MutationObserver-document.html` remains in discovery: its parser-insertion and
-parent-removal subtests pass, but its dynamic inline script insertion subtest fails because
-that separate synchronous script-execution path is not implemented. This is not a claim of
-complete MutationObserver or script-scheduling conformance.
+The upstream `MutationObserver-document.html` now passes all four subtests in the strict gate,
+including [synchronous dynamic inline-script insertion](inline-scripts-and-table-geometry.md).
+This is not a claim of complete MutationObserver or script-scheduling conformance.
 
 ## Autonomous custom elements during HTML parsing
 

@@ -34,7 +34,7 @@ impl ScriptRuntime {
                     &host,
                     &mut outcome,
                     &mut dynamic_script_loader,
-                    &mut self.total_script_bytes,
+                    &self.total_script_bytes,
                 );
             }
             outcome
@@ -74,7 +74,7 @@ impl ScriptRuntime {
                     &host,
                     &mut outcome,
                     &mut dynamic_script_loader,
-                    &mut self.total_script_bytes,
+                    &self.total_script_bytes,
                 );
             }
             outcome
@@ -114,7 +114,7 @@ impl ScriptRuntime {
                     &host,
                     &mut outcome,
                     &mut dynamic_script_loader,
-                    &mut self.total_script_bytes,
+                    &self.total_script_bytes,
                 );
             }
             outcome

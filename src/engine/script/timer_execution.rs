@@ -28,7 +28,7 @@ pub(super) fn settle_startup_timer_slice(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) {
     settle_timer_slice(
         context,
@@ -49,7 +49,7 @@ pub(super) fn settle_timer_slice(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
     slice: TimerSlice,
     mut stage_reporter: Option<&mut dyn FnMut(&str)>,
 ) {

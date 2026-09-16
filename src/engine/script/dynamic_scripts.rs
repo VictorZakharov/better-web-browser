@@ -9,7 +9,7 @@ pub(super) fn drain_dynamic_scripts(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) {
     if dynamic_script_loader.is_none() {
         return;
@@ -31,7 +31,7 @@ pub(super) fn drain_one_dynamic_script(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
     // Legacy synchronous embedders may supply already-available sources. The isolated renderer
     // never enters this adapter: it publishes completions and executes only ready elements.
@@ -46,9 +46,11 @@ pub(super) fn drain_one_dynamic_script(
             .next();
         if let Some(request) = request {
             let result = loader(&request.source_url, request.kind, request.fetch_options);
-            host.borrow_mut()
-                .pending_dynamic_scripts
-                .complete(request.node, result, *total_bytes);
+            host.borrow_mut().pending_dynamic_scripts.complete(
+                request.node,
+                result,
+                total_bytes.get(),
+            );
         }
     }
     let Some(pending_script) = host.borrow_mut().pending_dynamic_scripts.pop_ready() else {
@@ -82,7 +84,7 @@ fn execute_prepared(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     mut pending_script: queue::PendingScript,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) {
     // Detachment does not cancel a prepared script; adoption into another document does.
     if host
@@ -117,7 +119,7 @@ fn execute_prepared(
             return;
         }
     };
-    if total_bytes.saturating_add(code.len()) > MAX_PAGE_SCRIPT_BYTES {
+    if total_bytes.get().saturating_add(code.len()) > MAX_PAGE_SCRIPT_BYTES {
         outcome.errors.push(format!(
             "{}: skipped because the page exceeds the {} MiB JavaScript limit",
             pending_script.source_url,
@@ -136,7 +138,7 @@ fn execute_prepared(
         }
         return;
     }
-    *total_bytes += code.len();
+    total_bytes.set(total_bytes.get() + code.len());
     let script = ScriptInput {
         node: pending_script.node,
         source_url: pending_script.source_url,

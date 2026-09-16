@@ -25,13 +25,20 @@
         return Number.parseFloat(getComputedStyle(element)[`padding${side}`]) || 0;
     }
 
+    // The anonymous table wrapper owns the client box, regardless of element tag.
+    // Its border is on the inner table box, not on this wrapper (CSS 2.2 section 17.4).
+    function hasTableWrapper(element) {
+        const display = getComputedStyle(element).display;
+        return display === 'table' || display === 'inline-table';
+    }
+
     function clientWidth(element) {
         if (isViewportElement(element)) return layoutViewportWidth;
         const scroll = host('elementScroll', element.__id);
         if (Array.isArray(scroll)) return scroll[4];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
-        if (element.localName === 'table') return rect.width;
+        if (hasTableWrapper(element)) return rect.width;
         let width = rect.width - computedBorderWidth(element, 'Left') -
             computedBorderWidth(element, 'Right');
         if (element.localName === 'input') {
@@ -46,7 +53,7 @@
         if (Array.isArray(scroll)) return scroll[5];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
-        if (element.localName === 'table') return rect.height;
+        if (hasTableWrapper(element)) return rect.height;
         return Math.max(0, rect.height - computedBorderWidth(element, 'Top') -
             computedBorderWidth(element, 'Bottom'));
     }
@@ -67,7 +74,7 @@
         clientLeft: {
             configurable: true,
             get() {
-                if (isViewportElement(this) || this.localName === 'table' ||
+                if (isViewportElement(this) || hasTableWrapper(this) ||
                     !layoutRect(this).hasBox) return 0;
                 const padding = this.localName === 'input' ? computedPaddingWidth(this, 'Left') : 0;
                 return Math.round(computedBorderWidth(this, 'Left') + padding);
@@ -76,7 +83,7 @@
         clientTop: {
             configurable: true,
             get() {
-                if (isViewportElement(this) || this.localName === 'table' ||
+                if (isViewportElement(this) || hasTableWrapper(this) ||
                     !layoutRect(this).hasBox) return 0;
                 return Math.round(computedBorderWidth(this, 'Top'));
             }

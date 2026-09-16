@@ -56,7 +56,7 @@ impl ScriptRuntime {
                 blocked_on: None,
                 script_bytes: 0,
                 remaining_script_bytes: MAX_PAGE_SCRIPT_BYTES
-                    .saturating_sub(self.total_script_bytes.saturating_add(script_bytes)),
+                    .saturating_sub(self.total_script_bytes.get().saturating_add(script_bytes)),
             });
     }
 
@@ -101,7 +101,11 @@ impl ScriptRuntime {
     fn finish_parser_session(&mut self, outcome: ScriptOutcome) -> ParserScriptResult {
         let mut session = self.host.borrow_mut().parser_write_session.take().unwrap();
         session.parser.finish_writes();
-        self.total_script_bytes = self.total_script_bytes.saturating_add(session.script_bytes);
+        self.total_script_bytes.set(
+            self.total_script_bytes
+                .get()
+                .saturating_add(session.script_bytes),
+        );
         ParserScriptResult {
             outcome,
             parser: session.parser,

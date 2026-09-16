@@ -38,7 +38,7 @@ pub(super) fn execute_inner(
     scripts: &[ScriptInput],
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     defer_dynamic_scripts: bool,
     request_document_lifecycle: bool,
@@ -74,7 +74,7 @@ pub(super) fn execute_inner(
         } else {
             script.code.len()
         };
-        if total_bytes.saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
+        if total_bytes.get().saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
@@ -82,7 +82,7 @@ pub(super) fn execute_inner(
             ));
             break;
         }
-        *total_bytes += added_bytes;
+        total_bytes.set(total_bytes.get() + added_bytes);
         evaluate_script(
             context,
             host,
@@ -188,7 +188,7 @@ fn drain_dynamic_scripts_for_initial_task(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
     defer_dynamic_scripts: bool,
 ) {
     if defer_dynamic_scripts {
@@ -209,7 +209,7 @@ pub(super) fn execute_additional_inner(
     scripts: &[ScriptInput],
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
 ) -> ScriptOutcome {
     let mut outcome = ScriptOutcome::default();
@@ -228,7 +228,7 @@ pub(super) fn execute_additional_inner(
         } else {
             script.code.len()
         };
-        if total_bytes.saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
+        if total_bytes.get().saturating_add(added_bytes) > MAX_PAGE_SCRIPT_BYTES {
             outcome.errors.push(format!(
                 "{}: skipped because the page exceeds the {} MiB JavaScript limit",
                 script.source_url,
@@ -236,7 +236,7 @@ pub(super) fn execute_additional_inner(
             ));
             continue;
         }
-        *total_bytes += added_bytes;
+        total_bytes.set(total_bytes.get() + added_bytes);
         evaluate_script(
             context,
             host,
@@ -285,7 +285,7 @@ pub(super) fn evaluate_script(
     script: &ScriptInput,
     dispatch_load: bool,
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
-    total_bytes: &mut usize,
+    total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
     if script.kind == ScriptKind::Module {
         return module_evaluation::evaluate_module(
@@ -372,8 +372,12 @@ pub(super) fn evaluate_script(
     }
     if let Some(session) = host.borrow_mut().parser_write_session.as_mut() {
         session.insertion_point = false;
-        *total_bytes = total_bytes.saturating_add(std::mem::take(&mut session.script_bytes));
-        session.remaining_script_bytes = MAX_PAGE_SCRIPT_BYTES.saturating_sub(*total_bytes);
+        total_bytes.set(
+            total_bytes
+                .get()
+                .saturating_add(std::mem::take(&mut session.script_bytes)),
+        );
+        session.remaining_script_bytes = MAX_PAGE_SCRIPT_BYTES.saturating_sub(total_bytes.get());
     }
     succeeded
 }

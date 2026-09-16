@@ -148,10 +148,14 @@ pub(crate) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> O
     let (source_url, code) = if let Some(source) = external {
         (resolve_url(base_url, &source).unwrap_or_default(), None)
     } else {
-        (
-            format!("{base_url}#inline-script-{ordinal}"),
-            Some(node.text_content()),
-        )
+        let code = node.text_content();
+        // An empty parser-inserted script is not prepared. Later child-text mutation
+        // may prepare it; whitespace and comments, unlike an empty source, do run.
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if code.is_empty() {
+            return None;
+        }
+        (format!("{base_url}#inline-script-{ordinal}"), Some(code))
     };
     let executes_after_parsing = node.attr("async").is_none()
         && (kind == script::ScriptKind::Module || (is_external && node.attr("defer").is_some()));

@@ -160,6 +160,7 @@ fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
 }
 
 fn prepare(host: &mut HostState, target: u32, id: u32) -> JsResult<JsValue> {
+    let remaining_bytes = MAX_PAGE_SCRIPT_BYTES.saturating_sub(host.script_bytes.get());
     let Some(node) = host.node(id) else {
         return Ok(JsValue::Null);
     };
@@ -188,7 +189,8 @@ fn prepare(host: &mut HostState, target: u32, id: u32) -> JsResult<JsValue> {
     let value = if immediate {
         let code = script.code.as_ref().unwrap();
         if code.len() > MAX_SCRIPT_BYTES
-            || session.script_bytes.saturating_add(code.len()) > session.remaining_script_bytes
+            || session.script_bytes.saturating_add(code.len())
+                > session.remaining_script_bytes.min(remaining_bytes)
         {
             return Err(limit_error(
                 "document.write exceeded the page JavaScript byte limit".into(),

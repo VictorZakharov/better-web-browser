@@ -16,6 +16,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/adjacent_insertion.js"),
     include_str!("bootstrap/disclosure_elements.js"),
     include_str!("bootstrap/script_element.js"),
+    include_str!("bootstrap/inserted_scripts.js"),
     include_str!("bootstrap/metadata.js"),
     include_str!("bootstrap/cssom_view.js"),
     include_str!("bootstrap/hyperlinks.js"),
