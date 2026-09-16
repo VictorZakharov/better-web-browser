@@ -28,6 +28,8 @@ mod media_controls;
 mod navigation;
 #[path = "live_runtime/network.rs"]
 mod network;
+#[path = "live_runtime/parser_notifications.rs"]
+mod parser_notifications;
 #[path = "live_runtime/parser_writes.rs"]
 mod parser_writes;
 #[path = "live_runtime/parsing.rs"]

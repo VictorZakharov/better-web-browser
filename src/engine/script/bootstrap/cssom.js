@@ -148,12 +148,14 @@
     class CSSRule {
         constructor(sheet, text, token = null) {
             if (token !== cssRuleConstructionToken) throw new TypeError('Illegal constructor');
-            this.parentStyleSheet = sheet;
-            this.parentRule = null;
+            this.__parentStyleSheet = sheet;
+            this.__parentRule = null;
             this.__text = text.trim();
         }
         get cssText() { return this.__text; }
-        set cssText(value) { this.__text = String(value).trim(); this.parentStyleSheet.__rulesChanged(); }
+        set cssText(_value) {}
+        get parentStyleSheet() { return this.__parentStyleSheet; }
+        get parentRule() { return this.__parentRule; }
         get type() { return 0; }
     }
     CSSRule.STYLE_RULE = 1;
@@ -186,10 +188,13 @@
             this.__pristine = false;
             this.parentStyleSheet.__rulesChanged();
         }
-        __changed() { this.__pristine = false; this.parentStyleSheet.__rulesChanged(); }
+        __changed() { this.__pristine = false; this.parentStyleSheet?.__rulesChanged(); }
     }
 
     function createCssRule(sheet, text) {
+        const imported = /^@import\b/i.test(text.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, ''))
+            ? host('stylesheetImport', text) : null;
+        if (imported) return new CSSImportRule(sheet, text, imported, cssRuleConstructionToken);
         const open = text.indexOf('{');
         return open > 0 && !text.trimStart().startsWith('@')
             ? new CSSStyleRule(sheet, text, cssRuleConstructionToken)
@@ -197,173 +202,19 @@
     }
 
     function parseCssRules(sheet, text) {
-        return scanCssRules(text)
-            .filter(rule => !/^@import(?:\s|url\(|['"])/i.test(
-                rule.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '')))
-            .map(rule => createCssRule(sheet, rule));
-    }
-
-    class MediaList {
-        constructor(text = '', changed = () => {}) {
-            this.__changed = changed;
-            this.__items = [];
-            this.mediaText = text;
-        }
-        get mediaText() { return this.__items.join(', '); }
-        set mediaText(value) {
-            this.__items = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
-            this.__changed();
-        }
-        get length() { return this.__items.length; }
-        item(index) { return this.__items[Number(index)] ?? null; }
-        appendMedium(value) {
-            value = String(value).trim();
-            if (value && !this.__items.includes(value)) { this.__items.push(value); this.__changed(); }
-        }
-        deleteMedium(value) {
-            const index = this.__items.indexOf(String(value).trim());
-            if (index < 0) throw new DOMException('Media query was not found', 'NotFoundError');
-            this.__items.splice(index, 1);
-            this.__changed();
-        }
-        toString() { return this.mediaText; }
-        [Symbol.iterator]() { return this.__items[Symbol.iterator](); }
-    }
-
-    const styleSheetConstructionToken = {};
-    class StyleSheet {
-        constructor(token) {
-            if (token !== styleSheetConstructionToken) throw new TypeError('Illegal constructor');
-        }
-    }
-
-    function readonlyRuleList(backing) {
-        return new Proxy(Object.create(null), {
-            get(_target, property) {
-                if (property === 'length') return backing.length;
-                if (property === 'item') return index => backing[Number(index)] || null;
-                if (property === Symbol.iterator) return backing[Symbol.iterator].bind(backing);
-                if (cssIndex(property)) return backing[Number(property)];
-                return undefined;
-            },
-            ownKeys() { return backing.map((_rule, index) => String(index)); },
-            getOwnPropertyDescriptor(_target, property) {
-                if (cssIndex(property) && Number(property) < backing.length)
-                    return { configurable: true, enumerable: true, value: backing[Number(property)] };
+        let importsAllowed = true;
+        const rules = [];
+        for (const source of scanCssRules(text)) {
+            const text = source.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
+            if (/^@charset\b/i.test(text)) continue;
+            if (/^@import\b/i.test(text)) {
+                if (sheet.__constructed || !importsAllowed) continue;
+                const rule = createCssRule(sheet, text);
+                if (rule instanceof CSSImportRule) rules.push(rule);
+            } else {
+                if (!/^@layer\b[^{}]*;/i.test(text)) importsAllowed = false;
+                rules.push(createCssRule(sheet, text));
             }
-        });
-    }
-
-    class CSSStyleSheet extends StyleSheet {
-        constructor(options = {}) {
-            super(styleSheetConstructionToken);
-            options = Object(options || {});
-            this.__constructorDocument = document;
-            this.__constructed = true;
-            this.__baseUrl = options.baseURL == null ? document.baseURI :
-                host('strictResolveUrl', String(options.baseURL), document.baseURI);
-            this.__href = null;
-            this.__ownerNode = null;
-            this.__title = null;
-            this.__originClean = true;
-            this.__disabled = !!options.disabled;
-            this.__rules = [];
-            this.__ruleList = readonlyRuleList(this.__rules);
-            this.__adopters = new Set();
-            this.__modifying = false;
-            this.__media = new MediaList(options.media || '', () => this.__notifyRoots());
         }
-        get type() { return 'text/css'; }
-        get href() { return this.__href; }
-        get ownerNode() { return this.__ownerNode; }
-        get parentStyleSheet() { return null; }
-        get title() { return this.__title; }
-        get ownerRule() { return null; }
-        get media() { return this.__media; }
-        set media(value) { this.__media.mediaText = value; }
-        get disabled() { return this.__disabled; }
-        set disabled(value) {
-            value = !!value;
-            if (value !== this.__disabled) { this.__disabled = value; this.__notifyRoots(); }
-        }
-        get cssRules() { this.__assertOriginClean(); return this.__ruleList; }
-        get rules() { this.__assertOriginClean(); return this.__ruleList; }
-        insertRule(rule, index = 0) {
-            this.__assertOriginClean();
-            index = Number(index) >>> 0;
-            if (index > this.__rules.length)
-                throw new DOMException('Rule index is outside the list', 'IndexSizeError');
-            const source = String(rule);
-            if (/^\s*@import(?:\s|url\(|['"])/i.test(source))
-                throw new DOMException('@import is not allowed in constructed sheets', 'SyntaxError');
-            const parsed = scanCssRules(source);
-            if (parsed.length !== 1)
-                throw new DOMException('Expected exactly one CSS rule', 'SyntaxError');
-            this.__rules.splice(index, 0, createCssRule(this, parsed[0]));
-            this.__rulesChanged();
-            return index;
-        }
-        deleteRule(index) {
-            this.__assertOriginClean();
-            index = Number(index) >>> 0;
-            if (index >= this.__rules.length)
-                throw new DOMException('Rule index is outside the list', 'IndexSizeError');
-            this.__rules.splice(index, 1);
-            this.__rulesChanged();
-        }
-        replaceSync(text) {
-            this.__assertConstructed();
-            if (this.__modifying)
-                throw new DOMException('Stylesheet replacement is already active', 'NotAllowedError');
-            this.__setText(text);
-        }
-        replace(text) {
-            if (!this.__constructed)
-                return Promise.reject(new DOMException(
-                    'Only constructed stylesheets can be replaced', 'NotAllowedError'));
-            if (this.__modifying)
-                return Promise.reject(new DOMException(
-                    'Stylesheet replacement is already active', 'NotAllowedError'));
-            this.__modifying = true;
-            return Promise.resolve().then(() => {
-                try {
-                    this.__setText(text);
-                    return this;
-                } finally {
-                    this.__modifying = false;
-                }
-            });
-        }
-        __setText(text) {
-            const rules = parseCssRules(this, String(text));
-            this.__rules.splice(0, this.__rules.length, ...rules);
-            this.__notifyRoots();
-        }
-        __setOwner(ownerNode, href, title, media, originClean, text) {
-            this.__constructed = false;
-            this.__constructorDocument = null;
-            this.__ownerNode = ownerNode;
-            this.__href = href;
-            this.__title = title || null;
-            this.__baseUrl = href || ownerNode.ownerDocument.baseURI;
-            this.__originClean = !!originClean;
-            this.__disabled = ownerNode.hasAttribute('disabled');
-            this.__media.mediaText = media || '';
-            this.__setText(text);
-        }
-        __assertOriginClean() {
-            if (!this.__originClean)
-                throw new DOMException('Stylesheet rules are not accessible across origins',
-                    'SecurityError');
-        }
-        __assertConstructed() {
-            if (!this.__constructed)
-                throw new DOMException('Only constructed stylesheets can be replaced',
-                    'NotAllowedError');
-        }
-        __serialize() { return this.__rules.map(rule => rule.cssText).join('\n'); }
-        __rulesChanged() { this.__notifyRoots(); }
-        __notifyRoots() {
-            for (const root of [...this.__adopters]) adoptedRecord(root).sync();
-        }
+        return rules;
     }

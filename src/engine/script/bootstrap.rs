@@ -39,6 +39,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/ranges.js"),
     include_str!("bootstrap/fullscreen.js"),
     include_str!("bootstrap/cssom.js"),
+    include_str!("bootstrap/cssom_sheets.js"),
+    include_str!("bootstrap/cssom_imports.js"),
     include_str!("bootstrap/cssom_document.js"),
     include_str!("bootstrap/cssom_adoption.js"),
     include_str!("bootstrap/platform.js"),
@@ -50,6 +52,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/native_input.js"),
     include_str!("bootstrap/pointer_boundary.js"),
     include_str!("bootstrap/custom_elements.js"),
+    include_str!("bootstrap/parser_custom_elements.js"),
     include_str!("bootstrap/url.js"),
     // Observer closures capture the private task exception reporter before
     // tasks.js closes the shared root IIFE; delivery begins only after bootstrap completes.

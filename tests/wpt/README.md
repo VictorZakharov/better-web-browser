@@ -68,7 +68,7 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-292 passing files / 2,642 passing harness subtests with no failure, skip, timeout,
+306 passing files / 2,676 passing harness subtests (2026-09-16) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
@@ -76,16 +76,17 @@ manifest to be updated deliberately when compatibility changes.
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 292 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 306 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
 |---|---:|---|
 | HTML parsing | 4 | Tree construction and malformed-input recovery |
 | Active-parser writes | 60 | Same-call DOM visibility, token/character boundaries, nested classic execution and external-script pause/resumption |
+| Document streams | 3 | Document open/close, replacement, and parser state |
 | HTML event handlers | 12 | Compilation, scope, ordering, forwarding, mutation and errors |
 | Stylesheet loading | 1 | MIME rejection for nonempty and empty stylesheet responses |
-| DOM and mutation | 8 | Owned nodes, lookup, names, nested-document connectivity, hierarchy validation, and atomic live mutation |
+| DOM and mutation | 9 | Owned nodes, lookup, names, nested-document connectivity, hierarchy validation, atomic live mutation, and observer records |
 | Events, Abort API, event loop, and animation frames | 23 | Dispatch semantics, cancellation, listeners, microtasks, and rendering callbacks |
 | Idle callbacks | 12 | Deadline caps, timeout races while busy, cancellation, exceptions, and FIFO/repost fairness |
 | Resize observers | 18 | Content/border boxes, padding, box selection, inline transitions, callback lifetime, depth and error handling, and observer ordering |
@@ -97,9 +98,10 @@ follows:
 | Web Storage | 25 | Lossless strings, method/named access, conversions, quotas, enumeration, independent areas, and storage-event construction |
 | CSS cascade, selectors, and layout | 28 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
 | CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
+| CSSOM stylesheet ownership | 3 | Preferred-set insertion order and per-occurrence imported-sheet identity |
 | Forms | 4 | Form collections, button types, datalist options/validation, and select values |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
-| Custom Elements | 1 | Registry isolation, definition lookup, and when-defined promises |
+| Custom Elements | 8 | Registry isolation, definition lookup, when-defined promises, parser construction, and reaction ordering |
 | Shadow DOM | 3 | Root connectivity, detached slot assignment, and composed event retargeting |
 
 The revision `f9ecd8a4a9c6e9865ea4aee4741e4b02f75fd476` (2026-08-14 upstream commit)
@@ -117,16 +119,18 @@ chunks fail the case. The ordinary renderer IPC text limits and upstream test ti
 
 The active-parser write selection is `001.html`–`046.html`, `051.html` and
 `script_001.html`–`script_013.html` under `html/webappapis/dynamic-markup-insertion/document-write/`.
-It does not cover document replacement/open/close, popup/frame realms, XML or
-module destructive-write policy. See the [implemented contract and boundaries](../../docs/synchronous-document-write.md).
+That selection does not cover popup/frame realms, XML or module destructive-write policy.
+Three separate document-stream tests cover part of document open/close and replacement;
+see the [stream contract](../../docs/document-streams-and-pre-wrap.md) and
+[parser observation contract](../../docs/parser-observation-and-cssom.md).
 
 The broader ResizeObserver inventory is documented in
 [ResizeObserver delivery](../../docs/resize-observer-delivery.md#remaining-boundaries), including
 the cases intentionally outside this green gate. The selected 18 files are not a whole-spec pass rate.
 
-`discovery.json` is a separate, deliberately failing compatibility sample. It covers nearby DOM,
-forms, selectors, flex, float, and geometry behavior that is not in the green gate. At the pinned
-revision its one file contains 13 harness subtests, failing as expected. The known file-level
+`discovery.json` is a separate, deliberately failing compatibility sample. Its two files cover
+table scrolling geometry and dynamic inline-script insertion during a mutation-observer test.
+The known file-level
 failure mode and reason are explicit, so an unexpected pass tells maintainers to promote newly
 supported coverage instead of masking it.
 

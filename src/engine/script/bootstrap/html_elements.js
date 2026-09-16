@@ -39,6 +39,8 @@
             super(id, ...metadata);
         }
         get dataset() { return this.__dataset ||= datasetFor(this); }
+        get title() { return this.getAttribute('title') || ''; }
+        set title(value) { this.setAttribute('title', String(value)); }
         // HTML defines innerText on HTMLElement, not Node. The complete getter is
         // layout-aware; until whitespace and generated-line handling cross the host
         // boundary, preserve the required DOMString contract with the subtree text.
@@ -57,8 +59,8 @@
         set media(value) { this.setAttribute('media', value); }
         get type() { return this.getAttribute('type') || ''; }
         set type(value) { this.setAttribute('type', value); }
-        get disabled() { return this.hasAttribute('disabled'); }
-        set disabled(value) { this.toggleAttribute('disabled', !!value); }
+        get disabled() { return this.sheet?.disabled || false; }
+        set disabled(value) { if (this.sheet) this.sheet.disabled = !!value; }
     }
     class HTMLLinkElement extends HTMLElement {
         get rel() { return this.getAttribute('rel') || ''; }

@@ -83,7 +83,7 @@ impl DocumentRuntime {
                     );
                     merge_outcome(
                         outcome,
-                        runtime.parser_dom_changed(),
+                        runtime.parser_dom_changed(self.page.dom.take_parser_mutations()),
                         self.page.dom.document.id(),
                     );
                 }
@@ -97,6 +97,9 @@ impl DocumentRuntime {
                 );
             }
             match step {
+                ParserStep::CustomElement(node) => {
+                    self.construct_parser_element(node, outcome);
+                }
                 ParserStep::Encoding(label) => {
                     self.parser_encoding(&label);
                     if self.encoding_restart_pending() {
@@ -172,5 +175,37 @@ impl DocumentRuntime {
                 (script, blocked)
             },
         ))
+    }
+}
+
+impl DocumentRuntime {
+    fn construct_parser_element(
+        &mut self,
+        node: crate::engine::dom::NodeRef,
+        outcome: &mut ScriptOutcome,
+    ) {
+        let prepare = self.written_script_preparation();
+        let Some(runtime) = self.script_runtime.as_mut() else {
+            return;
+        };
+        let Some(mut parser) = self.parser.take() else {
+            return;
+        };
+        let result =
+            runtime.execute_parser_element(node, parser.parser, prepare, self.page.scripts.len());
+        parser.parser = result.parser;
+        self.parser = Some(parser);
+        for (script, executed) in result.prepared {
+            self.page.scripts.push(script.clone());
+            if !executed {
+                self.parser_scripts.enqueue(script);
+            }
+        }
+        if result.mutated {
+            self.page.discover_parsed_resources();
+            self.record_written_stylesheets(result.stylesheets);
+        }
+        merge_outcome(outcome, result.outcome, self.page.dom.document.id());
+        self.collect_document_stream_changes();
     }
 }

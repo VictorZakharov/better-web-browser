@@ -86,7 +86,11 @@ pub(super) fn collect(
             external_stylesheets,
             environment,
         );
-        for source in imports.sheets.into_iter().chain(std::iter::once(source)) {
+        for source in imports
+            .sheets
+            .into_iter()
+            .chain(std::iter::once(std::borrow::Cow::Borrowed(source)))
+        {
             inputs.push(SheetInput {
                 source: source.source.clone(),
                 base_url: source.base_url.clone(),

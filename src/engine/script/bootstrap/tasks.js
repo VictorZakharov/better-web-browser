@@ -241,9 +241,10 @@
             }
         });
     };
-    const queueMutationRecord = (target, type, details = {}) => {
+    const queueMutationRecord = (target, type, details = {}, ancestors = null) => {
         if (!mutationRegistrationCount || suppressedMutationRecordTargets.has(target)) return;
-        for (const node of mutationAncestors(target)) {
+        const interested = new Map();
+        for (const node of ancestors || mutationAncestors(target)) {
             const registrations = mutationRegistrations.get(node);
             if (!registrations) continue;
             for (const [observer, options] of registrations) {
@@ -251,8 +252,14 @@
                 if (type === 'characterData' && !options.characterData) continue;
                 if (type === 'attributes' && !options.attributes) continue;
                 if (type === 'attributes' && options.attributeFilter &&
-                    !options.attributeFilter.includes(details.attributeName)) continue;
+                    (details.attributeNamespace != null || !options.attributeFilter.includes(details.attributeName))) continue;
                 if (type === 'childList' && !options.childList) continue;
+                const oldValue = (type === 'characterData' && options.characterDataOldValue) ||
+                    (type === 'attributes' && options.attributeOldValue);
+                interested.set(observer, (interested.get(observer) || false) || oldValue);
+            }
+        }
+        for (const [observer, oldValue] of interested) {
                 observer.records.push({
                     type,
                     target,
@@ -262,11 +269,9 @@
                     nextSibling: details.nextSibling || null,
                     attributeName: details.attributeName || null,
                     attributeNamespace: details.attributeNamespace ?? null,
-                    oldValue: (type === 'characterData' && options.characterDataOldValue) ||
-                        (type === 'attributes' && options.attributeOldValue) ? details.oldValue ?? null : null
+                    oldValue: oldValue ? details.oldValue ?? null : null
                 });
                 pendingMutationObservers.add(observer);
-            }
         }
         if (pendingMutationObservers.size) queueMutationObserverMicrotask();
     };
@@ -303,13 +308,23 @@
                 throw new TypeError('MutationObserver options must select at least one mutation type');
             let registrations = mutationRegistrations.get(target);
             if (!registrations) mutationRegistrations.set(target, registrations = new Map());
-            if (!registrations.has(this)) mutationRegistrationCount++;
+            if (!registrations.has(this)) {
+                mutationRegistrationCount++;
+            } else {
+                host('observeParserMutations', target.__id, 0,
+                    registrations.get(this).characterDataOldValue ? 1 : 0);
+            }
+            host('observeParserMutations', target.__id, 1, normalized.characterDataOldValue ? 1 : 0);
             registrations.set(this, normalized);
             this.targets.add(target);
         }
         disconnect() {
             for (const target of this.targets) {
-                if (mutationRegistrations.get(target)?.delete(this)) mutationRegistrationCount--;
+                const oldText = mutationRegistrations.get(target)?.get(this)?.characterDataOldValue;
+                if (mutationRegistrations.get(target)?.delete(this)) {
+                    mutationRegistrationCount--;
+                    host('observeParserMutations', target.__id, 0, oldText ? 1 : 0);
+                }
             }
             this.targets.clear();
             this.records.length = 0;

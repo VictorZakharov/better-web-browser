@@ -270,8 +270,40 @@
     installParentNodeMembers(DocumentFragment.prototype);
 
     class DOMTokenList {
-        constructor(element, attribute) { this.element = element; this.attribute = attribute; }
-        _tokens() { return (this.element.getAttribute(this.attribute) || '').split(/\s+/).filter(Boolean); }
+        constructor(element, attribute) {
+            this.element = element; this.attribute = attribute;
+            return new Proxy(this, {
+                get(target, property, receiver) {
+                    const index = collectionIndex(property);
+                    if (index !== null && index < target.length) return target.item(index);
+                    return Reflect.get(target, property, receiver);
+                },
+                has(target, property) {
+                    const index = collectionIndex(property);
+                    return (index !== null && index < target.length) || Reflect.has(target, property);
+                },
+                ownKeys(target) {
+                    return [...Array(target.length).keys()].map(String).concat(Reflect.ownKeys(target));
+                },
+                getOwnPropertyDescriptor(target, property) {
+                    const index = collectionIndex(property);
+                    return index !== null && index < target.length
+                        ? { value: target.item(index), writable: false, enumerable: true, configurable: true }
+                        : Reflect.getOwnPropertyDescriptor(target, property);
+                },
+                set(target, property, value, receiver) {
+                    return collectionIndex(property) === null && Reflect.set(target, property, value, receiver);
+                },
+                defineProperty(target, property, descriptor) {
+                    return collectionIndex(property) === null && Reflect.defineProperty(target, property, descriptor);
+                },
+                deleteProperty(target, property) {
+                    const index = collectionIndex(property);
+                    return !(index !== null && index < target.length) && Reflect.deleteProperty(target, property);
+                }
+            });
+        }
+        _tokens() { return [...new Set((this.element.getAttribute(this.attribute) || '').split(/[\t\n\f\r ]+/).filter(Boolean))]; }
         _set(tokens) { this.element.setAttribute(this.attribute, [...new Set(tokens)].join(' ')); }
         contains(token) { return this._tokens().includes(String(token)); }
         add(...tokens) { this._set(this._tokens().concat(tokens.map(String))); }

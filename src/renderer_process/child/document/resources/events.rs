@@ -10,6 +10,14 @@ impl DocumentRuntime {
         resource: &PageResource,
         event_type: &'static str,
     ) -> Result<bool, String> {
+        if event_type == "load" && matches!(resource, PageResource::Stylesheet { .. }) {
+            // CSSOM insertRule can load another import after its owner already fired load.
+            // Resource visibility must not depend on dispatching a second owner event.
+            self.sync_script_layout_page();
+            if let Some(runtime) = self.script_runtime.as_mut() {
+                self.page.synchronize_script_stylesheets(runtime);
+            }
+        }
         if event_type == "error" {
             self.parser_scripts.complete(resource, None);
         }

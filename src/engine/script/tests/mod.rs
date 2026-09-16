@@ -28,6 +28,7 @@ mod collections;
 mod compatibility;
 mod crypto;
 mod cssom;
+mod cssom_owned;
 mod cssom_view;
 mod cssom_view_scroll;
 mod custom_elements;

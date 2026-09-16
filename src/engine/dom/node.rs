@@ -1,6 +1,7 @@
 //! DOM node identity, data model, read access, and traversal.
 mod attributes;
 pub(super) mod checkable;
+pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
 use html5ever::{Attribute, QualName};
@@ -67,6 +68,9 @@ pub(super) struct NodeIdAllocator {
     next_local: Cell<u64>,
     allocated_nodes: Cell<usize>,
     pub(super) mutation_version: Cell<u64>,
+    pub(super) parser_observers: Cell<usize>,
+    pub(super) parser_old_text_observers: Cell<usize>,
+    pub(super) custom_element_names: RefCell<std::collections::HashSet<String>>,
 }
 
 impl NodeIdAllocator {
@@ -81,6 +85,9 @@ impl NodeIdAllocator {
             next_local: Cell::new(1),
             allocated_nodes: Cell::new(0),
             mutation_version: Cell::new(0),
+            parser_observers: Cell::new(0),
+            parser_old_text_observers: Cell::new(0),
+            custom_element_names: Default::default(),
         })
     }
 
@@ -126,6 +133,7 @@ pub struct Node {
     pub parent: Cell<Option<Weak<Node>>>,
     pub children: RefCell<Vec<NodeRef>>,
     adopted_stylesheets: RefCell<Vec<AdoptedStyleSheet>>,
+    sheet_state: std::cell::OnceCell<Box<RefCell<stylesheets::SheetState>>>,
     /// UA scrolling state is not a DOM mutation and is not copied by cloneNode.
     pub(crate) scroll_offset: Cell<(f32, f32)>,
     pub data: NodeData,
@@ -199,6 +207,7 @@ impl Node {
             parent: Cell::new(None),
             children: RefCell::new(Vec::new()),
             adopted_stylesheets: RefCell::new(Vec::new()),
+            sheet_state: std::cell::OnceCell::new(),
             scroll_offset: Cell::new((0.0, 0.0)),
             data,
         })

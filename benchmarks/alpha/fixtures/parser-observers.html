@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Parser mutation observers</title>
+<style>
+body { font: 16px Arial, sans-serif; margin: 32px; color: #172b3a; }
+h1 { font-size: 24px; }
+#fixture { display: none; }
+#result { white-space: pre-wrap; padding: 20px; background: #e5f5ea; }
+</style>
+<h1>Parser mutation observers</h1>
+<pre id="result">Waiting for parser checkpoints.</pre>
+<div id="fixture"><script id="writer">
+const facts = {};
+const observer = new MutationObserver(() => {});
+observer.observe(document, {subtree: true, childList: true, characterData: true, characterDataOldValue: true});
+observer.observe(document.body, {subtree: true, childList: true});
+document.write('<p id="written">A');
+document.write('B</p><!--tail-->');
+facts.records = observer.takeRecords().map(r => [
+    r.type, r.target.nodeName, [...r.addedNodes].map(n => n.nodeName),
+    r.previousSibling?.nodeName || null, r.nextSibling?.nodeName || null, r.oldValue
+]);
+document.write('<table id="table">foster<tr><td>cell</td></tr></table>');
+const foster = observer.takeRecords().find(r => [...r.addedNodes].some(n => n.nodeType === 3 && n.data === 'foster'));
+facts.foster = [foster?.target.id, foster?.nextSibling?.id];
+observer.disconnect();
+facts.order = [];
+const network = new MutationObserver(records => {
+    if (records.some(r => [...r.addedNodes].some(n => n.id === 'network'))) facts.order.push('observer');
+});
+network.observe(document.getElementById('fixture'), {childList: true});
+</script><p id="network">Network insertion</p><script>
+facts.order.push('script');
+network.disconnect();
+window.addEventListener('load', () => {
+    document.title = JSON.stringify(facts);
+    const result = document.getElementById('result');
+    result.setAttribute('data-facts', JSON.stringify(facts));
+    result.textContent = facts.records.map(record => JSON.stringify(record)).join('\n')
+        + '\nFoster parenting: ' + JSON.stringify(facts.foster)
+        + '\nCheckpoint order: ' + JSON.stringify(facts.order);
+});
+</script></div>

@@ -18,17 +18,17 @@
         if (!owner?.isConnected || (!isCssStyleElement(owner) && !isStyleSheetLink(owner)))
             return null;
         const href = isStyleSheetLink(owner) ? owner.href : null;
-        const metadata = [href, owner.getAttribute('title'), owner.media, owner.disabled].join('\u0000');
+        const metadata = [href, owner.getAttribute('title'), owner.media, owner.hasAttribute('disabled'),
+            host('stylesheetGeneration', owner.__id)].join('\u0000');
         let record = ownerStyleSheets.get(owner);
         if (href !== null && record?.metadata === metadata) return record.sheet;
         const source = href === null ? owner.textContent : host('stylesheetSource', href);
         if (source === null) return null;
         const signature = href === null ? metadata + '\u0000' + source : metadata;
         if (record?.signature === signature) return record.sheet;
-        if (!record) {
-            record = { sheet: new CSSStyleSheet(), metadata: null, signature: null };
-            ownerStyleSheets.set(owner, record);
-        }
+        if (record) record.sheet.__ownerNode = null;
+        record = { sheet: new CSSStyleSheet(), metadata: null, signature: null };
+        ownerStyleSheets.set(owner, record);
         record.sheet.__setOwner(
             owner,
             href,
@@ -80,11 +80,11 @@
         return list;
     }
 
-    Object.defineProperty(Document.prototype, 'styleSheets', {
-        configurable: true,
-        enumerable: true,
-        get() { return styleSheetListFor(this); }
-    });
+    for (const prototype of [Document.prototype, ShadowRoot.prototype])
+        Object.defineProperty(prototype, 'styleSheets', {
+            configurable: true, enumerable: true,
+            get() { return styleSheetListFor(this); }
+        });
     Object.defineProperty(HTMLStyleElement.prototype, 'sheet', {
         configurable: true,
         enumerable: true,

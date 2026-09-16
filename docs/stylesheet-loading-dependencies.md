@@ -50,8 +50,9 @@ Loaded import metadata is reused; unchanged DOM/source/media checkpoints skip
 dependency rediscovery. Fetched payloads do not acquire an independent top-level
 cascade position merely because they arrived.
 
-Separate boundaries remain: preferred/alternate stylesheet-set selection; full
-`CSSImportRule` object graphs and CSSOM mutation of imported rules; cascade layers;
+Preferred/alternate titled sheets and per-occurrence `CSSImportRule` graphs/edits are now
+covered by [parser observation and stylesheet ownership](parser-observation-and-cssom.md).
+Separate boundaries remain: HTTP Default-Style/meta selection and user-facing set selection; cascade layers;
 non-HTTP(S) stylesheet sources; complete CSS encoding inheritance and stylesheet
 Fetch-option/CORS metadata; and full rendering-opportunity semantics. Layered
 imports are not applied as unlayered rules. `supports()` retains the feature-query

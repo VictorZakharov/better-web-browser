@@ -25,15 +25,19 @@ fn parser_mutations_invalidate_cssom_and_synchronous_layout_before_the_next_scri
 }
 
 #[test]
-fn newly_parsed_elements_update_cached_children_and_upgrade_before_the_following_script() {
+fn newly_parsed_elements_update_cached_children_and_construct_before_the_following_script() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(
         r#"<!doctype html><div id=box><script>
       window.box=document.querySelector('#box'); window.children=box.childNodes;
-      customElements.define('x-parsed', class extends HTMLElement { constructor(){super();this.setAttribute('upgraded','yes');} });
+      customElements.define('x-parsed', class extends HTMLElement {
+        constructor(){super();this.constructedBeforeAttrs=this.id==='';}
+        connectedCallback(){this.setAttribute('upgraded','yes');}
+      });
       </script><x-parsed id=created></x-parsed></div><p id=status>pending</p><script>
       const child=document.querySelector('#created');
-      document.querySelector('#status').textContent=box.childNodes===children && Array.from(children).includes(child) && child.getAttribute('upgraded')==='yes' ? 'parsed DOM refreshed':'WRONG';
+      document.querySelector('#status').textContent=box.childNodes===children && Array.from(children).includes(child) &&
+        child.constructedBeforeAttrs && child.getAttribute('upgraded')==='yes' ? 'parsed DOM refreshed':'WRONG';
       </script>"#,
     );
     driver.until_text("parsed DOM refreshed");

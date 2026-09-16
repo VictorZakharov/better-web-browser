@@ -6,11 +6,15 @@ This is not a Chromium, WebView2, Gecko, or operating-system web-view wrapper. T
 
 ## Run it
 
-Requirements: Windows 10/11 and a current stable Rust toolchain.
+Requirements: Windows 10/11 x64, PowerShell 7, Rust via rustup (the repository pins
+Rust 1.95.0), and the Visual Studio C++ build tools/Windows SDK for the MSVC target.
+The first build downloads locked dependencies and the checksum-verified V8 library.
 
 ```powershell
-cargo run --release
-cargo run --release -- https://www.google.com/
+./scripts/prepare-v8.ps1 -Profile release
+cargo build --release --locked --bin better-web-browser
+./target/release/better-web-browser.exe
+./target/release/better-web-browser.exe https://example.org/
 ```
 
 Persistent cookies and `localStorage` use `%LOCALAPPDATA%\Breeze`; `sessionStorage` remains
@@ -30,9 +34,11 @@ The normal page surface is always the default. **Reader** is an explicit optiona
 Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
+- [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
+- [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers and microtasks, navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
 - Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static ECMAScript module graphs with top-level await, and isolated classic/module dedicated workers
@@ -74,10 +80,10 @@ The repository-owned public-alpha gate runs Breeze and unified-headless Chromium
 
 The visual benchmark runs on every push to `main`, not on pull requests. It requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. PRs retain core, renderer, and focused Windows integration tests, lint, formatting, dependency/security policy, and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main. Relevant local integration tests and visual comparisons remain necessary before review: deferred CI checks can first detect a regression after merge. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md), [CI policy and timings](docs/build-performance.md), and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
 
-### Renderer text cold-path comparison
+### Historical renderer text cold-path comparison
 
 Three-run hidden release medians on the Wikipedia earthquake fixture compare the historical GDI
-control, the first renderer-owned COSMIC Text implementation, and the current lean renderer-owned
+control, the first renderer-owned COSMIC Text implementation, and the lean renderer-owned
 pipeline:
 
 | Text backend | Page ready | Non-network | Layout/paint | Working set |
@@ -86,6 +92,7 @@ pipeline:
 | COSMIC Text | 714.472 ms | 321.404 ms | 214.886 ms | 179.668 MiB |
 | Fontique + HarfRust + Swash | 534.731 ms | 226.830 ms | 131.399 ms | 183.672 MiB |
 
+These are historical measurements from ADR 0003, not timings remeasured for the current HEAD.
 The current path keeps hostile font bytes, advanced shaping, and rasterization inside the
 AppContainer renderer. It recovers page-ready time but not the original GDI memory footprint; the
 full method, scroll results, per-stage profile, and outlier record are in
@@ -134,8 +141,13 @@ contract are documented in [docs/security-and-fuzzing.md](docs/security-and-fuzz
 ## Verification
 
 ```powershell
-cargo test --all-targets
-cargo build --release
+./scripts/prepare-v8.ps1 -Profile debug
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+./scripts/check-source-size.ps1
+./scripts/prepare-v8.ps1 -Profile release
+cargo build --release --locked --bin better-web-browser
 ./scripts/run-fuzz-smoke.ps1
 
 .\scripts\run-hidden-benchmark.ps1 `
@@ -149,7 +161,13 @@ cargo build --release
   -SettleMs 2000
 ```
 
-Benchmark mode keeps its window hidden. `--screenshot` paints an offscreen PNG for visual
+Run renderer and live-runtime integration tests as your normal Windows user, not a restricted
+filesystem-sandbox identity: they need access to that user's AppContainer profile. Automated
+browser tests must remain hidden, and reference Chromium runs must use unified `--headless` and
+`--mute-audio`. The Chromium comparison additionally requires the .NET 8 SDK and installed Chrome.
+
+The hidden-benchmark wrapper verifies the child launch and enforces its automation guard.
+`--screenshot` paints an offscreen PNG for visual
 verification without putting a browser window on the desktop. Repeatable `--diagnostic-selector`
 options add bounded computed-style, resource-decode, and native-control geometry facts to the JSON
 report; omit them during normal measurements. `--early-scroll-trace` starts at page-ready and
@@ -172,7 +190,7 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 295-file Web Platform Test suite covers 2,653 upstream harness subtests across HTML
+A pinned, curated 306-file Web Platform Test suite covers 2,676 upstream harness subtests across HTML
 parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
@@ -228,13 +246,13 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
 | ◩ | JavaScript and browser APIs | A bounded retained V8 realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
-| ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists and tab-scoped `sessionStorage` does not. Cross-document `storage` events, storage property-name traps, partitioned state, and user-facing data controls remain incomplete. |
+| ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists; `sessionStorage` is tab-scoped. Named properties preserve UTF-16 values, and same-origin tabs synchronize local storage with ordered `storage` events. Child-frame event scope, partitioned state, and user-facing data controls remain incomplete; see the [storage contract](docs/web-storage.md). |
 | ◩ | JavaScript Fetch and XHR | Document and dedicated-worker Fetch bodies stream progressively through default readers, with byte-based backpressure, cloning, and cancellation. Fetch/XHR and Body primitives are implemented; BYOB, streaming uploads, and complete pipe/transform semantics remain incomplete. See the [streaming contract and measurements](docs/progressive-fetch.md). |
 | ◩ | ECMAScript modules | Static module graphs and top-level `await` are implemented. Dynamic `import()` and import maps are not. |
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
-| ◩ | Script scheduling | Streaming parsing, [active-parser synchronous writes](docs/synchronous-document-write.md), independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented. [Stylesheet dependencies](docs/stylesheet-loading-dependencies.md) have separate parser-script and paint gates. Document replacement, full stylesheet-set selection and rendering-opportunity semantics remain incomplete. |
+| ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Synchronous dynamic inline-script insertion, customized built-ins, and the complete HTML rendering/event-loop model remain incomplete. |
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
-| ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Control styling is approximate; reset/default-value behavior, IME/composition, cancelable `beforeinput`, broader form behavior, and document text selection remain incomplete. |
+| ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
 | ◩ | Canvas, media, and downloads | A bounded software Canvas 2D slice provides real sRGB pixels for color fills, clearing, and `ImageData` reads/writes. The contained media worker provides user-visible non-DRM H.264/AAC MP4 playback, synchronized XAudio2 output, progressive and bounded Media Source input, play/pause/seek/volume/mute controls, and fullscreen video. Capability APIs advertise only that tested media path; other Canvas drawing operations, downloads, broader codecs, DRM, captions, track selection, and picture-in-picture remain incomplete. |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
@@ -252,9 +270,10 @@ measurements, branded entries, depth-limited callbacks, and before-paint updates
 SVG/iframe geometry, and broader rendering-loop compatibility remain incomplete.
 
 The [loading standards implementation sequence](docs/loading-standards.md) records the
-code-backed scheduling/lifecycle gaps and owned-fixture acceptance criteria. The first
-slice replaces URL-based async script execution with per-element readiness tasks;
-this is not a claim that the complete HTML loading model or Chromium-level startup is finished.
+implementation sequence and owned-fixture acceptance criteria. Later slices are documented in
+[stylesheet dependencies](docs/stylesheet-loading-dependencies.md), [document streams](docs/document-streams-and-pre-wrap.md),
+and [parser observation/CSSOM ownership](docs/parser-observation-and-cssom.md). These are bounded
+standards contracts, not a claim of complete HTML loading or Chromium-level startup performance.
 
 The [technical-alpha release notes](docs/technical-alpha-release.md) describe the reproducible
 unsigned Windows x64 archive, verification and cleanup, acceptance evidence, dependency policy,
@@ -262,11 +281,38 @@ and the safety limitations that apply before trying a public build. Development-
 provenance that are intentionally absent from the shipped graph are tracked separately in
 [development third-party material](docs/development-third-party.md).
 
-The deterministic alpha matrix now covers long-form and portal pages, responsive articles, search results, a capability dashboard, forms/storage, layout, media/fonts, and asynchronous mutation. Its opt-in live URLs provide side-by-side evidence rather than CI truth. Modern Google results are **not working yet**: Google currently serves an anti-automation challenge whose generated proof it rejects for this client; a fresh headless Chromium profile on the same machine/network is also sent to Google's unusual-traffic page. Breeze renders Google's actual HTTP error document and never reroutes it to another provider. DuckDuckGo's HTML results remain a compatibility target, not evidence that Google search is solved.
+The deterministic alpha matrix covers long-form and portal pages, responsive articles, search
+results, a capability dashboard, forms/storage, layout, media/fonts, and asynchronous mutation.
+Its opt-in live URLs are observations, not CI truth. Modern Google results are not an accepted
+compatibility baseline: previous tests encountered anti-automation responses, which can change
+with profile, network, and time. Breeze renders the actual response; it does not silently substitute
+another search provider. Passing a deterministic search fixture does not establish live Google support.
 
-As of 2026-09-02, the development build renders an HTML5test score of **284 / 588**. A fresh-profile hidden release run at `https://html5test.co/` also completed with zero JavaScript errors and no renderer exit. This score is a compatibility inventory, not a conformance claim; Web Platform Tests remain the authoritative source for implementing and regressing individual standards features.
+The 2026-09-16 fresh-profile hidden release run at
+[`cb50f83`](https://github.com/VictorZakharov/better-web-browser/commit/cb50f83247d42b1deeafcff6a47999915b1b8eb3)
+rendered **285 / 588** on HTML5test,
+with zero JavaScript errors and no renderer exit. This replaces the older 284-point observation;
+it does not imply that the site's layout is pixel-correct or that every detected API is complete.
+HTML5test is a capability inventory, not a percentage of browser completion or a conformance claim;
+specifications and individual Web Platform Tests define the implementation/regression contracts.
 
-YouTube playback remains work in progress: non-DRM video and audio can play, but startup, video frame cadence, layout fidelity, and memory use are not yet at an acceptable browser baseline. Passing media fixtures does not establish usable live-site playback.
+Reproduce that snapshot on Windows x64 with the release build above (1280×720 hidden window,
+125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
+
+```powershell
+./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
+  -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
+  -SettleMs 5000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
+  -Output target/html5test/2026-09-16.json -Screenshot target/html5test/2026-09-16.png
+```
+
+New releases must refresh or explicitly date these observations using the
+[evidence checklist](docs/technical-alpha-release.md#reproduction-and-release-authority).
+
+YouTube remains work in progress: non-DRM video/audio can play, but startup, seeking/recovery,
+video frame cadence, layout fidelity, and memory use are not an accepted browser baseline.
+Passing media fixtures does not establish usable live-site playback. Wikipedia has dedicated
+layout and scrolling regressions, but passing those pages is not a guarantee for every article.
 
 ## License
 

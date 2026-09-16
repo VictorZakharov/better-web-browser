@@ -42,7 +42,7 @@ impl Page {
     pub(crate) fn stylesheet_dependencies(&self, node: &NodeRef) -> SheetDependencies {
         let base = document_base_url(&self.dom, &self.source_url);
         let mut urls = Vec::new();
-        let (base, imports) = if node.tag_name() == Some("style") {
+        let (base, mut imports) = if node.tag_name() == Some("style") {
             (base, imports::parse(&node.text_content()))
         } else if let Some(url) = node
             .attr("href")
@@ -69,11 +69,16 @@ impl Page {
                 truncated: false,
             };
         };
-        let expanded = imports::expand(
+        let overrides = node.sheet_overrides();
+        if let Some(own) = overrides.iter().find(|s| s.path.is_empty()) {
+            imports = imports::parse(&own.source);
+        }
+        let expanded = imports::expand_owned(
             &base,
             &imports,
             &self.stylesheet_sources,
             self.media_environment,
+            &overrides,
         );
         urls.extend(expanded.urls);
         SheetDependencies {
@@ -84,11 +89,7 @@ impl Page {
 
     pub(crate) fn stylesheet_applies(&self, node: &NodeRef) -> bool {
         is_stylesheet(node)
-            && node.attr("disabled").is_none()
-            && !node.attr("rel").is_some_and(|rel| {
-                rel.split_ascii_whitespace()
-                    .any(|t| t.eq_ignore_ascii_case("alternate"))
-            })
+            && !Node::sheet_disabled(node)
             && crate::engine::css::media::media_matches_for_environment(
                 &node.attr("media").unwrap_or_default(),
                 self.media_environment,

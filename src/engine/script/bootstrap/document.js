@@ -195,8 +195,17 @@
         set cookie(value) { host('cookieSet', String(value)); }
     }
     installParentNodeMembers(Document.prototype);
-    const parserDomChanged = ids => {
+    const parserDomChanged = (ids, mutations = []) => {
         parserCollectionEpoch++;
+        for (const record of mutations) {
+            for (const id of [...record.added, ...record.removed]) invalidateMutationAncestors(wrap(id));
+            queueMutationRecord(wrap(record.target), record.type, {
+                addedNodes: record.added.map(wrap), removedNodes: record.removed.map(wrap),
+                previousSibling: wrap(record.previous), nextSibling: wrap(record.next),
+                attributeName: record.name, attributeNamespace: record.namespace,
+                oldValue: record.oldValue
+            }, record.ancestors.map(wrap));
+        }
         for (const node of list(ids)) maybeUpgradeCustomElement(node, false, true);
         refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
