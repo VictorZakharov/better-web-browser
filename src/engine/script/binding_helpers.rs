@@ -35,6 +35,7 @@ pub(super) fn node_label(node: &NodeRef) -> String {
     match &node.data {
         NodeData::Document => "#document".into(),
         NodeData::Text(_) => "#text".into(),
+        NodeData::Cdata(_) => "#cdata-section".into(),
         NodeData::Comment(_) => "#comment".into(),
         _ => node
             .tag_name()
@@ -155,10 +156,10 @@ fn serialize_node(node: &NodeRef, output: &mut String) {
             output.push_str(tag);
             output.push('>');
         }
-        NodeData::Text(text) => escape_html(&text.borrow(), output, false),
+        NodeData::Text(text) | NodeData::Cdata(text) => escape_html(&text.borrow(), output, false),
         NodeData::Comment(comment) => {
             output.push_str("<!--");
-            output.push_str(comment);
+            output.push_str(&comment.borrow());
             output.push_str("-->");
         }
         _ => {}

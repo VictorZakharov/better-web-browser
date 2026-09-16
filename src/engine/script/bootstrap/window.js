@@ -26,6 +26,8 @@
     windowObject.TreeWalker = TreeWalker;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
+    windowObject.HTMLHtmlElement = HTMLHtmlElement;
+    windowObject.HTMLParagraphElement = HTMLParagraphElement;
     windowObject.HTMLTitleElement = HTMLTitleElement;
     windowObject.HTMLStyleElement = HTMLStyleElement;
     windowObject.HTMLLinkElement = HTMLLinkElement;
@@ -66,6 +68,9 @@
     windowObject.HTMLTemplateElement = HTMLTemplateElement;
     windowObject.HTMLFormElement = HTMLFormElement;
     windowObject.Document = Document;
+    windowObject.HTMLDocument = Document;
+    windowObject.XMLDocument = XMLDocument;
+    windowObject.DOMParser = DOMParser;
     windowObject.CharacterData = CharacterData;
     windowObject.Text = Text;
     windowObject.CDATASection = CDATASection;
@@ -199,7 +204,6 @@
         get origin() { const parsed = parseUrl(currentUrl); return parsed.protocol + '//' + parsed.host; }
     };
     windowObject.location = location;
-    document.location = location;
     function cloneMessageValue(value, memory = new Map()) {
         if (value === null || ['undefined', 'boolean', 'number', 'string', 'bigint'].includes(typeof value)) return value;
         if (typeof value === 'symbol' || typeof value === 'function') {

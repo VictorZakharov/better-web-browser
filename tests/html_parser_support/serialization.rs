@@ -136,10 +136,10 @@ fn append_node_line(output: &mut String, node: &NodeRef, depth: usize) {
                 format!("<!DOCTYPE {name} \"{public_id}\" \"{system_id}\">")
             }
         }
-        NodeData::Text(text) => format!("\"{}\"", text.borrow()),
-        NodeData::Comment(contents) => format!("<!-- {contents} -->"),
+        NodeData::Text(text) | NodeData::Cdata(text) => format!("\"{}\"", text.borrow()),
+        NodeData::Comment(contents) => format!("<!-- {} -->", contents.borrow()),
         NodeData::ProcessingInstruction { target, contents } => {
-            format!("<?{target} {contents}?>")
+            format!("<?{target} {}?>", contents.borrow())
         }
         NodeData::Element(element) => format!(
             "<{}{}>",

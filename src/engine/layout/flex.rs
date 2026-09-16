@@ -34,7 +34,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut pending_space = None;
         for child in composed_children {
             if child.element().is_none() {
-                if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
+                if matches!(&child.data, NodeData::Text(text) | NodeData::Cdata(text) if !text.borrow().trim().is_empty())
+                {
                     self.collect_inline(
                         &child,
                         None,
@@ -227,7 +228,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut pending_space = None;
         for child in self.box_children(node) {
             if child.element().is_none() {
-                if matches!(&child.data, NodeData::Text(text) if !text.borrow().trim().is_empty()) {
+                if matches!(&child.data, NodeData::Text(text) | NodeData::Cdata(text) if !text.borrow().trim().is_empty())
+                {
                     self.collect_inline(
                         &child,
                         None,

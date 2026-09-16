@@ -84,7 +84,7 @@ fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool) {
             output.push_str(tag);
             output.push('>');
         }
-        NodeData::Text(text) => escape_xml(&text.borrow(), output),
+        NodeData::Text(text) | NodeData::Cdata(text) => escape_xml(&text.borrow(), output),
         _ => {}
     }
 }

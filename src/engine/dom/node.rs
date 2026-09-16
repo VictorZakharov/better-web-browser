@@ -160,10 +160,11 @@ pub enum NodeData {
         system_id: String,
     },
     Text(RefCell<String>),
-    Comment(String),
+    Cdata(RefCell<String>),
+    Comment(RefCell<String>),
     ProcessingInstruction {
         target: String,
-        contents: String,
+        contents: RefCell<String>,
     },
     Element(ElementData),
 }
@@ -355,8 +356,11 @@ impl Node {
     }
 
     pub fn text_content(&self) -> String {
+        if let NodeData::ProcessingInstruction { contents, .. } = &self.data {
+            return contents.borrow().clone();
+        }
         if let NodeData::Comment(contents) = &self.data {
-            return contents.clone();
+            return contents.borrow().clone();
         }
         let mut result = String::new();
         self.push_text_content(&mut result);
@@ -364,7 +368,7 @@ impl Node {
     }
 
     fn push_text_content(&self, output: &mut String) {
-        if let NodeData::Text(text) = &self.data {
+        if let NodeData::Text(text) | NodeData::Cdata(text) = &self.data {
             output.push_str(&text.borrow());
         }
         for child in self.children.borrow().iter() {

@@ -53,6 +53,14 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-html.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-xml.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-encoding.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-xml-doctype.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-xml-parsererror.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/DOMParser-parseFromString-stylesheets.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/domparser-spurious-attributes.html"},
+    {"area":"DOMParser","expected":"pass","path":"domparsing/xmldomparser.html"},
     {
       "path": "intersection-observer/disconnect.html",
       "area": "Intersection Observer",

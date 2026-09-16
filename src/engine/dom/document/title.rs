@@ -27,7 +27,7 @@ pub(super) fn document_title(document: &NodeRef) -> String {
     };
     let mut text = String::new();
     for child in title.children.borrow().iter() {
-        if let NodeData::Text(value) = &child.data {
+        if let NodeData::Text(value) | NodeData::Cdata(value) = &child.data {
             text.push_str(&value.borrow());
         }
     }

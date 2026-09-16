@@ -24,7 +24,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             return;
         }
         match &node.data {
-            NodeData::Text(text) => {
+            NodeData::Text(text) | NodeData::Cdata(text) => {
                 collect_text_atoms(
                     &text.borrow(),
                     style,

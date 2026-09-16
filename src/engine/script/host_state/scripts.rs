@@ -62,7 +62,7 @@ impl HostState {
                 .borrow()
                 .iter()
                 .filter_map(|child| match &child.data {
-                    NodeData::Text(text) => Some(text.borrow().clone()),
+                    NodeData::Text(text) | NodeData::Cdata(text) => Some(text.borrow().clone()),
                     _ => None,
                 })
                 .collect::<String>()

@@ -54,6 +54,8 @@
     for (const prototype of [HTMLBodyElement.prototype, HTMLFrameSetElement.prototype])
         for (const type of windowHandlerTypes) defineEventHandler(prototype, null, type);
     class HTMLDivElement extends HTMLElement {}
+    class HTMLHtmlElement extends HTMLElement {}
+    class HTMLParagraphElement extends HTMLElement {}
     class HTMLStyleElement extends HTMLElement {
         get media() { return this.getAttribute('media') || ''; }
         set media(value) { this.setAttribute('media', value); }

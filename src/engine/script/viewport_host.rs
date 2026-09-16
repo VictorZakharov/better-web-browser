@@ -98,6 +98,9 @@ pub(super) fn viewport_host_call(
                 if node.id() == state.document.id() {
                     state.quirks_mode
                 } else {
+                    if let Some(metadata) = state.document_metadata.get(&node.id()) {
+                        return metadata.quirks;
+                    }
                     state
                         .document_streams
                         .parsers

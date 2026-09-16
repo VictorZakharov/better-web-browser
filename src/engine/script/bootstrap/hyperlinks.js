@@ -3,7 +3,7 @@
     const hyperlinkUrl = element => {
         const value = element.getAttribute('href');
         if (value == null) return null;
-        try { return host('strictResolveUrl', value); }
+        try { return host('strictResolveUrl', value, element.baseURI); }
         catch (_) { return null; }
     };
     const hyperlinkParts = element => {

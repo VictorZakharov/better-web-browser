@@ -15,6 +15,8 @@
         if (localName === 'body') return HTMLBodyElement;
         if (localName === 'frameset') return HTMLFrameSetElement;
         if (localName === 'div') return HTMLDivElement;
+        if (localName === 'html') return HTMLHtmlElement;
+        if (localName === 'p') return HTMLParagraphElement;
         if (localName === 'title') return HTMLTitleElement;
         if (localName === 'style') return HTMLStyleElement;
         if (localName === 'link') return HTMLLinkElement;
@@ -53,7 +55,9 @@
     class DOMImplementation {
         createDocument(namespace, qualifiedName, doctype = null) {
             if (doctype !== null) throw new DOMException('DocumentType insertion is not implemented', 'NotSupportedError');
-            return wrap(host('createDocument', namespace == null ? '' : String(namespace), String(qualifiedName)));
+            const result = wrap(host('createDocument', namespace == null ? '' : String(namespace), String(qualifiedName)));
+            Object.setPrototypeOf(result, XMLDocument.prototype);
+            return result;
         }
         createHTMLDocument(title = '') { return wrap(host('createHtmlDocument', String(title))); }
     }
@@ -146,9 +150,15 @@
         get body() { return this.querySelector('body'); }
         get title() { return documentTitleValue(this); }
         set title(value) { setDocumentTitleValue(this, value); }
-        get URL() { return host('documentUrl'); }
+        get URL() { return host('documentUrl', this.__id); }
         get documentURI() { return this.URL; }
-        get baseURI() { return this.querySelector('base')?.href || this.URL; }
+        get baseURI() {
+            const base = this.querySelector('base[href]');
+            try { return base ? host('strictResolveUrl', base.getAttribute('href'), this.URL) : this.URL; }
+            catch (_) { return this.URL; }
+        }
+        get location() { return this.defaultView?.location || null; }
+        set location(value) { if (this.defaultView) this.defaultView.location.href = String(value); }
         get currentScript() { return this._currentScript; }
         get defaultView() {
             return documentDefaultViews.get(this) ||
@@ -190,10 +200,14 @@
         get visibilityState() { return 'visible'; }
         get compatMode() { return host('documentCompatMode', this.__id); }
         get characterSet() { return host('documentCharacterSet', this.__id); }
-        get contentType() { return 'text/html'; }
-        get cookie() { return host('cookieGet'); }
-        set cookie(value) { host('cookieSet', String(value)); }
+        get charset() { return this.characterSet; }
+        get inputEncoding() { return this.characterSet; }
+        get contentType() { return host('documentContentType', this.__id); }
+        // Documents without a browsing context are cookie-averse (HTML resource metadata).
+        get cookie() { return this.defaultView ? host('cookieGet') : ''; }
+        set cookie(value) { if (this.defaultView) host('cookieSet', String(value)); }
     }
+    class XMLDocument extends Document {}
     installParentNodeMembers(Document.prototype);
     const parserDomChanged = (ids, mutations = []) => {
         parserCollectionEpoch++;

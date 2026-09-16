@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Detached document parsing</title>
+  <link rel="stylesheet" href="/common.css">
+</head>
+<body>
+  <header class="site-header"><h1>Detached document parsing</h1></header>
+  <main id="main" class="page">
+    <h2 id="status">Parsing pending</h2>
+    <p>HTML and XML documents must remain independent until their nodes are adopted.</p>
+    <section id="html"></section>
+    <section id="xml"></section>
+  </main>
+  <script>
+    const parser = new DOMParser();
+    const html = parser.parseFromString('<article><h3>Imported article</h3><p>Parsed <strong>HTML</strong> keeps its structure and entities: A &amp; B.</p></article><script>throw Error("inert script executed")</scr'+'ipt>', 'text/html');
+    if (html.defaultView !== null || html.location !== null) throw Error('not detached');
+    html.cookie = 'detachedParserCookie=mustNotPersist';
+    if (html.cookie !== '' || document.cookie.includes('detachedParserCookie=')) throw Error('detached cookie access');
+    document.querySelector('#html').append(...html.body.childNodes);
+    const xml = parser.parseFromString('<svg xmlns="http://www.w3.org/2000/svg" width="260" height="70" viewBox="0 0 260 70"><rect width="260" height="70" rx="8" fill="#d8e8fa"/><circle cx="35" cy="35" r="18" fill="#2864a8"/><text x="66" y="42" font-size="18"><![CDATA[XML & SVG ready]]></text></svg>', 'image/svg+xml');
+    if (xml.documentElement.namespaceURI !== 'http://www.w3.org/2000/svg') throw Error('namespace lost');
+    document.querySelector('#xml').append(document.importNode(xml.documentElement, true));
+    const broken = parser.parseFromString('<broken>', 'text/xml');
+    if (!broken.getElementsByTagName('parsererror').length) throw Error('XML error missing');
+    document.querySelector('#status').textContent = 'HTML, XML, and inert scripts: passed';
+    document.documentElement.dataset.fixtureReady = 'true';
+  </script>
+</body>
+</html>

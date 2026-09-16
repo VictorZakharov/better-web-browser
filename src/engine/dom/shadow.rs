@@ -78,8 +78,10 @@ impl Node {
             .borrow()
             .iter()
             .filter(|node| {
-                matches!(node.data, NodeData::Element(_) | NodeData::Text(_))
-                    && node.attr("slot").unwrap_or_default() == name
+                matches!(
+                    node.data,
+                    NodeData::Element(_) | NodeData::Text(_) | NodeData::Cdata(_)
+                ) && node.attr("slot").unwrap_or_default() == name
                     && Node::assigned_slot(node).is_some_and(|assigned| assigned.id() == slot.id())
             })
             .cloned()

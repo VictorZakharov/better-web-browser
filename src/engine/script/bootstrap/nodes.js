@@ -96,6 +96,7 @@
         get nodeType() { return this.__nodeType; }
         get nodeName() { return this.__nodeName; }
         get ownerDocument() { return wrap(host('ownerDocument', this.__id)); }
+        get baseURI() { return this.ownerDocument?.baseURI || null; }
         get parentNode() { return wrap(host('parent', this.__id)); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }
         get assignedSlot() { return wrap(host('assignedSlot', this.__id)); }

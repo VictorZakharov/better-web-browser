@@ -4,9 +4,11 @@ use super::binding_helpers::{argument_id, argument_string, join_node_ids, js_str
 use super::*;
 mod construction;
 mod named;
+mod parsing;
 use construction::{create_document, create_html_document, subtree_size};
 pub(super) use named::NamedPropertyIndex;
 use named::{named_property_candidates, named_property_names, named_property_nodes};
+pub(super) use parsing::DocumentMetadata;
 
 const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 
@@ -16,6 +18,48 @@ pub(super) fn dom_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "documentUrl" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .and_then(|node| {
+                    state
+                        .document_metadata
+                        .get(&node.id())
+                        .map(|metadata| metadata.url.clone())
+                })
+                .unwrap_or_else(|| state.document_url.clone()),
+        ),
+        "parseDocument" => {
+            let input = argument_string(args, 1)?;
+            let kind = argument_string(args, 2)?;
+            let response_url = args
+                .get(3)
+                .filter(|arg| !matches!(arg, JsValue::Undefined))
+                .map(|_| argument_string(args, 3))
+                .transpose()?;
+            JsValue::from(parsing::parse_document(
+                state,
+                &input,
+                &kind,
+                response_url.as_deref(),
+            )?)
+        }
+        "documentContentType" => js_string(state.node(argument_id(args, 1)).map_or_else(
+            || "text/html".to_string(),
+            |node| {
+                state.document_metadata.get(&node.id()).map_or_else(
+                    || {
+                        if state.is_html_document_for(&node) {
+                            "text/html"
+                        } else {
+                            "application/xml"
+                        }
+                        .to_string()
+                    },
+                    |metadata| metadata.content_type.clone(),
+                )
+            },
+        )),
         "document" => {
             let document = state.document.clone();
             JsValue::from(state.id_for(&document))
@@ -163,6 +207,9 @@ pub(super) fn dom_host_call(
                     let html = state.is_html_document_for(&source);
                     let clone = Node::clone_document(&source, deep);
                     state.register_document(clone.clone(), html);
+                    if let Some(metadata) = state.document_metadata.get(&source.id()).cloned() {
+                        state.document_metadata.insert(clone.id(), metadata);
+                    }
                     clone
                 } else {
                     let owner = owner.unwrap_or_else(|| source.clone());
@@ -274,6 +321,7 @@ fn node_type(state: &HostState, node: Option<&NodeRef>) -> u8 {
     node.map_or(0, |node| match node.data {
         NodeData::Element(_) => 1,
         NodeData::Text(_) => 3,
+        NodeData::Cdata(_) => 4,
         NodeData::Comment(_) => 8,
         NodeData::ShadowRoot(_) => 11,
         NodeData::Document if is_document_root(state, node) => 9,
@@ -287,6 +335,7 @@ fn node_name(state: &HostState, node: &NodeRef) -> String {
     match &node.data {
         NodeData::Element(_) => element_qualified_name(state, node),
         NodeData::Text(_) => "#text".to_string(),
+        NodeData::Cdata(_) => "#cdata-section".to_string(),
         NodeData::Comment(_) => "#comment".to_string(),
         NodeData::ShadowRoot(_) => "#document-fragment".to_string(),
         NodeData::Document if is_document_root(state, node) => "#document".to_string(),
