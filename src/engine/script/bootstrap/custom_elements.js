@@ -84,7 +84,7 @@
         if (registry === defaultCustomElementRegistry && element.ownerDocument !== document) return null;
         return registryStates.get(registry)?.definitionsByName.get(element.localName) || null;
     };
-    const upgradeElement = (element, definition, synchronous) => {
+    const upgradeElement = (element, definition, synchronous, parserInserted = false) => {
         const state = customElementStates.get(element);
         if (state === 'custom' || state === 'failed') return element;
         const initialAttributes = attributeRecords(element).filter(record =>
@@ -93,6 +93,7 @@
         customElementStates.set(element, 'failed');
         Object.setPrototypeOf(element, definition.prototype);
         definition.constructionStack.push(element);
+        if (parserInserted) throwOnDynamicMarkupInsertion++;
         try {
             const constructed = new definition.constructor();
             if (constructed !== element)
@@ -103,6 +104,7 @@
             reportGlobalException(error);
             return element;
         } finally {
+            if (parserInserted) throwOnDynamicMarkupInsertion--;
             definition.constructionStack.pop();
         }
         withCustomElementReactions(() => {
@@ -113,14 +115,14 @@
         });
         return element;
     };
-    const tryUpgradeElement = (element, registry, synchronous = false) => {
+    const tryUpgradeElement = (element, registry, synchronous = false, parserInserted = false) => {
         if (!(element instanceof Element)) return element;
         const definition = definitionForElement(registry, element);
-        return definition ? upgradeElement(element, definition, synchronous) : element;
+        return definition ? upgradeElement(element, definition, synchronous, parserInserted) : element;
     };
 
-    maybeUpgradeCustomElement = (element, synchronous = false) =>
-        tryUpgradeElement(element, defaultCustomElementRegistry, synchronous);
+    maybeUpgradeCustomElement = (element, synchronous = false, parserInserted = false) =>
+        tryUpgradeElement(element, defaultCustomElementRegistry, synchronous, parserInserted);
     upgradeCustomElementTree = (root, registry = defaultCustomElementRegistry) =>
         withCustomElementReactions(() => {
             for (const element of inclusiveElementDescendants(root)) tryUpgradeElement(element, registry);

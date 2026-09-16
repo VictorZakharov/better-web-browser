@@ -265,6 +265,10 @@ impl DocumentRuntime {
             return Ok(());
         };
         let parser_blocking = script.blocks_first_paint;
+        let prepare =
+            (parser_blocking && self.parser.is_some()).then(|| self.written_script_preparation());
+        let mut written_stylesheets = Vec::new();
+        let mut parser_changed = false;
         let input = ScriptInput {
             node: script.node,
             source_url: script.source_url,
@@ -280,13 +284,35 @@ impl DocumentRuntime {
             ))?;
             // One element per invocation; promise jobs are drained before parser resumption.
             // Dependencies are ready before invocation. Never perform network I/O in this task.
-            runtime.set_parser_write_capture(parser_blocking && self.parser.is_some());
-            let result = runtime.execute_additional_with_loader(&[input], None);
-            let writes = runtime.take_parser_writes();
-            if let Some(parser) = self.parser.as_mut() {
-                parser.parser.insert(writes);
-            }
+            let result = if parser_blocking && let Some(mut parser) = self.parser.take() {
+                let result = runtime.execute_parser_script(
+                    input,
+                    parser.parser,
+                    prepare.expect("active parser preparation"),
+                    self.page.scripts.len(),
+                );
+                parser.parser = result.parser;
+                if parser.parser.ended() {
+                    parser.next = Some(crate::engine::dom::incremental::ParserStep::End);
+                }
+                self.parser = Some(parser);
+                written_stylesheets = result.stylesheets;
+                parser_changed = result.mutated;
+                for (script, executed) in result.prepared {
+                    self.page.scripts.push(script.clone());
+                    if !executed {
+                        self.parser_scripts.enqueue(script);
+                    }
+                }
+                result.outcome
+            } else {
+                runtime.execute_additional_with_loader(&[input], None)
+            };
             merge_outcome(outcome, result, self.page.dom.document.id());
+        }
+        if parser_changed {
+            self.page.discover_parsed_resources();
+            self.record_written_stylesheets(written_stylesheets);
         }
         Ok(())
     }

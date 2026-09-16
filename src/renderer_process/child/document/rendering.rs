@@ -39,9 +39,17 @@ impl DocumentRuntime {
             .collect()
     }
     pub(super) fn record_parser_stylesheets(&mut self, previous: &[(NodeId, u64)]) {
+        let written = self
+            .stylesheet_nodes()
+            .into_iter()
+            .filter(|node| !previous.contains(&(node.id(), node.subtree_mutation_version())))
+            .collect();
+        self.record_written_stylesheets(written);
+    }
+    pub(super) fn record_written_stylesheets(&mut self, nodes: Vec<NodeRef>) {
         let head = self.head_links();
-        for node in self.stylesheet_nodes() {
-            if !previous.contains(&(node.id(), node.subtree_mutation_version()))
+        for node in nodes {
+            if Node::tree_root(&node).id() == self.page.dom.document.id()
                 && self.stylesheet_pending(&node)
             {
                 // HTML's script-blocking set includes parser-created body links and style
@@ -98,24 +106,12 @@ impl DocumentRuntime {
         })
     }
     fn stylesheet_pending(&self, node: &NodeRef) -> bool {
-        self.page.stylesheet_applies(node)
-            && self
-                .page
-                .stylesheet_dependencies(node)
-                .urls
-                .iter()
-                .any(|url| {
-                    let resource = PageResource::Stylesheet { url: url.clone() };
-                    !self.loaded_resources.contains(&resource)
-                        && (self.page.resources.contains(&resource)
-                            || self
-                                .page
-                                .resources
-                                .iter()
-                                .filter(|r| matches!(r, PageResource::Stylesheet { .. }))
-                                .count()
-                                < crate::limits::MAX_STYLESHEETS)
-                })
+        stylesheet_pending(
+            &self.page,
+            node,
+            &self.loaded_resources,
+            &self.page.resources,
+        )
     }
     pub(super) fn parser_stylesheets_pending(&self) -> bool {
         self.rendering.scripts.values().any(|node| {
@@ -147,4 +143,25 @@ impl DocumentRuntime {
             ),
         }))
     }
+}
+
+// Both normal parser checkpoints and synchronous written scripts use the same stylesheet
+// applicability, response, and admission policy. Unadmitted resources cannot block forever.
+pub(super) fn stylesheet_pending(
+    page: &Page,
+    node: &NodeRef,
+    loaded: &HashSet<PageResource>,
+    admitted: &[PageResource],
+) -> bool {
+    page.stylesheet_applies(node)
+        && page.stylesheet_dependencies(node).urls.iter().any(|url| {
+            let resource = PageResource::Stylesheet { url: url.clone() };
+            !loaded.contains(&resource)
+                && (admitted.contains(&resource)
+                    || admitted
+                        .iter()
+                        .filter(|r| matches!(r, PageResource::Stylesheet { .. }))
+                        .count()
+                        < crate::limits::MAX_STYLESHEETS)
+        })
 }

@@ -67,20 +67,24 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 `timeout`, or `crash`. Expected non-passes require a reason in the manifest. A matching expected
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
-expectation and enforces a floor of 200 harness subtests. Its current baseline is 219 passing files
-and 2,167 passing harness subtests with no failure, skip, timeout, or crash allowance. This forces the
+expectation and enforces a floor of 200 harness subtests. Its current baseline is
+292 passing files / 2,642 passing harness subtests with no failure, skip, timeout,
+or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
 ## Selection contract
 
 The feature clusters were chosen before expanding the gate: parser and DOM ownership, mutation and
 event dispatch, task ordering, URL handling, network-facing objects, browser-owned cookies, form
-bindings, and the style/layout surfaces used by the alpha fixtures. The 219 files are distributed as
+bindings, and the style/layout surfaces used by the alpha fixtures. The 292 files are distributed as
 follows:
 
 | Cluster | Files | Why it is gated |
 |---|---:|---|
 | HTML parsing | 4 | Tree construction and malformed-input recovery |
+| Active-parser writes | 60 | Same-call DOM visibility, token/character boundaries, nested classic execution and external-script pause/resumption |
+| HTML event handlers | 12 | Compilation, scope, ordering, forwarding, mutation and errors |
+| Stylesheet loading | 1 | MIME rejection for nonempty and empty stylesheet responses |
 | DOM and mutation | 8 | Owned nodes, lookup, names, nested-document connectivity, hierarchy validation, and atomic live mutation |
 | Events, Abort API, event loop, and animation frames | 23 | Dispatch semantics, cancellation, listeners, microtasks, and rendering callbacks |
 | Idle callbacks | 12 | Deadline caps, timeout races while busy, cancellation, exceptions, and FIFO/repost fairness |
@@ -110,6 +114,11 @@ bounded, ordered console chunks and reassembled without omitting subtests; malfo
 chunks fail the case. The ordinary renderer IPC text limits and upstream test timeouts are unchanged.
 
 ## Discovery sample
+
+The active-parser write selection is `001.html`–`046.html`, `051.html` and
+`script_001.html`–`script_013.html` under `html/webappapis/dynamic-markup-insertion/document-write/`.
+It does not cover document replacement/open/close, popup/frame realms, XML or
+module destructive-write policy. See the [implemented contract and boundaries](../../docs/synchronous-document-write.md).
 
 The broader ResizeObserver inventory is documented in
 [ResizeObserver delivery](../../docs/resize-observer-delivery.md#remaining-boundaries), including

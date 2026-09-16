@@ -2,7 +2,9 @@
 //! https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
 use super::{Dom, NodeRef, budget, document::chunk_end};
 use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
+use html5ever::buffer_queue::BufferQueue;
 use html5ever::{ParseOpts, Parser, TokenizerResult, parse_document};
+mod writes;
 
 pub(crate) enum ParserStep {
     Script(NodeRef),
@@ -19,6 +21,9 @@ pub(crate) struct HtmlParser {
     eof: bool,
     waiting: bool,
     received: usize,
+    write_inputs: Vec<BufferQueue>,
+    write_prefix: BufferQueue,
+    written_bytes: usize,
 }
 
 impl HtmlParser {
@@ -40,6 +45,9 @@ impl HtmlParser {
             eof: true,
             waiting: false,
             received: source.len(),
+            write_inputs: Vec::new(),
+            write_prefix: BufferQueue::default(),
+            written_bytes: 0,
         }
     }
 
@@ -67,19 +75,19 @@ impl HtmlParser {
         !self.ended && !self.waiting
     }
 
-    pub(crate) fn dom(&self) -> &Dom {
-        &self.parser.tokenizer.sink.sink
+    pub(crate) fn ended(&self) -> bool {
+        self.ended
     }
 
-    pub(crate) fn insert(&mut self, text: String) {
-        self.parser.input_buffer.push_front(text.into());
-        self.waiting = false;
+    pub(crate) fn dom(&self) -> &Dom {
+        &self.parser.tokenizer.sink.sink
     }
 
     pub(crate) fn advance(&mut self) -> ParserStep {
         if self.ended {
             return ParserStep::End;
         }
+        self.restore_write_prefix();
         loop {
             if self.dom().identity.allocated_nodes() >= MAX_DOM_NODES {
                 self.dom().errors.borrow_mut().push(format!(
@@ -90,7 +98,8 @@ impl HtmlParser {
                 self.eof = true;
                 break;
             }
-            match self.parser.tokenizer.feed(&self.parser.input_buffer) {
+            let (token, more) = self.feed_bounded(&self.parser.input_buffer);
+            match token {
                 TokenizerResult::Script(node) => {
                     if self.enforce_limits() {
                         self.parser.input_buffer.replace_with(Default::default());
@@ -110,6 +119,9 @@ impl HtmlParser {
                 self.cursor = self.source.len();
                 self.eof = true;
                 break;
+            }
+            if more {
+                continue;
             }
             if self.cursor == self.source.len() {
                 self.source.clear();
@@ -230,7 +242,10 @@ mod tests {
         assert_eq!(script.text_content(), "first");
         let parent = script.parent().unwrap();
         assert!(parser.dom().elements_named("b").next().is_none());
-        parser.insert("<i id=written>inserted</i>".into());
+        parser
+            .begin_write("<i id=written>inserted</i>".into())
+            .unwrap();
+        parser.end_write();
         assert!(matches!(parser.advance(), ParserStep::End));
         let children = parent.children.borrow();
         assert!(children.iter().any(|child| child.id() == script.id()));

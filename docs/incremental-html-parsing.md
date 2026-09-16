@@ -4,7 +4,8 @@ Updated 2026-09-09. This slice replaces the renderer's whole-DOM-before-script
 startup path with a retained HTML tokenizer/tree builder. It is not complete HTML
 streaming or complete `document.write()` support at that revision. The subsequent
 [main-response streaming slice](streaming-html-navigation.md) adds progressive decoding,
-network EOF, and charset restart handling; synchronous writes remain incomplete.
+network EOF, and charset restart handling. The subsequent
+[synchronous-write slice](synchronous-document-write.md) adds active-parser re-entry.
 
 ## Implemented contract
 
@@ -48,10 +49,11 @@ an adversarial open-element chain grow until EOF. The retained scheduler yields
 between script boundaries after an 8 ms slice; this is not a hard execution deadline
 for an individual script or tokenizer chunk.
 
-Buffered classic `document.write()` output now enters the retained tokenizer at
+At this slice's original revision, buffered classic `document.write()` output entered the retained tokenizer at
 the parser insertion point, before unread input. That preserves tree-construction
 context, split tokens and written-script ordering **after the caller returns**.
-It deliberately does not claim the synchronous re-entrant write algorithm.
+That revision did not implement synchronous re-entry. It is superseded by the
+[active-parser write contract](synchronous-document-write.md).
 
 ## Verification
 
@@ -159,10 +161,9 @@ Keep reports, profiles and screenshots in ignored output directories.
 - Main-response transfer now starts the parser before EOF; see
   [streaming navigation](streaming-html-navigation.md). Generic `page_ready_ms`
   still denotes first presentation, not visual completion or window load.
-- [Synchronous `document.write()` re-entry](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document.write()),
-  nested execution before the call returns, `document.open()/close()`, parser pause
-  flags and destructive-write policy are not complete. A same-script read immediately
-  after `write()` can still differ from Chromium. Fragment insertion is not a substitute.
+- [Active-parser writes](synchronous-document-write.md) now support same-script reads,
+  nested execution and parser pause/resumption. `document.open()/close()` and destructive
+  writes without an insertion point remain incomplete. Fragment insertion is not a substitute.
 - Stylesheet waiting consumes the current conservative admitted stylesheet set.
   Disabled/media applicability, pending imports, alternate sheets and exact
   script-blocking versus render-blocking state remain the next stylesheet slice.

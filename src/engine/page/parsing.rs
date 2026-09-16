@@ -31,7 +31,17 @@ impl Page {
     }
 
     pub(crate) fn prepare_parser_script(&mut self, node: NodeRef) -> Option<PageScript> {
-        if self.scripts.len() >= crate::limits::MAX_PAGE_SCRIPTS
+        let script = self.prepare_parser_script_at(node, self.scripts.len() + 1)?;
+        self.scripts.push(script.clone());
+        Some(script)
+    }
+
+    pub(crate) fn prepare_parser_script_at(
+        &mut self,
+        node: NodeRef,
+        ordinal: usize,
+    ) -> Option<PageScript> {
+        if ordinal > crate::limits::MAX_PAGE_SCRIPTS
             || node
                 .element()
                 .is_none_or(|element| element.script_started.get())
@@ -40,9 +50,7 @@ impl Page {
             return None;
         }
         self.base_url = document_base_url(&self.dom, &self.source_url);
-        let script = resources::prepare_script(node, &self.base_url, self.scripts.len() + 1)?;
-        self.scripts.push(script.clone());
-        Some(script)
+        resources::prepare_script(node, &self.base_url, ordinal)
     }
 
     pub(crate) fn discover_parsed_resources(&mut self) {

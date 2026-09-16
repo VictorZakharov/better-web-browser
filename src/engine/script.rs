@@ -13,7 +13,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-
 mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
@@ -35,6 +34,7 @@ mod module_lifecycle;
 mod module_loader;
 mod mutation_host;
 mod network;
+mod parser_writes;
 mod performance_clock;
 mod render_invalidation;
 pub(crate) mod runtime;

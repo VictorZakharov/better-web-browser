@@ -52,7 +52,7 @@ cycles, and top-level await. These slices do not establish whole-page parity.
 
 | Order | Contract / observed gap | Existing ownership | Acceptance test for the next implementation |
 | --- | --- | --- | --- |
-| 4 | Remaining parser work: synchronous, re-entrant insertion. [Streaming main-response decoding and charset replay](streaming-html-navigation.md) are implemented; buffered writes still enter the tokenizer after the caller returns. | `document/parsing.rs`, `dom/incremental.rs`, `mutation_host/document_write.rs` | Same-script reads and nested written-script execution match the insertion-point algorithm. |
+| 4 | [Active-parser synchronous writes](synchronous-document-write.md), [streaming decoding and charset replay](streaming-html-navigation.md) are implemented. Document replacement and destructive writes remain. | `document/parsing.rs`, `dom/incremental/writes.rs`, `script/parser_writes.rs` | Extend lifecycle coverage to `document.open()/close()`, inactive insertion points and nested browsing contexts. |
 | 5 | [Stylesheet dependency loading and separate script/paint gates](stylesheet-loading-dependencies.md) are implemented for the documented subset. Full stylesheet-set selection and imported CSSOM objects remain. | `page/stylesheets.rs`, `css/imports.rs`, renderer resource loader | Extend owned loading/cascade checks to preferred/alternate sets and imported-rule identity/mutation. |
 | 6 | [HTML event-handler content attributes](html-event-handlers.md) now cover parsing, mutation, lazy compilation, scope, ordering, cancellation and body/window forwarding. Remaining boundaries include CSP and broader browsing-context/realm behavior. | `bootstrap/event_handlers.js`, native V8 compilation, DOM attributes/construction | Continue with policy and browsing-context slices; do not infer their completion from handler names being present. |
 
@@ -69,8 +69,9 @@ its 250 ms idle monitor to discover queued events. Drains are bounded, and remai
 batches continue at low timer priority. Health/deadline polling remains as a fallback;
 idle polling was not shortened. See [event delivery and measured evidence](renderer-event-delivery.md).
 Retained parser ownership now removes the whole-DOM-before-script startup barrier.
-Main-response parsing now progresses before EOF. Re-entrant writes and full stylesheet-set/CSSOM
-behavior remain boundaries. Deferred/module readiness and document lifecycle separation are
+Main-response parsing now progresses before EOF and active-parser writes re-enter synchronously.
+Document replacement and full stylesheet-set/CSSOM behavior remain boundaries.
+Deferred/module readiness and document lifecycle separation are
 implemented for the currently admitted resource paths; this is not a complete HTML
 navigation implementation.
 

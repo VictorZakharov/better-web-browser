@@ -12,6 +12,9 @@ pub(super) fn mutation_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if let Some(value) = super::parser_writes::dispatch(operation, args, state)? {
+        return Ok(Some(value));
+    }
     let value = match operation {
         "appendChild" => append_child(args, state),
         "insertBefore" => insert_before(args, state),
@@ -46,6 +49,7 @@ pub(super) fn enforce_tree_budget_for_operation(
             | "innerHtmlSet"
             | "innerHtmlAppend"
             | "documentWrite"
+            | "parserWriteBegin"
             | "attachShadow"
             | "adoptedStyleSheetsSet"
     ) {
@@ -322,7 +326,7 @@ fn mutate_inner_html(args: &[JsValue], state: &mut HostState, append: bool) -> J
     Ok(JsValue::from(changed))
 }
 
-fn estimated_markup_nodes(html: &str) -> usize {
+pub(super) fn estimated_markup_nodes(html: &str) -> usize {
     // Each markup opener can introduce at most one node, with at most one intervening text node.
     // Overestimation is intentional because the retained realm keeps identities for detached nodes.
     html.bytes()

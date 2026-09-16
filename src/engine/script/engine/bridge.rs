@@ -117,6 +117,10 @@ fn host_call_callback(
         super::event_handlers::compile(scope, arguments, return_value);
         return;
     }
+    if operation == "runParserScript" {
+        super::parser_scripts::run(scope, arguments);
+        return;
+    }
     // Check lengths before copying untrusted strings into native allocations.
     if matches!(
         operation.as_str(),

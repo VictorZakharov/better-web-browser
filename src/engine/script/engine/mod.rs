@@ -4,6 +4,7 @@ mod bridge;
 mod crypto;
 mod event_handlers;
 mod modules;
+mod parser_scripts;
 mod runtime;
 mod value;
 mod watchdog;

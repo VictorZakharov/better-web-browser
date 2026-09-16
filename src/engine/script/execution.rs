@@ -314,6 +314,9 @@ pub(super) fn evaluate_script(
     };
 
     let script_started = Instant::now();
+    if let Some(session) = host.borrow_mut().parser_write_session.as_mut() {
+        session.insertion_point = session.root == script.node.id();
+    }
     let succeeded =
         match mutation_host::eval_with_writes(context, host, &script.code, &script.source_url) {
             Ok(_) => {
@@ -363,6 +366,11 @@ pub(super) fn evaluate_script(
             "load",
             &script.source_url,
         );
+    }
+    if let Some(session) = host.borrow_mut().parser_write_session.as_mut() {
+        session.insertion_point = false;
+        *total_bytes = total_bytes.saturating_add(std::mem::take(&mut session.script_bytes));
+        session.remaining_script_bytes = MAX_PAGE_SCRIPT_BYTES.saturating_sub(*total_bytes);
     }
     succeeded
 }
