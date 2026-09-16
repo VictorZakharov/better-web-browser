@@ -5,6 +5,7 @@ use super::watchdog::ExecutionWatchdog;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
+mod dynamic_imports;
 mod hooks;
 mod module_preparation;
 
@@ -17,6 +18,7 @@ pub(in crate::engine::script) struct Context {
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
+    imports: Rc<super::dynamic_imports::Imports>,
     isolate: v8::OwnedIsolate,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
@@ -34,6 +36,8 @@ impl Context {
         initialize_v8();
         let mut isolate = v8::Isolate::new(v8::CreateParams::default());
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
+        isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
+        let imports = Rc::new(super::dynamic_imports::Imports::default());
         isolate.set_host_initialize_import_meta_object_callback(
             super::modules::initialize_import_meta,
         );
@@ -41,6 +45,7 @@ impl Context {
             v8::scope!(let scope, &mut isolate);
             let context = v8::Context::new(scope, Default::default());
             context.set_slot(Rc::new(bridge));
+            context.set_slot(Rc::clone(&imports));
             let scope = &mut v8::ContextScope::new(scope, context);
             install_host_call(scope, context)?;
             v8::Global::new(scope, context)
@@ -53,6 +58,7 @@ impl Context {
             watchdog,
             context,
             private_hooks: HashMap::new(),
+            imports,
             isolate,
             next_module_promise: 1,
             module_promises: HashMap::new(),

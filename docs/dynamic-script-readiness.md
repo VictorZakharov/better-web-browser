@@ -46,9 +46,11 @@ Isolated-renderer tests withhold a slow response while verifying fast painted
 content, absence of idle polling, independent ordered scripts, shared resource
 owners, and a newly requested script starting before the old batch completes.
 
-This is **not** full HTML script/loading conformance. Dynamic inline execution,
-dynamic modules and dependency graphs, incremental parser integration, and the
-document-wide DOMContentLoaded/load resource-delay model remain separate work.
+This is **not** full HTML script/loading conformance. Later slices add
+[inline classic execution](inline-scripts-and-table-geometry.md),
+[dynamic document modules](dynamic-modules.md), and
+[document lifecycle tasks](document-load-lifecycle.md); their remaining boundaries
+are documented separately.
 The synchronous source-loader API remains for non-renderer embedders and module
 graphs; it is no longer used to wait for dynamic classic sources in the browser.
 

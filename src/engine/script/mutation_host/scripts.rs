@@ -15,7 +15,11 @@ pub(super) fn prepare(args: &[JsValue], state: &mut HostState) -> JsResult<JsVal
     {
         return Ok(JsValue::Null);
     }
-    if node.attr("src").is_some() {
+    if node.attr("src").is_some()
+        || node
+            .attr("type")
+            .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("module"))
+    {
         state.queue_dynamic_script(&node);
         return Ok(JsValue::Null);
     }

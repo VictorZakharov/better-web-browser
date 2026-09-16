@@ -173,6 +173,7 @@ impl ScriptRuntime {
         host.timer_handles.clear();
         host.document_streams = Default::default();
         host.pending_dynamic_scripts.clear();
+        host.module_jobs = Default::default();
         host.pending_module_evaluations.clear();
         host.prepared_script_external.clear();
         host.completed_module_evaluations.clear();

@@ -100,7 +100,13 @@ fn busy_callback(expect_timeout: bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         assert!(Instant::now() < deadline, "video producer did not start");
-        match session.wait_for_event(Duration::from_secs(2)).unwrap() {
+        // Codec startup is setup, not the watchdog assertion below. Honor the
+        // existing overall startup deadline even when no event arrives for 2 s.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match session
+            .wait_for_event(remaining)
+            .expect("video startup exceeded its 10 s deadline")
+        {
             RendererEvent::VideoFrame(_) => break,
             RendererEvent::Presentation(presentation) => {
                 session

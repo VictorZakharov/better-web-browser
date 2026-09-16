@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dynamic modules pending</title>
+<style>body{font:20px sans-serif;margin:24px;background:#f4f7fa}main{padding:24px;background:white;border:2px solid #54718f}pre{white-space:pre-wrap} .pass{border-color:green}</style>
+<main id="main"><h1>Asynchronous module loading</h1><p id="status">The page remains usable while module graphs load.</p><pre id="trace"></pre></main>
+<script>
+window.events=[];
+window.record=value=>{events.push(value);document.getElementById('trace').textContent=events.join('\n')};
+window.results=[];
+window.check=(name,condition)=>{results.push([name,condition]);if(!condition)throw Error(name)};
+const outcomes=[];
+const module=document.createElement('script');
+module.type='module';
+module.textContent="check('inline asynchronous',globalThis.inserted);check('inline base',import.meta.url===document.URL);check('module currentScript',document.currentScript===null);record('inline module');inlineDone()";
+outcomes.push(new Promise((resolve,reject)=>{window.inlineDone=resolve;module.onerror=reject}));
+module.onload=()=>check('inline module has no load event',false);
+document.head.append(module);
+window.inserted=true;
+const external=document.createElement('script');external.type='module';external.src='./module-shared.js?delay_ms=120';
+outcomes.push(new Promise((resolve,reject)=>{external.onload=()=>{check('external load',true);resolve()};external.onerror=reject}));
+document.head.append(external);
+const a=import('./module-shared.js?delay_ms=120');
+const b=import('./module-shared.js?delay_ms=120');
+outcomes.push(Promise.all([a,b]).then(([a,b])=>{
+  check('namespace identity',a===b);check('single evaluation',sharedRuns===1);check('export',a.answer===42);record('shared imports');
+}));
+outcomes.push(import('./module-await.js').then(m=>{
+  check('transitive export',m.answer===42);check('await settled',m.settled===true);record('await import');
+}));
+outcomes.push(import('./module-absent.js').then(()=>check('missing rejects',false),e=>check('missing rejects',e instanceof TypeError)));
+outcomes.push(import('./module-throws.js').then(()=>check('throw rejects',false),e=>check('throw identity',e===globalThis.marker)));
+Promise.all(outcomes).then(()=>{
+  check('timer progressed',events.includes('timer'));
+  document.getElementById('trace').textContent=events.slice().sort().join('\n');
+  document.getElementById('status').textContent='PASS: imports, shared identity, events, errors, and top-level await.';
+  document.getElementById('main').className='pass';
+  document.getElementById('main').setAttribute('data-facts',JSON.stringify(results));
+  document.title='Dynamic modules PASS';
+},e=>{document.title='Dynamic modules FAIL: '+e;record(String(e))});
+setTimeout(()=>record('timer'),5);
+record('caller');
+</script>

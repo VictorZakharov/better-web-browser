@@ -101,6 +101,7 @@ impl ModuleGraphs {
         runtime: &mut ScriptRuntime,
         script: &PageScript,
     ) -> Result<bool, String> {
+        runtime.register_module_options(&script.source_url, script.fetch_options);
         for _ in 0..MAX_DYNAMIC_SCRIPTS {
             let missing = match runtime
                 .prepare_module_graph(&script.source_url, script.code.as_deref().unwrap())

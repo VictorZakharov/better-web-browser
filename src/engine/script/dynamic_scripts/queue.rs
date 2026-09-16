@@ -8,6 +8,7 @@ pub(in crate::engine::script) struct PendingScript {
     pub source_url: String,
     pub fetch_options: ScriptFetchOptions,
     pub ordered: bool,
+    pub kind: ScriptKind,
     requested: bool,
     pub result: Option<Result<String, String>>,
 }
@@ -21,6 +22,15 @@ pub(in crate::engine::script) struct ScriptQueue {
 
 impl ScriptQueue {
     pub fn push(&mut self, node: NodeRef, source_url: String, options: ScriptFetchOptions) {
+        self.push_kind(node, source_url, options, ScriptKind::Classic);
+    }
+    pub fn push_kind(
+        &mut self,
+        node: NodeRef,
+        source_url: String,
+        options: ScriptFetchOptions,
+        kind: ScriptKind,
+    ) {
         let ordered = node
             .element()
             .is_some_and(|element| !element.script_force_async.get())
@@ -30,6 +40,7 @@ impl ScriptQueue {
             source_url,
             fetch_options: options,
             ordered,
+            kind,
             requested: false,
             result: None,
         });
@@ -42,14 +53,16 @@ impl ScriptQueue {
         !self.ready.is_empty()
     }
     pub fn has_unrequested(&self) -> bool {
-        self.pending
-            .iter()
-            .any(|script| !script.requested && script.result.is_none())
+        self.pending.iter().any(|script| {
+            script.kind == ScriptKind::Classic && !script.requested && script.result.is_none()
+        })
     }
     pub fn requests(&self) -> Vec<DynamicScriptRequest> {
         self.pending
             .iter()
-            .filter(|script| !script.requested && script.result.is_none())
+            .filter(|script| {
+                script.kind == ScriptKind::Classic && !script.requested && script.result.is_none()
+            })
             .take(MAX_DYNAMIC_SCRIPTS)
             .map(|script| DynamicScriptRequest {
                 node: script.node.id(),

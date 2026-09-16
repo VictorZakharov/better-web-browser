@@ -42,6 +42,12 @@ The existing additional-module element-event path reports successful invocation 
 for that promise, and later rejection remains a JavaScript diagnostic. See the
 [document readiness contract and remaining loading gaps](document-load-lifecycle.md).
 
+Document `import()` and inserted inline/external module elements use the
+[dynamic module pipeline](dynamic-modules.md): asynchronous graph preparation,
+native namespace promises, shared evaluation, retryable failed fetches, and
+redirect-aware dynamic graph bases. Import promises wait for top-level await;
+script-element invocation and document completion do not.
+
 `Worker` creates an isolated V8 realm on a background thread. Classic and module dedicated workers
 support structured-clone messaging and transfers, timers, Fetch/XHR, relative static imports,
 `importScripts` for classic workers, top-level await for module workers, and deterministic
@@ -84,8 +90,8 @@ This is a usable core, not the entire browser API surface:
   consumers. [Main HTML navigation](streaming-html-navigation.md) now decodes/parses progressively;
 - synchronous XHR on `Window` is intentionally rejected; `responseXML` remains `null` until the
   XML/HTML `DOMParser` path exists;
-- static module graphs are supported, while network-discovered dynamic `import()`, import maps, and
-  module types other than JavaScript remain future work; and
+- static and dynamic document JavaScript modules are supported within the documented HTTP(S)
+  slice; import maps/attributes, other module types, and dynamic worker imports remain future work; and
 - dedicated workers are implemented; shared workers, service workers, worklets, and their storage,
   lifecycle, interception, and registration models are not.
 

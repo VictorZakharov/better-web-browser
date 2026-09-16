@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/windows-rust
       - name: Test the full browser headlessly
-        run: cargo test --locked --test live_runtime
+        run: ./scripts/test-live-runtime.ps1
 
   wpt:
     name: Curated WPT
@@ -170,6 +170,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test shadow-aware Chromium capture classifier
         run: dotnet run --project benchmarks/chromium-tests/ChromiumBaseline.Tests.csproj -c Release
+      - name: Test hidden fixture-server lifecycle
+        run: ./scripts/test-alpha-fixture-server.ps1
 
   dependency-policy:
     name: Dependency policy
@@ -215,6 +217,13 @@ jobs:
       - name: Run deterministic public-alpha matrix headlessly
         shell: pwsh
         run: ./benchmarks/run-alpha.ps1 -BuildProfile debug -Iterations 1 -ShardIndex ${{ matrix.shard }} -ShardCount 2 -SkipBuild -OutputDirectory (Join-Path $env:RUNNER_TEMP 'alpha-compatibility')
+      - name: Retain failed compatibility diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: alpha-failure-${{ matrix.shard }}
+          path: ${{ runner.temp }}/alpha-compatibility
+          retention-days: 7
 
   windows:
     name: windows

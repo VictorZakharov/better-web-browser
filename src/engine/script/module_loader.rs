@@ -29,6 +29,14 @@ impl WebModuleLoader {
         self.sources.borrow().contains_key(url)
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.sources.borrow().len()
+    }
+
+    pub(super) fn source(&self, url: &str) -> Option<String> {
+        self.sources.borrow().get(url).cloned()
+    }
+
     pub(super) fn sources(&self) -> HashMap<String, String> {
         self.sources.borrow().clone()
     }
