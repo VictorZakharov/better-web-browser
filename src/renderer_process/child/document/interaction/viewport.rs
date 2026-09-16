@@ -7,6 +7,7 @@ impl DocumentRuntime {
         &mut self,
         event: UserInputEvent,
     ) -> Result<crate::engine::UserInputResult, String> {
+        self.prepare_document_streams();
         let Some(runtime) = self.script_runtime.as_mut() else {
             return Ok(crate::engine::UserInputResult {
                 default_allowed: true,

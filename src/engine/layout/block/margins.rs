@@ -108,7 +108,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             if child.element().is_none()
-                && style.white_space != WhiteSpace::Pre
+                && !style.white_space.preserves_spaces()
                 && child.text_content().trim().is_empty()
             {
                 continue;

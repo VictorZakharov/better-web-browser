@@ -3,6 +3,9 @@ use super::*;
 use crate::limits::MAX_DOCUMENT_WRITE_BYTES;
 
 impl HtmlParser {
+    pub(crate) fn writing(&self) -> bool {
+        !self.write_inputs.is_empty()
+    }
     pub(crate) fn begin_write(&mut self, text: String) -> Result<(), String> {
         if self.ended {
             return Err("document.write cannot resume a stopped parser".into());

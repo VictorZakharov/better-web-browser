@@ -23,6 +23,7 @@ pub(super) fn evaluate_module(
     let mut result = Err("module graph could not be loaded".to_string());
     let mut pending_promise = None;
     let mut resource_failed = false;
+    host.borrow_mut().document_streams.ignore_destructive += 1;
     for _ in 0..MAX_DYNAMIC_SCRIPTS {
         let missing =
             match context.evaluate_module(&script.source_url, &script.code, &loader.sources()) {
@@ -77,7 +78,7 @@ pub(super) fn evaluate_module(
         }
     }
 
-    super::mutation_host::flush_document_write(&mut host.borrow_mut());
+    host.borrow_mut().document_streams.ignore_destructive -= 1;
     let mut error = result.err();
     let pending = if error.is_none() {
         pending_promise.is_some_and(|promise| {

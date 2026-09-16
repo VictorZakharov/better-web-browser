@@ -5,9 +5,13 @@ use crate::engine::dom::incremental::{HtmlParser, ParserStep};
 use crate::engine::page::PageScript;
 
 pub(crate) type PrepareWrittenScript =
-    Box<dyn FnMut(NodeRef, usize, &[NodeRef]) -> (Option<PageScript>, bool)>;
+    Rc<RefCell<dyn FnMut(NodeRef, usize, &[NodeRef]) -> (Option<PageScript>, bool)>>;
 
 pub(super) struct ParserWriteSession {
+    pub(super) target: NodeRef,
+    pub(super) script_created: bool,
+    pub(super) closed: bool,
+    pub(super) nesting: usize,
     pub(super) parser: HtmlParser,
     pub(super) prepare: PrepareWrittenScript,
     pub(super) prepared: Vec<(PageScript, bool)>,
@@ -17,6 +21,7 @@ pub(super) struct ParserWriteSession {
     pub(super) root: NodeId,
     pub(super) insertion_point: bool,
     pub(super) paused: bool,
+    pub(super) blocked_on: Option<NodeId>,
     pub(super) script_bytes: usize,
     pub(super) remaining_script_bytes: usize,
 }
@@ -28,26 +33,24 @@ pub(super) fn dispatch(
 ) -> JsResult<Option<JsValue>> {
     Ok(Some(match operation {
         "parserWriteBegin" => {
+            let id = argument_id(args, 1);
             if host
-                .parser_write_session
-                .as_ref()
-                .is_none_or(|session| !session.insertion_point)
-                || host
-                    .node(argument_id(args, 1))
-                    .is_none_or(|node| node.id() != host.document.id())
+                .write_session(id)
+                .is_none_or(|session| !session.insertion_point || session.parser.ended())
             {
                 return Ok(Some(JsValue::from(false)));
             }
             let text = argument_string(args, 2)?;
             host.ensure_node_capacity(super::mutation_host::estimated_markup_nodes(&text))?;
-            let session = host.parser_write_session.as_mut().unwrap();
+            let session = host.write_session(id).unwrap();
             session.parser.begin_write(text).map_err(limit_error)?;
             JsValue::from(true)
         }
-        "parserWriteStep" => step(host)?,
-        "parserWritePrepare" => prepare(host, argument_id(args, 1))?,
+        "parserWriteStep" => step(host, argument_id(args, 1), false)?,
+        "parserStreamStep" => step(host, argument_id(args, 1), true)?,
+        "parserWritePrepare" => prepare(host, argument_id(args, 1), argument_id(args, 2))?,
         "parserWriteEnd" => {
-            if let Some(session) = host.parser_write_session.as_mut() {
+            if let Some(session) = host.write_session(argument_id(args, 1)) {
                 session.parser.end_write();
             }
             JsValue::undefined()
@@ -56,27 +59,45 @@ pub(super) fn dispatch(
             host.executed += 1;
             JsValue::undefined()
         }
+        "parserScriptEnter" | "parserScriptLeave" => {
+            if let Some(session) = host.write_session(argument_id(args, 1)) {
+                if operation == "parserScriptEnter" {
+                    session.nesting += 1;
+                } else {
+                    session.nesting = session.nesting.saturating_sub(1);
+                }
+            }
+            JsValue::undefined()
+        }
         _ => return Ok(None),
     }))
 }
 
-fn step(host: &mut HostState) -> JsResult<JsValue> {
-    let Some(session) = host.parser_write_session.as_mut() else {
+fn step(host: &mut HostState, id: u32, stream: bool) -> JsResult<JsValue> {
+    if host.navigation_url.is_some() {
+        return Ok(JsValue::Null);
+    }
+    let Some(session) = host.write_session(id) else {
         return Ok(JsValue::Null);
     };
-    if session.paused || host.navigation_url.is_some() {
+    if session.paused || (stream && (session.nesting > 0 || session.parser.writing())) {
         return Ok(JsValue::Null);
     }
     let version = session.parser.dom().mutation_version();
-    let previous: Vec<_> = Node::descendants(&host.document)
+    let target = session.target.clone();
+    let previous: Vec<_> = Node::descendants(&target)
         .filter(crate::engine::page::is_stylesheet)
         .map(|node| (node.id(), node.subtree_mutation_version()))
         .collect();
-    let step = session.parser.advance_write();
+    let step = if stream {
+        session.parser.advance()
+    } else {
+        session.parser.advance_write()
+    };
     let changed = version != session.parser.dom().mutation_version();
     session.mutated |= changed;
     if changed {
-        for node in Node::descendants(&host.document).filter(crate::engine::page::is_stylesheet) {
+        for node in Node::descendants(&target).filter(crate::engine::page::is_stylesheet) {
             if !previous.contains(&(node.id(), node.subtree_mutation_version()))
                 && !session
                     .stylesheets
@@ -87,17 +108,20 @@ fn step(host: &mut HostState) -> JsResult<JsValue> {
             }
         }
     }
-    host.quirks_mode =
+    let quirks =
         session.parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks;
+    let ended = session.script_created && session.parser.ended();
+    if target.id() == host.document.id() {
+        host.quirks_mode = quirks;
+    }
     let node = if let ParserStep::Script(node) = &step {
         host.id_for(node)
     } else {
         0
     };
     let ids = if changed {
-        let ids = host.register_parser_changes();
-        let document = host.document.clone();
-        host.record_mutation(Some(&document), MutationKind::Stylesheet);
+        let ids = host.register_parser_changes_in(&target);
+        host.record_mutation(Some(&target), MutationKind::Stylesheet);
         ids
     } else {
         String::new()
@@ -106,6 +130,7 @@ fn step(host: &mut HostState) -> JsResult<JsValue> {
         ("node".into(), JsValue::from(node)),
         ("ids".into(), JsValue::from(ids)),
         ("changed".into(), JsValue::from(changed)),
+        ("ended".into(), JsValue::from(ended)),
         (
             "done".into(),
             JsValue::from(matches!(step, ParserStep::NeedInput | ParserStep::End)),
@@ -113,7 +138,7 @@ fn step(host: &mut HostState) -> JsResult<JsValue> {
     ]))
 }
 
-fn prepare(host: &mut HostState, id: u32) -> JsResult<JsValue> {
+fn prepare(host: &mut HostState, target: u32, id: u32) -> JsResult<JsValue> {
     let Some(node) = host.node(id) else {
         return Ok(JsValue::Null);
     };
@@ -124,7 +149,7 @@ fn prepare(host: &mut HostState, id: u32) -> JsResult<JsValue> {
     {
         return Ok(JsValue::Null);
     }
-    let Some(session) = host.parser_write_session.as_mut() else {
+    let Some(session) = host.write_session(target) else {
         return Ok(JsValue::Null);
     };
     let ordinal = session.initial_count + session.prepared.len() + 1;
@@ -133,7 +158,8 @@ fn prepare(host: &mut HostState, id: u32) -> JsResult<JsValue> {
             "document.write exceeded the page script count limit".into(),
         ));
     }
-    let (script, styles_pending) = (session.prepare)(node.clone(), ordinal, &session.stylesheets);
+    let (script, styles_pending) =
+        (session.prepare.borrow_mut())(node.clone(), ordinal, &session.stylesheets);
     let Some(script) = script else {
         return Ok(JsValue::Null);
     };
@@ -155,6 +181,7 @@ fn prepare(host: &mut HostState, id: u32) -> JsResult<JsValue> {
     } else {
         if script.blocks_first_paint {
             session.paused = true;
+            session.blocked_on = Some(node.id());
         }
         JsValue::Null
     };
@@ -170,18 +197,19 @@ fn limit_error(message: String) -> JsError {
 impl HostState {
     pub(super) fn register_parser_changes(&mut self) -> String {
         let document = self.document.clone();
+        self.register_parser_changes_in(&document)
+    }
+
+    pub(super) fn register_parser_changes_in(&mut self, document: &NodeRef) -> String {
         self.computed_styles = None;
         self.offset_parent_styles = None;
         self.layout_geometry_initialized = false;
-        self.pending_layout_invalidation.record(
-            &document,
-            Some(&document),
-            MutationKind::Stylesheet,
-        );
-        let new_elements = Node::descendants(&document)
+        self.pending_layout_invalidation
+            .record(document, Some(document), MutationKind::Stylesheet);
+        let new_elements = Node::descendants(document)
             .filter(|node| node.element().is_some() && !self.node_ids.contains_key(&node.id()))
             .collect::<Vec<_>>();
-        self.register_subtree(&document);
+        self.register_subtree(document);
         new_elements
             .iter()
             .map(|node| self.id_for(node).to_string())

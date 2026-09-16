@@ -24,6 +24,11 @@ impl DocumentRuntime {
     ) -> Result<(), String> {
         let started = Instant::now();
         while self.parser.is_some() {
+            self.collect_document_stream_changes();
+            if self.parser.is_none() {
+                break;
+            }
+            self.prepare_document_streams();
             if !self.parser_runnable() {
                 break;
             }
@@ -154,14 +159,18 @@ impl DocumentRuntime {
             .filter(|resource| matches!(resource, PageResource::Stylesheet { .. }))
             .cloned()
             .collect::<Vec<_>>();
-        Box::new(move |node, ordinal, stylesheets| {
-            let mut page = page.borrow_mut();
-            let script = page.prepare_parser_script_at(node, ordinal);
-            let blocked = stylesheets
-                .iter()
-                .filter(|node| Node::tree_root(node).id() == page.dom.document.id())
-                .any(|node| super::rendering::stylesheet_pending(&page, node, &loaded, &admitted));
-            (script, blocked)
-        })
+        Rc::new(RefCell::new(
+            move |node, ordinal, stylesheets: &[crate::engine::dom::NodeRef]| {
+                let mut page = page.borrow_mut();
+                let script = page.prepare_parser_script_at(node, ordinal);
+                let blocked = stylesheets
+                    .iter()
+                    .filter(|node| Node::tree_root(node).id() == page.dom.document.id())
+                    .any(|node| {
+                        super::rendering::stylesheet_pending(&page, node, &loaded, &admitted)
+                    });
+                (script, blocked)
+            },
+        ))
     }
 }

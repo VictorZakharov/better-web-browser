@@ -57,6 +57,21 @@ impl HtmlParser {
         parser
     }
 
+    /// Script-created input reuses the Document and its node allocator, not a fragment sink.
+    pub(crate) fn for_document(document: NodeRef) -> Self {
+        let mut parser = Self::streaming();
+        let dom = Dom {
+            identity: document.identity.clone(),
+            document,
+            errors: Default::default(),
+            quirks_mode: std::cell::Cell::new(html5ever::tree_builder::QuirksMode::NoQuirks),
+        };
+        let mut options = ParseOpts::default();
+        options.tree_builder.scripting_enabled = true;
+        parser.parser = parse_document(dom, options);
+        parser
+    }
+
     pub(crate) fn append(&mut self, source: &str, eof: bool) -> Result<(), String> {
         if self.eof || self.ended {
             return Err("HTML input arrived after EOF".into());

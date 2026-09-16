@@ -17,6 +17,7 @@ mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
 mod cssom_host;
+mod document_streams;
 mod dom_host;
 mod dynamic_scripts;
 mod engine;
@@ -53,7 +54,6 @@ mod worker_host;
 mod worker_module;
 mod worker_runtime;
 mod workers;
-
 use engine::{
     Context, HostBridge, JsError, JsNativeError, JsResult, JsString, JsValue, ModuleEvaluation,
     Source,

@@ -126,6 +126,17 @@ pub enum WhiteSpace {
     Normal,
     NoWrap,
     Pre,
+    PreWrap,
+}
+
+impl WhiteSpace {
+    pub(crate) fn preserves_spaces(self) -> bool {
+        matches!(self, Self::Pre | Self::PreWrap)
+    }
+
+    pub(crate) fn wraps(self) -> bool {
+        matches!(self, Self::Normal | Self::PreWrap)
+    }
 }
 
 mod floats;

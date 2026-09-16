@@ -6,6 +6,7 @@ mod refresh;
 mod rendering;
 mod resource_events;
 mod resources;
+pub(crate) use resources::prepare_script as prepare_written_script;
 mod scripts;
 mod snapshot;
 mod stylesheets;

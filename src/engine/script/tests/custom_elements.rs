@@ -209,11 +209,12 @@ fn html_insertion_and_document_write_upgrade_defined_elements() {
             customElements.define('x-inserted', InsertedElement);
             document.getElementById('container').innerHTML =
                 '<x-inserted id="inner" data-value="one"></x-inserted>';
+            const inner = document.getElementById('inner');
             document.write('<x-inserted id="written" data-value="two"></x-inserted>');
             queueMicrotask(() => {
-                const inner = document.getElementById('inner');
                 const written = document.getElementById('written');
-                const valid = inner instanceof InsertedElement && written instanceof InsertedElement &&
+                const valid = inner instanceof InsertedElement && !inner.isConnected &&
+                    document.getElementById('inner') === null && written instanceof InsertedElement &&
                     order.includes('constructor:inner') && order.includes('attribute:inner:one') &&
                     order.includes('connected:inner') && order.includes('constructor:written') &&
                     order.includes('attribute:written:two') && order.includes('connected:written');

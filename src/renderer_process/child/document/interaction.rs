@@ -196,6 +196,7 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
         // Media acknowledgements can run callbacks that produce more side effects.
+        self.collect_document_stream_changes();
         // Collect those after the bounded media-action drain, not before it.
         self.apply_media_actions(outcome, connection)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);

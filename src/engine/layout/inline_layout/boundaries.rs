@@ -10,7 +10,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         index: usize,
     ) -> bool {
         let right = &atoms[index];
-        if let InlineAtom::Text { text, no_wrap, .. } = right
+        if let InlineAtom::Text {
+            text,
+            no_wrap,
+            preserve_space: false,
+            ..
+        } = right
             && text.starts_with([' ', '\t', '\n', '\r', '\u{c}'])
         {
             return !no_wrap;
@@ -18,6 +23,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let Some(left) = index.checked_sub(1).map(|i| &atoms[i]) else {
             return false;
         };
+        if matches!(left, InlineAtom::Text { text, preserve_space: true, no_wrap: false, .. }
+            if text.ends_with([' ', '\t']))
+        {
+            return true;
+        }
         if !atomic(left) && !atomic(right) {
             return false;
         }
@@ -34,10 +44,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         .collect();
                 std::iter::successors(Some(right), Node::composed_parent)
                     .find(|n| ancestors.contains(&n.id()))
-                    .is_none_or(|n| self.styles.get(&n).white_space == WhiteSpace::Normal)
+                    .is_none_or(|n| self.styles.get(&n).white_space.wraps())
             }
-            (Some(node), None) | (None, Some(node)) => Node::composed_parent(&node)
-                .is_none_or(|n| self.styles.get(&n).white_space == WhiteSpace::Normal),
+            (Some(node), None) | (None, Some(node)) => {
+                Node::composed_parent(&node).is_none_or(|n| self.styles.get(&n).white_space.wraps())
+            }
             _ => true,
         }
     }

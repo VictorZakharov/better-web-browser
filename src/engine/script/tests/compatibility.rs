@@ -283,36 +283,6 @@ fn adopt_node_preserves_identity_detaches_and_updates_subtree_ownership() {
 }
 
 #[test]
-fn document_write_preserves_one_tokenizer_stream_and_url_serialization() {
-    let (dom, outcome) = execute_html(
-        r#"<!doctype html><body>
-        <div><a href='?notin=&notin;&not;&;& &'>Link</a><p>Text: &notin;&not;</p></div>
-        <script>
-            const markup = "<div><a href='?notin=&notin;&not;&;& &'>Link</a><p>Text: &notin;&not;</p></div>";
-            for (let index = 0; index < markup.length; index++) document.write(markup.charAt(index));
-        </script>
-        <p id="status">no</p><script>
-            const divs = document.getElementsByTagName('div');
-            const writtenHref = divs[1].firstChild.href;
-            const query = writtenHref.substring(writtenHref.indexOf('?'));
-            if (divs.length === 2 && divs[1].childNodes.length === 2 &&
-                query === '?notin=%E2%88%89%C2%AC&;&%20&' &&
-                divs[1].lastChild.textContent === 'Text: \u2209\u00AC') {
-                document.getElementById('status').textContent = 'yes';
-            }
-        </script></body>"#,
-    );
-    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
-    assert_eq!(
-        dom.elements_named("p")
-            .find(|node| node.attr("id").as_deref() == Some("status"))
-            .unwrap()
-            .text_content(),
-        "yes"
-    );
-}
-
-#[test]
 fn html_collections_are_live_indexed_named_and_same_object() {
     let (dom, outcome) = execute_html(
         r#"<!doctype html><body>

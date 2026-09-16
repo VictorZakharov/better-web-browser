@@ -317,20 +317,22 @@ pub(super) fn evaluate_script(
     if let Some(session) = host.borrow_mut().parser_write_session.as_mut() {
         session.insertion_point = session.root == script.node.id();
     }
-    let succeeded =
-        match mutation_host::eval_with_writes(context, host, &script.code, &script.source_url) {
-            Ok(_) => {
-                outcome.executed += 1;
-                host.borrow_mut().executed += 1;
-                true
-            }
-            Err(error) => {
-                outcome
-                    .errors
-                    .push(format!("{}: {error}", script.source_url));
-                false
-            }
-        };
+    let stream_execution = host.borrow_mut().begin_stream_script(&script.node);
+    let succeeded = match context
+        .eval(Source::from_bytes(&script.code).with_path(std::path::Path::new(&script.source_url)))
+    {
+        Ok(_) => {
+            outcome.executed += 1;
+            host.borrow_mut().executed += 1;
+            true
+        }
+        Err(error) => {
+            outcome
+                .errors
+                .push(format!("{}: {error}", script.source_url));
+            false
+        }
+    };
     // Running a classic script ends with a microtask checkpoint, before the outer
     // execute-script-element algorithm restores currentScript and fires load.
     // https://html.spec.whatwg.org/multipage/webappapis.html#clean-up-after-running-script
@@ -340,6 +342,7 @@ pub(super) fn evaluate_script(
             .push(format!("{}: promise job: {error}", script.source_url));
     }
     let script_time = script_started.elapsed();
+    host.borrow_mut().end_stream_script(stream_execution);
     if script_time.as_millis() >= 1 {
         outcome.diagnostics.push(format!(
             "JavaScript {:.3} ms: {}",

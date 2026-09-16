@@ -2,6 +2,8 @@ use super::*;
 mod boundaries;
 mod fragment_collection;
 pub(super) mod geometry;
+#[cfg(test)]
+mod whitespace_tests;
 mod wrapping;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
@@ -31,6 +33,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     align,
                     line_width,
                     line_height.max(default_line_height),
+                    true,
                 );
                 line.clear();
                 line_width = 0.0;
@@ -61,6 +64,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     align,
                     line_width,
                     line_height.max(default_line_height),
+                    false,
                 );
                 line.clear();
                 line_width = 0.0;
@@ -91,6 +95,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 align,
                 line_width,
                 line_height.max(default_line_height),
+                true,
             );
         }
         y
@@ -147,9 +152,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width,
                     height,
                     content_height: height,
-                    no_wrap: Node::composed_parent(node).is_some_and(|parent| {
-                        self.styles.get(&parent).white_space != WhiteSpace::Normal
-                    }),
+                    no_wrap: Node::composed_parent(node)
+                        .is_some_and(|parent| !self.styles.get(&parent).white_space.wraps()),
                     break_before: true,
                 }
             }
@@ -201,7 +205,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     width: metrics.total_width(),
                     height: metrics.total_height(),
                     content_height: metrics.total_height(),
-                    no_wrap: style.white_space == WhiteSpace::NoWrap,
+                    no_wrap: !style.white_space.wraps(),
                     break_before: false,
                 }
             }

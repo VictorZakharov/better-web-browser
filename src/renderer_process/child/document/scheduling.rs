@@ -3,6 +3,7 @@ use super::*;
 
 impl DocumentRuntime {
     pub(in crate::renderer_process::child) fn next_timer_micros(&mut self) -> Option<u64> {
+        self.collect_document_stream_changes();
         if self.lifecycle == crate::renderer_protocol::DocumentLifecycle::Frozen {
             return None;
         }
@@ -72,6 +73,8 @@ impl DocumentRuntime {
             })));
         }
         self.resource_event_pending = false;
+        self.collect_document_stream_changes();
+        self.prepare_document_streams();
         let mut outcome = std::mem::take(&mut self.pending_async_outcome);
         // IntersectionObserver callbacks are tasks, unlike ResizeObserver's before-paint loop.
         if !self.rendering_is_blocked()

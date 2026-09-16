@@ -31,6 +31,7 @@ mod cssom;
 mod cssom_view;
 mod cssom_view_scroll;
 mod custom_elements;
+mod document_streams;
 mod element_scrolling;
 mod embedded_elements;
 mod event_handler_attributes;

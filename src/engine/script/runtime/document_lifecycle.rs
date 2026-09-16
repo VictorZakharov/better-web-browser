@@ -30,6 +30,10 @@ pub(in crate::engine::script) struct DocumentLoad {
 }
 
 impl DocumentLoad {
+    pub(in crate::engine::script) fn stream_finished(&mut self) {
+        self.readiness = Readiness::Interactive;
+        self.parsing_finished = true;
+    }
     pub(in crate::engine::script) fn storage_event(
         &self,
         update: crate::storage::StorageUpdate,
@@ -67,6 +71,15 @@ pub(in crate::engine::script) fn enter_interactive(
     if host.borrow().document_load.readiness != Readiness::Loading {
         return;
     }
+    if host
+        .borrow()
+        .document_streams
+        .parsers
+        .get(&host.borrow().document.id())
+        .is_some_and(|session| !session.parser.ended())
+    {
+        return;
+    }
     host.borrow_mut().document_load.readiness = Readiness::Interactive;
     call(context, outcome, "__setDocumentInteractive");
 }
@@ -76,8 +89,11 @@ pub(in crate::engine::script) fn parsing_finished(
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
 ) {
+    let generation = host.borrow().document_streams.generation;
     enter_interactive(context, host, outcome);
-    host.borrow_mut().document_load.parsing_finished = true;
+    if host.borrow().document_streams.generation == generation {
+        host.borrow_mut().document_load.parsing_finished = true;
+    }
 }
 
 pub(in crate::engine::script) fn run_one(
@@ -120,8 +136,11 @@ pub(in crate::engine::script) fn run_one(
     match task {
         DocumentTask::DomContentLoaded => call(context, outcome, "__dispatchDOMContentLoaded"),
         DocumentTask::WindowLoad => {
+            let generation = host.borrow().document_streams.generation;
             call(context, outcome, "__setDocumentComplete");
-            call(context, outcome, "__dispatchWindowLoad");
+            if host.borrow().document_streams.generation == generation {
+                call(context, outcome, "__dispatchWindowLoad");
+            }
         }
     }
     true
@@ -152,7 +171,7 @@ impl ScriptRuntime {
         host.resize_observers_deferred = false;
         host.resize_boxes.clear();
         host.timer_handles.clear();
-        host.pending_document_write.clear();
+        host.document_streams = Default::default();
         host.pending_dynamic_scripts.clear();
         host.pending_module_evaluations.clear();
         host.prepared_script_external.clear();

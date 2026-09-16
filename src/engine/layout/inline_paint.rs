@@ -11,10 +11,21 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         align: TextAlign,
         line_width: f32,
         line_height: f32,
+        forced_end: bool,
     ) -> f32 {
         let fragments = std::sync::Arc::make_mut(&mut self.output.fragments);
         fragments.next_line += 1;
         let line_id = fragments.next_line;
+        let hanging = line
+            .last()
+            .map(|item| self.hanging_space_width(item.atom))
+            .unwrap_or(0.0);
+        let hanging = if forced_end && line_width <= width {
+            0.0
+        } else {
+            hanging
+        };
+        let line_width = (line_width - hanging).max(0.0);
         let mut cursor_x = match align {
             TextAlign::Start => x,
             TextAlign::Center => x + ((width - line_width) / 2.0).max(0.0),

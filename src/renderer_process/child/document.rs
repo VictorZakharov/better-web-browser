@@ -2,6 +2,7 @@
 
 mod accessibility;
 mod diagnostics;
+mod document_streams;
 mod dynamic_scripts;
 mod fetch;
 mod fullscreen;

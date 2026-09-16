@@ -2,6 +2,15 @@
 use super::*;
 
 impl Page {
+    pub(crate) fn reset_document_stream(&mut self) {
+        self.scripts.clear();
+        self.resources.clear();
+        self.stylesheet_sources.clear();
+        self.external_stylesheets.clear();
+        self.dom
+            .quirks_mode
+            .set(html5ever::tree_builder::QuirksMode::NoQuirks);
+    }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_parser_runtime(
         &self,

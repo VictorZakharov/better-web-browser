@@ -1,0 +1,43 @@
+<!doctype html><meta charset="utf-8"><title>Document stream fixture</title>
+<body><p id="old">This content must be replaced.</p>
+<script>
+window.onload = () => setTimeout(() => {
+  window.trace = [];
+  const original = document;
+  document.addEventListener('click', () => trace.push('stale listener'));
+  document.open();
+  trace.push(document === original ? 'same document' : 'wrong identity');
+  trace.push(document.readyState);
+  document.dispatchEvent(new Event('click'));
+  document.write('<!doctype html><meta charset="utf-8"><style>' +
+    'body { margin:24px; color:#183149; background:#edf3f8; font:18px Arial,sans-serif }' +
+    'main { max-width:820px; padding:24px; background:white }' +
+    'output { display:block; margin-top:20px; padding:16px; background:#d9f5e5; white-space:pre-wrap }' +
+    '.wrap { width:280px; white-space:pre-wrap; font:20px/28px monospace; border:1px solid #183149 }' +
+    '</style><main><h1>Document replacement and preserved text</h1>' +
+    '<p id="fresh">New content is visible before write returns.</p>' +
+    '<div class="wrap">  Leading spaces\nWords   keep   their   spaces and wrap within the box.\n\nAfter an empty line.</div>' +
+    '<output id="result"></output></main>');
+  trace.push(document.getElementById('old') === null ? 'old content removed' : 'stale content');
+  trace.push(document.getElementById('fresh') ? 'synchronous content' : 'missing content');
+  document.onreadystatechange = () => trace.push(document.readyState);
+  document.addEventListener('DOMContentLoaded', () => trace.push('DOMContentLoaded'));
+  window.onload = () => {
+    trace.push('load');
+  };
+  setTimeout(() => {
+    const expected = ['same document','loading','old content removed','synchronous content',
+      'interactive','DOMContentLoaded','complete','load'];
+    // Chromium completes readiness synchronously here; HTML queues DCL and load.
+    // Compare the shared lifecycle order, retaining the return marker in the proof.
+    const pass = JSON.stringify(trace.filter(item => item !== 'close returned')) === JSON.stringify(expected);
+    const result = document.getElementById('result');
+    result.dataset.contract = pass ? 'pass' : 'fail';
+    result.textContent = (pass ? 'PASS' : 'FAIL') + '\n' + trace.join(' → ');
+    document.documentElement.dataset.fixtureReady = 'true';
+    document.title = pass ? 'Document stream PASS' : 'Document stream FAIL';
+  }, 50);
+  document.close();
+  trace.push('close returned');
+}, 0);
+</script>

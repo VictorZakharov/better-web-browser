@@ -29,11 +29,19 @@ pub(super) fn collect_text_atoms(
             start,
             end: offset,
         };
-        if style.white_space == WhiteSpace::Pre {
+        if style.white_space.preserves_spaces() {
             if ch == '\n' {
                 emit(&mut word, &mut units, style, &link, source_node, output);
                 output.push(InlineAtom::Break);
             } else {
+                // Preserved spaces belong to the preceding line, unlike collapsed spaces.
+                // CSS Text §3/§4: pre-wrap permits a break after each space sequence.
+                if style.white_space.wraps()
+                    && !matches!(ch, ' ' | '\t')
+                    && word.ends_with([' ', '\t'])
+                {
+                    emit(&mut word, &mut units, style, &link, source_node, output);
+                }
                 word.push(ch);
                 units.extend(std::iter::repeat_n(unit, ch.len_utf16()));
             }
@@ -107,8 +115,8 @@ pub(super) fn text_atom(
         source_node,
         source_units: Vec::new(),
         visible: style.visibility,
-        preserve_space: style.white_space == WhiteSpace::Pre,
+        preserve_space: style.white_space.preserves_spaces(),
         line_height: style.line_height,
-        no_wrap: style.white_space == WhiteSpace::NoWrap,
+        no_wrap: !style.white_space.wraps(),
     }
 }
