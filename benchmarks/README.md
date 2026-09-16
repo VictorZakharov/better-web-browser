@@ -13,6 +13,7 @@ A nonblank shell or an empty uncaught-error list alone does not establish readin
 
 | Fixture | Compatibility role | Extra gate |
 |---|---|---|
+| `dom-parser` | Detached HTML/XML documents and imported SVG | Inert scripts, cookie isolation, namespaces, CDATA, and readiness |
 | `encyclopedia-article` | Long-form article, infobox, contents, references | Six-second early-scroll trace |
 | `encyclopedia-main` | Dense portal/main-page structure | Structural and visual checks |
 | `responsive-blog` | Responsive article and cards | Six-second early-scroll trace |

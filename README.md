@@ -34,10 +34,11 @@ The normal page surface is always the default. **Reader** is an explicit optiona
 Current page support includes:
 
 - HTML5 tree construction with an engine-owned DOM
+- [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
 - [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
 - A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
-- External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG, and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
+- External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
 - A bounded V8 JavaScript runtime with browser Annex B syntax, owned DOM bindings, capture/target/bubble events, retained timers, [native microtasks independent of author Promise implementations](docs/native-microtasks-and-resource-invalidation.md), navigation, and browser-authoritative cookie/storage projections
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
@@ -73,7 +74,7 @@ from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against thirteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against fourteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
@@ -83,41 +84,41 @@ The visual benchmark runs on every push to `main`, not on pull requests. It requ
 
 ### Current measured snapshot — September 16, 2026
 
-Fresh hidden release / Chrome 153 trials alternate before/after/reference runs
-against the merged #164 release: five per browser on Coron, three on Main Page
-and modern DuckDuckGo. Current live medians:
+Fresh hidden release / Chrome 153 trials compare the merged #165 executable with
+DOMParser and conservative hidden-removal geometry reuse: five runs per browser
+on Coron and three on Main Page and modern DuckDuckGo.
 
 | Page | Breeze first presentation | Chrome load | Working set B/C | Private memory B/C |
 |---|---:|---:|---:|---:|
-| Live Wikipedia Main Page | 580 ms | 662 ms | 160.0 / 642.3 MiB | 124.4 / 396.9 MiB |
-| Live Coron, Palawan | 532 ms | 711 ms | 212.6 / 693.4 MiB | 179.7 / 442.6 MiB |
-
-The final owned matrix passed **39/39 pairs**, including an explicit ready-marker
-check in both browsers. A prior attempt's isolated startup timing failure is retained
-in the full report; the complete repeat passed without relaxing thresholds.
+| Live Wikipedia Main Page | 588 ms | 648 ms | 160.5 / 645.4 MiB | 125.4 / 400.5 MiB |
+| Live Coron, Palawan | 615 ms | 718 ms | 210.9 / 678.7 MiB | 177.4 / 431.7 MiB |
 
 **These are different readiness milestones, not a browser speed ratio.** Chrome's
-navigation-relative FCP was 232 ms on Main Page and 260 ms on Coron; Breeze's first
-presentation is not proof that all useful content has loaded. Startup probes were
-about 9 ms for Breeze's hidden window versus 210–230 ms for Chrome's debugger on
-these pages—also different milestones, not interactive launch parity.
+navigation-relative FCP was 229 ms on Main Page and 260 ms on Coron; Breeze's first
+presentation does not establish complete-page usability. Hidden-window creation
+was about 9 ms for Breeze versus 227–230 ms for Chrome debugger readiness, also not
+interactive startup parity. Process-tree memory covers different feature sets and
+can count shared resident pages more than once.
 
-Coron's early-scroll p95 was **5.0 ms**, all five traces passed, and scroll-only
-style/layout rebuilds stayed at zero. Sampled cumulative CPU was **8.14 s for
-Breeze / 6.11 s for Chrome**. Memory/CPU cover 2 versus 10 processes with different
-feature coverage. The nonvisual-resource fix removes a tested unnecessary-layout
-path, but live Coron style/layout medians are essentially unchanged: **no overall
-Wikipedia speedup is established**.
+Coron median layout/paint work decreased from **1,272 to 1,164 ms (8.5%)**;
+cumulative CPU was essentially unchanged and memory increased slightly. A matched
+trace confirms one hidden-head cleanup's layout stage dropping from **56.556 to
+0.006 ms**. All five early-scroll traces pass, with **5.2 ms median per-run p95**
+and zero scroll-only layout/style rebuilds. This is not a general loading-speed
+win: Coron first presentation increased from 568 to 615 ms, and Main Page CPU
+increased from 1.31 to 1.53 s. The earlier 17% layout/paint reduction did not repeat
+at that magnitude in the final series. Repeated full-document style/layout work
+remains substantially above Chrome.
 
-Modern DuckDuckGo's main module improved from a **2,014 ms watchdog timeout to
-108 ms**, and total JavaScript from **4.16 s to 0.82 s**, after fixing recursive
-microtask scheduling. It still renders an incomplete shell and encounters missing
-`DOMParser`; it is **not supported search yet**. The HTML fallback is unchanged.
+The [DOMParser slice](docs/detached-document-parsing.md) removes the missing-parser
+error in all three modern DuckDuckGo runs. The page still renders an incomplete
+shell and reports the pre-existing `Invalid scheme` error: **usable modern search
+is not established**, and the HTML fallback remains unchanged.
 
-The [latest reassessment](docs/browser-performance-bootstrap-2026-09-16.md) contains
-the before/after table, startup/memory/CPU definitions, failures, reproduction, and
-remaining work. The [earlier assessment](docs/browser-performance-2026-09-16.md)
-preserves the previous twelve-fixture and historical PR comparisons.
+The [latest reassessment](docs/browser-performance-domparser-2026-09-16.md) records
+the before/after table, Chrome reference, validation, visual limits, and evidence.
+The [previous bootstrap assessment](docs/browser-performance-bootstrap-2026-09-16.md)
+retains the native-microtask improvement and its original measurements.
 
 ### Historical renderer text cold-path comparison
 
@@ -229,11 +230,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 361-file Web Platform Test suite covers 2,826 upstream harness subtests across HTML
-parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
+A pinned, curated 369-file Web Platform Test suite covers 2,895 upstream harness subtests across HTML
+and detached HTML/XML parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 2,826 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 2,895 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
