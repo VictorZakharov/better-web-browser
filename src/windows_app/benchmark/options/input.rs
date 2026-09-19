@@ -1,6 +1,19 @@
 //! Validated hidden pointer, keyboard, and scroll action arguments.
 use super::BenchmarkNavigation;
 
+pub(super) fn control_value_input(
+    selector: &str,
+    value: &str,
+) -> Result<BenchmarkNavigation, String> {
+    if selector.trim().is_empty() || value.len() > 4096 || value.contains('\0') {
+        return Err("--set-control-value-after-ready requires a selector and a value up to 4096 bytes without NUL".into());
+    }
+    Ok(BenchmarkNavigation::SetControlValue {
+        selector: selector.to_string(),
+        value: value.to_string(),
+    })
+}
+
 pub(super) fn wheel_input(value: &str) -> Result<BenchmarkNavigation, String> {
     let error = "--wheel-after-ready requires x,y,delta (CSS viewport coordinates and pixel delta)";
     let values = value
@@ -72,6 +85,65 @@ mod tests {
     use super::*;
     use crate::windows_app::benchmark::options::LaunchOptions;
     use std::time::Instant;
+
+    #[test]
+    fn control_value_arguments_are_bounded_and_require_hidden_mode() {
+        for value in ["", "a,b=c", "a 🦀"] {
+            assert_eq!(
+                control_value_input("#query", value).unwrap(),
+                BenchmarkNavigation::SetControlValue {
+                    selector: "#query".into(),
+                    value: value.into()
+                }
+            );
+        }
+        assert!(control_value_input(" ", "value").is_err());
+        assert!(control_value_input("#q", &"a".repeat(4097)).is_err());
+        assert!(control_value_input("#q", "a\0b").is_err());
+        for arguments in [
+            vec!["--set-control-value-after-ready", "#query", "new query"],
+            vec![
+                "--benchmark",
+                "about:blank",
+                "--output",
+                "result.json",
+                "--set-control-value-after-ready",
+                "#query",
+            ],
+        ] {
+            assert!(
+                LaunchOptions::parse_from(
+                    Instant::now(),
+                    arguments.into_iter().map(str::to_string)
+                )
+                .is_err()
+            );
+        }
+        let options = LaunchOptions::parse_from(
+            Instant::now(),
+            [
+                "--benchmark",
+                "about:blank",
+                "--output",
+                "result.json",
+                "--set-control-value-after-ready",
+                "#query",
+                "new query",
+                "--key-after-ready",
+                "Enter,Enter",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        )
+        .unwrap();
+        let actions = options.benchmark.unwrap().navigation_targets;
+        assert_eq!(actions.len(), 2);
+        assert!(matches!(
+            actions[0],
+            BenchmarkNavigation::SetControlValue { .. }
+        ));
+        assert!(matches!(actions[1], BenchmarkNavigation::Key { .. }));
+    }
 
     #[test]
     fn wheel_arguments_are_bounded_and_require_hidden_mode() {

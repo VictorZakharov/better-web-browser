@@ -1,6 +1,7 @@
 //! Hidden in-process navigation sequences for lifecycle regression coverage.
 
 mod scroll;
+mod text;
 
 use super::super::*;
 use better_web_browser::renderer_protocol::{
@@ -18,6 +19,7 @@ pub(in crate::windows_app) enum BenchmarkNavigation {
     ScrollTo { y: i32 },
     Wheel { x: i32, y: i32, delta: i32 },
     Key { key: String, code: String },
+    SetControlValue { selector: String, value: String },
 }
 
 impl BrowserState {
@@ -70,6 +72,13 @@ impl BrowserState {
                 }
                 BenchmarkNavigation::Key { key, code } => {
                     let result = self.press_benchmark_key(key, code);
+                    if result.is_ok() {
+                        self.continue_or_finish_benchmark_actions();
+                    }
+                    result
+                }
+                BenchmarkNavigation::SetControlValue { selector, value } => {
+                    let result = self.set_benchmark_control_value(&selector, value);
                     if result.is_ok() {
                         self.continue_or_finish_benchmark_actions();
                     }
