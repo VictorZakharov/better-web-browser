@@ -94,8 +94,7 @@
     // Consumed and removed by the shared Window/Worker timing bootstrap, before author scripts.
     globalThis.__performanceHooks = {
         queue: callback => queueTimer(callback, 0, false, [], 'PerformanceObserver delivery', 'performanceTaskSchedule'),
-        report: error => reportGlobalException(error, 'PerformanceObserver'),
-        install: value => { iframeWindow.performance = value; }
+        report: error => reportGlobalException(error, 'PerformanceObserver')
     };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');

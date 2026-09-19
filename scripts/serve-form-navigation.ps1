@@ -30,7 +30,9 @@ try {
             $path = $request.Url.AbsolutePath
             $case = $request.QueryString['case']
             $q = $request.QueryString['q']
-            if ($path -eq '/redirect') {
+            if ($path -eq '/iframe-initial') {
+                $html = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../tests/fixtures/iframe-initial-document.html') -Raw
+            } elseif ($path -eq '/redirect') {
                 $context.Response.StatusCode = 303
                 $context.Response.RedirectLocation = '/echo?redirected=yes'
                 $html = 'Redirecting'

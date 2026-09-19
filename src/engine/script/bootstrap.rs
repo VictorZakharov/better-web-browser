@@ -23,6 +23,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/cssom_view.js"),
     include_str!("bootstrap/hyperlinks.js"),
     include_str!("bootstrap/embedded_elements.js"),
+    include_str!("bootstrap/frame_elements.js"),
     include_str!("bootstrap/shadow_dom.js"),
     include_str!("bootstrap/forms.js"),
     include_str!("bootstrap/checkable.js"),

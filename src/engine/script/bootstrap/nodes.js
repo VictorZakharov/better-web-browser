@@ -34,10 +34,10 @@
     };
     const finishInsertion = (parent, records) => withCustomElementReactions(() => {
         for (const { node, wasConnected, oldDocument } of records) {
-            if (wasConnected) disconnectCustomElementTree(node);
+            if (wasConnected) disconnectElementTree(node);
             if (oldDocument !== node.ownerDocument)
                 adoptCustomElementTree(node, oldDocument, node.ownerDocument);
-            if (node.isConnected) connectCustomElementTree(node);
+            if (node.isConnected) connectElementTree(node);
             // DOM insertion steps only try upgrading nodes that are connected. Inert template
             // fragments may be adopted into a detached cache without running constructors.
         }
@@ -64,9 +64,9 @@
             addedNodes: addedChildren,
             removedNodes: removedChildren
         });
-        if (wasConnected) for (const child of removedChildren) disconnectCustomElementTree(child);
+        if (wasConnected) for (const child of removedChildren) disconnectElementTree(child);
         for (const child of addedChildren) {
-            if (wasConnected) connectCustomElementTree(child);
+            if (wasConnected) connectElementTree(child);
             // Template contents use an inert template-contents owner document and do not share
             // the host document's custom-element registry. Importing or connecting to the live
             // document performs the upgrade against that destination registry.
@@ -120,7 +120,7 @@
                 addedNodes: addedChildren,
                 removedNodes: removedChildren
             });
-            if (this.isConnected) for (const child of removedChildren) disconnectCustomElementTree(child);
+            if (this.isConnected) for (const child of removedChildren) disconnectElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(removedChildren);
             scheduleSlotChangeCheck();
             scriptChildrenChanged(characterData ? this.parentNode : this);
@@ -194,7 +194,7 @@
             queueMutationRecord(this, 'childList', {
                 removedNodes: [child], previousSibling, nextSibling
             });
-            if (wasConnected) disconnectCustomElementTree(child);
+            if (wasConnected) disconnectElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(child);
             scheduleSlotChangeCheck();
             scriptChildrenChanged(this);

@@ -24,7 +24,7 @@
         markChildCollectionsChanged(target);
         if (removed.length) queueMutationRecord(target, 'childList', { removedNodes: removed });
         refreshWindowNamedProperties();
-        for (const child of removed) disconnectCustomElementTree(child);
+        for (const child of removed) disconnectElementTree(child);
         return target;
     }
     function finishDocumentStream(target) {

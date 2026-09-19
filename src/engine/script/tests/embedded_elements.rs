@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn initial_child_document_contract() {
+    let (dom, outcome) = execute_html(include_str!(
+        "../../../../tests/fixtures/iframe-initial-document.html"
+    ));
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result = dom.elements_named("pre").next().unwrap().text_content();
+    assert!(!result.contains("FAIL"), "{result}");
+    assert_eq!(
+        result
+            .lines()
+            .filter(|line| line.ends_with(": PASS"))
+            .count(),
+        20,
+        "{result}"
+    );
+}
+
+#[test]
+fn child_realms_do_not_expose_the_trusted_storage_dispatcher() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body><iframe></iframe><output>no</output><script>
+        if (typeof document.querySelector('iframe').contentWindow.__dispatchStorageEvent === 'undefined')
+            document.querySelector('output').textContent = 'yes';
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn iframe_elements_use_the_standard_interface_and_reflect_attributes() {
     let (dom, outcome) = execute_html(
         r#"<!doctype html><body><iframe></iframe><output>no</output><script>
@@ -37,19 +70,51 @@ fn connected_iframes_own_live_html_documents() {
             document.body.append(first, second);
             const firstDocument = first.contentDocument;
             const secondDocument = second.contentDocument;
+            const firstWindow = first.contentWindow;
+            const secondWindow = second.contentWindow;
             const child = firstDocument.createElement('p');
             firstDocument.body.appendChild(child);
             first.remove();
             const accepted = detachedDocument === null &&
-                firstDocument instanceof Document && secondDocument instanceof Document &&
+                firstDocument instanceof firstWindow.Document && secondDocument instanceof secondWindow.Document &&
+                !(firstDocument instanceof Document) && firstWindow !== secondWindow &&
                 firstDocument !== document && firstDocument !== secondDocument &&
                 firstDocument.documentElement.localName === 'html' &&
                 firstDocument.head.localName === 'head' && firstDocument.body.localName === 'body' &&
                 child.ownerDocument === firstDocument && child.isConnected &&
-                first.contentDocument === firstDocument &&
+                first.contentDocument === null && first.contentWindow === null &&
                 second.contentWindow === secondDocument.defaultView;
             if (accepted) document.querySelector('output').textContent = 'yes';
         </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
+fn removing_an_embedding_subtree_destroys_nested_navigables() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body><output>no</output><script>
+        const container = document.createElement('div');
+        document.body.append(container);
+        container.innerHTML = '<iframe></iframe>';
+        const outer = container.firstChild;
+        const child = outer.contentWindow;
+        child.document.body.innerHTML = '<iframe></iframe>';
+        const inner = child.document.body.firstChild;
+        const grandchild = inner.contentWindow;
+        const savedDocument = grandchild.document;
+        container.textContent = '';
+        const afterRemoval = child.closed && grandchild.closed && outer.contentDocument === null &&
+            inner.contentDocument === null && savedDocument.body !== null;
+        const staleFrame = child.document.createElement('iframe');
+        child.document.body.append(staleFrame);
+        if (afterRemoval && staleFrame.contentWindow === null)
+            document.querySelector('output').textContent = 'yes';
+    </script>"#,
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(

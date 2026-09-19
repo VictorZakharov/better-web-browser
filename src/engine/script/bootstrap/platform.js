@@ -89,7 +89,6 @@
             });
         }
     };
-    iframeWindow.navigator = windowObject.navigator;
     const [initialViewportWidth = 1280, initialViewportHeight = 720, initialDeviceScale = 1,
         initialLayoutViewportWidth = initialViewportWidth,
         initialLayoutViewportHeight = initialViewportHeight] = host('viewportMetrics');

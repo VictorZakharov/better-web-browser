@@ -114,7 +114,7 @@
             const oldDocument = node.ownerDocument;
             const oldParent = node.parentNode;
             const wasConnected = node.isConnected;
-            if (wasConnected) disconnectCustomElementTree(node);
+            if (wasConnected) disconnectElementTree(node);
             const adopted = wrap(host('adoptNode', this.__id, node.__id));
             if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
             markChildCollectionsChanged(oldParent);
@@ -153,6 +153,7 @@
         get URL() { return host('documentUrl', this.__id); }
         get documentURI() { return this.URL; }
         get baseURI() {
+            if (host('isPrimaryDocument', this.__id)) return host('apiBaseUrl');
             const base = this.querySelector('base[href]');
             try { return base ? host('strictResolveUrl', base.getAttribute('href'), this.URL) : this.URL; }
             catch (_) { return this.URL; }
@@ -220,7 +221,10 @@
                 oldValue: record.oldValue
             }, record.ancestors.map(wrap));
         }
-        for (const node of list(ids)) maybeUpgradeCustomElement(node, false, true);
+        for (const node of list(ids)) {
+            if (node.localName === 'iframe') host('frameWindow', node.__id, node);
+            maybeUpgradeCustomElement(node, false, true);
+        }
         refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
     };

@@ -171,7 +171,7 @@
                 host('innerHtmlAppend', this.__id, String(html));
                 markChildCollectionsChanged(this);
                 for (const child of this.childNodes) if (!previousChildren.has(child.__id)) {
-                    if (this.isConnected) connectCustomElementTree(child);
+                    if (this.isConnected) connectElementTree(child);
                     else upgradeCustomElementTree(child);
                 }
                 if (this.isConnected) refreshWindowNamedProperties(
@@ -209,10 +209,10 @@
             });
         }
         get contentWindow() {
-            return this.localName === 'iframe' && iframeDocumentFor(this) ? iframeWindow : null;
+            return this.localName === 'iframe' ? host('frameWindow', this.__id, this) : null;
         }
         get contentDocument() {
-            return this.localName === 'iframe' ? iframeDocumentFor(this) : null;
+            return this.localName === 'iframe' ? host('frameDocument', this.__id, this) : null;
         }
         click() {
             if (this.__clicking || this.matches(':disabled')) return;

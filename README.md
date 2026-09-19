@@ -122,6 +122,9 @@ The subsequent [form/navigation slice](docs/form-submission-and-navigation.md) a
 `submit()` / `requestSubmit()`, GET/POST transport, and correct input-type reflection.
 Live search submission now reaches the new query. Result activation is still blocked:
 the inspected handler delegates through an iframe URL that Breeze cannot yet execute.
+The [iframe-context work in progress](docs/iframe-browsing-contexts.md) now gives initial
+child documents separate globals and lifetimes; URL loading and message routing are
+still unfinished, so its passing isolation checks do not establish live-search acceptance.
 **Modern-search acceptance remains incomplete and the HTML fallback stays.**
 
 The [full September 19 assessment](docs/browser-performance-readiness-2026-09-19.md)

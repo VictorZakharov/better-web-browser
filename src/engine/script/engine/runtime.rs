@@ -19,6 +19,7 @@ pub(in crate::engine::script) struct Context {
     context: v8::Global<v8::Context>,
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
     imports: Rc<super::dynamic_imports::Imports>,
+    _frames: Rc<super::frames::FrameTree>,
     isolate: v8::OwnedIsolate,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
@@ -38,6 +39,7 @@ impl Context {
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
         isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
         let imports = Rc::new(super::dynamic_imports::Imports::default());
+        let frames = Rc::new(super::frames::FrameTree::default());
         isolate.set_host_initialize_import_meta_object_callback(
             super::modules::initialize_import_meta,
         );
@@ -46,6 +48,7 @@ impl Context {
             let context = v8::Context::new(scope, Default::default());
             context.set_slot(Rc::new(bridge));
             context.set_slot(Rc::clone(&imports));
+            super::frames::register(context, &frames);
             let scope = &mut v8::ContextScope::new(scope, context);
             install_host_call(scope, context)?;
             v8::Global::new(scope, context)
@@ -59,6 +62,7 @@ impl Context {
             context,
             private_hooks: HashMap::new(),
             imports,
+            _frames: frames,
             isolate,
             next_module_promise: 1,
             module_promises: HashMap::new(),
@@ -160,52 +164,6 @@ impl Context {
                 .call(tc, receiver, &values)
                 .ok_or_else(|| caught_error(tc, &format!("call {name}")))?;
             value_from_v8(tc, result)
-        })
-    }
-
-    pub(in crate::engine::script) fn initialize_iframe_realm(
-        &mut self,
-        bootstrap: &str,
-    ) -> JsResult<()> {
-        let parent = self.context.clone();
-        self.watchdog.run(&mut self.isolate, |isolate| {
-            v8::scope!(let scope, isolate);
-            let parent = v8::Local::new(scope, &parent);
-            let iframe = v8::Context::new(scope, Default::default());
-            // The synthetic iframe is same-origin with its owning document. V8 otherwise gives
-            // every Context a distinct token and rejects WindowProxy access as "no access".
-            iframe.set_security_token(parent.get_security_token(scope));
-            let bridge = parent.get_slot::<HostBridge>().ok_or_else(|| JsError {
-                kind: JsErrorKind::Type,
-                message: "browser host bridge is unavailable".into(),
-            })?;
-            iframe.set_slot(bridge);
-            {
-                let scope = &mut v8::ContextScope::new(scope, iframe);
-                install_host_call(scope, iframe)?;
-                let source = v8::String::new(scope, bootstrap)
-                    .ok_or_else(|| allocation_error("iframe bootstrap"))?;
-                let script = v8::Script::compile(scope, source, None).ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "compile iframe browser bindings".into(),
-                })?;
-                script.run(scope).ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "evaluate iframe browser bindings".into(),
-                })?;
-            }
-            let scope = &mut v8::ContextScope::new(scope, parent);
-            let key = v8::String::new(scope, "__iframeWindow")
-                .ok_or_else(|| allocation_error("iframe global name"))?;
-            parent
-                .global(scope)
-                .set(scope, key.into(), iframe.global(scope).into())
-                .filter(|set| *set)
-                .ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "expose iframe JavaScript realm".into(),
-                })?;
-            Ok(())
         })
     }
 

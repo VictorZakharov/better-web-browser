@@ -1,6 +1,13 @@
     // Window exposure, named access, iframe views, and window messaging.
     const windowEvents = new EventTarget();
     const windowObject = globalThis;
+    const frameElementObject = globalThis.__frameElement || null;
+    delete globalThis.__frameElement;
+    Object.defineProperties(windowObject, {
+        frameElement: { configurable: true, enumerable: true,
+            get: () => host('frameActive') ? frameElementObject : null },
+        closed: { configurable: true, enumerable: true, get: () => !host('frameActive') }
+    });
     Object.assign(windowObject, { HTMLBodyElement, HTMLFrameSetElement, BeforeUnloadEvent });
     const windowConstructionToken = {};
     class Window extends EventTarget {
@@ -158,29 +165,6 @@
         }
     };
 
-    const iframeWindow = isolatedIframeWindow || windowObject;
-    const iframeEvents = new EventTarget();
-    installEventTargetProxy(iframeEvents, iframeWindow);
-    iframeWindow.addEventListener = iframeEvents.addEventListener.bind(iframeEvents);
-    iframeWindow.removeEventListener = iframeEvents.removeEventListener.bind(iframeEvents);
-    iframeWindow.dispatchEvent = iframeEvents.dispatchEvent.bind(iframeEvents);
-    const iframeDocuments = new WeakMap();
-    const iframeDocumentFor = frame => {
-        let iframeDocument = iframeDocuments.get(frame);
-        if (!iframeDocument && frame.isConnected) {
-            // A same-origin about:blank iframe owns a real HTML document. Its descendants keep
-            // that document as their root even if the embedding element is later disconnected.
-            // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
-            iframeDocument = wrap(host('createHtmlDocument', ''));
-            documentDefaultViews.set(iframeDocument, iframeWindow);
-            iframeDocuments.set(frame, iframeDocument);
-        }
-        if (iframeDocument) iframeWindow.document = iframeDocument;
-        return iframeDocument || null;
-    };
-    iframeWindow.parent = windowObject;
-    iframeWindow.top = windowObject;
-    iframeWindow.document = null;
 
     let currentUrl = host('documentUrl');
     const parseUrl = value => JSON.parse(host('parseWebUrl', String(value)));
@@ -268,5 +252,3 @@
     }
     windowObject.postMessage = (message, targetOriginOrOptions = '/', transfer = []) =>
         postMessageTo(windowEvents, message, targetOriginOrOptions, transfer);
-    iframeWindow.postMessage = (message, targetOriginOrOptions = '/', transfer = []) =>
-        postMessageTo(iframeEvents, message, targetOriginOrOptions, transfer);
