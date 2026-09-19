@@ -3,6 +3,15 @@ use super::*;
 
 impl BrowserState {
     pub(in crate::windows_app) unsafe fn finish_benchmark(&mut self) {
+        if self.benchmark.as_ref().is_some_and(|run| {
+            run.error.is_none()
+                && (run.navigation_scheduled
+                    || !run.navigation_targets.is_empty()
+                    || self.navigation.is_loading())
+        }) {
+            initialization::post_benchmark_finish(self.window, RENDERER_WAIT_POLL_INTERVAL);
+            return;
+        }
         // AppContainer profile creation can outlive a short page-settle period on
         // cold hosts. Keep the window responsive while ensuring process metrics
         // include a renderer launch that is still resolving.

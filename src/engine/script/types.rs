@@ -108,6 +108,7 @@ pub struct ScriptOutcome {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub navigation_options: crate::navigation::request::NavigationOptions,
     /// Latest script-requested vertical viewport offset, in CSS pixels.
     pub viewport_scroll_y: Option<f32>,
     /// Unconsumed wheel default, applied relative to the browser's current animation target.

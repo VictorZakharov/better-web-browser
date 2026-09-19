@@ -49,6 +49,7 @@ impl RuntimeReport {
         next.diagnostics = self.diagnostics;
         if next.navigation_url.is_none() {
             next.navigation_url = self.navigation_url;
+            next.navigation_options = self.navigation_options;
         }
         if next.viewport_scroll_y.is_none() {
             next.viewport_scroll_y = self.viewport_scroll_y;

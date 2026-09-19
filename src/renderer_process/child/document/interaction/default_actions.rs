@@ -66,6 +66,10 @@ impl DocumentRuntime {
         let Some(control) = target.control.as_ref() else {
             return Ok(None);
         };
+        // Script-backed activation has already used the DOM submission algorithm.
+        if self.script_runtime.is_some() {
+            return Ok(None);
+        }
         if control.kind == ControlKind::Reset {
             let Some(form_id) = control.form_id else {
                 return Ok(None);
@@ -96,6 +100,9 @@ impl DocumentRuntime {
         target: Option<NodeId>,
         outcome: &mut ScriptOutcome,
     ) -> Result<Option<(String, NavigationDisposition)>, String> {
+        if self.script_runtime.is_some() {
+            return Ok(None);
+        }
         let Some(control) = target.and_then(|target| {
             self.layout.items.iter().find_map(|item| match item {
                 DisplayItem::Control(control) if control.node_id == target => Some(control.clone()),

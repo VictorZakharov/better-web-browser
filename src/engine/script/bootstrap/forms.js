@@ -1,4 +1,12 @@
     class HTMLInputElement extends HTMLElement {
+        // The type IDL attribute is limited to known values; missing and invalid
+        // content values select Text, including for libraries deciding how to edit it.
+        // https://html.spec.whatwg.org/multipage/input.html#attr-input-type
+        get type() {
+            const value = (this.getAttribute('type') || '').toLowerCase();
+            return /^(hidden|text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color|checkbox|radio|file|submit|image|reset|button)$/.test(value) ? value : 'text';
+        }
+        set type(value) { this.setAttribute('type', value); }
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
@@ -54,7 +62,7 @@
         get formTarget() { return this.getAttribute('formtarget') || ''; }
         set formTarget(value) { this.setAttribute('formtarget', value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.disabled && !['hidden', 'button', 'reset'].includes(this.type); }
+        get willValidate() { return !this.matches(':disabled') && !this.hasAttribute('readonly') && !hasDataListAncestor(this) && !['hidden', 'button', 'reset'].includes(this.type); }
         get validity() { return validityFor(this); }
         get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
         setCustomValidity(message) { this.__customValidity = String(message); }
@@ -78,7 +86,7 @@
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.disabled; }
+        get willValidate() { return !this.matches(':disabled') && !this.hasAttribute('readonly') && !hasDataListAncestor(this); }
         get validity() { return validityFor(this); }
         get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
         setCustomValidity(message) { this.__customValidity = String(message); }
@@ -90,6 +98,8 @@
         set reversed(value) { this.toggleAttribute('reversed', !!value); }
     }
     class HTMLSelectElement extends HTMLElement {
+        get multiple() { return this.hasAttribute('multiple'); }
+        set multiple(value) { this.toggleAttribute('multiple', !!value); }
         get options() { return this.querySelectorAll('option'); }
         get selectedIndex() {
             const options = this.options;
@@ -116,7 +126,7 @@
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.disabled && !hasDataListAncestor(this); }
+        get willValidate() { return !this.matches(':disabled') && !hasDataListAncestor(this); }
         get validity() { return validityFor(this); }
         get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please select an item.'); }
         setCustomValidity(message) { this.__customValidity = String(message); }
@@ -163,6 +173,16 @@
         get type() { return 'fieldset'; }
     }
     class HTMLOptionElement extends HTMLElement {
+        get selected() {
+            const select = this.closest('select');
+            if (this.hasAttribute('selected')) return true;
+            return !!select && !select.multiple && select.options[select.selectedIndex] === this;
+        }
+        set selected(value) {
+            const select = this.closest('select');
+            if (value && select && !select.multiple) for (const option of select.options) option.removeAttribute('selected');
+            this.toggleAttribute('selected', !!value);
+        }
         get label() {
             return this.hasAttribute('label') ? this.getAttribute('label') : optionText(this);
         }
@@ -226,7 +246,7 @@
     class HTMLFormElement extends HTMLElement {
         get elements() {
             return document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
-                .filter(element => associatedForm(element) === this);
+                .filter(element => associatedForm(element) === this && !(element instanceof HTMLInputElement && element.type.toLowerCase() === 'image'));
         }
         get length() { return this.elements.length; }
         get noValidate() { return this.hasAttribute('novalidate'); }
@@ -271,7 +291,8 @@
         const value = String(element.value ?? '');
         const type = String(element.type || '').toLowerCase();
         const required = !!element.required;
-        const valueMissing = required && value === '';
+        const valueMissing = required && (type === 'checkbox' ? !element.checked :
+            type === 'radio' ? !radioGroup(element).some(input => input.checked) : value === '');
         let typeMismatch = false;
         if (value && type === 'email') typeMismatch = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
         if (value && type === 'url') typeMismatch = !/^[a-z][a-z0-9+.-]*:\/\/[^\s]+$/i.test(value);
@@ -298,7 +319,7 @@
     }
     function checkControlValidity(element) {
         if (!element.willValidate || element.validity.valid) return true;
-        element.dispatchEvent(new Event('invalid', { cancelable: true }));
+        element.dispatchEvent(markTrusted(new Event('invalid', { cancelable: true })));
         return false;
     }
     function hasDataListAncestor(element) {

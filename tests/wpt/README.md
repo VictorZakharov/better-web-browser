@@ -73,7 +73,7 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-383 passing files / 3,372 passing harness subtests (2026-09-19) with no failure, skip, timeout,
+385 passing files / 3,380 passing harness subtests (2026-09-19) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 
@@ -107,7 +107,7 @@ follows:
 | CSS cascade, selectors, and layout | 29 | Cascade, structural selectors, generated content, flex display, and CSSOM geometry |
 | CSSOM fragment geometry | 8 | Snapshot lists, inline fragments, selected text, display:contents, and UTF-16 source offsets |
 | CSSOM stylesheet ownership | 3 | Preferred-set insertion order and per-occurrence imported-sheet identity |
-| Forms | 4 | Form collections, button types, datalist options/validation, and select values |
+| Forms | 6 | Form collections, button types, datalist options/validation, select values, and SubmitEvent/FormDataEvent construction |
 | JavaScript modules and Web IDL | 7 | Script scheduling and platform exception bindings |
 | Dynamic modules | 2 | Native import promises and parse/specifier/link/evaluation error identity |
 | Custom Elements | 8 | Registry isolation, definition lookup, when-defined promises, parser construction, and reaction ordering |

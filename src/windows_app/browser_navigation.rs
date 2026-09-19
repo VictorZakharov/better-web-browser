@@ -2,15 +2,18 @@
 
 use super::tabs::TabId;
 use super::*;
+mod submission;
 use better_web_browser::fetch::{
     FetchController, FetchRequest, FetchSignal, FetchUrl, Origin, Referrer,
 };
+use better_web_browser::navigation::request::FormPost;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
     Push,
     Existing,
     Script,
+    ScriptPush,
     Recovery,
 }
 
@@ -107,6 +110,17 @@ impl BrowserState {
         history_mode: HistoryMode,
         referrer: Option<String>,
     ) {
+        self.begin_navigation_request_for_tab(id, url, history_mode, referrer, None);
+    }
+
+    pub(super) unsafe fn begin_navigation_request_for_tab(
+        &mut self,
+        id: TabId,
+        url: String,
+        history_mode: HistoryMode,
+        referrer: Option<String>,
+        post_body: Option<FormPost>,
+    ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
             self.exit_page_fullscreen();
@@ -151,8 +165,10 @@ impl BrowserState {
             tab.performance = TabPerformance::default();
             tab.scroll_animation = Default::default();
             match history_mode {
-                HistoryMode::Push => {
-                    tab.script_navigation.reset(&url);
+                HistoryMode::Push | HistoryMode::ScriptPush => {
+                    if matches!(history_mode, HistoryMode::Push) {
+                        tab.script_navigation.reset(&url);
+                    }
                     if tab.history.get(tab.history_index) != Some(&url) {
                         if !tab.history.is_empty() {
                             tab.history.truncate(tab.history_index + 1);
@@ -227,8 +243,13 @@ impl BrowserState {
                 let result =
                     (|| -> Result<super::document_activation::NavigationResult, String> {
                         let client = http_client;
-                        let mut response =
-                            fetch_navigation(&client, &url, &fetch_signal, referrer.as_deref())?;
+                        let mut response = fetch_navigation(
+                            &client,
+                            &url,
+                            &fetch_signal,
+                            referrer.as_deref(),
+                            post_body,
+                        )?;
                         let network_time = started.elapsed();
                         let final_url = response
                             .url_list
@@ -325,11 +346,23 @@ fn fetch_navigation(
     url: &str,
     signal: &FetchSignal,
     referrer: Option<&str>,
+    post_body: Option<FormPost>,
 ) -> Result<winhttp::StreamingFetchResponse, String> {
     let mut request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
     if let Some(referrer) = referrer {
+        request.origin = Some(Origin::parse(referrer).map_err(|error| error.to_string())?);
         request.referrer =
             Referrer::Url(FetchUrl::parse(referrer).map_err(|error| error.to_string())?);
+    }
+    if let Some(post) = post_body {
+        request
+            .set_method("POST")
+            .map_err(|error| error.to_string())?;
+        request
+            .headers
+            .set("content-type", &post.content_type)
+            .map_err(|error| error.to_string())?;
+        request.body = Some(better_web_browser::fetch::Body::from_bytes(post.body));
     }
     let request = request.with_signal(signal.clone());
     client

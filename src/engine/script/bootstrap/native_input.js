@@ -61,13 +61,18 @@
         }
         return allowed;
     };
-    const dispatchNativeKeyboard = input => nativeTarget(input.target).dispatchEvent(markTrusted(new KeyboardEvent(
+    const dispatchNativeKeyboard = input => {
+        const target = nativeTarget(input.target);
+        const allowed = target.dispatchEvent(markTrusted(new KeyboardEvent(
         input.phase === 'down' ? 'keydown' : 'keyup', {
             bubbles: true, cancelable: true, composed: true,
             key: input.key, code: input.code, repeat: !!input.repeat,
             keyCode: Number(input.keyCode) || 0, ...nativeModifiers(input)
         }
-    )));
+        )));
+        if (allowed && input.phase === 'down' && input.key === 'Enter') implicitSubmission(target);
+        return allowed;
+    };
     const dispatchNativeText = input => {
         const target = nativeTarget(input.target);
         target.value = String(input.value);

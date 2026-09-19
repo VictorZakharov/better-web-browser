@@ -2,6 +2,7 @@ use crate::limits::MAX_URL_BYTES;
 use std::fmt;
 use url::{Host, Url, form_urlencoded};
 
+pub mod request;
 mod web_url;
 pub use web_url::{parse_web_url, resolve_web_url, set_web_url_component, web_url_parts};
 

@@ -57,6 +57,16 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {
+      "path": "html/semantics/forms/form-submission-0/SubmitEvent.window.js",
+      "area": "HTML forms",
+      "expected": "pass"
+    },
+    {
+      "path": "html/semantics/forms/form-submission-0/FormDataEvent.window.js",
+      "area": "HTML forms",
+      "expected": "pass"
+    },
     {"area":"DOM collections","expected":"pass","path":"dom/collections/HTMLCollection-iterator.html"},
     {"area":"DOM collections","expected":"pass","path":"dom/lists/DOMTokenList-Iterable.html"},
     {"area":"DOM collections","expected":"pass","path":"dom/lists/DOMTokenList-iteration.html"},

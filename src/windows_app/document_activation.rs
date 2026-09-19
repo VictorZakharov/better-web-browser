@@ -4,7 +4,6 @@ mod metrics;
 mod submission;
 mod video;
 
-use super::browser_navigation::HistoryMode;
 use super::paint_primitives::screen_rect;
 use super::*;
 use better_web_browser::renderer_protocol::{
@@ -152,17 +151,10 @@ impl BrowserState {
         self.renderer_revision = presentation.revision;
         self.record_renderer_presentation_incident(&presentation, first_presentation);
 
-        if let Some(url) = presentation.runtime.navigation_url.as_deref()
-            && url != presentation.final_url
-            && self.allow_script_navigation(url)
-        {
-            self.acknowledge_renderer_presentation(
-                presentation.document,
-                presentation.revision,
-                false,
-                false,
-            );
-            self.begin_document_navigation(url.to_string(), HistoryMode::Script);
+        if self.follow_runtime_navigation(
+            &presentation.runtime,
+            Some((presentation.document, presentation.revision)),
+        ) {
             return;
         }
 
@@ -291,10 +283,12 @@ impl BrowserState {
                 presentation.runtime.scripts_executed, presentation.runtime.dom_mutations
             )
         };
-        self.set_status(&format!(
-            "HTTP {}  •  isolated renderer{script_status}",
-            presentation.status
-        ));
+        if presentation.runtime.navigation_url.is_none() {
+            self.set_status(&format!(
+                "HTTP {}  •  isolated renderer{script_status}",
+                presentation.status
+            ));
+        }
 
         let visual_changed = first_presentation
             || layout_changed

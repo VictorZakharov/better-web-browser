@@ -3,6 +3,7 @@
 use super::binding_helpers::*;
 use super::*;
 
+pub(super) mod navigation;
 mod storage;
 mod task_scheduling;
 
@@ -11,6 +12,9 @@ pub(super) fn dispatch_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = navigation::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::url_host::dispatch(operation, args)? {
         return Ok(value);
     }
@@ -204,12 +208,6 @@ pub(super) fn dispatch_host_call(
         }
         "apiBaseUrl" => Ok(js_string(state.script_base_url())),
         "apiOriginUrl" => Ok(js_string(state.document_url.clone())),
-        "navigate" => {
-            let value = argument_string(args, 1)?;
-            let resolved = state.resolved_url(&value);
-            state.navigation_url = Some(resolved.clone());
-            Ok(js_string(resolved))
-        }
         "console" => {
             let level = argument_string(args, 1)?;
             let message = argument_string(args, 2)?;

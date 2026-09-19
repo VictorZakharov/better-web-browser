@@ -15,6 +15,18 @@ pub(in crate::renderer_protocol) fn encode_runtime(
     writer.bool(report.navigation_url.is_some());
     if let Some(url) = &report.navigation_url {
         writer.string(url)?;
+        let options = &report.navigation_options;
+        options.validate().map_err(ProtocolError::InvalidPayload)?;
+        writer.string(&options.target)?;
+        writer.bool(options.noreferrer);
+        writer.bool(options.replace_history);
+        writer.bool(options.user_initiated);
+        writer.bool(options.form_submission);
+        writer.bool(options.post.is_some());
+        if let Some(post) = &options.post {
+            writer.string(&post.content_type)?;
+            writer.bytes(&post.body)?;
+        }
     }
     writer.bool(report.viewport_scroll_y.is_some());
     if let Some(y) = report.viewport_scroll_y {
@@ -62,6 +74,28 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         .bool()?
         .then(|| reader.string(MAX_URL_BYTES))
         .transpose()?;
+    let navigation_options = if navigation_url.is_some() {
+        use crate::navigation::request::{FormPost, MAX_FORM_BODY_BYTES, NavigationOptions};
+        let options = NavigationOptions {
+            target: reader.string(1024)?,
+            noreferrer: reader.bool()?,
+            replace_history: reader.bool()?,
+            user_initiated: reader.bool()?,
+            form_submission: reader.bool()?,
+            post: if reader.bool()? {
+                Some(FormPost {
+                    content_type: reader.string(256)?,
+                    body: reader.bytes(MAX_FORM_BODY_BYTES)?,
+                })
+            } else {
+                None
+            },
+        };
+        options.validate().map_err(ProtocolError::InvalidPayload)?;
+        options
+    } else {
+        Default::default()
+    };
     let viewport_scroll_y = reader.bool()?.then(|| reader.f32()).transpose()?;
     if viewport_scroll_y.is_some_and(|y| !y.is_finite() || y < 0.0) {
         return Err(ProtocolError::InvalidPayload("viewport scroll offset"));
@@ -96,6 +130,7 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         console,
         diagnostics,
         navigation_url,
+        navigation_options,
         viewport_scroll_y,
         viewport_wheel_delta_y,
         history_updates,

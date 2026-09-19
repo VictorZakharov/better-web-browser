@@ -46,6 +46,9 @@ internal sealed class Options
     public bool RequireFixtureReady { get; init; }
     public ClickPoint? ClickAfterReady { get; init; }
     public string? ActivateLinkAfterReady { get; init; }
+    public bool BackAfterReady { get; init; }
+    public string? SubmitControlSelector { get; init; }
+    public string? SubmitControlValue { get; init; }
     public int NavigationDelayMs { get; init; }
     public IReadOnlyList<string> DiagnosticSelectors { get; init; } = Array.Empty<string>();
 
@@ -57,7 +60,7 @@ internal sealed class Options
         for (var index = 0; index < arguments.Length; index++)
         {
             var argument = arguments[index];
-            if (argument is "--early-scroll" or "--require-fixture-ready")
+            if (argument is "--early-scroll" or "--require-fixture-ready" or "--back-after-ready")
             {
                 switches.Add(argument);
                 continue;
@@ -142,6 +145,9 @@ internal sealed class Options
             RequireFixtureReady = switches.Contains("--require-fixture-ready"),
             ClickAfterReady = clickAfterReady,
             ActivateLinkAfterReady = values.GetValueOrDefault("--activate-link-after-ready"),
+            BackAfterReady = switches.Contains("--back-after-ready"),
+            SubmitControlSelector = values.GetValueOrDefault("--submit-control-selector"),
+            SubmitControlValue = values.GetValueOrDefault("--submit-control-value"),
             NavigationDelayMs = Integer("--navigation-delay-ms", 0, 0, 60_000)
             ,
             DiagnosticSelectors = diagnosticSelectors

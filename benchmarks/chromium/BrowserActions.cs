@@ -44,10 +44,11 @@ internal static class BrowserActions
             await Task.Delay(options.NavigationDelayMs);
             nextId = await DispatchClickAsync(cdp, click.X, click.Y, timeout, nextId);
         }
+        nextId = await FormNavigationActions.RunAsync(cdp, options, timeout, nextId);
         return nextId;
     }
 
-    private static async Task<JsonElement> EvaluateAsync(
+    internal static async Task<JsonElement> EvaluateAsync(
         CdpConnection cdp,
         int id,
         string expression,

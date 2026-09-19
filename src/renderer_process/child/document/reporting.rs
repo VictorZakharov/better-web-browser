@@ -25,6 +25,7 @@ pub(super) fn merge_outcome(
     target.diagnostics.append(&mut source.diagnostics);
     if source.navigation_url.is_some() {
         target.navigation_url = source.navigation_url;
+        target.navigation_options = source.navigation_options;
     }
     if source.viewport_scroll_y.is_some() {
         target.viewport_scroll_y = source.viewport_scroll_y;
@@ -62,6 +63,7 @@ pub(super) fn runtime_report(
         console: telemetry::bounded(std::mem::take(&mut outcome.console), "console"),
         diagnostics: telemetry::bounded(std::mem::take(&mut outcome.diagnostics), "diagnostics"),
         navigation_url: outcome.navigation_url,
+        navigation_options: outcome.navigation_options,
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
         history_updates: outcome

@@ -5,6 +5,11 @@ iteration, supported CSSOM properties, and deferral of unpresentable display lis
 This follows [PR #167's URL/request assessment](browser-performance-url-2026-09-16.md).
 The HTML search fallback remains enabled: modern DuckDuckGo is not fully accepted.
 
+This is the historical #168 assessment. The subsequent
+[form/navigation slice](form-submission-and-navigation.md) fixes query submission
+and identifies the result-link iframe dependency; the measurements and failures
+below describe the earlier build, not a fresh measurement of that follow-up.
+
 ## Validation
 
 | Measurement | Merged #167 | This slice |

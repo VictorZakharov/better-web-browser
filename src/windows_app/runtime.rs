@@ -43,13 +43,7 @@ impl BrowserState {
         }
         let benchmark_completed =
             self.record_renderer_runtime_metrics(&update.runtime, update.load, false);
-        if let Some(url) = update.runtime.navigation_url.as_deref()
-            && self.allow_script_navigation(url)
-        {
-            self.begin_navigation(
-                url.to_string(),
-                super::browser_navigation::HistoryMode::Script,
-            );
+        if self.follow_runtime_navigation(&update.runtime, None) {
             return;
         }
         self.apply_same_document_history_updates(&update.runtime.history_updates);

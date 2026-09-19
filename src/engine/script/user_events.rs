@@ -8,6 +8,14 @@ pub(super) fn dispatch(
     event: UserInputEvent,
 ) -> UserInputResult {
     host.borrow_mut().begin_task();
+    let user_initiated = matches!(
+        &event,
+        UserInputEvent::Pointer {
+            phase: "down" | "up" | "activate",
+            ..
+        } | UserInputEvent::Keyboard { phase: "down", .. }
+    );
+    host.borrow_mut().user_input_active = user_initiated;
     let payload = payload(host, event);
     let invocation = format!(
         "document.__dispatchNativeInput({});",
@@ -29,6 +37,10 @@ pub(super) fn dispatch(
             .push(format!("dispatch trusted user input promise jobs: {error}"));
     }
     super::module_lifecycle::drain(context, host, &mut outcome);
+    if user_initiated && host.borrow().navigation_url.is_some() {
+        host.borrow_mut().navigation_options.user_initiated = true;
+    }
+    host.borrow_mut().user_input_active = false;
     UserInputResult {
         outcome,
         default_allowed,

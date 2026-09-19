@@ -29,6 +29,7 @@ pub struct RuntimeReport {
     pub console: Vec<String>,
     pub diagnostics: Vec<String>,
     pub navigation_url: Option<String>,
+    pub navigation_options: crate::navigation::request::NavigationOptions,
     pub viewport_scroll_y: Option<f32>,
     pub viewport_wheel_delta_y: f32,
     pub history_updates: Vec<HistoryUpdate>,
