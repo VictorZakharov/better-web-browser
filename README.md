@@ -46,7 +46,7 @@ Current page support includes:
 - [HTML event-handler attributes](docs/html-event-handlers.md), with lazy compilation, DOM scope lookup, stable listener ordering, cancellation, and body/window forwarding
 - [IntersectionObserver geometry and queued snapshots](docs/intersection-observer-geometry.md), with containing-block overflow clips, nested scroll margins, and callback microtask checkpoints (remaining geometry and v2-visibility gaps are explicit)
 - Progressive document/worker Fetch response streams with bounded backpressure, Fetch/XHR body primitives, abort signals, static/dynamic document ECMAScript modules with top-level await, and isolated classic/module dedicated workers
-- Native text/search/password/select controls and buttons whose web-visible state, trusted DOM events, link hit testing, and GET-form default actions are renderer-owned
+- Native text/search/password/select controls and buttons with renderer-owned state and trusted events, plus [bounded GET/POST form submission](docs/form-submission-and-navigation.md), submitter/validation events, and synthetic link activation
 - Character-set decoding from BOM, HTTP headers, or HTML metadata
 - A typed Fetch/navigation pipeline with tuple origins, guarded headers, redirect modes, persistent RFC-oriented cookies, CORS/preflight checks, bounded backpressured renderer streams, and document-wide cancellation
 - One capability-free Windows AppContainer renderer per tab, owning remote-document decoding, HTML/DOM, JavaScript, trusted input dispatch, CSS/layout, image/font decoding, Workers, and immutable presentation output behind bounded IPC, Job limits, crash recovery, hang detection, and Task Manager controls
@@ -84,7 +84,7 @@ The repository-owned public-alpha gate runs Breeze and unified-headless Chromium
 
 The visual benchmark runs on every push to `main`, not on pull requests. It requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. PRs retain core, renderer, and focused Windows integration tests, lint, formatting, dependency/security policy, and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main. Relevant local integration tests and visual comparisons remain necessary before review: deferred CI checks can first detect a regression after merge. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md), [CI policy and timings](docs/build-performance.md), and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
 
-### Current measured snapshot — September 19, 2026
+### Last performance assessment — September 19, 2026 (#168)
 
 The [collections/readiness slice](docs/collections-and-capabilities.md) fixes live
 attribute/token/child iteration and false CSSOM capability detection, and avoids
@@ -116,10 +116,12 @@ ratio. Process-tree memory may double-count shared pages. Hidden-window creation
 (about 10 ms) is not comparable interactive startup to Chrome debugger readiness
 (about 202–216 ms).
 
-All **48 owned Breeze/Chrome fixture pairs** pass. Modern DDG's closed-menu overlap
-is fixed, but live search submission exposes the missing `HTMLFormElement.submit()`
-API: its caught exception removes the search component. Chrome receives a challenge.
-Result-link activation also remains unaccepted; repeated address navigation passes.
+All **48 owned Breeze/Chrome fixture pairs** passed in that assessment. Modern DDG's
+closed-menu overlap was fixed, but form submission and result activation failed.
+The subsequent [form/navigation slice](docs/form-submission-and-navigation.md) adds
+`submit()` / `requestSubmit()`, GET/POST transport, and correct input-type reflection.
+Live search submission now reaches the new query. Result activation is still blocked:
+the inspected handler delegates through an iframe URL that Breeze cannot yet execute.
 **Modern-search acceptance remains incomplete and the HTML fallback stays.**
 
 The [full September 19 assessment](docs/browser-performance-readiness-2026-09-19.md)
@@ -237,11 +239,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 383-file Web Platform Test suite covers 3,372 upstream harness subtests across HTML
+A pinned, curated 385-file Web Platform Test suite covers 3,380 upstream harness subtests across HTML
 and detached HTML/XML parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 3,372 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 3,380 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell
@@ -249,7 +251,9 @@ subtests pass at the pinned revision, with no expected-failure, skip, or timeout
 .\scripts\run-wpt.ps1 -WptRoot ..\wpt
 ```
 
-The latest [URL/request slice](docs/url-request-resolution.md) documents native parsing,
+The [form/navigation slice](docs/form-submission-and-navigation.md) adds upstream submit/formdata
+event-construction coverage plus owned cross-browser navigation checks. The earlier
+[URL/request slice](docs/url-request-resolution.md) documents native parsing,
 headless browser checks, and remaining parser boundaries. The earlier
 [document-stream slice](docs/document-streams-and-pre-wrap.md) records replacement semantics.
 
