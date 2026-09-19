@@ -114,6 +114,7 @@ impl LaunchOptions {
                         &argument,
                     )?));
                 }
+                "--back-after-ready" => navigation_targets.push(BenchmarkNavigation::HistoryBack),
                 "--activate-link-after-ready" => {
                     navigation_targets.push(BenchmarkNavigation::ActivateLink(required(
                         &mut arguments,

@@ -12,6 +12,7 @@ use better_web_browser::renderer_protocol::{
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::windows_app) enum BenchmarkNavigation {
     Address(String),
+    HistoryBack,
     ActivateLink(String),
     ActivateSelector(String),
     ClickPoint { x: i32, y: i32 },
@@ -27,7 +28,12 @@ impl BrowserState {
         let Some(benchmark) = self.benchmark.as_mut() else {
             return false;
         };
-        if benchmark.navigation_targets.is_empty() || benchmark.navigation_scheduled {
+        // A new document can become ready while a prior action already queued the
+        // next step. It must not schedule completion in place of that pending step.
+        if benchmark.navigation_scheduled {
+            return true;
+        }
+        if benchmark.navigation_targets.is_empty() {
             return false;
         }
         benchmark.navigation_scheduled = true;
@@ -47,6 +53,14 @@ impl BrowserState {
                 BenchmarkNavigation::Address(url) => {
                     self.begin_navigation(url, browser_navigation::HistoryMode::Push);
                     Ok(())
+                }
+                BenchmarkNavigation::HistoryBack => {
+                    if self.history_index == 0 {
+                        Err("benchmark Back has no previous history entry".into())
+                    } else {
+                        self.go_back();
+                        Ok(())
+                    }
                 }
                 BenchmarkNavigation::ActivateLink(url) => self.activate_benchmark_link(&url),
                 BenchmarkNavigation::ActivateSelector(selector) => {

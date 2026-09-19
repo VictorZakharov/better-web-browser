@@ -101,12 +101,14 @@ mod tests {
         assert!(control_value_input("#q", &"a".repeat(4097)).is_err());
         assert!(control_value_input("#q", "a\0b").is_err());
         for arguments in [
+            vec!["--back-after-ready"],
             vec!["--set-control-value-after-ready", "#query", "new query"],
             vec![
                 "--benchmark",
                 "about:blank",
                 "--output",
                 "result.json",
+                "--back-after-ready",
                 "--set-control-value-after-ready",
                 "#query",
             ],
@@ -129,6 +131,7 @@ mod tests {
                 "--set-control-value-after-ready",
                 "#query",
                 "new query",
+                "--back-after-ready",
                 "--key-after-ready",
                 "Enter,Enter",
             ]
@@ -137,12 +140,13 @@ mod tests {
         )
         .unwrap();
         let actions = options.benchmark.unwrap().navigation_targets;
-        assert_eq!(actions.len(), 2);
+        assert_eq!(actions.len(), 3);
+        assert!(matches!(actions[1], BenchmarkNavigation::HistoryBack));
         assert!(matches!(
             actions[0],
             BenchmarkNavigation::SetControlValue { .. }
         ));
-        assert!(matches!(actions[1], BenchmarkNavigation::Key { .. }));
+        assert!(matches!(actions[2], BenchmarkNavigation::Key { .. }));
     }
 
     #[test]

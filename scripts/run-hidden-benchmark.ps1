@@ -33,6 +33,7 @@ param(
     [string[]] $LinkActivationTarget = @(),
     [string[]] $SelectorActivationTarget = @(),
     [string[]] $ClickTarget = @(),
+    [switch] $BackAfterReady,
     [string[]] $PointerMoveTarget = @(),
     [System.Collections.IDictionary] $ControlValue = @{},
     [string[]] $KeyTarget = @(),
@@ -184,6 +185,7 @@ foreach ($target in $ClickTarget) {
     $arguments.Add('--click-after-ready')
     $arguments.Add($target)
 }
+if ($BackAfterReady) { $arguments.Add('--back-after-ready') }
 foreach ($entry in $ControlValue.GetEnumerator()) {
     if ([string]::IsNullOrWhiteSpace([string] $entry.Key)) { throw '-ControlValue requires non-empty selectors.' }
     $arguments.Add('--set-control-value-after-ready')
@@ -211,7 +213,7 @@ foreach ($target in $WheelTarget) {
     $arguments.Add('--wheel-after-ready')
     $arguments.Add($target)
 }
-if ($NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
+if ($BackAfterReady -or $NavigationTarget.Count -gt 0 -or $LinkActivationTarget.Count -gt 0 -or
     $SelectorActivationTarget.Count -gt 0 -or $PointerMoveTarget.Count -gt 0 -or
     $ClickTarget.Count -gt 0 -or $ControlValue.Count -gt 0 -or $KeyTarget.Count -gt 0 -or $ScrollTarget.Count -gt 0 -or $WheelTarget.Count -gt 0) {
     $arguments.Add('--navigation-delay-ms')
