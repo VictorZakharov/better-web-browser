@@ -13,10 +13,12 @@
             return Promise.reject(new DOMException('Element is not connected', 'TypeError'));
         if (this.ownerDocument !== document)
             return Promise.reject(new DOMException('Element belongs to another document', 'TypeError'));
+        if (!document.fullscreenEnabled)
+            return Promise.reject(new TypeError('Fullscreen is not available in this document'));
         return queueFullscreenRequest(this, true);
     };
     Object.defineProperties(Document.prototype, {
-        fullscreenEnabled: { configurable: true, enumerable: true, get: () => true },
+        fullscreenEnabled: { configurable: true, enumerable: true, get: () => host('fullscreenSupported') },
         fullscreenElement: { configurable: true, enumerable: true, get: () => fullscreenElement }
     });
     Document.prototype.exitFullscreen = function() {

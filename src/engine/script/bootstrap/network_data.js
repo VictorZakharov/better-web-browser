@@ -188,10 +188,20 @@
             return code >= 0x20 && code <= 0x7e;
         }) ? type : '';
     };
+    const blobStates = new WeakMap(), fileStates = new WeakMap();
+    const blobState = blob => {
+        const state = blobStates.get(blob);
+        if (!state) throw new TypeError('Invalid Blob receiver');
+        return state;
+    };
+    const materializeBlob = blob => {
+        const state = blobState(blob);
+        if (state.chunks.length > 1) state.chunks = [concatBytes(state.chunks)];
+        return state.chunks[0];
+    };
     const initializeBlob = (blob, chunks, type) => {
-        blob.__chunks = chunks.length ? chunks : [new Uint8Array()];
-        blob.__size = chunks.reduce((total, chunk) => total + chunk.length, 0);
-        blob.__type = normalizedBlobType(type);
+        blobStates.set(blob, {chunks: chunks.length ? chunks : [new Uint8Array()],
+            size: chunks.reduce((total, chunk) => total + chunk.length, 0), type: normalizedBlobType(type)});
         return blob;
     };
     const bytesToBase64 = bytes => {
@@ -207,18 +217,18 @@
             for (const part of parts) {
                 // Blob byte sequences are immutable, so another Blob's owned chunks can be
                 // shared without changing the observable snapshot.
-                if (part instanceof Blob) chunks.push(...part.__chunks);
+                if (blobStates.has(part)) chunks.push(...blobState(part).chunks);
                 else chunks.push(copyBytes(part) || encoder.encode(String(part)));
             }
             initializeBlob(this, chunks, options?.type);
         }
         __materializeBytes() {
-            if (this.__chunks.length > 1) this.__chunks = [concatBytes(this.__chunks)];
-            return this.__chunks[0];
+            return new Uint8Array(materializeBlob(this));
         }
-        get __bytes() { return this.__materializeBytes(); }
-        get size() { return this.__size; }
-        get type() { return this.__type; }
+        get __chunks() { return blobState(this).chunks.map(chunk => new Uint8Array(chunk)); }
+        get __bytes() { return new Uint8Array(materializeBlob(this)); }
+        get size() { return blobState(this).size; }
+        get type() { return blobState(this).type; }
         slice(start = 0, end = this.size, type = '') {
             const normalize = value => value < 0 ? Math.max(this.size + value, 0) : Math.min(value, this.size);
             start = normalize(Number(start) || 0);
@@ -241,11 +251,11 @@
     class File extends Blob {
         constructor(parts, name, options = {}) {
             super(parts, options);
-            this.__name = String(name).replace(/\//g, ':');
-            this.__lastModified = options.lastModified === undefined ? Date.now() : Number(options.lastModified);
+            fileStates.set(this, {name: String(name).replace(/\//g, ':'),
+                lastModified: options.lastModified === undefined ? Date.now() : Number(options.lastModified)});
         }
-        get name() { return this.__name; }
-        get lastModified() { return this.__lastModified; }
+        get name() { return fileStates.get(this).name; }
+        get lastModified() { return fileStates.get(this).lastModified; }
         get webkitRelativePath() { return ''; }
     }
 
@@ -279,6 +289,21 @@
     };
 
     Object.assign(globalThis, { Headers, Blob, File });
+    // FileReader consumes a private immutable snapshot, not author-overridden
+    // Blob methods or properties. The next bootstrap extension removes this hook.
+    globalThis.__fileReaderSnapshot = [value => {
+        const state = blobState(value);
+        return { chunks: state.chunks, size: state.size, type: state.type };
+    }, concatBytes, bytesToBase64];
+    // Captured and removed before author execution. Native structured clone invokes these
+    // closures, never mutable author getters, prototypes, or constructor properties.
+    if (typeof document !== 'undefined') globalThis.__blobCloneBindings = [
+        value => blobStates.has(value),
+        value => {const state=blobState(value), file=fileStates.get(value);
+            return [state.chunks,state.type,file?.name,file?.lastModified];},
+        value => value[2] === undefined ? new Blob(value[0], {type:value[1]})
+            : new File(value[0], value[2], {type:value[1],lastModified:value[3]})
+    ];
     Object.defineProperty(globalThis, '__networkData', {
         configurable: true,
         value: Object.freeze({ concatBytes, bytesToBase64, extractBody, encoder, decoder })

@@ -8,6 +8,7 @@ mod cookies;
 mod fetches;
 pub(crate) mod geometry;
 mod ownership;
+mod sandbox;
 mod scripts;
 mod storage;
 mod task_scheduling;
@@ -32,6 +33,10 @@ pub(super) struct HostState {
     pub(super) about_base_url: Option<String>,
     pub(super) inherited_url: Option<String>,
     pub(super) document_origin: crate::fetch::Origin,
+    pub(super) sandbox: sandbox::Sandbox,
+    pub(super) embedded: bool,
+    pub(super) fetch_client: crate::fetch::RequestClient,
+    pub(super) policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
     api_base_cache: RefCell<Option<base_url::CachedBaseUrl>>,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
@@ -75,7 +80,7 @@ pub(super) struct HostState {
     pub(super) document_load: super::runtime::document_lifecycle::DocumentLoad,
     pub(super) fetch_identifiers: Rc<RefCell<fetches::FetchIdentifiers>>,
     pub(super) pending_fetch_actions: Vec<ScriptFetchAction>,
-    pub(super) next_worker_id: u32,
+    pub(super) worker_identifiers: Rc<RefCell<fetches::FetchIdentifiers>>,
     pub(super) pending_worker_actions: Vec<ScriptWorkerAction>,
     pub(super) pending_fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub(super) pending_media_actions: Vec<ScriptMediaAction>,
@@ -123,6 +128,10 @@ impl HostState {
             inherited_url: None,
             document_origin: crate::fetch::Origin::parse(document_url)
                 .unwrap_or_else(|_| crate::fetch::Origin::opaque()),
+            sandbox: Default::default(),
+            embedded: false,
+            fetch_client: Default::default(),
+            policy: Default::default(),
             api_base_cache: RefCell::new(None),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),
@@ -165,7 +174,7 @@ impl HostState {
             document_load: Default::default(),
             fetch_identifiers: Default::default(),
             pending_fetch_actions: Vec::new(),
-            next_worker_id: 1,
+            worker_identifiers: Default::default(),
             pending_worker_actions: Vec::new(),
             pending_fullscreen_actions: Vec::new(),
             pending_media_actions: Vec::new(),
@@ -236,7 +245,7 @@ impl HostState {
     }
 
     pub(super) fn resolved_url(&self, reference: &str) -> String {
-        resolve_url(&self.document_url, reference).unwrap_or_else(|| reference.to_string())
+        resolve_url(&self.script_base_url(), reference).unwrap_or_else(|| reference.to_string())
     }
 
     pub(super) fn diagnose(&mut self, message: String) {

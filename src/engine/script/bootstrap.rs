@@ -78,11 +78,12 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/network_fetch.js"),
     include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
+    include_str!("bootstrap/file_reader.js"),
     include_str!("bootstrap/structured_clone.js"),
     include_str!("bootstrap/performance.js"),
     include_str!("bootstrap/user_timing.js"),
     include_str!("bootstrap/performance_observer.js"),
-    include_str!("bootstrap/channel_messaging.js"),
+    include_str!("bootstrap/native_ports.js"),
     include_str!("bootstrap/workers.js"),
     include_str!("bootstrap/url_cleanup.js"),
 );

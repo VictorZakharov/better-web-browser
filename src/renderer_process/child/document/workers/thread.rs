@@ -9,6 +9,7 @@ pub(super) fn run_worker(config: WorkerConfig) {
         &config.url,
         config.kind,
         config.credentials,
+        config.client,
     );
     let response = match response {
         Ok(response) if response.is_success() => response,
@@ -32,11 +33,19 @@ pub(super) fn run_worker(config: WorkerConfig) {
     let network = config.network.clone();
     let document_url = config.document_url.clone();
     let credentials = config.credentials;
+    let client = config.client;
     let cancelled = config.cancelled.clone();
     let loader: Arc<WorkerSourceLoader> = Arc::new(move |url, kind| {
-        let response =
-            worker_source_request(&network, &cancelled, &document_url, url, kind, credentials)
-                .map_err(|error| error.to_string())?;
+        let response = worker_source_request(
+            &network,
+            &cancelled,
+            &document_url,
+            url,
+            kind,
+            credentials,
+            client,
+        )
+        .map_err(|error| error.to_string())?;
         if !response.is_success() {
             return Err(format!("server returned HTTP {}", response.status));
         }
@@ -97,9 +106,14 @@ fn drive_worker_outcome(config: &WorkerConfig, outcome: WorkerRuntimeOutcome) ->
     closed
 }
 
-fn emit(config: &WorkerConfig, outcome: WorkerRuntimeOutcome) {
+fn emit(config: &WorkerConfig, mut outcome: WorkerRuntimeOutcome) {
     if config.cancelled.load(Ordering::Acquire) {
         return;
+    }
+    for action in &mut outcome.fetch_actions {
+        if let ScriptFetchAction::Start { request, .. } = action {
+            request.client = config.client;
+        }
     }
     let messages = outcome
         .messages

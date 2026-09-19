@@ -115,6 +115,17 @@ fn host_call_callback(
     let operation = arguments.get(0).to_rust_string_lossy(scope);
     if matches!(
         operation.as_str(),
+        "navigate"
+            | "navigateRequest"
+            | "planFormNavigation"
+            | "commitFormNavigation"
+            | "fragmentNavigation"
+    ) && !super::window_access::guard_navigation(scope)
+    {
+        return;
+    }
+    if matches!(
+        operation.as_str(),
         "bindNodeWrapper" | "nodeHandle" | "nodeWrapper"
     ) {
         super::node_wrappers::dispatch(scope, &operation, arguments, return_value);

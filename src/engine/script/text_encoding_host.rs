@@ -7,6 +7,18 @@ pub(super) fn text_encoding_host_call(
     operation: &str,
     args: &[JsValue],
 ) -> JsResult<Option<JsValue>> {
+    if operation == "fileReadText" {
+        let bytes = typed_array_bytes(args, 1)?;
+        let label = super::binding_helpers::argument_string(args, 2)?;
+        let charset = super::binding_helpers::argument_string(args, 3)?;
+        // File API packaging: explicit label, MIME charset, then UTF-8.
+        // Encoding's decode algorithm gives a BOM precedence over that fallback.
+        let encoding = encoding_rs::Encoding::for_label(label.as_bytes())
+            .or_else(|| encoding_rs::Encoding::for_label(charset.as_bytes()))
+            .unwrap_or(encoding_rs::UTF_8);
+        let (text, _, _) = encoding.decode(&bytes);
+        return Ok(Some(js_string(text.into_owned())));
+    }
     if operation != "utf8Decode" {
         return Ok(None);
     }

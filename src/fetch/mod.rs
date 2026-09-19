@@ -5,7 +5,9 @@
 
 mod body;
 mod cancellation;
+mod client;
 mod cors;
+pub mod csp;
 mod error;
 mod headers;
 mod request;
@@ -14,6 +16,7 @@ mod url;
 
 pub use body::Body;
 pub use cancellation::{FetchController, FetchSignal};
+pub use client::RequestClient;
 pub use error::{FetchError, FetchErrorKind};
 pub use headers::{Header, HeaderList};
 pub use request::{

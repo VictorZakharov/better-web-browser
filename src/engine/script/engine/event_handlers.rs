@@ -20,6 +20,12 @@ pub(super) fn compile(
     let Some(context) = global.get_creation_context(scope) else {
         return;
     };
+    if super::node_wrappers::host(context).is_some_and(|host| {
+        let host = host.borrow();
+        host.sandbox.scripts_blocked || !host.policy.allows_inline(true)
+    }) {
+        return;
+    }
     let scope = &mut v8::ContextScope::new(scope, context);
     let mut scopes = Vec::new();
     for index in 0..extensions.length() {

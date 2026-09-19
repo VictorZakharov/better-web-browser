@@ -3,6 +3,9 @@ use super::*;
 pub(super) mod documents;
 mod navigation;
 mod resources;
+mod script_fetches;
+mod streaming;
+mod styles;
 use crate::engine::script::engine::frames::FrameNavigation;
 use documents::FrameDocument;
 use resources::FrameFetch;
@@ -16,6 +19,8 @@ pub(super) struct ChildRuntimes {
     documents: HashMap<NodeId, FrameDocument>,
     fetches: HashMap<u32, FrameFetch>,
     prefer_message: bool,
+    styles: HashMap<NodeId, styles::Sheets>,
+    pending: ScriptOutcome,
 }
 
 impl ScriptRuntime {
@@ -42,12 +47,18 @@ impl ScriptRuntime {
         self.frames.as_mut()?.children.get_mut(&owner)
     }
 
+    pub(super) fn child_for_worker(&mut self, id: u32) -> Option<&mut ScriptRuntime> {
+        let owner = self.host.borrow().worker_identifiers.borrow().owner(id)?;
+        self.frames.as_mut()?.children.get_mut(&owner)
+    }
+
     pub(super) fn sync_child_runtimes(&mut self) {
         let (Some(frames), Some(context)) = (&mut self.frames, self.context.as_deref_mut()) else {
             return;
         };
         let active = context.child_documents();
         frames.documents.retain(|id, _| active.contains(id));
+        frames.styles.retain(|id, _| active.contains(id));
         for navigation in context.frame_navigations() {
             frames
                 .navigations
@@ -72,6 +83,12 @@ impl ScriptRuntime {
             let ids = host.fetch_identifiers.borrow_mut().cancel_document(*id);
             host.pending_fetch_actions
                 .extend(ids.into_iter().map(|id| ScriptFetchAction::Abort { id }));
+            let workers = host.worker_identifiers.borrow_mut().cancel_document(*id);
+            host.pending_worker_actions.extend(
+                workers
+                    .into_iter()
+                    .map(|id| ScriptWorkerAction::Terminate { id }),
+            );
             false
         });
         let known = frames.children.keys().copied().collect();
@@ -113,6 +130,7 @@ impl ScriptRuntime {
     pub(super) fn child_timer_delay(&mut self) -> Option<Duration> {
         let frames = self.frames.as_mut()?;
         if !frames.navigations.is_empty()
+            || frames.styles.values().any(|sheets| sheets.dirty)
             || frames.documents.values().any(FrameDocument::runnable)
             || self
                 .context
@@ -124,7 +142,13 @@ impl ScriptRuntime {
         frames
             .children
             .values_mut()
-            .filter_map(Self::next_timer_delay)
+            .filter_map(|child| {
+                if child.has_ready_dynamic_scripts() {
+                    Some(Duration::ZERO)
+                } else {
+                    child.next_timer_delay()
+                }
+            })
             .min()
     }
 
@@ -170,6 +194,7 @@ impl ScriptRuntime {
             .iter_mut()
             .filter_map(|(id, child)| {
                 (child.next_timer_delay() == Some(Duration::ZERO)
+                    || child.has_ready_dynamic_scripts()
                     || frames
                         .documents
                         .get(id)
@@ -194,12 +219,19 @@ impl ScriptRuntime {
         } else {
             child.advance_time(Duration::ZERO, 1)
         };
+        if let Err(error) = self.restart_frame_encoding(id) {
+            self.host.borrow_mut().diagnose(error);
+        }
         Some(self.collect_frame_result(id, outcome))
     }
 
     pub(super) fn collect_child_outcomes(&mut self, mut outcome: ScriptOutcome) -> ScriptOutcome {
         self.sync_child_runtimes();
+        self.start_frame_styles();
         self.start_frame_resources();
+        if let Some(frames) = &mut self.frames {
+            documents::append(&mut outcome, std::mem::take(&mut frames.pending));
+        }
         let states: Vec<_> = self
             .frames
             .as_mut()
@@ -215,26 +247,42 @@ impl ScriptRuntime {
             .fetch_actions
             .append(&mut self.host.borrow_mut().pending_fetch_actions);
         outcome
+            .worker_actions
+            .append(&mut self.host.borrow_mut().pending_worker_actions);
+        outcome
     }
 
-    fn collect_frame_result(&mut self, id: NodeId, mut outcome: ScriptOutcome) -> ScriptOutcome {
+    pub(super) fn collect_frame_result(
+        &mut self,
+        id: NodeId,
+        mut outcome: ScriptOutcome,
+    ) -> ScriptOutcome {
+        // These browser-owned effects have no child-document wire identity yet. Never
+        // apply a child's cookie/storage/media/fullscreen action to its parent's identity.
+        outcome.cookie_updates.clear();
+        outcome.storage_updates.clear();
+        outcome.storage_event_receipts.clear();
+        outcome.media_actions.clear();
+        outcome.fullscreen_actions.clear();
+        if outcome.navigation_options.post.is_some()
+            || !matches!(outcome.navigation_options.target.as_str(), "" | "_self")
+        {
+            outcome.navigation_url = None;
+            outcome
+                .diagnostics
+                .push("Embedded form POST and targeted navigation are not supported yet".into());
+        }
         if let Some(url) = outcome.navigation_url.take()
+            && let Some(navigation) = self
+                .context
+                .as_ref()
+                .and_then(|context| context.request_frame_navigation(id, url))
             && let Some(frames) = &mut self.frames
-            && let Some(document) = frames.documents.get(&id)
         {
             frames
                 .navigations
-                .retain(|old| old.element != document.element);
-            frames.navigations.push_back(FrameNavigation {
-                element: document.element,
-                document: id,
-                epoch: document.epoch,
-                url,
-                source: None,
-                scripts: document.scripts,
-                initiator_url: frames.children[&id].host.borrow().document_url.clone(),
-                initiator_origin: frames.children[&id].host.borrow().document_origin.clone(),
-            });
+                .retain(|old| old.element != navigation.element);
+            frames.navigations.push_back(navigation);
         }
         outcome.viewport_scroll_y = None;
         outcome.history_actions.clear();

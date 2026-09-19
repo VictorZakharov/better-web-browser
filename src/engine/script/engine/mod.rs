@@ -11,10 +11,13 @@ mod messaging;
 mod modules;
 mod node_wrappers;
 mod parser_scripts;
+mod policy;
+mod ports;
 mod runtime;
 mod v8_api;
 mod value;
 mod watchdog;
+mod window_access;
 
 pub(super) use bridge::HostBridge;
 pub(super) use runtime::{Context, ModuleEvaluation};

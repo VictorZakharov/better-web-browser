@@ -66,17 +66,28 @@ pub(super) fn finish_host(
     let mut state = host.borrow_mut();
     state.task_started = None;
     state.user_input_active = false;
-    outcome.mutation_count = std::mem::take(&mut state.mutation_count);
+    let mutations = std::mem::take(&mut state.mutation_count);
+    outcome.mutation_count += mutations;
     outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
     outcome.console.append(&mut state.console);
     outcome.diagnostics.append(&mut state.diagnostics);
     state.append_host_call_diagnostics(&mut outcome.diagnostics);
-    outcome.navigation_url = state.navigation_url.take();
-    outcome.navigation_options = std::mem::take(&mut state.navigation_options);
+    if let Some(url) = state.navigation_url.take() {
+        outcome.navigation_url = Some(url);
+        outcome.navigation_options = std::mem::take(&mut state.navigation_options);
+    }
     outcome.viewport_scroll_y = state.viewport_scroll_y.take();
     outcome.history_actions.append(&mut state.history_actions);
     outcome.cookie_updates.append(&mut state.cookie_updates);
     outcome.storage_updates.append(&mut state.storage_updates);
+    let client = state.fetch_client;
+    let policy = state.policy.clone();
+    for action in &mut state.pending_fetch_actions {
+        if let ScriptFetchAction::Start { request, .. } = action {
+            request.client = client;
+            request.policy = policy.clone();
+        }
+    }
     outcome
         .fetch_actions
         .append(&mut state.pending_fetch_actions);
@@ -89,7 +100,10 @@ pub(super) fn finish_host(
     outcome
         .media_actions
         .append(&mut state.pending_media_actions);
-    outcome.render_requested = state.timers.take_render_request();
-    outcome.invalidation = state.pending_invalidation.take(outcome.mutation_count);
+    outcome.render_requested |= state.timers.take_render_request();
+    outcome.invalidation.merge_conservatively(
+        state.pending_invalidation.take(mutations),
+        state.document.id(),
+    );
     outcome
 }

@@ -3,7 +3,7 @@ use super::*;
 use scheduler::Step;
 
 pub(super) enum Job {
-    Request(RendererFetchRequest, FetchSignal),
+    Request(Box<RendererFetchRequest>, FetchSignal),
     Body(Box<BodyJob>),
 }
 
@@ -32,11 +32,18 @@ impl Job {
         sink: &FetchResponseSink,
         document: DocumentId,
         document_url: &str,
+        registry: &RendererFetchRegistry,
     ) -> Step<Self> {
         match self {
-            Self::Request(request, signal) => {
-                start(request, signal, client, sink, document, document_url)
-            }
+            Self::Request(request, signal) => start(
+                *request,
+                signal,
+                client,
+                sink,
+                document,
+                document_url,
+                registry,
+            ),
             Self::Body(mut body) => match body.advance(sink) {
                 Ok(true) => Step::Ready(Self::Body(body)),
                 Ok(false) => Step::Parked(Self::Body(body)),
@@ -53,14 +60,35 @@ fn start(
     sink: &FetchResponseSink,
     document: DocumentId,
     document_url: &str,
+    registry: &RendererFetchRegistry,
 ) -> Step<Job> {
     let id = request.head.request_id;
+    let target = request.head.resulting_client;
     let result = (|| {
         request
             .validate()
             .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
         validate_document_identity(document, request.head.document)?;
-        client.fetch_stream(reconstruct(document_url, request)?.with_signal(signal))
+        let (owner, policy) = {
+            let mut clients = registry
+                .clients
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let owner = clients.resolve(document, document_url, request.head.client)?;
+            let policy = if request.head.initiator == FetchInitiator::ChildNavigation {
+                clients
+                    .resolve(document, document_url, request.head.embedding_client)?
+                    .policy
+            } else {
+                owner.policy.clone()
+            };
+            clients.reserve(document, &request.head)?;
+            (owner, policy)
+        };
+        let mut request = reconstruct(&owner.url, request)?;
+        request.origin = Some(owner.origin);
+        request.policy = policy;
+        client.fetch_stream(request.with_signal(signal))
     })();
     let response = match result {
         Ok(response) => response,
@@ -69,6 +97,28 @@ fn start(
             return Step::Done(0);
         }
     };
+    // A final response head establishes the child client before streamed parser
+    // scripts can request subresources. Waiting for body EOF would race those requests.
+    if target.id != 0 {
+        let result = registry
+            .clients
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .commit(
+                document,
+                target,
+                response
+                    .url_list
+                    .last()
+                    .expect("Fetch response URL")
+                    .as_str(),
+                &response.headers,
+            );
+        if let Err(error) = result {
+            let _ = send_failure(sink, id, &error);
+            return Step::Done(0);
+        }
+    }
     let head = FetchResponseHead {
         request_id: id,
         result: FetchResponseResult::Success {

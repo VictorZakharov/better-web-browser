@@ -7,8 +7,10 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 mod creation;
 mod navigation;
+mod relations;
 use creation::create;
 pub(in crate::engine::script) use navigation::{FrameNavigation, Replacement};
+pub(super) use relations::child_windows;
 
 #[derive(Default)]
 pub(super) struct FrameTree {
@@ -16,14 +18,16 @@ pub(super) struct FrameTree {
     wrappers: Rc<super::node_wrappers::Wrappers>,
     documents: RefCell<HashMap<NodeId, v8::Weak<v8::Context>>>,
     pub(super) messages: super::messaging::Messages,
+    pub(super) ports: Rc<super::ports::Ports>,
+    pub(super) prefer_port_message: Cell<bool>,
 }
 
 struct ChildRealm {
     element: NodeRef,
     attributes: Option<(Option<String>, Option<String>)>,
     load_notified: bool,
+    navigation_pending: bool,
     navigation_epoch: u64,
-    initial: bool,
     context: v8::Global<v8::Context>,
     _storage_dispatch: v8::Global<v8::Function>,
     host: Rc<RefCell<HostState>>,
@@ -52,13 +56,10 @@ impl FrameTree {
     pub(super) fn ready_load(&self, take: bool) -> Option<(NodeId, NodeRef)> {
         for child in self.children.borrow_mut().values_mut() {
             if child.load_notified
+                || child.navigation_pending
                 || child.attributes.is_none()
                 || !child.host.borrow().document_load.complete()
             {
-                continue;
-            }
-            // Initial about:blank completion is suppressed while a nonblank navigation is pending.
-            if child.initial && child.navigation_epoch > 0 {
                 continue;
             }
             if take {
@@ -73,6 +74,18 @@ impl FrameTree {
         self.children.borrow().get(&element).is_some_and(|child| {
             child.host.borrow().document.id() == document && child.navigation_epoch == epoch
         })
+    }
+
+    pub(super) fn navigation_failed(&self, navigation: &FrameNavigation) {
+        let mut children = self.children.borrow_mut();
+        if let Some(child) = children.get_mut(&navigation.element)
+            && child.host.borrow().document.id() == navigation.document
+            && child.navigation_epoch == navigation.epoch
+        {
+            // Failed child navigations still release the embedding document's load delay.
+            // HTML deliberately does not expose a network-error event on iframe elements.
+            child.navigation_pending = false;
+        }
     }
 
     pub(super) fn snapshot(&self) -> Vec<RealmSnapshot> {
@@ -259,6 +272,7 @@ fn discard(tree: &FrameTree, id: NodeId) {
     let document = child.host.borrow().document.id();
     child.active.set(false);
     tree.messages.remove(document);
+    tree.ports.remove(document);
     let descendants: Vec<_> = tree
         .children
         .borrow()

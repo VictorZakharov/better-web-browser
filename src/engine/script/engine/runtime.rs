@@ -37,6 +37,7 @@ impl Context {
         initialize_v8();
         let mut isolate = v8::Isolate::new(v8::CreateParams::default());
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
+        isolate.set_allow_wasm_code_generation_callback(super::policy::allow_wasm);
         isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
         let imports = Rc::new(super::dynamic_imports::Imports::default());
         let frames = Rc::new(super::frames::FrameTree::default());
@@ -45,7 +46,14 @@ impl Context {
         );
         let context = {
             v8::scope!(let scope, &mut isolate);
-            let context = v8::Context::new(scope, Default::default());
+            let global_template = super::v8_api::window_template(scope);
+            let context = v8::Context::new(
+                scope,
+                v8::ContextOptions {
+                    global_template: Some(global_template),
+                    ..Default::default()
+                },
+            );
             context.set_slot(Rc::new(bridge));
             context.set_slot(Rc::clone(&imports));
             super::frames::register(context, &frames);

@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "common/gc.js",
     "common/subset-tests-by-key.js",
     "url/resources/urltestdata.json",
     "url/resources/urltestdata-javascript-only.json",
@@ -57,6 +58,18 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {"path":"webmessaging/Channel_postMessage_Blob.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_DataCloneErr.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_clone_port.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_clone_port_error.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_event_properties.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_ports_readonly_array.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_target_source.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_with_transfer_entangled.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_with_transfer_incoming_messages.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/Channel_postMessage_with_transfer_outgoing_messages.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/MessagePort_initial_disabled.any.js","area":"Window messaging","expected":"pass"},
+    {"path":"webmessaging/MessagePort_onmessage_start.any.js","area":"Window messaging","expected":"pass"},
     {
       "path": "html/semantics/forms/form-submission-0/SubmitEvent.window.js",
       "area": "HTML forms",

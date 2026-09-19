@@ -5,7 +5,7 @@ use crate::limits::{
     MAX_FETCH_STREAM_CHUNK_BYTES, MAX_RENDERER_FETCH_STREAM_BYTES, MAX_RESPONSE_BODY_BYTES,
 };
 use crate::renderer_protocol::FetchResponseResult;
-use crate::renderer_protocol::{FetchInitiator, RendererFetchRequest};
+use crate::renderer_protocol::RendererFetchRequest;
 
 pub(super) struct OutgoingFetch {
     offset: usize,
@@ -24,14 +24,14 @@ impl Broker {
                 .register(
                     request.head.document,
                     request.head.request_id,
-                    request.head.initiator == FetchInitiator::ScriptApi,
+                    request.head.initiator.streams_response(),
                 )
                 .map_err(|_| ProtocolError::InvalidPayload("duplicate Fetch flow identity"))?;
             if self
                 .fetch_response_streaming
                 .insert(
                     request.head.request_id,
-                    request.head.initiator == FetchInitiator::ScriptApi,
+                    request.head.initiator.streams_response(),
                 )
                 .is_some()
             {

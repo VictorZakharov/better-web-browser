@@ -1,6 +1,8 @@
 //! Request state and policy-specific constructors.
 
-use super::{Body, FetchError, FetchErrorKind, FetchSignal, FetchUrl, HeaderList, Origin};
+use super::{
+    Body, FetchError, FetchErrorKind, FetchSignal, FetchUrl, HeaderList, Origin, RequestClient,
+};
 use crate::limits::MAX_RESPONSE_BODY_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +75,13 @@ pub enum Referrer {
 
 #[derive(Debug, Clone)]
 pub struct FetchRequest {
+    pub policy: std::sync::Arc<super::csp::PolicyContainer>,
+    /// Renderer client reference, resolved to a browser-owned navigation result.
+    pub client: RequestClient,
+    /// Nonzero only for a child-document navigation; never an arbitrary origin.
+    pub resulting_client: RequestClient,
+    /// Embedding document's browser-owned frame policy, distinct from the initiator.
+    pub embedding_client: RequestClient,
     pub url: FetchUrl,
     pub method: String,
     pub headers: HeaderList,
@@ -93,6 +102,10 @@ pub struct FetchRequest {
 impl FetchRequest {
     pub fn navigation(url: &str) -> Result<Self, FetchError> {
         Ok(Self {
+            policy: Default::default(),
+            client: RequestClient::default(),
+            resulting_client: RequestClient::default(),
+            embedding_client: RequestClient::default(),
             url: FetchUrl::parse(url)?,
             method: "GET".into(),
             headers: HeaderList::new(),
@@ -123,6 +136,10 @@ impl FetchRequest {
             RequestMode::NoCors
         };
         Ok(Self {
+            policy: Default::default(),
+            client: RequestClient::default(),
+            resulting_client: RequestClient::default(),
+            embedding_client: RequestClient::default(),
             url: FetchUrl::parse(url)?,
             method: "GET".into(),
             headers: HeaderList::new(),
@@ -144,6 +161,10 @@ impl FetchRequest {
     pub fn script(url: &str, document_url: &str) -> Result<Self, FetchError> {
         let document = FetchUrl::parse(document_url)?;
         Ok(Self {
+            policy: Default::default(),
+            client: RequestClient::default(),
+            resulting_client: RequestClient::default(),
+            embedding_client: RequestClient::default(),
             url: FetchUrl::parse(url)?,
             method: "GET".into(),
             headers: HeaderList::new(),

@@ -5,37 +5,45 @@ use crate::engine::page::{PageResource, PageScript};
 use crate::engine::script::runtime::parser_queue::ParserScripts;
 
 pub(super) struct FrameDocument {
-    pub element: NodeId,
-    pub epoch: u64,
     pub scripts: bool,
-    parser: Option<HtmlParser>,
+    pub(super) parser: Option<HtmlParser>,
+    pub(super) input: Option<super::streaming::Input>,
     pub queue: ParserScripts,
     pub requested: HashSet<PageResource>,
     ordinal: usize,
+    pub(super) styles_pending: bool,
+    pub(super) styles_load_pending: bool,
 }
 
 impl FrameDocument {
-    pub fn new(element: NodeId, epoch: u64, parser: HtmlParser, scripts: bool) -> Self {
+    pub fn new(parser: HtmlParser, scripts: bool) -> Self {
         let mut queue = ParserScripts::default();
         queue.set_parsing(true);
         Self {
-            element,
-            epoch,
             scripts,
             parser: Some(parser),
+            input: None,
             queue,
             requested: HashSet::new(),
             ordinal: 0,
+            styles_pending: false,
+            styles_load_pending: false,
         }
     }
 
     pub fn runnable(&self) -> bool {
-        self.queue.has_ready_with_styles(true) || (self.parser.is_some() && !self.queue.blocked())
+        self.queue.has_ready_with_styles(!self.styles_pending)
+            || (self.parser.as_ref().is_some_and(HtmlParser::runnable) && !self.queue.blocked())
     }
 
     pub fn advance(&mut self, runtime: &mut ScriptRuntime) -> ScriptOutcome {
         self.queue.prepare_modules(runtime);
-        if let Some(script) = self.queue.pop_ready() {
+        let script = if self.styles_pending {
+            self.queue.pop_nonblocking_ready(false)
+        } else {
+            self.queue.pop_ready()
+        };
+        if let Some(script) = script {
             return self.execute(runtime, script);
         }
         let Some(parser) = &mut self.parser else {
@@ -47,6 +55,11 @@ impl FrameDocument {
             parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
         );
         match step {
+            ParserStep::Encoding(label) => {
+                if let Some(input) = &mut self.input {
+                    input.restart = input.decoder.change_encoding(&label);
+                }
+            }
             ParserStep::Script(node) if self.scripts => {
                 self.ordinal += 1;
                 if self.ordinal <= crate::limits::MAX_PAGE_SCRIPTS {
@@ -144,10 +157,12 @@ impl FrameDocument {
         }))
     }
 
-    fn update_pending(&mut self, runtime: &mut ScriptRuntime) {
+    pub(super) fn update_pending(&mut self, runtime: &mut ScriptRuntime) {
         self.queue.prepare_modules(runtime);
         runtime.set_deferred_scripts_pending(self.queue.deferred_pending());
-        runtime.set_document_load_pending(self.parser.is_some() || self.queue.is_pending());
+        runtime.set_document_load_pending(
+            self.parser.is_some() || self.queue.is_pending() || self.styles_load_pending,
+        );
     }
 }
 
@@ -161,6 +176,7 @@ pub(in crate::engine::script::runtime) fn append(
     outcome.console.append(&mut other.console);
     outcome.diagnostics.append(&mut other.diagnostics);
     outcome.fetch_actions.append(&mut other.fetch_actions);
+    outcome.worker_actions.append(&mut other.worker_actions);
     if other.navigation_url.is_some() {
         outcome.navigation_url = other.navigation_url;
         outcome.navigation_options = other.navigation_options;

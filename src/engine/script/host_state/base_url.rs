@@ -28,6 +28,7 @@ impl HostState {
             .find_map(|node| node.attr("href"))
             .and_then(|href| crate::navigation::resolve_web_url(fallback, &href))
             .filter(|url| !url.starts_with("data:") && !url.starts_with("javascript:"))
+            .filter(|url| self.policy.allows_url("base-uri", url, 0))
             .unwrap_or_else(|| fallback.to_string());
         *self.api_base_cache.borrow_mut() = Some(CachedBaseUrl {
             document,

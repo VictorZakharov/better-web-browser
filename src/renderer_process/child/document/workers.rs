@@ -131,7 +131,7 @@ impl RendererWorkers {
     fn apply(
         &mut self,
         actions: Vec<ScriptWorkerAction>,
-        document_url: &str,
+        _document_url: &str,
         outcome: &mut ScriptOutcome,
     ) -> Result<(), String> {
         for action in actions {
@@ -142,6 +142,8 @@ impl RendererWorkers {
                     kind,
                     name,
                     credentials,
+                    document_url,
+                    client,
                 } => {
                     if self.handles.len() >= MAX_DEDICATED_WORKERS {
                         outcome.errors.push(format!(
@@ -157,7 +159,8 @@ impl RendererWorkers {
                         kind,
                         name,
                         credentials,
-                        document_url: document_url.to_string(),
+                        document_url,
+                        client,
                         network: self.network_sender.clone(),
                         events: self.event_sender.clone(),
                         commands: receiver,
@@ -233,6 +236,7 @@ struct WorkerConfig {
     name: String,
     credentials: CredentialsMode,
     document_url: String,
+    client: crate::fetch::RequestClient,
     network: mpsc::Sender<WorkerNetworkRequest>,
     events: mpsc::Sender<WorkerEvent>,
     commands: mpsc::Receiver<WorkerCommand>,

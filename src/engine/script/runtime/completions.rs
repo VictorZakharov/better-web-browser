@@ -33,11 +33,12 @@ impl ScriptRuntime {
             };
         }
         if let Some(child) = self.child_for_fetch(id) {
+            let owner = child.host.borrow().document.id();
             let outcome = child.complete_fetch_with_loader(id, result, dynamic_script_loader);
             self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+            let outcome = self.collect_frame_result(owner, outcome);
             return self.finish_guarded_run(Ok(outcome));
         }
-        self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -68,6 +69,7 @@ impl ScriptRuntime {
             }
             outcome
         }));
+        self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
         self.finish_guarded_run(result)
     }
 
@@ -83,15 +85,15 @@ impl ScriptRuntime {
             return self.finish_guarded_run(Ok(outcome));
         }
         if let Some(child) = self.child_for_fetch(id) {
+            let owner = child.host.borrow().document.id();
             let outcome = child.deliver_fetch_event_with_loader(id, event, dynamic_script_loader);
+            let outcome = self.collect_frame_result(owner, outcome);
             return self.finish_guarded_run(Ok(outcome));
         }
-        if matches!(
+        let terminal = matches!(
             event,
             ScriptFetchEvent::End | ScriptFetchEvent::Abort(_) | ScriptFetchEvent::Head(Err(_))
-        ) {
-            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
-        }
+        );
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -122,6 +124,9 @@ impl ScriptRuntime {
             }
             outcome
         }));
+        if terminal {
+            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+        }
         self.finish_guarded_run(result)
     }
 
@@ -132,6 +137,18 @@ impl ScriptRuntime {
         event: Result<String, String>,
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        self.sync_child_runtimes();
+        let owner = self.host.borrow().worker_identifiers.borrow().owner(id);
+        if owner.is_none() {
+            // Delivery ends the idle period even if termination made the event stale.
+            self.host.borrow_mut().idle_callbacks.interrupt();
+            return ScriptOutcome::default();
+        }
+        if let Some(child) = self.child_for_worker(id) {
+            let outcome = child.complete_worker_event_with_loader(id, event, dynamic_script_loader);
+            let outcome = self.collect_frame_result(owner.unwrap(), outcome);
+            return self.finish_guarded_run(Ok(outcome));
+        }
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }

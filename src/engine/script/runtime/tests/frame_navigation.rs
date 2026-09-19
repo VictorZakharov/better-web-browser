@@ -1,5 +1,16 @@
 use super::*;
 use crate::engine::script::ScriptFetchAction;
+mod cross_origin;
+mod effects;
+mod failures;
+mod file_reader;
+mod history;
+mod policy;
+mod ports;
+mod scripts;
+mod streaming;
+mod styles;
+mod workers;
 
 fn start(source: &str) -> (dom::Dom, ScriptRuntime) {
     let dom = dom::parse_with_scripting(source, true);
@@ -183,6 +194,11 @@ fn sandbox_without_allow_scripts_parses_but_does_not_execute() {
         &mut runtime,
         &dom,
         "if (document.body.dataset.bad || f.contentDocument.querySelector('p').textContent !== 'inert') throw Error('sandbox scripts');",
+    );
+    evaluate(
+        &mut runtime,
+        &dom,
+        "for(const code of [()=>f.contentWindow.eval('1'),()=>new f.contentWindow.Function('return 1')]) {try {code();throw Error('codegen escaped')} catch(e){if(e.name!=='EvalError') throw e}}",
     );
 }
 

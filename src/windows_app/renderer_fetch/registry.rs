@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
 pub(in crate::windows_app) struct RendererFetchRegistry {
+    pub(super) clients: Arc<Mutex<super::clients::Clients>>,
     requests: Arc<Mutex<HashMap<(DocumentId, u64), FetchController>>>,
 }
 

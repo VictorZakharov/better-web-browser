@@ -2,6 +2,16 @@
 unsafe extern "C" {
     fn breeze_v8_capture_incumbent(result: *const v8::Object) -> bool;
     fn breeze_v8_detach_global(context: *const v8::Context);
+    fn breeze_v8_window_template(template: *const v8::ObjectTemplate);
+}
+
+pub(super) fn window_template<'s>(
+    scope: &v8::PinScope<'s, '_, ()>,
+) -> v8::Local<'s, v8::ObjectTemplate> {
+    let template = v8::ObjectTemplate::new(scope);
+    // Installs failed-access handlers, not a blanket exemption from origin checks.
+    unsafe { breeze_v8_window_template(&*template) };
+    template
 }
 
 pub(super) fn incumbent<'s>(

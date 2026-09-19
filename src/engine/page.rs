@@ -10,7 +10,7 @@ pub(crate) use resources::prepare_script as prepare_written_script;
 mod scripts;
 mod snapshot;
 mod stylesheets;
-pub(crate) use stylesheets::is_stylesheet;
+pub(crate) use stylesheets::{is_stylesheet, stylesheet_dependencies};
 mod svg;
 
 pub(crate) use self::media::MEDIA_VIDEO_PLACEHOLDER;

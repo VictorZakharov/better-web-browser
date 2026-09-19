@@ -22,7 +22,14 @@ pub(super) fn dispatch(
         "navigate" => {
             let resolved = state.resolved_url(&argument_string(args, 1)?);
             state.navigation_url = Some(resolved.clone());
-            state.navigation_options = Default::default();
+            // HTML Location-object navigate: a pre-load redirect without activation
+            // replaces; a loaded document's assign/href navigation pushes history.
+            state.navigation_options = NavigationOptions {
+                replace_history: args.get(2).is_some_and(JsValue::to_boolean)
+                    || (!state.document_load.complete() && !state.user_input_active),
+                user_initiated: state.user_input_active,
+                ..Default::default()
+            };
             Ok(Some(js_string(resolved)))
         }
         "navigateRequest" | "planFormNavigation" => {
@@ -39,6 +46,14 @@ pub(super) fn dispatch(
             crate::navigation::ParsedUrl::parse(&resolved)
                 .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
             if operation == "planFormNavigation" {
+                if !state.policy.allows_url("form-action", &resolved, 0) {
+                    state.diagnose("form navigation blocked by Content Security Policy".into());
+                    return Ok(Some(JsValue::from(0u32)));
+                }
+                if state.sandbox.forms_blocked {
+                    state.diagnose("form navigation blocked by the document sandbox".into());
+                    return Ok(Some(JsValue::from(0u32)));
+                }
                 let id = argument_id(args, 3);
                 let _form = state
                     .nodes

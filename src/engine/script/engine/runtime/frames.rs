@@ -7,6 +7,42 @@ use std::collections::HashSet;
 pub(in crate::engine::script) type ChildContext = (NodeId, Rc<RefCell<HostState>>, Box<Context>);
 
 impl Context {
+    pub(in crate::engine::script) fn fail_frame_navigation(
+        &self,
+        navigation: &super::super::frames::FrameNavigation,
+    ) {
+        self._frames.navigation_failed(navigation);
+    }
+    pub(in crate::engine::script) fn frame_ancestor_origins(
+        &self,
+        element: NodeId,
+    ) -> Vec<crate::fetch::Origin> {
+        self._frames.ancestor_origins(element)
+    }
+    pub(in crate::engine::script) fn refresh_code_generation_policy(&mut self) {
+        self.agent
+            .borrow_mut()
+            .run(|isolate| {
+                v8::scope!(let scope, isolate);
+                let context = v8::Local::new(scope, &self.context);
+                if let Some(host) = super::super::node_wrappers::host(context) {
+                    let host = host.borrow();
+                    context.set_allow_generation_from_strings(
+                        !host.sandbox.scripts_blocked && host.policy.allows_eval(),
+                    );
+                }
+                Ok(())
+            })
+            .expect("policy update does not execute author code");
+    }
+    pub(in crate::engine::script) fn request_frame_navigation(
+        &self,
+        document: NodeId,
+        url: String,
+    ) -> Option<super::super::frames::FrameNavigation> {
+        self._frames.request_navigation(document, url)
+    }
+
     pub(in crate::engine::script) fn pending_frame_parents(&self) -> HashSet<NodeId> {
         self._frames.pending_parents()
     }
@@ -52,12 +88,13 @@ impl Context {
             let local = v8::Local::new(scope, context);
             let scope = &mut v8::ContextScope::new(scope, local);
             super::super::messaging::install(scope)
+                .and_then(|()| super::super::window_access::install(scope))
                 .ok_or_else(|| allocation_error("window messaging bindings"))
         })
     }
 
     pub(in crate::engine::script) fn has_message_task(&self) -> bool {
-        self._frames.messages.pending()
+        self._frames.messages.pending() || self._frames.ports.pending()
     }
 
     pub(in crate::engine::script) fn deliver_message(&mut self) -> JsResult<()> {
@@ -67,10 +104,16 @@ impl Context {
             let local = v8::Local::new(scope, context);
             let scope = &mut v8::ContextScope::new(scope, local);
             v8::tc_scope!(let tc, scope);
-            self._frames
-                .messages
-                .deliver(tc)
-                .ok_or_else(|| caught_error(tc, "posted-message delivery"))
+            let prefer_port = !self._frames.prefer_port_message.get();
+            self._frames.prefer_port_message.set(prefer_port);
+            let result = if self._frames.ports.pending()
+                && (prefer_port || !self._frames.messages.pending())
+            {
+                self._frames.ports.deliver(tc)
+            } else {
+                self._frames.messages.deliver(tc)
+            };
+            result.ok_or_else(|| caught_error(tc, "posted-message delivery"))
         })
     }
 

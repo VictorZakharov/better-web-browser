@@ -95,6 +95,9 @@ pub(super) fn dispatch_worker_host_call(
     args: &[JsValue],
     state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
+    if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
+        return Ok(value);
+    }
     if let Some(value) = super::url_host::dispatch(operation, args)? {
         return Ok(value);
     }

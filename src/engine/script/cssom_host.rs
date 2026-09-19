@@ -40,10 +40,7 @@ pub(super) fn cssom_host_call(
                 .find(|source| source.url() == url)
                 .map_or(url, |source| source.base_url.as_str());
             let same_origin = crate::fetch::Origin::parse(final_url)
-                .and_then(|origin| {
-                    crate::fetch::Origin::parse(&state.document_url)
-                        .map(|document_origin| origin.is_same_origin(&document_origin))
-                })
+                .map(|origin| origin.is_same_origin(&state.document_origin))
                 .unwrap_or(false);
             return Ok(Some(JsValue::from(same_origin)));
         }

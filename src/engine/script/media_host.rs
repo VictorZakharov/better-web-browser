@@ -8,8 +8,14 @@ pub(super) fn media_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "mediaPlaybackSupported" {
+        return Ok(Some(JsValue::from(!state.embedded)));
+    }
     if operation != "mediaRequest" && operation != "mediaDiagnostic" {
         return Ok(None);
+    }
+    if state.embedded && operation == "mediaRequest" {
+        return Ok(Some(JsValue::undefined()));
     }
     let Some(node) = state.node(argument_id(args, 1)) else {
         return Ok(Some(JsValue::undefined()));

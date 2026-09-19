@@ -13,6 +13,8 @@ pub enum ScriptWorkerAction {
         kind: ScriptKind,
         name: String,
         credentials: CredentialsMode,
+        document_url: String,
+        client: crate::fetch::RequestClient,
     },
     PostMessage {
         id: u32,
@@ -48,6 +50,13 @@ pub(super) fn worker_host_call(
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "workerStart" => {
+            if !state.policy.is_empty() {
+                return Err(JsNativeError::typ()
+                    .with_message(
+                        "Workers with inherited Content Security Policy are not yet supported",
+                    )
+                    .into());
+            }
             let url = state.resolved_url(&argument_string(args, 1)?);
             let options: WorkerOptions =
                 serde_json::from_str(&argument_string(args, 2)?).map_err(|error| {
@@ -62,7 +71,6 @@ pub(super) fn worker_host_call(
                         .into());
                 }
             };
-            let id = state.next_worker_id;
             let credentials = match options.credentials.as_str() {
                 "omit" => CredentialsMode::Omit,
                 "same-origin" => CredentialsMode::SameOrigin,
@@ -73,9 +81,10 @@ pub(super) fn worker_host_call(
                         .into());
                 }
             };
-            state.next_worker_id = state.next_worker_id.checked_add(1).ok_or_else(|| {
-                JsNativeError::range().with_message("Worker identifiers were exhausted")
-            })?;
+            let id = state
+                .worker_identifiers
+                .borrow_mut()
+                .allocate(state.document.id())?;
             state
                 .pending_worker_actions
                 .push(ScriptWorkerAction::Start {
@@ -84,24 +93,37 @@ pub(super) fn worker_host_call(
                     kind,
                     name: options.name,
                     credentials,
+                    document_url: state
+                        .inherited_url
+                        .as_ref()
+                        .unwrap_or(&state.document_url)
+                        .clone(),
+                    client: state.fetch_client,
                 });
             Ok(Some(JsValue::from(id)))
         }
         "workerPostMessage" => {
+            let id = argument_id(args, 1);
+            if state.worker_identifiers.borrow().owner(id) != Some(state.document.id()) {
+                return Ok(Some(JsValue::undefined()));
+            }
             state
                 .pending_worker_actions
                 .push(ScriptWorkerAction::PostMessage {
-                    id: argument_id(args, 1),
+                    id,
                     serialized: argument_string(args, 2)?,
                 });
             Ok(Some(JsValue::undefined()))
         }
         "workerTerminate" => {
+            let id = argument_id(args, 1);
+            if state.worker_identifiers.borrow().owner(id) != Some(state.document.id()) {
+                return Ok(Some(JsValue::undefined()));
+            }
+            state.worker_identifiers.borrow_mut().finish(id);
             state
                 .pending_worker_actions
-                .push(ScriptWorkerAction::Terminate {
-                    id: argument_id(args, 1),
-                });
+                .push(ScriptWorkerAction::Terminate { id });
             Ok(Some(JsValue::undefined()))
         }
         _ => Ok(None),

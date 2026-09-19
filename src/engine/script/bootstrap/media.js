@@ -189,6 +189,8 @@
             });
         }
         play() {
+            if (!host('mediaPlaybackSupported'))
+                return Promise.reject(new DOMException('Embedded media playback is not supported yet', 'NotSupportedError'));
             const state = mediaStateFor(this);
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {

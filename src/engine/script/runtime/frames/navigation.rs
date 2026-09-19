@@ -5,7 +5,7 @@ use crate::fetch::{FetchRequest, FetchUrl, Referrer};
 
 impl ScriptRuntime {
     pub(super) fn advance_frame_navigation(&mut self) -> ScriptOutcome {
-        let Some(request) = self
+        let Some(mut request) = self
             .frames
             .as_mut()
             .and_then(|frames| frames.navigations.pop_front())
@@ -28,6 +28,18 @@ impl ScriptRuntime {
         } else {
             match FetchRequest::navigation(&request.url) {
                 Ok(mut fetch) => {
+                    if let Err(error) = request.embedding_policy.check_request(
+                        crate::fetch::RequestDestination::Document,
+                        &request.url,
+                        0,
+                    ) {
+                        self.context
+                            .as_ref()
+                            .unwrap()
+                            .fail_frame_navigation(&request);
+                        outcome.diagnostics.push(error.to_string());
+                        return outcome;
+                    }
                     let host =
                         Rc::clone(&self.frames.as_ref().unwrap().children[&request.document].host);
                     let host = host.borrow();
@@ -42,6 +54,14 @@ impl ScriptRuntime {
                         .allocate(request.document)
                     {
                         Ok(id) => {
+                            fetch.client = request.initiator_client;
+                            fetch.embedding_client = request.embedding_client;
+                            fetch.policy = request.embedding_policy.clone();
+                            fetch.resulting_client = crate::fetch::RequestClient {
+                                id: u64::from(id),
+                                opaque: host.sandbox.opaque_origin,
+                            };
+                            request.response_client = fetch.resulting_client;
                             self.frames
                                 .as_mut()
                                 .unwrap()
@@ -52,12 +72,24 @@ impl ScriptRuntime {
                                 request: Box::new(fetch),
                             });
                         }
-                        Err(error) => outcome.errors.push(error.to_string()),
+                        Err(error) => {
+                            self.context
+                                .as_ref()
+                                .unwrap()
+                                .fail_frame_navigation(&request);
+                            outcome.diagnostics.push(error.to_string());
+                        }
                     }
                 }
-                Err(error) => outcome
-                    .diagnostics
-                    .push(format!("iframe navigation: {error}")),
+                Err(error) => {
+                    self.context
+                        .as_ref()
+                        .unwrap()
+                        .fail_frame_navigation(&request);
+                    outcome
+                        .diagnostics
+                        .push(format!("iframe navigation: {error}"));
+                }
             }
         }
         outcome
@@ -65,24 +97,41 @@ impl ScriptRuntime {
 
     pub(super) fn commit_frame(
         &mut self,
-        request: FrameNavigation,
+        mut request: FrameNavigation,
         source: String,
         encoding: &str,
     ) -> Result<(), String> {
+        self.commit_frame_parser(&mut request, HtmlParser::new(&source), encoding, None)
+            .map(|_| ())
+    }
+
+    pub(super) fn commit_frame_parser(
+        &mut self,
+        request: &mut FrameNavigation,
+        parser: HtmlParser,
+        encoding: &str,
+        fetch: Option<u32>,
+    ) -> Result<Option<NodeId>, String> {
         if !self
             .context
             .as_ref()
-            .is_some_and(|context| context.frame_navigation_current(&request))
+            .is_some_and(|context| context.frame_navigation_current(request))
         {
-            return Ok(());
+            return Ok(None);
         }
-        let parser = HtmlParser::new(&source);
         let document = parser.dom().document.clone();
+        if let Some(fetch) = fetch {
+            self.host
+                .borrow()
+                .fetch_identifiers
+                .borrow_mut()
+                .reassign(fetch, document.id());
+        }
         let id = self
             .context
             .as_deref_mut()
             .ok_or("inactive frame tree")?
-            .replace_frame(request.element, document, request.url)
+            .replace_frame(request.element, document, request.url.clone())
             .map_err(|error| error.to_string())?
             .ok_or("frame was removed during navigation")?;
         self.sync_child_runtimes();
@@ -92,10 +141,21 @@ impl ScriptRuntime {
             .get_mut(&id)
             .ok_or("replacement frame was not registered")?;
         child.host.borrow_mut().document_character_set = encoding.into();
-        frames.documents.insert(
-            id,
-            FrameDocument::new(request.element, request.epoch, parser, request.scripts),
-        );
-        Ok(())
+        if request.response_client.id != 0 {
+            child.host.borrow_mut().fetch_client = request.response_client;
+        }
+        if let Some(policy) = &request.response_policy {
+            child.host.borrow_mut().policy = policy.clone();
+        }
+        child
+            .context
+            .as_mut()
+            .ok_or("inactive child context")?
+            .refresh_code_generation_policy();
+        frames
+            .documents
+            .insert(id, FrameDocument::new(parser, request.scripts));
+        request.document = id;
+        Ok(Some(id))
     }
 }

@@ -173,7 +173,7 @@
         set href(value) { navigateLocation(value, false); },
         assign(value) { this.href = value; },
         replace(value) { navigateLocation(value, true); },
-        reload() { host('navigate', currentUrl); },
+        reload() { host('navigate', currentUrl, true); },
         toString() { return currentUrl; },
         get protocol() { return parseUrl(currentUrl).protocol; },
         get host() { return parseUrl(currentUrl).host; },
@@ -203,8 +203,8 @@
                 throw new TypeError('The transfer list must be iterable');
             return [String(targetOrigin), [...transfer]];
         },
-        (data, origin, source) => windowEvents.dispatchEvent(markTrusted(new MessageEventConstructor('message', {
-            data, origin, source, ports: []
+        (data, origin, source, ports) => windowEvents.dispatchEvent(markTrusted(new MessageEventConstructor('message', {
+            data, origin, source, ports
         }))),
         (message, name) => new MessageDOMException(message, name)
     ];

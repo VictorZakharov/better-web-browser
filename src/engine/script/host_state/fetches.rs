@@ -29,6 +29,12 @@ impl FetchIdentifiers {
         self.owners.get(&id).copied()
     }
 
+    pub(in crate::engine::script) fn reassign(&mut self, id: u32, document: NodeId) {
+        if let Some(owner) = self.owners.get_mut(&id) {
+            *owner = document;
+        }
+    }
+
     pub(in crate::engine::script) fn finish(&mut self, id: u32) {
         self.owners.remove(&id);
     }

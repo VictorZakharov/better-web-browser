@@ -67,17 +67,23 @@ impl Messages {
         let bindings = self.bindings.borrow().get(&state.document.id()).cloned()?;
         drop(state);
         let scope = &mut v8::ContextScope::new(scope, context);
-        let data = message.data.read(scope)?;
+        let (data, ports) = message.data.read(scope)?;
         let source = v8::Local::new(scope, &message.source);
         let origin = v8::String::new(scope, &message.origin.serialize())?;
         let deliver = v8::Local::new(scope, bindings.deliver);
-        deliver.call(scope, target.into(), &[data, origin.into(), source.into()])?;
+        deliver.call(
+            scope,
+            target.into(),
+            &[data, origin.into(), source.into(), ports.into()],
+        )?;
         scope.perform_microtask_checkpoint();
         Some(())
     }
 }
 
 pub(super) fn install(scope: &mut v8::PinScope) -> Option<()> {
+    super::message_clone::install(scope)?;
+    super::ports::install(scope)?;
     let context = scope.get_current_context();
     let tree = frames::tree(context)?;
     let host = node_wrappers::host(context)?;
@@ -133,6 +139,15 @@ pub(super) fn throw_named(scope: &mut v8::PinScope, name: &str, text: &str) {
 }
 
 fn post_message(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, _: v8::ReturnValue) {
+    let target = args.this();
+    post_message_to(scope, args, target);
+}
+
+pub(super) fn post_message_to(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    target: v8::Local<v8::Object>,
+) {
     if args.length() == 0 {
         let text = v8::String::new(scope, "postMessage requires a message").unwrap();
         let error = v8::Exception::type_error(scope, text);
@@ -142,7 +157,6 @@ fn post_message(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, _
     let Some(source) = v8_api::incumbent(scope) else {
         return;
     };
-    let target = args.this();
     let Some(receiver) = target.get_creation_context(scope) else {
         return;
     };

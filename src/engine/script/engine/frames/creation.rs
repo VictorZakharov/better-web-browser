@@ -39,24 +39,28 @@ pub(super) fn create<'s>(
         host.borrow_mut()
             .share_document_registry(&parent_host.borrow());
         host.borrow_mut().fetch_identifiers = Rc::clone(&parent_host.borrow().fetch_identifiers);
+        host.borrow_mut().worker_identifiers = Rc::clone(&parent_host.borrow().worker_identifiers);
         host.borrow_mut().script_bytes = Rc::clone(&parent_host.borrow().script_bytes);
     }
+    let global_template = super::super::v8_api::window_template(scope);
     let context = v8::Context::new(
         scope,
         v8::ContextOptions {
+            global_template: Some(global_template),
             global_object: replacement.as_ref().map(|input| input.proxy.into()),
             ..Default::default()
         },
     );
     let inherit_origin = url.starts_with("about:");
-    let unsandboxed_origin = node.attr("sandbox").is_none_or(|flags| {
-        flags
-            .split_ascii_whitespace()
-            .any(|flag| flag.eq_ignore_ascii_case("allow-same-origin"))
-    });
     let parent_host = super::super::node_wrappers::host(parent)?;
+    let sandbox = parent_host
+        .borrow()
+        .sandbox
+        .child(node.attr("sandbox").as_deref());
+    host.borrow_mut().sandbox = sandbox;
+    host.borrow_mut().embedded = true;
     let parent_origin = parent_host.borrow().document_origin.clone();
-    let origin = if !unsandboxed_origin {
+    let origin = if sandbox.opaque_origin {
         crate::fetch::Origin::opaque()
     } else if inherit_origin {
         parent_origin.clone()
@@ -67,11 +71,30 @@ pub(super) fn create<'s>(
     host.borrow_mut().document_origin = origin;
     if same_origin {
         context.set_security_token(parent.get_security_token(scope));
+    } else {
+        for owner in tree
+            .documents
+            .borrow()
+            .values()
+            .filter_map(|owner| owner.to_local(scope))
+        {
+            if super::super::node_wrappers::host(owner).is_some_and(|other| {
+                other
+                    .borrow()
+                    .document_origin
+                    .is_same_origin(&host.borrow().document_origin)
+            }) {
+                context.set_security_token(owner.get_security_token(scope));
+                break;
+            }
+        }
     }
     if let Some(parent_host) = super::super::node_wrappers::host(parent) {
         let parent_host = parent_host.borrow();
         let mut state = host.borrow_mut();
         if inherit_origin {
+            state.fetch_client = parent_host.fetch_client;
+            state.policy = parent_host.policy.clone();
             state.inherited_url = Some(
                 parent_host
                     .inherited_url
@@ -82,6 +105,8 @@ pub(super) fn create<'s>(
         }
     }
     context.set_slot(Rc::new(HostBridge::Document(Rc::downgrade(&host))));
+    let opaque = host.borrow().document_origin.serialize() == "null";
+    host.borrow_mut().fetch_client.opaque = opaque;
     context.set_slot(Rc::new(DocumentLifetime {
         _host: Rc::clone(&host),
     }));
@@ -113,6 +138,7 @@ pub(super) fn create<'s>(
             .global(scope)
             .set(scope, parent_key.into(), parent.global(scope).into())?;
         context.global(scope).set(scope, top_key.into(), top)?;
+        super::super::window_access::install(scope)?;
         if initial {
             host.borrow_mut().document_load =
                 crate::engine::script::runtime::document_lifecycle::DocumentLoad::initial_blank();
@@ -129,12 +155,16 @@ pub(super) fn create<'s>(
         }
         v8::Global::new(scope, function)
     };
+    // Install code-generation restrictions after trusted bootstrap initialization.
+    context.set_allow_generation_from_strings(
+        !sandbox.scripts_blocked && host.borrow().policy.allows_eval(),
+    );
     Some(ChildRealm {
         element: node.clone(),
         attributes: None,
         load_notified: false,
+        navigation_pending: false,
         navigation_epoch: 0,
-        initial,
         context: v8::Global::new(scope, context),
         _storage_dispatch: storage_dispatch,
         host,
