@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `27cbbf7b4ec472375adaebc010442de19f4845d5d1d9fb70dde1342c0a845f10`
-- Third-party packages: 195
+- Cargo.lock SHA-256: `1dd4fab7b578e35eaa48bb1abd749aa70ddfb947e8a8d27ac8365489b8ff51b0`
+- Third-party packages: 198
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -22,6 +22,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `bytemuck_derive` | 1.12.0 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `byteorder-lite` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/image-rs/byteorder-lite) |
 | `calendrical_calculations` | 0.2.4 | Apache-2.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `cc` | 1.4.7 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cc-rs) |
 | `cexpr` | 0.6.0 | Apache-2.0/MIT | [upstream](https://github.com/jethrogb/rust-cexpr) |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cfg-if) |
 | `clang-sys` | 1.9.1 | Apache-2.0 | [upstream](https://github.com/KyleMayes/clang-sys) |
@@ -43,6 +44,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `euclid` | 0.22.14 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/euclid) |
 | `fastrand` | 2.5.0 | Apache-2.0 OR MIT | [upstream](https://github.com/smol-rs/fastrand) |
 | `fdeflate` | 0.3.7 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/fdeflate) |
+| `find-msvc-tools` | 0.1.13 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cc-rs) |
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/flate2-rs) |
 | `float-cmp` | 0.9.0 | MIT | [upstream](https://github.com/mikedilger/float-cmp) |
 | `foldhash` | 0.2.0 | Zlib | [upstream](https://github.com/orlp/foldhash) |
@@ -136,6 +138,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `serde_derive` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/json) |
 | `shlex` | 1.3.0 | MIT OR Apache-2.0 | [upstream](https://github.com/comex/rust-shlex) |
+| `shlex` | 2.0.1 | MIT OR Apache-2.0 | [upstream](https://github.com/comex/rust-shlex) |
 | `simd-adler32` | 0.3.10 | MIT | [upstream](https://github.com/mcountryman/simd-adler32) |
 | `simplecss` | 0.2.2 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/simplecss) |
 | `siphasher` | 1.0.3 | MIT/Apache-2.0 | [upstream](https://github.com/jedisct1/rust-siphash) |

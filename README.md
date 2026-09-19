@@ -20,6 +20,8 @@ cargo build --release --locked --bin better-web-browser
 Persistent cookies and `localStorage` use `%LOCALAPPDATA%\Breeze`; `sessionStorage` remains
 tab-scoped and is not written to disk. Tests and isolated automation can set
 `BREEZE_PROFILE_DIRECTORY` to an absolute profile directory.
+This persistence currently covers top-level documents; child-document state routing
+is a [documented iframe limitation](docs/iframe-browsing-contexts.md#deliberate-limits-and-remaining-work).
 
 For a faster optimized edit/build loop, use `cargo run --profile performance`. This profile keeps
 optimization enabled but trades release LTO and single-unit code generation for incremental,
@@ -120,13 +122,16 @@ All **48 owned Breeze/Chrome fixture pairs** passed in that assessment. Modern D
 closed-menu overlap was fixed, but form submission and result activation failed.
 The subsequent [form/navigation slice](docs/form-submission-and-navigation.md) adds
 `submit()` / `requestSubmit()`, GET/POST transport, and correct input-type reflection.
-Live search submission now reaches the new query. Result activation is still blocked:
-the inspected handler delegates through an iframe URL. The
-[iframe-context work in progress](docs/iframe-browsing-contexts.md) now loads same-origin
-child HTML documents and passes the owned frame-message-navigation relay in both
-Breeze and Chrome. Cross-origin Window access, full sandbox policy, and remaining
-child-resource/effect routing are unfinished; this is not live-search acceptance.
-**Modern-search acceptance remains incomplete and the HTML fallback stays.**
+Live search submission now reaches the new query. The subsequent
+[child-context/navigation slice](docs/iframe-browsing-contexts.md) loads child HTML
+in separate realms, supports guarded cross-origin messaging and MessagePort transfer,
+and fixes Back after script-driven result navigation. Owned relay/Back/search cases
+pass in Breeze and headless Chrome; three fresh release Breeze runs also complete
+modern DDG → Wikipedia result → Back → another search, each with ten final result
+links and no reported JavaScript/console errors. Chrome did not present the
+same requested live result link, so no live performance comparison is claimed.
+Visual iframe embedding, persistent child state, complete policy support, and broader
+live reliability remain unfinished. **The HTML search fallback stays enabled.**
 
 The [full September 19 assessment](docs/browser-performance-readiness-2026-09-19.md)
 records the before/after results, populated-UI evidence, validation, outliers, and
@@ -243,11 +248,11 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 385-file Web Platform Test suite covers 3,380 upstream harness subtests across HTML
+A pinned, curated 397-file Web Platform Test suite covers 3,393 upstream harness subtests across HTML
 and detached HTML/XML parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
-Web IDL, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
+Web IDL, window/port messaging, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
 and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 3,380 selected
+after preparing that checkout, the suite runs offline with one hidden command. All 3,393 selected
 subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
 
 ```powershell

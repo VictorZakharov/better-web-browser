@@ -1,132 +1,175 @@
-# Iframe browsing contexts — implementation in progress
+# Child browsing contexts and message-driven navigation
 
-The branch replaces the shared synthetic iframe window with separate child
-Documents and V8 contexts. The same-origin URL-backed relay in the
-[form/navigation fixture](form-submission-and-navigation.md) now passes in Breeze
-and Chrome. **This is not complete iframe support or verified live DuckDuckGo
-result activation. The planned PR is not merge-ready.**
+This slice replaces the shared synthetic iframe window with child Documents and
+V8 contexts. It enables URL-backed frame/message relays without running child code
+in the parent realm or bypassing canceled links. It also fixes Back after a loaded
+document navigates with `Location.assign()` or the `href` setter.
 
-The proposed cross-origin V8 access-check adapter was blocked by the safety
-review and has not been applied; scoped approval was requested. Existing V8
-origin checks remain intact. Other remaining work is listed below.
+**This is a scripting/navigation slice, not complete iframe support.** Visual frame
+embedding, child persistent state, and several policy/lifecycle features remain
+unsupported. The modern search HTML fallback stays enabled; issue #89 stays open.
 
 ## Implemented contracts
 
 - Connecting an HTML iframe synchronously creates an initial `about:blank`
-  Document and a separate global, intrinsic constructors, and event storage.
-  The initial Document inherits its parent's base URL and origin unless its
-  sandbox requires a unique opaque origin. Its initial readiness is `complete`.
-- Native private node brands translate document-local handles across same-origin
-  realms. Adopting a node preserves its wrapper identity and original prototype
-  while updating its owner Document. The upstream iframe adoption regression is
-  fixed without changing its assertion or excluding its test.
-- Removal destroys nested navigables and cancels their pending Fetch work.
-  Reconnection creates a new context; retained old DOM objects remain usable.
-  Document-registry roots are weak so the shared registry does not itself keep
-  every replaced Document alive indefinitely.
-- `srcdoc` takes precedence over `src`. URL-backed HTML uses the existing Fetch
-  transport, redirects, response bounds, decoder, and HTML parser. Response bytes
-  are currently buffered before parsing; this is not streaming child navigation.
-  Changing a relative `src` resolves it against the embedding Document, not the
-  previous child URL. Superseded responses cannot commit a stale navigation.
-- Navigation uses V8's public `DetachGlobal`/global-reuse boundary: the
-  WindowProxy identity survives, but the Document, global properties, and realm
-  are replaced. Old Document objects remain attached to their original host.
-- Child parser scripts share the top-level parser-script queue and module-graph
-  preparation code. Blocking external scripts pause the parser; `document.write`
-  uses the existing parser insertion point rather than reparsing an HTML string.
-- A related group of contexts shares one isolate/watchdog. Child timers, promise
-  jobs, Fetch completions, and parser work are scheduled through the retained
-  runtime. Request identifiers are unique within that group and routed to their
-  owning Document. Child load precedes iframe-element load and parent Window load.
-- Same-origin `postMessage` uses V8's incumbent context for `event.source` and
-  the sender origin, queues asynchronous delivery, checks `targetOrigin`, and
-  deserializes into the receiving realm. ArrayBuffer transfer detaches only after
-  successful serialization and queue admission. Limits are 16 MiB per message,
-  32 MiB queued, and 1,024 queued messages. Transferred buffer bytes count toward
-  these limits. Messages targeting a destroyed Document are discarded.
-- Native bookkeeping limits active child contexts to 256 per document tree.
-  Opaque sandboxed children deny direct DOM access; a sandbox without
-  `allow-scripts` prevents loaded scripts from executing. This is **not** full
-  sandbox-policy implementation.
+  Document, global, intrinsic constructors, and event storage. It inherits the
+  parent's base URL and origin unless sandboxing requires an opaque origin.
+- Private native node brands translate document-local handles across same-origin
+  realms. Adoption preserves wrapper identity and its original prototype while
+  changing the owner Document. Document registry roots are weak.
+- `srcdoc` takes precedence over `src`. Relative `src` changes resolve against the
+  embedding Document. A changed URL or removal invalidates old navigation epochs,
+  aborts pending fetches, and terminates owned workers. Reconnection makes a new
+  context. Superseded responses cannot replace its Document.
+- HTML response heads commit the new Document before body EOF. The existing
+  incremental parser and decoder handle split bytes, HTTP charset precedence,
+  and meta-encoding replay. A restart replaces the Document but preserves the
+  WindowProxy. Load waits for the parser and its resource obligations to finish.
+- V8's public `DetachGlobal`/global-reuse boundary preserves WindowProxy identity
+  across navigation while replacing the realm. Retained old DOM objects remain
+  associated with their original Document, not the replacement host.
+- Parser scripts use the existing blocking/async/deferred and module queues.
+  `document.write` uses the parser insertion point. Linked stylesheets and imports
+  use shared dependency discovery; blocking scripts wait for applicable CSS, and
+  loaded stylesheet text is available to CSSOM. Failure releases the blocker and
+  reports the element error. Inserted scripts and `import()` use child-owned fetches.
+- Related contexts share one isolate/watchdog and a scheduled task loop. Timers,
+  promise jobs, message queues, fetches, and dedicated workers retain their Document
+  ownership. Native identifier checks reject attempts to abort another Document's
+  fetch or terminate its worker. Child load precedes iframe load and parent load.
+- Cross-origin Window access has a native allowlist for the HTML Window/Location
+  surface. DOM/arbitrary-property access and foreign prototype access stay denied.
+  Permitted functions and descriptors are created in the caller's realm. Foreign
+  Location reads are denied; writes obey sandbox/ancestor checks. Sandboxed script
+  execution, forms, opaque origins, and top-navigation restrictions are inherited.
+- `postMessage` uses the incumbent context for sender origin and source, checks
+  target origin at delivery, and deserializes into the receiving realm. V8 handles
+  built-in cloneable values and ArrayBuffers; native side tables handle MessagePorts,
+  Blob, and File. Transfers commit only after serialization and queue admission.
+  Native MessagePort endpoints retain entanglement/queued messages across transfers;
+  start/close and discarded-transfer cleanup are tested. Window and port tasks take
+  turns, so a recursive window-message stream cannot starve ports.
+- FileReader provides asynchronous text, binary-string, ArrayBuffer, and data-URL
+  reads over private Blob bytes, progress/load/error/abort events, encoding selection,
+  cancellation, and read chaining. Author-defined Blob getters cannot replace its
+  underlying bytes.
+- Browser-owned Fetch clients are established from final response heads, not
+  renderer-supplied origins. Redirected child requests retain the appropriate origin
+  and referrer. The embedding client's frame policy controls child self-navigation
+  as well as attribute navigation, including redirects.
+- Supported response CSP source lists are intersected and enforced for script,
+  connection, stylesheet, frame, base, and form requests; eval/code generation and
+  inline script checks use the child policy. `frame-ancestors` and X-Frame-Options
+  are checked against ancestors. Unsupported CSP expressions/directives refuse the
+  child response rather than silently treating that policy as absent.
+- Loaded-document Location assignment pushes session history; initial redirects
+  without activation, explicit replacement, and reload replace the current entry.
+  Existing bounded scripted-navigation guards remain in place.
 
-The implementation follows HTML's [child navigables](https://html.spec.whatwg.org/multipage/document-sequences.html#child-navigable),
+Primary contracts: HTML [child navigables](https://html.spec.whatwg.org/multipage/document-sequences.html#child-navigable),
 [iframe processing](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element),
-[posted messages](https://html.spec.whatwg.org/multipage/web-messaging.html#posting-messages),
-and DOM's [adoption algorithm](https://dom.spec.whatwg.org/#concept-node-adopt).
-There are no site names or endpoint exceptions in the implementation.
+[cross-origin Window](https://html.spec.whatwg.org/multipage/nav-history-apis.html#crossoriginproperties-(-o-)),
+[Location navigation](https://html.spec.whatwg.org/multipage/nav-history-apis.html#location-object-navigate),
+[messaging](https://html.spec.whatwg.org/multipage/web-messaging.html),
+[structured serialization](https://html.spec.whatwg.org/multipage/structured-data.html#structuredserializewithtransfer),
+DOM [adoption](https://dom.spec.whatwg.org/#concept-node-adopt),
+[File API](https://w3c.github.io/FileAPI/), and [CSP 3](https://www.w3.org/TR/CSP3/).
+No implementation code contains site-specific endpoint or host exceptions.
 
-## Evidence, September 19, 2026
+## Evidence — September 19, 2026
 
-| Check | Merged PR #169 release | Working branch | Headless Chrome 153 |
+| Check | Merged PR #169 release | This slice | Unified-headless Chrome 153 |
 |---|---:|---:|---:|
 | Initial-document fixture | 6 / 20 | 20 / 20 | 20 / 20 |
 | Same-origin URL/message/navigation relay | Fails | Passes | Passes |
+| External-script relay with response CSP | Not supported | Passes | Passes |
+| Relay → destination → Back → second Unicode query | No functioning relay | Passes | Passes |
+| Live modern DDG → Wikipedia result → Back → second search | Result activation blocked | 3 / 3 fresh release runs pass | Requested result link not presented |
+| Curated WPT files / assertions | 385 / 3,380 pass | 397 / 3,393 pass | Not run by this runner |
 
-The latest working runs use the `debug` development profile, not a final release
-build. The earlier initial-document comparison used `performance`. These are
-functional assertions, **not performance measurements**.
+The three live Breeze release runs used fresh state, native result activation, Back,
+native input, and Enter. Each ended at `?q=CSS+Grid+specification&ia=web` with ten
+result-title links and no reported JavaScript or console errors. CSS-variable
+warnings remain; this is not a claim of error-free visual compatibility.
+The Chrome run did not present the requested Wikipedia result
+link, so there is **no equal-content live timing comparison**. The functional
+harness deliberately waits between interactions: its elapsed time is not load speed.
+Owned fixtures provide the deterministic cross-browser comparison.
 
-At this checkpoint:
+The final local suites pass 1,225 library tests (one existing ignore), 118 browser
+unit tests, 17 WPT-runner tests, 130 renderer integration tests, and 82 live-runtime
+tests (three existing live-service ignores). The four additional Windows integration
+suites pass all 22 tests. All twelve owned form/navigation cases pass in release
+Breeze and headless Chrome, as do the twenty initial-document checks. One fresh
+pair per existing alpha fixture passes all sixteen visual/readiness/scroll gates
+with unchanged thresholds. This smoke comparison is not a new performance assessment.
+Clippy with warnings denied, formatting, source-size checks, and generated notices
+validation pass. No file-size ceiling was raised.
 
-- 1,192 library tests pass; one existing test is ignored.
-- 129 renderer-process tests pass.
-- 82 live-runtime tests pass; three existing live-service tests are ignored.
-- Curated upstream WPT: **385/385 files, 3,380/3,380 assertions pass**.
-- Clippy with warnings denied, formatting, and source-size checks pass.
-
-No WPT manifest entry, assertion, or acceptance threshold was weakened. The
-previous checkpoint's iframe adoption failure is now covered and passing.
+No upstream
+assertion, existing manifest entry, or acceptance threshold was weakened. Twelve
+unmodified upstream web-messaging files add thirteen assertions to the curated
+suite. The WPT checkout remains external and pinned; its BSD-licensed source is
+not copied into this repository.
 
 ```powershell
-dotnet build benchmarks/chromium -c Release
-./scripts/test-iframe-initial.ps1 -Chrome -OutputDirectory target/iframe-chrome
-./scripts/test-iframe-initial.ps1 -Browser target/debug/better-web-browser.exe -OutputDirectory target/iframe-breeze
-./scripts/test-form-navigation.ps1 -Browser target/debug/better-web-browser.exe -Cases iframe -OutputDirectory target/iframe-relay
-./scripts/test-form-navigation.ps1 -Chrome -Cases iframe -OutputDirectory target/iframe-relay-chrome
-cargo test --locked --lib engine::script::runtime::tests::frames
+./scripts/test-iframe-initial.ps1 -OutputDirectory target/iframe-initial
+./scripts/test-iframe-initial.ps1 -Chrome -OutputDirectory target/iframe-initial-chrome
+./scripts/test-form-navigation.ps1 -Cases flow,iframe,iframe-external -OutputDirectory target/iframe-relay
+./scripts/test-form-navigation.ps1 -Chrome -Cases flow,iframe,iframe-external -OutputDirectory target/iframe-relay-chrome
 cargo test --locked --lib frame_navigation
+./scripts/run-wpt.ps1 -WptRoot ../wpt -Jobs 4
 ```
 
-Browser harnesses remain headless and muted with fresh profiles. Reports stay
-under ignored `target/iframe-contexts-proof`; assertions and fixtures are checked
-in. The stable release executable remains unchanged at this checkpoint.
+All automated browsers remain hidden and muted. Breeze uses its fail-closed
+benchmark wrapper; Chromium uses unified `--headless`, `--mute-audio`, and
+`CreateNoWindow`. Captures/logs stay under ignored `target/iframe-contexts-proof`.
 
-## Native API adapter and provenance
+## Deliberate limits and remaining work
 
-`src/engine/script/engine/v8_api.cc` is a small, original adapter compiled against
-public headers from the already-pinned `v8 = 152.2.0` Cargo dependency. It exposes
-`GetIncumbentContext` and `DetachGlobal`, absent from that binding's Rust API.
-It does not copy V8 layouts, use private/mangled symbols, or vendor V8 sources.
-The isolate is obtained with V8's public `Isolate::GetCurrent`; Rust's Isolate
-wrapper is not passed as a raw C++ isolate pointer.
+- No visual child-document compositing, child viewport/input/observer geometry,
+  embedded media playback, or embedded fullscreen. Media/fullscreen requests reject
+  instead of remaining pending or acting on the parent's browser identity.
+- Child cookie/storage projections are document-local and do not persist to the
+  browser profile or synchronize with other contexts. Their updates are never
+  applied under the parent's identity. Full storage/event/cookie routing remains
+  required before claiming embedded applications have persistent state.
+- Child form POST, named/ancestor form targets, joint nested session history, and
+  history restoration are incomplete. Unsupported embedded POST/target requests
+  report a diagnostic instead of silently becoming a GET or parent navigation.
+- The CSP implementation is a **child response-header subset**, not general CSP
+  conformance. Meta policies, top-level response-policy integration, nonce/hash and
+  strict-dynamic, reporting, Trusted Types, and policy-bearing workers remain work.
+  Workers from policy-bearing child documents are refused for now. Full sandbox
+  token coverage and transient-activation lifetime propagation are not claimed.
+- Stylesheet discovery/MIME/import ordering is covered; child image/font/media load
+  obligations, full CSS encoding rules, and complete resource/observer interoperability
+  are not. There is no separate out-of-process frame/site isolation.
+- Native Window/MessagePort cloning does not make the separate global
+  `structuredClone` or worker messaging implementation fully HTML-conformant.
+  Supported transferred endpoints are cleaned up on failed delivery and document
+  removal; general garbage collection of live unreferenced ports remains limited.
+- Safety bounds: 256 active child contexts, 4,096 lifetime broker client records,
+  4,096 MessagePort endpoints, 16 MiB per structured message, 32 MiB queued bytes,
+  1,024 window messages, and 256 messages per port. Existing HTML/script/CSS limits
+  also apply. Exceeding a bound fails explicitly; it is not a successful benchmark.
+- Longer navigation/responsiveness runs and broader endpoint coverage still need
+  acceptance before removing the HTML search fallback. Three successful runs of
+  one live flow are not proof of general modern-search reliability or iframe conformance.
 
-The build-only `cc` dependency is MIT OR Apache-2.0; rusty_v8 is MIT and its bundled
-V8 carries its upstream BSD license. No existing project dependency supplied a
-C++ build helper. The adapter requires a C++20 toolchain and resolves the exact
-152.2.0 headers in Cargo's registry; vendored/custom registries must set
-`BREEZE_V8_SOURCE_DIR` to the resolved crate directory. Ambiguous registries and
-header/library version mismatches fail the build.
+## Native adapter and dependency provenance
 
-## Still required before the planned PR is ready
+The small original C++ adapters in `src/engine/script/engine/v8_api.cc` and
+`window_access.cc` compile against public headers from the pinned `v8 = 152.2.0`
+dependency. They expose incumbent-context lookup, global detachment/reuse, and
+access-checked object templates missing from the Rust binding. They do not copy
+V8 layouts, use private/mangled symbols, or vendor V8 sources. Origin-token checks
+remain enabled; the scoped adapter permits only the tested HTML cross-origin surface.
 
-1. Implement and test permitted cross-origin Window/Location capabilities while
-   retaining DOM and arbitrary-property denial. Currently V8 rejects cross-origin
-   Window access, including `postMessage`; the access-check change awaits approval.
-2. Complete sandbox policy inheritance and navigation restrictions. Same-origin
-   sandboxed script execution must not gain unauthorized top navigation.
-3. Complete child dynamic-script/import, worker, storage, and other effect routing;
-   stylesheet-dependent parser blocking and remaining resource lifecycle; nested
-   navigation, cancellation, and cache/observer interoperability coverage.
-4. Complete messaging platform-object/MessagePort transfer coverage and the
-   relevant unmodified upstream messaging tests. Native serialization of built-in
-   values and ArrayBuffers alone is not the complete HTML structured-clone contract.
-5. Replace buffered child navigation with the shared streaming/encoding-restart
-   path and transfer enforceable response policies. X-Frame-Options is checked;
-   responses with CSP currently fail closed rather than silently ignoring it.
-6. Retry live search → result → Back → another search and record comparable
-   evidence. Keep the HTML fallback until that workflow is reliable.
-7. Re-run all gates and build the final release head before opening a review-ready PR.
-
-Visual iframe embedding, out-of-process frame isolation, complete history/storage
-integration, and full Web Platform Test conformance are not implied by this slice.
+The build-only `cc` dependency is MIT OR Apache-2.0; rusty_v8 is MIT and bundled V8
+has its upstream BSD license. Locked transitive build-tool licenses are in
+`THIRD_PARTY_NOTICES.md`. No existing project dependency supplied a C++ build helper.
+The adapter requires C++20 and resolves exact-version Cargo registry headers.
+Vendored/custom registries must set `BREEZE_V8_SOURCE_DIR` to that crate directory.
+Ambiguous registries or header/library version mismatches fail the build. Browser
+and renderer must be rebuilt together: this slice uses IPC major version 14.
