@@ -11,6 +11,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/node_insertion.js"),
     include_str!("bootstrap/node_mixins.js"),
     include_str!("bootstrap/nodes.js"),
+    include_str!("bootstrap/style_declaration.js"),
     include_str!("bootstrap/attributes.js"),
     include_str!("bootstrap/elements.js"),
     include_str!("bootstrap/html_elements.js"),

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Collections and capability fallback</title>
+<style>
+body{margin:24px;font:16px Arial,sans-serif}
+main{max-width:800px}
+p{padding:12px;background:#edf6ed}
+#drawer{position:fixed;top:0;right:-18.25em;width:18em;height:100%;
+    background:#ddf;transform:translate3d(18.25em,0,0)}
+.depth #drawer{right:0}
+#drawer.open{right:0;transform:translate3d(0,0,0)}
+</style></head><body>
+<main id="main"><h1>Collections and capability fallback</h1><div id="results"></div></main>
+<aside id="drawer"><button id="close">Close</button><a href="?next">Next page</a></aside>
+<script>
+try {
+    const report = (condition, label) => {
+        if (!condition) throw Error(label);
+        const row = document.createElement('p'); row.textContent = label; results.append(row);
+    };
+    const element = document.createElement('section');
+    element.setAttribute('first', '1'); element.setAttribute('second', '2');
+    const attributes = element.attributes[Symbol.iterator]();
+    report(attributes.next().value.name === 'first', 'Attribute iteration starts in attribute order');
+    element.removeAttribute('second'); element.setAttribute('third', '3');
+    report(attributes.next().value.name === 'third', 'Attribute iteration observes live replacement');
+    element.innerHTML = '<i id="a"></i><i id="b"></i>';
+    const children = element.children[Symbol.iterator]();
+    children.next(); element.lastChild.id = 'updated'; element.append(document.createElement('b'));
+    report(children.next().value.id === 'updated' && children.next().value.localName === 'b',
+        'Child iteration observes changes and appended elements');
+    element.className = 'one two';
+    const tokens = element.classList.values(); tokens.next(); element.className = 'one changed three';
+    report(tokens.next().value === 'changed' && tokens.next().value === 'three',
+        'Token iteration remains live');
+    report(element.style.unsupportedFixtureProperty === undefined &&
+        !('unsupportedFixtureProperty' in element.style), 'Unknown CSS properties do not advertise support');
+    if (element.style.perspective !== undefined) document.documentElement.classList.add('depth');
+    const drawer = document.getElementById('drawer');
+    report(drawer.getBoundingClientRect().left >= innerWidth,
+        'Closed menu is outside the viewport using the supported rendering path');
+    drawer.classList.add('open');
+    report(drawer.getBoundingClientRect().left < innerWidth &&
+        Math.abs(drawer.getBoundingClientRect().right - innerWidth) < 1,
+        'Opening the menu updates its geometry');
+    document.getElementById('close').onclick = () => drawer.classList.remove('open');
+    document.getElementById('close').click();
+    report(drawer.getBoundingClientRect().left >= innerWidth, 'Closing the menu restores off-screen geometry');
+    document.documentElement.setAttribute('data-fixture-ready', 'true');
+} catch(error) { results.textContent = 'FAILED: ' + error.message; console.error(error); }
+</script></body></html>

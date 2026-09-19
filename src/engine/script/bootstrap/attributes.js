@@ -251,6 +251,7 @@
         }
     }
     Object.defineProperty(NamedNodeMap.prototype, Symbol.toStringTag, { value: 'NamedNodeMap', configurable: true });
+    installIndexedIterator(NamedNodeMap.prototype);
 
     const arrayIndex = property => {
         if (typeof property !== 'string' || property === '') return null;

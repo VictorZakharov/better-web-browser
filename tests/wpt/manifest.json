@@ -57,6 +57,9 @@
     "resize-observer/resources/image.png"
   ],
   "tests": [
+    {"area":"DOM collections","expected":"pass","path":"dom/collections/HTMLCollection-iterator.html"},
+    {"area":"DOM collections","expected":"pass","path":"dom/lists/DOMTokenList-Iterable.html"},
+    {"area":"DOM collections","expected":"pass","path":"dom/lists/DOMTokenList-iteration.html"},
     {"area":"URL","expected":"pass","path":"url/url-setters-stripping.any.js"},
     {"area":"URL","expected":"pass","path":"url/url-statics-canparse.any.js"},
     {"area":"URL","expected":"pass","path":"url/url-statics-parse.any.js"},

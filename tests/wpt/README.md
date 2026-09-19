@@ -73,7 +73,7 @@ subtests, JavaScript diagnostics, durations, and one of four actual outcomes: `p
 failure is successful in a discovery manifest, while an unexpected pass, changed failure mode,
 regression, or crash makes the command fail. The curated manifest forbids every non-pass
 expectation and enforces a floor of 200 harness subtests. Its current baseline is
-380 passing files / 3,354 passing harness subtests (2026-09-16) with no failure, skip, timeout,
+383 passing files / 3,372 passing harness subtests (2026-09-19) with no failure, skip, timeout,
 or crash allowance. This forces the
 manifest to be updated deliberately when compatibility changes.
 

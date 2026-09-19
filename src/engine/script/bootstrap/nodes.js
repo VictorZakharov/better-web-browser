@@ -334,53 +334,6 @@
         set value(value) { this.element.setAttribute(this.attribute, value); }
         get length() { return this._tokens().length; }
         item(index) { return this._tokens()[index] || null; }
-        [Symbol.iterator]() { return this._tokens()[Symbol.iterator](); }
         toString() { return this.value; }
     }
-
-    class CSSStyleDeclaration {
-        constructor(element) { this.element = element; }
-        _name(name) { name = String(name); return name.startsWith('--') ? name : name.toLowerCase(); }
-        _map() {
-            const map = new Map();
-            for (const declaration of (this.element.getAttribute('style') || '').split(';')) {
-                const split = declaration.indexOf(':');
-                if (split > 0) {
-                    const name = declaration.slice(0, split).trim();
-                    map.set(this._name(name), declaration.slice(split + 1).trim());
-                }
-            }
-            return map;
-        }
-        _write(map) { this.element.setAttribute('style', [...map].map(([name, value]) => name + ': ' + value).join('; ')); }
-        get cssText() { return this.element.getAttribute('style') || ''; }
-        set cssText(value) { this.element.setAttribute('style', String(value)); }
-        getPropertyValue(name) { return this._map().get(this._name(name)) || ''; }
-        setProperty(name, value, priority = '') {
-            const map = this._map();
-            map.set(this._name(name), String(value) + (priority ? ' !' + priority : ''));
-            this._write(map);
-        }
-        removeProperty(name) {
-            const map = this._map();
-            name = this._name(name);
-            const old = map.get(name) || '';
-            map.delete(name);
-            this._write(map);
-            return old;
-        }
-    }
-    const styleProxy = element => new Proxy(new CSSStyleDeclaration(element), {
-        get(target, property) {
-            if (property in target) {
-                const value = target[property];
-                return typeof value === 'function' ? value.bind(target) : value;
-            }
-            return target.getPropertyValue(String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()));
-        },
-        set(target, property, value) {
-            if (property === 'cssText') target.cssText = value;
-            else target.setProperty(String(property).replace(/[A-Z]/g, match => '-' + match.toLowerCase()), value);
-            return true;
-        }
-    });
+    installIndexedIterator(DOMTokenList.prototype, true);
