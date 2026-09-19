@@ -84,9 +84,39 @@ pub(super) fn wait_for_navigation(
                 disposition,
                 cause,
             } if event_document == document => return (url, disposition, cause),
-            RendererEvent::Presentation(_) | RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::Presentation(presentation) => {
+                if let Some(url) = presentation.runtime.navigation_url {
+                    return (
+                        url,
+                        NavigationDisposition::CurrentTab,
+                        if presentation.runtime.navigation_options.user_initiated {
+                            NavigationCause::UserActivation
+                        } else {
+                            NavigationCause::Redirect
+                        },
+                    );
+                }
+                pump_ready_task(session, document, presentation.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
             RendererEvent::RuntimeUpdate(update) if update.document == document => {
-                assert_quiet_geometry_update(&update);
+                assert!(
+                    update.runtime.errors.is_empty(),
+                    "{:?}",
+                    update.runtime.errors
+                );
+                if let Some(url) = update.runtime.navigation_url {
+                    return (
+                        url,
+                        NavigationDisposition::CurrentTab,
+                        if update.runtime.navigation_options.user_initiated {
+                            NavigationCause::UserActivation
+                        } else {
+                            NavigationCause::Redirect
+                        },
+                    );
+                }
+                pump_ready_task(session, document, update.next_timer_micros);
             }
             event => panic!("unexpected renderer navigation event: {event:?}"),
         }

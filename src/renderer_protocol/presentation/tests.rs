@@ -1,5 +1,6 @@
 use super::*;
 mod borders;
+mod navigation;
 mod sticky;
 use crate::document::Document;
 use crate::engine::{FontSpec, PositionedGlyph, RectF};

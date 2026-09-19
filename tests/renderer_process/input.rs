@@ -366,6 +366,7 @@ fn native_input_lifecycle_and_navigation_cross_the_real_renderer_boundary() {
         ),
         "{activated_text}"
     );
+    pump_ready_task(&session, initial.document, activated.next_timer_micros);
     let (button_url, button_disposition, button_cause) =
         wait_for_navigation(&session, initial.document);
     assert_eq!(button_url, "https://example.test/submit?q=changed&send=yes");

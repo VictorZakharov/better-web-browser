@@ -202,10 +202,36 @@ fn is_disabled(node: &NodeRef) -> bool {
     if node.attr_ref("disabled").is_some() {
         return true;
     }
+    if node.tag_name() == Some("option") {
+        return node.parent().is_some_and(|parent| {
+            parent.tag_name() == Some("optgroup") && parent.attr_ref("disabled").is_some()
+        });
+    }
+    if node.tag_name() == Some("optgroup") {
+        return false;
+    }
     let mut ancestor = node.parent();
     while let Some(candidate) = ancestor {
         if candidate.tag_name() == Some("fieldset") && candidate.attr_ref("disabled").is_some() {
-            return true;
+            let first_legend = candidate
+                .children
+                .borrow()
+                .iter()
+                .find(|child| child.tag_name() == Some("legend"))
+                .cloned();
+            let inside_legend = first_legend.is_some_and(|legend| {
+                let mut parent = node.parent();
+                while let Some(current) = parent {
+                    if current.id() == legend.id() {
+                        return true;
+                    }
+                    parent = current.parent();
+                }
+                false
+            });
+            if !inside_legend {
+                return true;
+            }
         }
         ancestor = candidate.parent();
     }

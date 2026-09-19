@@ -1,5 +1,6 @@
 (() => {
     'use strict';
+    const FormData = globalThis.FormData;
     const urlApi = globalThis.__urlInternals;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
@@ -248,76 +249,19 @@
         get webkitRelativePath() { return ''; }
     }
 
-    const formControlType = control => String(control.type).toLowerCase() ||
-        (control.localName === 'button' ? 'submit' : control.localName === 'input' ? 'text' : '');
-    class FormData {
-        constructor(form = undefined, submitter = undefined) {
-            this.__entries = [];
-            if (form === undefined) return;
-            if (!(form instanceof HTMLFormElement)) throw new TypeError('FormData requires an HTMLFormElement');
-            if (submitter !== undefined && (submitter.form !== form ||
-                !['submit', 'image'].includes(formControlType(submitter))))
-                throw new DOMException('The submitter does not belong to this form', 'NotFoundError');
-            for (const control of form.elements) {
-                const name = control.name;
-                const type = formControlType(control);
-                if (!name || control.disabled || ['button', 'reset'].includes(type)) continue;
-                if (['submit', 'image'].includes(type) && control !== submitter) continue;
-                if (['checkbox', 'radio'].includes(type) && !control.checked) continue;
-                if (control.localName === 'select') {
-                    let options = control.querySelectorAll('option').filter(option => option.hasAttribute('selected'));
-                    if (!control.multiple && !options.length) options = control.querySelectorAll('option').slice(0, 1);
-                    for (const option of options) this.append(name,
-                        option.hasAttribute('value') ? option.getAttribute('value') : option.textContent);
-                } else if (type === 'file') this.append(name, new File([], ''));
-                else this.append(name, control.value);
-                if (control.dirName) this.append(control.dirName, 'ltr');
-            }
-        }
-        append(name, value, filename = undefined) {
-            name = String(name);
-            if (value instanceof Blob && !(value instanceof File))
-                value = new File([value], filename === undefined ? 'blob' : filename, { type: value.type });
-            else if (value instanceof File && filename !== undefined)
-                value = new File([value], filename, { type: value.type, lastModified: value.lastModified });
-            else if (!(value instanceof Blob)) value = String(value);
-            this.__entries.push([name, value]);
-        }
-        delete(name) { name = String(name); this.__entries = this.__entries.filter(entry => entry[0] !== name); }
-        get(name) { return this.__entries.find(entry => entry[0] === String(name))?.[1] ?? null; }
-        getAll(name) { return this.__entries.filter(entry => entry[0] === String(name)).map(entry => entry[1]); }
-        has(name) { return this.__entries.some(entry => entry[0] === String(name)); }
-        set(name, value, filename = undefined) {
-            name = String(name);
-            const index = this.__entries.findIndex(entry => entry[0] === name);
-            if (index < 0) { this.append(name, value, filename); return; }
-            const replacement = new FormData(); replacement.append(name, value, filename);
-            this.__entries[index] = replacement.__entries[0];
-            this.__entries = this.__entries.filter((entry, position) => position <= index || entry[0] !== name);
-        }
-        forEach(callback, thisArg = undefined) {
-            if (typeof callback !== 'function') throw new TypeError('FormData callback must be callable');
-            for (const [name, value] of this.__entries) callback.call(thisArg, value, name, this);
-        }
-        *entries() {
-            for (let index = 0; index < this.__entries.length; index++) yield [...this.__entries[index]];
-        }
-        *keys() { for (const [name] of this.entries()) yield name; }
-        *values() { for (const [, value] of this.entries()) yield value; }
-        [Symbol.iterator]() { return this.entries(); }
-    }
 
     const multipartBody = form => {
         const boundary = '----BreezeFormBoundary' + Math.floor(Math.random() * 0x1fffffffffffff).toString(16);
         const chunks = [];
         for (const [name, value] of form) {
-            const escape = input => String(input).replace(/[\r\n"]/g, character => encodeURIComponent(character));
+            const normalize = input => String(input).replace(/\r\n|\r|\n/g, '\r\n');
+            const escape = input => normalize(input).replace(/[\r\n"]/g, character => encodeURIComponent(character));
             let heading = '--' + boundary + '\r\nContent-Disposition: form-data; name="' + escape(name) + '"';
             if (value instanceof File) {
                 heading += '; filename="' + escape(value.name) + '"\r\n';
                 heading += 'Content-Type: ' + (value.type || 'application/octet-stream') + '\r\n\r\n';
                 chunks.push(encoder.encode(heading), value.__bytes, encoder.encode('\r\n'));
-            } else chunks.push(encoder.encode(heading + '\r\n\r\n' + value + '\r\n'));
+            } else chunks.push(encoder.encode(heading + '\r\n\r\n' + normalize(value) + '\r\n'));
         }
         chunks.push(encoder.encode('--' + boundary + '--\r\n'));
         return { bytes: concatBytes(chunks), stream: null, type: 'multipart/form-data; boundary=' + boundary };
@@ -334,7 +278,7 @@
         return { bytes: encoder.encode(String(body)), stream: null, type: 'text/plain;charset=UTF-8' };
     };
 
-    Object.assign(globalThis, { Headers, Blob, File, FormData });
+    Object.assign(globalThis, { Headers, Blob, File });
     Object.defineProperty(globalThis, '__networkData', {
         configurable: true,
         value: Object.freeze({ concatBytes, bytesToBase64, extractBody, encoder, decoder })

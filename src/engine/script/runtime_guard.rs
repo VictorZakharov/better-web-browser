@@ -65,12 +65,14 @@ pub(super) fn finish_host(
 ) -> ScriptOutcome {
     let mut state = host.borrow_mut();
     state.task_started = None;
+    state.user_input_active = false;
     outcome.mutation_count = std::mem::take(&mut state.mutation_count);
     outcome.executed = outcome.executed.max(std::mem::take(&mut state.executed));
     outcome.console.append(&mut state.console);
     outcome.diagnostics.append(&mut state.diagnostics);
     state.append_host_call_diagnostics(&mut outcome.diagnostics);
     outcome.navigation_url = state.navigation_url.take();
+    outcome.navigation_options = std::mem::take(&mut state.navigation_options);
     outcome.viewport_scroll_y = state.viewport_scroll_y.take();
     outcome.history_actions.append(&mut state.history_actions);
     outcome.cookie_updates.append(&mut state.cookie_updates);

@@ -312,6 +312,7 @@
             }
             finishCheckableActivation(activation, event);
             activateLabel(target, event);
+            activateNavigation(target, event);
             return !event.defaultPrevented;
         }
     }

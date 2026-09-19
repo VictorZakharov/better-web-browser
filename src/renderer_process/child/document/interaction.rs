@@ -218,6 +218,9 @@ impl DocumentRuntime {
             || !outcome.console.is_empty()
             || !outcome.diagnostics.is_empty()
             || outcome.navigation_url.is_some()
+            // Quiet input can queue a form-navigation task. Geometry observers already
+            // publish their own wakeup after sampling; do not bypass that checkpoint.
+            || (!self.has_pending_geometry_observers() && self.next_timer_micros().is_some())
             || outcome.viewport_scroll_y.is_some()
             || outcome.viewport_wheel_delta_y != 0.0
             || !outcome.history_actions.is_empty()

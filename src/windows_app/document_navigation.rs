@@ -31,6 +31,14 @@ impl ScriptNavigationGuard {
         self.followed += 1;
         Ok(())
     }
+
+    pub(super) fn allow_form(&mut self) -> bool {
+        if self.followed >= MAX_SCRIPT_NAVIGATIONS {
+            return false;
+        }
+        self.followed += 1;
+        true
+    }
 }
 
 impl BrowserState {
