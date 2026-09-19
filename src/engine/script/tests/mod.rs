@@ -72,6 +72,7 @@ mod scoped_invalidation;
 mod selectors;
 mod shadow_dom;
 mod storage_event;
+mod style_declaration;
 mod svg;
 mod table_geometry;
 mod tasks;

@@ -43,6 +43,12 @@ pub(super) fn style_host_call(
             JsValue::from(depth),
         ])));
     }
+    if operation == "cssPropertySupported" {
+        let property = argument_string(args, 1)?;
+        return Ok(Some(JsValue::from(
+            crate::engine::css::supports::supports_property(&property),
+        )));
+    }
     if operation == "cssSupports" {
         let condition = argument_string(args, 1)?;
         return Ok(Some(JsValue::from(

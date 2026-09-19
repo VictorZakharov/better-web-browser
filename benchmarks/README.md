@@ -13,6 +13,7 @@ A nonblank shell or an empty uncaught-error list alone does not establish readin
 
 | Fixture | Compatibility role | Extra gate |
 |---|---|---|
+| `collections-capabilities` | Live collections and supported CSSOM properties | Mutation-aware iteration and off-canvas open/close geometry |
 | `url-resolution` | Native request parsing under author URL replacement | Explicit public bases, live document bases, actual XHR/Fetch responses, and readiness |
 | `dom-parser` | Detached HTML/XML documents and imported SVG | Inert scripts, cookie isolation, namespaces, CDATA, and readiness |
 | `encyclopedia-article` | Long-form article, infobox, contents, references | Six-second early-scroll trace |
@@ -56,7 +57,7 @@ The default output under `benchmark-results/alpha-<timestamp>/` contains:
 
 ## Controlled comparison contract
 
-The [September 16 release reassessment](../docs/browser-performance-2026-09-16.md)
+The [September 19 release reassessment](../docs/browser-performance-readiness-2026-09-19.md)
 records current three-run medians, startup-probe limitations, private/working memory,
 CPU and scrolling, plus live Wikipedia and failed modern DuckDuckGo evidence.
 
@@ -69,6 +70,16 @@ CPU and scrolling, plus live Wikipedia and failed modern DuckDuckGo evidence.
 Breeze page-ready is its first owned layout and paint. Chromium page-ready is `Page.loadEventFired`; its first-contentful-paint is recorded separately. Breeze scroll metrics measure owned repaint work, while Chromium scroll metrics measure two-animation-frame latency, so compare trends rather than treating unlike fields as identical instrumentation.
 
 ## Opt-in live evidence
+
+For hidden control editing, `scripts/run-hidden-benchmark.ps1 -ControlValue
+@{'#query'='new query'} -KeyTarget 'Enter,Enter'` focuses the selected control and
+routes a full native-control value update through the normal renderer input
+protocol, followed by key down/up. It does not execute page-evaluation JavaScript
+or emulate per-character physical typing. Values are limited to 4 KiB and require
+hidden benchmark mode. `-NavigationDelayMs` applies between actions; choose enough
+time for the tested page to initialize. Selector/pointer actions run before value
+updates, and key actions run afterward. Verify the final URL and page content, not
+only that dispatch returned successfully.
 
 The matrix also names representative public URLs for Wikipedia, a responsive blog, DuckDuckGo HTML results, and HTML5test. They are never used as deterministic CI gates. Each browser gets a 45-second live-process bound; failed samples are retained as diagnostics while the remaining targets continue. Successful pairs must still produce nonblank captures. To collect fresh hidden side-by-side evidence:
 

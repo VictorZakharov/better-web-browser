@@ -185,6 +185,13 @@ impl DocumentRuntime {
 
     pub(super) fn rebuild_layout(&mut self) {
         self.sync_script_layout_page();
+        // A blocked rendering opportunity does not need a paintable display list.
+        // Keep the CSSOM snapshot current: explicit geometry reads still flush it
+        // synchronously, independent of this deferred presentation path.
+        if self.rendering_is_blocked() {
+            self.rendering.dirty = true;
+            return;
+        }
         let mut text = self.text.borrow_mut();
         text.reset_layout_metrics();
         self.layout = layout_page_with_style_viewport(

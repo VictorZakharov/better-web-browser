@@ -35,6 +35,14 @@ fn evaluate_condition(condition: &str) -> bool {
     }
 }
 
+pub(crate) fn supports_property(property: &str) -> bool {
+    // These declarations currently establish containing blocks only. They do not
+    // implement the visual effect and must not opt authors into 3D/filter branches.
+    // https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
+    !matches!(property, "perspective" | "transform-style" | "filter")
+        && super::css_wide::supports_css_wide_keyword(property, "initial")
+}
+
 fn supports_declaration(property: &str, value: &str) -> bool {
     if property.is_empty() || value.is_empty() || value.ends_with("!important") {
         return false;
@@ -44,6 +52,12 @@ fn supports_declaration(property: &str, value: &str) -> bool {
     }
     let property = property.to_ascii_lowercase();
     let value = value.to_ascii_lowercase();
+    if matches!(
+        property.as_str(),
+        "perspective" | "transform-style" | "filter"
+    ) {
+        return false;
+    }
     if super::css_wide::supports_css_wide_keyword(&property, &value) {
         return true;
     }
@@ -134,7 +148,6 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "-moz-flex-basis" => parse_length(&value).is_some(),
         "opacity" => parse_opacity(&value).is_some(),
         "transform" => super::transform::parse_transform(&value).is_some(),
-        "transform-style" => matches!(value.as_str(), "flat" | "preserve-3d"),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             value == "none" || value.starts_with("url(")
         }

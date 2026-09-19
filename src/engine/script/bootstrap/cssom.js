@@ -129,21 +129,7 @@
         }
     }
 
-    const ruleStyleProxy = declaration => new Proxy(declaration, {
-        get(target, property) {
-            if (property in target) {
-                const value = target[property];
-                return typeof value === 'function' ? value.bind(target) : value;
-            }
-            return target.getPropertyValue(cssName(property));
-        },
-        set(target, property, value) {
-            if (property === 'cssText') target.cssText = value;
-            else if (property in target) target[property] = value;
-            else target.setProperty(cssName(property), value);
-            return true;
-        }
-    });
+    const ruleStyleProxy = declaration => declarationProxy(declaration);
 
     class CSSRule {
         constructor(sheet, text, token = null) {

@@ -1,6 +1,21 @@
     const htmlCollectionConstructionToken = {};
     const htmlCollectionResolvers = new WeakMap();
 
+    // Web IDL indexed getters use the Array intrinsics, not a snapshot iterator.
+    // next() reads the current length/index, while forEach captures only the length.
+    // https://webidl.spec.whatwg.org/#define-the-iteration-methods
+    const installIndexedIterator = (prototype, valueIterable = false) => {
+        Object.defineProperty(prototype, Symbol.iterator, {
+            value: Array.prototype.values, writable: true, configurable: true
+        });
+        if (valueIterable) {
+            for (const method of ['entries', 'keys', 'values', 'forEach'])
+                Object.defineProperty(prototype, method, {
+                    value: Array.prototype[method], writable: true, enumerable: true, configurable: true
+                });
+        }
+    };
+
     const collectionItems = collection => {
         const resolve = htmlCollectionResolvers.get(collection);
         if (!resolve) throw new TypeError('Illegal invocation');
@@ -46,9 +61,9 @@
             }
             return null;
         }
-        [Symbol.iterator]() { return collectionItems(this)[Symbol.iterator](); }
         get [Symbol.toStringTag]() { return 'HTMLCollection'; }
     }
+    installIndexedIterator(HTMLCollection.prototype);
 
     // HTMLCollection is a live legacy platform object: every access resolves the
     // current tree, while indexed and named properties remain ordinary reads.
