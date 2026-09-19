@@ -4,7 +4,7 @@ use super::*;
 impl Context {
     pub(in crate::engine::script) fn capture_hook(&mut self, name: &str) -> JsResult<()> {
         let context = self.context.clone();
-        let function = self.watchdog.run(&mut self.isolate, |isolate| {
+        let function = self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);

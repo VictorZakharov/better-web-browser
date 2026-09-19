@@ -91,15 +91,15 @@
             get() {
                 if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
                 if (scrollsViewport(this)) return axis === 'x' ? viewportScrollX : viewportScrollY;
-                return host('elementScroll', this.__id)?.[axis === 'x' ? 0 : 1] || 0;
+                return host('elementScroll', nodeId(this))?.[axis === 'x' ? 0 : 1] || 0;
             },
             set(value) {
                 if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
                 value = finiteScrollValue(value);
                 if (scrollsViewport(this)) { if (axis === 'y') scrollViewport(value); return; }
                 const index = axis === 'x' ? 0 : 1;
-                const before = host('elementScroll', this.__id)?.[index] || 0;
-                const after = host('elementScroll', this.__id, index, value)?.[index] || 0;
+                const before = host('elementScroll', nodeId(this))?.[index] || 0;
+                const after = host('elementScroll', nodeId(this), index, value)?.[index] || 0;
                 if (before !== after) queueElementScrollEvent(this);
             }
         });
@@ -110,7 +110,7 @@
             get() {
                 if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
                 if (isViewportElement(this)) return Math.round(axis === 3 ? host('documentScrollHeight') : layoutViewportWidth);
-                const metrics = host('elementScroll', this.__id);
+                const metrics = host('elementScroll', nodeId(this));
                 return Math.round(metrics?.[axis] ?? (axis === 2 ? clientWidth(this) : clientHeight(this)));
             }
         });

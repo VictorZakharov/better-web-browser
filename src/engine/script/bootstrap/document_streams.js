@@ -1,11 +1,11 @@
     function checkDynamicMarkupTarget(target) {
         if (!(target instanceof Document)) throw new TypeError('Illegal invocation');
-        if (!host('isHtmlDocument', target.__id) || (target === document && throwOnDynamicMarkupInsertion))
+        if (!host('isHtmlDocument', nodeId(target)) || (target === document && throwOnDynamicMarkupInsertion))
             throw new DOMException('Dynamic markup insertion is not allowed for this document', 'InvalidStateError');
     }
     function openDocumentStream(target) {
         const removed = [...target.childNodes];
-        const erased = host('documentOpen', target.__id);
+        const erased = host('documentOpen', nodeId(target));
         if (erased === null) return target;
         // Erase, rather than replacing, listener entries: an in-progress dispatch snapshot
         // must see each old listener's removed flag too. Detached unrelated nodes survive.
@@ -29,7 +29,7 @@
     }
     function finishDocumentStream(target) {
         if (target.readyState !== 'loading') return;
-        host('documentStreamFinished', target.__id);
+        host('documentStreamFinished', nodeId(target));
         documentReadiness.set(target, 'interactive');
         target.dispatchEvent(markTrusted(new Event('readystatechange')));
         if (!target.defaultView) documentReadiness.set(target, 'complete');

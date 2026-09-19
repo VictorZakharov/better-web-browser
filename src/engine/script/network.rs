@@ -66,11 +66,18 @@ pub(super) fn network_host_call(
     match operation {
         "fetchStart" => {
             let serialized = argument_string(args, 1)?;
-            let request = request_from_serialized(&state.document_url, &serialized)?;
-            let id = state.next_fetch_id;
-            state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {
-                JsNativeError::range().with_message("Fetch request identifiers were exhausted")
-            })?;
+            let mut request = request_from_serialized(
+                state
+                    .inherited_url
+                    .as_deref()
+                    .unwrap_or(&state.document_url),
+                &serialized,
+            )?;
+            request.origin = Some(state.document_origin.clone());
+            let id = state
+                .fetch_identifiers
+                .borrow_mut()
+                .allocate(state.document.id())?;
             state.pending_fetch_actions.push(ScriptFetchAction::Start {
                 id,
                 request: Box::new(request),

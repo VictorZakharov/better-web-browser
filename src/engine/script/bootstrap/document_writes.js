@@ -2,23 +2,23 @@
     // Author JS runs with no native host borrow; nested scripts do not drain microtasks.
     function pumpDocumentParser(target, stream) {
         for (;;) {
-            const next = host(stream ? 'parserStreamStep' : 'parserWriteStep', target.__id);
+            const next = host(stream ? 'parserStreamStep' : 'parserWriteStep', nodeId(target));
             if (!next) break;
             if (next.changed) parserDomChanged(next.ids, next.mutations);
             if (next.customElement) constructParserElement(target, wrap(next.customElement));
             if (next.node) {
-                const prepared = host('parserWritePrepare', target.__id, next.node);
+                const prepared = host('parserWritePrepare', nodeId(target), next.node);
                 if (prepared) {
                     const previous = document._currentScript;
                     document._currentScript = wrap(next.node);
-                    host('parserScriptEnter', target.__id);
+                    host('parserScriptEnter', nodeId(target));
                     try {
                         host('runParserScript', prepared.code, prepared.url);
                         host('parserWriteExecuted');
                     } catch (error) {
                         reportGlobalException(error, 'written script', windowObject, prepared.url);
                     } finally {
-                        host('parserScriptLeave', target.__id);
+                        host('parserScriptLeave', nodeId(target));
                         document._currentScript = previous;
                     }
                 }
@@ -28,9 +28,9 @@
         }
     }
     function writeIntoActiveParser(target, text) {
-        if (!host('parserWriteBegin', target.__id, text)) return false;
+        if (!host('parserWriteBegin', nodeId(target), text)) return false;
         try { pumpDocumentParser(target, false); }
-        finally { host('parserWriteEnd', target.__id); }
-        if (host('documentStreamNeedsClose', target.__id)) pumpDocumentParser(target, true);
+        finally { host('parserWriteEnd', nodeId(target)); }
+        if (host('documentStreamNeedsClose', nodeId(target))) pumpDocumentParser(target, true);
         return true;
     }

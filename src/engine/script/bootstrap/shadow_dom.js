@@ -7,14 +7,14 @@
             if (token !== shadowRootConstructionToken) throw new TypeError('Illegal constructor');
             super(id, type, name, localName, namespaceURI);
         }
-        get mode() { return host('shadowMode', this.__id); }
-        get delegatesFocus() { return !!host('shadowDelegatesFocus', this.__id); }
-        get serializable() { return !!host('shadowSerializable', this.__id); }
-        get clonable() { return !!host('shadowClonable', this.__id); }
+        get mode() { return host('shadowMode', nodeId(this)); }
+        get delegatesFocus() { return !!host('shadowDelegatesFocus', nodeId(this)); }
+        get serializable() { return !!host('shadowSerializable', nodeId(this)); }
+        get clonable() { return !!host('shadowClonable', nodeId(this)); }
         get slotAssignment() { return 'named'; }
-        get host() { return wrap(host('shadowHost', this.__id)); }
-        getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
-        get innerHTML() { return host('innerHtmlGet', this.__id); }
+        get host() { return wrap(host('shadowHost', nodeId(this))); }
+        getElementById(id) { return wrap(host('byId', nodeId(this), String(id))); }
+        get innerHTML() { return host('innerHtmlGet', nodeId(this)); }
         set innerHTML(value) { replaceElementInnerHtml(this, value); }
     }
     Object.defineProperty(ShadowRoot.prototype, Symbol.toStringTag,
@@ -25,7 +25,7 @@
         get name() { return this.getAttribute('name') || ''; }
         set name(value) { this.setAttribute('name', value); }
         assignedNodes(options = {}) {
-            return list(host('assignedNodes', this.__id, !!Object(options).flatten));
+            return list(host('assignedNodes', nodeId(this), !!Object(options).flatten));
         }
         assignedElements(options = {}) {
             return this.assignedNodes(options).filter(node => node.nodeType === 1);

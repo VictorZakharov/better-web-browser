@@ -55,6 +55,10 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_WindowsProgramming",
 ] }
 
+[build-dependencies]
+# Build-only, MIT OR Apache-2.0; compiles the small adapter to the pinned V8 public API.
+cc = "1.2"
+
 [patch.crates-io]
 # V8 152.2 still names the archived `paste` crate. This maintained,
 # version-compatible fork preserves the macro API without an advisory ignore.

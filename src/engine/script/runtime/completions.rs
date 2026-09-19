@@ -9,6 +9,35 @@ impl ScriptRuntime {
         result: Result<crate::fetch::FetchResponse, crate::fetch::FetchError>,
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        if self.is_frame_fetch(id) {
+            return match result {
+                Ok(mut response) => {
+                    let bytes = std::mem::replace(&mut response.body, crate::fetch::Body::empty(0))
+                        .into_bytes();
+                    let mut outcome =
+                        self.deliver_frame_fetch(id, ScriptFetchEvent::Head(Ok(response)));
+                    frames::documents::append(
+                        &mut outcome,
+                        self.deliver_frame_fetch(id, ScriptFetchEvent::Chunk(bytes)),
+                    );
+                    frames::documents::append(
+                        &mut outcome,
+                        self.deliver_frame_fetch(id, ScriptFetchEvent::End),
+                    );
+                    self.finish_guarded_run(Ok(outcome))
+                }
+                Err(error) => {
+                    let outcome = self.deliver_frame_fetch(id, ScriptFetchEvent::Head(Err(error)));
+                    self.finish_guarded_run(Ok(outcome))
+                }
+            };
+        }
+        if let Some(child) = self.child_for_fetch(id) {
+            let outcome = child.complete_fetch_with_loader(id, result, dynamic_script_loader);
+            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }
@@ -49,6 +78,20 @@ impl ScriptRuntime {
         event: super::ScriptFetchEvent,
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        if self.is_frame_fetch(id) {
+            let outcome = self.deliver_frame_fetch(id, event);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if let Some(child) = self.child_for_fetch(id) {
+            let outcome = child.deliver_fetch_event_with_loader(id, event, dynamic_script_loader);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if matches!(
+            event,
+            ScriptFetchEvent::End | ScriptFetchEvent::Abort(_) | ScriptFetchEvent::Head(Err(_))
+        ) {
+            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+        }
         if !self.initialized {
             return lifecycle_error("the document's initial scripts have not executed");
         }

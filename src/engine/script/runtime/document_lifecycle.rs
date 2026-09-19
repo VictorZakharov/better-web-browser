@@ -27,9 +27,21 @@ pub(in crate::engine::script) struct DocumentLoad {
     parsing_finished: bool,
     deferred_scripts_pending: bool,
     external_resources_pending: bool,
+    pub(in crate::engine::script) child_documents_pending: bool,
 }
 
 impl DocumentLoad {
+    pub(in crate::engine::script) fn initial_blank() -> Self {
+        Self {
+            readiness: Readiness::Complete,
+            parsing_finished: true,
+            ..Default::default()
+        }
+    }
+
+    pub(in crate::engine::script) fn complete(&self) -> bool {
+        self.readiness == Readiness::Complete
+    }
     pub(in crate::engine::script) fn stream_finished(&mut self) {
         self.readiness = Readiness::Interactive;
         self.parsing_finished = true;
@@ -53,7 +65,11 @@ impl DocumentLoad {
             Readiness::Interactive if self.parsing_finished && !self.deferred_scripts_pending => {
                 Some(DocumentTask::DomContentLoaded)
             }
-            Readiness::DomContentLoaded if !self.external_resources_pending && !scripts_pending => {
+            Readiness::DomContentLoaded
+                if !self.external_resources_pending
+                    && !self.child_documents_pending
+                    && !scripts_pending =>
+            {
                 Some(DocumentTask::WindowLoad)
             }
             _ => None,
@@ -163,6 +179,7 @@ fn call(context: &mut Context, outcome: &mut ScriptOutcome, name: &str) {
 impl ScriptRuntime {
     /// Cancels queued work and tears down the document's healthy JavaScript context.
     pub fn cancel_document(&mut self) {
+        self.frames.take();
         self.context.take();
         let mut host = self.host.borrow_mut();
         host.timers.clear();

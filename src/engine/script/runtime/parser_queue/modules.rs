@@ -1,9 +1,9 @@
-//! Fetch-completion-driven module graph preparation. Compiling never evaluates a module.
+//! Shared fetch-completion-driven module graphs. Compiling never evaluates a module.
 use super::*;
 use crate::engine::dom::NodeId;
 use crate::limits::MAX_DYNAMIC_SCRIPTS;
 
-pub(super) struct ModuleGraphs {
+pub(crate) struct ModuleGraphs {
     requested: HashSet<PageResource>,
     responses: HashMap<PageResource, Option<String>>,
     installed: HashSet<PageResource>,
@@ -26,22 +26,22 @@ impl Default for ModuleGraphs {
 }
 
 impl ModuleGraphs {
-    pub(super) fn invalidate(&mut self) {
+    pub(crate) fn invalidate(&mut self) {
         self.dirty = true;
     }
 
-    pub(super) fn contains(&self, resource: &PageResource) -> bool {
+    pub(crate) fn contains(&self, resource: &PageResource) -> bool {
         self.requested.contains(resource)
     }
 
-    pub(super) fn resources(&self) -> impl Iterator<Item = PageResource> + '_ {
+    pub(crate) fn resources(&self) -> impl Iterator<Item = PageResource> + '_ {
         self.requested
             .iter()
             .filter(|resource| !self.responses.contains_key(*resource))
             .cloned()
     }
 
-    pub(super) fn complete(&mut self, resource: &PageResource, code: Option<&str>) {
+    pub(crate) fn complete(&mut self, resource: &PageResource, code: Option<&str>) {
         if matches!(
             resource,
             PageResource::Script {
@@ -55,22 +55,22 @@ impl ModuleGraphs {
         }
     }
 
-    pub(super) fn is_ready(&self, script: &PageScript) -> bool {
+    pub(crate) fn is_ready(&self, script: &PageScript) -> bool {
         self.ready.contains_key(&script.node.id())
     }
 
-    pub(super) fn error(&self, script: &PageScript) -> Option<&str> {
+    pub(crate) fn error(&self, script: &PageScript) -> Option<&str> {
         self.ready
             .get(&script.node.id())
             .and_then(|result| result.as_ref().err())
             .map(String::as_str)
     }
 
-    pub(super) fn is_script_error(&self, script: &PageScript) -> bool {
+    pub(crate) fn is_script_error(&self, script: &PageScript) -> bool {
         self.script_errors.contains(&script.node.id())
     }
 
-    pub(super) fn prepare<'a>(
+    pub(crate) fn prepare<'a>(
         &mut self,
         runtime: &mut ScriptRuntime,
         scripts: impl Iterator<Item = &'a PageScript>,

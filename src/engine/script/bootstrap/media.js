@@ -41,7 +41,7 @@
         const pending = pendingMediaRequests.get(requestId);
         if (pending) pending.element = element;
         traceMediaLifecycle(element, 'request:' + command);
-        return host('mediaRequest', element.__id, requestId || nextMediaRequest++, command, ...args);
+        return host('mediaRequest', nodeId(element), requestId || nextMediaRequest++, command, ...args);
     };
     const supportedMediaType = type => {
         const source = String(type).trim().toLowerCase();

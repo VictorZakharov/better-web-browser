@@ -9,7 +9,7 @@ impl Context {
         sources: &HashMap<String, String>,
     ) -> JsResult<Vec<String>> {
         let context = self.context.clone();
-        match self.watchdog.run(&mut self.isolate, |isolate| {
+        match self.agent.borrow_mut().run(|isolate| {
             super::super::modules::evaluate(isolate, &context, url, source, sources, true)
         })? {
             EngineModuleEvaluation::Missing(urls) => Ok(urls),

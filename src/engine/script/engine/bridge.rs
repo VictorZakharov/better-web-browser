@@ -115,6 +115,13 @@ fn host_call_callback(
     let operation = arguments.get(0).to_rust_string_lossy(scope);
     if matches!(
         operation.as_str(),
+        "bindNodeWrapper" | "nodeHandle" | "nodeWrapper"
+    ) {
+        super::node_wrappers::dispatch(scope, &operation, arguments, return_value);
+        return;
+    }
+    if matches!(
+        operation.as_str(),
         "frameWindow" | "frameDocument" | "discardFrame" | "frameActive"
     ) {
         super::frames::dispatch(scope, &operation, arguments, return_value);

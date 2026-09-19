@@ -45,7 +45,7 @@
     const usesHtmlAttributeNames = element => {
         let mode = htmlAttributeNameModes.get(element);
         if (mode === undefined) {
-            mode = element.namespaceURI === htmlNamespace && host('isHtmlDocument', element.__id);
+            mode = element.namespaceURI === htmlNamespace && host('isHtmlDocument', nodeId(element));
             htmlAttributeNameModes.set(element, mode);
         }
         return mode;
@@ -64,7 +64,7 @@
         name = String(name);
         return usesHtmlAttributeNames(element) ? name.toLowerCase() : name;
     };
-    const attributeRecords = element => host('attrRecords', element.__id);
+    const attributeRecords = element => host('attrRecords', nodeId(element));
     const cacheForAttributes = element => {
         let state = attributeCollections.get(element);
         if (!state) {
@@ -89,7 +89,7 @@
         get name() { return this.__nodeName; }
         get value() {
             if (!this.__element) return this.__value;
-            const value = host('attrGetNs', this.__element.__id, this.namespaceURI || '', this.localName);
+            const value = host('attrGetNs', nodeId(this.__element), this.namespaceURI || '', this.localName);
             return value === null ? this.__value : (this.__value = value);
         }
         set value(value) {
@@ -211,7 +211,7 @@
     const setAttachedAttributeValue = (attribute, value) => {
         const element = attribute.ownerElement;
         const oldValue = attribute.value;
-        host('attrSetNs', element.__id, attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
+        host('attrSetNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
         attribute.__value = value;
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
@@ -312,7 +312,7 @@
 
     const createAttributeFor = (ownerDocument, localName) => {
         localName = validateAttributeLocalName(String(localName));
-        if (host('isHtmlDocument', ownerDocument.__id)) localName = localName.toLowerCase();
+        if (host('isHtmlDocument', nodeId(ownerDocument))) localName = localName.toLowerCase();
         return createDetachedAttribute(ownerDocument, null, null, localName);
     };
     const createAttributeNsFor = (ownerDocument, namespace, qualifiedName) => {
@@ -329,7 +329,7 @@
         const oldAttribute = getAttributeNodeNsFor(element, attribute.namespaceURI, attribute.localName);
         if (oldAttribute === attribute) return attribute;
         const oldValue = oldAttribute?.value ?? null;
-        host('attrReplaceNs', element.__id, attribute.namespaceURI || '', attribute.prefix || '',
+        host('attrReplaceNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '',
             attribute.localName, attribute.value);
         if (oldAttribute) detachAttribute(element, {
             namespace: oldAttribute.namespaceURI, localName: oldAttribute.localName, value: oldValue
@@ -354,7 +354,7 @@
             qualifiedName: attribute.name,
             value: attribute.value
         };
-        host('attrRemoveNs', element.__id, record.namespace || '', record.localName);
+        host('attrRemoveNs', nodeId(element), record.namespace || '', record.localName);
         detachAttribute(element, record, attribute);
         queueAttributeMutation(element, record, record.value, null);
         maybeRefreshNamedProperties(element, record.namespace, record.localName, record.value, null);

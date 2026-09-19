@@ -8,6 +8,9 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         ))
         .map_err(|error| format!("initialize browser bindings: {error}"))?;
     context
+        .install_window_bindings()
+        .map_err(|error| format!("initialize window messaging: {error}"))?;
+    context
         .eval(Source::from_bytes(
             "for (const frame of document.querySelectorAll('iframe')) void frame.contentWindow;",
         ))

@@ -78,5 +78,5 @@
             }
         }
         visit(sheet, []);
-        host('stylesheetOverrides', owner.__id, records);
+        host('stylesheetOverrides', nodeId(owner), records);
     }

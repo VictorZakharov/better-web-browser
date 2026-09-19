@@ -124,4 +124,4 @@
     };
 
     const selectorCollection = (root, selector) =>
-        liveHtmlCollection(() => list(host('queryAll', root.__id, selector)));
+        liveHtmlCollection(() => list(host('queryAll', nodeId(root), selector)));

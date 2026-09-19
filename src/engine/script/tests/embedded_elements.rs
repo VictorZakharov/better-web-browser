@@ -1,6 +1,46 @@
 use super::*;
 
 #[test]
+fn adoption_between_frame_realms_preserves_nodes_and_document_identity() {
+    let (dom, outcome) = execute_html(
+        r#"<!doctype html><body><output></output><script>
+        function check(value, message) { if (!value) throw new Error(message); }
+        const outer = document.createElement('iframe');
+        const inner = document.createElement('iframe');
+        const node = document.createElement('div');
+        node.id = 'adopted';
+        document.body.append(outer);
+        const child = outer.contentWindow;
+        child.document.body.appendChild(inner);
+        check(inner.ownerDocument === child.document, 'adopted frame owner');
+        check(inner.contentWindow.parent === child, 'adopted frame parent');
+        inner.contentDocument.body.appendChild(node);
+        check(node.ownerDocument === inner.contentDocument, 'grandchild owner');
+        check(inner.contentDocument.getElementById('adopted') === node, 'stable wrapper');
+        check(node instanceof HTMLDivElement && !(node instanceof child.HTMLDivElement), 'original prototype');
+        check(child.document.adoptNode(node) === node && node.ownerDocument === child.document, 'explicit adoption');
+        child.document.body.append(node);
+        check(child.document.body.lastChild === node, 'cross realm ParentNode');
+        document.body.append(node);
+        check(node.ownerDocument === document && node.parentNode === document.body, 'return to parent');
+        let rejected = false;
+        try { child.document.body.appendChild({__id: node.__id, nodeType: 1}); } catch (_) { rejected = true; }
+        check(rejected, 'forged wrapper');
+        const saved = inner.contentDocument;
+        outer.remove();
+        check(inner.isConnected && saved.body.isConnected, 'retained documents stay connected');
+        check(inner.contentWindow === null, 'inactive child cannot recreate a navigable');
+        document.querySelector('output').textContent = 'pass';
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "pass"
+    );
+}
+
+#[test]
 fn initial_child_document_contract() {
     let (dom, outcome) = execute_html(include_str!(
         "../../../../tests/fixtures/iframe-initial-document.html"

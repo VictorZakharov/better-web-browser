@@ -5,6 +5,7 @@ use crate::engine::MediaEnvironment;
 
 mod base_url;
 mod cookies;
+mod fetches;
 pub(crate) mod geometry;
 mod ownership;
 mod scripts;
@@ -29,6 +30,8 @@ pub(super) struct HostState {
     pub(super) named_property_index: super::dom_host::NamedPropertyIndex,
     pub(super) document_url: String,
     pub(super) about_base_url: Option<String>,
+    pub(super) inherited_url: Option<String>,
+    pub(super) document_origin: crate::fetch::Origin,
     api_base_cache: RefCell<Option<base_url::CachedBaseUrl>>,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) document_character_set: String,
@@ -36,11 +39,7 @@ pub(super) struct HostState {
     pub(super) module_loader: Rc<module_loader::WebModuleLoader>,
     pub(super) nodes: HashMap<u32, NodeRef>,
     pub(super) node_ids: HashMap<NodeId, u32>,
-    pub(super) owner_documents: HashMap<NodeId, u64>,
-    pub(super) document_roots: HashMap<u64, NodeRef>,
-    pub(super) html_documents: HashSet<u64>,
-    pub(super) document_metadata: HashMap<NodeId, super::dom_host::DocumentMetadata>,
-    pub(super) template_contents_documents: HashMap<u64, u64>,
+    pub(super) documents: Rc<RefCell<ownership::DocumentRegistry>>,
     pub(super) next_node_id: u32,
     pub(super) mutation_count: usize,
     pub(super) task_mutations: task_mutation_profile::TaskMutationProfile,
@@ -74,7 +73,7 @@ pub(super) struct HostState {
     pub(super) prepared_script_external: HashMap<NodeId, bool>,
     pub(super) completed_module_evaluations: Vec<CompletedModuleEvaluation>,
     pub(super) document_load: super::runtime::document_lifecycle::DocumentLoad,
-    pub(super) next_fetch_id: u32,
+    pub(super) fetch_identifiers: Rc<RefCell<fetches::FetchIdentifiers>>,
     pub(super) pending_fetch_actions: Vec<ScriptFetchAction>,
     pub(super) next_worker_id: u32,
     pub(super) pending_worker_actions: Vec<ScriptWorkerAction>,
@@ -121,6 +120,9 @@ impl HostState {
             named_property_index: Default::default(),
             document_url: document_url.to_string(),
             about_base_url: None,
+            inherited_url: None,
+            document_origin: crate::fetch::Origin::parse(document_url)
+                .unwrap_or_else(|_| crate::fetch::Origin::opaque()),
             api_base_cache: RefCell::new(None),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),
@@ -128,11 +130,7 @@ impl HostState {
             module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),
-            owner_documents: HashMap::new(),
-            document_roots: HashMap::new(),
-            html_documents: HashSet::new(),
-            document_metadata: HashMap::new(),
-            template_contents_documents: HashMap::new(),
+            documents: Default::default(),
             next_node_id: 1,
             mutation_count: 0,
             task_mutations: task_mutation_profile::TaskMutationProfile::default(),
@@ -165,7 +163,7 @@ impl HostState {
             prepared_script_external: HashMap::new(),
             completed_module_evaluations: Vec::new(),
             document_load: Default::default(),
-            next_fetch_id: 1,
+            fetch_identifiers: Default::default(),
             pending_fetch_actions: Vec::new(),
             next_worker_id: 1,
             pending_worker_actions: Vec::new(),

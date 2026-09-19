@@ -158,6 +158,11 @@ pub(super) fn execute_inner(
         runtime::document_lifecycle::run_one(context, host, &mut outcome);
     }
     for _ in 0..types::STARTUP_TIMER_PASSES {
+        if context.has_message_task()
+            && let Err(error) = context.deliver_message()
+        {
+            outcome.errors.push(format!("posted message: {error}"));
+        }
         if defer_dynamic_scripts {
             let mut no_dynamic_script_loader = None;
             settle_startup_timer_slice(

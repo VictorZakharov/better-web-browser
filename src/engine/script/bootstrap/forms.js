@@ -241,7 +241,7 @@
         get labels() { return labelsFor(this); }
     }
     class HTMLTemplateElement extends HTMLElement {
-        get content() { return wrap(host('templateContent', this.__id)); }
+        get content() { return wrap(host('templateContent', nodeId(this))); }
     }
     class HTMLFormElement extends HTMLElement {
         get elements() {

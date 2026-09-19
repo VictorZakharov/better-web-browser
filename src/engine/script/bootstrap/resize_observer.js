@@ -56,7 +56,7 @@
             const state = resizeStates.get(observer);
             state.active = [];
             for (const [target, observation] of state.targets) {
-                const box = host('resizeObservation', target.__id);
+                const box = host('resizeObservation', nodeId(target));
                 const size = observedSize(box, observation.box);
                 if (size[0] === observation.last[0] && size[1] === observation.last[1]) continue;
                 if (box[7] > depth) { state.active.push([target, observation]); active = true; }
@@ -72,7 +72,7 @@
             let shallowest = Infinity;
             const entries = [];
             for (const [target, observation] of state.active) {
-                const box = host('resizeObservation', target.__id);
+                const box = host('resizeObservation', nodeId(target));
                 entries.push(resizeEntry(target, box));
                 observation.last = observedSize(box, observation.box);
                 shallowest = Math.min(shallowest, box[7]);

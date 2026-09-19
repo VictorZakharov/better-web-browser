@@ -26,8 +26,8 @@
                 });
             });
         },
-        querySelector(selector) { return wrap(host('query', this.__id, String(selector))); },
-        querySelectorAll(selector) { return list(host('queryAll', this.__id, String(selector))); }
+        querySelector(selector) { return wrap(host('query', nodeId(this), String(selector))); },
+        querySelectorAll(selector) { return list(host('queryAll', nodeId(this), String(selector))); }
     };
     const installUnscopables = (prototype, names) => {
         // Web IDL gives each interface its own null-prototype unscopables object.
@@ -45,7 +45,7 @@
         before(...items) {
             const parent = this.parentNode;
             if (!parent) return;
-            const itemNodes = items.filter(item => item instanceof Node);
+            const itemNodes = items.filter(item => isNode(item));
             let viablePreviousSibling = this.previousSibling;
             while (viablePreviousSibling && itemNodes.includes(viablePreviousSibling))
                 viablePreviousSibling = viablePreviousSibling.previousSibling;
@@ -57,7 +57,7 @@
         after(...items) {
             const parent = this.parentNode;
             if (!parent) return;
-            const itemNodes = items.filter(item => item instanceof Node);
+            const itemNodes = items.filter(item => isNode(item));
             let viableNextSibling = this.nextSibling;
             while (viableNextSibling && itemNodes.includes(viableNextSibling))
                 viableNextSibling = viableNextSibling.nextSibling;
@@ -71,7 +71,7 @@
             const parent = this.parentNode;
             if (!parent) return;
             let viableNextSibling = this.nextSibling;
-            const itemNodes = items.filter(item => item instanceof Node);
+            const itemNodes = items.filter(item => isNode(item));
             while (viableNextSibling && itemNodes.includes(viableNextSibling))
                 viableNextSibling = viableNextSibling.nextSibling;
             const replacement = convertNodes(items);

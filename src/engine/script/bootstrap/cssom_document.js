@@ -19,7 +19,7 @@
             return null;
         const href = isStyleSheetLink(owner) ? owner.href : null;
         const metadata = [href, owner.getAttribute('title'), owner.media, owner.hasAttribute('disabled'),
-            host('stylesheetGeneration', owner.__id)].join('\u0000');
+            host('stylesheetGeneration', nodeId(owner))].join('\u0000');
         let record = ownerStyleSheets.get(owner);
         if (href !== null && record?.metadata === metadata) return record.sheet;
         const source = href === null ? owner.textContent : host('stylesheetSource', href);

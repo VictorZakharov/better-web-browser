@@ -25,17 +25,17 @@
                     constructed.localName !== localName)
                     throw new DOMException('A parser custom element constructor must return an empty, detached element',
                         'NotSupportedError');
-                host('parserElementResult', target.__id, constructed.__id);
+                host('parserElementResult', nodeId(target), nodeId(constructed));
                 element = constructed;
             } catch (error) {
                 if (network) host('parserMicrotaskCheckpoint');
                 reportGlobalException(error);
-                const failed = host('parserElementFailed', target.__id);
+                const failed = host('parserElementFailed', nodeId(target));
                 element = wrap(failed.node);
                 Object.setPrototypeOf(element, HTMLUnknownElement.prototype);
                 customElementStates.set(element, 'failed');
             }
-            const attributes = host('parserElementAttributes', target.__id);
+            const attributes = host('parserElementAttributes', nodeId(target));
             parserDomChanged(attributes.ids, attributes.mutations);
             withCustomElementReactions(() => {
                 for (const attribute of attributeRecords(element)) {
@@ -47,7 +47,7 @@
         } finally {
             throwOnDynamicMarkupInsertion--;
         }
-        const inserted = host('parserElementInsert', target.__id);
+        const inserted = host('parserElementInsert', nodeId(target));
         parserDomChanged(inserted.ids, inserted.mutations);
         if (element.isConnected) withCustomElementReactions(() =>
             enqueueCustomElementCallback(element, 'connectedCallback'));

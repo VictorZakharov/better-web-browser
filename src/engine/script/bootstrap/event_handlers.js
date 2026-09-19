@@ -38,7 +38,7 @@
     };
     const handlerDocument = target => {
         const receiver = receiverFor(target);
-        return receiver instanceof Node ? receiver.ownerDocument : receiver.document;
+        return isNode(receiver) ? receiver.ownerDocument : receiver.document;
     };
     const getEventHandler = (target, type) => {
         if (target === null) return null;
@@ -63,7 +63,7 @@
             handler.raw = null;
             try {
                 handler.value = host('compileEventHandler', location.body, 'on' + type, scopes,
-                    location.url, doc.defaultView, type === 'error' && !(receiver instanceof Node));
+                    location.url, doc.defaultView, type === 'error' && !(isNode(receiver)));
             } catch (error) {
                 // A compilation failure clears the value, not the activated listener.
                 handler.value = null;

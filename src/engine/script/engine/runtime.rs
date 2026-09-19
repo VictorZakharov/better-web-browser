@@ -1,11 +1,13 @@
+use super::agent::Agent;
 use super::bridge::{HostBridge, install_host_call, value_from_v8, value_to_v8};
 use super::modules::EngineModuleEvaluation;
 use super::value::{JsError, JsErrorKind, JsResult, JsValue, Source};
-use super::watchdog::ExecutionWatchdog;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
 mod dynamic_imports;
+mod frames;
 mod hooks;
 mod module_preparation;
 
@@ -13,16 +15,14 @@ static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();
 
 pub(in crate::engine::script) struct Context {
-    // Stop cross-thread termination before the persistent handles and isolate are released.
-    watchdog: ExecutionWatchdog,
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
     imports: Rc<super::dynamic_imports::Imports>,
     _frames: Rc<super::frames::FrameTree>,
-    isolate: v8::OwnedIsolate,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
+    agent: Rc<RefCell<Agent>>,
 }
 
 pub(in crate::engine::script) enum ModuleEvaluation {
@@ -50,28 +50,25 @@ impl Context {
             context.set_slot(Rc::clone(&imports));
             super::frames::register(context, &frames);
             let scope = &mut v8::ContextScope::new(scope, context);
+            super::frames::register_document(scope, context, &frames);
             install_host_call(scope, context)?;
             v8::Global::new(scope, context)
         };
-        let watchdog = ExecutionWatchdog::new(isolate.thread_safe_handle())?;
-        // rusty_v8 enters new isolates for their full lifetime. Breeze retains multiple document
-        // realms on one renderer thread, so execution enters only the isolate it is about to use.
-        unsafe { isolate.exit() };
+        let agent = Rc::new(RefCell::new(Agent::new(isolate)?));
         Ok(Self {
-            watchdog,
             context,
             private_hooks: HashMap::new(),
             imports,
             _frames: frames,
-            isolate,
             next_module_promise: 1,
             module_promises: HashMap::new(),
+            agent,
         })
     }
 
     pub(in crate::engine::script) fn eval(&mut self, source: Source) -> JsResult<JsValue> {
         let context = self.context.clone();
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -108,14 +105,14 @@ impl Context {
     }
 
     pub(in crate::engine::script) fn run_jobs(&mut self) -> JsResult<()> {
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             isolate.perform_microtask_checkpoint();
             Ok(())
         })
     }
 
     pub(in crate::engine::script) fn heap_diagnostic(&mut self) -> JsResult<String> {
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             let stats = isolate.get_heap_statistics();
             Ok(format!(
                 "V8 heap: used={} committed={} physical={} external={} malloced={} contexts={} detached={}",
@@ -137,7 +134,7 @@ impl Context {
     ) -> JsResult<JsValue> {
         let context = self.context.clone();
         let captured = self.private_hooks.get(name).cloned();
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -174,7 +171,7 @@ impl Context {
         sources: &HashMap<String, String>,
     ) -> JsResult<ModuleEvaluation> {
         let context = self.context.clone();
-        let evaluation = self.watchdog.run(&mut self.isolate, |isolate| {
+        let evaluation = self.agent.borrow_mut().run(|isolate| {
             super::modules::evaluate(isolate, &context, root_url, root_source, sources, false)
         })?;
         match evaluation {
@@ -210,7 +207,7 @@ impl Context {
         let property = format!("__breezeModulePromise{promise_id}");
         {
             let context = self.context.clone();
-            self.watchdog.run(&mut self.isolate, |isolate| {
+            self.agent.borrow_mut().run(|isolate| {
                 v8::scope!(let scope, isolate);
                 let context = v8::Local::new(scope, &context);
                 let scope = &mut v8::ContextScope::new(scope, context);
@@ -243,14 +240,6 @@ impl Context {
              ).finally(() => delete globalThis[{property}]);"
         )))?;
         Ok(())
-    }
-}
-
-impl Drop for Context {
-    fn drop(&mut self) {
-        // OwnedIsolate::drop balances one entry. Restore that invariant after Breeze's explicit
-        // per-operation entry guards have all exited.
-        unsafe { self.isolate.enter() };
     }
 }
 

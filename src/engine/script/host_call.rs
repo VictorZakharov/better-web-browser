@@ -207,7 +207,14 @@ pub(super) fn dispatch_host_call(
             Ok(js_string(state.resolved_url(&value)))
         }
         "apiBaseUrl" => Ok(js_string(state.script_base_url())),
-        "apiOriginUrl" => Ok(js_string(state.document_url.clone())),
+        "apiOriginUrl" => Ok(js_string(
+            state
+                .inherited_url
+                .as_ref()
+                .unwrap_or(&state.document_url)
+                .clone(),
+        )),
+        "documentOrigin" => Ok(js_string(state.document_origin.serialize())),
         "console" => {
             let level = argument_string(args, 1)?;
             let message = argument_string(args, 2)?;

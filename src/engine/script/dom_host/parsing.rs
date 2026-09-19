@@ -56,7 +56,7 @@ pub(super) fn parse_document(
         }
         stack.extend(node.children.borrow().iter().cloned());
     }
-    state.document_metadata.insert(
+    state.documents.borrow_mut().document_metadata.insert(
         document.id(),
         DocumentMetadata {
             url: response_url.unwrap_or(&state.document_url).to_string(),

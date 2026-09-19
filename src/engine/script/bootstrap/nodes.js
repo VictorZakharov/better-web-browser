@@ -45,7 +45,7 @@
     });
     const convertNodes = items => {
         const nodes = items.map(item =>
-            item instanceof Node ? item : document.createTextNode(String(item)));
+            isNode(item) ? item : document.createTextNode(String(item)));
         if (nodes.length === 1) return nodes[0];
         const fragment = document.createDocumentFragment();
         for (const node of nodes) fragment.appendChild(node);
@@ -54,10 +54,10 @@
     replaceElementInnerHtml = (element, value) => {
         const isTemplateContents = element.localName === 'template';
         const target = isTemplateContents
-            ? wrap(host('templateContent', element.__id)) : element;
+            ? wrap(host('templateContent', nodeId(element))) : element;
         const wasConnected = target.isConnected;
         const removedChildren = [...target.childNodes];
-        host('innerHtmlSet', element.__id, value == null ? '' : String(value));
+        host('innerHtmlSet', nodeId(element), value == null ? '' : String(value));
         markChildCollectionsChanged(target);
         const addedChildren = [...target.childNodes];
         if (removedChildren.length || addedChildren.length) queueMutationRecord(target, 'childList', {
@@ -80,6 +80,8 @@
     class Node extends EventTarget {
         constructor(id, type, name, localName, namespaceURI) {
             super();
+            if (type !== 2 && !host('bindNodeWrapper', this, id)) throw new TypeError('Illegal constructor');
+            nodeHandles.set(this, id);
             this.__id = id;
             if (type === undefined) {
                 const metadata = host('nodeMetadata', id).split('\u001f');
@@ -95,24 +97,24 @@
         }
         get nodeType() { return this.__nodeType; }
         get nodeName() { return this.__nodeName; }
-        get ownerDocument() { return wrap(host('ownerDocument', this.__id)); }
+        get ownerDocument() { return wrap(host('ownerDocument', nodeId(this))); }
         get baseURI() { return this.ownerDocument?.baseURI || null; }
-        get parentNode() { return wrap(host('parent', this.__id)); }
+        get parentNode() { return wrap(host('parent', nodeId(this))); }
         get parentElement() { const parent = this.parentNode; return parent?.nodeType === 1 ? parent : null; }
-        get assignedSlot() { return wrap(host('assignedSlot', this.__id)); }
-        get firstChild() { return wrap(host('firstChild', this.__id)); }
-        get lastChild() { return wrap(host('lastChild', this.__id)); }
-        get nextSibling() { return wrap(host('nextSibling', this.__id)); }
-        get previousSibling() { return wrap(host('previousSibling', this.__id)); }
+        get assignedSlot() { return wrap(host('assignedSlot', nodeId(this))); }
+        get firstChild() { return wrap(host('firstChild', nodeId(this))); }
+        get lastChild() { return wrap(host('lastChild', nodeId(this))); }
+        get nextSibling() { return wrap(host('nextSibling', nodeId(this))); }
+        get previousSibling() { return wrap(host('previousSibling', nodeId(this))); }
         get childNodes() { return childCollection(this, false); }
-        get textContent() { return host('textGet', this.__id); }
+        get textContent() { return host('textGet', nodeId(this)); }
         set textContent(value) {
             const characterData = this.nodeType === 3 || this.nodeType === 4 ||
                 this.nodeType === 7 || this.nodeType === 8;
             const oldValue = characterData ? this.textContent : null;
             const removedChildren = characterData ? [] : [...this.childNodes];
             const namedAccessChanged = this.isConnected && removedChildren.some(child => child.nodeType === 1);
-            host('textSet', this.__id, value == null ? '' : String(value));
+            host('textSet', nodeId(this), value == null ? '' : String(value));
             if (!characterData) markChildCollectionsChanged(this);
             const addedChildren = characterData ? [] : [...this.childNodes];
             if (characterData) queueMutationRecord(this, 'characterData', { oldValue });
@@ -129,11 +131,11 @@
             return this.getRootNode({ composed: true })?.nodeType === 9;
         }
         appendChild(child) {
-            if (!(child instanceof Node)) throw new TypeError('appendChild requires a Node');
+            if (!(isNode(child))) throw new TypeError('appendChild requires a Node');
             ensurePreInsertionValidity(child, this);
             const records = insertionRecords(child);
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
-            const inserted = nodes.every(node => !!host('appendChild', this.__id, node.__id));
+            const inserted = nodes.every(node => !!host('appendChild', nodeId(this), nodeId(node)));
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
@@ -143,13 +145,13 @@
             return inserted ? child : null;
         }
         insertBefore(child, reference) {
-            if (!(child instanceof Node)) throw new TypeError('insertBefore requires a Node');
-            if (reference != null && !(reference instanceof Node)) throw new TypeError('reference must be a Node');
+            if (!(isNode(child))) throw new TypeError('insertBefore requires a Node');
+            if (reference != null && !(isNode(reference))) throw new TypeError('reference must be a Node');
             ensurePreInsertionValidity(child, this, reference);
             const records = insertionRecords(child);
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node =>
-                !!host('insertBefore', this.__id, node.__id, reference?.__id || 0));
+                !!host('insertBefore', nodeId(this), nodeId(node), nodeId(reference) || 0));
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
@@ -160,8 +162,8 @@
         }
         replaceChild(child, replaced) {
             return withScriptMutationBatch(() => {
-                if (!(child instanceof Node)) throw new TypeError('replaceChild requires a Node');
-                if (!(replaced instanceof Node)) throw new TypeError('replaced child must be a Node');
+                if (!(isNode(child))) throw new TypeError('replaceChild requires a Node');
+                if (!(isNode(replaced))) throw new TypeError('replaced child must be a Node');
                 if (replaced.parentNode !== this)
                     throw new DOMException('The node to replace is not a child', 'NotFoundError');
                 if (child === replaced) return replaced;
@@ -186,10 +188,10 @@
         }
         removeChild(child) {
             const namedAccessChanged = this.isConnected;
-            const wasConnected = child instanceof Node && child.isConnected;
-            const previousSibling = child instanceof Node ? child.previousSibling : null;
-            const nextSibling = child instanceof Node ? child.nextSibling : null;
-            if (!(child instanceof Node) || !host('removeChild', this.__id, child.__id)) throw new Error('node is not a child');
+            const wasConnected = isNode(child) && child.isConnected;
+            const previousSibling = isNode(child) ? child.previousSibling : null;
+            const nextSibling = isNode(child) ? child.nextSibling : null;
+            if (!(isNode(child)) || !host('removeChild', nodeId(this), nodeId(child))) throw new Error('node is not a child');
             markChildCollectionsChanged(this);
             queueMutationRecord(this, 'childList', {
                 removedNodes: [child], previousSibling, nextSibling
@@ -205,9 +207,9 @@
             return false;
         }
         hasChildNodes() { return !!this.firstChild; }
-        getRootNode(options = {}) { return wrap(host('rootNode', this.__id, !!Object(options).composed)); }
+        getRootNode(options = {}) { return wrap(host('rootNode', nodeId(this), !!Object(options).composed)); }
         cloneNode(deep = false) {
-            const clone = wrap(host('cloneNode', this.__id, !!deep));
+            const clone = wrap(host('cloneNode', nodeId(this), !!deep));
             upgradeCustomElementTree(clone);
             return clone;
         }
@@ -269,8 +271,8 @@
     }
     class DocumentType extends Node {
         get name() { return this.nodeName; }
-        get publicId() { return host('documentTypeMetadata', this.__id).split('\u001f')[0] || ''; }
-        get systemId() { return host('documentTypeMetadata', this.__id).split('\u001f')[1] || ''; }
+        get publicId() { return host('documentTypeMetadata', nodeId(this)).split('\u001f')[0] || ''; }
+        get systemId() { return host('documentTypeMetadata', nodeId(this)).split('\u001f')[1] || ''; }
     }
     installChildNodeMembers(DocumentType.prototype);
     class DocumentFragment extends Node {}

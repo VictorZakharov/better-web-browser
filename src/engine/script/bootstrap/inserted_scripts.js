@@ -14,18 +14,18 @@
     }
     function prepareInsertedScript(node) {
         if (!(node instanceof HTMLScriptElement)) return;
-        const prepared = host('prepareInsertedScript', node.__id);
+        const prepared = host('prepareInsertedScript', nodeId(node));
         if (!prepared) return;
         const previous = document._currentScript;
         document._currentScript = node.getRootNode() instanceof ShadowRoot ? null : node;
-        host('parserScriptEnter', document.__id);
+        host('parserScriptEnter', nodeId(document));
         try {
             host('runParserScript', prepared.code, prepared.url);
             host('parserWriteExecuted');
         } catch (error) {
             reportGlobalException(error, 'inline script', windowObject, prepared.url);
         } finally {
-            host('parserScriptLeave', document.__id);
+            host('parserScriptLeave', nodeId(document));
             document._currentScript = previous;
         }
     }

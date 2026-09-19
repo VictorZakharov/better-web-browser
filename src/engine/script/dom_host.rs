@@ -23,6 +23,8 @@ pub(super) fn dom_host_call(
                 .node(argument_id(args, 1))
                 .and_then(|node| {
                     state
+                        .documents
+                        .borrow()
                         .document_metadata
                         .get(&node.id())
                         .map(|metadata| metadata.url.clone())
@@ -47,17 +49,22 @@ pub(super) fn dom_host_call(
         "documentContentType" => js_string(state.node(argument_id(args, 1)).map_or_else(
             || "text/html".to_string(),
             |node| {
-                state.document_metadata.get(&node.id()).map_or_else(
-                    || {
-                        if state.is_html_document_for(&node) {
-                            "text/html"
-                        } else {
-                            "application/xml"
-                        }
-                        .to_string()
-                    },
-                    |metadata| metadata.content_type.clone(),
-                )
+                state
+                    .documents
+                    .borrow()
+                    .document_metadata
+                    .get(&node.id())
+                    .map_or_else(
+                        || {
+                            if state.is_html_document_for(&node) {
+                                "text/html"
+                            } else {
+                                "application/xml"
+                            }
+                            .to_string()
+                        },
+                        |metadata| metadata.content_type.clone(),
+                    )
             },
         )),
         "document" => {
@@ -207,8 +214,18 @@ pub(super) fn dom_host_call(
                     let html = state.is_html_document_for(&source);
                     let clone = Node::clone_document(&source, deep);
                     state.register_document(clone.clone(), html);
-                    if let Some(metadata) = state.document_metadata.get(&source.id()).cloned() {
-                        state.document_metadata.insert(clone.id(), metadata);
+                    let metadata = state
+                        .documents
+                        .borrow()
+                        .document_metadata
+                        .get(&source.id())
+                        .cloned();
+                    if let Some(metadata) = metadata {
+                        state
+                            .documents
+                            .borrow_mut()
+                            .document_metadata
+                            .insert(clone.id(), metadata);
                     }
                     clone
                 } else {

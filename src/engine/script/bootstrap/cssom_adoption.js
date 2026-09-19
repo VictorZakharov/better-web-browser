@@ -19,7 +19,7 @@
                 for (const sheet of this.sheets) if (!next.has(sheet)) sheet.__adopters.delete(root);
                 for (const sheet of next) sheet.__adopters.add(root);
                 this.sheets = next;
-                host('adoptedStyleSheetsSet', root.__id,
+                host('adoptedStyleSheetsSet', nodeId(root),
                     active.filter(sheet => !sheet.disabled).map(sheet => [
                         sheet.__baseUrl,
                         sheet.media.mediaText,

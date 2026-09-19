@@ -6,7 +6,7 @@
     let viewportScrollY = 0;
 
     function layoutRect(element) {
-        const value = host('layoutRect', element.__id);
+        const value = host('layoutRect', nodeId(element));
         const [x = 0, y = 0, width = 0, height = 0] = Array.isArray(value) ? value : [];
         return { x, y, width, height, hasBox: Array.isArray(value) };
     }
@@ -34,7 +34,7 @@
 
     function clientWidth(element) {
         if (isViewportElement(element)) return layoutViewportWidth;
-        const scroll = host('elementScroll', element.__id);
+        const scroll = host('elementScroll', nodeId(element));
         if (Array.isArray(scroll)) return scroll[4];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
@@ -49,7 +49,7 @@
 
     function clientHeight(element) {
         if (isViewportElement(element)) return layoutViewportHeight;
-        const scroll = host('elementScroll', element.__id);
+        const scroll = host('elementScroll', nodeId(element));
         if (Array.isArray(scroll)) return scroll[5];
         const rect = layoutRect(element);
         if (!rect.hasBox) return 0;
@@ -104,7 +104,7 @@
         },
         offsetParent: {
             configurable: true,
-            get() { return wrap(host('offsetParent', this.__id)); }
+            get() { return wrap(host('offsetParent', nodeId(this))); }
         },
         offsetLeft: {
             configurable: true,
