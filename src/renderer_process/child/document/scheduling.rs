@@ -223,6 +223,7 @@ impl DocumentRuntime {
         // Reuse only box geometry. A hidden DOM change can still update the document title
         // or an accessibility name, so keep the regular presentation/metadata path.
         if resources_changed
+            || (self.rendering.dirty && !self.rendering_is_blocked())
             || (outcome.render_requested
                 && !self
                     .page

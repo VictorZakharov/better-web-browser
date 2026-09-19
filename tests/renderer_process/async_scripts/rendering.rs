@@ -16,6 +16,10 @@ pub(super) fn blocked_until_request(driver: &mut Driver, suffix: &str) {
                 }
             }
             RendererEvent::RuntimeUpdate(update) => {
+                assert_eq!(
+                    update.load.text_measure_count, 0,
+                    "blocked presentation must not shape a discarded display list"
+                );
                 assert!(
                     update.runtime.errors.is_empty(),
                     "{:?}",
@@ -59,7 +63,17 @@ fn initial_stylesheets_block_paint_not_async_scripts_or_heartbeats() {
     );
     blocked_until_request(&mut driver, "slow.css");
     blocked_until_request(&mut driver, "fast.js");
-    driver.respond("fast.js", "console.log('async while paint blocked')", 200);
+    driver.respond(
+        "fast.js",
+        r#"
+        const target = document.querySelector('#status');
+        target.style.width = '123px';
+        if (target.getBoundingClientRect().width !== 123)
+            throw new Error('explicit geometry must flush while presentation is blocked');
+        console.log('async while paint blocked');
+    "#,
+        200,
+    );
     let mut ran = false;
     for _ in 0..30 {
         match driver
