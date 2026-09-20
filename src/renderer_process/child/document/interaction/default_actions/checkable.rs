@@ -19,14 +19,11 @@ pub(super) fn activate(target: &NodeRef, document: &NodeRef, outcome: &mut Scrip
     }
     if document.document_mutation_version() != version {
         outcome.render_requested = true;
-        outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
-            roots: vec![document.id()],
-            impact: crate::engine::invalidation::MutationKind::State.impact(),
-            mutation_count: 0,
-            rebuild_style_rules: false,
-            removed_nodes: Vec::new(),
-            removals_are_local: false,
-        };
+        // Targeted roots (control, radio peers, form/fieldset aggregates)
+        // instead of the whole document; see `request_state_render`.
+        let mut roots = ScriptOutcome::default();
+        super::super::request_state_render(&control, &mut roots);
+        outcome.invalidation = roots.invalidation;
     }
 }
 

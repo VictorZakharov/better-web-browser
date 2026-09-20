@@ -6,6 +6,7 @@ pub(crate) mod control_select;
 pub(crate) mod control_state;
 pub(crate) mod control_validity;
 pub(crate) mod control_values;
+mod control_version;
 pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;

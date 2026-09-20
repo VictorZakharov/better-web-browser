@@ -28,6 +28,12 @@ pub(super) struct CompoundSelector {
     pub(super) requires_hover: bool,
     pub(super) requires_checked: bool,
     pub(super) requires_indeterminate: bool,
+    pub(super) requires_valid: bool,
+    pub(super) requires_invalid: bool,
+    pub(super) requires_required: bool,
+    pub(super) requires_optional: bool,
+    pub(super) requires_in_range: bool,
+    pub(super) requires_out_of_range: bool,
     pub(super) never_matches: bool,
 }
 

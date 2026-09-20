@@ -74,9 +74,8 @@ pub(super) fn dispatch(
         {
             let verdict = !flags.pattern_mismatch;
             if control_validity::store_pattern_verdict(&node, &pattern, values, verdict) {
-                let document = host.borrow().document.clone();
                 host.borrow_mut()
-                    .record_mutation(Some(&document), MutationKind::State);
+                    .record_mutation(Some(&node), MutationKind::State);
             }
         }
     }

@@ -44,8 +44,23 @@ pub(super) fn dispatch(
         _ => unreachable!(),
     };
     if node.document_mutation_version() != version {
-        let document = state.document.clone();
-        state.record_mutation(Some(&document), MutationKind::State);
+        state.record_mutation(Some(&node), MutationKind::State);
+        // Checking a radio unchecks its group peers; their validity flips
+        // too even when they live under a different parent.
+        if node.is_radio() && state.mutation_requires_render(&node) {
+            use crate::engine::invalidation::validation_aggregation_roots;
+            let document = state.document.clone();
+            for peer in node.radio_group() {
+                if peer.id() != node.id() {
+                    state.pending_invalidation.extend(&document, &peer);
+                    state.pending_layout_invalidation.extend(&document, &peer);
+                    for extra in validation_aggregation_roots(&peer) {
+                        state.pending_invalidation.extend(&document, &extra);
+                        state.pending_layout_invalidation.extend(&document, &extra);
+                    }
+                }
+            }
+        }
     }
     Ok(Some(JsValue::undefined()))
 }

@@ -96,7 +96,7 @@ impl Node {
 
     /// Sets one option's selectedness (internal; no exclusivity, no events).
     pub(crate) fn update_selectedness(&self, selected: bool, dirty: bool) {
-        self.update_control_state(|state| {
+        self.update_control_state_tracked(|state| {
             state.selectedness = selected;
             if dirty {
                 state.selected_dirty = true;
@@ -176,18 +176,18 @@ impl Node {
             if option.control_state_snapshot().selectedness != is_match {
                 changed = true;
             }
-            option.update_control_state(|state| {
+            option.update_control_state_tracked(|state| {
                 state.selectedness = is_match;
                 state.selected_dirty = true;
             });
         }
         if matched {
-            self.update_control_state(|state| {
+            self.update_control_state_tracked(|state| {
                 state.user_validity = true;
             });
         }
         if changed {
-            self.update_control_state(|state| {
+            self.update_control_state_tracked(|state| {
                 state.reported = false;
             });
         }
@@ -217,12 +217,12 @@ impl Node {
         }
         for option in self.select_options() {
             let selected = option.attr("selected").is_some();
-            option.update_control_state(|state| {
+            option.update_control_state_tracked(|state| {
                 state.selectedness = selected;
                 state.selected_dirty = false;
             });
         }
-        self.update_control_state(|state| {
+        self.update_control_state_tracked(|state| {
             state.reported = false;
         });
         self.run_selectedness_setting();

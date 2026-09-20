@@ -1,6 +1,7 @@
 //! Coalesced rendering invalidation shared by DOM, style, layout, and diagnostics.
 
 use super::dom::NodeId;
+use super::dom::{Node, NodeRef};
 
 pub(crate) const MAX_INVALIDATION_ROOTS: usize = 256;
 
@@ -168,9 +169,89 @@ impl RenderInvalidation {
     }
 }
 
+/// Extra style roots whose own selectors can flip when a control's validation
+/// state changes: the form owner (HTML `form:valid` / `form:invalid`
+/// aggregation, including external `form=` controls) and ancestor fieldsets.
+/// The control itself stays covered by the `State`-mutation root (its parent
+/// subtree, which also covers sibling-combinator rules); unrelated subtrees
+/// are never touched, so a keystroke in one control does not restyle the
+/// whole document. Returns an empty set when no form or fieldset is involved.
+pub(crate) fn validation_aggregation_roots(control: &NodeRef) -> Vec<NodeRef> {
+    let mut roots = Vec::new();
+    if matches!(control.tag_name(), Some("form" | "fieldset")) {
+        roots.push(control.clone());
+    }
+    if let Some(owner) = control.form_owner()
+        && owner != control.id()
+    {
+        let root = Node::tree_root(control);
+        if let Some(form) = Node::descendants(&root).find(|node| node.id() == owner) {
+            roots.push(form);
+        }
+    }
+    let mut ancestor = control.parent();
+    while let Some(node) = ancestor {
+        if node.tag_name() == Some("fieldset") {
+            roots.push(node.clone());
+        }
+        ancestor = node.parent();
+    }
+    roots
+}
+
+/// Content attributes whose change can flip validation selectors on the
+/// element itself (`:required`, `:optional`, `:valid`, `:invalid`,
+/// `:in-range`, `:out-of-range`) or on its form/fieldset aggregates.
+pub(crate) fn is_validation_attribute(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "value"
+            | "checked"
+            | "selected"
+            | "required"
+            | "readonly"
+            | "disabled"
+            | "type"
+            | "min"
+            | "max"
+            | "step"
+            | "pattern"
+            | "minlength"
+            | "maxlength"
+            | "multiple"
+            | "form"
+            | "name"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::dom::parse;
+
+    #[test]
+    fn validation_roots_cover_owner_and_fieldsets_not_documents() {
+        let dom = parse(
+            "<form id=f><fieldset><div><input required></div></fieldset></form>\
+             <form id=g></form><input required>",
+        );
+        let input = dom.elements_named("input").next().expect("input");
+        let roots: Vec<NodeId> = validation_aggregation_roots(&input)
+            .iter()
+            .map(|root| root.id())
+            .collect();
+        let form = dom.elements_named("form").next().expect("form");
+        let fieldset = dom.elements_named("fieldset").next().expect("fieldset");
+        let other = dom.elements_named("form").nth(1).expect("other form");
+        assert!(roots.contains(&form.id()));
+        assert!(roots.contains(&fieldset.id()));
+        assert!(!roots.contains(&other.id()));
+        assert!(!roots.contains(&dom.document.id()));
+        // A control without an owner or fieldset needs no extra roots: its
+        // own subtree root already covers it, and unrelated nodes stay clean.
+        let bare = dom.elements_named("input").nth(1).expect("bare input");
+        assert!(validation_aggregation_roots(&bare).is_empty());
+    }
 
     #[test]
     fn classifies_mutations_conservatively() {

@@ -118,7 +118,7 @@ impl DocumentRuntime {
                         _ => false,
                     };
                     if changed {
-                        request_state_render(&self.page.dom.document, &mut result.outcome);
+                        request_state_render(&target, &mut result.outcome);
                     }
                 }
                 (result.outcome, None)
@@ -314,11 +314,39 @@ fn lifecycle_name(state: DocumentLifecycle) -> &'static str {
     }
 }
 
-/// Requests a state-invalidation render after scriptless control edits.
-fn request_state_render(document: &NodeRef, outcome: &mut ScriptOutcome) {
+/// Requests a targeted state-invalidation render after scriptless control
+/// edits: the control's own subtree root plus form-owner/fieldset aggregation
+/// roots (HTML `:valid` / `:invalid` on `form` / `fieldset`), radio-group
+/// peers, and their aggregates. Never the whole document.
+fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcome) {
+    use crate::engine::invalidation::validation_aggregation_roots;
+    let mut roots = vec![
+        control
+            .shadow_including_parent()
+            .unwrap_or_else(|| control.clone())
+            .id(),
+    ];
+    let mut push_with_aggregates = |node: &NodeRef| {
+        roots.push(node.id());
+        roots.extend(
+            validation_aggregation_roots(node)
+                .iter()
+                .map(|root| root.id()),
+        );
+    };
+    push_with_aggregates(control);
+    if control.is_radio() {
+        for peer in control.radio_group() {
+            if peer.id() != control.id() {
+                push_with_aggregates(&peer);
+            }
+        }
+    }
+    roots.sort_unstable();
+    roots.dedup();
     outcome.render_requested = true;
     outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
-        roots: vec![document.id()],
+        roots,
         impact: crate::engine::invalidation::MutationKind::State.impact(),
         mutation_count: 0,
         rebuild_style_rules: false,

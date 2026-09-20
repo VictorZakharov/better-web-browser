@@ -162,11 +162,11 @@ impl DocumentRuntime {
         {
             // Scriptless static validation blocks submission, reports the
             // first invalid control, and focuses it like interactive repair.
-            first.update_control_state(|state| {
+            first.update_control_state_tracked(|state| {
                 state.reported = true;
             });
             self.focused_node = Some(first.id());
-            super::request_state_render(&self.page.dom.document, outcome);
+            super::request_state_render(&first, outcome);
             return Ok(None);
         }
         Ok(self.form_navigation(form_id, submitter))

@@ -2,6 +2,10 @@
 mod ancestor_filter;
 pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
+use super::selector_validity::{
+    matches_in_range, matches_invalid, matches_optional, matches_out_of_range, matches_required,
+    matches_valid,
+};
 use super::*;
 
 pub(crate) struct CompiledSelectorList {
@@ -128,6 +132,24 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     if selector.requires_indeterminate && !matches_indeterminate(node) {
         return false;
     }
+    if selector.requires_valid && !matches_valid(node) {
+        return false;
+    }
+    if selector.requires_invalid && !matches_invalid(node) {
+        return false;
+    }
+    if selector.requires_required && !matches_required(node) {
+        return false;
+    }
+    if selector.requires_optional && !matches_optional(node) {
+        return false;
+    }
+    if selector.requires_in_range && !matches_in_range(node) {
+        return false;
+    }
+    if selector.requires_out_of_range && !matches_out_of_range(node) {
+        return false;
+    }
     if selector.requires_fullscreen && !node.is_fullscreen() {
         return false;
     }
@@ -245,6 +267,12 @@ pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -
             "indeterminate" => matches_indeterminate(node),
             "disabled" => is_disableable(node) && is_disabled(node),
             "enabled" => is_disableable(node) && !is_disabled(node),
+            "valid" => matches_valid(node),
+            "invalid" => matches_invalid(node),
+            "required" => matches_required(node),
+            "optional" => matches_optional(node),
+            "in-range" => matches_in_range(node),
+            "out-of-range" => matches_out_of_range(node),
             _ => false,
         },
         SimpleSelector::Tag(tag) => node.tag_name() == Some(tag),
@@ -255,8 +283,10 @@ pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -
 }
 
 fn matches_checked(node: &NodeRef) -> bool {
+    // Options use authoritative selectedness: the `selected` attribute is the
+    // default, while user picks and `selected` writes live in control state.
     (node.is_checkable() && node.checked())
-        || (node.tag_name() == Some("option") && node.attr("selected").is_some())
+        || (node.tag_name() == Some("option") && node.control_state_snapshot().selectedness)
 }
 
 fn matches_indeterminate(node: &NodeRef) -> bool {

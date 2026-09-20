@@ -86,7 +86,7 @@ pub(super) fn dispatch(
         "optionSelected" => JsValue::from(node.control_state_snapshot().selectedness),
         "optionSetSelected" => {
             let selected = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
-            node.update_control_state(|state| {
+            node.update_control_state_tracked(|state| {
                 state.selectedness = selected;
                 state.selected_dirty = true;
             });
@@ -95,7 +95,7 @@ pub(super) fn dispatch(
             }
             if let Some(select) = node.nearest_select() {
                 select.run_selectedness_setting();
-                select.update_control_state(|state| {
+                select.update_control_state_tracked(|state| {
                     state.reported = false;
                 });
             }
@@ -111,7 +111,7 @@ pub(super) fn dispatch(
                 .default_override
                 .clone()
                 .unwrap_or_else(|| node.text_content());
-            node.update_control_state(|state| {
+            node.update_control_state_tracked(|state| {
                 state.default_override = Some(current_default);
             });
             Node::set_text_content(&node, &value);
@@ -128,7 +128,7 @@ pub(super) fn dispatch(
             if node.control_state_snapshot().default_override.is_none() {
                 Node::set_text_content(&node, &value);
             } else {
-                node.update_control_state(|state| {
+                node.update_control_state_tracked(|state| {
                     state.default_override = Some(value.clone());
                 });
             }
@@ -155,14 +155,13 @@ pub(super) fn dispatch(
                 .and_then(|text| serde_json::from_str(&text).ok())
                 .unwrap_or_default();
             if control_validity::store_pattern_verdict(&node, &pattern, values, verdict) {
-                let document = state.document.clone();
-                state.record_mutation(Some(&document), MutationKind::State);
+                state.record_mutation(Some(&node), MutationKind::State);
             }
             JsValue::undefined()
         }
         "controlReportInvalid" => {
             // Marks interactive reporting; visible feedback follows.
-            node.update_control_state(|state| {
+            node.update_control_state_tracked(|state| {
                 state.reported = true;
             });
             JsValue::undefined()
@@ -180,8 +179,7 @@ pub(super) fn dispatch(
         _ => unreachable!(),
     };
     if node.document_mutation_version() != version {
-        let document = state.document.clone();
-        state.record_mutation(Some(&document), MutationKind::State);
+        state.record_mutation(Some(&node), MutationKind::State);
     }
     Ok(Some(value))
 }
@@ -269,7 +267,7 @@ fn set_selected_index(select: &Node, index: i64) {
     let mut matched = false;
     for (position, option) in select.select_options().iter().enumerate() {
         let is_match = !matched && position as i64 == index;
-        option.update_control_state(|state| {
+        option.update_control_state_tracked(|state| {
             state.selectedness = is_match;
             if is_match {
                 state.selected_dirty = true;
@@ -277,7 +275,7 @@ fn set_selected_index(select: &Node, index: i64) {
         });
         matched |= is_match;
     }
-    select.update_control_state(|state| {
+    select.update_control_state_tracked(|state| {
         state.reported = false;
     });
 }
@@ -288,7 +286,7 @@ fn set_select_value(select: &Node, value: &str) {
     let mut matched = false;
     for option in select.select_options() {
         let is_match = !matched && option.option_value() == value;
-        option.update_control_state(|state| {
+        option.update_control_state_tracked(|state| {
             state.selectedness = is_match;
             if is_match {
                 state.selected_dirty = true;
@@ -296,7 +294,7 @@ fn set_select_value(select: &Node, value: &str) {
         });
         matched |= is_match;
     }
-    select.update_control_state(|state| {
+    select.update_control_state_tracked(|state| {
         state.reported = false;
     });
 }

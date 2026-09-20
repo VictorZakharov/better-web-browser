@@ -348,7 +348,7 @@ pub(crate) fn store_pattern_verdict(
             cached_pattern != pattern || cached_values != &values || *cached_verdict != verdict
         },
     );
-    node.update_control_state(|state| {
+    node.update_control_state_tracked(|state| {
         state.pattern_verdict = Some((pattern.to_string(), values, verdict));
     });
     changed

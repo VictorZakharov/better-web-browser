@@ -13,6 +13,7 @@ mod rule_index;
 pub(crate) mod selector_match;
 mod selector_model;
 mod selector_parser;
+mod selector_validity;
 mod shorthands;
 mod stylesheet;
 pub(crate) mod supports;

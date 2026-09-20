@@ -233,6 +233,12 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "hover" => compound.requires_hover = true,
                         "checked" => compound.requires_checked = true,
                         "indeterminate" => compound.requires_indeterminate = true,
+                        "valid" => compound.requires_valid = true,
+                        "invalid" => compound.requires_invalid = true,
+                        "required" => compound.requires_required = true,
+                        "optional" => compound.requires_optional = true,
+                        "in-range" => compound.requires_in_range = true,
+                        "out-of-range" => compound.requires_out_of_range = true,
                         "active" | "focus" | "visited" | "focus-visible" => {
                             compound.never_matches = true
                         }
@@ -302,7 +308,19 @@ pub(super) fn parse_attribute_selector(input: &str) -> Option<AttributeSelector>
 
 pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
     if let Some(name) = input.strip_prefix(':')
-        && matches!(name, "checked" | "indeterminate" | "disabled" | "enabled")
+        && matches!(
+            name,
+            "checked"
+                | "indeterminate"
+                | "disabled"
+                | "enabled"
+                | "valid"
+                | "invalid"
+                | "required"
+                | "optional"
+                | "in-range"
+                | "out-of-range"
+        )
     {
         return Some(SimpleSelector::State(name.to_string()));
     }
