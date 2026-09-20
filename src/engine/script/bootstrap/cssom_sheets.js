@@ -84,14 +84,14 @@
         set media(value) { this.__media.mediaText = value; }
         get disabled() {
             const owner = this.ownerNode;
-            return owner ? !!host('stylesheetDisabled', owner.__id) : this.__disabled;
+            return owner ? !!host('stylesheetDisabled', nodeId(owner)) : this.__disabled;
         }
         set disabled(value) {
             value = !!value;
             const owner = this.ownerNode;
             const changed = value !== this.__disabled;
             this.__disabled = value;
-            if (owner) host('stylesheetDisable', owner.__id, value);
+            if (owner) host('stylesheetDisable', nodeId(owner), value);
             else if (changed) this.__notifyRoots();
         }
         get cssRules() { this.__assertOriginClean(); return this.__ruleList; }

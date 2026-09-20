@@ -34,7 +34,7 @@
         const buffers = source ? [...source.sourceBuffers].map(buffer =>
             mediaTrackKind(buffer.__type) + ':' + buffer.__bytes + ':'
             + Number(buffer.updating) + ':' + ranges(buffer.buffered)).join(';') : '';
-        host('mediaDiagnostic', element.__id, event + ' t=' + state.currentTime
+        host('mediaDiagnostic', nodeId(element), event + ' t=' + state.currentTime
             + ' duration=' + state.duration + ' ready=' + state.readyState
             + ' paused=' + state.paused + ' buffered=' + ranges(state.buffered)
             + ' native=' + position + '/' + duration

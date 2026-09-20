@@ -40,7 +40,7 @@ impl Context {
         cache_error: bool,
     ) -> JsResult<()> {
         let context = self.context.clone();
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);

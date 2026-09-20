@@ -113,6 +113,35 @@ fn host_call_callback(
     mut return_value: v8::ReturnValue,
 ) {
     let operation = arguments.get(0).to_rust_string_lossy(scope);
+    if matches!(
+        operation.as_str(),
+        "navigate"
+            | "navigateRequest"
+            | "planFormNavigation"
+            | "commitFormNavigation"
+            | "fragmentNavigation"
+    ) && !super::window_access::guard_navigation(scope)
+    {
+        return;
+    }
+    if matches!(
+        operation.as_str(),
+        "bindNodeWrapper"
+            | "nodeHandle"
+            | "nodeWrapper"
+            | "bindAttributeWrapper"
+            | "attributeComparisonData"
+    ) {
+        super::node_wrappers::dispatch(scope, &operation, arguments, return_value);
+        return;
+    }
+    if matches!(
+        operation.as_str(),
+        "frameWindow" | "frameDocument" | "discardFrame" | "frameActive"
+    ) {
+        super::frames::dispatch(scope, &operation, arguments, return_value);
+        return;
+    }
     if operation == "queueMicrotask" {
         // HTML microtasks share V8's job queue, not the author's replaceable Promise API.
         // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#microtask-queuing

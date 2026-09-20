@@ -1,15 +1,15 @@
     // HTML live checkedness, radio groups, and legacy click activation.
     // https://html.spec.whatwg.org/multipage/input.html#dom-input-checked
     Object.defineProperties(HTMLInputElement.prototype, {
-        checked: { configurable: true, get() { return host('inputChecked', this.__id); },
-            set(value) { host('inputSetChecked', this.__id, !!value); } },
+        checked: { configurable: true, get() { return host('inputChecked', nodeId(this)); },
+            set(value) { host('inputSetChecked', nodeId(this), !!value); } },
         defaultChecked: { configurable: true, get() { return this.hasAttribute('checked'); },
             set(value) { this.toggleAttribute('checked', !!value); } },
-        indeterminate: { configurable: true, get() { return host('inputIndeterminate', this.__id); },
-            set(value) { host('inputSetIndeterminate', this.__id, !!value); } }
+        indeterminate: { configurable: true, get() { return host('inputIndeterminate', nodeId(this)); },
+            set(value) { host('inputSetIndeterminate', nodeId(this), !!value); } }
     });
     function radioGroup(input) {
-        return String(host('inputRadioGroup', input.__id)).split(',').filter(Boolean).map(id => wrap(Number(id)));
+        return String(host('inputRadioGroup', nodeId(input))).split(',').filter(Boolean).map(id => wrap(Number(id)));
     }
     function checkableType(input) {
         return input instanceof HTMLInputElement && /^(checkbox|radio)$/i.test(input.type);
@@ -59,7 +59,7 @@
         try {
             if (!this.dispatchEvent(new Event('reset', { bubbles: true, cancelable: true }))) return;
             for (const control of this.elements) {
-                if (control instanceof HTMLInputElement) host('inputResetChecked', control.__id);
+                if (control instanceof HTMLInputElement) host('inputResetChecked', nodeId(control));
             }
         } finally { this.__resetting = false; }
     };

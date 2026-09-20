@@ -14,10 +14,12 @@ pub(super) mod document_lifecycle;
 mod document_streams;
 mod dynamic_modules;
 mod dynamic_scripts;
+mod frames;
 mod geometry;
 mod memory;
 mod module_preparation;
 pub(crate) mod parser;
+pub(crate) mod parser_queue;
 mod restart;
 pub(crate) use restart::RestartState;
 mod storage;
@@ -32,6 +34,7 @@ pub struct ScriptRuntime {
     initialized: bool,
     prefer_timer_task: bool,
     last_heap_sample: Option<Instant>,
+    frames: Option<frames::ChildRuntimes>,
 }
 
 impl ScriptRuntime {
@@ -67,6 +70,7 @@ impl ScriptRuntime {
             initialized: false,
             prefer_timer_task: true,
             last_heap_sample: None,
+            frames: Some(Default::default()),
         }
     }
 
@@ -153,16 +157,31 @@ impl ScriptRuntime {
 
     /// Returns the delay until the next timer should wake this runtime.
     pub fn next_timer_delay(&mut self) -> Option<Duration> {
+        self.sync_child_runtimes();
+        let child_due = self.child_timer_delay();
+        if self.frames.is_some()
+            && self
+                .context
+                .as_ref()
+                .is_some_and(|context| context.has_message_task())
+        {
+            return Some(Duration::ZERO);
+        }
         if self.has_ready_document_task() {
             return Some(Duration::ZERO);
         }
         let mut host = self.host.borrow_mut();
         let now = host.timers.now();
-        host.next_callback_due().map(|due| due.saturating_sub(now))
+        host.next_callback_due()
+            .map(|due| due.saturating_sub(now))
+            .into_iter()
+            .chain(child_due)
+            .min()
     }
 
     /// Advances the realm clock without selecting a timer task for execution.
     pub fn elapse_time(&mut self, advance: Duration) {
+        self.elapse_child_time(advance);
         let mut host = self.host.borrow_mut();
         let horizon = host.timers.now().saturating_add(advance);
         host.timers.advance_to(horizon);
@@ -251,6 +270,16 @@ impl ScriptRuntime {
         // dates. Apply it before selecting work so a busy event loop cannot run an expired
         // idle timeout as though an earlier idle opportunity were still available.
         self.elapse_time(advance);
+        if max_callbacks > 0
+            && let Some(outcome) = self.advance_message_task()
+        {
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if max_callbacks > 0
+            && let Some(outcome) = self.advance_child_task()
+        {
+            return self.finish_guarded_run(Ok(outcome));
+        }
         let advance = Duration::ZERO;
         if max_callbacks > 0 && self.has_ready_document_task() {
             return self.advance_document_task(advance);
@@ -354,11 +383,13 @@ impl ScriptRuntime {
                 // The V8 entry guard restores isolate state during unwinding, so the damaged
                 // document realm can be released normally instead of leaking engine memory.
                 self.context.take();
+                self.frames.take();
                 stopped_runtime_outcome(panic_detail(payload))
             }
         };
         self.append_memory_diagnostic(&mut outcome);
-        finish_host(outcome, &self.host)
+        let outcome = finish_host(outcome, &self.host);
+        self.collect_child_outcomes(outcome)
     }
 }
 

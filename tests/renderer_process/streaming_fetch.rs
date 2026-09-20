@@ -6,6 +6,8 @@ use better_web_browser::renderer_protocol::{
 };
 use std::time::Duration;
 
+#[path = "streaming_fetch/frames.rs"]
+mod frames;
 #[path = "streaming_fetch/progressive.rs"]
 mod progressive;
 

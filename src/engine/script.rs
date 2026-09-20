@@ -35,7 +35,7 @@ mod module_evaluation;
 mod module_lifecycle;
 mod module_loader;
 mod mutation_host;
-mod network;
+pub(crate) mod network;
 mod parser_writes;
 mod performance_clock;
 mod render_invalidation;

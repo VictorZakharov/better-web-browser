@@ -94,8 +94,7 @@
     // Consumed and removed by the shared Window/Worker timing bootstrap, before author scripts.
     globalThis.__performanceHooks = {
         queue: callback => queueTimer(callback, 0, false, [], 'PerformanceObserver delivery', 'performanceTaskSchedule'),
-        report: error => reportGlobalException(error, 'PerformanceObserver'),
-        install: value => { iframeWindow.performance = value; }
+        report: error => reportGlobalException(error, 'PerformanceObserver')
     };
     windowObject.queueMicrotask = callback => {
         if (typeof callback !== 'function') throw new TypeError('queueMicrotask requires a callback');
@@ -121,7 +120,7 @@
         getPropertyValue(name) {
             name = String(name);
             if (!name.startsWith('--')) name = name.toLowerCase();
-            return element ? host('computedStyle', element.__id, name, pseudo) : '';
+            return element ? host('computedStyle', nodeId(element), name, pseudo) : '';
         },
         get cssText() { return ''; }
     }, {
@@ -210,7 +209,7 @@
     const mutationAncestors = target => {
         let ancestors = mutationAncestorCache.get(target);
         if (!ancestors) {
-            ancestors = list(host('inclusiveAncestors', target.__id));
+            ancestors = list(host('inclusiveAncestors', nodeId(target)));
             mutationAncestorCache.set(target, ancestors);
         }
         return ancestors;
@@ -283,7 +282,7 @@
             this.targets = new Set();
         }
         observe(target, options = {}) {
-            if (!(target instanceof Node)) throw new TypeError('MutationObserver target must be a Node');
+            if (!(isNode(target))) throw new TypeError('MutationObserver target must be a Node');
             options = Object(options);
             const normalized = {
                 childList: !!options.childList,
@@ -311,10 +310,10 @@
             if (!registrations.has(this)) {
                 mutationRegistrationCount++;
             } else {
-                host('observeParserMutations', target.__id, 0,
+                host('observeParserMutations', nodeId(target), 0,
                     registrations.get(this).characterDataOldValue ? 1 : 0);
             }
-            host('observeParserMutations', target.__id, 1, normalized.characterDataOldValue ? 1 : 0);
+            host('observeParserMutations', nodeId(target), 1, normalized.characterDataOldValue ? 1 : 0);
             registrations.set(this, normalized);
             this.targets.add(target);
         }
@@ -323,7 +322,7 @@
                 const oldText = mutationRegistrations.get(target)?.get(this)?.characterDataOldValue;
                 if (mutationRegistrations.get(target)?.delete(this)) {
                     mutationRegistrationCount--;
-                    host('observeParserMutations', target.__id, 0, oldText ? 1 : 0);
+                    host('observeParserMutations', nodeId(target), 0, oldText ? 1 : 0);
                 }
             }
             this.targets.clear();

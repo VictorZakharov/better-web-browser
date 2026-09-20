@@ -1,8 +1,11 @@
 use super::*;
 
-fn intent(document: DocumentId, url: &str) -> RendererFetchRequest {
+pub(super) fn intent(document: DocumentId, url: &str) -> RendererFetchRequest {
     RendererFetchRequest {
         head: better_web_browser::renderer_protocol::FetchRequestHead {
+            client: Default::default(),
+            resulting_client: Default::default(),
+            embedding_client: Default::default(),
             request_id: 7,
             document,
             initiator: FetchInitiator::ScriptApi,

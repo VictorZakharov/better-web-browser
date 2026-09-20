@@ -8,6 +8,8 @@ use std::time::Duration;
 mod document_lifecycle;
 mod dynamic_modules;
 mod dynamic_readiness;
+mod frame_navigation;
+mod frames;
 mod idle;
 mod inserted_scripts;
 mod scheduling;

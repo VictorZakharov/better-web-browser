@@ -2,8 +2,9 @@ use crate::limits::{
     MAX_FETCH_HEADER_NAME_BYTES, MAX_FETCH_HEADER_VALUE_BYTES, MAX_REDIRECTS,
     MAX_RENDERER_FETCH_HEADERS, MAX_URL_BYTES,
 };
+use crate::renderer_protocol::DocumentId;
 use crate::renderer_protocol::ProtocolError;
-use crate::renderer_protocol::document::*;
+use crate::renderer_protocol::fetch::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 
 pub(super) fn encode_request_head(
@@ -13,6 +14,12 @@ pub(super) fn encode_request_head(
     head.validate()?;
     writer.u64(head.request_id);
     writer.u64(head.document.get());
+    writer.u64(head.client.id);
+    writer.u8(u8::from(head.client.opaque));
+    writer.u64(head.resulting_client.id);
+    writer.u8(u8::from(head.resulting_client.opaque));
+    writer.u64(head.embedding_client.id);
+    writer.u8(u8::from(head.embedding_client.opaque));
     writer.u8(initiator_tag(head.initiator));
     writer.u8(destination_tag(head.destination));
     writer.string(&head.url)?;
@@ -34,6 +41,9 @@ pub(super) fn decode_request_head(
     let head = FetchRequestHead {
         request_id: nonzero(reader.u64()?, "Fetch request")?,
         document: DocumentId::new(reader.u64()?)?,
+        client: decode_client(reader)?,
+        resulting_client: decode_client(reader)?,
+        embedding_client: decode_client(reader)?,
         initiator: decode_initiator(reader.u8()?)?,
         destination: decode_destination(reader.u8()?)?,
         url: reader.string(MAX_URL_BYTES)?,
@@ -194,6 +204,18 @@ fn nonzero(value: u64, field: &'static str) -> Result<u64, ProtocolError> {
         .ok_or(ProtocolError::InvalidPayload(field))
 }
 
+fn decode_client(
+    reader: &mut WireReader<'_>,
+) -> Result<crate::fetch::RequestClient, ProtocolError> {
+    let id = reader.u64()?;
+    let opaque = match reader.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(ProtocolError::InvalidPayload("Fetch client origin flag")),
+    };
+    Ok(crate::fetch::RequestClient { id, opaque })
+}
+
 macro_rules! tagged_enum {
     ($encode:ident, $decode:ident, $ty:ty, $field:literal, {$($variant:path => $tag:literal),+ $(,)?}) => {
         fn $encode(value: $ty) -> u8 { match value { $($variant => $tag),+ } }
@@ -201,8 +223,8 @@ macro_rules! tagged_enum {
     };
 }
 
-tagged_enum!(initiator_tag, decode_initiator, FetchInitiator, "Fetch initiator", { FetchInitiator::Subresource => 1, FetchInitiator::ClassicScript => 2, FetchInitiator::ModuleScript => 3, FetchInitiator::ScriptApi => 4, FetchInitiator::ClassicWorker => 5, FetchInitiator::ModuleWorker => 6 });
-tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5, ResourceDestination::Video => 6 });
+tagged_enum!(initiator_tag, decode_initiator, FetchInitiator, "Fetch initiator", { FetchInitiator::Subresource => 1, FetchInitiator::ClassicScript => 2, FetchInitiator::ModuleScript => 3, FetchInitiator::ScriptApi => 4, FetchInitiator::ClassicWorker => 5, FetchInitiator::ModuleWorker => 6, FetchInitiator::ChildNavigation => 7, FetchInitiator::ChildResource => 8 });
+tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5, ResourceDestination::Video => 6, ResourceDestination::Document => 7 });
 tagged_enum!(mode_tag, decode_mode, FetchMode, "Fetch mode", { FetchMode::SameOrigin => 1, FetchMode::NoCors => 2, FetchMode::Cors => 3 });
 tagged_enum!(credentials_tag, decode_credentials, FetchCredentials, "Fetch credentials", { FetchCredentials::Omit => 1, FetchCredentials::SameOrigin => 2, FetchCredentials::Include => 3 });
 tagged_enum!(cache_tag, decode_cache, FetchCache, "Fetch cache", { FetchCache::Default => 1, FetchCache::NoStore => 2, FetchCache::Reload => 3, FetchCache::NoCache => 4, FetchCache::ForceCache => 5, FetchCache::OnlyIfCached => 6 });

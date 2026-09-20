@@ -1,11 +1,13 @@
+use super::agent::Agent;
 use super::bridge::{HostBridge, install_host_call, value_from_v8, value_to_v8};
 use super::modules::EngineModuleEvaluation;
 use super::value::{JsError, JsErrorKind, JsResult, JsValue, Source};
-use super::watchdog::ExecutionWatchdog;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Once, OnceLock};
 mod dynamic_imports;
+mod frames;
 mod hooks;
 mod module_preparation;
 
@@ -13,15 +15,14 @@ static INITIALIZE_V8: Once = Once::new();
 static V8_PLATFORM: OnceLock<v8::SharedRef<v8::Platform>> = OnceLock::new();
 
 pub(in crate::engine::script) struct Context {
-    // Stop cross-thread termination before the persistent handles and isolate are released.
-    watchdog: ExecutionWatchdog,
     // Persistent handles must be released before their isolate.
     context: v8::Global<v8::Context>,
     private_hooks: HashMap<String, v8::Global<v8::Function>>,
     imports: Rc<super::dynamic_imports::Imports>,
-    isolate: v8::OwnedIsolate,
+    _frames: Rc<super::frames::FrameTree>,
     next_module_promise: u64,
     module_promises: HashMap<u64, v8::Global<v8::Promise>>,
+    agent: Rc<RefCell<Agent>>,
 }
 
 pub(in crate::engine::script) enum ModuleEvaluation {
@@ -36,38 +37,46 @@ impl Context {
         initialize_v8();
         let mut isolate = v8::Isolate::new(v8::CreateParams::default());
         isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
+        isolate.set_allow_wasm_code_generation_callback(super::policy::allow_wasm);
         isolate.set_host_import_module_dynamically_callback(super::dynamic_imports::request);
         let imports = Rc::new(super::dynamic_imports::Imports::default());
+        let frames = Rc::new(super::frames::FrameTree::default());
         isolate.set_host_initialize_import_meta_object_callback(
             super::modules::initialize_import_meta,
         );
         let context = {
             v8::scope!(let scope, &mut isolate);
-            let context = v8::Context::new(scope, Default::default());
+            let global_template = super::v8_api::window_template(scope);
+            let context = v8::Context::new(
+                scope,
+                v8::ContextOptions {
+                    global_template: Some(global_template),
+                    ..Default::default()
+                },
+            );
             context.set_slot(Rc::new(bridge));
             context.set_slot(Rc::clone(&imports));
+            super::frames::register(context, &frames);
             let scope = &mut v8::ContextScope::new(scope, context);
+            super::frames::register_document(scope, context, &frames);
             install_host_call(scope, context)?;
             v8::Global::new(scope, context)
         };
-        let watchdog = ExecutionWatchdog::new(isolate.thread_safe_handle())?;
-        // rusty_v8 enters new isolates for their full lifetime. Breeze retains multiple document
-        // realms on one renderer thread, so execution enters only the isolate it is about to use.
-        unsafe { isolate.exit() };
+        let agent = Rc::new(RefCell::new(Agent::new(isolate)?));
         Ok(Self {
-            watchdog,
             context,
             private_hooks: HashMap::new(),
             imports,
-            isolate,
+            _frames: frames,
             next_module_promise: 1,
             module_promises: HashMap::new(),
+            agent,
         })
     }
 
     pub(in crate::engine::script) fn eval(&mut self, source: Source) -> JsResult<JsValue> {
         let context = self.context.clone();
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -104,14 +113,14 @@ impl Context {
     }
 
     pub(in crate::engine::script) fn run_jobs(&mut self) -> JsResult<()> {
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             isolate.perform_microtask_checkpoint();
             Ok(())
         })
     }
 
     pub(in crate::engine::script) fn heap_diagnostic(&mut self) -> JsResult<String> {
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             let stats = isolate.get_heap_statistics();
             Ok(format!(
                 "V8 heap: used={} committed={} physical={} external={} malloced={} contexts={} detached={}",
@@ -133,7 +142,7 @@ impl Context {
     ) -> JsResult<JsValue> {
         let context = self.context.clone();
         let captured = self.private_hooks.get(name).cloned();
-        self.watchdog.run(&mut self.isolate, |isolate| {
+        self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let context = v8::Local::new(scope, &context);
             let scope = &mut v8::ContextScope::new(scope, context);
@@ -163,52 +172,6 @@ impl Context {
         })
     }
 
-    pub(in crate::engine::script) fn initialize_iframe_realm(
-        &mut self,
-        bootstrap: &str,
-    ) -> JsResult<()> {
-        let parent = self.context.clone();
-        self.watchdog.run(&mut self.isolate, |isolate| {
-            v8::scope!(let scope, isolate);
-            let parent = v8::Local::new(scope, &parent);
-            let iframe = v8::Context::new(scope, Default::default());
-            // The synthetic iframe is same-origin with its owning document. V8 otherwise gives
-            // every Context a distinct token and rejects WindowProxy access as "no access".
-            iframe.set_security_token(parent.get_security_token(scope));
-            let bridge = parent.get_slot::<HostBridge>().ok_or_else(|| JsError {
-                kind: JsErrorKind::Type,
-                message: "browser host bridge is unavailable".into(),
-            })?;
-            iframe.set_slot(bridge);
-            {
-                let scope = &mut v8::ContextScope::new(scope, iframe);
-                install_host_call(scope, iframe)?;
-                let source = v8::String::new(scope, bootstrap)
-                    .ok_or_else(|| allocation_error("iframe bootstrap"))?;
-                let script = v8::Script::compile(scope, source, None).ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "compile iframe browser bindings".into(),
-                })?;
-                script.run(scope).ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "evaluate iframe browser bindings".into(),
-                })?;
-            }
-            let scope = &mut v8::ContextScope::new(scope, parent);
-            let key = v8::String::new(scope, "__iframeWindow")
-                .ok_or_else(|| allocation_error("iframe global name"))?;
-            parent
-                .global(scope)
-                .set(scope, key.into(), iframe.global(scope).into())
-                .filter(|set| *set)
-                .ok_or_else(|| JsError {
-                    kind: JsErrorKind::Error,
-                    message: "expose iframe JavaScript realm".into(),
-                })?;
-            Ok(())
-        })
-    }
-
     pub(in crate::engine::script) fn evaluate_module(
         &mut self,
         root_url: &str,
@@ -216,7 +179,7 @@ impl Context {
         sources: &HashMap<String, String>,
     ) -> JsResult<ModuleEvaluation> {
         let context = self.context.clone();
-        let evaluation = self.watchdog.run(&mut self.isolate, |isolate| {
+        let evaluation = self.agent.borrow_mut().run(|isolate| {
             super::modules::evaluate(isolate, &context, root_url, root_source, sources, false)
         })?;
         match evaluation {
@@ -252,7 +215,7 @@ impl Context {
         let property = format!("__breezeModulePromise{promise_id}");
         {
             let context = self.context.clone();
-            self.watchdog.run(&mut self.isolate, |isolate| {
+            self.agent.borrow_mut().run(|isolate| {
                 v8::scope!(let scope, isolate);
                 let context = v8::Local::new(scope, &context);
                 let scope = &mut v8::ContextScope::new(scope, context);
@@ -285,14 +248,6 @@ impl Context {
              ).finally(() => delete globalThis[{property}]);"
         )))?;
         Ok(())
-    }
-}
-
-impl Drop for Context {
-    fn drop(&mut self) {
-        // OwnedIsolate::drop balances one entry. Restore that invariant after Breeze's explicit
-        // per-operation entry guards have all exited.
-        unsafe { self.isolate.enter() };
     }
 }
 

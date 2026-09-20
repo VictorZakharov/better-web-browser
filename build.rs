@@ -1,5 +1,6 @@
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    v8_api::build();
 
     // V8 and the layout engine both execute standards-defined nested algorithms. Windows' default
     // one-megabyte executable stack is too small for otherwise bounded real-world pages (the
@@ -11,3 +12,6 @@ fn main() {
         println!("cargo:rustc-link-arg-bin=better-web-browser=/STACK:8388608");
     }
 }
+
+#[path = "build/v8_api.rs"]
+mod v8_api;

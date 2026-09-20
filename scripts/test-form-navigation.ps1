@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param([string] $Browser, [string] $OutputDirectory = 'target/forms-navigation-proof/owned', [switch] $Chrome,
-    [ValidateSet('direct','post','plain','multipart','redirect','cancel','removed-during-submit','removed','synthetic','flow','iframe')]
+    [ValidateSet('direct','post','plain','multipart','redirect','cancel','removed-during-submit','removed','synthetic','flow','iframe','iframe-external')]
     [string[]] $Cases = @('direct','post','plain','multipart','redirect','cancel','removed-during-submit','removed','synthetic','flow'))
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -48,6 +48,7 @@ try {
             'removed' { $last.method -eq 'GET' -and $last.path -eq '/echo?q=standards+%F0%9F%A6%80&text=line1%0D%0Aline2' }
             'synthetic' { $last.path -eq '/destination' -and $report.final_url -eq ($server.Url + 'destination') }
             'iframe' { $last.path -eq '/destination' -and $report.final_url -eq ($server.Url + 'destination') }
+            'iframe-external' { $last.path -eq '/destination' -and $report.final_url -eq ($server.Url + 'destination') }
             'flow' { $report.final_url -eq ($server.Url + 'flow?q=second+%F0%9F%A6%80') -and @($observed | Where-Object path -eq '/destination').Count -eq 1 -and @($requests | Where-Object path -eq '/flow?q=second+%F0%9F%A6%80').Count -eq 1 }
         }
         $consoleErrors = @($report.javascript_console | Where-Object { $_ -match '^error:' })

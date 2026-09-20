@@ -193,7 +193,7 @@
         }
     };
     const shadowIncludingContains = (ancestor, node) => {
-        if (!(ancestor instanceof Node) || !(node instanceof Node)) return false;
+        if (!(isNode(ancestor)) || !(isNode(node))) return false;
         for (let current = node; current; current = current.parentNode ||
             (current instanceof ShadowRoot ? current.host : null)) {
             if (current === ancestor) return true;
@@ -202,16 +202,16 @@
     };
     const retarget = (target, against) => {
         let adjusted = target;
-        while (adjusted instanceof Node) {
+        while (isNode(adjusted)) {
             const root = adjusted.getRootNode();
             if (!(root instanceof ShadowRoot) ||
-                (against instanceof Node && shadowIncludingContains(root, against))) return adjusted;
+                (isNode(against) && shadowIncludingContains(root, against))) return adjusted;
             adjusted = root.host;
         }
         return adjusted;
     };
     const closedShadowHidden = (node, currentTarget) => {
-        if (!(node instanceof Node)) return false;
+        if (!(isNode(node))) return false;
         let root = node.getRootNode();
         while (root instanceof ShadowRoot) {
             if (root.mode === 'closed' && !shadowIncludingContains(root, currentTarget)) return true;
@@ -223,12 +223,12 @@
         return this.__path.filter(node => !closedShadowHidden(node, this.__currentTarget));
     };
     const eventParent = (target, event) => {
-        if (!(target instanceof Node)) return null;
+        if (!(isNode(target))) return null;
         if (target.assignedSlot) return target.assignedSlot;
         const parent = target.parentNode;
         if (parent) return parent;
         if (target instanceof ShadowRoot) {
-            const targetRoot = event.__originalTarget instanceof Node
+            const targetRoot = isNode(event.__originalTarget)
                 ? event.__originalTarget.getRootNode()
                 : null;
             return event.composed || targetRoot !== target ? target.host : null;

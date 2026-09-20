@@ -40,51 +40,12 @@ impl Page {
     }
 
     pub(crate) fn stylesheet_dependencies(&self, node: &NodeRef) -> SheetDependencies {
-        let base = document_base_url(&self.dom, &self.source_url);
-        let mut urls = Vec::new();
-        let (base, mut imports) = if node.tag_name() == Some("style") {
-            (base, imports::parse(&node.text_content()))
-        } else if let Some(url) = node
-            .attr("href")
-            .filter(|s| !s.trim().is_empty())
-            .and_then(|href| imports::resolve(&base, &href))
-        {
-            urls.push(url.clone());
-            if let Some(sheet) = self
-                .stylesheet_sources
-                .iter()
-                .rev()
-                .find(|s| s.owner_url.as_ref() == Some(&url))
-            {
-                (sheet.base_url.clone(), sheet.imports.clone())
-            } else {
-                return SheetDependencies {
-                    urls,
-                    truncated: false,
-                };
-            }
-        } else {
-            return SheetDependencies {
-                urls,
-                truncated: false,
-            };
-        };
-        let overrides = node.sheet_overrides();
-        if let Some(own) = overrides.iter().find(|s| s.path.is_empty()) {
-            imports = imports::parse(&own.source);
-        }
-        let expanded = imports::expand_owned(
-            &base,
-            &imports,
+        stylesheet_dependencies(
+            node,
+            &document_base_url(&self.dom, &self.source_url),
             &self.stylesheet_sources,
             self.media_environment,
-            &overrides,
-        );
-        urls.extend(expanded.urls);
-        SheetDependencies {
-            urls,
-            truncated: expanded.truncated,
-        }
+        )
     }
 
     pub(crate) fn stylesheet_applies(&self, node: &NodeRef) -> bool {
@@ -163,8 +124,55 @@ impl Page {
     }
 }
 
-// Bound the accumulator as well as each graph traversal: a document can own many
-// style elements, so collecting every candidate URL before admission is unbounded.
+// Shared with child-document parser scheduling; redirects change an import's base,
+// while the requested URL continues to identify the owning link's stylesheet.
+pub(crate) fn stylesheet_dependencies(
+    node: &NodeRef,
+    base: &str,
+    sources: &[StylesheetSource],
+    environment: MediaEnvironment,
+) -> SheetDependencies {
+    let base = base.to_string();
+    let mut urls = Vec::new();
+    let (base, mut imports) = if node.tag_name() == Some("style") {
+        (base, imports::parse(&node.text_content()))
+    } else if let Some(url) = node
+        .attr("href")
+        .filter(|s| !s.trim().is_empty())
+        .and_then(|href| imports::resolve(&base, &href))
+    {
+        urls.push(url.clone());
+        if let Some(sheet) = sources
+            .iter()
+            .rev()
+            .find(|s| s.owner_url.as_ref() == Some(&url))
+        {
+            (sheet.base_url.clone(), sheet.imports.clone())
+        } else {
+            return SheetDependencies {
+                urls,
+                truncated: false,
+            };
+        }
+    } else {
+        return SheetDependencies {
+            urls,
+            truncated: false,
+        };
+    };
+    let overrides = node.sheet_overrides();
+    if let Some(own) = overrides.iter().find(|s| s.path.is_empty()) {
+        imports = imports::parse(&own.source);
+    }
+    let expanded = imports::expand_owned(&base, &imports, sources, environment, &overrides);
+    urls.extend(expanded.urls);
+    SheetDependencies {
+        urls,
+        truncated: expanded.truncated,
+    }
+}
+
+// Bound the accumulator as well as each graph traversal across all style owners.
 fn admit_urls(known: &mut HashSet<String>, admitted: &mut Vec<String>, urls: Vec<String>) -> bool {
     let mut truncated = false;
     for url in urls {

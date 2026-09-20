@@ -5,6 +5,7 @@ use super::fetch::{
 };
 use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD, MAX_URL_BYTES};
 use crate::renderer_protocol::document::*;
+use crate::renderer_protocol::fetch::*;
 use crate::renderer_protocol::presentation::codec::{
     decode_load, decode_runtime, encode_load, encode_runtime,
 };

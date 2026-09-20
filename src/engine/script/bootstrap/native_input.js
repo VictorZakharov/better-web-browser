@@ -7,6 +7,13 @@
     });
 
     const nativeTarget = id => wrap(Number(id) || 0) || document.body || document;
+    // User editing changes the control's value internally, not by invoking an
+    // author-installed value setter (e.g. a framework's programmatic-write tracker).
+    const nativeValueSetters = [
+        [HTMLTextAreaElement, Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set],
+        [HTMLSelectElement, Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set],
+        [Element, Object.getOwnPropertyDescriptor(Element.prototype, 'value').set]
+    ];
     const nativeModifiers = input => ({
         altKey: !!input.alt, ctrlKey: !!input.control,
         shiftKey: !!input.shift, metaKey: !!input.meta
@@ -75,8 +82,10 @@
     };
     const dispatchNativeText = input => {
         const target = nativeTarget(input.target);
-        target.value = String(input.value);
-        if (target instanceof HTMLTextAreaElement) target.textContent = target.value;
+        const value = String(input.value);
+        const setter = nativeValueSetters.find(([kind]) => target instanceof kind)?.[1];
+        if (setter) Reflect.apply(setter, target, [value]);
+        if (target instanceof HTMLTextAreaElement) target.textContent = value;
         if (typeof target.setSelectionRange === 'function') {
             try { target.setSelectionRange(input.selectionStart, input.selectionEnd); } catch (_error) {}
         }

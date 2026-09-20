@@ -37,10 +37,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             && let Some((kind, value)) = block_control
         {
             let icon = self.control_background_icon(style, rect.width, rect.height);
-            let mut label = input_control_label(node, kind, &value);
-            if icon.is_some() && value.is_empty() {
-                label.clear();
-            }
+            let select = (kind == ControlKind::Select).then(|| select_data(node));
+            let label = select.as_ref().map_or_else(
+                || input_control_label(node, kind, &value),
+                |select| select.label(),
+            );
             let value = if node.tag_name() == Some("button") {
                 node.attr("value").unwrap_or_default()
             } else {
@@ -56,8 +57,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     name: node.attr("name").unwrap_or_default(),
                     value,
                     label,
-                    options: Vec::new(),
-                    selected_index: 0,
+                    selected_index: select.as_ref().map_or(0, |select| select.selected_index),
+                    options: select.map_or_else(Vec::new, |select| select.options),
                     placeholder: node
                         .attr("placeholder")
                         .or_else(|| node.attr("title"))

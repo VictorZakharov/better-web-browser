@@ -1,5 +1,11 @@
 # Form submission and navigation
 
+This is the historical PR #169 report. Its iframe blocker is addressed by the
+[subsequent child-context/navigation slice](iframe-browsing-contexts.md), including
+an owned relay → Back → second-search test and three successful fresh release live runs.
+The measurements below remain the original form-slice evidence, not current iframe
+limitations. The HTML search fallback remains enabled.
+
 This slice follows [the collections/readiness assessment](browser-performance-readiness-2026-09-19.md).
 It implements the missing native form-navigation path and diagnoses the separate modern
 DuckDuckGo result-link failure. It does **not** complete modern-search acceptance:
@@ -137,13 +143,14 @@ URLs, plus JavaScript and console-reported errors; an empty uncaught-error array
 alone is insufficient. The multi-action harness waits for every queued action,
 including a navigation already scheduled when the preceding settle timer expires.
 
-The extra iframe diagnostic deliberately remains failing in Breeze and is **not**
-part of the passing default form suite. Run it explicitly; do not turn it into an
-expected pass or use the default suite to claim modern DDG result acceptance:
+At PR #169 the extra iframe diagnostic failed in Breeze and was not part of the
+passing default form suite. It now passes without weakening its assertion; the
+current default `flow` fixture also navigates through a child-message relay before
+Back and the second search. Run the explicit relay cases with:
 
 ```powershell
-./scripts/test-form-navigation.ps1 -Cases iframe -OutputDirectory target/iframe-breeze
-./scripts/test-form-navigation.ps1 -Chrome -Cases iframe -OutputDirectory target/iframe-chrome
+./scripts/test-form-navigation.ps1 -Cases iframe,iframe-external -OutputDirectory target/iframe-breeze
+./scripts/test-form-navigation.ps1 -Chrome -Cases iframe,iframe-external -OutputDirectory target/iframe-chrome
 ```
 
 The two added, unmodified upstream WPT files test `SubmitEvent` and `FormDataEvent`

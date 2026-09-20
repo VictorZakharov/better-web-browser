@@ -6,6 +6,7 @@
 mod accessibility;
 mod codec;
 mod document;
+mod fetch;
 mod input;
 mod message;
 mod presentation;
@@ -19,12 +20,14 @@ pub use accessibility::{
 };
 pub use codec::{FrameReader, FrameWriter, ProtocolError};
 pub use document::{
-    BrowserFetchError, BrowserFetchErrorKind, BrowserFetchResponse, DocumentId, DocumentStart,
-    FetchCache, FetchCredentials, FetchInitiator, FetchMode, FetchRedirect, FetchReferrer,
-    FetchReferrerPolicy, FetchRequestHead, FetchResponseAbort, FetchResponseEnd, FetchResponseHead,
-    FetchResponseResult, FetchResponseType, PresentedViewport, RendererFetchRequest,
-    RendererFetchResponse, ResourceDestination, StreamingTransferAssembler, TransferAssembler,
+    DocumentId, DocumentStart, PresentedViewport, StreamingTransferAssembler, TransferAssembler,
     TransferChunk,
+};
+pub use fetch::{
+    BrowserFetchError, BrowserFetchErrorKind, BrowserFetchResponse, FetchCache, FetchCredentials,
+    FetchInitiator, FetchMode, FetchRedirect, FetchReferrer, FetchReferrerPolicy, FetchRequestHead,
+    FetchResponseAbort, FetchResponseEnd, FetchResponseHead, FetchResponseResult,
+    FetchResponseType, RendererFetchRequest, RendererFetchResponse, ResourceDestination,
 };
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
@@ -54,7 +57,7 @@ pub use state::{
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
-pub const PROTOCOL_MAJOR: u16 = 13;
+pub const PROTOCOL_MAJOR: u16 = 14;
 pub const PROTOCOL_MINOR: u16 = 0;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 

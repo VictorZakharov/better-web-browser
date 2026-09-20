@@ -239,7 +239,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     /// Returns box-tree children, flattening `display: contents` wrappers such as Shadow DOM
     /// slots while preserving the assigned nodes' own block, flex, grid, or inline display.
     pub(super) fn box_children(&self, node: &NodeRef) -> Vec<NodeRef> {
-        if self.styles.get(node).display == Display::None {
+        // Native select contents belong to its picker, not the surrounding box tree,
+        // even when CSS blockifies the control (HTML rendering: the select element).
+        if self.styles.get(node).display == Display::None || node.tag_name() == Some("select") {
             return Vec::new();
         }
         self.styles.children(node)

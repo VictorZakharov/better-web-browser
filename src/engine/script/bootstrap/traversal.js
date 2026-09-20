@@ -26,8 +26,8 @@
         Object.defineProperty(NodeFilter.prototype, name, { enumerable: true, value });
     }
 
-    const traversalChildren = node => list(host('children', node.__id));
-    const traversalParent = node => wrap(host('parent', node.__id));
+    const traversalChildren = node => list(host('children', nodeId(node)));
+    const traversalParent = node => wrap(host('parent', nodeId(node)));
     const traversalChild = (node, first) => {
         const children = traversalChildren(node);
         return children.length ? children[first ? 0 : children.length - 1] : null;
@@ -53,7 +53,7 @@
         }
         get currentNode() { return this.__current; }
         set currentNode(node) {
-            if (!(node instanceof Node)) throw new TypeError('currentNode must be a Node');
+            if (!(isNode(node))) throw new TypeError('currentNode must be a Node');
             this.__current = node;
         }
         __accept(node) {

@@ -40,10 +40,7 @@ pub(super) fn cssom_host_call(
                 .find(|source| source.url() == url)
                 .map_or(url, |source| source.base_url.as_str());
             let same_origin = crate::fetch::Origin::parse(final_url)
-                .and_then(|origin| {
-                    crate::fetch::Origin::parse(&state.document_url)
-                        .map(|document_origin| origin.is_same_origin(&document_origin))
-                })
+                .map(|origin| origin.is_same_origin(&state.document_origin))
                 .unwrap_or(false);
             return Ok(Some(JsValue::from(same_origin)));
         }
@@ -56,8 +53,11 @@ pub(super) fn cssom_host_call(
             .into());
     };
     let is_document = state
+        .documents
+        .borrow()
         .document_roots
         .values()
+        .filter_map(std::rc::Weak::upgrade)
         .any(|document| document.id() == root.id());
     if !is_document && !matches!(root.data, NodeData::ShadowRoot(_)) {
         return Err(JsNativeError::typ()

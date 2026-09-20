@@ -59,6 +59,9 @@ pub(super) fn page_resource_request(
     };
     RendererFetchRequest {
         head: FetchRequestHead {
+            client: Default::default(),
+            resulting_client: Default::default(),
+            embedding_client: Default::default(),
             request_id,
             document,
             initiator,
@@ -100,9 +103,18 @@ pub(super) fn script_api_request(
         .unwrap_or_default();
     RendererFetchRequest {
         head: FetchRequestHead {
+            client: request.client,
+            resulting_client: request.resulting_client,
+            embedding_client: request.embedding_client,
             request_id,
             document,
-            initiator: FetchInitiator::ScriptApi,
+            initiator: if request.resulting_client.id != 0 {
+                FetchInitiator::ChildNavigation
+            } else if request.context == crate::fetch::RequestContext::Subresource {
+                FetchInitiator::ChildResource
+            } else {
+                FetchInitiator::ScriptApi
+            },
             destination: destination(request.destination),
             url: request.url.as_str().to_string(),
             method: request.method,
@@ -167,52 +179,7 @@ pub(super) fn into_fetch_error(error: crate::renderer_protocol::BrowserFetchErro
     FetchError::new(error_kind_from_wire(error.kind), error.message)
 }
 
-/// HTML delegates module-script MIME checking to the MIME Sniffing Standard's
-/// JavaScript MIME type list. Classic scripts intentionally retain legacy behavior.
-pub(super) fn validate_script_response(
-    response: &FetchResponse,
-    kind: ScriptKind,
-) -> Result<(), FetchError> {
-    if kind != ScriptKind::Module || !response.is_success() {
-        return Ok(());
-    }
-    let essence = response
-        .content_type()
-        .unwrap_or_default()
-        .split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
-    if matches!(
-        essence.as_str(),
-        "application/ecmascript"
-            | "application/javascript"
-            | "application/x-ecmascript"
-            | "application/x-javascript"
-            | "text/ecmascript"
-            | "text/javascript"
-            | "text/javascript1.0"
-            | "text/javascript1.1"
-            | "text/javascript1.2"
-            | "text/javascript1.3"
-            | "text/javascript1.4"
-            | "text/javascript1.5"
-            | "text/jscript"
-            | "text/livescript"
-            | "text/x-ecmascript"
-            | "text/x-javascript"
-    ) {
-        return Ok(());
-    }
-    Err(FetchError::new(
-        FetchErrorKind::Network,
-        format!(
-            "module script response has non-JavaScript MIME type `{}`",
-            response.content_type().unwrap_or_default().trim()
-        ),
-    ))
-}
+pub(super) use crate::engine::script::network::response::validate_script_response;
 
 fn destination(value: RequestDestination) -> ResourceDestination {
     match value {
@@ -220,7 +187,8 @@ fn destination(value: RequestDestination) -> ResourceDestination {
         RequestDestination::Image => ResourceDestination::Image,
         RequestDestination::Script => ResourceDestination::Script,
         RequestDestination::Font => ResourceDestination::Font,
-        RequestDestination::Document | RequestDestination::Fetch => ResourceDestination::Fetch,
+        RequestDestination::Document => ResourceDestination::Document,
+        RequestDestination::Fetch => ResourceDestination::Fetch,
         RequestDestination::Video => ResourceDestination::Video,
     }
 }

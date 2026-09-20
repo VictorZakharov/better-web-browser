@@ -24,7 +24,7 @@
         get tagName() { return this.__nodeName; }
         get localName() { return this.__localName; }
         get namespaceURI() { return this.__namespaceURI; }
-        get prefix() { return host('prefix', this.__id); }
+        get prefix() { return host('prefix', nodeId(this)); }
         get previousElementSibling() { return elementSibling(this, false); }
         get nextElementSibling() { return elementSibling(this, true); }
         get id() { return this.getAttribute('id') || ''; }
@@ -55,14 +55,14 @@
                     'font-face-uri', 'font-face-format', 'font-face-name', 'missing-glyph']).has(this.localName);
             if (this.namespaceURI !== htmlNamespace || (!validBuiltIn && !validCustomName))
                 throw new DOMException('This element cannot host a shadow tree', 'NotSupportedError');
-            const root = wrap(host('attachShadow', this.__id, mode, !!init.delegatesFocus,
+            const root = wrap(host('attachShadow', nodeId(this), mode, !!init.delegatesFocus,
                 !!init.serializable, !!init.clonable));
             if (!root) throw new DOMException('This element already hosts a shadow tree', 'NotSupportedError');
             scheduleSlotChangeCheck();
             return root;
         }
-        get shadowRoot() { return wrap(host('shadowRoot', this.__id)); }
-        get innerHTML() { return host('innerHtmlGet', this.__id); }
+        get shadowRoot() { return wrap(host('shadowRoot', nodeId(this))); }
+        get innerHTML() { return host('innerHtmlGet', nodeId(this)); }
         set innerHTML(value) { replaceElementInnerHtml(this, value); }
         get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
         set outerHTML(value) {
@@ -75,16 +75,16 @@
         }
         getAttribute(name) {
             name = normalizedQualifiedName(this, name);
-            return host('attrGet', this.__id, name);
+            return host('attrGet', nodeId(this), name);
         }
         getAttributeNS(namespace, localName) {
             namespace = normalizedNamespace(namespace);
-            return host('attrGetNs', this.__id, namespace || '', String(localName));
+            return host('attrGetNs', nodeId(this), namespace || '', String(localName));
         }
         setAttribute(name, value) {
             name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
             value = String(value);
-            const record = host('attrSet', this.__id, name, value);
+            const record = host('attrSet', nodeId(this), name, value);
             const oldValue = record?.value ?? null;
             const current = record ? { ...record, value } : {
                 namespace: null, prefix: null, localName: name, qualifiedName: name, value
@@ -100,7 +100,7 @@
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
             value = String(value);
-            const record = host('attrSetNs', this.__id, extracted.namespace || '',
+            const record = host('attrSetNs', nodeId(this), extracted.namespace || '',
                 extracted.prefix || '', extracted.localName, value);
             const oldValue = record?.value ?? null;
             const current = record ? { ...record, value } : { ...extracted, value };
@@ -113,7 +113,7 @@
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
-            const record = host('attrRemove', this.__id, name);
+            const record = host('attrRemove', nodeId(this), name);
             if (!record) return;
             if (this.localName === 'img' &&
                 (record.localName === 'src' || record.localName === 'srcset'))
@@ -126,7 +126,7 @@
         removeAttributeNS(namespace, localName) {
             namespace = normalizedNamespace(namespace);
             localName = String(localName);
-            const record = host('attrRemoveNs', this.__id, namespace || '', localName);
+            const record = host('attrRemoveNs', nodeId(this), namespace || '', localName);
             if (!record) return;
             if (this.localName === 'img' && record.namespace === null &&
                 (record.localName === 'src' || record.localName === 'srcset'))
@@ -136,10 +136,10 @@
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             scheduleSlotChangeCheck();
         }
-        hasAttribute(name) { return host('attrHas', this.__id, normalizedQualifiedName(this, name)); }
+        hasAttribute(name) { return host('attrHas', nodeId(this), normalizedQualifiedName(this, name)); }
         hasAttributeNS(namespace, localName) {
             namespace = normalizedNamespace(namespace);
-            return host('attrHasNs', this.__id, namespace || '', String(localName));
+            return host('attrHasNs', nodeId(this), namespace || '', String(localName));
         }
         hasAttributes() { return this.attributes.length !== 0; }
         toggleAttribute(name, force) {
@@ -158,8 +158,8 @@
         setAttributeNode(attribute) { return setAttributeNodeFor(this, attribute); }
         setAttributeNodeNS(attribute) { return setAttributeNodeFor(this, attribute); }
         removeAttributeNode(attribute) { return removeAttributeNodeFor(this, attribute); }
-        matches(selector) { return host('matches', this.__id, String(selector)); }
-        closest(selector) { return wrap(host('closest', this.__id, String(selector))); }
+        matches(selector) { return host('matches', nodeId(this), String(selector)); }
+        closest(selector) { return wrap(host('closest', nodeId(this), String(selector))); }
         getElementsByTagName(name) { return selectorCollection(this, String(name)); }
         getElementsByClassName(name) {
             return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
@@ -167,15 +167,15 @@
         insertAdjacentHTML(position, html) {
             position = String(position).toLowerCase();
             if (position === 'beforeend') {
-                const previousChildren = new Set(this.childNodes.map(child => child.__id));
-                host('innerHtmlAppend', this.__id, String(html));
+                const previousChildren = new Set(this.childNodes.map(child => nodeId(child)));
+                host('innerHtmlAppend', nodeId(this), String(html));
                 markChildCollectionsChanged(this);
-                for (const child of this.childNodes) if (!previousChildren.has(child.__id)) {
-                    if (this.isConnected) connectCustomElementTree(child);
+                for (const child of this.childNodes) if (!previousChildren.has(nodeId(child))) {
+                    if (this.isConnected) connectElementTree(child);
                     else upgradeCustomElementTree(child);
                 }
                 if (this.isConnected) refreshWindowNamedProperties(
-                    this.childNodes.filter(child => !previousChildren.has(child.__id)));
+                    this.childNodes.filter(child => !previousChildren.has(nodeId(child))));
             }
             else if (position === 'afterbegin') this.innerHTML = String(html) + this.innerHTML;
             else if (position === 'beforebegin' && this.parentNode) {
@@ -209,10 +209,10 @@
             });
         }
         get contentWindow() {
-            return this.localName === 'iframe' && iframeDocumentFor(this) ? iframeWindow : null;
+            return this.localName === 'iframe' ? host('frameWindow', nodeId(this), this) : null;
         }
         get contentDocument() {
-            return this.localName === 'iframe' ? iframeDocumentFor(this) : null;
+            return this.localName === 'iframe' ? host('frameDocument', nodeId(this), this) : null;
         }
         click() {
             if (this.__clicking || this.matches(':disabled')) return;

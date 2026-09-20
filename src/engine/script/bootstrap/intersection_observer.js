@@ -137,7 +137,7 @@
                 }
                 previous.time = time;
                 const [valid, targetBox, rootBox, rootScroll, clips] =
-                    host('intersectionGeometry', target.__id, state.root?.__id ?? 0);
+                    host('intersectionGeometry', nodeId(target), nodeId(state.root) ?? 0);
                 const boundingClientRect = rectangle(targetBox);
                 const rootBounds = expand(rectangle(rootBox), state.rootMargin);
                 let root = rootBounds;

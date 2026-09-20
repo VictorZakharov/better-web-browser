@@ -1,8 +1,6 @@
 (() => {
     'use strict';
     const host = function () { return __hostCall.apply(null, arguments); };
-    const isolatedIframeWindow = globalThis.__iframeWindow;
-    delete globalThis.__iframeWindow;
     if (typeof String.prototype.substr !== 'function') {
         Object.defineProperty(String.prototype, 'substr', {
             configurable: true,
@@ -21,6 +19,18 @@
         });
     }
     const cache = new Map();
+    const nodeHandles = new WeakMap();
+    const nodeId = node => {
+        if (node == null) return 0;
+        let id = nodeHandles.get(node);
+        if (id === undefined) {
+            id = host('nodeHandle', node);
+            if (!id) return 0;
+            nodeHandles.set(node, id);
+        }
+        return id;
+    };
+    const isNode = value => nodeHandles.has(value) || !!nodeId(value);
     let refreshWindowNamedProperties = () => {};
     let refreshWindowNamedPropertyValues = () => {};
     let maybeUpgradeCustomElement = element => element;
@@ -60,16 +70,16 @@
         if (elements) {
             if (!record) {
                 const value = liveHtmlCollection(() =>
-                    list(host('elementChildren', node.__id)));
+                    list(host('elementChildren', nodeId(node))));
                 records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
             }
             return record.value;
         }
         if (!record) {
-            const value = list(host('children', node.__id));
+            const value = list(host('children', nodeId(node)));
             records[key] = record = { version, value, parserEpoch: parserCollectionEpoch };
         } else if (record.version !== version || record.parserEpoch !== parserCollectionEpoch) {
-            const next = list(host('children', node.__id));
+            const next = list(host('children', nodeId(node)));
             record.value.splice(0, record.value.length, ...next);
             record.version = version;
             record.parserEpoch = parserCollectionEpoch;

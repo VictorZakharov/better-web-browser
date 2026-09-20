@@ -158,6 +158,11 @@ pub(super) fn execute_inner(
         runtime::document_lifecycle::run_one(context, host, &mut outcome);
     }
     for _ in 0..types::STARTUP_TIMER_PASSES {
+        if context.has_message_task()
+            && let Err(error) = context.deliver_message()
+        {
+            outcome.errors.push(format!("posted message: {error}"));
+        }
         if defer_dynamic_scripts {
             let mut no_dynamic_script_loader = None;
             settle_startup_timer_slice(
@@ -287,6 +292,15 @@ pub(super) fn evaluate_script(
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
+    if host.borrow().sandbox.scripts_blocked
+        || (!host.borrow().script_is_external(&script.node)
+            && !host.borrow().policy.allows_inline(false))
+    {
+        outcome
+            .diagnostics
+            .push("inline script blocked by document policy".into());
+        return false;
+    }
     context.register_script_origin(&script.source_url, &script.source_url, script.fetch_options);
     if script.kind == ScriptKind::Module {
         return module_evaluation::evaluate_module(

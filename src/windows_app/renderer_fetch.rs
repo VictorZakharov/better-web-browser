@@ -1,5 +1,6 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
+mod clients;
 mod pump;
 mod registry;
 mod scheduler;
@@ -51,12 +52,17 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         sink,
         tab_router,
     } = batch;
+    registry
+        .clients
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .activate(document);
     let requests = requests
         .into_iter()
         .map(|request| {
             let request_id = request.head.request_id;
             let request_signal = registry.register(document, request_id);
-            pump::Job::Request(request, signal.any(&request_signal))
+            pump::Job::Request(Box::new(request), signal.any(&request_signal))
         })
         .collect::<Vec<_>>();
     std::thread::Builder::new()
@@ -70,7 +76,7 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
                     let request_id = job.id();
                     let started = job.started();
                     let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        job.step(&client, &sink, document, &document_url)
+                        job.step(&client, &sink, document, &document_url, &registry)
                     }))
                     .unwrap_or_else(|_| {
                         let error = FetchError::new(
@@ -129,7 +135,22 @@ fn reconstruct(
     let body_is_empty = renderer.body.is_empty();
     let renderer_body = renderer.body;
     let mut request = match head.initiator {
-        FetchInitiator::Subresource | FetchInitiator::ClassicScript => FetchRequest::subresource(
+        FetchInitiator::ChildNavigation => {
+            if head.resulting_client.id == 0 || head.destination != ResourceDestination::Document {
+                return Err(FetchError::new(
+                    FetchErrorKind::InvalidRequest,
+                    "invalid child navigation intent",
+                ));
+            }
+            let mut request = FetchRequest::navigation(&head.url)?;
+            request.origin = Some(FetchUrl::parse(authoritative_document_url)?.origin());
+            request.referrer = trusted_referrer(authoritative_document_url, head.referrer.clone())?;
+            request.response_body_limit = better_web_browser::limits::MAX_HTML_INPUT_BYTES;
+            request
+        }
+        FetchInitiator::Subresource
+        | FetchInitiator::ClassicScript
+        | FetchInitiator::ChildResource => FetchRequest::subresource(
             &head.url,
             authoritative_document_url,
             destination(head.destination),
@@ -172,6 +193,16 @@ fn reconstruct(
                 | FetchInitiator::ModuleWorker
         ) {
             request.destination = destination(head.destination);
+        }
+        if matches!(
+            head.initiator,
+            FetchInitiator::ClassicScript
+                | FetchInitiator::ModuleScript
+                | FetchInitiator::ChildResource
+        ) {
+            request.mode = mode(head.mode);
+            request.credentials = credentials(head.credentials);
+            request.referrer_policy = referrer_policy(head.referrer_policy);
         }
     }
     Ok(request)
@@ -216,6 +247,7 @@ fn wire_error(error: &FetchError) -> BrowserFetchError {
 
 fn destination(value: ResourceDestination) -> RequestDestination {
     match value {
+        ResourceDestination::Document => RequestDestination::Document,
         ResourceDestination::Style => RequestDestination::Style,
         ResourceDestination::Image => RequestDestination::Image,
         ResourceDestination::Script => RequestDestination::Script,

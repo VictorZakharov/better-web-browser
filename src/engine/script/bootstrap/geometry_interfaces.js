@@ -39,7 +39,7 @@
         return list;
     }
     function clientRectsFromHost(operation, node, start = 0, end = 0) {
-        const values = host(operation, node.__id, start, end,
+        const values = host(operation, nodeId(node), start, end,
             viewportScrollX !== 0 || viewportScrollY !== 0) || [];
         return values.map(([x, y, width, height, fixed]) => new DOMRect(
             x - (fixed ? 0 : viewportScrollX), y - (fixed ? 0 : viewportScrollY), width, height));

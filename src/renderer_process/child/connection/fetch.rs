@@ -7,9 +7,7 @@ use crate::limits::{
     MAX_DEFERRED_RENDERER_MESSAGES, MAX_DEFERRED_RENDERER_STATE_MESSAGES,
     MAX_RENDERER_FETCH_REQUESTS_PER_BATCH,
 };
-use crate::renderer_protocol::{
-    BrowserFetchResponse, DocumentInput, FetchInitiator, RendererFetchRequest,
-};
+use crate::renderer_protocol::{BrowserFetchResponse, DocumentInput, RendererFetchRequest};
 use std::collections::HashSet;
 
 pub(in crate::renderer_process::child) struct PendingFetchBatch {
@@ -89,7 +87,7 @@ impl ChildConnection {
             .map(|request| {
                 (
                     request.head.request_id,
-                    stream_script_api && request.head.initiator == FetchInitiator::ScriptApi,
+                    stream_script_api && request.head.initiator.streams_response(),
                 )
             })
             .collect::<Vec<_>>();

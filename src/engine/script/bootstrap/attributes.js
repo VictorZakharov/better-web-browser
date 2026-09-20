@@ -45,7 +45,7 @@
     const usesHtmlAttributeNames = element => {
         let mode = htmlAttributeNameModes.get(element);
         if (mode === undefined) {
-            mode = element.namespaceURI === htmlNamespace && host('isHtmlDocument', element.__id);
+            mode = element.namespaceURI === htmlNamespace && host('isHtmlDocument', nodeId(element));
             htmlAttributeNameModes.set(element, mode);
         }
         return mode;
@@ -64,7 +64,7 @@
         name = String(name);
         return usesHtmlAttributeNames(element) ? name.toLowerCase() : name;
     };
-    const attributeRecords = element => host('attrRecords', element.__id);
+    const attributeRecords = element => host('attrRecords', nodeId(element));
     const cacheForAttributes = element => {
         let state = attributeCollections.get(element);
         if (!state) {
@@ -74,70 +74,6 @@
         return state;
     };
 
-    class Attr extends Node {
-        constructor(token, ownerDocument, record, ownerElement = null) {
-            if (token !== attributeConstructionToken) throw new TypeError('Illegal constructor');
-            super(0, 2, record.qualifiedName, record.localName, record.namespace);
-            this.__document = ownerDocument;
-            this.__prefix = record.prefix;
-            this.__value = record.value;
-            this.__element = ownerElement;
-        }
-        get namespaceURI() { return this.__namespaceURI; }
-        get prefix() { return this.__prefix; }
-        get localName() { return this.__localName; }
-        get name() { return this.__nodeName; }
-        get value() {
-            if (!this.__element) return this.__value;
-            const value = host('attrGetNs', this.__element.__id, this.namespaceURI || '', this.localName);
-            return value === null ? this.__value : (this.__value = value);
-        }
-        set value(value) {
-            value = String(value);
-            if (!this.__element) { this.__value = value; return; }
-            setAttachedAttributeValue(this, value);
-        }
-        get nodeValue() { return this.value; }
-        set nodeValue(value) { this.value = value == null ? '' : String(value); }
-        get textContent() { return this.value; }
-        set textContent(value) { this.value = value == null ? '' : String(value); }
-        get ownerElement() { return this.__element; }
-        get ownerDocument() { return this.__document; }
-        get specified() { return true; }
-        get parentNode() { return null; }
-        get parentElement() { return null; }
-        get firstChild() { return null; }
-        get lastChild() { return null; }
-        get nextSibling() { return null; }
-        get previousSibling() { return null; }
-        get childNodes() { const nodes = []; nodes.item = () => null; return nodes; }
-        get children() { const nodes = []; nodes.item = () => null; return nodes; }
-        get isConnected() { return false; }
-        hasChildNodes() { return false; }
-        contains(other) { return other === this; }
-        querySelector() { return null; }
-        querySelectorAll() { const nodes = []; nodes.item = () => null; return nodes; }
-        appendChild() { throw new DOMException('Attributes cannot have children', 'HierarchyRequestError'); }
-        insertBefore() { throw new DOMException('Attributes cannot have children', 'HierarchyRequestError'); }
-        removeChild() { throw new DOMException('Attributes do not have children', 'NotFoundError'); }
-        cloneNode() { return createDetachedAttribute(this.ownerDocument, this.namespaceURI, this.prefix, this.localName, this.value); }
-        __synchronize(record) {
-            this.__namespaceURI = record.namespace;
-            this.__prefix = record.prefix;
-            this.__localName = record.localName;
-            this.__nodeName = record.qualifiedName;
-            this.__value = record.value;
-        }
-        __attach(element) {
-            this.__element = element;
-            this.__document = element.ownerDocument;
-        }
-        __detach(value = this.__value) {
-            this.__value = value;
-            this.__element = null;
-        }
-    }
-    Object.defineProperty(Attr.prototype, Symbol.toStringTag, { value: 'Attr', configurable: true });
 
     const createDetachedAttribute = (ownerDocument, namespace, prefix, localName, value = '') =>
         new Attr(attributeConstructionToken, ownerDocument, {
@@ -151,7 +87,7 @@
             attribute = new Attr(attributeConstructionToken, element.ownerDocument, record, element);
             state.attributes.set(key, attribute);
         } else {
-            attribute.__synchronize(record);
+            synchronizeAttribute(attribute, record);
         }
         return attribute;
     };
@@ -164,7 +100,7 @@
         });
         for (const [key, attribute] of state.attributes) {
             if (!seen.has(key) && attribute.ownerElement === element) {
-                attribute.__detach();
+                detachAttributeState(attribute);
                 state.attributes.delete(key);
             }
         }
@@ -197,7 +133,7 @@
     };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));
-        attribute.__detach(record.value);
+        detachAttributeState(attribute, record.value);
     };
     const detachCachedAttribute = (element, record) => {
         const state = attributeCollections.get(element);
@@ -206,13 +142,13 @@
         const attribute = state.attributes.get(key);
         if (!attribute || attribute.ownerElement !== element) return;
         state.attributes.delete(key);
-        attribute.__detach(record.value);
+        detachAttributeState(attribute, record.value);
     };
     const setAttachedAttributeValue = (attribute, value) => {
         const element = attribute.ownerElement;
         const oldValue = attribute.value;
-        host('attrSetNs', element.__id, attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
-        attribute.__value = value;
+        host('attrSetNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '', attribute.localName, value);
+        attributeStates.get(attribute).value = value;
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
         }, oldValue, value);
@@ -312,7 +248,7 @@
 
     const createAttributeFor = (ownerDocument, localName) => {
         localName = validateAttributeLocalName(String(localName));
-        if (host('isHtmlDocument', ownerDocument.__id)) localName = localName.toLowerCase();
+        if (host('isHtmlDocument', nodeId(ownerDocument))) localName = localName.toLowerCase();
         return createDetachedAttribute(ownerDocument, null, null, localName);
     };
     const createAttributeNsFor = (ownerDocument, namespace, qualifiedName) => {
@@ -329,12 +265,12 @@
         const oldAttribute = getAttributeNodeNsFor(element, attribute.namespaceURI, attribute.localName);
         if (oldAttribute === attribute) return attribute;
         const oldValue = oldAttribute?.value ?? null;
-        host('attrReplaceNs', element.__id, attribute.namespaceURI || '', attribute.prefix || '',
+        host('attrReplaceNs', nodeId(element), attribute.namespaceURI || '', attribute.prefix || '',
             attribute.localName, attribute.value);
         if (oldAttribute) detachAttribute(element, {
             namespace: oldAttribute.namespaceURI, localName: oldAttribute.localName, value: oldValue
         }, oldAttribute);
-        attribute.__attach(element);
+        attachAttribute(attribute, element);
         cacheForAttributes(element).attributes.set(attributeKey(attribute.namespaceURI, attribute.localName), attribute);
         queueAttributeMutation(element, {
             namespace: attribute.namespaceURI, localName: attribute.localName
@@ -354,7 +290,7 @@
             qualifiedName: attribute.name,
             value: attribute.value
         };
-        host('attrRemoveNs', element.__id, record.namespace || '', record.localName);
+        host('attrRemoveNs', nodeId(element), record.namespace || '', record.localName);
         detachAttribute(element, record, attribute);
         queueAttributeMutation(element, record, record.value, null);
         maybeRefreshNamedProperties(element, record.namespace, record.localName, record.value, null);

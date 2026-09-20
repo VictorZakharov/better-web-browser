@@ -248,15 +248,5 @@ pub(super) fn decode_script_response(
     if !response.is_success() {
         return Err(format!("server returned HTTP {}", response.status));
     }
-    validate_script_response(&response, kind).map_err(|error| error.to_string())?;
-    let bytes = response.body.as_bytes();
-    let source = if kind == ScriptKind::Module {
-        // HTML module source is UTF-8, irrespective of a transport charset label.
-        // Only a UTF-8 BOM is removed; UTF-16 must not select the HTML decoder.
-        String::from_utf8_lossy(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes))
-            .into_owned()
-    } else {
-        crate::winhttp::decode_text(bytes, response.content_type())
-    };
-    Ok((response.final_url().as_str().to_owned(), source))
+    crate::engine::script::network::response::decode(response, kind)
 }

@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 mod alignment;
 mod form_fidelity;
+mod select;
 
 #[test]
 fn icon_only_buttons_use_mask_descendants_without_accessibility_text() {

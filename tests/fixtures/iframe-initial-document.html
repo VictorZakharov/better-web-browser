@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<base href="/assets/">
+<title>Initial iframe documents</title>
+<pre id="result">Running</pre>
+<script>
+const results = [];
+const check = (name, action) => {
+  try {
+    if (!action()) throw Error('assertion failed');
+    results.push(name + ': PASS');
+  } catch (error) { results.push(name + ': FAIL ' + error.message); }
+};
+const first = document.createElement('iframe');
+const second = document.createElement('iframe');
+check('detached-null', () => first.contentWindow === null && first.contentDocument === null);
+document.body.append(first, second);
+const firstWindow = first.contentWindow;
+const firstDocument = first.contentDocument;
+const secondWindow = second.contentWindow;
+check('distinct-windows', () => firstWindow !== secondWindow && firstWindow !== window);
+check('stable-identity', () => first.contentWindow === firstWindow && firstDocument.defaultView === firstWindow);
+check('separate-intrinsics', () => firstWindow.Array !== Array && firstWindow.Array !== secondWindow.Array);
+check('document-realm', () => firstDocument instanceof firstWindow.Document && !(firstDocument instanceof Document));
+check('initial-url', () => firstDocument.URL === 'about:blank' && firstWindow.location.href === 'about:blank');
+check('initial-readiness', () => firstDocument.readyState === 'complete');
+check('inherited-base', () => firstDocument.baseURI === document.baseURI);
+check('parent-and-top', () => firstWindow.parent === window && firstWindow.top === window && firstWindow.frameElement === first);
+check('global-isolation', () => {
+  firstWindow.eval('globalThis.frameValue = 123');
+  return firstWindow.frameValue === 123 && secondWindow.frameValue === undefined && window.frameValue === undefined;
+});
+check('child-dom', () => {
+  firstWindow.eval('document.body.innerHTML = "<p>child</p>"');
+  return firstDocument.body.textContent === 'child' && second.contentDocument.body.textContent === '';
+});
+check('event-isolation', () => {
+  let firstCalls = 0, secondCalls = 0;
+  firstWindow.addEventListener('owned-check', () => firstCalls++);
+  secondWindow.addEventListener('owned-check', () => secondCalls++);
+  firstWindow.dispatchEvent(new firstWindow.Event('owned-check'));
+  return firstCalls === 1 && secondCalls === 0;
+});
+first.remove();
+check('removal-null', () => first.contentWindow === null && first.contentDocument === null);
+check('retained-document', () => firstDocument.body.textContent === 'child' && firstDocument.body.ownerDocument === firstDocument);
+check('destroyed-window', () => firstWindow.closed && firstWindow.frameElement === null);
+document.body.append(first);
+check('reconnection-new-context', () => first.contentWindow !== firstWindow && first.contentDocument !== firstDocument && first.contentWindow.frameValue === undefined);
+const beforeMove = second.contentWindow;
+document.body.append(second);
+check('move-recreates-context', () => second.contentWindow !== beforeMove);
+const shadowHost = document.createElement('div');
+document.body.append(shadowHost);
+const shadow = shadowHost.attachShadow({mode: 'open'});
+const shadowFrame = document.createElement('iframe');
+shadow.append(shadowFrame);
+check('shadow-tree-frame', () => shadowFrame.contentDocument !== null && shadowFrame.contentWindow.parent === window);
+const sandbox = document.createElement('iframe');
+sandbox.sandbox = 'allow-scripts';
+document.body.append(sandbox);
+check('sandbox-opaque-document', () => sandbox.contentWindow !== null && sandbox.contentDocument === null);
+check('sandbox-dom-denied', () => {
+  try { void sandbox.contentWindow.document; return false; } catch (_) { return true; }
+});
+const report = document.querySelector('#result');
+report.textContent = results.join('\n');
+for (const result of results) {
+  const [name, value] = result.split(': ');
+  report.setAttribute('data-' + name, value);
+}
+report.setAttribute('data-passed', String(results.filter(result => result.endsWith(': PASS')).length));
+document.documentElement.dataset.fixtureReady = 'true';
+for (const result of results) console.log('IFRAME ' + result);
+</script>

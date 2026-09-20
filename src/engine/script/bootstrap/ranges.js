@@ -1,7 +1,7 @@
     // DOM Standard §5. Range boundary points retain wrapper identity and are validated before
     // application script can use them for editing or selection.
     const rangeNodeLength = node => {
-        if (!(node instanceof Node)) throw new TypeError('A range boundary requires a Node');
+        if (!(isNode(node))) throw new TypeError('A range boundary requires a Node');
         if (node instanceof DocumentType)
             throw new DOMException('DocumentType cannot be a range boundary', 'InvalidNodeTypeError');
         return node instanceof CharacterData ? node.length : node.childNodes.length;
@@ -149,7 +149,7 @@
         extractContents() { return this._sameContainerContents(true); }
         cloneContents() { return this._sameContainerContents(false); }
         insertNode(node) {
-            if (!(node instanceof Node)) throw new TypeError('insertNode requires a Node');
+            if (!(isNode(node))) throw new TypeError('insertNode requires a Node');
             let parent = this.startContainer;
             let reference;
             if (parent instanceof CharacterData) {
@@ -162,7 +162,7 @@
             parent.insertBefore(node, reference);
         }
         surroundContents(newParent) {
-            if (!(newParent instanceof Node)) throw new TypeError('surroundContents requires a Node');
+            if (!(isNode(newParent))) throw new TypeError('surroundContents requires a Node');
             const fragment = this.extractContents();
             this.insertNode(newParent);
             newParent.appendChild(fragment);
@@ -189,7 +189,7 @@
             return compareBoundaries(point.node, point.offset, this.endContainer, this.endOffset) > 0 ? 1 : 0;
         }
         intersectsNode(node) {
-            if (!(node instanceof Node) || rangeRoot(node) !== rangeRoot(this.startContainer)) return false;
+            if (!(isNode(node)) || rangeRoot(node) !== rangeRoot(this.startContainer)) return false;
             const parent = node.parentNode;
             if (!parent) return true;
             const index = nodeIndex(node);

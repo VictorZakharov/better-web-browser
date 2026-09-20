@@ -9,7 +9,13 @@ pub(super) fn fullscreen_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     match operation {
+        "fullscreenSupported" => Ok(Some(JsValue::from(!state.embedded))),
         "fullscreenRequest" => {
+            if state.embedded {
+                return Err(JsNativeError::typ()
+                    .with_message("Fullscreen is not available in embedded documents")
+                    .into());
+            }
             let request_id = args
                 .get(1)
                 .and_then(JsValue::as_number)

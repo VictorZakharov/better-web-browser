@@ -12,7 +12,7 @@
         const oldURL = currentUrl;
         const result = host('fragmentNavigation', String(value), !!replace);
         if (result === null) {
-            currentUrl = host('navigate', String(value));
+            currentUrl = host('navigate', String(value), !!replace);
             return;
         }
         currentUrl = result[0];

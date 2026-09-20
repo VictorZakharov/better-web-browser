@@ -1,14 +1,35 @@
 use super::{DecodedImage, MAX_DECODED_IMAGE_PIXELS};
+use crate::engine::css::StyleSet;
 use crate::engine::dom::{NodeData, NodeRef};
 use crate::limits::MAX_SVG_SOURCE_BYTES;
+use std::hash::{Hash, Hasher};
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn inline_svg_key(node: &NodeRef) -> String {
     format!("inline-svg:{:032x}", node.id().to_wire())
 }
 
-pub(super) fn decode_inline_svg(node: &NodeRef) -> Result<DecodedImage, String> {
+pub(super) fn inline_svg_version(node: &NodeRef, styles: Option<&StyleSet>) -> u64 {
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    node.subtree_mutation_version().hash(&mut hash);
+    if let Some(styles) = styles {
+        for descendant in crate::engine::dom::Node::descendants(node) {
+            if let Some(style) = styles.styles.get(&descendant.id()) {
+                let c = style.color;
+                [c.red, c.green, c.blue, c.alpha].hash(&mut hash);
+            }
+        }
+    }
+    hash.finish()
+}
+
+pub(super) fn decode_inline_svg(
+    node: &NodeRef,
+    styles: Option<&StyleSet>,
+) -> Result<DecodedImage, String> {
     let mut source = String::new();
-    serialize_svg_node(node, &mut source, true);
+    serialize_svg_node(node, &mut source, true, styles);
     decode_svg(source.as_bytes(), "inline SVG")
 }
 
@@ -52,7 +73,7 @@ pub(super) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImag
     })
 }
 
-fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool) {
+fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool, styles: Option<&StyleSet>) {
     match &node.data {
         NodeData::Element(element) => {
             let tag = element.name.local.as_ref();
@@ -62,6 +83,9 @@ fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool) {
             output.push('<');
             output.push_str(tag);
             let attrs = element.attrs.borrow();
+            let color = styles
+                .and_then(|styles| styles.styles.get(&node.id()))
+                .map(|style| style.color);
             let has_xmlns = attrs
                 .iter()
                 .any(|attribute| attribute.name.local.as_ref() == "xmlns");
@@ -69,16 +93,36 @@ fn serialize_svg_node(node: &NodeRef, output: &mut String, root: bool) {
                 output.push_str(" xmlns=\"http://www.w3.org/2000/svg\"");
             }
             for attribute in attrs.iter() {
+                if color.is_some() && attribute.name.local.as_ref() == "style" {
+                    continue;
+                }
                 output.push(' ');
                 output.push_str(attribute.name.local.as_ref());
                 output.push_str("=\"");
                 escape_xml(&attribute.value, output);
                 output.push('"');
             }
+            if let Some(color) = color {
+                // SVG currentColor is resolved per element, not by tinting the whole
+                // bitmap: explicit fills and strokes must retain their own colors.
+                // https://svgwg.org/svg2-draft/painting.html#SpecifyingPaint
+                output.push_str(" style=\"");
+                if let Some(style) = node.attr("style") {
+                    let style = style.trim_end_matches([';', ' ', '\t', '\r', '\n', '\u{c}']);
+                    if !style.is_empty() {
+                        escape_xml(style, output);
+                        output.push(';');
+                    }
+                }
+                output.push_str(&format!(
+                    "color:#{:02x}{:02x}{:02x}{:02x}!important\"",
+                    color.red, color.green, color.blue, color.alpha
+                ));
+            }
             output.push('>');
             drop(attrs);
             for child in node.children.borrow().iter() {
-                serialize_svg_node(child, output, false);
+                serialize_svg_node(child, output, false, styles);
             }
             output.push_str("</");
             output.push_str(tag);

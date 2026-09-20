@@ -1,8 +1,4 @@
 use super::ProtocolError;
-use super::document::{
-    DocumentId, DocumentStart, FetchRequestHead, FetchResponseAbort, FetchResponseEnd,
-    FetchResponseHead, PresentedViewport, TransferChunk,
-};
 use super::input::{
     DocumentInput, FullscreenRequest, FullscreenResponse, NavigationCause, NavigationDisposition,
     PointerCursorResult, PresentationAcknowledgement,
@@ -10,6 +6,10 @@ use super::input::{
 use super::state::{
     CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
     StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart, StorageSync,
+};
+use super::{
+    DocumentId, DocumentStart, FetchRequestHead, FetchResponseAbort, FetchResponseEnd,
+    FetchResponseHead, PresentedViewport, TransferChunk,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;

@@ -1,6 +1,7 @@
 //! Script-facing Fetch request translation and asynchronous completion delivery.
 
 mod base64;
+pub(crate) mod response;
 use base64::decode_base64;
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
@@ -66,11 +67,18 @@ pub(super) fn network_host_call(
     match operation {
         "fetchStart" => {
             let serialized = argument_string(args, 1)?;
-            let request = request_from_serialized(&state.document_url, &serialized)?;
-            let id = state.next_fetch_id;
-            state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {
-                JsNativeError::range().with_message("Fetch request identifiers were exhausted")
-            })?;
+            let mut request = request_from_serialized(
+                state
+                    .inherited_url
+                    .as_deref()
+                    .unwrap_or(&state.document_url),
+                &serialized,
+            )?;
+            request.origin = Some(state.document_origin.clone());
+            let id = state
+                .fetch_identifiers
+                .borrow_mut()
+                .allocate(state.document.id())?;
             state.pending_fetch_actions.push(ScriptFetchAction::Start {
                 id,
                 request: Box::new(request),
@@ -81,18 +89,26 @@ pub(super) fn network_host_call(
             crate::limits::MAX_FETCH_STREAM_WINDOW_BYTES as u32,
         ))),
         "fetchConsumed" => {
+            let id = argument_id(args, 1);
+            if state.fetch_identifiers.borrow().owner(id) != Some(state.document.id()) {
+                return Ok(Some(JsValue::undefined()));
+            }
             state
                 .pending_fetch_actions
                 .push(ScriptFetchAction::Consume {
-                    id: argument_id(args, 1),
+                    id,
                     total: argument_id(args, 2),
                 });
             Ok(Some(JsValue::undefined()))
         }
         "fetchAbort" => {
-            state.pending_fetch_actions.push(ScriptFetchAction::Abort {
-                id: argument_id(args, 1),
-            });
+            let id = argument_id(args, 1);
+            if state.fetch_identifiers.borrow().owner(id) != Some(state.document.id()) {
+                return Ok(Some(JsValue::undefined()));
+            }
+            state
+                .pending_fetch_actions
+                .push(ScriptFetchAction::Abort { id });
             Ok(Some(JsValue::undefined()))
         }
         _ => Ok(None),

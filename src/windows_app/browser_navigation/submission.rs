@@ -46,7 +46,11 @@ impl BrowserState {
             if !self.allow_script_navigation(url) {
                 return false;
             }
-            HistoryMode::Script
+            if options.replace_history {
+                HistoryMode::Script
+            } else {
+                HistoryMode::ScriptPush
+            }
         };
         let referrer = (!options.noreferrer)
             .then(|| self.current_url().map(str::to_owned))

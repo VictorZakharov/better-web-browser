@@ -2,15 +2,64 @@
 
 use super::*;
 
-impl HostState {
-    pub(in crate::engine::script) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
+#[derive(Default)]
+pub(in crate::engine::script) struct DocumentRegistry {
+    pub(in crate::engine::script) owner_documents: HashMap<NodeId, u64>,
+    pub(in crate::engine::script) document_roots: HashMap<u64, std::rc::Weak<Node>>,
+    pub(in crate::engine::script) html_documents: HashSet<u64>,
+    pub(in crate::engine::script) document_metadata:
+        HashMap<NodeId, super::super::dom_host::DocumentMetadata>,
+    pub(in crate::engine::script) template_contents_documents: HashMap<u64, u64>,
+}
+
+impl DocumentRegistry {
+    pub(in crate::engine::script) fn collect_dead_documents(&mut self) {
+        let dead: HashSet<_> = self
+            .document_roots
+            .iter()
+            .filter_map(|(id, root)| (root.strong_count() == 0).then_some(*id))
+            .collect();
         self.document_roots
+            .retain(|_, root| root.strong_count() > 0);
+        self.owner_documents
+            .retain(|_, owner| !dead.contains(owner));
+        self.html_documents.retain(|owner| !dead.contains(owner));
+        self.document_metadata
+            .retain(|node, _| !dead.contains(&node.document()));
+        self.template_contents_documents
+            .retain(|owner, _| !dead.contains(owner));
+    }
+}
+
+impl HostState {
+    pub(in crate::engine::script) fn share_document_registry(&mut self, parent: &Self) {
+        let mut old = self.documents.borrow_mut();
+        let mut shared = parent.documents.borrow_mut();
+        shared.owner_documents.extend(old.owner_documents.drain());
+        shared.document_roots.extend(old.document_roots.drain());
+        shared.html_documents.extend(old.html_documents.drain());
+        shared
+            .document_metadata
+            .extend(old.document_metadata.drain());
+        shared
+            .template_contents_documents
+            .extend(old.template_contents_documents.drain());
+        drop(shared);
+        drop(old);
+        self.documents = Rc::clone(&parent.documents);
+    }
+    pub(in crate::engine::script) fn document_for(&self, node: &NodeRef) -> Option<NodeRef> {
+        self.documents
+            .borrow()
+            .document_roots
             .get(&self.owner_document_identity(node))
-            .cloned()
+            .and_then(std::rc::Weak::upgrade)
     }
 
     pub(in crate::engine::script) fn is_html_document_for(&self, node: &NodeRef) -> bool {
-        self.html_documents
+        self.documents
+            .borrow()
+            .html_documents
             .contains(&self.owner_document_identity(node))
     }
 
@@ -26,14 +75,28 @@ impl HostState {
         // https://html.spec.whatwg.org/multipage/scripting.html#appropriate-template-contents-owner-document
         let inert = Node::create_document();
         let inert_identity = inert.id().document();
-        self.document_roots.insert(identity, document.clone());
-        self.document_roots.insert(inert_identity, inert.clone());
-        self.template_contents_documents
+        self.documents.borrow_mut().collect_dead_documents();
+        self.documents
+            .borrow_mut()
+            .document_roots
+            .insert(identity, Rc::downgrade(&document));
+        self.documents
+            .borrow_mut()
+            .document_roots
+            .insert(inert_identity, Rc::downgrade(&inert));
+        self.documents
+            .borrow_mut()
+            .template_contents_documents
             .insert(identity, inert_identity);
-        self.template_contents_documents
+        self.documents
+            .borrow_mut()
+            .template_contents_documents
             .insert(inert_identity, inert_identity);
         if html {
-            self.html_documents.extend([identity, inert_identity]);
+            self.documents
+                .borrow_mut()
+                .html_documents
+                .extend([identity, inert_identity]);
         }
         self.id_for(&inert);
         self.register_subtree(&document);
@@ -55,7 +118,10 @@ impl HostState {
     fn assign_subtree_owner(&mut self, root: &NodeRef, owner: u64, register: bool) {
         let mut stack = vec![(root.clone(), owner)];
         while let Some((node, owner)) = stack.pop() {
-            self.owner_documents.insert(node.id(), owner);
+            self.documents
+                .borrow_mut()
+                .owner_documents
+                .insert(node.id(), owner);
             if register {
                 self.id_for(&node);
             }
@@ -73,6 +139,8 @@ impl HostState {
                 .and_then(|element| element.template_contents.borrow().clone())
             {
                 let inert = self
+                    .documents
+                    .borrow()
                     .template_contents_documents
                     .get(&owner)
                     .copied()
@@ -83,7 +151,9 @@ impl HostState {
     }
 
     pub(super) fn owner_document_identity(&self, node: &NodeRef) -> u64 {
-        self.owner_documents
+        self.documents
+            .borrow()
+            .owner_documents
             .get(&node.id())
             .copied()
             .unwrap_or_else(|| node.id().document())

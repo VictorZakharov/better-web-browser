@@ -70,7 +70,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "input" | "textarea" => {
                         self.collect_input(node, style, output, containing_block)
                     }
-                    "select" => self.collect_select(node, style, output, containing_block),
+                    "select" => self.collect_input(node, style, output, containing_block),
                     "button" => self.collect_button(node, style, output, containing_block),
                     "svg" => self.collect_svg(node, style, output, containing_block),
                     _ => {
@@ -299,7 +299,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 url: key,
                 resize_box: ResizeBox::from_content(width, height, padding, border),
                 alt: node.attr("aria-label").unwrap_or_default(),
-                tint: svg_uses_current_color(node).then_some(style.color),
+                tint: None,
                 node_id: node_id(node),
                 visible: style.visibility,
                 width: width + margin.horizontal() + border.horizontal() + padding.horizontal(),

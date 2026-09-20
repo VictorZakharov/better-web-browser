@@ -59,7 +59,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
             image.outer_width(node, &style, percentage_basis, horizontal_insets)
         });
-        let automatic_width = if authored_button && style.width == Length::Auto {
+        let automatic_width = if node.tag_name() == Some("select") && style.width == Length::Auto {
+            select_data(node).preferred_width(style.font_size) + horizontal_insets
+        } else if authored_button && style.width == Length::Auto {
             self.button_fit_content_width(node, percentage_basis, available_width)
         } else if block_image.is_none()
             && style.width == Length::Auto

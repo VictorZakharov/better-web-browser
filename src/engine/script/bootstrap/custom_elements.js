@@ -71,12 +71,12 @@
         else invokeCustomElementReactions([element]);
     };
     const inclusiveElementDescendants = root => {
-        if (!(root instanceof Node)) return [];
+        if (!(isNode(root))) return [];
         const elements = [];
         const pending = [root];
         while (pending.length) {
             const node = pending.pop();
-            if (node instanceof Element) elements.push(node);
+            if (node.nodeType === Node.ELEMENT_NODE) elements.push(node);
             const children = node.childNodes;
             for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
             const shadowRoot = shadowRootForTraversal(node);
@@ -169,7 +169,7 @@
             stack[index] = alreadyConstructedMarker;
             return element;
         }
-        const element = wrap(host('createElement', document.__id, definition.localName));
+        const element = wrap(host('createElement', nodeId(document), definition.localName));
         Object.setPrototypeOf(element, definition.prototype);
         customElementDefinitions.set(element, definition);
         customElementStates.set(element, 'custom');
@@ -260,7 +260,7 @@
             return pending.promise;
         }
         upgrade(root) {
-            if (!(root instanceof Node)) throw new TypeError('CustomElementRegistry.upgrade requires a Node');
+            if (!(isNode(root))) throw new TypeError('CustomElementRegistry.upgrade requires a Node');
             const state = registryStates.get(this);
             if (!state.scoped && (root instanceof Document || root.ownerDocument !== document))
                 throw new DOMException('The root does not use this custom element registry', 'NotSupportedError');

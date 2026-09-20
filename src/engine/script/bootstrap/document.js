@@ -78,44 +78,44 @@
     class Document extends Node {
         constructor(id = 0, ...metadata) {
             super(Number(id) || host('createDocument', '', ''), ...metadata);
-            cache.set(this.__id, this);
-            documentReadiness.set(this, host('isPrimaryDocument', this.__id) ? 'loading' : 'complete');
+            cache.set(nodeId(this), this);
+            documentReadiness.set(this, host('isPrimaryDocument', nodeId(this)) ? 'loading' : 'complete');
             this.activeElement = null;
             this._currentScript = null;
         }
         createElement(name) {
-            return maybeUpgradeCustomElement(wrap(host('createElement', this.__id, String(name))), true);
+            return maybeUpgradeCustomElement(wrap(host('createElement', nodeId(this), String(name))), true);
         }
         createElementNS(namespace, name) {
-            const element = wrap(host('createElementNS', this.__id,
+            const element = wrap(host('createElementNS', nodeId(this),
                 namespace == null ? '' : String(namespace), String(name)));
             return maybeUpgradeCustomElement(element, true);
         }
-        createTextNode(text) { return wrap(host('createText', this.__id, String(text))); }
-        createComment(text) { return wrap(host('createComment', this.__id, String(text))); }
-        createDocumentFragment() { return wrap(host('createDocumentFragment', this.__id)); }
+        createTextNode(text) { return wrap(host('createText', nodeId(this), String(text))); }
+        createComment(text) { return wrap(host('createComment', nodeId(this), String(text))); }
+        createDocumentFragment() { return wrap(host('createDocumentFragment', nodeId(this))); }
         createTreeWalker(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
-            if (!(root instanceof Node)) throw new TypeError('createTreeWalker requires a Node root');
+            if (!(isNode(root))) throw new TypeError('createTreeWalker requires a Node root');
             return new TreeWalker(treeWalkerToken, root, whatToShow, filter);
         }
         createAttribute(localName) { return createAttributeFor(this, localName); }
         createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
         importNode(node, deep = false) {
-            if (!(node instanceof Node)) throw new TypeError('importNode requires a Node');
-            const imported = wrap(host('importNode', this.__id, node.__id, !!deep));
+            if (!(isNode(node))) throw new TypeError('importNode requires a Node');
+            const imported = wrap(host('importNode', nodeId(this), nodeId(node), !!deep));
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
             upgradeCustomElementTree(imported);
             return imported;
         }
         adoptNode(node) {
-            if (!(node instanceof Node)) throw new TypeError('adoptNode requires a Node');
+            if (!(isNode(node))) throw new TypeError('adoptNode requires a Node');
             if (node instanceof Document)
                 throw new DOMException('Documents cannot be adopted', 'NotSupportedError');
             const oldDocument = node.ownerDocument;
             const oldParent = node.parentNode;
             const wasConnected = node.isConnected;
-            if (wasConnected) disconnectCustomElementTree(node);
-            const adopted = wrap(host('adoptNode', this.__id, node.__id));
+            if (wasConnected) disconnectElementTree(node);
+            const adopted = wrap(host('adoptNode', nodeId(this), nodeId(node)));
             if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
             markChildCollectionsChanged(oldParent);
             if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
@@ -130,7 +130,7 @@
             event.__initialized = false;
             return event;
         }
-        getElementById(id) { return wrap(host('byId', this.__id, String(id))); }
+        getElementById(id) { return wrap(host('byId', nodeId(this), String(id))); }
         getElementsByTagName(name) { return selectorCollection(this, String(name)); }
         getElementsByClassName(name) {
             return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
@@ -145,14 +145,15 @@
         get forms() { return documentCollection(this, 'forms', 'form'); }
         get scripts() { return documentCollection(this, 'scripts', 'script'); }
         get documentElement() { return this.children[0] || null; }
-        get doctype() { return wrap(host('doctype', this.__id)); }
+        get doctype() { return wrap(host('doctype', nodeId(this))); }
         get head() { return this.querySelector('head'); }
         get body() { return this.querySelector('body'); }
         get title() { return documentTitleValue(this); }
         set title(value) { setDocumentTitleValue(this, value); }
-        get URL() { return host('documentUrl', this.__id); }
+        get URL() { return host('documentUrl', nodeId(this)); }
         get documentURI() { return this.URL; }
         get baseURI() {
+            if (host('isPrimaryDocument', nodeId(this))) return host('apiBaseUrl');
             const base = this.querySelector('base[href]');
             try { return base ? host('strictResolveUrl', base.getAttribute('href'), this.URL) : this.URL; }
             catch (_) { return this.URL; }
@@ -162,7 +163,7 @@
         get currentScript() { return this._currentScript; }
         get defaultView() {
             return documentDefaultViews.get(this) ||
-                (host('isPrimaryDocument', this.__id) ? windowObject : null);
+                (host('isPrimaryDocument', nodeId(this)) ? windowObject : null);
         }
         get implementation() { return this.__implementation ||= new DOMImplementation(); }
         __setCurrentScript(id) { this._currentScript = wrap(id); }
@@ -193,16 +194,16 @@
         }
         close() {
             checkDynamicMarkupTarget(this);
-            if (host('documentClose', this.__id)) pumpDocumentParser(this, true);
+            if (host('documentClose', nodeId(this))) pumpDocumentParser(this, true);
         }
         hasFocus() { return true; }
         get hidden() { return false; }
         get visibilityState() { return 'visible'; }
-        get compatMode() { return host('documentCompatMode', this.__id); }
-        get characterSet() { return host('documentCharacterSet', this.__id); }
+        get compatMode() { return host('documentCompatMode', nodeId(this)); }
+        get characterSet() { return host('documentCharacterSet', nodeId(this)); }
         get charset() { return this.characterSet; }
         get inputEncoding() { return this.characterSet; }
-        get contentType() { return host('documentContentType', this.__id); }
+        get contentType() { return host('documentContentType', nodeId(this)); }
         // Documents without a browsing context are cookie-averse (HTML resource metadata).
         get cookie() { return this.defaultView ? host('cookieGet') : ''; }
         set cookie(value) { if (this.defaultView) host('cookieSet', String(value)); }
@@ -220,7 +221,10 @@
                 oldValue: record.oldValue
             }, record.ancestors.map(wrap));
         }
-        for (const node of list(ids)) maybeUpgradeCustomElement(node, false, true);
+        for (const node of list(ids)) {
+            if (node.localName === 'iframe') host('frameWindow', nodeId(node), node);
+            maybeUpgradeCustomElement(node, false, true);
+        }
         refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
     };
@@ -231,6 +235,12 @@
         id = Number(id) || 0;
         if (!id) return null;
         if (cache.has(id)) return cache.get(id);
+        const existing = host('nodeWrapper', id);
+        if (existing) {
+            cache.set(id, existing);
+            nodeHandles.set(existing, id);
+            return existing;
+        }
         const metadata = host('nodeMetadata', id).split('\u001f');
         const type = Number(metadata[0]);
         let node;

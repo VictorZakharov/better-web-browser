@@ -13,10 +13,12 @@
             return Promise.reject(new DOMException('Element is not connected', 'TypeError'));
         if (this.ownerDocument !== document)
             return Promise.reject(new DOMException('Element belongs to another document', 'TypeError'));
+        if (!document.fullscreenEnabled)
+            return Promise.reject(new TypeError('Fullscreen is not available in this document'));
         return queueFullscreenRequest(this, true);
     };
     Object.defineProperties(Document.prototype, {
-        fullscreenEnabled: { configurable: true, enumerable: true, get: () => true },
+        fullscreenEnabled: { configurable: true, enumerable: true, get: () => host('fullscreenSupported') },
         fullscreenElement: { configurable: true, enumerable: true, get: () => fullscreenElement }
     });
     Document.prototype.exitFullscreen = function() {
@@ -35,15 +37,15 @@
         const target = pending?.element || fullscreenElement || document;
         if (input.disposition === 'entered' && pending?.enter) {
             if (fullscreenElement && fullscreenElement !== pending.element)
-                host('fullscreenSet', fullscreenElement.__id, false);
+                host('fullscreenSet', nodeId(fullscreenElement), false);
             fullscreenElement = pending.element;
-            host('fullscreenSet', fullscreenElement.__id, true);
+            host('fullscreenSet', nodeId(fullscreenElement), true);
             pending.resolve();
             target.dispatchEvent(markTrusted(new Event('fullscreenchange', { bubbles: true })));
             return true;
         }
         if (input.disposition === 'exited') {
-            if (fullscreenElement) host('fullscreenSet', fullscreenElement.__id, false);
+            if (fullscreenElement) host('fullscreenSet', nodeId(fullscreenElement), false);
             fullscreenElement = null;
             pending?.resolve();
             target.dispatchEvent(markTrusted(new Event('fullscreenchange', { bubbles: true })));

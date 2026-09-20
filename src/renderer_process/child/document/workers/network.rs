@@ -105,6 +105,7 @@ pub(super) fn worker_source_request(
     url: &str,
     kind: ScriptKind,
     credentials: CredentialsMode,
+    client: crate::fetch::RequestClient,
 ) -> Result<FetchResponse, FetchError> {
     let mut request = FetchRequest::script(url, document_url)?;
     request.mode = match kind {
@@ -112,6 +113,7 @@ pub(super) fn worker_source_request(
         ScriptKind::Module => RequestMode::Cors,
     };
     request.credentials = credentials;
+    request.client = client;
     request_network(network, cancelled, request)
 }
 
