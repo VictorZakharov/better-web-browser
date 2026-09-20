@@ -1,7 +1,12 @@
 use super::*;
+mod select;
+pub(super) use select::select_data;
 
 pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)> {
     let tag = node.tag_name()?;
+    if tag == "select" {
+        return Some((ControlKind::Select, select_data(node).value()));
+    }
     if tag == "textarea" {
         return Some((ControlKind::TextArea, node.text_content()));
     }
@@ -45,15 +50,15 @@ pub(super) fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str
     {
         return value.to_string();
     }
-    let label = node
-        .attr("aria-label")
-        .or_else(|| node.attr("title"))
-        .or_else(|| node.attr("alt"))
-        .unwrap_or_default();
-    if kind == ControlKind::Submit && label.eq_ignore_ascii_case("search") {
-        "Go".to_string()
-    } else {
-        label
+    // HTML input button labels use value, including an explicitly empty value.
+    // Accessible names and tooltips are not substitute visual button labels.
+    if node.tag_name() != Some("input") || node.attr("value").is_some() {
+        return value.to_string();
+    }
+    match kind {
+        ControlKind::Submit => "Submit".to_string(),
+        ControlKind::Reset => "Reset".to_string(),
+        _ => String::new(),
     }
 }
 
@@ -63,6 +68,7 @@ pub(super) fn default_control_content_height(
     style: &ComputedStyle,
 ) -> f32 {
     match kind {
+        ControlKind::Select => style.line_height + 10.0,
         ControlKind::Submit | ControlKind::Button | ControlKind::Reset => 30.0,
         ControlKind::TextArea => {
             node.attr("rows")

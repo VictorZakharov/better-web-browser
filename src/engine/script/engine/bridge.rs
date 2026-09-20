@@ -126,7 +126,11 @@ fn host_call_callback(
     }
     if matches!(
         operation.as_str(),
-        "bindNodeWrapper" | "nodeHandle" | "nodeWrapper"
+        "bindNodeWrapper"
+            | "nodeHandle"
+            | "nodeWrapper"
+            | "bindAttributeWrapper"
+            | "attributeComparisonData"
     ) {
         super::node_wrappers::dispatch(scope, &operation, arguments, return_value);
         return;

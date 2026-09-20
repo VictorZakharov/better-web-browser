@@ -142,8 +142,8 @@ impl Page {
             .filter(|node| node.tag_name() == Some("svg"))
             .take(MAX_INLINE_SVGS)
         {
-            inline_svg_versions.insert(svg.id(), svg.subtree_mutation_version());
-            if let Ok(image) = decode_inline_svg(&svg) {
+            inline_svg_versions.insert(svg.id(), svg::inline_svg_version(&svg, None));
+            if let Ok(image) = decode_inline_svg(&svg, None) {
                 let _ =
                     media::install_initial_decoded_image(&mut images, inline_svg_key(&svg), image);
             }

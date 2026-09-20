@@ -26,7 +26,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 url,
                 intrinsic_width,
                 intrinsic_height,
-                tint: svg_uses_current_color(node).then_some(self.styles.get(node).color),
+                tint: None,
                 alt: node.attr("aria-label").unwrap_or_default(),
                 available: image.is_some(),
             });

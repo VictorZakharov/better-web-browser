@@ -5,6 +5,7 @@ use crate::engine::script::host_state::HostState;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+mod attributes;
 
 #[derive(Default)]
 pub(super) struct Wrappers(RefCell<HashMap<NodeId, v8::Weak<v8::Object>>>);
@@ -33,6 +34,13 @@ pub(super) fn dispatch(
     arguments: v8::FunctionCallbackArguments,
     mut result: v8::ReturnValue,
 ) {
+    if matches!(
+        operation,
+        "bindAttributeWrapper" | "attributeComparisonData"
+    ) {
+        attributes::dispatch(scope, operation, arguments, result);
+        return;
+    }
     result.set(v8::null(scope).into());
     let context = scope.get_current_context();
     let Some(host) = host(context) else { return };

@@ -39,16 +39,6 @@ pub(super) fn node_id(node: &NodeRef) -> NodeId {
     node.id()
 }
 
-pub(super) fn svg_uses_current_color(node: &NodeRef) -> bool {
-    Node::descendants(node).any(|descendant| {
-        ["fill", "stroke", "style"].iter().any(|attribute| {
-            descendant
-                .attr(attribute)
-                .is_some_and(|value| value.to_ascii_lowercase().contains("currentcolor"))
-        })
-    })
-}
-
 pub(super) fn resolve_outer_size(
     length: Length,
     basis: f32,

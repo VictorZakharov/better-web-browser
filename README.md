@@ -133,6 +133,14 @@ same requested live result link, so no live performance comparison is claimed.
 Visual iframe embedding, persistent child state, complete policy support, and broader
 live reliability remain unfinished. **The HTML search fallback stays enabled.**
 
+User testing then exposed two entrypoints missing from that assessment: the DDG
+homepage crashed, and HTML-results dropdown options spilled into the page.
+The [entrypoint follow-up](docs/ddg-entrypoint-regressions.md) adds native DOM equality,
+blockified-select rendering, framework-compatible user editing, correct empty
+button labels, and per-element SVG colour. It records the reproduced failures and
+adds a homepage/HTML-results acceptance script. Earlier direct-results evidence
+must not be read as a claim that every DDG entrypoint or visual detail worked.
+
 The [full September 19 assessment](docs/browser-performance-readiness-2026-09-19.md)
 records the before/after results, populated-UI evidence, validation, outliers, and
 remaining standards gaps. [PR #167's assessment](docs/browser-performance-url-2026-09-16.md)

@@ -78,6 +78,10 @@ No implementation code contains site-specific endpoint or host exceptions.
 
 ## Evidence — September 19, 2026
 
+The following evidence describes the initial child-context head. Subsequent user
+testing exposed homepage and HTML-results failures outside those direct-results
+runs; see the [entrypoint correction and follow-up](ddg-entrypoint-regressions.md).
+
 | Check | Merged PR #169 release | This slice | Unified-headless Chrome 153 |
 |---|---:|---:|---:|
 | Initial-document fixture | 6 / 20 | 20 / 20 | 20 / 20 |

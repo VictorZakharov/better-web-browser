@@ -207,6 +207,8 @@
             return false;
         }
         hasChildNodes() { return !!this.firstChild; }
+        isEqualNode(other = null) { return compareNodes(this, other, false); }
+        isSameNode(other = null) { return compareNodes(this, other, true); }
         getRootNode(options = {}) { return wrap(host('rootNode', nodeId(this), !!Object(options).composed)); }
         cloneNode(deep = false) {
             const clone = wrap(host('cloneNode', nodeId(this), !!deep));

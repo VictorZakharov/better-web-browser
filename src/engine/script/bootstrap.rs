@@ -13,6 +13,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/nodes.js"),
     include_str!("bootstrap/style_declaration.js"),
     include_str!("bootstrap/attributes.js"),
+    include_str!("bootstrap/attribute_node.js"),
+    include_str!("bootstrap/node_equality.js"),
     include_str!("bootstrap/elements.js"),
     include_str!("bootstrap/html_elements.js"),
     include_str!("bootstrap/adjacent_insertion.js"),

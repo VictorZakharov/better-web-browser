@@ -355,13 +355,14 @@ impl Page {
 
         for svg in svgs {
             let key = inline_svg_key(&svg);
-            let version = svg.subtree_mutation_version();
+            let styles = self.cached_styles.as_ref().map(|(_, _, styles)| styles);
+            let version = svg::inline_svg_version(&svg, styles);
             let changed = self.inline_svg_versions.get(&svg.id()).copied() != Some(version);
             if !changed {
                 continue;
             }
             self.inline_svg_versions.insert(svg.id(), version);
-            match decode_inline_svg(&svg) {
+            match decode_inline_svg(&svg, styles) {
                 Ok(image) => {
                     let _ = self.install_decoded_image(key, image);
                 }
