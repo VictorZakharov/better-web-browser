@@ -7,6 +7,12 @@
     });
 
     const nativeTarget = id => wrap(Number(id) || 0) || document.body || document;
+    // Text commit tracking: change fires when a user-edited control commits
+    // (blur or Enter), not for programmatic writes while focused.
+    const focusCommitted = new WeakMap();
+    const isCommitTarget = target =>
+        (target instanceof HTMLInputElement && /^(text|search|tel|url|email|password|number)$/i.test(target.type)) ||
+        target instanceof HTMLTextAreaElement;
     // User editing changes the control's value internally, not by invoking an
     // author-installed value setter (e.g. a framework's programmatic-write tracker).
     const nativeValueSetters = [
@@ -108,12 +114,28 @@
         if (target instanceof HTMLSelectElement && changed) {
             target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
         }
+        if (isCommitTarget(target)) {
+            const entry = focusCommitted.get(target) || { edited: false };
+            entry.edited = true;
+            focusCommitted.set(target, entry);
+        } else if (target instanceof HTMLInputElement && target.type === 'range' && changed) {
+            target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
+        }
         return allowed;
     };
     const dispatchNativeFocus = input => {
         const next = input.focused ? nativeTarget(input.target) : null;
         const previous = document.activeElement;
         if (previous === next && nativeDocumentFocused === !!input.focused) return true;
+        // A user-edited control commits its change on blur.
+        if (previous && previous !== next) {
+            const entry = focusCommitted.get(previous);
+            focusCommitted.delete(previous);
+            if (entry?.edited && isCommitTarget(previous) && previous.isConnected) {
+                previous.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
+            }
+        }
+        if (next && isCommitTarget(next)) focusCommitted.set(next, { edited: false });
         const wasDocumentFocused = nativeDocumentFocused;
         if (previous) {
             previous.dispatchEvent(markTrusted(new FocusEvent('blur', { relatedTarget: next })));

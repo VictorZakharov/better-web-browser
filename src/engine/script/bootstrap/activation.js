@@ -21,6 +21,12 @@
     }
     function implicitSubmission(target) {
         if (!(target instanceof HTMLInputElement) || !target.form) return;
+        // Enter commits a user edit before the submission validates it.
+        const entry = focusCommitted.get(target);
+        if (entry?.edited && isCommitTarget(target) && target.isConnected) {
+            focusCommitted.delete(target);
+            target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
+        }
         const form = target.form;
         const controls = Array.from(form.getRootNode().querySelectorAll('input,button')).filter(control => control.form === form);
         const button = controls.find(control => /^(submit|image)$/i.test(control.type));

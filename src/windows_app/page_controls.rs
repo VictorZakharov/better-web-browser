@@ -8,6 +8,8 @@ pub(super) struct PageControlWindow {
     pub(super) window: Hwnd,
     pub(super) spec: better_web_browser::engine::ControlSpec,
     pub(super) brush: Hbrush,
+    /// Browser-owned validation bubble for interactively reported errors.
+    pub(super) bubble: Hwnd,
 }
 
 impl Drop for PageControlWindow {
@@ -15,6 +17,9 @@ impl Drop for PageControlWindow {
         unsafe {
             if !self.window.is_null() && IsWindow(self.window) != 0 {
                 DestroyWindow(self.window);
+            }
+            if !self.bubble.is_null() && IsWindow(self.bubble) != 0 {
+                DestroyWindow(self.bubble);
             }
             if !self.brush.is_null() {
                 DeleteObject(self.brush);
@@ -121,10 +126,27 @@ impl BrowserState {
                 placeholder::install(window, &spec);
             }
             let brush = CreateSolidBrush(spec.background_color.to_colorref());
+            // A reported invalid control gets a browser-owned message bubble.
+            // It is a plain STATIC window: no DOM node, no author styling.
+            let bubble = if spec.invalid && !spec.validation_message.is_empty() {
+                let bubble = self.create_control(
+                    "STATIC",
+                    &spec.validation_message,
+                    WS_BORDER,
+                    ID_VALIDATION_BUBBLE_BASE + index,
+                );
+                if !bubble.is_null() {
+                    SendMessageW(bubble, WM_SETFONT, font as usize, 1);
+                }
+                bubble
+            } else {
+                null_mut()
+            };
             self.page_controls.push(PageControlWindow {
                 window,
                 spec,
                 brush,
+                bubble,
             });
         }
         self.sync_page_control_positions();
@@ -148,6 +170,9 @@ impl BrowserState {
         if self.processing_background_tab {
             for control in &self.page_controls {
                 ShowWindow(control.window, SW_HIDE);
+                if !control.bubble.is_null() {
+                    ShowWindow(control.bubble, SW_HIDE);
+                }
             }
             return;
         }
@@ -192,10 +217,46 @@ impl BrowserState {
                 };
                 MoveWindow(control.window, x, y, width, native_height, 1);
                 ShowWindow(control.window, SW_SHOW);
+                self.sync_validation_bubble(control, x, y, width, height, true);
             } else {
                 ShowWindow(control.window, SW_HIDE);
+                self.sync_validation_bubble(control, 0, 0, 0, 0, false);
             }
         }
+    }
+
+    /// Positions (or hides) the validation bubble under its control.
+    unsafe fn sync_validation_bubble(
+        &self,
+        control: &PageControlWindow,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        visible: bool,
+    ) {
+        if control.bubble.is_null() {
+            return;
+        }
+        if !visible {
+            ShowWindow(control.bubble, SW_HIDE);
+            return;
+        }
+        // Rough single-line estimate, never narrower than the control itself.
+        let scale = self.page_scale();
+        let estimate =
+            (control.spec.validation_message.chars().count() as f32 * 7.0 + 16.0).min(320.0);
+        let bubble_width = ((estimate.max(width as f32 / scale) * scale).ceil() as i32).max(40);
+        let bubble_height = (22.0 * scale).ceil() as i32;
+        MoveWindow(
+            control.bubble,
+            x,
+            y + height + (4.0 * scale).round() as i32,
+            bubble_width,
+            bubble_height,
+            1,
+        );
+        ShowWindow(control.bubble, SW_SHOW);
     }
 
     pub(super) unsafe fn activate_page_control(&mut self, id: usize, notification: usize) {

@@ -72,6 +72,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             content_height + vertical_insets
         };
         let icon = self.control_background_icon(style, width, height);
+        let (invalid, validation_message) = control_feedback(node);
         let label = select.as_ref().map_or_else(
             || input_control_label(node, kind, &value),
             |select| select.label(),
@@ -114,6 +115,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 icon_url: icon.as_ref().map(|(url, _, _)| url.clone()),
                 icon_width: icon.as_ref().map(|(_, width, _)| *width).unwrap_or(0.0),
                 icon_height: icon.as_ref().map(|(_, _, height)| *height).unwrap_or(0.0),
+                invalid,
+                validation_message,
             }),
             width: width + margin.horizontal(),
             height: height + margin.vertical(),

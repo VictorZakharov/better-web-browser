@@ -71,8 +71,16 @@
             submitting.add(form);
             try {
                 // Internal submission validates without author-overridable
-                // methods: static validation only, no focus or reporting.
-                if (!form.noValidate && !button?.formNoValidate && validateForSubmission(form).length) return;
+                // methods, then reports the first unhandled control.
+                if (!form.noValidate && !button?.formNoValidate) {
+                    const unhandled = validateForSubmission(form);
+                    if (unhandled.length) {
+                        // Blocked submission reports like interactive
+                        // validation so authors and users see feedback.
+                        globalThis.__reportInvalidControl(unhandled[0]);
+                        return;
+                    }
+                }
                 if (!form.dispatchEvent(trusted(new SubmitEvent('submit', {
                     bubbles: true, cancelable: true, submitter: button
                 })))) return;

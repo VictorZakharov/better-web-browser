@@ -186,6 +186,11 @@ impl Node {
                 state.user_validity = true;
             });
         }
+        if changed {
+            self.update_control_state(|state| {
+                state.reported = false;
+            });
+        }
         changed
     }
 
@@ -217,6 +222,9 @@ impl Node {
                 state.selected_dirty = false;
             });
         }
+        self.update_control_state(|state| {
+            state.reported = false;
+        });
         self.run_selectedness_setting();
     }
 

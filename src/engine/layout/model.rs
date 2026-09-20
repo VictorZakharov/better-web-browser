@@ -67,6 +67,9 @@ pub struct ControlSpec {
     pub icon_url: Option<String>,
     pub icon_width: f32,
     pub icon_height: f32,
+    /// Interactively reported invalid state with its message for feedback.
+    pub invalid: bool,
+    pub validation_message: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

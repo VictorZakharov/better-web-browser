@@ -40,6 +40,9 @@ pub(crate) struct ControlState {
     /// Last scripted pattern verdict with the (pattern, values) it was
     /// computed from; selector matching trusts it only on exact deps.
     pub pattern_verdict: Option<(String, Vec<String>, bool)>,
+    /// Set by interactive validation reporting; drives visible feedback.
+    /// Cleared by any value change or reset.
+    pub reported: bool,
     /// Last observed `type` attribute, for type-change transitions.
     pub type_seen: Option<String>,
 }
@@ -59,10 +62,6 @@ impl Node {
         }
         let cell = self.control_cell()?;
         cell.as_ref().map(|boxed| (**boxed).clone())
-    }
-
-    fn update_control(&self, update: impl FnOnce(&mut ControlState)) {
-        self.update_control_state(update);
     }
 
     /// Seeds live state from current attributes; idempotent.
@@ -126,10 +125,11 @@ impl Node {
         if mode != InputValueMode::Value {
             let before = self.input_value();
             let sanitized = sanitize_input_value(&self.input_state_name(), value);
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 state.dirty = false;
                 state.user_edited = false;
                 state.editing = None;
+                state.reported = false;
             });
             let _ = self.set_attr("value", &sanitized);
             return self.input_value() != before;
@@ -141,7 +141,7 @@ impl Node {
     /// Stores a sanitized value-mode write; fixes range empties to default.
     fn store_input_value(&self, sanitized: &str, by_user: bool) -> bool {
         let mut changed = false;
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             if state.value.as_deref() != Some(sanitized) {
                 state.value = Some(sanitized.to_string());
                 changed = true;
@@ -149,10 +149,14 @@ impl Node {
             state.dirty = true;
             state.user_edited = by_user;
             state.editing = None;
+            state.reported = false;
+            if by_user {
+                state.user_validity = true;
+            }
         });
         if self.input_state_name() == "range" && self.input_value().is_empty() {
             let fallback = range_default(&self.attr("min"), &self.attr("max"));
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 state.value = Some(fallback);
             });
             return true;
@@ -170,11 +174,13 @@ impl Node {
         }
         if input_type == "number" && !value.is_empty() && !is_valid_float(value) {
             let mut changed = false;
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 changed = state.editing.as_deref() != Some(value);
                 state.editing = Some(value.to_string());
                 state.dirty = true;
                 state.user_edited = true;
+                state.user_validity = true;
+                state.reported = false;
             });
             return changed;
         }
@@ -206,7 +212,7 @@ impl Node {
                     &self.input_state_name(),
                     &self.attr("value").unwrap_or_default(),
                 );
-                self.update_control(|state| {
+                self.update_control_state(|state| {
                     state.value = Some(live);
                 });
             }
@@ -228,6 +234,9 @@ impl Node {
         if previous == current {
             return;
         }
+        self.update_control_state(|state| {
+            state.reported = false;
+        });
         let previous_mode = input_value_mode(&previous);
         let current_mode = input_value_mode(&current);
         // Value/default/on modes propagate the live value into the attribute;
@@ -241,7 +250,7 @@ impl Node {
         ) && !self.input_value().is_empty()
         {
             let live = self.input_value();
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 state.type_seen = Some(current.clone());
             });
             let _ = self.set_attr("value", &live);
@@ -249,7 +258,7 @@ impl Node {
         }
         if previous_mode != InputValueMode::Value && current_mode == InputValueMode::Value {
             let live = sanitize_input_value(&current, &self.attr("value").unwrap_or_default());
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 state.type_seen = Some(current.clone());
                 state.value = Some(live);
                 state.dirty = false;
@@ -257,12 +266,12 @@ impl Node {
                 state.editing = None;
             });
         } else {
-            self.update_control(|state| {
+            self.update_control_state(|state| {
                 state.type_seen = Some(current.clone());
             });
         }
         let sanitized = sanitize_input_value(&current, &self.input_value());
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             if state.value.is_some() {
                 state.value = Some(sanitized.clone());
             }
@@ -308,13 +317,17 @@ impl Node {
     /// Textarea write (programmatic or user); sets dirty like input values.
     pub(crate) fn set_textarea_raw(&self, value: &str, by_user: bool) -> bool {
         let mut changed = false;
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             if state.value.as_deref() != Some(value) {
                 state.value = Some(value.to_string());
                 changed = true;
             }
             state.dirty = true;
             state.user_edited = by_user;
+            state.reported = false;
+            if by_user {
+                state.user_validity = true;
+            }
         });
         changed
     }
@@ -333,19 +346,20 @@ impl Node {
             return;
         }
         let text = self.text_content();
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             state.value = Some(text);
         });
     }
 
     /// Input reset algorithm: flags cleared, value follows the default again.
     pub(crate) fn reset_input(&self) {
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             state.value = None;
             state.dirty = false;
             state.user_edited = false;
             state.user_validity = false;
             state.editing = None;
+            state.reported = false;
         });
         self.reset_checked();
     }
@@ -353,11 +367,12 @@ impl Node {
     /// Textarea reset: raw value returns to child text.
     pub(crate) fn reset_textarea(&self) {
         let text = self.text_content();
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             state.value = Some(text);
             state.dirty = false;
             state.user_edited = false;
             state.user_validity = false;
+            state.reported = false;
         });
     }
 
@@ -369,23 +384,25 @@ impl Node {
             .clone()
             .unwrap_or_else(|| node.text_content());
         Self::set_text_content(node, &default);
-        node.update_control(|state| {
+        node.update_control_state(|state| {
             state.default_override = None;
         });
     }
 
     /// Clears user validity without touching values (select reset helper).
     pub(crate) fn clear_user_validity(&self) {
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             state.user_validity = false;
+            state.reported = false;
         });
     }
 
     /// Custom validity message write with newline normalization.
     pub(crate) fn set_custom_message(&self, message: &str) {
         let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
-        self.update_control(|state| {
+        self.update_control_state(|state| {
             state.custom_message = normalized;
+            state.reported = false;
         });
     }
 
@@ -419,7 +436,7 @@ impl Node {
     /// attribute-driven on the copy.
     pub(crate) fn propagate_clone_state(&self, copy: &Node) {
         let snapshot = self.control_state_snapshot();
-        copy.update_control(|state| {
+        copy.update_control_state(|state| {
             state.value = snapshot.value.clone();
             state.dirty = snapshot.dirty;
             state.user_edited = snapshot.user_edited;
@@ -447,6 +464,29 @@ impl Node {
                 _ => {}
             }
         }
+    }
+
+    /// Static validation over a form's owned submittable controls in tree
+    /// order. Fires no events itself; callers dispatch `invalid` where
+    /// listeners exist.
+    pub(crate) fn static_invalid_controls(
+        form: &Node,
+        document: &NodeRef,
+        patterns: &super::control_validity::PatternSource,
+    ) -> Vec<NodeRef> {
+        use super::control_validity::{validity_of, will_validate};
+        let form_id = form.id();
+        Node::descendants(document)
+            .filter(|node| {
+                node.form_owner().is_some_and(|owner| owner == form_id)
+                    && matches!(
+                        node.tag_name(),
+                        Some("input" | "button" | "select" | "textarea")
+                    )
+                    && will_validate(node)
+                    && !validity_of(node, patterns).valid()
+            })
+            .collect()
     }
 }
 

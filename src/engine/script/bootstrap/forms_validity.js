@@ -103,10 +103,13 @@
         return unhandled;
     }
     function focusInvalidControl(control) {
-        // Interactive reporting brings an eligible control to attention.
-        // Full reveal/feedback integration lives with submission feedback.
+        // Interactive reporting marks the control (visible feedback follows
+        // through layout and native presentation) and focuses it when possible.
+        host('controlReportInvalid', nodeId(control));
         if (!control.matches(':disabled')) control.focus();
     }
+    // Internal submission shares the reporting step across IIFE boundaries.
+    globalThis.__reportInvalidControl = focusInvalidControl;
     function stepControlValue(input, n, up) {
         const result = JSON.parse(host('controlStep', nodeId(input), Number(n), up));
         if (result.status === 'state') throw new DOMException('The input has no allowed value step.', 'InvalidStateError');

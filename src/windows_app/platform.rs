@@ -170,6 +170,9 @@ pub(super) const ID_READER: usize = 1007;
 pub(super) const ID_TAB_SEARCH_EDIT: usize = 1100;
 pub(super) const ID_TASK_END_PROCESS: usize = 1200;
 pub(super) const ID_PAGE_CONTROL_BASE: usize = 2000;
+/// Browser-owned validation bubbles; far from control ids so activation
+/// routing (which subtracts the control base) ignores them.
+pub(super) const ID_VALIDATION_BUBBLE_BASE: usize = 102_000;
 pub(super) const ID_RENDERER_RUNTIME_TIMER: usize = 1;
 pub(super) const ID_RENDERER_MONITOR_TIMER: usize = 2;
 pub(super) const ID_PERFORMANCE_MONITOR_TIMER: usize = 3;

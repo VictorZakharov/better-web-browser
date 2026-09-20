@@ -252,17 +252,25 @@ fn build_nodes(
     let selection = selection
         .filter(|(target, _, _)| *target == node.id())
         .map(|(_, start, end)| SemanticSelection { start, end });
+    // Interactively reported validation failures surface their message as
+    // the accessible description; untouched or valid controls keep authoring.
+    let description = control
+        .filter(|control| control.invalid && !control.validation_message.is_empty())
+        .map(|control| bounded_text(&control.validation_message))
+        .unwrap_or_else(|| {
+            bounded_text(
+                &node
+                    .attr("aria-description")
+                    .or_else(|| node.attr("title"))
+                    .unwrap_or_default(),
+            )
+        });
     let semantic = SemanticNode {
         id,
         role,
         name,
         value,
-        description: bounded_text(
-            &node
-                .attr("aria-description")
-                .or_else(|| node.attr("title"))
-                .unwrap_or_default(),
-        ),
+        description,
         bounds: bounds.get(&node.id()).copied().unwrap_or_default(),
         children,
         level: heading_level(node),

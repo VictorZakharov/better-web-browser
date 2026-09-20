@@ -37,6 +37,7 @@ pub(super) fn dispatch(
             | "controlWillValidate"
             | "controlSetCustomValidity"
             | "controlPatternVerdict"
+            | "controlReportInvalid"
             | "controlValueAsNumber"
             | "controlSetValueAsNumber"
             | "controlStep"
@@ -94,6 +95,9 @@ pub(super) fn dispatch(
             }
             if let Some(select) = node.nearest_select() {
                 select.run_selectedness_setting();
+                select.update_control_state(|state| {
+                    state.reported = false;
+                });
             }
             JsValue::undefined()
         }
@@ -154,6 +158,13 @@ pub(super) fn dispatch(
                 let document = state.document.clone();
                 state.record_mutation(Some(&document), MutationKind::State);
             }
+            JsValue::undefined()
+        }
+        "controlReportInvalid" => {
+            // Marks interactive reporting; visible feedback follows.
+            node.update_control_state(|state| {
+                state.reported = true;
+            });
             JsValue::undefined()
         }
         "controlValueAsNumber" => JsValue::from(value_as_number(&node)),
@@ -266,6 +277,9 @@ fn set_selected_index(select: &Node, index: i64) {
         });
         matched |= is_match;
     }
+    select.update_control_state(|state| {
+        state.reported = false;
+    });
 }
 
 /// Value setter: clears all, then selects the first option with a matching
@@ -282,4 +296,7 @@ fn set_select_value(select: &Node, value: &str) {
         });
         matched |= is_match;
     }
+    select.update_control_state(|state| {
+        state.reported = false;
+    });
 }

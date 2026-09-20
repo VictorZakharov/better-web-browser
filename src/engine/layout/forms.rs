@@ -44,6 +44,23 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     Some((kind, node.input_value()))
 }
 
+/// Invalid-and-reported feedback for a control, for native presentation.
+/// Uses the cached pattern verdict: layout never re-enters script.
+pub(super) fn control_feedback(node: &NodeRef) -> (bool, String) {
+    use crate::engine::dom::node::control_validity::{self, PatternSource};
+    if !control_validity::will_validate(node) {
+        return (false, String::new());
+    }
+    if !node.control_state_snapshot().reported {
+        return (false, String::new());
+    }
+    let flags = control_validity::validity_of(node, &PatternSource::Cached);
+    if flags.valid() {
+        return (false, String::new());
+    }
+    (true, control_validity::validation_message(node, &flags))
+}
+
 pub(super) fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str) -> String {
     if !matches!(
         kind,
