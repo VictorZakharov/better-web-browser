@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Text truncation fixture</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    line-height: 20px;
+    width: 800px;
+    background: #fff;
+    color: #111;
+  }
+  section { margin: 0 0 16px 8px; }
+  h2 { font-size: 13px; line-height: 16px; margin: 0 0 4px 0; font-weight: bold; }
+  .box {
+    width: 320px;
+    background: #f2f2f2;
+    border: 1px solid #999;
+  }
+  .single {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  #ref-plain { width: 320px; }
+  #single-ellipsis { text-overflow: ellipsis; }
+  #single-clip { text-overflow: clip; }
+  #single-narrow { width: 8px; text-overflow: ellipsis; }
+  #single-padding {
+    box-sizing: border-box;
+    width: 320px;
+    padding: 0 40px;
+    text-overflow: ellipsis;
+  }
+  .clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #clamp-1 { -webkit-line-clamp: 1; }
+  #clamp-2 { -webkit-line-clamp: 2; }
+  #clamp-3 { -webkit-line-clamp: 3; }
+  #clamp-exact { -webkit-line-clamp: 2; }
+  #clamp-none { -webkit-line-clamp: none; }
+  #clamp-unicode { -webkit-line-clamp: 2; }
+  #flex-clamp span { display: block; }
+  #flex-row { display: flex; }
+  #flex-row .item { flex: 1 1 0; }
+  #grid-clamp { display: grid; }
+  .big { font-size: 20px; }
+  a { color: #0645ad; }
+</style>
+</head>
+<body>
+<section>
+<h2>ref-plain: untruncated reference text</h2>
+<div class="box" id="ref-plain">The quick brown fox jumps over the lazy dog near the riverbank at dusk while birds return home.</div>
+</section>
+<section>
+<h2>single-ellipsis: one line with marker</h2>
+<div class="box single" id="single-ellipsis">The quick <span>brown fox <a href="/fox">jumps over</a></span> the <span class="big">lazy dog</span> near the riverbank at dusk.</div>
+</section>
+<section>
+<h2>single-clip: one line without marker</h2>
+<div class="box single" id="single-clip">The quick <span>brown fox <a href="/fox">jumps over</a></span> the <span class="big">lazy dog</span> near the riverbank at dusk.</div>
+</section>
+<section>
+<h2>single-narrow: box narrower than the marker</h2>
+<div class="box single" id="single-narrow">The quick brown fox jumps over the lazy dog.</div>
+</section>
+<section>
+<h2>single-padding: border box with padding</h2>
+<div class="box single" id="single-padding">The quick brown fox jumps over the lazy dog near the riverbank at dusk.</div>
+</section>
+<section>
+<h2>clamp-1: legacy clamp to one line</h2>
+<div class="box clamp" id="clamp-1">The quick <span>brown fox <a href="/fox">jumps over</a></span> the lazy dog near the <br>riverbank at dusk while birds return home to rest.</div>
+</section>
+<section>
+<h2>clamp-2: legacy clamp to two lines</h2>
+<div class="box clamp" id="clamp-2">The quick <span>brown fox <a href="/fox">jumps over</a></span> the lazy dog near the <br>riverbank at dusk while birds return home to rest.</div>
+</section>
+<section>
+<h2>clamp-3: legacy clamp to three lines</h2>
+<div class="box clamp" id="clamp-3">The quick <span>brown fox <a href="/fox">jumps over</a></span> the lazy dog near the <br>riverbank at dusk while birds return home to rest.</div>
+</section>
+<section>
+<h2>clamp-exact: content fits exactly, no marker expected</h2>
+<div class="box clamp" id="clamp-exact">The quick brown fox.</div>
+</section>
+<section>
+<h2>clamp-none: clamp disabled, full text expected</h2>
+<div class="box clamp" id="clamp-none">The quick <span>brown fox <a href="/fox">jumps over</a></span> the lazy dog near the riverbank at dusk while birds return home to rest.</div>
+</section>
+<section>
+<h2>clamp-unicode: combining marks and emoji stay intact</h2>
+<div class="box clamp" id="clamp-unicode">Cafe&#769; au lait &#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467; and nai&#769;ve re&#769;sume&#769; notes drift across the page again and again.</div>
+</section>
+<section>
+<h2>flex-clamp: clamped block inside a flex item</h2>
+<div id="flex-row"><div class="item"><div class="box clamp" id="flex-clamp">The quick brown fox jumps over the lazy dog near the riverbank at dusk while birds return home to rest.</div></div></div>
+</section>
+<section>
+<h2>grid-clamp: clamped block inside a grid item</h2>
+<div id="grid-clamp"><div><div class="box clamp" id="grid-clamp-inner">The quick brown fox jumps over the lazy dog near the riverbank at dusk while birds return home to rest.</div></div></div>
+</section>
+<section>
+<h2>sibling: clamped block followed by a sibling</h2>
+<div class="box clamp" id="clamp-sibling">The quick brown fox jumps over the lazy dog near the riverbank at dusk while birds return home to rest.</div>
+<p id="after-sibling">Following sibling text.</p>
+</section>
+</body>
+</html>
