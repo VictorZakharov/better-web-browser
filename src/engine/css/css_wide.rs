@@ -93,7 +93,10 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "content" => style
             .generated_content
             .clone_from(&source.generated_content),
-        "display" => style.display = source.display,
+        "display" => {
+            style.display = source.display;
+            style.legacy_webkit_box = source.legacy_webkit_box;
+        }
         "position" => style.position = source.position,
         "z-index" => style.z_index = source.z_index,
         "float" => style.float = source.float,
@@ -144,6 +147,9 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         }
         "text-align" => style.text_align = source.text_align,
         "white-space" => style.white_space = source.white_space,
+        "text-overflow" => style.text_overflow = source.text_overflow,
+        "-webkit-line-clamp" => style.line_clamp = source.line_clamp,
+        "-webkit-box-orient" => style.box_orient = source.box_orient,
         "text-decoration" | "text-decoration-line" => {
             style.text_decoration_underline = source.text_decoration_underline
         }

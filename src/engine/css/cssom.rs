@@ -100,6 +100,9 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
+        "text-overflow" => style.text_overflow.css_keyword().to_string(),
+        "-webkit-line-clamp" => style.line_clamp.css_text(),
+        "-webkit-box-orient" => style.box_orient.css_keyword().to_string(),
         "padding-bottom" => serialize_length(style.padding.bottom),
         "padding-left" => serialize_length(style.padding.left),
         "padding-right" => serialize_length(style.padding.right),

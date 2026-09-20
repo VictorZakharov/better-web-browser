@@ -47,5 +47,4 @@ pub use values::{
     ResolvedEdges, TextAlign, VerticalAlign, WhiteSpace,
 };
 use variables::{apply_custom_properties, apply_resolved_declaration};
-#[cfg(test)]
 mod tests;

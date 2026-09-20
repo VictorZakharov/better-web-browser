@@ -18,6 +18,11 @@ impl ComputedStyle {
             && self.line_height == other.line_height
             && self.text_align == other.text_align
             && self.white_space == other.white_space
+            // `text-overflow` only swaps the painted overflow marker, so it stays
+            // paint-only. Clamp state changes the line boxes and must relayout.
+            && self.line_clamp == other.line_clamp
+            && self.box_orient == other.box_orient
+            && self.legacy_webkit_box == other.legacy_webkit_box
             && self.width == other.width
             && self.height == other.height
             && self.min_width == other.min_width
