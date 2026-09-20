@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 fn table_layout(markup: &str) -> (LayoutOutput, NodeRef) {
     let page = Page::parse(markup, "https://example.com/");

@@ -1,5 +1,5 @@
-use super::super::test_support::FixedMeasurer;
 use super::super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn direct_text_does_not_flatten_element_flex_items() {

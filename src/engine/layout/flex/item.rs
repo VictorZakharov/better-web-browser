@@ -15,13 +15,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         container_style: &ComputedStyle,
     ) -> BlockMetrics {
         let Some(node) = item.node.as_ref() else {
+            // Anonymous flex runs are single inline flushes with an ephemeral
+            // clamp budget derived from the container style.
             let bottom = self.layout_inline_atoms(
                 &item.anonymous_atoms,
                 x,
                 y,
                 width,
-                container_style.text_align,
-                container_style.line_height,
+                container_style,
+                &mut None,
+                false,
             );
             return BlockMetrics { bottom };
         };
@@ -121,8 +124,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             ),
             _ => {}
         }
-        let bottom =
-            self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
+        let bottom = self.layout_inline_atoms(&atoms, x, y, width, &style, &mut None, false);
         BlockMetrics { bottom }
     }
 }

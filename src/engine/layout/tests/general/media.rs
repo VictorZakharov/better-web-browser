@@ -1,5 +1,5 @@
-use super::super::test_support::FixedMeasurer;
 use super::super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn video_is_a_replaced_element_and_installs_bounded_frames() {

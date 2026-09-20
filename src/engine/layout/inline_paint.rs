@@ -241,134 +241,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 style,
                 node_id,
             } => {
-                let item_start = self.output.items.len();
-                let metrics =
-                    self.measure_inline_box(measured.atom, children, style, containing_width);
-                let border_x = x + metrics.margin.left;
-                let border_y = if metrics.border_box_height == 0.0 && children.is_empty() {
-                    y + metrics.margin.top
-                } else {
-                    atom_y + metrics.margin.top
-                };
-                let border_rect = RectF {
-                    x: border_x,
-                    y: border_y,
-                    width: metrics.border_box_width,
-                    height: metrics.border_box_height,
-                };
-                if let Some(node_id) = node_id {
-                    self.output.node_bounds.insert(*node_id, border_rect);
-                    // Non-replaced inline elements have an empty ResizeObserver content rect.
-                    if style.display != Display::Inline {
-                        self.output.resize_boxes.insert(
-                            *node_id,
-                            ResizeBox::from_border(
-                                border_rect.width,
-                                border_rect.height,
-                                metrics.padding,
-                                metrics.border,
-                            ),
-                        );
-                    }
-                }
-                let radius =
-                    resolve_border_radius(style.border_radius, border_rect, style.font_size);
-                if self.emit_paint
-                    && style.visibility
-                    && style.background_color.alpha > 0
-                    && style.mask_image.is_none()
-                {
-                    self.output.items.push(DisplayItem::SolidRect {
-                        rect: border_rect,
-                        color: style
-                            .background_color
-                            .composite_over(self.output.background),
-                        radius,
-                    });
-                }
-                if self.emit_paint
-                    && style.visibility
-                    && let Some(tile_rect) = self.background_tile_rect(style, border_rect)
-                    && let Some(url) = style.background_image.as_ref()
-                {
-                    self.output.items.push(DisplayItem::BackgroundImage {
-                        clip_rect: border_rect,
-                        tile_rect,
-                        url: url.clone(),
-                        repeat_x: style.background_repeat_x,
-                        repeat_y: style.background_repeat_y,
-                    });
-                }
-                if self.emit_paint
-                    && style.visibility
-                    && let Some(url) = style.mask_image.as_ref()
-                {
-                    self.output.items.push(DisplayItem::Image {
-                        rect: border_rect,
-                        url: url.clone(),
-                        alt: String::new(),
-                        tint: Some(style.background_color),
-                    });
-                }
-                if self.emit_paint
-                    && style.visibility
-                    && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
-                    && (metrics.border.horizontal() > 0.0 || metrics.border.vertical() > 0.0)
-                {
-                    self.output.items.push(DisplayItem::BorderRect {
-                        rect: border_rect,
-                        widths: [
-                            metrics.border.top,
-                            metrics.border.right,
-                            metrics.border.bottom,
-                            metrics.border.left,
-                        ],
-                        colors: style.painted_border_colors(
-                            style
-                                .background_color
-                                .composite_over(self.output.background),
-                        ),
-                        radius,
-                    });
-                }
-                let content_x = border_x + metrics.border.left + metrics.padding.left;
-                let content_y = border_y + metrics.border.top + metrics.padding.top;
-                let content_width = (metrics.border_box_width
-                    - metrics.border.horizontal()
-                    - metrics.padding.horizontal())
-                .max(0.0);
-                let content_height = (metrics.border_box_height
-                    - metrics.border.vertical()
-                    - metrics.padding.vertical())
-                .max(0.0);
-                let mut child_x = match style.text_align {
-                    TextAlign::Start => content_x,
-                    TextAlign::Center => {
-                        content_x + ((content_width - metrics.children_width) / 2.0).max(0.0)
-                    }
-                    TextAlign::End => content_x + (content_width - metrics.children_width).max(0.0),
-                };
-                for (index, child) in children.iter().enumerate() {
-                    if matches!(child, InlineAtom::Break) {
-                        continue;
-                    }
-                    let child = self.measure_atom(child, index == 0, content_width);
-                    self.paint_atom(
-                        &child,
-                        child_x,
-                        content_y,
-                        content_height.max(child.height),
-                        content_width,
-                        line_id,
-                    );
-                    child_x += child.width;
-                }
-                if let Some(node_id) = node_id {
-                    self.apply_transform(*node_id, style, border_rect, item_start);
-                } else {
-                    self.apply_generated_transform(style, border_rect, item_start);
-                }
-                self.wrap_opacity(item_start, style.opacity);
+                self.paint_inline_box(
+                    measured,
+                    style,
+                    children,
+                    *node_id,
+                    x,
+                    y,
+                    line_height,
+                    containing_width,
+                    line_id,
+                    None,
+                );
             }
             InlineAtom::Placeholder {
                 node_id,
@@ -390,5 +274,107 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             InlineAtom::Break => {}
         }
+    }
+
+    /// Paints one line following a `RowPlan` and returns the line bottom.
+    /// Consumes a fragment line id exactly like `paint_line` so retained line
+    /// numbering stays identical between truncated and plain lines.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn paint_truncated_row(
+        &mut self,
+        line: &[MeasuredAtom<'_>],
+        plan: &RowPlan,
+        x: f32,
+        y: f32,
+        available: f32,
+        align: TextAlign,
+        line_height: f32,
+    ) -> f32 {
+        let fragments = std::sync::Arc::make_mut(&mut self.output.fragments);
+        fragments.next_line += 1;
+        let line_id = fragments.next_line;
+        let mut cursor_x = match align {
+            TextAlign::Start => x,
+            TextAlign::Center => x + ((available - plan.width) / 2.0).max(0.0),
+            TextAlign::End => x + (available - plan.width).max(0.0),
+        };
+        for (index, keep) in &plan.keeps {
+            let measured = &line[*index];
+            match keep {
+                AtomKeep::Whole => {
+                    self.paint_atom(measured, cursor_x, y, line_height, available, line_id);
+                    cursor_x += measured.width;
+                }
+                AtomKeep::TextPrefix { len, width } => {
+                    let text = measured.text.unwrap_or_default();
+                    let prefix = text.get(..*len).unwrap_or_default();
+                    let shortened = MeasuredAtom {
+                        atom: measured.atom,
+                        text: Some(prefix),
+                        width: *width,
+                        height: measured.height,
+                        content_height: measured.content_height,
+                        no_wrap: measured.no_wrap,
+                        break_before: measured.break_before,
+                    };
+                    self.paint_atom(&shortened, cursor_x, y, line_height, available, line_id);
+                    cursor_x += *width;
+                }
+                AtomKeep::BoxPrefix {
+                    keeps,
+                    width,
+                    children_width,
+                } => {
+                    let InlineAtom::InlineBox {
+                        children,
+                        style,
+                        node_id,
+                    } = measured.atom
+                    else {
+                        continue;
+                    };
+                    self.paint_inline_box(
+                        measured,
+                        style,
+                        children,
+                        *node_id,
+                        cursor_x,
+                        y,
+                        line_height,
+                        available,
+                        line_id,
+                        Some(BoxPaint {
+                            keeps,
+                            border_box_width: *width,
+                            children_width: *children_width,
+                        }),
+                    );
+                    cursor_x += *width;
+                }
+            }
+        }
+        let marker = &plan.marker;
+        if self.emit_paint && marker.visible {
+            let shaped = self.measurer.shape(ELLIPSIS, &marker.font);
+            let marker_y = y
+                + (line_height - marker.ref_height).max(0.0) / 2.0
+                + (marker.ref_height - marker.ref_content_height) / 2.0;
+            self.output.items.push(DisplayItem::Text {
+                rect: RectF {
+                    x: cursor_x,
+                    y: marker_y,
+                    width: marker.width,
+                    height: marker.ref_content_height,
+                },
+                text: ELLIPSIS.to_string(),
+                font: marker.font.clone(),
+                color: marker.color,
+                link: marker.link.clone(),
+                node_id: marker.node_id,
+                raster_run_id: shaped.raster_run_id,
+                glyphs: shaped.glyphs,
+            });
+        }
+        y + line_height
     }
 }
