@@ -1,10 +1,5 @@
-//! Painting for truncated line boxes: kept atoms plus the synthetic marker.
-//!
-//! Kept atoms paint through the ordinary atom path, so fragments, node bounds
-//! and paint agree exactly as they do for untruncated lines. The marker itself
-//! is generated text: it carries paint (with the truncated link target) but no
-//! source clusters, keeping DOM offsets intact. The clamp-aware line flush
-//! lives here as well so the core line breaker in `inline_layout` stays small.
+//! Clamp-aware line flushing and ordinary inline-box placement.
+//! Elision affects child paint, never the original box geometry.
 
 use super::*;
 
@@ -171,9 +166,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y
     }
 
-    /// Paints one inline box. With `truncation`, only kept children paint and
-    /// the border box shrinks to them; the line-level ellipsis marker itself is
-    /// painted by the truncated-row walk, never here.
+    /// Preserve the full inline box and child advances. A keep list suppresses
+    /// paint only; elided children still contribute source and scroll geometry.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn paint_inline_box(
         &mut self,
@@ -186,17 +180,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         line_height: f32,
         containing_width: f32,
         line_id: u64,
-        truncation: Option<BoxPaint<'_>>,
+        truncation: Option<&[(usize, AtomKeep)]>,
     ) {
         let atom_y = y + (line_height - measured.height).max(0.0) / 2.0;
         let item_start = self.output.items.len();
         let metrics = self.measure_inline_box(measured.atom, children, style, containing_width);
-        let border_box_width = truncation
-            .as_ref()
-            .map_or(metrics.border_box_width, |paint| paint.border_box_width);
-        let kept_children_width = truncation
-            .as_ref()
-            .map_or(metrics.children_width, |paint| paint.children_width);
+        let border_box_width = metrics.border_box_width;
+        let kept_children_width = metrics.children_width;
         let border_x = x + metrics.margin.left;
         let border_y = if metrics.border_box_height == 0.0 && children.is_empty() {
             y + metrics.margin.top
@@ -296,95 +286,29 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             TextAlign::Center => content_x + ((content_width - kept_children_width) / 2.0).max(0.0),
             TextAlign::End => content_x + (content_width - kept_children_width).max(0.0),
         };
-        // Kept indices address child positions, translated from row positions
-        // by the planner. Absent indices are dropped truncated content.
-        let keep_for: Vec<Option<&AtomKeep>> = children
-            .iter()
-            .enumerate()
-            .map(|(index, _)| {
-                truncation.as_ref().and_then(|paint| {
-                    paint
-                        .keeps
-                        .iter()
-                        .find(|(keep_index, _)| *keep_index == index)
-                        .map(|(_, keep)| keep)
-                })
-            })
-            .collect();
+        let mut keeps = truncation.unwrap_or_default().iter().peekable();
         for (index, child) in children.iter().enumerate() {
             if matches!(child, InlineAtom::Break) {
                 continue;
             }
-            match keep_for[index] {
-                None if truncation.is_some() => continue,
-                None | Some(AtomKeep::Whole) => {
-                    let painted = self.measure_atom(child, index == 0, content_width);
-                    self.paint_atom(
-                        &painted,
-                        child_x,
-                        content_y,
-                        content_height.max(painted.height),
-                        content_width,
-                        line_id,
-                    );
-                    child_x += painted.width;
-                }
-                Some(AtomKeep::TextPrefix { len, width }) => {
-                    let painted = self.measure_atom(child, index == 0, content_width);
-                    let text = painted.text.unwrap_or_default();
-                    let prefix = text.get(..*len).unwrap_or_default();
-                    let shortened = MeasuredAtom {
-                        atom: child,
-                        text: Some(prefix),
-                        width: *width,
-                        height: painted.height,
-                        content_height: painted.content_height,
-                        no_wrap: painted.no_wrap,
-                        break_before: painted.break_before,
-                    };
-                    self.paint_atom(
-                        &shortened,
-                        child_x,
-                        content_y,
-                        content_height.max(shortened.height),
-                        content_width,
-                        line_id,
-                    );
-                    child_x += *width;
-                }
-                Some(AtomKeep::BoxPrefix {
-                    keeps,
-                    width,
-                    children_width,
-                }) => {
-                    let InlineAtom::InlineBox {
-                        children: nested_children,
-                        style: nested_style,
-                        node_id: nested_id,
-                    } = child
-                    else {
-                        continue;
-                    };
-                    let painted = self.measure_atom(child, index == 0, content_width);
-                    self.paint_inline_box(
-                        &painted,
-                        nested_style,
-                        nested_children,
-                        *nested_id,
-                        child_x,
-                        content_y,
-                        content_height.max(painted.height),
-                        content_width,
-                        line_id,
-                        Some(BoxPaint {
-                            keeps,
-                            border_box_width: *width,
-                            children_width: *children_width,
-                        }),
-                    );
-                    child_x += *width;
-                }
-            }
+            let measured = self.measure_atom(child, index == 0, content_width);
+            let keep = if truncation.is_none() {
+                Some(&AtomKeep::Whole)
+            } else if keeps.peek().is_some_and(|(i, _)| *i == index) {
+                keeps.next().map(|(_, keep)| keep)
+            } else {
+                None
+            };
+            self.paint_kept_atom(
+                &measured,
+                keep,
+                child_x,
+                content_y,
+                content_height.max(measured.height),
+                content_width,
+                line_id,
+            );
+            child_x += measured.width;
         }
         if let Some(node_id) = node_id {
             self.apply_transform(node_id, style, border_rect, item_start);

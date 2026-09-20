@@ -14,11 +14,12 @@ paint and invalidation:
 
 ## Activation
 
-Single-line ellipsis needs `text-overflow: ellipsis`, a non-wrapping
-`white-space` (`nowrap` or `pre`) and non-`visible` overflow, per CSS
-Overflow 3 §2 (https://drafts.csswg.org/css-overflow-3/#text-overflow).
-Chrome additionally requires the nowrap/overflow combination; content that
-fits exactly, `clip`, or a box narrower than the marker itself paints
+Overflow ellipsis needs `text-overflow: ellipsis`, non-`visible` overflow,
+and inline content extending past the line's end edge, per
+[CSS Overflow 3](https://drafts.csswg.org/css-overflow-3/#text-overflow).
+An unbreakable word can overflow with `white-space: normal` too; `nowrap`
+is not required. Content that fits exactly, `clip`, or a box narrower than
+the marker itself paints
 without a marker (the narrow case falls back to plain clipping, matching
 Chrome 153).
 
@@ -34,17 +35,17 @@ explicitly out of scope.
 
 ## Implementation decisions
 
-- The marker is U+2026 shaped with the surrounding font, never three dots.
+- The marker is U+2026 shaped with the block container's font and color.
   Fitting walks grapheme boundaries (`unicode-segmentation`) and probes
   widths with `measure()` by binary search, so doubling input adds a
-  logarithmic number of calls; `shape()`/`text_geometry()` run once on the
-  final string.
-- Truncation shortens paint only. Fragments, element boxes and Range mapping
-  keep the authored prefix; the marker gains no source clusters, DOM strings
-  never change, and geometry-only and painted layout agree.
-- Marker ownership (font, color, link, node) follows the last kept text, so
-  hovering or activating the marker behaves like the content it replaces;
-  there is no dead click region.
+  logarithmic number of fitting calls. Source geometry uses the original run;
+  raster shaping uses the visible prefix.
+- Overflow ellipsis shortens paint only. Fragments, element boxes, Range
+  offsets and scroll extents retain the original text, including the hidden
+  suffix. Nested inline wrappers retain their box sizes and share one marker
+  budget. The synthetic marker gains no source clusters.
+- Marker visual styling is independent from its link/node ownership; a
+  differently styled nested span must not change the marker's font or color.
 - Clamp state is created fresh per block formatting context and threaded
   through that container's inline flushes only, so one container's budget can
   never truncate a sibling or a nested independent box (inline-block content
@@ -65,3 +66,30 @@ explicitly out of scope.
 - `tests/fixtures/text-truncation.html` with
   `scripts/test-text-truncation.ps1` for hidden Breeze vs headless Chrome
   comparison at matched content viewports.
+- The same runner with `-Contracts` uses `text-truncation-contracts.html`.
+  It asserts original per-character Range positions and scroll widths against
+  a clipped control, includes the leading astral-character crash regression,
+  and captures nested wrappers, normal whitespace, and mixed marker styling.
+  A missing success marker or JavaScript error fails the run.
+
+## Review regression verification (2026-09-20)
+
+The original implementation passed its unit tests but failed an independent
+Chrome comparison. The corrected paint-only path is covered by six regression
+tests, replacing the old empty-prefix Unicode assertion:
+
+| Contract | Before correction | After correction |
+|---|---|---|
+| Leading astral character, truncated suffix | UTF-8 slicing panic | No renderer error |
+| First visible character's Range (owned 20px monospace fixture) | Empty rectangle | Same 21px x / 11px width as Chrome |
+| Original 165px text scroll extent in a 100px box | Reduced to 100px | Preserved at 165px |
+| Two nested inline wrappers | Two extra characters hidden | Same truncation point as plain text |
+| Long word with normal whitespace | No ellipsis | Ellipsis rendered |
+| Blue 30px run in a red 20px block | Blue 30px marker | Red 20px block-styled marker |
+
+The release build passed both owned captures against headless Chrome 153 and
+the complete 16-fixture deterministic alpha gate (one iteration each).
+Local checks passed: 1,270 library tests, 118 browser-shell tests, 130 renderer
+tests and 82 live-runtime tests; existing ignored tests remain ignored.
+These are targeted contracts, not a claim of full rendering parity: font
+fallback for the mathematical-script glyph still differs from Chrome.

@@ -15,6 +15,7 @@ param(
     [string] $Browser,
     [string] $OutputDirectory = 'target/muse-text-truncation-proof/after',
     [switch] $Chrome,
+    [switch] $Contracts,
     [int] $ViewportWidth = 800,
     [int] $ViewportHeight = 600,
     [double] $DeviceScaleFactor = 1,
@@ -26,15 +27,20 @@ $outputRoot = [IO.Path]::GetFullPath((Join-Path $repo $OutputDirectory))
 . (Join-Path $PSScriptRoot 'alpha-fixture-server.ps1')
 $server = Start-AlphaFixtureServer -OutputDirectory $outputRoot -Root (Join-Path $repo 'tests/fixtures')
 try {
-    $output = Join-Path $outputRoot 'truncation.json'
-    $screenshot = Join-Path $outputRoot 'truncation.png'
-    $url = $server.Url + 'text-truncation.html'
+    $name = if ($Contracts) { 'truncation-contracts' } else { 'truncation' }
+    $output = Join-Path $outputRoot "$name.json"
+    $screenshot = Join-Path $outputRoot "$name.png"
+    $url = $server.Url + "text-$name.html"
     $selectors = @(
         '#ref-plain', '#single-ellipsis', '#single-clip', '#single-narrow',
         '#single-padding', '#clamp-1', '#clamp-2', '#clamp-3', '#clamp-exact',
         '#clamp-none', '#clamp-unicode', '#flex-clamp', '#grid-clamp-inner',
         '#clamp-sibling', '#after-sibling'
     )
+    if ($Contracts) {
+        $selectors = @('html[data-fixture-ready=true]', '#report', '#clip',
+            '#ellipsis', '#normal', '#nested', '#mixed', '#unicode')
+    }
     if ($Chrome) {
         $arguments = @(
             '--url', $url,
@@ -71,6 +77,15 @@ try {
     }
     $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
     if ($report.error) { throw "Browser run reported an error: $($report.error)" }
+    if ($report.javascript_errors -and @($report.javascript_errors).Count -gt 0) {
+        throw 'Text-truncation fixture reported JavaScript errors.'
+    }
+    if ($Contracts) {
+        $ready = @($report.diagnostics | Where-Object selector -eq 'html[data-fixture-ready=true]')
+        if ($ready.Count -ne 1 -or $ready[0].total_matches -ne 1) {
+            throw 'Text-truncation Range/scroll-width assertions did not pass.'
+        }
+    }
     if (-not (Test-Path -LiteralPath $screenshot -PathType Leaf)) {
         throw "Browser run did not produce $screenshot."
     }

@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::engine::layout::test_support::{CountingMeasurer, FixedMeasurer};
-use unicode_segmentation::UnicodeSegmentation;
+mod regressions;
 
 const VIEWPORT: (f32, f32) = (800.0, 600.0);
 const LINE: f32 = 20.0;
@@ -191,26 +191,6 @@ fn single_line_image_near_boundary_keeps_image_and_marker() {
         "atomic image before the truncation point must survive"
     );
     assert!(has_ellipsis(&output), "text after the image must ellipsize");
-}
-
-#[test]
-fn single_line_never_splits_graphemes() {
-    let body = "Cafe\u{301} au lait \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} and nai\u{302}ve re\u{301}sume\u{301}s drift across the page again and again.";
-    let html = single_page(
-        "width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;",
-        body,
-    );
-    let (_, output) = render(&html);
-    let texts = painted_text(&output);
-    let marker = texts
-        .iter()
-        .find(|(text, _, _)| text.ends_with('…'))
-        .expect("unicode overflow must carry a marker");
-    let prefix = marker.0.strip_suffix('…').unwrap();
-    let prefix_graphemes: Vec<&str> = prefix.graphemes(true).collect();
-    let body_graphemes: Vec<&str> = body.graphemes(true).collect();
-    assert_eq!(&body_graphemes[..prefix_graphemes.len()], prefix_graphemes);
-    assert!(prefix_graphemes.len() < body_graphemes.len());
 }
 
 #[test]

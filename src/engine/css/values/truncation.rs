@@ -102,13 +102,10 @@ impl BoxOrient {
 }
 
 impl ComputedStyle {
-    /// Whether the single-line overflow marker applies: `text-overflow:
-    /// ellipsis` with non-wrapping, non-visible overflow. Paint-only; layout
-    /// reports the primitives so no CSS value type crosses into layout.
+    /// Normal wrapping can overflow too (a long word). Actual line width
+    /// decides whether a marker is necessary during paint.
     pub(crate) fn ellipsis_on_overflow(&self) -> bool {
-        self.text_overflow == TextOverflow::Ellipsis
-            && !self.white_space.wraps()
-            && self.overflow_hidden
+        self.text_overflow == TextOverflow::Ellipsis && self.overflow_hidden
     }
 
     /// Legacy clamp budget from CSS Overflow 4: an authored `-webkit-box`
