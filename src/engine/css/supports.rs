@@ -1,5 +1,6 @@
 //! CSS Conditional Rules feature-query evaluation.
 
+use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 
 /// Evaluates the declaration-query subset of `@supports` against capabilities this engine
@@ -177,6 +178,9 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             "left" | "start" | "center" | "right" | "end"
         ),
         "white-space" => matches!(value.as_str(), "normal" | "nowrap" | "pre" | "pre-wrap"),
+        "text-overflow" => TextOverflow::parse(&value).is_some(),
+        "-webkit-line-clamp" => LineClamp::parse(&value).is_some(),
+        "-webkit-box-orient" => BoxOrient::parse(&value).is_some(),
         "text-decoration" | "text-decoration-line" => {
             matches!(value.as_str(), "none" | "underline")
         }

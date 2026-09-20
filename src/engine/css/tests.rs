@@ -1,3 +1,5 @@
+#![cfg(test)]
+//! Cascade regression tests grouped by area.
 use super::*;
 
 mod flex_flow;
@@ -5,6 +7,8 @@ mod fullscreen;
 mod queries;
 mod root_units;
 mod shadow;
+#[path = "tests_truncation.rs"]
+mod truncation;
 mod wide_keywords;
 use crate::engine::dom;
 

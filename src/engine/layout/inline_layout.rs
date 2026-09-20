@@ -7,16 +7,32 @@ mod whitespace_tests;
 mod wrapping;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    /// Lays out one inline formatting context. `clamp` carries the shared line
+    /// budget across the several flushes of a block container; single-call
+    /// sites pass `None` and receive an ephemeral budget. `more_follows` tells
+    /// the final flush whether content continues outside this atom run (a
+    /// following float or block child), which an in-run lookahead cannot see.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn layout_inline_atoms(
         &mut self,
         atoms: &[InlineAtom],
         x: f32,
         mut y: f32,
         width: f32,
-        align: TextAlign,
-        default_line_height: f32,
+        style: &ComputedStyle,
+        clamp: &mut Option<ClampState>,
+        more_follows: bool,
     ) -> f32 {
         self.begin_inline_measurement_context();
+        let policy = TruncationPolicy::for_style(style);
+        let align = style.text_align;
+        let default_line_height = style.line_height;
+        let mut ephemeral = ClampState::fresh(&policy);
+        let slot: &mut Option<ClampState> = if clamp.is_some() {
+            &mut *clamp
+        } else {
+            &mut ephemeral
+        };
         let runs = self.unbreakable_run_widths(atoms, width);
         let mut line = Vec::new();
         let mut line_width = 0.0_f32;
@@ -24,9 +40,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let (mut line_x, mut available) = self.floats.band(x, y, width, default_line_height);
 
         for (index, atom) in atoms.iter().enumerate() {
+            if slot.as_ref().is_some_and(|state| state.finished) {
+                break;
+            }
             if matches!(atom, InlineAtom::Break) {
-                y = self.paint_line(
-                    &line,
+                let more = more_follows
+                    || atoms[index + 1..]
+                        .iter()
+                        .any(|atom| !matches!(atom, InlineAtom::Break));
+                y = self.flush_line(
+                    &mut line,
                     line_x,
                     y,
                     available,
@@ -34,8 +57,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_width,
                     line_height.max(default_line_height),
                     true,
+                    &policy,
+                    &mut *slot,
+                    more,
                 );
-                line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
                 (line_x, available) = self.floats.band(x, y, width, default_line_height);
@@ -56,8 +81,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 && line_width + run_width > available
                 && self.inline_break_before(atoms, index);
             if should_wrap {
-                y = self.paint_line(
-                    &line,
+                // The wrapping atom itself is still pending, so more content
+                // always follows a wrap flush.
+                y = self.flush_line(
+                    &mut line,
                     line_x,
                     y,
                     available,
@@ -65,8 +92,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     line_width,
                     line_height.max(default_line_height),
                     false,
+                    &policy,
+                    &mut *slot,
+                    true,
                 );
-                line.clear();
                 line_width = 0.0;
                 line_height = 0.0;
                 (line_x, y, available) = self.floats.fit(
@@ -86,9 +115,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             line_height = line_height.max(measured.height);
             line.push(measured);
         }
-        if !line.is_empty() {
-            y = self.paint_line(
-                &line,
+        if !line.is_empty() && !slot.as_ref().is_some_and(|state| state.finished) {
+            y = self.flush_line(
+                &mut line,
                 line_x,
                 y,
                 available,
@@ -96,11 +125,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 line_width,
                 line_height.max(default_line_height),
                 true,
+                &policy,
+                &mut *slot,
+                more_follows,
             );
         }
         y
     }
-
     pub(super) fn begin_inline_measurement_context(&mut self) {
         // Inline atoms are short-lived per formatting context, so pointer-keyed measurements
         // must not outlive a context and alias recycled allocations from a later atom tree.

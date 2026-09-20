@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn block_svg_is_replaced_content_with_percentage_dimensions() {

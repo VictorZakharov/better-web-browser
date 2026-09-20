@@ -1,17 +1,11 @@
-use super::test_support::{CountingMeasurer, FixedMeasurer};
 use super::*;
+use crate::engine::layout::test_support::{CountingMeasurer, FixedMeasurer};
 
-#[path = "tests_grid.rs"]
 mod grid;
-#[path = "tests_media.rs"]
 mod media;
-#[path = "tests_opacity.rs"]
 mod opacity;
-#[path = "tests_positioned.rs"]
 mod positioned;
-#[path = "tests_svg.rs"]
 mod svg;
-#[path = "tests_table.rs"]
 mod table;
 
 #[test]
@@ -27,7 +21,7 @@ fn lays_out_centered_image_form_and_links() {
     );
     page.images.insert(
         "https://example.com/logo.png".into(),
-        super::super::page::DecodedImage {
+        crate::engine::page::DecodedImage {
             width: 100,
             height: 40,
             bgra: vec![0; 100 * 40 * 4].into(),
@@ -341,7 +335,7 @@ fn centers_explicitly_sized_background_images_in_block_boxes() {
     );
     page.images.insert(
         "https://example.com/logo.svg".into(),
-        super::super::page::DecodedImage {
+        crate::engine::page::DecodedImage {
             width: 48,
             height: 48,
             bgra: vec![0; 48 * 48 * 4].into(),

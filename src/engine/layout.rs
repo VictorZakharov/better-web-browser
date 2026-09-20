@@ -6,8 +6,11 @@ mod flex;
 mod forms;
 mod grid;
 mod inline_collect;
+mod inline_elision;
 mod inline_layout;
 mod inline_paint;
+mod inline_text;
+mod inline_truncate;
 mod model;
 mod opacity;
 mod scrollable_overflow;
@@ -15,21 +18,12 @@ mod scrolling;
 mod sizing;
 mod sticky;
 mod table;
-#[cfg(test)]
 mod test_support;
-#[cfg(test)]
-mod tests_controls;
-#[cfg(test)]
-mod tests_edge_cases;
-#[cfg(test)]
-mod tests_flex_sizing;
-#[cfg(test)]
-mod tests_general;
-#[cfg(test)]
-mod tests_pseudo;
+mod tests;
 mod tracks;
 mod translate;
-use self::{forms::*, model::*, sizing::*, tracks::*};
+mod truncation;
+use self::{forms::*, model::*, sizing::*, tracks::*, truncation::*};
 use super::css::*;
 use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::page::{Page, inline_svg_key};

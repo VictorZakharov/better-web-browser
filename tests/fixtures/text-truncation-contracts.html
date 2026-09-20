@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Text truncation contracts</title>
+<style>
+body { font:16px Arial; margin:20px; background:white; color:black }
+.row { width:100px; font:20px/30px monospace; white-space:nowrap;
+       overflow:hidden; border:1px solid; margin:8px 0 }
+.ellipsis { text-overflow:ellipsis }
+#normal { white-space:normal }
+#mixed { width:150px; color:red }
+#mixed span { color:blue; font-size:30px }
+#unicode { width:150px }
+</style>
+<div>Clip / ellipsis / normal / nested / mixed style / Unicode</div>
+<div id="clip" class="row">ABCDEFGHIJKLMNO</div>
+<div id="ellipsis" class="row ellipsis">ABCDEFGHIJKLMNO</div>
+<div id="normal" class="row ellipsis">ABCDEFGHIJKLMNO</div>
+<div id="nested" class="row ellipsis"><span style="background:#ddd"><span style="background:#eee">ABCDEFGHIJKLMNO</span></span></div>
+<div id="mixed" class="row ellipsis"><span>ABCDEFGHIJKLMNO</span></div>
+<div id="unicode" class="row ellipsis">𝒜ABCDEFGHIJKLMN</div>
+<div id="report">Checking geometry</div>
+<script>
+setTimeout(function () {
+  var control = document.getElementById('clip');
+  function ranges(element) {
+    var text = element.firstChild, values = [];
+    while (text.nodeType !== 3) text = text.firstChild;
+    for (var i = 0; i < text.length; i++) {
+      var range = document.createRange();
+      range.setStart(text, i); range.setEnd(text, i + 1);
+      var rect = range.getBoundingClientRect();
+      values.push([Math.round(rect.x), Math.round(rect.width)]);
+    }
+    return JSON.stringify(values);
+  }
+  var expected = ranges(control);
+  ['ellipsis', 'normal', 'nested'].forEach(function (id) {
+    var element = document.getElementById(id);
+    if (ranges(element) !== expected) throw new Error(id + ': original ranges changed');
+    if (element.scrollWidth !== control.scrollWidth) throw new Error(id + ': scroll width changed');
+  });
+  var report = document.getElementById('report');
+  report.setAttribute('data-scroll-width', String(control.scrollWidth));
+  report.textContent = 'Range and scroll-width checks passed';
+  document.documentElement.setAttribute('data-fixture-ready', 'true');
+}, 50);
+</script>

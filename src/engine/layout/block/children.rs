@@ -15,6 +15,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     ) -> f32 {
         let mut atoms = Vec::new();
         let mut pending_space = None;
+        // One clamp budget for the whole block container: every inline flush
+        // below shares it, so line counting survives float and block boundaries.
+        let policy = TruncationPolicy::for_style(style);
+        let mut clamp = ClampState::fresh(&policy);
         let mut adjoining = super::margins::MarginStrut::default();
         let mut absorb_start = parent_profile.absorb_start;
         if node.tag_name() == Some("li")
@@ -46,14 +50,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 // A float after inline content cannot rise above the preceding line.
                 if !atoms.is_empty() {
                     let previous_y = y;
-                    y = self.layout_inline_atoms(
-                        &atoms,
-                        x,
-                        y,
-                        width,
-                        style.text_align,
-                        style.line_height,
-                    );
+                    y = self.layout_inline_atoms(&atoms, x, y, width, style, &mut clamp, true);
                     if y != previous_y {
                         adjoining = Default::default();
                         absorb_start = false;
@@ -65,14 +62,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             } else if is_block_level(child_style.display) {
                 if !atoms.is_empty() {
                     let previous_y = y;
-                    y = self.layout_inline_atoms(
-                        &atoms,
-                        x,
-                        y,
-                        width,
-                        style.text_align,
-                        style.line_height,
-                    );
+                    y = self.layout_inline_atoms(&atoms, x, y, width, style, &mut clamp, true);
                     if y != previous_y {
                         adjoining = Default::default();
                         absorb_start = false;
@@ -178,7 +168,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         }
         if !atoms.is_empty() {
             let previous_y = y;
-            y = self.layout_inline_atoms(&atoms, x, y, width, style.text_align, style.line_height);
+            y = self.layout_inline_atoms(&atoms, x, y, width, style, &mut clamp, false);
             if y != previous_y {
                 adjoining = Default::default();
             }

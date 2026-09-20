@@ -68,6 +68,8 @@ impl ResolvedEdges {
 
 mod display;
 pub use display::Display;
+mod truncation;
+pub use truncation::{BoxOrient, LineClamp, TextOverflow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
@@ -191,6 +193,14 @@ pub struct ComputedStyle {
     pub text_align: TextAlign,
     pub white_space: WhiteSpace,
     pub text_decoration_underline: bool,
+    pub text_overflow: TextOverflow,
+    pub line_clamp: LineClamp,
+    pub box_orient: BoxOrient,
+    /// Whether `display` was authored as the legacy `-webkit-box` value. The
+    /// box still lays out as ordinary block flow; this flag only records the
+    /// authored value so legacy line-clamp activation can distinguish it from
+    /// a plain `display: block` without adopting the modern flexbox model.
+    pub legacy_webkit_box: bool,
     pub width: Length,
     pub height: Length,
     pub min_width: Length,
@@ -276,6 +286,10 @@ impl ComputedStyle {
             text_align: TextAlign::Start,
             white_space: WhiteSpace::Normal,
             text_decoration_underline: false,
+            text_overflow: TextOverflow::Clip,
+            line_clamp: LineClamp::None,
+            box_orient: BoxOrient::Horizontal,
+            legacy_webkit_box: false,
             width: Length::Auto,
             height: Length::Auto,
             min_width: Length::Auto,

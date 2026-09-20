@@ -1,6 +1,7 @@
 //! Longhand property application.
 
 use super::values::LineHeight;
+use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod helpers;
 use helpers::*;
@@ -31,37 +32,42 @@ pub(super) fn apply_declaration(
             }
         }
         "display" => {
-            style.display = match value {
-                "none" => Display::None,
-                "contents" => Display::Contents,
-                "block" | "flow" | "block flow" | "flow block" => Display::Block,
-                "inline" | "inline flow" | "flow inline" => Display::Inline,
-                "flow-root" | "block flow-root" | "flow-root block" => Display::FlowRoot,
-                "inline flow-root" | "flow-root inline" => Display::InlineBlock,
-                "inline-block" | "inline-box" => Display::InlineBlock,
+            // The legacy WebKit box model is not the modern flexbox model. Treating it as
+            // modern flex drops anonymous text children in our flex layout (notably
+            // YouTube's watch title). Block flow is the safer compatibility fallback until
+            // the legacy algorithm is implemented; sites that provide a later `flex` value
+            // still select the modern flex layout through the normal cascade. The authored
+            // legacy value is recorded separately so `-webkit-line-clamp` activation can
+            // distinguish it from an ordinary block.
+            let previous = (style.display, style.legacy_webkit_box);
+            let (display, legacy) = match value {
+                "none" => (Display::None, false),
+                "contents" => (Display::Contents, false),
+                "block" | "flow" | "block flow" | "flow block" => (Display::Block, false),
+                "inline" | "inline flow" | "flow inline" => (Display::Inline, false),
+                "flow-root" | "block flow-root" | "flow-root block" => (Display::FlowRoot, false),
+                "inline flow-root" | "flow-root inline" => (Display::InlineBlock, false),
+                "inline-block" | "inline-box" => (Display::InlineBlock, false),
                 "inline-flex" | "-webkit-inline-flex" | "inline flex" | "flex inline" => {
-                    Display::InlineFlex
+                    (Display::InlineFlex, false)
                 }
-                "flex" | "-webkit-flex" | "block flex" | "flex block" => Display::Flex,
-                // The legacy WebKit box model is not the modern flexbox model. Treating it as
-                // modern flex drops anonymous text children in our flex layout (notably
-                // YouTube's watch title). Block flow is the safer compatibility fallback until
-                // the legacy algorithm is implemented; sites that provide a later `flex` value
-                // still select the modern flex layout through the normal cascade.
-                "-webkit-box" => Display::Block,
-                "grid" | "-ms-grid" => Display::Grid,
-                "table" => Display::Table,
-                "inline-table" => Display::InlineTable,
-                "table-row" => Display::TableRow,
-                "table-cell" => Display::TableCell,
-                "table-caption" => Display::TableCaption,
-                "table-row-group" => Display::TableRowGroup,
-                "table-header-group" => Display::TableHeaderGroup,
-                "table-footer-group" => Display::TableFooterGroup,
-                "table-column" => Display::TableColumn,
-                "table-column-group" => Display::TableColumnGroup,
-                _ => style.display,
+                "flex" | "-webkit-flex" | "block flex" | "flex block" => (Display::Flex, false),
+                "-webkit-box" => (Display::Block, true),
+                "grid" | "-ms-grid" => (Display::Grid, false),
+                "table" => (Display::Table, false),
+                "inline-table" => (Display::InlineTable, false),
+                "table-row" => (Display::TableRow, false),
+                "table-cell" => (Display::TableCell, false),
+                "table-caption" => (Display::TableCaption, false),
+                "table-row-group" => (Display::TableRowGroup, false),
+                "table-header-group" => (Display::TableHeaderGroup, false),
+                "table-footer-group" => (Display::TableFooterGroup, false),
+                "table-column" => (Display::TableColumn, false),
+                "table-column-group" => (Display::TableColumnGroup, false),
+                _ => previous,
             };
+            style.display = display;
+            style.legacy_webkit_box = legacy;
         }
         "position" => {
             style.position = match value {
@@ -207,6 +213,21 @@ pub(super) fn apply_declaration(
         }
         "text-decoration" | "text-decoration-line" => {
             style.text_decoration_underline = value.contains("underline");
+        }
+        "text-overflow" => {
+            if let Some(overflow) = TextOverflow::parse(value) {
+                style.text_overflow = overflow;
+            }
+        }
+        "-webkit-line-clamp" => {
+            if let Some(clamp) = LineClamp::parse(value) {
+                style.line_clamp = clamp;
+            }
+        }
+        "-webkit-box-orient" => {
+            if let Some(orient) = BoxOrient::parse(value) {
+                style.box_orient = orient;
+            }
         }
         "width" => assign_length(&mut style.width, value),
         "height" => assign_length(&mut style.height, value),

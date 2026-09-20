@@ -1,5 +1,5 @@
-use super::test_support::FixedMeasurer;
 use super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn opacity_wraps_complete_nested_subtrees_without_removing_geometry() {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn places_explicit_items_across_fractional_and_fixed_tracks() {

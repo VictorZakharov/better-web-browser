@@ -1,3 +1,5 @@
+#![cfg(test)]
+//! Deterministic text measurers shared by layout regression tests.
 use super::*;
 
 pub(super) struct FixedMeasurer;

@@ -1,5 +1,5 @@
-use super::test_support::FixedMeasurer;
 use super::*;
+use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
 fn generated_content_participates_in_inline_flow_in_tree_order() {
