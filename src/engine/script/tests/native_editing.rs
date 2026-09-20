@@ -7,7 +7,8 @@ fn native_edits_do_not_invoke_author_value_setters() {
             &format!(
                 r#"<{tag} id=query></{tag}><output></output><script>
             const field=document.getElementById('query');
-            const prototype=field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : Element.prototype;
+            const prototype=field instanceof HTMLInputElement ? HTMLInputElement.prototype
+                : field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : Element.prototype;
             const descriptor=Object.getOwnPropertyDescriptor(prototype,'value');
             let tracked='', setterCalls=0;
             Object.defineProperty(field,'value',{{

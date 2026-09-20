@@ -13,7 +13,7 @@ mod node_wrappers;
 mod parser_scripts;
 mod policy;
 mod ports;
-mod runtime;
+pub(crate) mod runtime;
 mod v8_api;
 mod value;
 mod watchdog;

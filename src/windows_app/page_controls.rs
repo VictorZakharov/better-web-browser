@@ -102,10 +102,12 @@ impl BrowserState {
                     let label = wide(&option.label);
                     SendMessageW(window, CB_ADDSTRING, 0, label.as_ptr() as isize);
                 }
-                let selected = spec
-                    .selected_index
-                    .min(spec.options.len().saturating_sub(1));
-                SendMessageW(window, CB_SETCURSEL, selected, 0);
+                // -1 is explicit no-selection: leave the combobox unselected.
+                if spec.selected_index >= 0 {
+                    let selected =
+                        (spec.selected_index as usize).min(spec.options.len().saturating_sub(1));
+                    SendMessageW(window, CB_SETCURSEL, selected, 0);
+                }
             }
             if !spec.placeholder.is_empty()
                 && matches!(

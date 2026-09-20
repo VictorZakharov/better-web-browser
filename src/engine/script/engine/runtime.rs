@@ -251,7 +251,7 @@ impl Context {
     }
 }
 
-fn initialize_v8() {
+pub(crate) fn initialize_v8() {
     INITIALIZE_V8.call_once(|| {
         let platform = v8::new_default_platform(0, false).make_shared();
         v8::V8::initialize_platform(platform.clone());

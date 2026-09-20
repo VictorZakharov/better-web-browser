@@ -53,7 +53,7 @@ pub struct ControlSpec {
     pub value: String,
     pub label: String,
     pub options: Vec<SelectOption>,
-    pub selected_index: usize,
+    pub selected_index: i64,
     pub placeholder: String,
     pub form_id: Option<NodeId>,
     pub background_color: Color,

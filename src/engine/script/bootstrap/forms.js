@@ -7,6 +7,30 @@
             return /^(hidden|text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color|checkbox|radio|file|submit|image|reset|button)$/.test(value) ? value : 'text';
         }
         set type(value) { this.setAttribute('type', value); }
+        // Live values live in native control state; defaults stay attributes.
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
+        get value() {
+            switch (this.type) {
+                case 'checkbox': case 'radio':
+                    return this.getAttribute('value') ?? 'on';
+                default:
+                    return host('inputValue', nodeId(this));
+            }
+        }
+        set value(value) {
+            value = String(value);
+            switch (this.type) {
+                case 'checkbox': case 'radio':
+                    this.setAttribute('value', value);
+                    break;
+                default:
+                    host('inputSetValue', nodeId(this), value);
+                    this.setSelectionRange(this.value.length, this.value.length);
+                    break;
+            }
+        }
+        get defaultValue() { return this.getAttribute('value') ?? ''; }
+        set defaultValue(value) { this.setAttribute('value', String(value)); }
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
@@ -73,8 +97,8 @@
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
-        get value() { return this.__value ?? this.textContent; }
-        set value(value) { this.__value = String(value); }
+        get value() { return host('textareaValue', nodeId(this)); }
+        set value(value) { host('textareaSetValue', nodeId(this), String(value)); }
         get defaultValue() { return this.textContent; }
         set defaultValue(value) { this.textContent = String(value); }
         get minLength() { return reflectedInteger(this, 'minlength', -1); }
@@ -100,28 +124,16 @@
     class HTMLSelectElement extends HTMLElement {
         get multiple() { return this.hasAttribute('multiple'); }
         set multiple(value) { this.toggleAttribute('multiple', !!value); }
-        get options() { return this.querySelectorAll('option'); }
-        get selectedIndex() {
-            const options = this.options;
-            const selected = options.findIndex(option => option.hasAttribute('selected'));
-            return selected >= 0 ? selected : (options.length ? 0 : -1);
-        }
+        get type() { return this.multiple ? 'select-multiple' : 'select-one'; }
+        get options() { return selectOptions(this); }
+        get selectedOptions() { return selectSelectedOptions(this); }
+        get length() { return this.options.length; }
+        get selectedIndex() { return host('selectSelectedIndex', nodeId(this)); }
         set selectedIndex(value) {
-            const selected = Math.trunc(Number(value));
-            this.options.forEach((option, index) =>
-                option.toggleAttribute('selected', index === selected));
+            host('selectSetSelectedIndex', nodeId(this), Math.trunc(Number(value) || 0));
         }
-        get value() {
-            const option = this.options[this.selectedIndex];
-            return option ? (option.getAttribute('value') ?? option.textContent) : '';
-        }
-        set value(value) {
-            value = String(value);
-            const options = this.options;
-            const selected = options.findIndex(option =>
-                (option.getAttribute('value') ?? option.textContent) === value);
-            this.selectedIndex = selected;
-        }
+        get value() { return host('selectValue', nodeId(this)); }
+        set value(value) { host('selectSetValue', nodeId(this), String(value)); }
         get form() { return associatedForm(this); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
@@ -173,16 +185,16 @@
         get type() { return 'fieldset'; }
     }
     class HTMLOptionElement extends HTMLElement {
-        get selected() {
+        get selected() { return host('optionSelected', nodeId(this)); }
+        set selected(value) { host('optionSetSelected', nodeId(this), !!value); }
+        get defaultSelected() { return this.hasAttribute('selected'); }
+        set defaultSelected(value) { this.toggleAttribute('selected', !!value); }
+        get index() {
             const select = this.closest('select');
-            if (this.hasAttribute('selected')) return true;
-            return !!select && !select.multiple && select.options[select.selectedIndex] === this;
+            return select ? select.options.indexOf(this) : 0;
         }
-        set selected(value) {
-            const select = this.closest('select');
-            if (value && select && !select.multiple) for (const option of select.options) option.removeAttribute('selected');
-            this.toggleAttribute('selected', !!value);
-        }
+        get text() { return optionText(this); }
+        set text(value) { this.textContent = String(value); }
         get label() {
             return this.hasAttribute('label') ? this.getAttribute('label') : optionText(this);
         }
@@ -201,14 +213,10 @@
         get name() { return this.getAttribute('name') || ''; }
         set name(value) { this.setAttribute('name', value); }
         get type() { return 'output'; }
-        get value() { return this.textContent; }
-        set value(value) { this.textContent = String(value); }
-        get defaultValue() { return this.__defaultValue ?? this.textContent; }
-        set defaultValue(value) {
-            value = String(value);
-            if (this.__defaultValue === undefined) this.textContent = value;
-            else this.__defaultValue = value;
-        }
+        get value() { return host('outputValue', nodeId(this)); }
+        set value(value) { host('outputSetValue', nodeId(this), String(value)); }
+        get defaultValue() { return host('outputDefaultValue', nodeId(this)); }
+        set defaultValue(value) { host('outputSetDefault', nodeId(this), String(value)); }
         get labels() { return labelsFor(this); }
         get willValidate() { return false; }
         get validity() { return validValidityState(); }
@@ -275,6 +283,32 @@
     }
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);
+    }
+    const selectOptionLists = new WeakMap();
+    const selectedOptionLists = new WeakMap();
+    function selectOptions(select) {
+        // Same visible list object with current contents, like HTMLOptionsCollection.
+        let list = selectOptionLists.get(select);
+        if (!list) {
+            list = [];
+            selectOptionLists.set(select, list);
+        }
+        const ids = String(host('selectOptionIds', nodeId(select)));
+        const fresh = ids ? ids.split(',').map(id => wrap(Number(id))).filter(Boolean) : [];
+        list.length = 0;
+        list.push(...fresh);
+        return list;
+    }
+    function selectSelectedOptions(select) {
+        let list = selectedOptionLists.get(select);
+        if (!list) {
+            list = [];
+            selectedOptionLists.set(select, list);
+        }
+        const fresh = selectOptions(select).filter(option => option.selected);
+        list.length = 0;
+        list.push(...fresh);
+        return list;
     }
     function optionText(option) {
         return option.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();

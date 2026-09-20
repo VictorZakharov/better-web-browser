@@ -68,6 +68,7 @@ impl TreeSink for Dom {
                     .mathml_annotation_xml_integration_point,
                 fullscreen: std::cell::Cell::new(false),
                 hovered: std::cell::Cell::new(false),
+                control_state: RefCell::new(None),
                 script_force_async: std::cell::Cell::new(false),
                 script_started: std::cell::Cell::new(false),
             }),

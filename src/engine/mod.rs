@@ -6,6 +6,7 @@ pub(crate) mod fragment_navigation;
 pub mod invalidation;
 pub mod layout;
 pub mod page;
+pub(crate) mod pattern_eval;
 pub mod scheduler;
 pub mod script;
 mod stylesheet;

@@ -38,6 +38,7 @@ impl Node {
         }
         drop(attrs);
         self.checkable_attribute_changed(&name.to_ascii_lowercase());
+        self.control_attribute_changed(&name.to_ascii_lowercase());
         self.mark_mutated();
         true
     }
@@ -53,6 +54,7 @@ impl Node {
         drop(attrs);
         if changed {
             self.checkable_attribute_changed(&name.to_ascii_lowercase());
+            self.control_attribute_changed(&name.to_ascii_lowercase());
             self.mark_mutated();
         }
         changed
@@ -93,6 +95,8 @@ impl Node {
         child.parent.set(Some(Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child.clone());
         Node::checkable_subtree_inserted(&child);
+        Node::control_subtree_inserted(&child);
+        Node::control_child_changed(parent);
         parent.mark_children_mutated();
         Node::stylesheet_subtree_inserted(&child);
         true
@@ -226,6 +230,8 @@ pub(super) fn append_node(parent: &NodeRef, child: NodeRef) {
     child.parent.set(Some(Rc::downgrade(parent)));
     parent.children.borrow_mut().push(child.clone());
     Node::checkable_subtree_inserted(&child);
+    Node::control_subtree_inserted(&child);
+    Node::control_child_changed(parent);
     parent.mark_children_mutated();
     Node::stylesheet_subtree_inserted(&child);
 }
@@ -234,6 +240,9 @@ pub(super) fn append_to_existing_text(node: &NodeRef, text: &str) -> bool {
     if let NodeData::Text(contents) = &node.data {
         contents.borrow_mut().push_str(text);
         node.mark_mutated();
+        if let Some(parent) = node.parent() {
+            Node::control_child_changed(&parent);
+        }
         true
     } else {
         false
@@ -255,6 +264,7 @@ pub(super) fn remove_from_parent(target: &NodeRef) {
         parent.children.borrow_mut().remove(index);
         target.parent.set(None);
         Node::stylesheet_subtree_removed(target);
+        Node::control_child_changed(&parent);
         parent.mark_children_mutated();
     }
 }
@@ -268,6 +278,7 @@ fn clear_children(node: &NodeRef) {
     }
     drop(children);
     if changed {
+        Node::control_child_changed(node);
         node.mark_children_mutated();
     }
 }

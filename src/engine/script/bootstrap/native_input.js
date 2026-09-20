@@ -10,6 +10,7 @@
     // User editing changes the control's value internally, not by invoking an
     // author-installed value setter (e.g. a framework's programmatic-write tracker).
     const nativeValueSetters = [
+        [HTMLInputElement, Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set],
         [HTMLTextAreaElement, Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set],
         [HTMLSelectElement, Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set],
         [Element, Object.getOwnPropertyDescriptor(Element.prototype, 'value').set]
@@ -83,15 +84,30 @@
     const dispatchNativeText = input => {
         const target = nativeTarget(input.target);
         const value = String(input.value);
-        const setter = nativeValueSetters.find(([kind]) => target instanceof kind)?.[1];
-        if (setter) Reflect.apply(setter, target, [value]);
-        if (target instanceof HTMLTextAreaElement) target.textContent = value;
+        // A user edit is an internal operation, not the programmatic value
+        // setter: it sets the dirty flag, marks user-edited length state, and
+        // retains unconvertible number text for badInput.
+        let changed = true;
+        if (target instanceof HTMLInputElement) {
+            changed = host('inputUserEdit', nodeId(target), value);
+        } else if (target instanceof HTMLTextAreaElement) {
+            changed = host('textareaUserEdit', nodeId(target), value);
+        } else if (target instanceof HTMLSelectElement) {
+            changed = host('selectUserPick', nodeId(target), value);
+        } else {
+            const setter = nativeValueSetters.find(([kind]) => target instanceof kind)?.[1];
+            if (setter) Reflect.apply(setter, target, [value]);
+        }
         if (typeof target.setSelectionRange === 'function') {
             try { target.setSelectionRange(input.selectionStart, input.selectionEnd); } catch (_error) {}
         }
-        return target.dispatchEvent(markTrusted(new InputEvent('input', {
+        const allowed = target.dispatchEvent(markTrusted(new InputEvent('input', {
             bubbles: true, composed: true, inputType: 'insertText', data: null
         })));
+        if (target instanceof HTMLSelectElement && changed) {
+            target.dispatchEvent(markTrusted(new Event('change', { bubbles: true })));
+        }
+        return allowed;
     };
     const dispatchNativeFocus = input => {
         const next = input.focused ? nativeTarget(input.target) : null;

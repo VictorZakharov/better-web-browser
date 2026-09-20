@@ -78,12 +78,18 @@ impl DocumentRuntime {
                 return Ok(None);
             };
             let reset = self.dispatch_user_input(UserInputEvent::Simple {
-                target: form_node,
+                target: form_node.clone(),
                 event_type: "reset",
                 bubbles: true,
                 cancelable: true,
             })?;
             merge_outcome(outcome, reset.outcome, self.page.dom.document.id());
+            if self.script_runtime.is_none() && reset.default_allowed {
+                // No listeners exist scriptless; the event dispatch above is a
+                // no-op, so reset authoritative state directly on success.
+                crate::engine::dom::Node::reset_owned_controls(&form_node, &self.page.dom.document);
+                outcome.render_requested = true;
+            }
             return Ok(None);
         }
         if !matches!(control.kind, ControlKind::Submit) {

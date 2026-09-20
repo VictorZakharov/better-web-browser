@@ -85,7 +85,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 name: node.attr("name").unwrap_or_default(),
                 label,
                 value,
-                selected_index: select.as_ref().map_or(0, |select| select.selected_index),
+                selected_index: select.as_ref().map_or(-1, |select| select.selected_index),
                 options: select.map_or_else(Vec::new, |select| select.options),
                 placeholder: node
                     .attr("placeholder")

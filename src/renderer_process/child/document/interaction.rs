@@ -100,16 +100,27 @@ impl DocumentRuntime {
                 };
                 self.accessibility_selection =
                     Some((target.id(), input.selection_start, input.selection_end));
-                if self.script_runtime.is_none() {
-                    self.accessibility_values
-                        .insert(target.id(), input.value.clone());
-                }
-                let result = self.dispatch_user_input(UserInputEvent::Text {
-                    target,
-                    value: input.value,
+                let mut result = self.dispatch_user_input(UserInputEvent::Text {
+                    target: target.clone(),
+                    value: input.value.clone(),
                     selection_start: input.selection_start,
                     selection_end: input.selection_end,
                 })?;
+                if self.script_runtime.is_none() {
+                    // Scriptless documents still edit authoritative control
+                    // state; layout, paint, and submission read it from there.
+                    self.accessibility_values
+                        .insert(target.id(), input.value.clone());
+                    let changed = match target.tag_name() {
+                        Some("input") => target.user_edit_input(&input.value),
+                        Some("textarea") => target.set_textarea_raw(&input.value, true),
+                        Some("select") => target.user_pick_option(&input.value),
+                        _ => false,
+                    };
+                    if changed {
+                        request_state_render(&self.page.dom.document, &mut result.outcome);
+                    }
+                }
                 (result.outcome, None)
             }
             DocumentInput::Focus(input) => {
@@ -301,6 +312,19 @@ fn lifecycle_name(state: DocumentLifecycle) -> &'static str {
         DocumentLifecycle::Hidden => "hidden",
         DocumentLifecycle::Frozen => "frozen",
     }
+}
+
+/// Requests a state-invalidation render after scriptless control edits.
+fn request_state_render(document: &NodeRef, outcome: &mut ScriptOutcome) {
+    outcome.render_requested = true;
+    outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
+        roots: vec![document.id()],
+        impact: crate::engine::invalidation::MutationKind::State.impact(),
+        mutation_count: 0,
+        rebuild_style_rules: false,
+        removed_nodes: Vec::new(),
+        removals_are_local: false,
+    };
 }
 
 fn key_code(key: &str) -> u32 {

@@ -8,7 +8,7 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         return Some((ControlKind::Select, select_data(node).value()));
     }
     if tag == "textarea" {
-        return Some((ControlKind::TextArea, node.text_content()));
+        return Some((ControlKind::TextArea, node.textarea_api_value()));
     }
     if tag == "button" {
         let kind = match node.attr("type").as_deref() {
@@ -39,7 +39,9 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         "reset" => ControlKind::Reset,
         _ => ControlKind::Text,
     };
-    Some((kind, node.attr("value").unwrap_or_default()))
+    // Live control state owns the painted value; pristine controls mirror
+    // their default through the same accessor scripted getters use.
+    Some((kind, node.input_value()))
 }
 
 pub(super) fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str) -> String {

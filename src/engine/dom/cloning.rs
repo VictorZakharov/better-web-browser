@@ -61,6 +61,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             fullscreen: std::cell::Cell::new(false),
             hovered: std::cell::Cell::new(false),
             input_state: std::cell::Cell::new(element.input_state.get()),
+            control_state: RefCell::new(None),
             // HTML cloning copies already-started, but not the original force-async flag.
             script_force_async: std::cell::Cell::new(source.attr("async").is_none()),
             script_started: std::cell::Cell::new(element.script_started.get()),
@@ -71,6 +72,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
         clone_children(&clone, source);
         clone_template_contents(&clone, source);
     }
+    source.propagate_clone_state(&clone);
     clone
 }
 

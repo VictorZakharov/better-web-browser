@@ -1,6 +1,9 @@
 //! DOM node identity, data model, read access, and traversal.
 mod attributes;
 pub(super) mod checkable;
+pub(super) mod control_select;
+pub(super) mod control_state;
+pub(super) mod control_values;
 pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
@@ -179,6 +182,8 @@ pub struct ElementData {
     pub fullscreen: Cell<bool>,
     pub hovered: Cell<bool>,
     pub(crate) input_state: Cell<checkable::InputState>,
+    /// Authoritative form-control state (live values, dirtiness, overrides).
+    pub(crate) control_state: RefCell<Option<control_state::ControlState>>,
     /// HTML script flags belong to the element, including across adoption and cloning.
     pub(crate) script_force_async: Cell<bool>,
     pub(crate) script_started: Cell<bool>,
