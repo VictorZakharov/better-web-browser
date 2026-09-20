@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>form-validation-text</title>
+<style>
+body { margin: 0; font: 16px/1.4 sans-serif; }
+input { display: block; width: 240px; margin: 8px; }
+input:invalid { outline: 2px solid red; }
+input:valid { outline: 2px solid green; }
+#result { white-space: pre; }
+</style>
+</head>
+<body>
+<form id="f" action="/submit" method="get">
+<input id="name" name="name" required>
+<input id="email" name="email" type="email" required>
+<button type="submit">Send</button>
+</form>
+<pre id="result"></pre>
+<script>
+// Self-drive mode for headless-Chrome comparison (?drive=1). The embedded
+// browser harness drives this same page through real native input instead.
+(function () {
+  var out = document.getElementById('result');
+  function note(text) { out.textContent += text + '\n'; }
+  if (!new URLSearchParams(location.search).has('drive')) { note('idle'); return; }
+  var stopAfterBlocked = new URLSearchParams(location.search).get('drive') === 'blocked';
+  var form = document.getElementById('f');
+  var name = document.getElementById('name');
+  var email = document.getElementById('email');
+  var submits = 0;
+  var invalids = [];
+  form.addEventListener('submit', function (event) {
+    submits++;
+    event.preventDefault();
+    note('submit-body:' + new FormData(form).get('name') + ',' + new FormData(form).get('email'));
+  });
+  form.addEventListener('invalid', function (event) { invalids.push(event.target.id); }, true);
+  function snap(label) {
+    var focus = document.activeElement && document.activeElement.id
+      ? document.activeElement.id : 'none';
+    note(label + ':submits=' + submits + ':invalid=[' + invalids.join(',') + ']' +
+      ':name-invalid=' + name.matches(':invalid') +
+      ':email-valid=' + email.matches(':valid') +
+      ':form-invalid=' + form.matches(':invalid') + ':focus=' + focus);
+  }
+  form.requestSubmit();
+  snap('blocked');
+  if (stopAfterBlocked) { note('done'); return; }
+  name.value = 'ada';
+  email.value = 'ada@intranet';
+  invalids = [];
+  form.requestSubmit();
+  snap('valid');
+  note('done');
+})();
+</script>
+</body>
+</html>

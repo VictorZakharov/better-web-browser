@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>form-validation-controls</title>
+<style>
+body { margin: 0; font: 16px/1.4 sans-serif; }
+select, label { display: block; margin: 8px; }
+select:invalid { outline: 2px solid red; }
+select:valid { outline: 2px solid green; }
+#result { white-space: pre; }
+</style>
+</head>
+<body>
+<form id="f" action="/submit" method="get">
+<select id="color" name="color" required>
+<option value="">Pick a color</option>
+<option value="r">Red</option>
+<option value="b">Blue</option>
+</select>
+<label><input id="agree" type="checkbox" name="agree" value="yes" required> Agree</label>
+<label><input id="size-s" type="radio" name="size" value="s" required> Small</label>
+<label><input id="size-m" type="radio" name="size" value="m"> Medium</label>
+<button type="submit">Send</button>
+<button type="reset">Reset</button>
+</form>
+<pre id="result"></pre>
+<script>
+// Self-drive mode for headless-Chrome comparison (?drive=1).
+(function () {
+  var out = document.getElementById('result');
+  function note(text) { out.textContent += text + '\n'; }
+  if (!new URLSearchParams(location.search).has('drive')) { note('idle'); return; }
+  var form = document.getElementById('f');
+  var color = document.getElementById('color');
+  var agree = document.getElementById('agree');
+  var sizes = Array.prototype.slice.call(document.querySelectorAll('input[type=radio]'));
+  var submits = 0;
+  form.addEventListener('submit', function (event) {
+    submits++;
+    event.preventDefault();
+    var data = new FormData(form);
+    note('submit-body:' + data.get('color') + ',' + data.get('agree') + ',' + data.get('size'));
+  });
+  function snap(label) {
+    note(label + ':submits=' + submits +
+      ':color=' + color.value + '/' + color.matches(':invalid') +
+      ':agree=' + agree.checked + '/' + agree.matches(':invalid') +
+      ':radio-invalid=' + sizes[0].matches(':invalid') +
+      ':form-invalid=' + form.matches(':invalid'));
+  }
+  form.requestSubmit();
+  snap('blocked');
+  color.value = 'b';
+  agree.click();
+  sizes[1].click();
+  form.requestSubmit();
+  snap('valid');
+  form.reset();
+  note('reset:' + color.value + ',' + color.selectedIndex + ',' + agree.checked + ',' +
+    sizes.filter(function (r) { return r.checked; }).length + ',' + form.matches(':invalid'));
+  note('done');
+})();
+</script>
+</body>
+</html>

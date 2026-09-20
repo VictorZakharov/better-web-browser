@@ -307,4 +307,57 @@ mod tests {
         assert_eq!(selector.specificity.classes, 1);
         assert_eq!(selector.specificity.tags, 1);
     }
+
+    #[test]
+    fn single_edit_refresh_is_proportional_not_document_wide() {
+        use super::super::StyleSet;
+        use crate::engine::invalidation::validation_aggregation_roots;
+        // Five forms of 100 validated inputs plus unrelated content.
+        let mut html = String::from(
+            "<style>input:invalid{color:red}input:valid{color:green}form:invalid{color:red}</style>",
+        );
+        for form in 0..5 {
+            html.push_str(&format!("<form id=f{form}>"));
+            for index in 0..100 {
+                if index % 2 == 0 {
+                    html.push_str(&format!(
+                        "<input name=v{form}-{index} required value=seed{index}>"
+                    ));
+                } else {
+                    html.push_str(&format!("<input name=v{form}-{index} required>"));
+                }
+            }
+            html.push_str("</form>");
+        }
+        html.push_str("<p>Unrelated content that must not restyle on control edits.</p>");
+        let dom = parse(&html);
+        let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+        let edited = dom.elements_named("input").nth(1).expect("second input");
+        assert!(edited.user_edit_input("fixed"));
+        // Roots exactly as the mutation machinery records them: the control's
+        // subtree root plus form/fieldset aggregates.
+        let mut roots = vec![
+            edited
+                .shadow_including_parent()
+                .unwrap_or_else(|| edited.clone()),
+        ];
+        roots.extend(validation_aggregation_roots(&edited));
+        let stats = styles.refresh_subtrees(&dom.document, &roots, &[]);
+        let total: usize = dom.elements_named("input").count();
+        assert_eq!(total, 500);
+        // One form subtree (~100 inputs plus its form node), not the document.
+        assert!(
+            stats.recomputed_styles < 250,
+            "recomputed {} styles for one edit",
+            stats.recomputed_styles
+        );
+        // The bound is meaningful: a whole-document refresh costs the full set.
+        let mut fresh = StyleSet::from_dom(&dom, &[], 800.0);
+        let whole = fresh.refresh_subtrees(&dom.document, std::slice::from_ref(&dom.document), &[]);
+        assert!(whole.recomputed_styles >= 500, "{whole:?}");
+        assert!(stats.recomputed_styles < whole.recomputed_styles);
+        // And the refresh actually applied the new state.
+        let valid = compile_selector_list(":valid").expect("selector parses");
+        assert!(valid.matches(&edited));
+    }
 }
