@@ -101,6 +101,7 @@
         if (typeof target.setSelectionRange === 'function') {
             try { target.setSelectionRange(input.selectionStart, input.selectionEnd); } catch (_error) {}
         }
+        refreshPatternVerdict(target);
         const allowed = target.dispatchEvent(markTrusted(new InputEvent('input', {
             bubbles: true, composed: true, inputType: 'insertText', data: null
         })));

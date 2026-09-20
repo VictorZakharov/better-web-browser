@@ -74,6 +74,7 @@
     windowObject.HTMLMeterElement = HTMLMeterElement;
     windowObject.HTMLTemplateElement = HTMLTemplateElement;
     windowObject.HTMLFormElement = HTMLFormElement;
+    windowObject.ValidityState = ValidityState;
     windowObject.Document = Document;
     windowObject.HTMLDocument = Document;
     windowObject.XMLDocument = XMLDocument;

@@ -10,7 +10,7 @@ pub(crate) mod imports;
 pub(crate) mod media;
 mod properties;
 mod rule_index;
-mod selector_match;
+pub(crate) mod selector_match;
 mod selector_model;
 mod selector_parser;
 mod shorthands;

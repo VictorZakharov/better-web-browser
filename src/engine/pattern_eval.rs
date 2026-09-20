@@ -46,12 +46,15 @@ impl PatternEngine {
 thread_local! {
     static ENGINE: RefCell<PatternEngine> = RefCell::new(PatternEngine::fresh());
 }
-
 /// Tests `value` against an HTML `pattern` attribute.
 ///
 /// The pattern is anchored (`^(?:pattern)$`) and compiled with Unicode-sets
 /// semantics. Returns `None` when the pattern does not compile; callers treat
 /// that as "no pattern constraint", never as a match or a mismatch.
+///
+/// Never call this while a page isolate is entered on this thread (for
+/// example from inside a host callback); use [`eval_with_scope`] on the
+/// calling realm's scope instead.
 pub(crate) fn test_pattern(pattern: &str, value: &str) -> Option<bool> {
     ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
@@ -69,22 +72,32 @@ pub(crate) fn test_pattern(pattern: &str, value: &str) -> Option<bool> {
         v8::scope!(let scope, isolate);
         let context = v8::Local::new(scope, &shared);
         let scope = &mut v8::ContextScope::new(scope, context);
+        // Contain failed compiles: a pending SyntaxError must never poison
+        // later evaluations sharing this isolate.
+        v8::tc_scope!(let tc, scope);
         let expression = if let Some(cached) = compiled.get(pattern) {
-            v8::Local::new(scope, cached)
+            v8::Local::new(tc, cached)
         } else {
-            let source = v8::String::new(scope, &format!("^(?:{pattern})$"))?;
-            let expression = v8::RegExp::new(scope, source, v8::RegExpCreationFlags::UNICODE_SETS)?;
+            let source = v8::String::new(tc, &format!("^(?:{pattern})$"))?;
+            let expression =
+                match v8::RegExp::new(tc, source, v8::RegExpCreationFlags::UNICODE_SETS) {
+                    Some(expression) => expression,
+                    None => {
+                        tc.reset();
+                        return None;
+                    }
+                };
             if compiled.len() >= MAX_CACHED_PATTERNS {
                 compiled.clear();
             }
-            compiled.insert(pattern.to_string(), v8::Global::new(scope, expression));
+            compiled.insert(pattern.to_string(), v8::Global::new(tc, expression));
             expression
         };
-        let name = v8::String::new(scope, "test")?;
-        let test = v8::Local::<v8::Function>::try_from(expression.get(scope, name.into())?).ok()?;
-        let argument = v8::String::new(scope, value)?;
-        let outcome = test.call(scope, expression.into(), &[argument.into()])?;
-        Some(outcome.boolean_value(scope))
+        let name = v8::String::new(tc, "test")?;
+        let test = v8::Local::<v8::Function>::try_from(expression.get(tc, name.into())?).ok()?;
+        let argument = v8::String::new(tc, value)?;
+        let outcome = test.call(tc, expression.into(), &[argument.into()])?;
+        Some(outcome.boolean_value(tc))
     })
 }
 

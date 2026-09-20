@@ -57,7 +57,10 @@ impl Node {
 
     /// Display size: `size` attribute, else 4 for multiple, else 1.
     pub(crate) fn select_display_size(&self) -> u64 {
-        if let Some(size) = self.attr("size").and_then(|size| parse_non_negative(&size)) {
+        if let Some(size) = self
+            .attr("size")
+            .and_then(|size| super::control_values::parse_non_negative(&size))
+        {
             return size.max(1);
         }
         if self.select_is_multiple() { 4 } else { 1 }
@@ -285,15 +288,4 @@ fn collapse_option_text(text: &str) -> String {
         out.push_str(chunk);
     }
     out
-}
-
-fn parse_non_negative(value: &str) -> Option<u64> {
-    let trimmed = value.trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'));
-    if trimmed.is_empty() || trimmed.starts_with(['+', '-']) {
-        return None;
-    }
-    if !trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    trimmed.parse().ok()
 }

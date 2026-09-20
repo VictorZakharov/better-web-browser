@@ -2,6 +2,7 @@
 
 mod agent;
 mod bridge;
+mod control_validation;
 mod crypto;
 mod dynamic_imports;
 mod event_handlers;

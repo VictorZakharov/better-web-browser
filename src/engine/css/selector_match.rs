@@ -198,7 +198,7 @@ fn is_disableable(node: &NodeRef) -> bool {
     )
 }
 
-fn is_disabled(node: &NodeRef) -> bool {
+pub(crate) fn is_disabled(node: &NodeRef) -> bool {
     if node.attr_ref("disabled").is_some() {
         return true;
     }

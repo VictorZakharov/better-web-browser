@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::engine::dom::Node;
+use crate::engine::dom::node::{control_numeric, control_validity, control_values};
 
 pub(super) fn dispatch(
     operation: &str,
@@ -33,6 +34,12 @@ pub(super) fn dispatch(
             | "outputDefaultValue"
             | "outputSetDefault"
             | "formResetControls"
+            | "controlWillValidate"
+            | "controlSetCustomValidity"
+            | "controlPatternVerdict"
+            | "controlValueAsNumber"
+            | "controlSetValueAsNumber"
+            | "controlStep"
     ) {
         return Ok(None);
     }
@@ -128,6 +135,37 @@ pub(super) fn dispatch(
             Node::reset_owned_controls(&node, &document);
             JsValue::undefined()
         }
+        "controlWillValidate" => JsValue::from(control_validity::will_validate(&node)),
+        "controlSetCustomValidity" => {
+            node.set_custom_message(&string_argument(args, 2));
+            JsValue::undefined()
+        }
+        "controlPatternVerdict" => {
+            // Stores a scripted pattern verdict for scopeless consumers
+            // (selector matching); regexes never evaluate in this op.
+            let verdict = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
+            let pattern = string_argument(args, 3);
+            let values: Vec<String> = args
+                .get(4)
+                .map(JsValue::string_value)
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or_default();
+            if control_validity::store_pattern_verdict(&node, &pattern, values, verdict) {
+                let document = state.document.clone();
+                state.record_mutation(Some(&document), MutationKind::State);
+            }
+            JsValue::undefined()
+        }
+        "controlValueAsNumber" => JsValue::from(value_as_number(&node)),
+        "controlSetValueAsNumber" => js_string(set_value_as_number(
+            &node,
+            args.get(2).and_then(JsValue::as_number).unwrap_or(f64::NAN),
+        )),
+        "controlStep" => js_string(step_control(
+            &node,
+            args.get(2).and_then(JsValue::as_number).unwrap_or(1.0),
+            args.get(3).and_then(JsValue::as_boolean).unwrap_or(true),
+        )),
         _ => unreachable!(),
     };
     if node.document_mutation_version() != version {
@@ -139,6 +177,72 @@ pub(super) fn dispatch(
 
 fn string_argument(args: &[JsValue], index: usize) -> String {
     argument_string(args, index).unwrap_or_default()
+}
+
+/// Value as a number; NaN when the API does not apply or has no value.
+fn value_as_number(node: &Node) -> f64 {
+    if node.tag_name() != Some("input") {
+        return f64::NAN;
+    }
+    // Number/range only: temporal states keep their documented boundary
+    // (no date parsing in this experiment).
+    if !matches!(node.input_state_name().as_str(), "number" | "range") {
+        return f64::NAN;
+    }
+    control_values_float(&node.input_value()).unwrap_or(f64::NAN)
+}
+
+fn control_values_float(value: &str) -> Option<f64> {
+    control_values::parse_float_value(value)
+}
+
+/// valueAsNumber setter with spec-ordered errors, as a status document.
+fn set_value_as_number(node: &Node, value: f64) -> String {
+    if value.is_infinite() {
+        return String::from("{\"status\":\"type\"}");
+    }
+    if node.tag_name() != Some("input")
+        || !matches!(node.input_state_name().as_str(), "number" | "range")
+    {
+        return String::from("{\"status\":\"state\"}");
+    }
+    if value.is_nan() {
+        node.set_input_value("");
+    } else {
+        node.set_input_value(&control_values::number_to_string(value));
+    }
+    String::from("{\"status\":\"ok\"}")
+}
+
+/// stepUp/stepDown with spec-ordered errors, as a status document.
+fn step_control(node: &Node, n: f64, up: bool) -> String {
+    let state_error = String::from("{\"status\":\"state\"}");
+    if node.tag_name() != Some("input")
+        || !matches!(node.input_state_name().as_str(), "number" | "range")
+    {
+        return state_error;
+    }
+    let state = node.input_state_name();
+    let Some(step) = control_numeric::allowed_step(&state, &node.attr("step")) else {
+        return state_error;
+    };
+    let base = control_numeric::step_base(&node.attr("min"), &node.attr("value"));
+    let steps = n.trunc() as i64;
+    match control_numeric::step_by(
+        &node.input_value(),
+        &node.attr("min"),
+        &node.attr("max"),
+        step,
+        base,
+        steps,
+        up,
+    ) {
+        control_numeric::StepOutcome::Stepped(value) => {
+            node.set_input_value(&value);
+            String::from("{\"status\":\"ok\"}")
+        }
+        control_numeric::StepOutcome::NoChange => String::from("{\"status\":\"ok\"}"),
+    }
 }
 
 fn number_argument(args: &[JsValue], index: usize) -> i64 {

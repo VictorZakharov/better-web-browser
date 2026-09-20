@@ -109,15 +109,22 @@ fn validity_object_is_stable_and_live() {
 #[test]
 fn step_mismatch_is_detected_for_decimal_steps() {
     let (dom, _) = check(
-        r#"<body><input type=number value="0.3" step="0.1"><input type=number value="0.35" step="0.1"><output></output><script>
-            const [ok, bad] = document.querySelectorAll('input');
-            document.querySelector('output').textContent =
-                [ok.validity.stepMismatch, bad.validity.stepMismatch, bad.validity.valid].join('|');
+        r#"<body><input type=number step="0.1"><input type=number step="0.1" min="0.5"><output></output><script>
+            const [plain, based] = document.querySelectorAll('input');
+            plain.value = '0.3';
+            based.value = '0.7';
+            const aligned = [plain.validity.stepMismatch, based.validity.stepMismatch].join('|');
+            plain.value = '0.35';
+            based.value = '0.75';
+            document.querySelector('output').textContent = aligned + '|' + [
+                plain.validity.stepMismatch, based.validity.stepMismatch,
+                based.validity.valid, plain.value
+            ].join('|');
         </script></body>"#,
     );
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "false|true|false"
+        "false|false|true|true|false|0.35"
     );
 }
 
@@ -252,7 +259,7 @@ fn textarea_children_track_default_until_dirty() {
     );
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "one|one|two|two|edited|three|n/a"
+        "one|one|two|two|edited|three|6"
     );
 }
 

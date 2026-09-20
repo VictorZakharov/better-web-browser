@@ -37,12 +37,15 @@ pub(crate) struct ControlState {
     pub default_override: Option<String>,
     /// Custom validity message (newline-normalized on write).
     pub custom_message: String,
+    /// Last scripted pattern verdict with the (pattern, values) it was
+    /// computed from; selector matching trusts it only on exact deps.
+    pub pattern_verdict: Option<(String, Vec<String>, bool)>,
     /// Last observed `type` attribute, for type-change transitions.
     pub type_seen: Option<String>,
 }
 
 impl Node {
-    fn control_cell(&self) -> Option<std::cell::Ref<'_, Option<ControlState>>> {
+    fn control_cell(&self) -> Option<std::cell::Ref<'_, Option<Box<ControlState>>>> {
         self.element().map(|element| element.control_state.borrow())
     }
 
@@ -54,7 +57,8 @@ impl Node {
         if self.control_cell()?.is_none() {
             self.seed_control_state();
         }
-        self.control_cell().as_deref()?.clone()
+        let cell = self.control_cell()?;
+        cell.as_ref().map(|boxed| (**boxed).clone())
     }
 
     fn update_control(&self, update: impl FnOnce(&mut ControlState)) {
@@ -86,7 +90,7 @@ impl Node {
         } else if tag == "option" {
             state.selectedness = self.attr("selected").is_some();
         }
-        element.control_state.borrow_mut().replace(state);
+        element.control_state.borrow_mut().replace(Box::new(state));
     }
 
     /// True for elements that own control state.

@@ -110,6 +110,18 @@ pub(crate) fn strip_newlines(value: &str) -> String {
     value.replace("\r\n", "").replace(['\r', '\n'], "")
 }
 
+/// Parses non-negative integers for length/size attributes.
+pub(crate) fn parse_non_negative(value: &str) -> Option<u64> {
+    let trimmed = value.trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'));
+    if trimmed.is_empty()
+        || trimmed.starts_with(['+', '-'])
+        || !trimmed.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    trimmed.parse().ok()
+}
+
 /// Textarea API normalization: CRLF and CR become LF.
 pub(crate) fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n").replace('\r', "\n")

@@ -95,6 +95,7 @@
             }
             queueAttributeMutation(this, current, oldValue, value);
             maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
+            maybeRefreshPatternVerdict(this, current.localName);
             scheduleSlotChangeCheck();
         }
         setAttributeNS(namespace, qualifiedName, value) {
@@ -109,6 +110,7 @@
                 resetImageElementState(this);
             queueAttributeMutation(this, current, oldValue, value);
             maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
+            if (current.namespace === null) maybeRefreshPatternVerdict(this, current.localName);
             scheduleSlotChangeCheck();
         }
         removeAttribute(name) {
@@ -121,6 +123,7 @@
             detachCachedAttribute(this, record);
             queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
+            maybeRefreshPatternVerdict(this, record.localName);
             scheduleSlotChangeCheck();
         }
         removeAttributeNS(namespace, localName) {
@@ -134,6 +137,7 @@
             detachCachedAttribute(this, record);
             queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
+            if (record.namespace === null) maybeRefreshPatternVerdict(this, record.localName);
             scheduleSlotChangeCheck();
         }
         hasAttribute(name) { return host('attrHas', nodeId(this), normalizedQualifiedName(this, name)); }
