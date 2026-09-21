@@ -65,6 +65,8 @@
         set pattern(value) { this.setAttribute('pattern', value); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
+        get readOnly() { return this.hasAttribute('readonly'); }
+        set readOnly(value) { this.toggleAttribute('readonly', !!value); }
         get autofocus() { return this.hasAttribute('autofocus'); }
         set autofocus(value) { this.toggleAttribute('autofocus', !!value); }
         get autocomplete() { return this.getAttribute('autocomplete') || ''; }
@@ -122,6 +124,8 @@
         set wrap(value) { this.setAttribute('wrap', value); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
+        get readOnly() { return this.hasAttribute('readonly'); }
+        set readOnly(value) { this.toggleAttribute('readonly', !!value); }
         get labels() { return labelsFor(this); }
         get willValidate() { return host('controlWillValidate', nodeId(this)); }
         get validity() { return validityFor(this); }
@@ -130,6 +134,12 @@
         checkValidity() { return checkControlValidity(this); }
         reportValidity() { return reportControlValidity(this); }
         get textLength() { return host('textareaValue', nodeId(this)).length; }
+    }
+    class HTMLObjectElement extends HTMLElement {
+        // Object elements expose willValidate as false (headless Chrome
+        // 153): present for the constraint-validation API shape, never a
+        // candidate.
+        get willValidate() { return false; }
     }
     class HTMLOrderedListElement extends HTMLElement {
         get reversed() { return this.hasAttribute('reversed'); }
@@ -198,7 +208,7 @@
     }
     class HTMLFieldSetElement extends HTMLElement {
         get elements() {
-            return this.querySelectorAll('button, fieldset, input, object, output, select, textarea');
+            return withItem(this.querySelectorAll('button, fieldset, input, object, output, select, textarea'));
         }
         get form() { return associatedForm(this); }
         get disabled() { return this.hasAttribute('disabled'); }
@@ -280,8 +290,8 @@
     }
     class HTMLFormElement extends HTMLElement {
         get elements() {
-            return document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
-                .filter(element => associatedForm(element) === this && !(element instanceof HTMLInputElement && element.type.toLowerCase() === 'image'));
+            return withItem(document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
+                .filter(element => associatedForm(element) === this && !(element instanceof HTMLInputElement && element.type.toLowerCase() === 'image')));
         }
         get length() { return this.elements.length; }
         get noValidate() { return this.hasAttribute('novalidate'); }
@@ -317,6 +327,12 @@
     }
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);
+    }
+    // HTMLFormControlsCollection-style indexed access over the live arrays
+    // returned above; out-of-range indices yield null like item().
+    function withItem(list) {
+        list.item = index => list[Number(index)] ?? null;
+        return list;
     }
     const selectOptionLists = new WeakMap();
     const selectedOptionLists = new WeakMap();

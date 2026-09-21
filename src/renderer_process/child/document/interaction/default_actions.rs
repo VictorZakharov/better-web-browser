@@ -87,7 +87,10 @@ impl DocumentRuntime {
             if self.script_runtime.is_none() && reset.default_allowed {
                 // No listeners exist scriptless; the event dispatch above is a
                 // no-op, so reset authoritative state directly on success.
-                crate::engine::dom::Node::reset_owned_controls(&form_node, &self.page.dom.document);
+                crate::engine::dom::node::control_reset::reset_owned_controls(
+                    &form_node,
+                    &self.page.dom.document,
+                );
                 outcome.render_requested = true;
             }
             return Ok(None);
@@ -174,7 +177,7 @@ impl DocumentRuntime {
 
     /// Owned invalid controls for scriptless gating (no listeners to notify).
     fn scriptless_invalid(&self, form: &NodeRef) -> Vec<NodeRef> {
-        crate::engine::dom::Node::static_invalid_controls(
+        crate::engine::dom::node::control_reset::static_invalid_controls(
             form,
             &self.page.dom.document,
             &crate::engine::dom::node::control_validity::PatternSource::Live(

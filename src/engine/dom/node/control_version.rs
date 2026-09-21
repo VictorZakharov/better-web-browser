@@ -10,6 +10,7 @@
 
 use super::Node;
 use super::control_state::ControlState;
+use super::control_values;
 
 impl Node {
     pub(crate) fn update_control_state_tracked(&self, update: impl FnOnce(&mut ControlState)) {
@@ -18,7 +19,14 @@ impl Node {
         }
         let before = self.control_state_snapshot();
         self.update_control_state(update);
-        if self.control_state_snapshot() != before {
+        let state_changed = self.control_state_snapshot() != before;
+        // Keep the scopeless pattern verdict warm for selector matching and
+        // scriptless validation: a cheap no-op unless the verdict inputs
+        // changed, and skipped while a page isolate is entered (scripted
+        // writes refresh on their own realm instead).
+        let verdict_changed =
+            self.tag_name() == Some("input") && control_values::refresh_pattern_verdict(self);
+        if state_changed || verdict_changed {
             self.mark_mutated();
         }
     }

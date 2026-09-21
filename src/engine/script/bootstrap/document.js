@@ -43,6 +43,7 @@
         if (localName === 'fieldset') return HTMLFieldSetElement;
         if (localName === 'datalist') return HTMLDataListElement;
         if (localName === 'output') return HTMLOutputElement;
+        if (localName === 'object') return HTMLObjectElement;
         if (localName === 'progress') return HTMLProgressElement;
         if (localName === 'meter') return HTMLMeterElement;
         if (localName === 'template') return HTMLTemplateElement;

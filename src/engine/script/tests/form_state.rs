@@ -181,7 +181,7 @@ fn required_checkbox_and_radio_group_missing() {
 }
 
 #[test]
-fn readonly_bars_text_validation_but_not_checkbox() {
+fn readonly_bars_every_input_state() {
     let (dom, _) = check(
         r#"<body><input required readonly value=""><input type=checkbox required readonly><output></output><script>
             const [text, box] = document.querySelectorAll('input');
@@ -193,7 +193,7 @@ fn readonly_bars_text_validation_but_not_checkbox() {
     );
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "false|false|true|true|true"
+        "false|false|true|false|true"
     );
 }
 

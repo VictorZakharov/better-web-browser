@@ -74,6 +74,12 @@ impl TreeSink for Dom {
             }),
         );
         self.parser_element_created(&node);
+        // Parser-time pattern verdicts are warm from creation: attributes
+        // are complete here, and no page isolate is entered during initial
+        // parsing (innerHTML/document.write skip via the entered-flag inside).
+        if node.tag_name() == Some("input") {
+            super::super::node::control_values::refresh_pattern_verdict(&node);
+        }
         node
     }
 
@@ -226,6 +232,11 @@ impl TreeSink for Dom {
         drop(existing);
         if changed {
             target.mark_mutated();
+            // Late parser attributes (duplicate start tags) can complete
+            // pattern verdict inputs after creation.
+            if target.tag_name() == Some("input") {
+                super::super::node::control_values::refresh_pattern_verdict(target);
+            }
         }
     }
 

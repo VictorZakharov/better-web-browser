@@ -11,8 +11,8 @@
 //! parser, script, and host construction paths share one initialization.
 
 use super::control_values::{
-    InputValueMode, canonical_input_state, input_value_mode, is_valid_float, normalize_newlines,
-    range_default, sanitize_input_value,
+    InputValueMode, canonical_input_state, clamp_range_value, input_value_mode, is_valid_float,
+    normalize_newlines, range_default, sanitize_input_value,
 };
 use super::{Node, NodeRef};
 
@@ -78,10 +78,12 @@ impl Node {
             let input_type = canonical_input_state(&self.attr("type").unwrap_or_default());
             state.type_seen = Some(input_type.clone());
             if input_value_mode(&input_type) == InputValueMode::Value {
-                state.value = Some(sanitize_input_value(
-                    &input_type,
-                    &self.attr("value").unwrap_or_default(),
-                ));
+                let mut seeded =
+                    sanitize_input_value(&input_type, &self.attr("value").unwrap_or_default());
+                if input_type == "range" && !seeded.is_empty() {
+                    seeded = clamp_range_value(&seeded, &self.attr("min"), &self.attr("max"));
+                }
+                state.value = Some(seeded);
             }
             if input_type == "range" && state.value.as_deref() == Some("") {
                 state.value = Some(range_default(&self.attr("min"), &self.attr("max")));
@@ -110,10 +112,13 @@ impl Node {
         if let Some(value) = state.value {
             return value;
         }
-        sanitize_input_value(
-            &self.input_state_name(),
-            &self.attr("value").unwrap_or_default(),
-        )
+        let input_type = self.input_state_name();
+        let sanitized = sanitize_input_value(&input_type, &self.attr("value").unwrap_or_default());
+        if input_type == "range" && !sanitized.is_empty() {
+            // Unseeded reads observe the same clamped value seeding stores.
+            return clamp_range_value(&sanitized, &self.attr("min"), &self.attr("max"));
+        }
+        sanitized
     }
 
     /// Programmatic value write. Value-mode inputs sanitize into live state
@@ -138,8 +143,15 @@ impl Node {
         self.store_input_value(&sanitized, false)
     }
 
-    /// Stores a sanitized value-mode write; fixes range empties to default.
+    /// Stores a sanitized value-mode write; range values clamp to their
+    /// bounds and range empties fall back to the default.
     fn store_input_value(&self, sanitized: &str, by_user: bool) -> bool {
+        let clamped;
+        let mut sanitized = sanitized;
+        if self.input_state_name() == "range" && !sanitized.is_empty() {
+            clamped = clamp_range_value(sanitized, &self.attr("min"), &self.attr("max"));
+            sanitized = &clamped;
+        }
         let mut changed = false;
         self.update_control_state_tracked(|state| {
             if state.value.as_deref() != Some(sanitized) {
@@ -443,56 +455,4 @@ impl Node {
             state.editing = snapshot.editing.clone();
         });
     }
-
-    /// Resets every resettable control owned by `form` in tree order.
-    pub(crate) fn reset_owned_controls(form: &Node, document: &NodeRef) {
-        let form_id = form.id();
-        let controls: Vec<NodeRef> = Node::descendants(document)
-            .filter(|node| {
-                node.form_owner().is_some_and(|owner| owner == form_id) && is_resettable(node)
-            })
-            .collect();
-        for node in controls {
-            match node.tag_name() {
-                Some("input") => node.reset_input(),
-                Some("textarea") => node.reset_textarea(),
-                Some("select") => {
-                    node.reset_select();
-                    node.clear_user_validity();
-                }
-                Some("output") => Node::reset_output(&node),
-                _ => {}
-            }
-        }
-    }
-
-    /// Static validation over a form's owned submittable controls in tree
-    /// order. Fires no events itself; callers dispatch `invalid` where
-    /// listeners exist.
-    pub(crate) fn static_invalid_controls(
-        form: &Node,
-        document: &NodeRef,
-        patterns: &super::control_validity::PatternSource,
-    ) -> Vec<NodeRef> {
-        use super::control_validity::{validity_of, will_validate};
-        let form_id = form.id();
-        Node::descendants(document)
-            .filter(|node| {
-                node.form_owner().is_some_and(|owner| owner == form_id)
-                    && matches!(
-                        node.tag_name(),
-                        Some("input" | "button" | "select" | "textarea")
-                    )
-                    && will_validate(node)
-                    && !validity_of(node, patterns).valid()
-            })
-            .collect()
-    }
-}
-
-fn is_resettable(node: &Node) -> bool {
-    matches!(
-        node.tag_name(),
-        Some("input" | "textarea" | "select" | "output")
-    )
 }

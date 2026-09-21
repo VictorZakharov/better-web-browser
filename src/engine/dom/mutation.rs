@@ -39,6 +39,18 @@ impl Node {
         drop(attrs);
         self.checkable_attribute_changed(&name.to_ascii_lowercase());
         self.control_attribute_changed(&name.to_ascii_lowercase());
+        // Pattern verdict inputs can change without a tracked write
+        // (pattern/multiple/type/value attributes); re-warm idempotently.
+        // Skipped while a page isolate is entered (scripted attribute writes
+        // refresh on their realm); set_attr already bumped the version above.
+        if self.tag_name() == Some("input")
+            && matches!(
+                name.to_ascii_lowercase().as_str(),
+                "pattern" | "multiple" | "type" | "value"
+            )
+        {
+            super::node::control_values::refresh_pattern_verdict(self);
+        }
         self.mark_mutated();
         true
     }

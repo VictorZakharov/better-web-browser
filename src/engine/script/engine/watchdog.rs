@@ -26,21 +26,32 @@ pub(super) struct ExecutionWatchdog {
     worker: Option<thread::JoinHandle<()>>,
 }
 
-struct IsolateEntry(*mut v8::OwnedIsolate);
+struct IsolateEntry {
+    isolate: *mut v8::OwnedIsolate,
+    /// Whether a page isolate was already entered (nested same-isolate
+    /// entry). Restored on drop so Rust-side V8 users observe the exact
+    /// nesting state instead of a blind clear.
+    was_entered: bool,
+}
 
 impl IsolateEntry {
     fn new(isolate: &mut v8::OwnedIsolate) -> Self {
         // SAFETY: Context serializes access on its owning thread. This balances the matching exit
         // in Drop and temporarily restores whichever retained document isolate was current.
+        let was_entered = crate::engine::pattern_eval::set_page_isolate_entered(true);
         unsafe { isolate.enter() };
-        Self(isolate)
+        Self {
+            isolate,
+            was_entered,
+        }
     }
 }
 
 impl Drop for IsolateEntry {
     fn drop(&mut self) {
         // SAFETY: this guard is dropped before another isolate can be entered on this thread.
-        unsafe { (*self.0).exit() };
+        unsafe { (*self.isolate).exit() };
+        crate::engine::pattern_eval::set_page_isolate_entered(self.was_entered);
     }
 }
 

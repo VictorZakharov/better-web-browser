@@ -18,6 +18,8 @@ mod event_notifications;
 mod exit_diagnostics;
 #[path = "renderer_process/form_validation.rs"]
 mod form_validation;
+#[path = "renderer_process/form_validation_presentation.rs"]
+mod form_validation_presentation;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
 #[path = "renderer_process/hover.rs"]

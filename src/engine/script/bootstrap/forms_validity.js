@@ -24,6 +24,9 @@
         const descriptor = Object.getOwnPropertyDescriptor(ValidityState.prototype, name);
         Object.defineProperty(ValidityState.prototype, name, { ...descriptor, enumerable: true });
     }
+    // LegacyPlatformObjectGetOwnProperty-style class string for
+    // assert_class_string checks; non-enumerable like other built-ins.
+    Object.defineProperty(ValidityState.prototype, Symbol.toStringTag, { value: 'ValidityState' });
     function validityFor(element) {
         let state = validityStates.get(element);
         if (!state) {
@@ -58,6 +61,11 @@
             ? value.split(',').map(part => part.trim()) : [value];
         let verdict = true;
         try {
+            // Validity is judged on the raw pattern: anchoring first can
+            // accidentally balance a stray paren (e.g. `a)(b`), so never
+            // test what does not compile raw. Invalid patterns impose no
+            // constraint and leave no verdict behind.
+            new RegExp(pattern, 'v');
             const expression = new RegExp('^(?:' + pattern + ')$', 'v');
             verdict = values.every(candidate => expression.test(candidate));
         } catch (_error) { return; }

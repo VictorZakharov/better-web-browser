@@ -2,6 +2,10 @@
 //!
 //! Pure string functions shared by control state, validity, and numeric APIs.
 
+use super::Node;
+use super::control_temporal::{is_temporal_state, parse_temporal};
+use super::control_validity;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InputValueMode {
     /// Hidden input: live value is the default.
@@ -77,33 +81,51 @@ pub(crate) fn input_value_mode(state: &str) -> InputValueMode {
 
 /// Runs the per-state value sanitization algorithm.
 pub(crate) fn sanitize_input_value(state: &str, value: &str) -> String {
+    // Email and URL strip ASCII whitespace after newlines; they precede the
+    // text-like branch (`text_like_type` covers them) which only strips
+    // newlines.
+    if state == "email" || state == "url" {
+        return strip_newlines(value)
+            .trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'))
+            .to_string();
+    }
     if text_like_type(state) || state == "password" {
         return strip_newlines(value);
     }
-    if state == "url" {
-        return strip_newlines(value)
-            .trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'))
-            .to_string();
-    }
-    if state == "email" {
-        return strip_newlines(value)
-            .trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'))
-            .to_string();
-    }
     if state == "number" {
-        return if is_valid_float(value) {
+        return if is_strict_float(value) {
             value.to_string()
         } else {
             String::new()
         };
     }
     if state == "range" {
-        if !is_valid_float(value) {
+        if !is_strict_float(value) {
             return String::new();
         }
         return clamp_range(value, None, None);
     }
+    if is_temporal_state(state) {
+        // Out-of-grammar temporal values sanitize to empty (required
+        // controls then suffer valueMissing instead of keeping garbage).
+        return if parse_temporal(state, value).is_some() {
+            value.to_string()
+        } else {
+            String::new()
+        };
+    }
     value.to_string()
+}
+
+/// Strict float validity: no surrounding (or interior) ASCII whitespace.
+/// The lenient parser skips whitespace, but sanitization keeps the value
+/// only when it is already a valid floating-point number.
+fn is_strict_float(value: &str) -> bool {
+    !value.is_empty()
+        && !value
+            .bytes()
+            .any(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\x0C' | b'\r'))
+        && is_valid_float(value)
 }
 
 pub(crate) fn strip_newlines(value: &str) -> String {
@@ -209,6 +231,26 @@ pub(crate) fn clamp_range(value: &str, minimum: Option<f64>, maximum: Option<f64
     number_to_string(clamped)
 }
 
+/// Range value sanitization against authored bounds with spec defaults
+/// (minimum 0, maximum 100 when absent or unparseable). Sequential clamp:
+/// below-minimum rises to the minimum, above-maximum falls to the maximum,
+/// so reversed bounds settle on the maximum.
+pub(crate) fn clamp_range_value(
+    value: &str,
+    min_attr: &Option<String>,
+    max_attr: &Option<String>,
+) -> String {
+    let minimum = min_attr
+        .as_deref()
+        .and_then(parse_float_value)
+        .unwrap_or(0.0);
+    let maximum = max_attr
+        .as_deref()
+        .and_then(parse_float_value)
+        .unwrap_or(100.0);
+    clamp_range(value, Some(minimum), Some(maximum))
+}
+
 /// Serializes a finite float like the platform number-to-string rule:
 /// shortest round-trip digits, plain notation for magnitudes in
 /// (1e-6, 1e21], exponential otherwise.
@@ -287,6 +329,49 @@ pub(crate) fn number_to_string(value: f64) -> String {
         out.push_str(&mantissa[point as usize..]);
     }
     out
+}
+
+/// Warms the stored pattern verdict from the current inputs using the
+/// process pattern engine (its own isolate, Unicode-sets semantics).
+/// Already-warm, inapplicable, empty, and pattern-less inputs are cheap
+/// no-ops; the store itself is idempotent. Returns true when the stored
+/// verdict changed, so callers invalidate exactly then.
+///
+/// Never evaluates while a page isolate is entered on this thread (it
+/// returns false there); scripted writes refresh their verdict on their own
+/// realm instead (`refreshPatternVerdict` in `forms_validity.js`), and
+/// validity reads evaluate on the calling realm (`controlValidation`).
+pub(crate) fn refresh_pattern_verdict(node: &Node) -> bool {
+    if crate::engine::pattern_eval::page_isolate_entered() {
+        return false;
+    }
+    if node.tag_name() != Some("input") {
+        return false;
+    }
+    let state = node.input_state_name();
+    // Same applicability as the validity algorithm's pattern branch: an
+    // empty value never mismatches, so it needs no verdict.
+    if !matches!(
+        state.as_str(),
+        "text" | "search" | "tel" | "url" | "email" | "password"
+    ) {
+        return false;
+    }
+    let value = node.input_value();
+    if value.is_empty() {
+        return false;
+    }
+    let Some((pattern, values)) = control_validity::current_pattern_inputs(node, &state, &value)
+    else {
+        return false;
+    };
+    if control_validity::cached_pattern_verdict(node, &pattern, &values).is_some() {
+        return false;
+    }
+    let verdict = values.iter().all(|candidate| {
+        crate::engine::pattern_eval::test_pattern(&pattern, candidate).unwrap_or(true)
+    });
+    control_validity::store_pattern_verdict(node, &pattern, values, verdict)
 }
 
 #[cfg(test)]

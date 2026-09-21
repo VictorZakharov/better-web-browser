@@ -103,25 +103,26 @@ impl Decimal {
 }
 
 /// Allowed value step for number/range, or `None` for `step=any`/N/A states.
+/// Absent, unparseable, and non-positive steps fall back to the default
+/// step of one (the constraints suite pins `step=""` with a fractional
+/// value as a mismatch).
 pub(crate) fn allowed_step(state: &str, step_attr: &Option<String>) -> Option<Decimal> {
     if !matches!(state, "number" | "range") {
         return None;
     }
+    let default = Decimal {
+        mantissa: 1,
+        exp: 0,
+    };
     let Some(raw) = step_attr.as_deref() else {
-        return Some(Decimal {
-            mantissa: 1,
-            exp: 0,
-        });
+        return Some(default);
     };
     if raw.trim().eq_ignore_ascii_case("any") {
         return None;
     }
-    let step = parse_decimal(raw)?;
+    let step = parse_decimal(raw).unwrap_or(default);
     if step.mantissa <= 0 {
-        return Some(Decimal {
-            mantissa: 1,
-            exp: 0,
-        });
+        return Some(default);
     }
     Some(step)
 }
@@ -334,6 +335,66 @@ impl std::ops::Neg for Decimal {
             exp: self.exp,
         }
     }
+}
+
+/// Step mismatch for temporal states in the state's unit (days, months,
+/// weeks, seconds, seconds). `step=any` never mismatches; absent,
+/// unparseable, and non-positive steps fall back to the default step (one
+/// day, month, or week; sixty seconds). The base is a valid minimum, else
+/// the default base (1970-01-01, 1970-01, 1970-W01, midnight, epoch
+/// midnight). Empty and out-of-grammar values never mismatch.
+pub(crate) fn temporal_step_mismatch(
+    state: &str,
+    value: &str,
+    min_attr: &Option<String>,
+    step_attr: &Option<String>,
+) -> bool {
+    use super::control_temporal::{default_step_rank, step_rank};
+    if value.is_empty() {
+        return false;
+    }
+    let Some(actual) = step_rank(state, value) else {
+        return false;
+    };
+    // Time and datetime-local ranks are millis but steps are seconds.
+    let scale: i32 = if state == "time" || state == "datetime-local" {
+        3
+    } else {
+        0
+    };
+    let default = Decimal {
+        mantissa: if scale == 3 { 60_000 } else { 1 },
+        exp: 0,
+    };
+    let step = match step_attr.as_deref() {
+        None => default,
+        Some(raw) if raw.trim().eq_ignore_ascii_case("any") => return false,
+        Some(raw) => match parse_decimal(raw) {
+            Some(step) if step.mantissa > 0 => Decimal {
+                mantissa: step.mantissa,
+                exp: step.exp.checked_add(scale).unwrap_or(step.exp),
+            },
+            _ => default,
+        },
+    };
+    let base_rank = min_attr
+        .as_deref()
+        .and_then(|bound| step_rank(state, bound))
+        .unwrap_or_else(|| default_step_rank(state));
+    let Some(difference) = (Decimal {
+        mantissa: actual as i128,
+        exp: 0,
+    })
+    .sub(Decimal {
+        mantissa: base_rank as i128,
+        exp: 0,
+    }) else {
+        return false;
+    };
+    let Some((diff, step_scaled)) = difference.align(step) else {
+        return false;
+    };
+    diff % step_scaled != 0
 }
 
 #[cfg(test)]

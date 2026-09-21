@@ -6,11 +6,11 @@
 //! (select/option/textarea). Pattern matching goes through the V8 boundary in
 //! [`crate::engine::pattern_eval`]; every other flag is dependency-free.
 
-use super::NodeRef;
 use super::control_numeric::{allowed_step, step_base, step_mismatch};
 use super::control_state::ControlState;
 use super::control_values::parse_float_value;
 use super::control_values::parse_non_negative;
+use super::{Node, NodeRef};
 use crate::engine::css::selector_match::is_disabled;
 
 /// All validity flags; `valid` is the absence of every other flag.
@@ -74,9 +74,11 @@ pub(crate) fn will_validate(node: &NodeRef) -> bool {
             if is_disabled(node) {
                 return false;
             }
-            // Readonly bars validation only where it applies; elsewhere the
-            // attribute is ignored rather than disabling the control.
-            if node.attr("readonly").is_some() && readonly_applies(&state) {
+            // Readonly bars every input state (headless Chrome 153 and the
+            // constraints suite agree, including color/file/submit where
+            // readonly does not otherwise apply); only checkable states
+            // have no readonly IDL, so they never hit this.
+            if node.attr("readonly").is_some() {
                 return false;
             }
             true
@@ -93,23 +95,11 @@ pub(crate) fn will_validate(node: &NodeRef) -> bool {
     }
 }
 
-/// Readonly applies to text-like, password, temporal, and number states.
-fn readonly_applies(state: &str) -> bool {
-    matches!(
-        state,
-        "text"
-            | "search"
-            | "tel"
-            | "url"
-            | "email"
-            | "password"
-            | "date"
-            | "month"
-            | "week"
-            | "time"
-            | "datetime-local"
-            | "number"
-    )
+/// Mutable for value-mode missing: neither disabled nor readonly. Only
+/// value-mode and textarea missing require mutability; checkable, file,
+/// and select missing ignore barring (constraints suite).
+fn is_mutable(node: &NodeRef) -> bool {
+    !is_disabled(node) && node.attr("readonly").is_none()
 }
 
 /// Submit buttons are validation candidates; reset/button are barred.
@@ -140,10 +130,15 @@ pub(crate) enum PatternSource<'a> {
     Cached,
 }
 
-/// Computes every validity flag for a candidate; barred elements are valid.
+/// Computes every validity flag for the element. Flags reflect suffering
+/// state even when the element is barred from constraint validation
+/// (disabled or readonly controls still report patternMismatch,
+/// typeMismatch, range, step, and missing states); candidacy gates
+/// `will_validate`, check/report, selectors, and submission instead.
+/// Datalist descendants stay fully quiet.
 pub(crate) fn validity_of(node: &NodeRef, patterns: &PatternSource) -> ValidityFlags {
     let mut flags = ValidityFlags::default();
-    if !will_validate(node) {
+    if has_datalist_ancestor(node) {
         return flags;
     }
     let snapshot = node.control_state_snapshot();
@@ -152,11 +147,13 @@ pub(crate) fn validity_of(node: &NodeRef, patterns: &PatternSource) -> ValidityF
         Some("input") => validity_for_input(node, &snapshot, &mut flags, patterns),
         Some("textarea") => {
             let value = node.textarea_api_value();
-            flags.value_missing = node.attr("required").is_some() && value.is_empty();
+            flags.value_missing =
+                node.attr("required").is_some() && is_mutable(node) && value.is_empty();
             length_flags(node, &value, &snapshot, &mut flags);
         }
         Some("select") => {
-            flags.value_missing = node.attr("required").is_some() && select_is_missing(node);
+            flags.value_missing =
+                node.attr("required").is_some() && super::control_select::select_is_missing(node);
         }
         Some("button") => {}
         _ => {}
@@ -179,11 +176,15 @@ fn validity_for_input(
         }
         "radio" => {
             let group = node.radio_group();
-            flags.value_missing = required
-                && if group.is_empty() {
-                    !node.checked()
+            // Unnamed radios suffer nothing. Lone (or detached) named
+            // radios decide alone; groups suffer when any member is
+            // required and none is checked, reported by every member.
+            flags.value_missing = !node.attr("name").unwrap_or_default().is_empty()
+                && if group.len() <= 1 {
+                    required && !node.checked()
                 } else {
-                    group.iter().all(|peer| !peer.checked())
+                    group.iter().any(|peer| peer.attr("required").is_some())
+                        && group.iter().all(|peer| !peer.checked())
                 };
         }
         "file" => {
@@ -193,10 +194,11 @@ fn validity_for_input(
         "range" | "submit" | "image" | "reset" | "button" | "hidden" => {}
         _ if required
             && value.is_empty()
+            && is_mutable(node)
             && (super::control_values::text_like_type(&state)
                 || state == "password"
                 || state == "number"
-                || is_temporal_state(&state)) =>
+                || super::control_temporal::is_temporal_state(&state)) =>
         {
             flags.value_missing = true;
         }
@@ -230,13 +232,11 @@ fn validity_for_input(
     ) {
         length_flags(node, &value, snapshot, flags);
     }
-    if matches!(state.as_str(), "number" | "range") {
+    if matches!(state.as_str(), "number" | "range")
+        || super::control_temporal::is_temporal_state(&state)
+    {
         numeric_flags(node, &value, snapshot, flags);
     }
-}
-
-fn is_temporal_state(state: &str) -> bool {
-    matches!(state, "date" | "month" | "week" | "time" | "datetime-local")
 }
 
 /// Length flags need dirty state whose last change was a user edit.
@@ -267,6 +267,26 @@ fn numeric_flags(node: &NodeRef, value: &str, snapshot: &ControlState, flags: &m
     if state == "number" && snapshot.editing.is_some() {
         flags.bad_input = true;
     }
+    if super::control_temporal::is_temporal_state(&state) {
+        // Temporal bounds compare as chronological ranks; empty and
+        // out-of-grammar values suffer nothing.
+        if let Some((underflow, overflow)) = super::control_temporal::temporal_underflow_overflow(
+            &state,
+            value,
+            &node.attr("min"),
+            &node.attr("max"),
+        ) {
+            flags.range_underflow = underflow;
+            flags.range_overflow = overflow;
+        }
+        flags.step_mismatch = super::control_numeric::temporal_step_mismatch(
+            &state,
+            value,
+            &node.attr("min"),
+            &node.attr("step"),
+        );
+        return;
+    }
     let minimum = node.attr("min").as_deref().and_then(parse_float_value);
     let maximum = node.attr("max").as_deref().and_then(parse_float_value);
     if let Some(actual) = parse_float_value(value) {
@@ -282,28 +302,10 @@ fn numeric_flags(node: &NodeRef, value: &str, snapshot: &ControlState, flags: &m
     }
 }
 
-/// Required select is missing with no selection or only the placeholder.
-fn select_is_missing(select: &NodeRef) -> bool {
-    let options = select.select_options();
-    let selected: Vec<&NodeRef> = options
-        .iter()
-        .filter(|option| option.control_state_snapshot().selectedness)
-        .collect();
-    if selected.is_empty() {
-        return true;
-    }
-    if selected.len() == 1
-        && let Some(placeholder) = select.placeholder_option()
-    {
-        return selected[0].id() == placeholder.id();
-    }
-    false
-}
-
 /// Pattern source plus the exact values to test (multiple emails split).
 /// Shared by live evaluators so applicability stays in one place.
 pub(crate) fn current_pattern_inputs(
-    node: &NodeRef,
+    node: &Node,
     state: &str,
     value: &str,
 ) -> Option<(String, Vec<String>)> {
@@ -322,7 +324,7 @@ pub(crate) fn current_pattern_inputs(
 /// Cached verdict when the stored (pattern, values) still match.
 /// See `store_pattern_verdict` for the writer side.
 pub(crate) fn cached_pattern_verdict(
-    node: &NodeRef,
+    node: &Node,
     pattern: &str,
     values: &[String],
 ) -> Option<bool> {
@@ -337,7 +339,7 @@ pub(crate) fn cached_pattern_verdict(
 /// Stores a scripted pattern verdict; returns true when it changed something
 /// selectors may depend on (callers record a state invalidation then).
 pub(crate) fn store_pattern_verdict(
-    node: &NodeRef,
+    node: &Node,
     pattern: &str,
     values: Vec<String>,
     verdict: bool,

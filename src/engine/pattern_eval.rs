@@ -46,6 +46,23 @@ impl PatternEngine {
 thread_local! {
     static ENGINE: RefCell<PatternEngine> = RefCell::new(PatternEngine::fresh());
 }
+
+/// Whether a page isolate is currently entered on this thread. Evaluating on
+/// this engine's own isolate while a page isolate is entered would nest
+/// isolates and crash; Rust-side pattern warming checks this flag and defers
+/// to the calling realm's own evaluation instead. The flag is maintained by
+/// the script engine's isolate-entry guard, so it is exact by construction.
+pub(crate) fn page_isolate_entered() -> bool {
+    ENTERED.with(|flag| flag.get())
+}
+
+pub(crate) fn set_page_isolate_entered(entered: bool) -> bool {
+    ENTERED.with(|flag| flag.replace(entered))
+}
+
+thread_local! {
+    static ENTERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 /// Tests `value` against an HTML `pattern` attribute.
 ///
 /// The pattern is anchored (`^(?:pattern)$`) and compiled with Unicode-sets
@@ -78,6 +95,16 @@ pub(crate) fn test_pattern(pattern: &str, value: &str) -> Option<bool> {
         let expression = if let Some(cached) = compiled.get(pattern) {
             v8::Local::new(tc, cached)
         } else {
+            // Validity is judged on the raw pattern: wrapping an invalid
+            // pattern in `^(?:...)$` can accidentally balance it (the
+            // wrapper's `(` pairs with a stray `)`, e.g. `a)(b`), so the
+            // anchored test must never run for patterns that fail this
+            // check. HTML constrains only v-compilable patterns.
+            let raw = v8::String::new(tc, pattern)?;
+            if v8::RegExp::new(tc, raw, v8::RegExpCreationFlags::UNICODE_SETS).is_none() {
+                tc.reset();
+                return None;
+            }
             let source = v8::String::new(tc, &format!("^(?:{pattern})$"))?;
             let expression =
                 match v8::RegExp::new(tc, source, v8::RegExpCreationFlags::UNICODE_SETS) {
@@ -106,6 +133,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dormant_realm_probe() {
+        use crate::engine::dom;
+        use crate::engine::script::{ScriptFetchOptions, ScriptInput, ScriptKind, ScriptRuntime};
+        let dom = dom::parse_with_scripting("<input pattern='a+'><script>1+1</script>", true);
+        let script = dom.elements_named("script").next().unwrap();
+        let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+        // Pre-first-task: the fresh isolate is entered but has never run.
+        assert_eq!(test_pattern("a+", "aaa"), Some(true));
+        let result = runtime.execute_initial(&[ScriptInput {
+            source_url: "https://example.com/".into(),
+            code: script.text_content(),
+            node: script,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        }]);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        // Post-task dormant with the entry guard dropped.
+        let verdict = test_pattern("a+", "aaa");
+        assert_eq!(verdict, Some(true));
+    }
+
+    #[test]
     fn anchored_unicode_pattern_semantics() {
         assert_eq!(test_pattern("[a-z]+", "abc"), Some(true));
         assert_eq!(test_pattern("[a-z]+", "ab1"), Some(false));
@@ -117,6 +167,8 @@ mod tests {
         assert_eq!(test_pattern(r"[\p{Number}--[0-9]]", "٣"), Some(true));
         // Invalid patterns impose no constraint instead of throwing.
         assert_eq!(test_pattern("([", "([)"), None);
+        assert_eq!(test_pattern("a)(b", "de"), None);
+        assert_eq!(test_pattern("[(]", "x"), None);
         assert_eq!(test_pattern("", ""), Some(true));
     }
 }

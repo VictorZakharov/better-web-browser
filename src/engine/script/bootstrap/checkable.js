@@ -58,7 +58,14 @@
         if (resettingForms.has(this)) return;
         resettingForms.add(this);
         try {
-            if (!this.dispatchEvent(new Event('reset', { bubbles: true, cancelable: true }))) return;
+            // The reset event is trusted even when reset() is script-called.
+            if (!this.dispatchEvent(markTrusted(new Event('reset', { bubbles: true, cancelable: true })))) return;
             host('formResetControls', nodeId(this));
+            // Reset restores live values without value setters, so pattern
+            // verdicts cached from pre-reset values would go stale by their
+            // exact dependencies; refresh them on this realm instead.
+            for (const control of this.querySelectorAll('input[pattern]')) {
+                refreshPatternVerdict(control);
+            }
         } finally { resettingForms.delete(this); }
     };

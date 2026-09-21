@@ -62,19 +62,38 @@ pub(super) fn matches_required(node: &NodeRef) -> bool {
 
 pub(super) fn matches_optional(node: &NodeRef) -> bool {
     match node.tag_name() {
-        Some("input") => {
-            node.attr("required").is_none() && required_applies_to_input(&node.input_state_name())
-        }
-        Some("select" | "textarea") => node.attr("required").is_none(),
+        // Anything that is not `:required` is `:optional`, including hidden
+        // and button states where `required` never applies.
+        Some("input" | "select" | "textarea") => !matches_required(node),
         _ => false,
     }
 }
 
-/// Input states where `required` applies. Hidden and button states match
-/// neither `:required` nor `:optional`; readonly/disabled do not change
-/// requiredness (only candidacy). Verified against headless Chrome in Phase E.
+/// Input states where `required` can make the control required: exactly the
+/// states where value-missing applies. Hidden, button, range, and color
+/// states always match `:optional`, even with the attribute specified.
+/// Verified against headless Chrome 153 plus upstream
+/// `required-optional-hidden.html`; readonly/disabled do not change
+/// requiredness (only candidacy).
 fn required_applies_to_input(state: &str) -> bool {
-    !matches!(state, "hidden" | "submit" | "image" | "reset" | "button")
+    matches!(
+        state,
+        "text"
+            | "search"
+            | "tel"
+            | "url"
+            | "email"
+            | "password"
+            | "number"
+            | "checkbox"
+            | "radio"
+            | "file"
+            | "date"
+            | "month"
+            | "week"
+            | "time"
+            | "datetime-local"
+    )
 }
 
 pub(super) fn matches_in_range(node: &NodeRef) -> bool {
@@ -86,20 +105,25 @@ pub(super) fn matches_out_of_range(node: &NodeRef) -> bool {
 }
 
 /// Underflow/overflow only when the node has applicable range limitations:
-/// a number/range candidate with `min` or `max` specified. An empty value
+/// a number/temporal candidate with `min` or `max` specified, or any range
+/// candidate (spec defaults supply minimum 0, maximum 100). An empty value
 /// parses to nothing, suffers neither bound, and therefore counts as
-/// in-range; text inputs never have range limitations.
+/// in-range; other input types never have range limitations.
 fn range_flags(node: &NodeRef) -> Option<(bool, bool)> {
     if node.tag_name() != Some("input") {
         return None;
     }
-    if !matches!(node.input_state_name().as_str(), "number" | "range") {
+    let state = node.input_state_name();
+    if !matches!(
+        state.as_str(),
+        "number" | "range" | "date" | "month" | "week" | "time" | "datetime-local"
+    ) {
         return None;
     }
     if !will_validate(node) {
         return None;
     }
-    if node.attr("min").is_none() && node.attr("max").is_none() {
+    if state != "range" && node.attr("min").is_none() && node.attr("max").is_none() {
         return None;
     }
     let flags = validity_of(node, &PatternSource::Cached);
@@ -111,7 +135,6 @@ mod tests {
     use super::super::selector_match::compile_selector_list;
     use super::super::selector_parser::parse_selector;
     use super::*;
-    use crate::engine::dom::node::control_validity::store_pattern_verdict;
     use crate::engine::dom::parse;
 
     /// Asserts per-element match results for `tag` in document order.
@@ -139,9 +162,16 @@ mod tests {
     #[test]
     fn required_applies_by_type_not_bar_status() {
         let html = "<input type=hidden required><input type=submit required>\
-            <input><input type=range><select></select><textarea></textarea><div required></div>";
-        assert_match(html, ":required", "input", &[false, false, false, false]);
-        assert_match(html, ":optional", "input", &[false, false, true, true]);
+            <input><input type=range><input type=range required><select></select><textarea></textarea><div required></div>";
+        assert_match(
+            html,
+            ":required",
+            "input",
+            &[false, false, false, false, false],
+        );
+        // Hidden, button, and range states are always `:optional`, even with
+        // `required` specified (Chrome 153, upstream required-optional-hidden).
+        assert_match(html, ":optional", "input", &[true, true, true, true, true]);
         assert_match(html, ":required", "select", &[false]);
         assert_match(html, ":optional", "select", &[true]);
         assert_match(html, ":required", "textarea", &[false]);
@@ -156,10 +186,15 @@ mod tests {
     }
 
     #[test]
-    fn readonly_checkbox_stays_a_candidate() {
+    fn readonly_bars_every_input_state() {
+        // Headless Chrome 153: `readOnly = true` drops willValidate for all
+        // input states (including checkbox), so barred controls match
+        // neither validity state while keeping requiredness.
         let html = "<input type=checkbox required readonly>";
-        assert_match(html, ":invalid", "input", &[true]);
+        assert_match(html, ":invalid", "input", &[false]);
+        assert_match(html, ":valid", "input", &[false]);
         assert_match(html, ":required", "input", &[true]);
+        assert_match(html, ":optional", "input", &[false]);
     }
 
     #[test]
@@ -235,6 +270,42 @@ mod tests {
     }
 
     #[test]
+    fn range_clamps_and_temporal_compares() {
+        // Range values clamp to their bounds (or the 0/100 defaults), so
+        // range inputs with limitations are always in-range here; temporal
+        // inputs compare chronologically; unconstrained and barred inputs
+        // match neither range state.
+        let html = "<form>\
+            <input type=range value=50>\
+            <input type=range min=2 max=7 value=1>\
+            <input type=range min=2 max=7 value=9>\
+            <input type=date min=2005-10-10 max=2020-10-10 value=2010-10-10>\
+            <input type=date min=2010-10-10 max=2020-10-10 value=2005-10-10>\
+            <input type=time min=21:00:00 max=03:00:00 value=12:00:00>\
+            <input type=time min=21:00:00 max=03:00:00 value=23:00:00>\
+            <input type=month min=2000-04 max=2000-09 value=2000-11>\
+            <input type=number value=0>\
+            <input type=number min=1 max=10 value=0 readonly>\
+            </form>";
+        assert_match(
+            html,
+            ":in-range",
+            "input",
+            &[
+                true, true, true, true, false, false, true, false, false, false,
+            ],
+        );
+        assert_match(
+            html,
+            ":out-of-range",
+            "input",
+            &[
+                false, false, false, false, true, true, false, true, false, false,
+            ],
+        );
+    }
+
+    #[test]
     fn checked_option_follows_selectedness_not_attributes() {
         let dom = parse("<select><option value=a>A</option><option value=b>B</option></select>");
         let select = dom.elements_named("select").next().expect("select");
@@ -251,24 +322,41 @@ mod tests {
     }
 
     #[test]
-    fn cached_pattern_verdict_drives_selectors_without_script() {
+    fn parsed_pattern_verdict_drives_selectors_without_script() {
+        // Parser-created inputs warm their verdict at creation (no page
+        // isolate is entered during initial parsing), so selectors observe
+        // pattern constraints with no prior validity read.
         let dom = parse("<input pattern='a+' value='bbb'>");
         let input = dom.elements_named("input").next().expect("input");
         let invalid = compile_selector_list(":invalid").expect("selector parses");
         let valid = compile_selector_list(":valid").expect("selector parses");
-        // Cold cache means "no known mismatch": selectors never run script.
-        assert!(valid.matches(&input));
-        assert!(store_pattern_verdict(
-            &input,
-            "a+",
-            vec!["bbb".to_string()],
-            false,
-        ));
         assert!(invalid.matches(&input));
         assert!(!valid.matches(&input));
-        // A stale verdict (different values) does not apply.
+        // A value change re-warms through the tracked write path.
         assert!(input.user_edit_input("aaa"));
         assert!(valid.matches(&input));
+        assert!(!invalid.matches(&input));
+    }
+
+    #[test]
+    fn verdict_warming_skips_entered_isolates() {
+        use crate::engine::pattern_eval::set_page_isolate_entered;
+        // While a page isolate is entered, Rust must not evaluate on its own
+        // isolate; scripted writes refresh on their realm instead. The
+        // selector then reads the cold cache as "no known mismatch".
+        struct FlagGuard(bool);
+        impl Drop for FlagGuard {
+            fn drop(&mut self) {
+                set_page_isolate_entered(self.0);
+            }
+        }
+        let _guard = FlagGuard(set_page_isolate_entered(true));
+        let dom = parse("<input pattern='a+' value='bbb'>");
+        let input = dom.elements_named("input").next().expect("input");
+        let invalid = compile_selector_list(":invalid").expect("selector parses");
+        let valid = compile_selector_list(":valid").expect("selector parses");
+        assert!(valid.matches(&input));
+        assert!(!invalid.matches(&input));
     }
 
     #[test]
@@ -278,8 +366,9 @@ mod tests {
         let invalid = compile_selector_list(":invalid").expect("selector parses");
         let valid = compile_selector_list(":valid").expect("selector parses");
         assert!(invalid.matches(&radios[0]));
-        // The unrequired peer has no failing constraint of its own.
-        assert!(valid.matches(&radios[1]));
+        // Group suffering is reported by every member, required or not
+        // (upstream radio-group-valueMissing).
+        assert!(invalid.matches(&radios[1]));
         let form = dom.elements_named("form").next().expect("form");
         assert!(invalid.matches(&form));
         radios[1].set_checked(true, true);

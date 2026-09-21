@@ -246,6 +246,6 @@ fn custom_validity_barred_elements_and_clones() {
     );
     assert_eq!(
         dom.elements_named("output").nth(1).unwrap().text_content(),
-        "true|false|Nope.|false||true|true|"
+        "true|false|Nope.|false||true|false|"
     );
 }

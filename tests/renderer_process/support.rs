@@ -1,10 +1,13 @@
-use better_web_browser::renderer_process::{RendererLaunchOptions, RendererSession};
+use better_web_browser::renderer_process::{RendererEvent, RendererLaunchOptions, RendererSession};
 use better_web_browser::renderer_protocol::{
-    DocumentId, DocumentStart, DocumentState, PresentedViewport, RendererPresentation,
+    DocumentId, DocumentInput, DocumentNodeId, DocumentStart, DocumentState, FocusInput,
+    InputModifiers, KeyPhase, KeyboardInput, NavigationCause, NavigationDisposition, PointerButton,
+    PointerInput, PointerPhase, PresentationAcknowledgement, PresentedViewport,
+    RendererPresentation, TextInput,
 };
 use better_web_browser::storage::StorageAreaSnapshot;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -92,6 +95,208 @@ pub(super) fn empty_document_state() -> DocumentState {
         cookie_header: String::new(),
         local_storage: StorageAreaSnapshot::empty(),
         session_storage: StorageAreaSnapshot::empty(),
+    }
+}
+
+/// Acknowledges a presentation as shown with controls applied.
+pub(super) fn acknowledge(session: &RendererSession, presentation: &RendererPresentation) {
+    session
+        .acknowledge_presentation(PresentationAcknowledgement {
+            document: presentation.document,
+            revision: presentation.revision,
+            presented: true,
+            controls_applied: true,
+        })
+        .unwrap();
+}
+
+/// Waits for a presentation satisfying `wanted`, tolerating diagnostics and
+/// runtime updates.
+pub(super) fn wait_for_presentation(
+    session: &RendererSession,
+    document: DocumentId,
+    wanted: &str,
+    matches: impl Fn(&RendererPresentation) -> bool,
+) -> RendererPresentation {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        assert!(Instant::now() < deadline, "no presentation: {wanted}");
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::Presentation(presentation) if presentation.document == document => {
+                if matches(&presentation) {
+                    return *presentation;
+                }
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            RendererEvent::RuntimeUpdate(update) if update.document == document => {
+                assert!(
+                    update.runtime.errors.is_empty(),
+                    "{:?}",
+                    update.runtime.errors
+                );
+            }
+            event => panic!("unexpected event while waiting for {wanted}: {event:?}"),
+        }
+    }
+}
+
+/// Proves zero submissions: drains events, failing on any navigation signal.
+pub(super) fn assert_no_submit(
+    session: &RendererSession,
+    document: DocumentId,
+    duration: Duration,
+) {
+    let deadline = Instant::now() + duration;
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        match session.wait_for_event(remaining) {
+            Ok(RendererEvent::NavigationRequested {
+                document: navigated,
+                url,
+                ..
+            }) if navigated == document => {
+                panic!("blocked form navigated to {url}")
+            }
+            Ok(RendererEvent::Presentation(presentation)) if presentation.document == document => {
+                assert!(
+                    presentation.runtime.navigation_url.is_none(),
+                    "blocked form navigated to {:?}",
+                    presentation.runtime.navigation_url
+                );
+            }
+            Ok(RendererEvent::RuntimeUpdate(update)) if update.document == document => {
+                assert!(
+                    update.runtime.navigation_url.is_none(),
+                    "blocked form navigated to {:?}",
+                    update.runtime.navigation_url
+                );
+            }
+            Ok(RendererEvent::Diagnostic { .. }) => {}
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+}
+
+pub(super) fn wait_for_navigation_url(
+    session: &RendererSession,
+    document: DocumentId,
+) -> (String, NavigationDisposition, NavigationCause) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        assert!(Instant::now() < deadline, "form did not navigate");
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::NavigationRequested {
+                document: event_document,
+                url,
+                disposition,
+                cause,
+            } if event_document == document => return (url, disposition, cause),
+            RendererEvent::Presentation(presentation) => {
+                if let Some(url) = presentation.runtime.navigation_url {
+                    return (
+                        url,
+                        NavigationDisposition::CurrentTab,
+                        NavigationCause::UserActivation,
+                    );
+                }
+                pump_ready_task(session, document, presentation.next_timer_micros);
+            }
+            RendererEvent::RuntimeUpdate(update) => {
+                if let Some(url) = update.runtime.navigation_url {
+                    return (
+                        url,
+                        NavigationDisposition::CurrentTab,
+                        NavigationCause::UserActivation,
+                    );
+                }
+                pump_ready_task(session, document, update.next_timer_micros);
+            }
+            RendererEvent::Diagnostic { .. } => {}
+            event => panic!("unexpected event while waiting for navigation: {event:?}"),
+        }
+    }
+}
+
+pub(super) fn node_id(wire: u128) -> DocumentNodeId {
+    DocumentNodeId::new(wire).expect("control node id")
+}
+
+pub(super) fn send_text(
+    session: &RendererSession,
+    document: DocumentId,
+    sequence: u64,
+    target: DocumentNodeId,
+    value: &str,
+) {
+    session
+        .send_input(DocumentInput::Text(TextInput {
+            document,
+            sequence,
+            target,
+            value: value.into(),
+            selection_start: value.len() as u32,
+            selection_end: value.len() as u32,
+        }))
+        .unwrap();
+}
+
+pub(super) fn send_focus(
+    session: &RendererSession,
+    document: DocumentId,
+    sequence: u64,
+    target: DocumentNodeId,
+) {
+    session
+        .send_input(DocumentInput::Focus(FocusInput {
+            document,
+            sequence,
+            focused: true,
+            target: Some(target),
+        }))
+        .unwrap();
+}
+
+pub(super) fn send_enter(
+    session: &RendererSession,
+    document: DocumentId,
+    sequence: u64,
+    target: DocumentNodeId,
+) {
+    session
+        .send_input(DocumentInput::Keyboard(KeyboardInput {
+            document,
+            sequence,
+            phase: KeyPhase::Down,
+            key: "Enter".into(),
+            code: "Enter".into(),
+            repeat: false,
+            modifiers: InputModifiers::default(),
+            target: Some(target),
+        }))
+        .unwrap();
+}
+
+pub(super) fn click(
+    session: &RendererSession,
+    document: DocumentId,
+    sequence: u64,
+    x: f32,
+    y: f32,
+) {
+    for (offset, phase) in [(0, PointerPhase::Down), (1, PointerPhase::Up)] {
+        session
+            .send_input(DocumentInput::Pointer(PointerInput {
+                document,
+                sequence: sequence + offset,
+                phase,
+                button: PointerButton::Primary,
+                buttons: if phase == PointerPhase::Down { 1 } else { 0 },
+                x,
+                y,
+                modifiers: InputModifiers::default(),
+                target: None,
+            }))
+            .unwrap();
     }
 }
 

@@ -47,8 +47,16 @@ pub(super) fn dispatch(
         #[allow(clippy::needless_borrow, clippy::explicit_auto_deref)]
         let scope: &mut v8::PinScope = &mut *guard;
         // A failed compile schedules a SyntaxError on this isolate; contain
-        // it so invalid patterns stay a quiet "no constraint".
+        // it so invalid patterns stay a quiet "no constraint". Validity is
+        // judged on the raw pattern: anchoring first can accidentally
+        // balance a stray paren (e.g. `a)(b`), so never test what does not
+        // compile raw.
         v8::tc_scope!(let tc, scope);
+        let raw = v8::String::new(tc, pattern)?;
+        if v8::RegExp::new(tc, raw, v8::RegExpCreationFlags::UNICODE_SETS).is_none() {
+            tc.reset();
+            return None;
+        }
         let source = v8::String::new(tc, &format!("^(?:{pattern})$"))?;
         let expression = match v8::RegExp::new(tc, source, v8::RegExpCreationFlags::UNICODE_SETS) {
             Some(expression) => expression,

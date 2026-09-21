@@ -151,6 +151,6 @@ fn radio_group_check_updates_every_peer_selector() {
     );
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "true|true|true|true|true"
+        "true|false|true|true|true"
     );
 }

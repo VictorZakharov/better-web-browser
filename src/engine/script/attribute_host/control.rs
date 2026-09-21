@@ -136,7 +136,7 @@ pub(super) fn dispatch(
         }
         "formResetControls" => {
             let document = state.document.clone();
-            Node::reset_owned_controls(&node, &document);
+            crate::engine::dom::node::control_reset::reset_owned_controls(&node, &document);
             JsValue::undefined()
         }
         "controlWillValidate" => JsValue::from(control_validity::will_validate(&node)),

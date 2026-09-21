@@ -2,8 +2,10 @@
 mod attributes;
 pub(super) mod checkable;
 pub(crate) mod control_numeric;
+pub(crate) mod control_reset;
 pub(crate) mod control_select;
 pub(crate) mod control_state;
+pub(crate) mod control_temporal;
 pub(crate) mod control_validity;
 pub(crate) mod control_values;
 mod control_version;

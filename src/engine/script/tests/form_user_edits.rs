@@ -127,7 +127,7 @@ fn native_edits_keep_reset_defaults_intact() {
     assert_eq!(input.input_value(), "edited");
     assert_eq!(input.input_default_value(), "new-default");
     let form = dom.elements_named("form").next().unwrap();
-    crate::engine::dom::Node::reset_owned_controls(&form, &dom.document);
+    crate::engine::dom::node::control_reset::reset_owned_controls(&form, &dom.document);
     assert_eq!(input.input_value(), "new-default");
     assert_eq!(area.textarea_api_value(), "default");
 }

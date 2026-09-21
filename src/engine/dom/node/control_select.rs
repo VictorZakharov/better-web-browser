@@ -297,3 +297,21 @@ fn collapse_option_text(text: &str) -> String {
     }
     out
 }
+
+/// Required select is missing with no selection or only the placeholder.
+pub(crate) fn select_is_missing(select: &NodeRef) -> bool {
+    let options = select.select_options();
+    let selected: Vec<&NodeRef> = options
+        .iter()
+        .filter(|option| option.control_state_snapshot().selectedness)
+        .collect();
+    if selected.is_empty() {
+        return true;
+    }
+    if selected.len() == 1
+        && let Some(placeholder) = select.placeholder_option()
+    {
+        return selected[0].id() == placeholder.id();
+    }
+    false
+}
