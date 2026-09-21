@@ -135,6 +135,8 @@ impl Dom {
         child.parent.set(Some(std::rc::Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child.clone());
         Node::checkable_subtree_inserted(&child);
+        Node::control_subtree_inserted(&child);
+        Node::control_child_changed(parent);
         parent.mark_children_mutated();
         Node::stylesheet_subtree_inserted(&child);
         self.queue_parser_record(record);

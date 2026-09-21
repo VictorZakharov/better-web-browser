@@ -3,6 +3,7 @@
 use super::binding_helpers::{argument_id, argument_string, js_string, node_label};
 use super::*;
 mod checkable;
+mod control;
 
 pub(super) fn attribute_host_call(
     operation: &str,
@@ -10,6 +11,9 @@ pub(super) fn attribute_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     if let Some(value) = checkable::dispatch(operation, args, state)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = control::dispatch(operation, args, state)? {
         return Ok(Some(value));
     }
     let value = match operation {

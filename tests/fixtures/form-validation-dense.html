@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>form-validation-dense</title>
+<style>
+body { margin: 0; font: 14px/1.2 sans-serif; }
+form { margin: 8px; padding: 4px; border: 1px solid #ccc; }
+input { display: inline-block; width: 120px; margin: 1px; }
+input:invalid { outline: 1px solid red; }
+input:valid { outline: 1px solid green; }
+input:out-of-range { background: #fee; }
+#other { margin: 8px; }
+#result { white-space: pre; }
+</style>
+</head>
+<body>
+<div id="forms"></div>
+<p id="other">Unrelated content that must not restyle on control edits.</p>
+<pre id="result"></pre>
+<script>
+// Five forms x 100 controls: required text, email, number with min/max,
+// pattern text, and checkbox. Deterministic values, no external resources.
+(function () {
+  var host = document.getElementById('forms');
+  var kinds = ['text', 'email', 'number', 'pattern', 'check'];
+  for (var f = 0; f < 5; f++) {
+    var form = document.createElement('form');
+    form.id = 'f' + f;
+    form.action = '/submit-' + f;
+    for (var i = 0; i < 100; i++) {
+      var kind = kinds[(f + i) % kinds.length];
+      var control;
+      if (kind === 'check') {
+        control = document.createElement('input');
+        control.type = 'checkbox';
+        control.name = 'c' + f + '_' + i;
+        if (i % 3 === 0) control.required = true;
+      } else {
+        control = document.createElement('input');
+        control.name = 'v' + f + '_' + i;
+        if (kind === 'email') control.type = 'email';
+        else if (kind === 'number') { control.type = 'number'; control.min = '1'; control.max = '50'; }
+        else if (kind === 'pattern') control.pattern = '[a-z]+';
+        if (i % 2 === 0) { control.required = true; control.value = 'seed' + i; }
+      }
+      control.id = 'c-' + f + '-' + i;
+      form.appendChild(control);
+    }
+    host.appendChild(form);
+  }
+  document.getElementById('result').textContent =
+    'controls=' + document.querySelectorAll('input').length +
+    ':invalid=' + document.querySelectorAll('input:invalid').length;
+})();
+</script>
+</body>
+</html>

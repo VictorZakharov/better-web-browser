@@ -44,8 +44,26 @@ pub(super) fn dispatch(
         _ => unreachable!(),
     };
     if node.document_mutation_version() != version {
-        let document = state.document.clone();
-        state.record_mutation(Some(&document), MutationKind::State);
+        state.record_mutation(Some(&node), MutationKind::State);
+        // Checking a radio unchecks its group peers; their validity flips
+        // too even when they live under a different parent.
+        if node.is_radio() && state.mutation_requires_render(&node) {
+            let document = state.document.clone();
+            for peer in node.radio_group() {
+                if peer.id() != node.id() {
+                    // Record the same state dependency as the activated radio:
+                    // its parent includes siblings, and validation adds owners.
+                    state
+                        .pending_invalidation
+                        .record(&document, Some(&peer), MutationKind::State);
+                    state.pending_layout_invalidation.record(
+                        &document,
+                        Some(&peer),
+                        MutationKind::State,
+                    );
+                }
+            }
+        }
     }
     Ok(Some(JsValue::undefined()))
 }

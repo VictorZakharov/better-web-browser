@@ -1,6 +1,7 @@
 //! Per-realm accumulation of the minimum conservative rendering invalidation.
 
 use super::*;
+use crate::engine::invalidation::{is_validation_attribute, validation_aggregation_roots};
 use std::collections::BTreeSet;
 
 #[derive(Default)]
@@ -41,6 +42,29 @@ impl PendingInvalidation {
             MutationKind::Viewport => document.clone(),
         };
         self.extend(document, &root);
+        self.extend_validation_dependents(document, target, kind);
+    }
+
+    /// Adds form-owner and ancestor-fieldset roots when a mutation can flip
+    /// validation selectors beyond the recorded target's own subtree (HTML
+    /// `form`/`fieldset` `:valid` / `:invalid` aggregation). The helper
+    /// returns an empty set for unrelated mutations, so ordinary edits keep
+    /// their existing narrow roots. Moving a control records both sides:
+    /// the new side here and the old side via `invalidate_previous_parent`.
+    fn extend_validation_dependents(
+        &mut self,
+        document: &NodeRef,
+        target: &NodeRef,
+        kind: MutationKind<'_>,
+    ) {
+        let relevant = matches!(kind, MutationKind::State | MutationKind::ChildList)
+            || matches!(kind, MutationKind::Attribute(name) if is_validation_attribute(name));
+        if !relevant {
+            return;
+        }
+        for extra in validation_aggregation_roots(target) {
+            self.extend(document, &extra);
+        }
     }
 
     pub(super) fn extend(&mut self, document: &NodeRef, target: &NodeRef) {
@@ -119,6 +143,53 @@ fn is_descendant_of(node: &NodeRef, ancestor: &NodeRef) -> bool {
 mod tests {
     use super::*;
     use crate::engine::dom;
+
+    #[test]
+    fn validation_mutations_widen_roots_to_form_and_fieldsets() {
+        let document =
+            dom::parse("<form><fieldset><div><input required></div></fieldset></form><p></p>");
+        let input = document.elements_named("input").next().unwrap();
+        let form = document.elements_named("form").next().unwrap();
+        let mut pending = PendingInvalidation::default();
+        pending.record(
+            &document.document,
+            Some(&input),
+            MutationKind::Attribute("required"),
+        );
+        // The form root covers the nested fieldset and control subtrees.
+        let roots = pending.snapshot(1).roots;
+        assert!(roots.contains(&form.id()));
+        assert!(!roots.contains(&document.document.id()));
+
+        // A standalone fieldset (no form owner) becomes a root of its own.
+        let grouped = dom::parse("<fieldset><div><input required></div></fieldset>");
+        let lone_input = grouped.elements_named("input").next().unwrap();
+        let lone_set = grouped.elements_named("fieldset").next().unwrap();
+        let mut grouped_pending = PendingInvalidation::default();
+        grouped_pending.record(
+            &grouped.document,
+            Some(&lone_input),
+            MutationKind::Attribute("required"),
+        );
+        assert!(grouped_pending.snapshot(1).roots.contains(&lone_set.id()));
+
+        // Unrelated attributes keep their existing narrow roots.
+        let mut narrow = PendingInvalidation::default();
+        narrow.record(
+            &document.document,
+            Some(&input),
+            MutationKind::Attribute("class"),
+        );
+        let roots = narrow.snapshot(1).roots;
+        assert!(!roots.contains(&form.id()));
+
+        // Ownerless controls add no aggregation roots at all.
+        let bare = dom::parse("<div><input required></div>");
+        let lone = bare.elements_named("input").next().unwrap();
+        let mut lone_pending = PendingInvalidation::default();
+        lone_pending.record(&bare.document, Some(&lone), MutationKind::State);
+        assert_eq!(lone_pending.snapshot(1).roots.len(), 1);
+    }
 
     #[test]
     fn published_geometry_preserves_pending_style_and_removal_obligations() {

@@ -78,12 +78,21 @@ impl DocumentRuntime {
                 return Ok(None);
             };
             let reset = self.dispatch_user_input(UserInputEvent::Simple {
-                target: form_node,
+                target: form_node.clone(),
                 event_type: "reset",
                 bubbles: true,
                 cancelable: true,
             })?;
             merge_outcome(outcome, reset.outcome, self.page.dom.document.id());
+            if self.script_runtime.is_none() && reset.default_allowed {
+                // No listeners exist scriptless; the event dispatch above is a
+                // no-op, so reset authoritative state directly on success.
+                crate::engine::dom::node::control_reset::reset_owned_controls(
+                    &form_node,
+                    &self.page.dom.document,
+                );
+                outcome.render_requested = true;
+            }
             return Ok(None);
         }
         if !matches!(control.kind, ControlKind::Submit) {
@@ -138,7 +147,7 @@ impl DocumentRuntime {
             return Ok(None);
         };
         let submit = self.dispatch_user_input(UserInputEvent::Simple {
-            target: form_node,
+            target: form_node.clone(),
             event_type: "submit",
             bubbles: true,
             cancelable: true,
@@ -147,7 +156,34 @@ impl DocumentRuntime {
         if !submit.default_allowed {
             return Ok(None);
         }
+        if self.script_runtime.is_none()
+            && form_node.attr("novalidate").is_none()
+            && submitter
+                .and_then(|id| self.page.dom.find_node(id))
+                .is_none_or(|node| node.attr("formnovalidate").is_none())
+            && let Some(first) = self.scriptless_invalid(&form_node).into_iter().next()
+        {
+            // Scriptless static validation blocks submission, reports the
+            // first invalid control, and focuses it like interactive repair.
+            first.update_control_state_tracked(|state| {
+                state.reported = true;
+            });
+            self.focused_node = Some(first.id());
+            super::request_state_render(&first, outcome);
+            return Ok(None);
+        }
         Ok(self.form_navigation(form_id, submitter))
+    }
+
+    /// Owned invalid controls for scriptless gating (no listeners to notify).
+    fn scriptless_invalid(&self, form: &NodeRef) -> Vec<NodeRef> {
+        crate::engine::dom::node::control_reset::static_invalid_controls(
+            form,
+            &self.page.dom.document,
+            &crate::engine::dom::node::control_validity::PatternSource::Live(
+                &crate::engine::pattern_eval::test_pattern,
+            ),
+        )
     }
 
     fn form_navigation(

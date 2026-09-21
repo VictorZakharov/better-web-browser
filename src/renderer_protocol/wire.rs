@@ -31,6 +31,10 @@ impl WireWriter {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
+    pub(super) fn i32(&mut self, value: i32) {
+        self.u32(value as u32);
+    }
+
     pub(super) fn u64(&mut self, value: u64) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -121,6 +125,10 @@ impl<'a> WireReader<'a> {
 
     pub(super) fn u32(&mut self) -> Result<u32, ProtocolError> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+
+    pub(super) fn i32(&mut self) -> Result<i32, ProtocolError> {
+        Ok(self.u32()? as i32)
     }
 
     pub(super) fn u64(&mut self) -> Result<u64, ProtocolError> {

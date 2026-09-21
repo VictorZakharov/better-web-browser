@@ -10,12 +10,14 @@ pub(super) fn encode_control(
     for value in [&spec.name, &spec.value, &spec.label] {
         writer.string(value)?;
     }
+    writer.bool(spec.invalid);
+    writer.string(&spec.validation_message)?;
     writer.u32(spec.options.len() as u32);
     for option in &spec.options {
         writer.string(&option.value)?;
         writer.string(&option.label)?;
     }
-    writer.u32(spec.selected_index as u32);
+    writer.i32(spec.selected_index as i32);
     writer.string(&spec.placeholder)?;
     writer.bool(spec.form_id.is_some());
     if let Some(form) = spec.form_id {
@@ -45,6 +47,8 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
     let name = reader.string(MAX_CONTROL_TEXT_BYTES)?;
     let value = reader.string(MAX_CONTROL_TEXT_BYTES)?;
     let label = reader.string(MAX_CONTROL_TEXT_BYTES)?;
+    let invalid = reader.bool()?;
+    let validation_message = reader.string(MAX_CONTROL_TEXT_BYTES)?;
     let option_count = bounded_count(reader.u32()?, MAX_CONTROL_OPTIONS, "control options")?;
     let mut options = Vec::with_capacity(option_count);
     for _ in 0..option_count {
@@ -53,8 +57,9 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
             label: reader.string(MAX_CONTROL_TEXT_BYTES)?,
         });
     }
-    let selected_index = reader.u32()? as usize;
-    if !options.is_empty() && selected_index >= options.len() {
+    // -1 travels as no selection; non-negative values must name an option.
+    let selected_index = reader.i32()? as i64;
+    if selected_index < -1 || (!options.is_empty() && selected_index >= options.len() as i64) {
         return Err(ProtocolError::InvalidPayload("selected option"));
     }
     let placeholder = reader.string(MAX_CONTROL_TEXT_BYTES)?;
@@ -66,6 +71,8 @@ pub(super) fn decode_control(reader: &mut WireReader<'_>) -> Result<ControlSpec,
         name,
         value,
         label,
+        invalid,
+        validation_message,
         options,
         selected_index,
         placeholder,

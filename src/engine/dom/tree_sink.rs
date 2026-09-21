@@ -68,11 +68,18 @@ impl TreeSink for Dom {
                     .mathml_annotation_xml_integration_point,
                 fullscreen: std::cell::Cell::new(false),
                 hovered: std::cell::Cell::new(false),
+                control_state: RefCell::new(None),
                 script_force_async: std::cell::Cell::new(false),
                 script_started: std::cell::Cell::new(false),
             }),
         );
         self.parser_element_created(&node);
+        // Parser-time pattern verdicts are warm from creation: attributes
+        // are complete here, and no page isolate is entered during initial
+        // parsing (innerHTML/document.write skip via the entered-flag inside).
+        if node.tag_name() == Some("input") {
+            super::super::node::control_values::refresh_pattern_verdict(&node);
+        }
         node
     }
 
@@ -225,6 +232,11 @@ impl TreeSink for Dom {
         drop(existing);
         if changed {
             target.mark_mutated();
+            // Late parser attributes (duplicate start tags) can complete
+            // pattern verdict inputs after creation.
+            if target.tag_name() == Some("input") {
+                super::super::node::control_values::refresh_pattern_verdict(target);
+            }
         }
     }
 

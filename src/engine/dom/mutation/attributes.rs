@@ -66,6 +66,7 @@ impl Node {
         }
         drop(attributes);
         self.checkable_attribute_changed(qualified_name);
+        self.control_attribute_changed(qualified_name);
         self.mark_mutated();
         true
     }
@@ -95,6 +96,7 @@ impl Node {
         drop(attributes);
         if namespace.unwrap_or_default().is_empty() {
             self.checkable_attribute_changed(local_name);
+            self.control_attribute_changed(local_name);
         }
         self.mark_mutated();
         true
@@ -128,6 +130,7 @@ impl Node {
         drop(attributes);
         if namespace.unwrap_or_default().is_empty() {
             self.checkable_attribute_changed(local_name);
+            self.control_attribute_changed(local_name);
         }
         self.mark_mutated();
         true
@@ -153,6 +156,7 @@ impl Node {
         drop(attributes);
         if removed.name.ns.as_ref().is_empty() {
             self.checkable_attribute_changed(removed.name.local.as_ref());
+            self.control_attribute_changed(removed.name.local.as_ref());
         }
         self.mark_mutated();
         true

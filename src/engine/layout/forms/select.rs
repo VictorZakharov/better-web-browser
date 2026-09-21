@@ -2,22 +2,26 @@ use super::*;
 
 pub(in crate::engine::layout) struct SelectData {
     pub options: Vec<SelectOption>,
-    pub selected_index: usize,
+    pub selected_index: i64,
 }
 
 impl SelectData {
     pub fn label(&self) -> String {
-        self.options
-            .get(self.selected_index)
+        self.selected_option()
             .map(|option| option.label.clone())
             .unwrap_or_default()
     }
 
     pub fn value(&self) -> String {
-        self.options
-            .get(self.selected_index)
+        self.selected_option()
             .map(|option| option.value.clone())
             .unwrap_or_default()
+    }
+
+    fn selected_option(&self) -> Option<&SelectOption> {
+        usize::try_from(self.selected_index)
+            .ok()
+            .and_then(|index| self.options.get(index))
     }
 
     pub fn preferred_width(&self, font_size: f32) -> f32 {
@@ -32,33 +36,17 @@ impl SelectData {
 }
 
 pub(in crate::engine::layout) fn select_data(node: &NodeRef) -> SelectData {
-    let options: Vec<_> = Node::descendants(node)
-        .skip(1)
-        .filter(|option| option.tag_name() == Some("option"))
-        .map(|option| {
-            let text = option
-                .text_content()
-                .split(['\t', '\n', '\u{c}', '\r', ' '])
-                .filter(|part| !part.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let label = option
-                .attr("label")
-                .filter(|label| !label.is_empty())
-                .unwrap_or_else(|| text.clone());
-            let value = option.attr("value").unwrap_or(text);
-            (
-                SelectOption { value, label },
-                option.attr("selected").is_some(),
-            )
+    // The select's list of options owns membership; selectedness owns state.
+    let options: Vec<_> = node
+        .select_options()
+        .iter()
+        .map(|option| SelectOption {
+            value: option.option_value(),
+            label: option.option_label(),
         })
         .collect();
-    let selected_index = options
-        .iter()
-        .position(|(_, selected)| *selected)
-        .unwrap_or(0);
     SelectData {
-        options: options.into_iter().map(|(option, _)| option).collect(),
-        selected_index,
+        options,
+        selected_index: node.selected_index(),
     }
 }

@@ -8,7 +8,7 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         return Some((ControlKind::Select, select_data(node).value()));
     }
     if tag == "textarea" {
-        return Some((ControlKind::TextArea, node.text_content()));
+        return Some((ControlKind::TextArea, node.textarea_api_value()));
     }
     if tag == "button" {
         let kind = match node.attr("type").as_deref() {
@@ -39,7 +39,26 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
         "reset" => ControlKind::Reset,
         _ => ControlKind::Text,
     };
-    Some((kind, node.attr("value").unwrap_or_default()))
+    // Live control state owns the painted value; pristine controls mirror
+    // their default through the same accessor scripted getters use.
+    Some((kind, node.input_display_value()))
+}
+
+/// Invalid-and-reported feedback for a control, for native presentation.
+/// Uses the cached pattern verdict: layout never re-enters script.
+pub(super) fn control_feedback(node: &NodeRef) -> (bool, String) {
+    use crate::engine::dom::node::control_validity::{self, PatternSource};
+    if !control_validity::will_validate(node) {
+        return (false, String::new());
+    }
+    if !node.control_state_snapshot().reported {
+        return (false, String::new());
+    }
+    let flags = control_validity::validity_of(node, &PatternSource::Cached);
+    if flags.valid() {
+        return (false, String::new());
+    }
+    (true, control_validity::validation_message(node, &flags))
 }
 
 pub(super) fn input_control_label(node: &NodeRef, kind: ControlKind, value: &str) -> String {

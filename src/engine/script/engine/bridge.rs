@@ -135,6 +135,10 @@ fn host_call_callback(
         super::node_wrappers::dispatch(scope, &operation, arguments, return_value);
         return;
     }
+    if operation == "controlValidation" {
+        super::control_validation::dispatch(scope, arguments, return_value);
+        return;
+    }
     if matches!(
         operation.as_str(),
         "frameWindow" | "frameDocument" | "discardFrame" | "frameActive"

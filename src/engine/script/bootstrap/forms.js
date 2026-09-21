@@ -4,9 +4,36 @@
         // https://html.spec.whatwg.org/multipage/input.html#attr-input-type
         get type() {
             const value = (this.getAttribute('type') || '').toLowerCase();
-            return /^(hidden|text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color|checkbox|radio|file|submit|image|reset|button)$/.test(value) ? value : 'text';
+            return ['hidden', 'text', 'search', 'tel', 'url', 'email', 'password', 'date',
+                'month', 'week', 'time', 'datetime-local', 'number', 'range', 'color',
+                'checkbox', 'radio', 'file', 'submit', 'image', 'reset', 'button'].includes(value) ? value : 'text';
         }
         set type(value) { this.setAttribute('type', value); }
+        // Live values live in native control state; defaults stay attributes.
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
+        get value() {
+            switch (this.type) {
+                case 'checkbox': case 'radio':
+                    return this.getAttribute('value') ?? 'on';
+                default:
+                    return host('inputValue', nodeId(this));
+            }
+        }
+        set value(value) {
+            value = String(value);
+            switch (this.type) {
+                case 'checkbox': case 'radio':
+                    this.setAttribute('value', value);
+                    break;
+                default:
+                    host('inputSetValue', nodeId(this), value);
+                    this.setSelectionRange(this.value.length, this.value.length);
+                    refreshPatternVerdict(this);
+                    break;
+            }
+        }
+        get defaultValue() { return this.getAttribute('value') ?? ''; }
+        set defaultValue(value) { this.setAttribute('value', String(value)); }
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
@@ -40,6 +67,8 @@
         set pattern(value) { this.setAttribute('pattern', value); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
+        get readOnly() { return this.hasAttribute('readonly'); }
+        set readOnly(value) { this.toggleAttribute('readonly', !!value); }
         get autofocus() { return this.hasAttribute('autofocus'); }
         set autofocus(value) { this.toggleAttribute('autofocus', !!value); }
         get autocomplete() { return this.getAttribute('autocomplete') || ''; }
@@ -62,19 +91,31 @@
         get formTarget() { return this.getAttribute('formtarget') || ''; }
         set formTarget(value) { this.setAttribute('formtarget', value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.matches(':disabled') && !this.hasAttribute('readonly') && !hasDataListAncestor(this) && !['hidden', 'button', 'reset'].includes(this.type); }
+        get willValidate() { return host('controlWillValidate', nodeId(this)); }
         get validity() { return validityFor(this); }
-        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
-        setCustomValidity(message) { this.__customValidity = String(message); }
+        get validationMessage() { return validationMessageFor(this); }
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
         checkValidity() { return checkControlValidity(this); }
-        reportValidity() { return this.checkValidity(); }
+        reportValidity() { return reportControlValidity(this); }
+        get valueAsNumber() { return host('controlValueAsNumber', nodeId(this)); }
+        set valueAsNumber(value) {
+            const result = JSON.parse(host('controlSetValueAsNumber', nodeId(this), Number(value)));
+            if (result.status === 'type') throw new TypeError('Value is not a finite number.');
+            if (result.status === 'state') throw new DOMException('The input does not support numeric values.', 'InvalidStateError');
+        }
+        // Temporal value access stays an explicit boundary: no date parsing
+        // in this experiment, so the API reports its inapplicability.
+        get valueAsDate() { return null; }
+        set valueAsDate(_value) { throw new DOMException('The input does not support dates.', 'InvalidStateError'); }
+        stepUp(n = 1) { stepControlValue(this, n, true); }
+        stepDown(n = 1) { stepControlValue(this, n, false); }
     }
     class HTMLTextAreaElement extends HTMLElement {
         get placeholder() { return this.getAttribute('placeholder') || ''; }
         set placeholder(value) { this.setAttribute('placeholder', value); }
         get form() { return associatedForm(this); }
-        get value() { return this.__value ?? this.textContent; }
-        set value(value) { this.__value = String(value); }
+        get value() { return host('textareaValue', nodeId(this)); }
+        set value(value) { host('textareaSetValue', nodeId(this), String(value)); }
         get defaultValue() { return this.textContent; }
         set defaultValue(value) { this.textContent = String(value); }
         get minLength() { return reflectedInteger(this, 'minlength', -1); }
@@ -85,13 +126,22 @@
         set wrap(value) { this.setAttribute('wrap', value); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
+        get readOnly() { return this.hasAttribute('readonly'); }
+        set readOnly(value) { this.toggleAttribute('readonly', !!value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.matches(':disabled') && !this.hasAttribute('readonly') && !hasDataListAncestor(this); }
+        get willValidate() { return host('controlWillValidate', nodeId(this)); }
         get validity() { return validityFor(this); }
-        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please enter a valid value.'); }
-        setCustomValidity(message) { this.__customValidity = String(message); }
+        get validationMessage() { return validationMessageFor(this); }
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
         checkValidity() { return checkControlValidity(this); }
-        reportValidity() { return this.checkValidity(); }
+        reportValidity() { return reportControlValidity(this); }
+        get textLength() { return host('textareaValue', nodeId(this)).length; }
+    }
+    class HTMLObjectElement extends HTMLElement {
+        // Object elements expose willValidate as false (headless Chrome
+        // 153): present for the constraint-validation API shape, never a
+        // candidate.
+        get willValidate() { return false; }
     }
     class HTMLOrderedListElement extends HTMLElement {
         get reversed() { return this.hasAttribute('reversed'); }
@@ -100,38 +150,26 @@
     class HTMLSelectElement extends HTMLElement {
         get multiple() { return this.hasAttribute('multiple'); }
         set multiple(value) { this.toggleAttribute('multiple', !!value); }
-        get options() { return this.querySelectorAll('option'); }
-        get selectedIndex() {
-            const options = this.options;
-            const selected = options.findIndex(option => option.hasAttribute('selected'));
-            return selected >= 0 ? selected : (options.length ? 0 : -1);
-        }
+        get type() { return this.multiple ? 'select-multiple' : 'select-one'; }
+        get options() { return selectOptions(this); }
+        get selectedOptions() { return selectSelectedOptions(this); }
+        get length() { return this.options.length; }
+        get selectedIndex() { return host('selectSelectedIndex', nodeId(this)); }
         set selectedIndex(value) {
-            const selected = Math.trunc(Number(value));
-            this.options.forEach((option, index) =>
-                option.toggleAttribute('selected', index === selected));
+            host('selectSetSelectedIndex', nodeId(this), Math.trunc(Number(value) || 0));
         }
-        get value() {
-            const option = this.options[this.selectedIndex];
-            return option ? (option.getAttribute('value') ?? option.textContent) : '';
-        }
-        set value(value) {
-            value = String(value);
-            const options = this.options;
-            const selected = options.findIndex(option =>
-                (option.getAttribute('value') ?? option.textContent) === value);
-            this.selectedIndex = selected;
-        }
+        get value() { return host('selectValue', nodeId(this)); }
+        set value(value) { host('selectSetValue', nodeId(this), String(value)); }
         get form() { return associatedForm(this); }
         get required() { return this.hasAttribute('required'); }
         set required(value) { this.toggleAttribute('required', !!value); }
         get labels() { return labelsFor(this); }
-        get willValidate() { return !this.matches(':disabled') && !hasDataListAncestor(this); }
+        get willValidate() { return host('controlWillValidate', nodeId(this)); }
         get validity() { return validityFor(this); }
-        get validationMessage() { return this.validity.valid ? '' : (this.__customValidity || 'Please select an item.'); }
-        setCustomValidity(message) { this.__customValidity = String(message); }
+        get validationMessage() { return validationMessageFor(this); }
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
         checkValidity() { return checkControlValidity(this); }
-        reportValidity() { return this.checkValidity(); }
+        reportValidity() { return reportControlValidity(this); }
     }
     class HTMLButtonElement extends HTMLElement {
         get form() { return associatedForm(this); }
@@ -154,6 +192,13 @@
         set formNoValidate(value) { this.toggleAttribute('formnovalidate', !!value); }
         get formTarget() { return this.getAttribute('formtarget') || ''; }
         set formTarget(value) { this.setAttribute('formtarget', value); }
+        get labels() { return labelsFor(this); }
+        get willValidate() { return host('controlWillValidate', nodeId(this)); }
+        get validity() { return validityFor(this); }
+        get validationMessage() { return validationMessageFor(this); }
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
+        checkValidity() { return checkControlValidity(this); }
+        reportValidity() { return reportControlValidity(this); }
     }
     class HTMLLabelElement extends HTMLElement {
         get htmlFor() { return this.getAttribute('for') || ''; }
@@ -165,24 +210,31 @@
     }
     class HTMLFieldSetElement extends HTMLElement {
         get elements() {
-            return this.querySelectorAll('button, fieldset, input, object, output, select, textarea');
+            return cachedControlCollection(fieldsetLists, this,
+                () => Array.from(this.querySelectorAll(listedControlSelector)));
         }
         get form() { return associatedForm(this); }
         get disabled() { return this.hasAttribute('disabled'); }
         set disabled(value) { this.toggleAttribute('disabled', !!value); }
         get type() { return 'fieldset'; }
+        get willValidate() { return false; }
+        get validity() { return validityFor(this); }
+        get validationMessage() { return ''; }
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
+        checkValidity() { return true; }
+        reportValidity() { return true; }
     }
     class HTMLOptionElement extends HTMLElement {
-        get selected() {
+        get selected() { return host('optionSelected', nodeId(this)); }
+        set selected(value) { host('optionSetSelected', nodeId(this), !!value); }
+        get defaultSelected() { return this.hasAttribute('selected'); }
+        set defaultSelected(value) { this.toggleAttribute('selected', !!value); }
+        get index() {
             const select = this.closest('select');
-            if (this.hasAttribute('selected')) return true;
-            return !!select && !select.multiple && select.options[select.selectedIndex] === this;
+            return select ? Array.prototype.indexOf.call(select.options, this) : 0;
         }
-        set selected(value) {
-            const select = this.closest('select');
-            if (value && select && !select.multiple) for (const option of select.options) option.removeAttribute('selected');
-            this.toggleAttribute('selected', !!value);
-        }
+        get text() { return optionText(this); }
+        set text(value) { this.textContent = String(value); }
         get label() {
             return this.hasAttribute('label') ? this.getAttribute('label') : optionText(this);
         }
@@ -201,19 +253,15 @@
         get name() { return this.getAttribute('name') || ''; }
         set name(value) { this.setAttribute('name', value); }
         get type() { return 'output'; }
-        get value() { return this.textContent; }
-        set value(value) { this.textContent = String(value); }
-        get defaultValue() { return this.__defaultValue ?? this.textContent; }
-        set defaultValue(value) {
-            value = String(value);
-            if (this.__defaultValue === undefined) this.textContent = value;
-            else this.__defaultValue = value;
-        }
+        get value() { return host('outputValue', nodeId(this)); }
+        set value(value) { host('outputSetValue', nodeId(this), String(value)); }
+        get defaultValue() { return host('outputDefaultValue', nodeId(this)); }
+        set defaultValue(value) { host('outputSetDefault', nodeId(this), String(value)); }
         get labels() { return labelsFor(this); }
         get willValidate() { return false; }
-        get validity() { return validValidityState(); }
+        get validity() { return validityFor(this); }
         get validationMessage() { return ''; }
-        setCustomValidity(_message) {}
+        setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
         checkValidity() { return true; }
         reportValidity() { return true; }
     }
@@ -245,18 +293,22 @@
     }
     class HTMLFormElement extends HTMLElement {
         get elements() {
-            return document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
-                .filter(element => associatedForm(element) === this && !(element instanceof HTMLInputElement && element.type.toLowerCase() === 'image'));
+            return cachedControlCollection(formLists, this, () =>
+                Array.from(this.getRootNode().querySelectorAll(listedControlSelector))
+                    .filter(element => associatedForm(element) === this &&
+                        !(element instanceof HTMLInputElement && element.type === 'image')));
         }
         get length() { return this.elements.length; }
         get noValidate() { return this.hasAttribute('novalidate'); }
         set noValidate(value) { this.toggleAttribute('novalidate', !!value); }
         checkValidity() {
-            let valid = true;
-            for (const control of this.elements) if (typeof control.checkValidity === 'function' && !control.checkValidity()) valid = false;
+            return staticFormValidation(this).valid;
+        }
+        reportValidity() {
+            const { valid, unhandled } = staticFormValidation(this);
+            if (unhandled.length) focusInvalidControl(unhandled[0]);
             return valid;
         }
-        reportValidity() { return this.checkValidity(); }
     }
     function reflectedInteger(element, attribute, fallback) {
         const value = Number(element.getAttribute(attribute));
@@ -276,57 +328,31 @@
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);
     }
+    const listedControlSelector = 'button, fieldset, input, object, output, select, textarea';
+    const formLists = new WeakMap();
+    const fieldsetLists = new WeakMap();
+    const selectOptionLists = new WeakMap();
+    const selectedOptionLists = new WeakMap();
+    function cachedControlCollection(cache, owner, resolve) {
+        let list = cache.get(owner);
+        if (!list) {
+            list = liveHtmlCollection(resolve);
+            cache.set(owner, list);
+        }
+        return list;
+    }
+    function selectOptions(select) {
+        return cachedControlCollection(selectOptionLists, select, () => {
+            const ids = String(host('selectOptionIds', nodeId(select)));
+            return ids ? ids.split(',').map(id => wrap(Number(id))).filter(Boolean) : [];
+        });
+    }
+    function selectSelectedOptions(select) {
+        return cachedControlCollection(selectedOptionLists, select,
+            () => Array.from(selectOptions(select)).filter(option => option.selected));
+    }
     function optionText(option) {
         return option.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();
-    }
-    function validValidityState() {
-        return {
-            valueMissing: false, typeMismatch: false, patternMismatch: false,
-            tooLong: false, tooShort: false, rangeUnderflow: false,
-            rangeOverflow: false, stepMismatch: false, badInput: false,
-            customError: false, valid: true
-        };
-    }
-    function validityFor(element) {
-        const value = String(element.value ?? '');
-        const type = String(element.type || '').toLowerCase();
-        const required = !!element.required;
-        const valueMissing = required && (type === 'checkbox' ? !element.checked :
-            type === 'radio' ? !radioGroup(element).some(input => input.checked) : value === '');
-        let typeMismatch = false;
-        if (value && type === 'email') typeMismatch = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-        if (value && type === 'url') typeMismatch = !/^[a-z][a-z0-9+.-]*:\/\/[^\s]+$/i.test(value);
-        let patternMismatch = false;
-        const pattern = element.pattern;
-        if (value && pattern) {
-            try { patternMismatch = !(new RegExp('^(?:' + pattern + ')$')).test(value); } catch (_error) {}
-        }
-        const numeric = Number(value);
-        const hasNumber = value !== '' && Number.isFinite(numeric);
-        const minimum = Number(element.min);
-        const maximum = Number(element.max);
-        const rangeUnderflow = hasNumber && element.min !== '' && Number.isFinite(minimum) && numeric < minimum;
-        const rangeOverflow = hasNumber && element.max !== '' && Number.isFinite(maximum) && numeric > maximum;
-        const badInput = (type === 'number' || type === 'range') && value !== '' && !hasNumber;
-        const customError = !!element.__customValidity;
-        const valid = !(valueMissing || typeMismatch || patternMismatch || rangeUnderflow || rangeOverflow || badInput || customError);
-        return {
-            valueMissing, typeMismatch, patternMismatch,
-            tooLong: false, tooShort: false, rangeUnderflow,
-            rangeOverflow, stepMismatch: false, badInput,
-            customError, valid
-        };
-    }
-    function checkControlValidity(element) {
-        if (!element.willValidate || element.validity.valid) return true;
-        element.dispatchEvent(markTrusted(new Event('invalid', { cancelable: true })));
-        return false;
-    }
-    function hasDataListAncestor(element) {
-        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
-            if (ancestor.localName === 'datalist') return true;
-        }
-        return false;
     }
     function associatedForm(element) {
         const explicit = element.getAttribute('form');

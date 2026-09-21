@@ -100,16 +100,27 @@ impl DocumentRuntime {
                 };
                 self.accessibility_selection =
                     Some((target.id(), input.selection_start, input.selection_end));
-                if self.script_runtime.is_none() {
-                    self.accessibility_values
-                        .insert(target.id(), input.value.clone());
-                }
-                let result = self.dispatch_user_input(UserInputEvent::Text {
-                    target,
-                    value: input.value,
+                let mut result = self.dispatch_user_input(UserInputEvent::Text {
+                    target: target.clone(),
+                    value: input.value.clone(),
                     selection_start: input.selection_start,
                     selection_end: input.selection_end,
                 })?;
+                if self.script_runtime.is_none() {
+                    // Scriptless documents still edit authoritative control
+                    // state; layout, paint, and submission read it from there.
+                    self.accessibility_values
+                        .insert(target.id(), input.value.clone());
+                    let changed = match target.tag_name() {
+                        Some("input") => target.user_edit_input(&input.value),
+                        Some("textarea") => target.set_textarea_raw(&input.value, true),
+                        Some("select") => target.user_pick_option(&input.value),
+                        _ => false,
+                    };
+                    if changed {
+                        request_state_render(&target, &mut result.outcome);
+                    }
+                }
                 (result.outcome, None)
             }
             DocumentInput::Focus(input) => {
@@ -301,6 +312,48 @@ fn lifecycle_name(state: DocumentLifecycle) -> &'static str {
         DocumentLifecycle::Hidden => "hidden",
         DocumentLifecycle::Frozen => "frozen",
     }
+}
+
+/// Requests a targeted state-invalidation render after scriptless control
+/// edits: the control's own subtree root plus form-owner/fieldset aggregation
+/// roots (HTML `:valid` / `:invalid` on `form` / `fieldset`), radio-group
+/// peers, and their aggregates. Never the whole document.
+fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcome) {
+    use crate::engine::invalidation::validation_aggregation_roots;
+    let mut roots = Vec::new();
+    let mut push_with_aggregates = |node: &NodeRef| {
+        // A changed peer's siblings can match :checked + .label too, even
+        // when that radio lives under a different parent from the target.
+        roots.push(
+            node.shadow_including_parent()
+                .unwrap_or_else(|| node.clone())
+                .id(),
+        );
+        roots.extend(
+            validation_aggregation_roots(node)
+                .iter()
+                .map(|root| root.id()),
+        );
+    };
+    push_with_aggregates(control);
+    if control.is_radio() {
+        for peer in control.radio_group() {
+            if peer.id() != control.id() {
+                push_with_aggregates(&peer);
+            }
+        }
+    }
+    roots.sort_unstable();
+    roots.dedup();
+    outcome.render_requested = true;
+    outcome.invalidation = crate::engine::invalidation::RenderInvalidation {
+        roots,
+        impact: crate::engine::invalidation::MutationKind::State.impact(),
+        mutation_count: 0,
+        rebuild_style_rules: false,
+        removed_nodes: Vec::new(),
+        removals_are_local: false,
+    };
 }
 
 fn key_code(key: &str) -> u32 {

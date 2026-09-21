@@ -6,6 +6,10 @@
     const constructing = globalThis.__constructingFormData;
     delete globalThis.__constructingFormData;
     const FormDataConstructor = FormData;
+    const validateForSubmission = globalThis.__staticFormValidation;
+    const reportInvalidControl = globalThis.__reportInvalidControl;
+    delete globalThis.__staticFormValidation;
+    delete globalThis.__reportInvalidControl;
     const queueNavigation = globalThis.setTimeout;
     const cancelNavigation = globalThis.clearTimeout;
     const plannedTasks = new WeakMap();
@@ -69,7 +73,17 @@
             if (submitting.has(form)) return;
             submitting.add(form);
             try {
-                if (!form.noValidate && !button?.formNoValidate && !form.reportValidity()) return;
+                // Internal submission validates without author-overridable
+                // methods, then reports the first unhandled control.
+                if (!form.noValidate && !button?.formNoValidate) {
+                    const { valid, unhandled } = validateForSubmission(form);
+                    if (!valid) {
+                        // Blocked submission reports like interactive
+                        // validation so authors and users see feedback.
+                        if (unhandled.length) reportInvalidControl(unhandled[0]);
+                        return;
+                    }
+                }
                 if (!form.dispatchEvent(trusted(new SubmitEvent('submit', {
                     bubbles: true, cancelable: true, submitter: button
                 })))) return;

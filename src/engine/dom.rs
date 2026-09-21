@@ -4,7 +4,7 @@ mod cloning;
 pub(crate) mod document;
 pub(crate) mod incremental;
 mod mutation;
-mod node;
+pub(crate) mod node;
 mod shadow;
 pub use document::{Dom, parse, parse_with_scripting};
 pub use node::{Descendants, ElementData, Node, NodeData, NodeId, NodeRef, ShadowRootMode};

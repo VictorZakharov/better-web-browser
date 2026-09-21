@@ -2,6 +2,7 @@
 
 mod agent;
 mod bridge;
+mod control_validation;
 mod crypto;
 mod dynamic_imports;
 mod event_handlers;
@@ -13,10 +14,10 @@ mod node_wrappers;
 mod parser_scripts;
 mod policy;
 mod ports;
-mod runtime;
+pub(crate) mod runtime;
 mod v8_api;
 mod value;
-mod watchdog;
+pub(crate) mod watchdog;
 mod window_access;
 
 pub(super) use bridge::HostBridge;

@@ -21,7 +21,7 @@ mod document_streams;
 mod dom_host;
 mod dynamic_modules;
 mod dynamic_scripts;
-mod engine;
+pub(crate) mod engine;
 mod execution;
 mod fullscreen_host;
 mod history_host;

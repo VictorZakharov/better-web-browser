@@ -26,21 +26,32 @@ pub(super) struct ExecutionWatchdog {
     worker: Option<thread::JoinHandle<()>>,
 }
 
-struct IsolateEntry(*mut v8::OwnedIsolate);
+struct IsolateEntry {
+    isolate: *mut v8::OwnedIsolate,
+    /// Whether a page isolate was already entered (nested same-isolate
+    /// entry). Restored on drop so Rust-side V8 users observe the exact
+    /// nesting state instead of a blind clear.
+    was_entered: bool,
+}
 
 impl IsolateEntry {
     fn new(isolate: &mut v8::OwnedIsolate) -> Self {
         // SAFETY: Context serializes access on its owning thread. This balances the matching exit
         // in Drop and temporarily restores whichever retained document isolate was current.
+        let was_entered = crate::engine::pattern_eval::set_page_isolate_entered(true);
         unsafe { isolate.enter() };
-        Self(isolate)
+        Self {
+            isolate,
+            was_entered,
+        }
     }
 }
 
 impl Drop for IsolateEntry {
     fn drop(&mut self) {
         // SAFETY: this guard is dropped before another isolate can be entered on this thread.
-        unsafe { (*self.0).exit() };
+        unsafe { (*self.isolate).exit() };
+        crate::engine::pattern_eval::set_page_isolate_entered(self.was_entered);
     }
 }
 
@@ -136,5 +147,40 @@ impl Drop for ExecutionWatchdog {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+
+/// The same execution budget for the private, script-disabled pattern isolate.
+/// A string error keeps engine-private JS error types out of the DOM boundary.
+pub(crate) struct PatternWatchdog(ExecutionWatchdog);
+
+impl Drop for PatternWatchdog {
+    fn drop(&mut self) {
+        // This owner is thread-local. Windows runs TLS destructors under the
+        // loader lock, so joining a terminating worker here deadlocks. The
+        // handle is safe after isolate disposal; disarm and let it exit alone.
+        self.0.active.store(0, Ordering::Release);
+        let _ = self.0.sender.send(Command::Stop);
+        self.0.worker.take();
+    }
+}
+
+impl PatternWatchdog {
+    pub(crate) fn new(handle: v8::IsolateHandle) -> Result<Self, String> {
+        ExecutionWatchdog::new(handle)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn run<T>(
+        &mut self,
+        isolate: &mut v8::OwnedIsolate,
+        action: impl FnOnce(&mut v8::OwnedIsolate) -> T,
+    ) -> Result<T, String> {
+        let result = self.0.run(isolate, |isolate| Ok(action(isolate)));
+        if result.is_err() {
+            isolate.cancel_terminate_execution();
+        }
+        result.map_err(|error| error.to_string())
     }
 }

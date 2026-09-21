@@ -53,7 +53,7 @@ pub struct ControlSpec {
     pub value: String,
     pub label: String,
     pub options: Vec<SelectOption>,
-    pub selected_index: usize,
+    pub selected_index: i64,
     pub placeholder: String,
     pub form_id: Option<NodeId>,
     pub background_color: Color,
@@ -67,6 +67,9 @@ pub struct ControlSpec {
     pub icon_url: Option<String>,
     pub icon_width: f32,
     pub icon_height: f32,
+    /// Interactively reported invalid state with its message for feedback.
+    pub invalid: bool,
+    pub validation_message: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

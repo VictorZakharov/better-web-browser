@@ -1,5 +1,6 @@
     // HTML live checkedness, radio groups, and legacy click activation.
     // https://html.spec.whatwg.org/multipage/input.html#dom-input-checked
+    const resettingForms = new WeakSet();
     Object.defineProperties(HTMLInputElement.prototype, {
         checked: { configurable: true, get() { return host('inputChecked', nodeId(this)); },
             set(value) { host('inputSetChecked', nodeId(this), !!value); } },
@@ -54,12 +55,17 @@
         }
     }
     HTMLFormElement.prototype.reset = function() {
-        if (this.__resetting) return;
-        this.__resetting = true;
+        if (resettingForms.has(this)) return;
+        resettingForms.add(this);
         try {
-            if (!this.dispatchEvent(new Event('reset', { bubbles: true, cancelable: true }))) return;
-            for (const control of this.elements) {
-                if (control instanceof HTMLInputElement) host('inputResetChecked', nodeId(control));
+            // The reset event is trusted even when reset() is script-called.
+            if (!this.dispatchEvent(markTrusted(new Event('reset', { bubbles: true, cancelable: true })))) return;
+            host('formResetControls', nodeId(this));
+            // Reset restores live values without value setters, so pattern
+            // verdicts cached from pre-reset values would go stale by their
+            // exact dependencies; refresh them on this realm instead.
+            for (const control of this.querySelectorAll('input[pattern]')) {
+                refreshPatternVerdict(control);
             }
-        } finally { this.__resetting = false; }
+        } finally { resettingForms.delete(this); }
     };
