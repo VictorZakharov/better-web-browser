@@ -40,6 +40,7 @@ mod element_scrolling;
 mod embedded_elements;
 mod event_handler_attributes;
 mod events;
+mod form_review_regressions;
 mod form_selectors;
 mod form_state;
 mod form_submission;

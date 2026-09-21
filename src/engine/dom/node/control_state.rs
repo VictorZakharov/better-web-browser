@@ -11,8 +11,7 @@
 //! parser, script, and host construction paths share one initialization.
 
 use super::control_values::{
-    InputValueMode, canonical_input_state, clamp_range_value, input_value_mode, is_valid_float,
-    normalize_newlines, range_default, sanitize_input_value,
+    InputValueMode, canonical_input_state, input_value_mode, is_strict_float, normalize_newlines,
 };
 use super::{Node, NodeRef};
 
@@ -78,15 +77,11 @@ impl Node {
             let input_type = canonical_input_state(&self.attr("type").unwrap_or_default());
             state.type_seen = Some(input_type.clone());
             if input_value_mode(&input_type) == InputValueMode::Value {
-                let mut seeded =
-                    sanitize_input_value(&input_type, &self.attr("value").unwrap_or_default());
-                if input_type == "range" && !seeded.is_empty() {
-                    seeded = clamp_range_value(&seeded, &self.attr("min"), &self.attr("max"));
-                }
-                state.value = Some(seeded);
-            }
-            if input_type == "range" && state.value.as_deref() == Some("") {
-                state.value = Some(range_default(&self.attr("min"), &self.attr("max")));
+                state.value =
+                    Some(self.sanitize_control_value(
+                        &input_type,
+                        &self.attr("value").unwrap_or_default(),
+                    ));
             }
         } else if tag == "option" {
             state.selectedness = self.attr("selected").is_some();
@@ -109,16 +104,24 @@ impl Node {
     /// Live value for value-mode inputs; pristine controls mirror the default.
     pub(crate) fn input_value(&self) -> String {
         let state = self.control_state_snapshot();
-        if let Some(value) = state.value {
-            return value;
-        }
         let input_type = self.input_state_name();
-        let sanitized = sanitize_input_value(&input_type, &self.attr("value").unwrap_or_default());
-        if input_type == "range" && !sanitized.is_empty() {
-            // Unseeded reads observe the same clamped value seeding stores.
-            return clamp_range_value(&sanitized, &self.attr("min"), &self.attr("max"));
+        match input_value_mode(&input_type) {
+            InputValueMode::DefaultOn => self.attr("value").unwrap_or_else(|| "on".into()),
+            InputValueMode::Filename => String::new(),
+            InputValueMode::Default | InputValueMode::ButtonDefault => {
+                self.sanitize_control_value(&input_type, &self.attr("value").unwrap_or_default())
+            }
+            InputValueMode::Value => state.value.unwrap_or_else(|| {
+                self.sanitize_control_value(&input_type, &self.attr("value").unwrap_or_default())
+            }),
         }
-        sanitized
+    }
+
+    /// Preserve unconvertible user text visually without exposing a stale API value.
+    pub(crate) fn input_display_value(&self) -> String {
+        self.control_state_snapshot()
+            .editing
+            .unwrap_or_else(|| self.input_value())
     }
 
     /// Programmatic value write. Value-mode inputs sanitize into live state
@@ -129,7 +132,7 @@ impl Node {
         let mode = input_value_mode(&self.input_state_name());
         if mode != InputValueMode::Value {
             let before = self.input_value();
-            let sanitized = sanitize_input_value(&self.input_state_name(), value);
+            let sanitized = self.sanitize_control_value(&self.input_state_name(), value);
             self.update_control_state_tracked(|state| {
                 state.dirty = false;
                 state.user_edited = false;
@@ -139,19 +142,13 @@ impl Node {
             let _ = self.set_attr("value", &sanitized);
             return self.input_value() != before;
         }
-        let sanitized = sanitize_input_value(&self.input_state_name(), value);
+        let sanitized = self.sanitize_control_value(&self.input_state_name(), value);
         self.store_input_value(&sanitized, false)
     }
 
     /// Stores a sanitized value-mode write; range values clamp to their
     /// bounds and range empties fall back to the default.
     fn store_input_value(&self, sanitized: &str, by_user: bool) -> bool {
-        let clamped;
-        let mut sanitized = sanitized;
-        if self.input_state_name() == "range" && !sanitized.is_empty() {
-            clamped = clamp_range_value(sanitized, &self.attr("min"), &self.attr("max"));
-            sanitized = &clamped;
-        }
         let mut changed = false;
         self.update_control_state_tracked(|state| {
             if state.value.as_deref() != Some(sanitized) {
@@ -166,13 +163,6 @@ impl Node {
                 state.user_validity = true;
             }
         });
-        if self.input_state_name() == "range" && self.input_value().is_empty() {
-            let fallback = range_default(&self.attr("min"), &self.attr("max"));
-            self.update_control_state_tracked(|state| {
-                state.value = Some(fallback);
-            });
-            return true;
-        }
         changed
     }
 
@@ -184,11 +174,12 @@ impl Node {
         if input_value_mode(&input_type) != InputValueMode::Value {
             return self.set_input_value(value);
         }
-        if input_type == "number" && !value.is_empty() && !is_valid_float(value) {
+        if input_type == "number" && !value.is_empty() && !is_strict_float(value) {
             let mut changed = false;
             self.update_control_state_tracked(|state| {
                 changed = state.editing.as_deref() != Some(value);
                 state.editing = Some(value.to_string());
+                state.value = Some(String::new());
                 state.dirty = true;
                 state.user_edited = true;
                 state.user_validity = true;
@@ -196,7 +187,7 @@ impl Node {
             });
             return changed;
         }
-        let sanitized = sanitize_input_value(&input_type, value);
+        let sanitized = self.sanitize_control_value(&input_type, value);
         self.store_input_value(&sanitized, true)
     }
 
@@ -220,7 +211,7 @@ impl Node {
         if tag == Some("input") && name == "value" {
             let snapshot = self.control_state_snapshot();
             if !snapshot.dirty {
-                let live = sanitize_input_value(
+                let live = self.sanitize_control_value(
                     &self.input_state_name(),
                     &self.attr("value").unwrap_or_default(),
                 );
@@ -229,6 +220,13 @@ impl Node {
                 });
             }
             return;
+        }
+        if tag == Some("input")
+            && matches!(name, "min" | "max" | "step")
+            && self.input_state_name() == "range"
+        {
+            let value = self.sanitize_control_value("range", &self.input_value());
+            self.update_control_state_tracked(|state| state.value = Some(value));
         }
         if tag == Some("input") && name == "type" {
             self.apply_type_transition();
@@ -239,64 +237,8 @@ impl Node {
         }
     }
 
-    /// Runs the type-change transition against the last observed state.
-    fn apply_type_transition(&self) {
-        let previous = self.control_state_snapshot().type_seen.unwrap_or_default();
-        let current = canonical_input_state(&self.attr("type").unwrap_or_default());
-        if previous == current {
-            return;
-        }
-        self.update_control_state_tracked(|state| {
-            state.reported = false;
-        });
-        let previous_mode = input_value_mode(&previous);
-        let current_mode = input_value_mode(&current);
-        // Value/default/on modes propagate the live value into the attribute;
-        // entering value mode from any other mode reloads from the attribute.
-        if matches!(
-            previous_mode,
-            InputValueMode::Value | InputValueMode::Default | InputValueMode::DefaultOn
-        ) && matches!(
-            current_mode,
-            InputValueMode::Default | InputValueMode::DefaultOn
-        ) && !self.input_value().is_empty()
-        {
-            let live = self.input_value();
-            self.update_control_state_tracked(|state| {
-                state.type_seen = Some(current.clone());
-            });
-            let _ = self.set_attr("value", &live);
-            return;
-        }
-        if previous_mode != InputValueMode::Value && current_mode == InputValueMode::Value {
-            let live = sanitize_input_value(&current, &self.attr("value").unwrap_or_default());
-            self.update_control_state_tracked(|state| {
-                state.type_seen = Some(current.clone());
-                state.value = Some(live);
-                state.dirty = false;
-                state.user_edited = false;
-                state.editing = None;
-            });
-        } else {
-            self.update_control_state_tracked(|state| {
-                state.type_seen = Some(current.clone());
-            });
-        }
-        let sanitized = sanitize_input_value(&current, &self.input_value());
-        self.update_control_state_tracked(|state| {
-            if state.value.is_some() {
-                state.value = Some(sanitized.clone());
-            }
-        });
-    }
-
-    /// The `value` content attribute gives the default value; pristine
-    /// controls follow it through sanitization.
     pub(crate) fn input_default_value(&self) -> String {
-        sanitize_input_value(
-            &self.input_state_name(),
-            &self.attr("value").unwrap_or_default(),
-        )
+        self.attr("value").unwrap_or_default()
     }
 
     /// Mutable control-state access with lazy seeding.

@@ -18,12 +18,12 @@ pub(crate) struct TemporalRank(i64, i64);
 pub(crate) fn step_rank(state: &str, value: &str) -> Option<i64> {
     match state {
         "date" => parse_date(value),
-        "month" => parse_month(value).map(|(year, month)| (year - 1970) * 12 + (month - 1)),
+        "month" => parse_month(value)
+            .and_then(|(year, month)| (year - 1970).checked_mul(12)?.checked_add(month - 1)),
         "week" => parse_week(value).map(|(year, week)| monday_ordinal(year, week)),
         "time" => parse_time(value),
-        "datetime-local" => {
-            parse_datetime_local(value).map(|(days, millis)| days * 86_400_000 + millis)
-        }
+        "datetime-local" => parse_datetime_local(value)
+            .and_then(|(days, millis)| days.checked_mul(86_400_000)?.checked_add(millis)),
         _ => None,
     }
 }
@@ -114,7 +114,13 @@ fn parse_year(value: &str) -> Option<i64> {
         return None;
     }
     let year = digits(value)?;
-    if year < 1 { None } else { Some(year) }
+    // The native rank uses signed 64-bit civil days. Reject years outside
+    // that representation before any multiplication in calendar arithmetic.
+    if !(1..=i64::MAX / 366).contains(&year) {
+        None
+    } else {
+        Some(year)
+    }
 }
 
 fn is_leap_year(year: i64) -> bool {

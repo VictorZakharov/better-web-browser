@@ -48,16 +48,19 @@ pub(super) fn dispatch(
         // Checking a radio unchecks its group peers; their validity flips
         // too even when they live under a different parent.
         if node.is_radio() && state.mutation_requires_render(&node) {
-            use crate::engine::invalidation::validation_aggregation_roots;
             let document = state.document.clone();
             for peer in node.radio_group() {
                 if peer.id() != node.id() {
-                    state.pending_invalidation.extend(&document, &peer);
-                    state.pending_layout_invalidation.extend(&document, &peer);
-                    for extra in validation_aggregation_roots(&peer) {
-                        state.pending_invalidation.extend(&document, &extra);
-                        state.pending_layout_invalidation.extend(&document, &extra);
-                    }
+                    // Record the same state dependency as the activated radio:
+                    // its parent includes siblings, and validation adds owners.
+                    state
+                        .pending_invalidation
+                        .record(&document, Some(&peer), MutationKind::State);
+                    state.pending_layout_invalidation.record(
+                        &document,
+                        Some(&peer),
+                        MutationKind::State,
+                    );
                 }
             }
         }

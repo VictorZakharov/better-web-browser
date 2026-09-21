@@ -103,7 +103,7 @@ pub(crate) fn sanitize_input_value(state: &str, value: &str) -> String {
         if !is_strict_float(value) {
             return String::new();
         }
-        return clamp_range(value, None, None);
+        return value.to_string();
     }
     if is_temporal_state(state) {
         // Out-of-grammar temporal values sanitize to empty (required
@@ -120,8 +120,12 @@ pub(crate) fn sanitize_input_value(state: &str, value: &str) -> String {
 /// Strict float validity: no surrounding (or interior) ASCII whitespace.
 /// The lenient parser skips whitespace, but sanitization keeps the value
 /// only when it is already a valid floating-point number.
-fn is_strict_float(value: &str) -> bool {
+pub(crate) fn is_strict_float(value: &str) -> bool {
     !value.is_empty()
+        && !value.starts_with('+')
+        && !value.ends_with('.')
+        && !value.contains(".e")
+        && !value.contains(".E")
         && !value
             .bytes()
             .any(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\x0C' | b'\r'))
@@ -200,55 +204,6 @@ pub(crate) fn parse_float_value(value: &str) -> Option<f64> {
     }
     let parsed: f64 = trimmed.parse().ok()?;
     parsed.is_finite().then_some(parsed)
-}
-
-/// Best representation of the range default (midpoint, or minimum).
-pub(crate) fn range_default(min_attr: &Option<String>, max_attr: &Option<String>) -> String {
-    let minimum = min_attr
-        .as_deref()
-        .and_then(parse_float_value)
-        .unwrap_or(0.0);
-    let maximum = max_attr
-        .as_deref()
-        .and_then(parse_float_value)
-        .unwrap_or(100.0);
-    if maximum < minimum {
-        return number_to_string(minimum);
-    }
-    number_to_string(minimum + (maximum - minimum) / 2.0)
-}
-
-/// Clamps a valid float string into `[minimum, maximum]` (either open).
-pub(crate) fn clamp_range(value: &str, minimum: Option<f64>, maximum: Option<f64>) -> String {
-    let parsed = parse_float_value(value).unwrap_or(0.0);
-    let mut clamped = parsed;
-    if let Some(minimum) = minimum {
-        clamped = clamped.max(minimum);
-    }
-    if let Some(maximum) = maximum {
-        clamped = clamped.min(maximum);
-    }
-    number_to_string(clamped)
-}
-
-/// Range value sanitization against authored bounds with spec defaults
-/// (minimum 0, maximum 100 when absent or unparseable). Sequential clamp:
-/// below-minimum rises to the minimum, above-maximum falls to the maximum,
-/// so reversed bounds settle on the maximum.
-pub(crate) fn clamp_range_value(
-    value: &str,
-    min_attr: &Option<String>,
-    max_attr: &Option<String>,
-) -> String {
-    let minimum = min_attr
-        .as_deref()
-        .and_then(parse_float_value)
-        .unwrap_or(0.0);
-    let maximum = max_attr
-        .as_deref()
-        .and_then(parse_float_value)
-        .unwrap_or(100.0);
-    clamp_range(value, Some(minimum), Some(maximum))
 }
 
 /// Serializes a finite float like the platform number-to-string rule:

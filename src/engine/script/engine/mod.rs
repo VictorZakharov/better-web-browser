@@ -17,7 +17,7 @@ mod ports;
 pub(crate) mod runtime;
 mod v8_api;
 mod value;
-mod watchdog;
+pub(crate) mod watchdog;
 mod window_access;
 
 pub(super) use bridge::HostBridge;

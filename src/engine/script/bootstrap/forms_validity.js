@@ -55,21 +55,9 @@
         if (!(element instanceof HTMLInputElement)) return;
         const pattern = element.getAttribute('pattern');
         if (pattern === null) return;
-        const value = element.value;
-        if (!value) return;
-        const values = element.type === 'email' && element.multiple
-            ? value.split(',').map(part => part.trim()) : [value];
-        let verdict = true;
-        try {
-            // Validity is judged on the raw pattern: anchoring first can
-            // accidentally balance a stray paren (e.g. `a)(b`), so never
-            // test what does not compile raw. Invalid patterns impose no
-            // constraint and leave no verdict behind.
-            new RegExp(pattern, 'v');
-            const expression = new RegExp('^(?:' + pattern + ')$', 'v');
-            verdict = values.every(candidate => expression.test(candidate));
-        } catch (_error) { return; }
-        host('controlPatternVerdict', nodeId(element), verdict, pattern, JSON.stringify(values));
+        // Use the native evaluator, not author-mutable RegExp methods. It
+        // also stores the verdict used by stylesheet/selector matching.
+        controlValidation(element);
     }
     // Attribute writes that can change pattern inputs refresh the verdict.
     function maybeRefreshPatternVerdict(element, localName) {
@@ -86,13 +74,12 @@
     }
     function checkControlValidity(element) {
         if (!isCandidateInvalid(element)) return true;
-        // Invalid events from validation are untrusted: no user gesture fired them.
-        element.dispatchEvent(new Event('invalid', { cancelable: true }));
+        element.dispatchEvent(markTrusted(new Event('invalid', { cancelable: true })));
         return false;
     }
     function reportControlValidity(element) {
         if (!isCandidateInvalid(element)) return true;
-        const notCanceled = element.dispatchEvent(new Event('invalid', { cancelable: true }));
+        const notCanceled = element.dispatchEvent(markTrusted(new Event('invalid', { cancelable: true })));
         if (notCanceled) focusInvalidControl(element);
         return false;
     }
@@ -102,13 +89,15 @@
             .filter(control => associatedForm(control) === form);
     }
     function staticFormValidation(form) {
+        // HTML snapshots invalid candidates before firing any events. Event
+        // cancellation suppresses UI, not the negative validation result.
+        const invalid = validationControls(form).filter(isCandidateInvalid);
         const unhandled = [];
-        for (const control of validationControls(form)) {
-            if (!isCandidateInvalid(control)) continue;
-            const notCanceled = control.dispatchEvent(new Event('invalid', { cancelable: true }));
+        for (const control of invalid) {
+            const notCanceled = control.dispatchEvent(markTrusted(new Event('invalid', { cancelable: true })));
             if (notCanceled) unhandled.push(control);
         }
-        return unhandled;
+        return { valid: invalid.length === 0, unhandled };
     }
     function focusInvalidControl(control) {
         // Interactive reporting marks the control (visible feedback follows

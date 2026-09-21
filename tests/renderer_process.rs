@@ -16,6 +16,8 @@ mod crypto;
 mod event_notifications;
 #[path = "renderer_process/exit_diagnostics.rs"]
 mod exit_diagnostics;
+#[path = "renderer_process/form_review.rs"]
+mod form_review;
 #[path = "renderer_process/form_validation.rs"]
 mod form_validation;
 #[path = "renderer_process/form_validation_presentation.rs"]

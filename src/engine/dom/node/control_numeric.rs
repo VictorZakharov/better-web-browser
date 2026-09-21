@@ -8,99 +8,8 @@
 
 use super::control_values::parse_float_value;
 
-/// Exact decimal: `mantissa * 10^exp`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Decimal {
-    mantissa: i128,
-    exp: i32,
-}
-
-/// Parses float-grammar strings exactly (finite only).
-pub(crate) fn parse_decimal(text: &str) -> Option<Decimal> {
-    let value = parse_float_value(text)?;
-    // Re-derive the decimal from the authored string, not the binary float.
-    let trimmed = text.trim_matches(|char| matches!(char, ' ' | '\t' | '\n' | '\x0C' | '\r'));
-    let (body, declared) = split_exponent(trimmed)?;
-    let negative = body.starts_with('-');
-    let digits_body = body.trim_start_matches(['+', '-']);
-    let (before, after) = digits_body.split_once('.').unwrap_or((digits_body, ""));
-    if before.is_empty() && after.is_empty() {
-        return None;
-    }
-    let mut digits = format!("{before}{after}");
-    digits = digits.trim_start_matches('0').to_string();
-    let mut exp = declared - after.len() as i32;
-    // Strip trailing zeros into the exponent.
-    while digits.ends_with('0') && digits.len() > 1 {
-        digits.pop();
-        exp += 1;
-    }
-    if digits.is_empty() {
-        return Some(Decimal {
-            mantissa: 0,
-            exp: 0,
-        });
-    }
-    let mut mantissa: i128 = digits.parse().ok()?;
-    if negative {
-        mantissa = mantissa.checked_neg()?;
-    }
-    let _ = value;
-    Some(Decimal { mantissa, exp })
-}
-
-fn split_exponent(text: &str) -> Option<(&str, i32)> {
-    let mut body = text;
-    let mut declared = 0;
-    if let Some(position) = text.find(['e', 'E']) {
-        body = &text[..position];
-        declared = text[position + 1..].parse::<i32>().ok()?;
-    }
-    Some((body, declared))
-}
-
-fn scale_up(mantissa: i128, steps: u32) -> Option<i128> {
-    let mut scaled = mantissa;
-    for _ in 0..steps {
-        scaled = scaled.checked_mul(10)?;
-    }
-    Some(scaled)
-}
-
-impl Decimal {
-    /// Scales both mantissas to the finer (minimum) exponent.
-    fn align(self, other: Decimal) -> Option<(i128, i128)> {
-        if self.exp == other.exp {
-            return Some((self.mantissa, other.mantissa));
-        }
-        if self.exp < other.exp {
-            let shift = (other.exp - self.exp) as u32;
-            Some((self.mantissa, scale_up(other.mantissa, shift)?))
-        } else {
-            let shift = (self.exp - other.exp) as u32;
-            Some((scale_up(self.mantissa, shift)?, other.mantissa))
-        }
-    }
-
-    fn sub(self, other: Decimal) -> Option<Decimal> {
-        let (left, right) = self.align(other)?;
-        Some(Decimal {
-            mantissa: left.checked_sub(right)?,
-            exp: self.exp.min(other.exp),
-        })
-    }
-
-    fn add_scaled(self, scaled: i128, exp: i32) -> Option<Decimal> {
-        let (left, right) = self.align(Decimal {
-            mantissa: scaled,
-            exp,
-        })?;
-        Some(Decimal {
-            mantissa: left.checked_add(right)?,
-            exp: self.exp.min(exp),
-        })
-    }
-}
+use super::control_decimal::{Decimal, decimal_to_f64};
+pub(crate) use super::control_decimal::{decimal_to_string, parse_decimal};
 
 /// Allowed value step for number/range, or `None` for `step=any`/N/A states.
 /// Absent, unparseable, and non-positive steps fall back to the default
@@ -169,45 +78,6 @@ fn step_mismatch_float(value: &str, base: Decimal, step: Decimal) -> bool {
         return false;
     };
     ((actual - base) / step).fract() != 0.0
-}
-
-fn decimal_to_f64(decimal: Decimal) -> Option<f64> {
-    let text = decimal_to_string(decimal);
-    let parsed: f64 = text.parse().ok()?;
-    parsed.is_finite().then_some(parsed)
-}
-
-/// Exact decimal rendering (no binary-float rounding).
-pub(crate) fn decimal_to_string(decimal: Decimal) -> String {
-    if decimal.mantissa == 0 {
-        return "0".to_string();
-    }
-    let mut out = String::new();
-    let mut digits = decimal.mantissa.abs().to_string();
-    if decimal.mantissa < 0 {
-        out.push('-');
-    }
-    if decimal.exp >= 0 {
-        out.push_str(&digits);
-        out.push_str(&"0".repeat(decimal.exp as usize));
-        return out;
-    }
-    let point = digits.len() as i32 + decimal.exp;
-    if point <= 0 {
-        out.push_str("0.");
-        out.push_str(&"0".repeat((-point) as usize));
-        out.push_str(&digits);
-    } else {
-        while digits.len() < point as usize {
-            digits.push('0');
-        }
-        out.push_str(&digits[..point as usize]);
-        if point as usize != digits.len() {
-            out.push('.');
-            out.push_str(&digits[point as usize..]);
-        }
-    }
-    out.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 pub(crate) enum StepOutcome {
@@ -324,6 +194,41 @@ fn ceil_multiple(value: Decimal, base: Decimal, step: Decimal) -> Option<Decimal
 
 fn floor_multiple(value: Decimal, base: Decimal, step: Decimal) -> Option<Decimal> {
     floor_multiple_decimal(value, base, step)
+}
+
+/// Range controls always choose a legal step, ties toward positive infinity.
+pub(super) fn round_range_to_step(
+    actual: f64,
+    minimum: f64,
+    maximum: f64,
+    min_attr: &Option<String>,
+    value_attr: &Option<String>,
+    step_attr: &Option<String>,
+) -> f64 {
+    let Some(step) = allowed_step("range", step_attr) else {
+        return actual;
+    };
+    let base = step_base(min_attr, value_attr);
+    let Some(value) = parse_decimal(&super::control_values::number_to_string(actual)) else {
+        return actual;
+    };
+    let mut nearest = None;
+    for candidate in [
+        floor_multiple(value, base, step),
+        ceil_multiple(value, base, step),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(decimal_to_f64)
+    {
+        if candidate < minimum || (maximum >= minimum && candidate > maximum) {
+            continue;
+        }
+        if nearest.is_none_or(|old: f64| (candidate - actual).abs() <= (old - actual).abs()) {
+            nearest = Some(candidate);
+        }
+    }
+    nearest.unwrap_or(actual)
 }
 
 impl std::ops::Neg for Decimal {

@@ -1,6 +1,8 @@
 //! DOM node identity, data model, read access, and traversal.
 mod attributes;
 pub(super) mod checkable;
+mod control_decimal;
+mod control_input_lifecycle;
 pub(crate) mod control_numeric;
 pub(crate) mod control_reset;
 pub(crate) mod control_select;

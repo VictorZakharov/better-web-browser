@@ -13,6 +13,10 @@ use crate::engine::dom::node::control_validity::{self, PatternSource};
 use crate::engine::invalidation::MutationKind;
 use std::cell::RefCell;
 
+// Same isolate (and watchdog), but an author-inaccessible realm. Even V8's
+// RegExp::exec API can consult mutable RegExp hooks on the regexp's realm.
+struct PatternContext(v8::Global<v8::Context>);
+
 pub(super) fn dispatch(
     scope: &mut v8::PinScope,
     arguments: v8::FunctionCallbackArguments,
@@ -46,6 +50,18 @@ pub(super) fn dispatch(
         // (deref alone would move out of the borrowed guard).
         #[allow(clippy::needless_borrow, clippy::explicit_auto_deref)]
         let scope: &mut v8::PinScope = &mut *guard;
+        let owner = scope.get_current_context();
+        if owner.get_slot::<PatternContext>().is_none() {
+            let private = v8::Context::new(scope, Default::default());
+            owner.set_slot(std::rc::Rc::new(PatternContext(v8::Global::new(
+                scope, private,
+            ))));
+        }
+        let private = owner
+            .get_slot::<PatternContext>()
+            .expect("pattern realm initialized");
+        let context = v8::Local::new(scope, &private.0);
+        let scope = &mut v8::ContextScope::new(scope, context);
         // A failed compile schedules a SyntaxError on this isolate; contain
         // it so invalid patterns stay a quiet "no constraint". Validity is
         // judged on the raw pattern: anchoring first can accidentally
@@ -65,11 +81,10 @@ pub(super) fn dispatch(
                 return None;
             }
         };
-        let name = v8::String::new(tc, "test")?;
-        let test = v8::Local::<v8::Function>::try_from(expression.get(tc, name.into())?).ok()?;
         let argument = v8::String::new(tc, value)?;
-        let outcome = test.call(tc, expression.into(), &[argument.into()])?;
-        Some(outcome.boolean_value(tc))
+        // V8's intrinsic exec bypasses author changes to RegExp.prototype.
+        let outcome = expression.exec(tc, argument)?;
+        Some(!outcome.is_null())
     };
     let flags = control_validity::validity_of(&node, &PatternSource::Live(&tester));
     let message = control_validity::validation_message(&node, &flags);

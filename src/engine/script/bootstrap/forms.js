@@ -4,7 +4,9 @@
         // https://html.spec.whatwg.org/multipage/input.html#attr-input-type
         get type() {
             const value = (this.getAttribute('type') || '').toLowerCase();
-            return /^(hidden|text|search|tel|url|email|password|date|month|week|time|datetime-local|number|range|color|checkbox|radio|file|submit|image|reset|button)$/.test(value) ? value : 'text';
+            return ['hidden', 'text', 'search', 'tel', 'url', 'email', 'password', 'date',
+                'month', 'week', 'time', 'datetime-local', 'number', 'range', 'color',
+                'checkbox', 'radio', 'file', 'submit', 'image', 'reset', 'button'].includes(value) ? value : 'text';
         }
         set type(value) { this.setAttribute('type', value); }
         // Live values live in native control state; defaults stay attributes.
@@ -208,7 +210,8 @@
     }
     class HTMLFieldSetElement extends HTMLElement {
         get elements() {
-            return withItem(this.querySelectorAll('button, fieldset, input, object, output, select, textarea'));
+            return cachedControlCollection(fieldsetLists, this,
+                () => Array.from(this.querySelectorAll(listedControlSelector)));
         }
         get form() { return associatedForm(this); }
         get disabled() { return this.hasAttribute('disabled'); }
@@ -228,7 +231,7 @@
         set defaultSelected(value) { this.toggleAttribute('selected', !!value); }
         get index() {
             const select = this.closest('select');
-            return select ? select.options.indexOf(this) : 0;
+            return select ? Array.prototype.indexOf.call(select.options, this) : 0;
         }
         get text() { return optionText(this); }
         set text(value) { this.textContent = String(value); }
@@ -290,24 +293,21 @@
     }
     class HTMLFormElement extends HTMLElement {
         get elements() {
-            return withItem(document.querySelectorAll('button, fieldset, input, object, output, select, textarea')
-                .filter(element => associatedForm(element) === this && !(element instanceof HTMLInputElement && element.type.toLowerCase() === 'image')));
+            return cachedControlCollection(formLists, this, () =>
+                Array.from(this.getRootNode().querySelectorAll(listedControlSelector))
+                    .filter(element => associatedForm(element) === this &&
+                        !(element instanceof HTMLInputElement && element.type === 'image')));
         }
         get length() { return this.elements.length; }
         get noValidate() { return this.hasAttribute('novalidate'); }
         set noValidate(value) { this.toggleAttribute('novalidate', !!value); }
         checkValidity() {
-            let valid = true;
-            for (const control of validationControls(this)) {
-                if (!checkControlValidity(control)) valid = false;
-            }
-            return valid;
+            return staticFormValidation(this).valid;
         }
         reportValidity() {
-            const unhandled = staticFormValidation(this);
-            if (!unhandled.length) return true;
-            focusInvalidControl(unhandled[0]);
-            return false;
+            const { valid, unhandled } = staticFormValidation(this);
+            if (unhandled.length) focusInvalidControl(unhandled[0]);
+            return valid;
         }
     }
     function reflectedInteger(element, attribute, fallback) {
@@ -328,37 +328,28 @@
     function labelsFor(element) {
         return document.querySelectorAll('label').filter(label => label.control === element);
     }
-    // HTMLFormControlsCollection-style indexed access over the live arrays
-    // returned above; out-of-range indices yield null like item().
-    function withItem(list) {
-        list.item = index => list[Number(index)] ?? null;
-        return list;
-    }
+    const listedControlSelector = 'button, fieldset, input, object, output, select, textarea';
+    const formLists = new WeakMap();
+    const fieldsetLists = new WeakMap();
     const selectOptionLists = new WeakMap();
     const selectedOptionLists = new WeakMap();
-    function selectOptions(select) {
-        // Same visible list object with current contents, like HTMLOptionsCollection.
-        let list = selectOptionLists.get(select);
+    function cachedControlCollection(cache, owner, resolve) {
+        let list = cache.get(owner);
         if (!list) {
-            list = [];
-            selectOptionLists.set(select, list);
+            list = liveHtmlCollection(resolve);
+            cache.set(owner, list);
         }
-        const ids = String(host('selectOptionIds', nodeId(select)));
-        const fresh = ids ? ids.split(',').map(id => wrap(Number(id))).filter(Boolean) : [];
-        list.length = 0;
-        list.push(...fresh);
         return list;
     }
+    function selectOptions(select) {
+        return cachedControlCollection(selectOptionLists, select, () => {
+            const ids = String(host('selectOptionIds', nodeId(select)));
+            return ids ? ids.split(',').map(id => wrap(Number(id))).filter(Boolean) : [];
+        });
+    }
     function selectSelectedOptions(select) {
-        let list = selectedOptionLists.get(select);
-        if (!list) {
-            list = [];
-            selectedOptionLists.set(select, list);
-        }
-        const fresh = selectOptions(select).filter(option => option.selected);
-        list.length = 0;
-        list.push(...fresh);
-        return list;
+        return cachedControlCollection(selectedOptionLists, select,
+            () => Array.from(selectOptions(select)).filter(option => option.selected));
     }
     function optionText(option) {
         return option.textContent.replace(/[\t\n\f\r ]+/g, ' ').trim();

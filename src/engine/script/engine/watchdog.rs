@@ -149,3 +149,38 @@ impl Drop for ExecutionWatchdog {
         }
     }
 }
+
+/// The same execution budget for the private, script-disabled pattern isolate.
+/// A string error keeps engine-private JS error types out of the DOM boundary.
+pub(crate) struct PatternWatchdog(ExecutionWatchdog);
+
+impl Drop for PatternWatchdog {
+    fn drop(&mut self) {
+        // This owner is thread-local. Windows runs TLS destructors under the
+        // loader lock, so joining a terminating worker here deadlocks. The
+        // handle is safe after isolate disposal; disarm and let it exit alone.
+        self.0.active.store(0, Ordering::Release);
+        let _ = self.0.sender.send(Command::Stop);
+        self.0.worker.take();
+    }
+}
+
+impl PatternWatchdog {
+    pub(crate) fn new(handle: v8::IsolateHandle) -> Result<Self, String> {
+        ExecutionWatchdog::new(handle)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn run<T>(
+        &mut self,
+        isolate: &mut v8::OwnedIsolate,
+        action: impl FnOnce(&mut v8::OwnedIsolate) -> T,
+    ) -> Result<T, String> {
+        let result = self.0.run(isolate, |isolate| Ok(action(isolate)));
+        if result.is_err() {
+            isolate.cancel_terminate_execution();
+        }
+        result.map_err(|error| error.to_string())
+    }
+}

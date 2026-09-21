@@ -30,7 +30,7 @@ fn blocked_submit_reports_focuses_and_sends_nothing() {
     assert!(outcome.navigation_url.is_none());
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "invalid:false:false:true|active=true|still-invalid=false|message=Please fill out this field."
+        "invalid:true:false:true|active=true|still-invalid=false|message=Please fill out this field."
     );
 }
 

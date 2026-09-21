@@ -41,7 +41,7 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     };
     // Live control state owns the painted value; pristine controls mirror
     // their default through the same accessor scripted getters use.
-    Some((kind, node.input_value()))
+    Some((kind, node.input_display_value()))
 }
 
 /// Invalid-and-reported feedback for a control, for native presentation.

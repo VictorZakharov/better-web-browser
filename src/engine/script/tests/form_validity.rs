@@ -182,7 +182,7 @@ fn will_validate_covers_eligibility_matrix() {
 }
 
 #[test]
-fn check_and_report_events_are_untrusted_and_ordered() {
+fn check_and_report_events_are_trusted_and_ordered() {
     let (dom, _) = check(
         r#"<body><form><input required><input required value="ok"></form><output></output><script>
             const form = document.querySelector('form');
@@ -194,8 +194,7 @@ fn check_and_report_events_are_untrusted_and_ordered() {
             first.addEventListener('invalid', event => { log.push('first'); event.preventDefault(); });
             const checked = form.checkValidity();
             const reported = form.reportValidity();
-            // Cancellation claims responsibility (positive result) without
-            // making the invalid data valid.
+            // Cancellation claims responsibility for UI, not validity.
             log.push('checked=' + checked, 'reported=' + reported,
                 'still-invalid=' + first.validity.valid,
                 'active=' + (document.activeElement === first));
@@ -204,7 +203,7 @@ fn check_and_report_events_are_untrusted_and_ordered() {
     );
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "doc-capture:INPUT:false:false:true|first|doc-capture:INPUT:false:false:true|first|checked=false|reported=true|still-invalid=false|active=false"
+        "doc-capture:INPUT:true:false:true|first|doc-capture:INPUT:true:false:true|first|checked=false|reported=false|still-invalid=false|active=false"
     );
 }
 

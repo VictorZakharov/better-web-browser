@@ -320,14 +320,15 @@ fn lifecycle_name(state: DocumentLifecycle) -> &'static str {
 /// peers, and their aggregates. Never the whole document.
 fn request_state_render(control: &NodeRef, outcome: &mut ScriptOutcome) {
     use crate::engine::invalidation::validation_aggregation_roots;
-    let mut roots = vec![
-        control
-            .shadow_including_parent()
-            .unwrap_or_else(|| control.clone())
-            .id(),
-    ];
+    let mut roots = Vec::new();
     let mut push_with_aggregates = |node: &NodeRef| {
-        roots.push(node.id());
+        // A changed peer's siblings can match :checked + .label too, even
+        // when that radio lives under a different parent from the target.
+        roots.push(
+            node.shadow_including_parent()
+                .unwrap_or_else(|| node.clone())
+                .id(),
+        );
         roots.extend(
             validation_aggregation_roots(node)
                 .iter()
