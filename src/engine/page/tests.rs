@@ -169,6 +169,39 @@ fn requests_only_webfont_faces_used_by_computed_styles() {
 }
 
 #[test]
+fn font_weight_ranges_select_the_face_containing_each_requested_weight() {
+    let mut page = Page::parse(
+        "<body><p>regular</p><strong>bold</strong></body>",
+        "https://example.test/",
+    );
+    page.add_stylesheet_from(
+        "https://example.test/fonts.css",
+        "@font-face{font-family:Fixture;font-weight:300 400;src:url(regular.woff)}
+         @font-face{font-family:Fixture;font-weight:430;src:url(medium.woff)}
+         @font-face{font-family:Fixture;font-weight:530 700;src:url(bold.woff)}
+         body{font-family:Fixture}"
+            .into(),
+    );
+    page.refresh_resources(800.0);
+    let mut fonts = page
+        .resources
+        .iter()
+        .filter_map(|resource| match resource {
+            PageResource::Font { url, weight, .. } => Some((url.as_str(), *weight)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    fonts.sort_unstable();
+    assert_eq!(
+        fonts,
+        vec![
+            ("https://example.test/bold.woff", 700),
+            ("https://example.test/regular.woff", 400),
+        ]
+    );
+}
+
+#[test]
 fn discovers_background_images_from_computed_styles() {
     let mut page = Page::parse(
         r#"<a class="logo"></a><span class="icon"></span>"#,

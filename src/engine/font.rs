@@ -3,13 +3,18 @@ use crate::navigation::resolve_url;
 use flate2::read::ZlibDecoder;
 use std::io::Read;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WebFontFace {
     pub family: String,
     pub weight: u16,
+    /// Inclusive CSS Fonts 4 descriptor interval; matching uses this instead of `weight`.
+    pub weight_min: f32,
+    pub weight_max: f32,
     pub italic: bool,
     pub url: String,
 }
+
+mod face_match;
 
 #[derive(Debug, Clone)]
 pub struct WebFont {
@@ -40,14 +45,16 @@ pub fn discover_font_faces(css: &str, stylesheet_url: &str) -> Vec<WebFontFace> 
             .and_then(supported_font_url)
             .and_then(|url| resolve_url(stylesheet_url, &url));
         if let (Some(family), Some(url)) = (family, source) {
-            let weight = declaration_value(declarations, "font-weight")
+            let (weight_min, weight_max) = declaration_value(declarations, "font-weight")
                 .and_then(parse_font_weight)
-                .unwrap_or(400);
+                .unwrap_or((400.0, 400.0));
             let italic = declaration_value(declarations, "font-style")
                 .is_some_and(|style| matches!(style.trim(), "italic" | "oblique"));
             let face = WebFontFace {
                 family,
-                weight,
+                weight: weight_min.round() as u16,
+                weight_min,
+                weight_max,
                 italic,
                 url,
             };
@@ -123,16 +130,29 @@ fn supported_font_url(source: &str) -> Option<String> {
     None
 }
 
-fn parse_font_weight(value: &str) -> Option<u16> {
+fn parse_font_weight(value: &str) -> Option<(f32, f32)> {
     match value.trim() {
-        "normal" => Some(400),
-        "bold" => Some(700),
-        value => value
-            .split_ascii_whitespace()
-            .next()?
-            .parse::<u16>()
-            .ok()
-            .map(|weight| weight.clamp(1, 1000)),
+        "normal" => Some((400.0, 400.0)),
+        "bold" => Some((700.0, 700.0)),
+        value => {
+            let mut parts = value.split_ascii_whitespace();
+            let first = parts.next()?.parse::<f32>().ok()?;
+            let second = parts
+                .next()
+                .map(str::parse::<f32>)
+                .transpose()
+                .ok()?
+                .unwrap_or(first);
+            if parts.next().is_some()
+                || !first.is_finite()
+                || !second.is_finite()
+                || !(1.0..=1000.0).contains(&first)
+                || !(1.0..=1000.0).contains(&second)
+            {
+                return None;
+            }
+            Some((first.min(second), first.max(second)))
+        }
     }
 }
 

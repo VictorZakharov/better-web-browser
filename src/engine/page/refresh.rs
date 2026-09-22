@@ -310,29 +310,38 @@ impl Page {
         available_faces: Vec<WebFontFace>,
         requested_faces: Vec<(String, u16, bool)>,
     ) {
-        let mut selected_faces = Vec::<WebFontFace>::new();
+        let mut selected_faces = Vec::<(WebFontFace, u16)>::new();
         for (family, weight, italic) in requested_faces {
             let Some(face) = available_faces
                 .iter()
                 .filter(|face| face.family.eq_ignore_ascii_case(&family))
-                .min_by_key(|face| {
-                    (
-                        u8::from(face.italic != italic),
-                        face.weight.abs_diff(weight),
-                    )
+                .min_by(|left, right| {
+                    u8::from(left.italic != italic)
+                        .cmp(&u8::from(right.italic != italic))
+                        .then_with(|| {
+                            let left_rank = left.weight_match_rank(weight);
+                            let right_rank = right.weight_match_rank(weight);
+                            left_rank
+                                .0
+                                .cmp(&right_rank.0)
+                                .then_with(|| left_rank.1.total_cmp(&right_rank.1))
+                        })
                 })
             else {
                 continue;
             };
-            if !selected_faces.contains(face) {
-                selected_faces.push(face.clone());
+            let registered_weight = face.registered_weight(weight);
+            if !selected_faces.iter().any(|(selected, selected_weight)| {
+                selected == face && *selected_weight == registered_weight
+            }) {
+                selected_faces.push((face.clone(), registered_weight));
             }
         }
-        for face in selected_faces.into_iter().take(MAX_WEB_FONTS) {
+        for (face, weight) in selected_faces.into_iter().take(MAX_WEB_FONTS) {
             let resource = PageResource::Font {
                 url: face.url,
                 family: face.family,
-                weight: face.weight,
+                weight,
                 italic: face.italic,
             };
             if !self.resources.contains(&resource) {
