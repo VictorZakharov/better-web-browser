@@ -351,6 +351,27 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
 }
 
 #[test]
+fn large_custom_property_sets_remain_complete() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            const declarations = [];
+            for (let index = 0; index < 400; index++) {
+                declarations.push('--theme-' + index + ':' + index + 'px');
+            }
+            declarations.push('font-size:var(--theme-399)');
+            target.setAttribute('style', declarations.join(';'));
+            document.body.setAttribute('data-result',
+                target.style.getPropertyValue('--theme-399') + '|' +
+                getComputedStyle(target).fontSize);
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("399px|399px"));
+}
+
+#[test]
 fn stylesheet_owner_changes_invalidate_the_computed_cascade_synchronously() {
     let (dom, outcome) = execute_html_with_stylesheets(
         r#"<link id=sheet rel=stylesheet href=app.css>
