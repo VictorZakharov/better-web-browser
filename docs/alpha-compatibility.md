@@ -3,7 +3,7 @@
 This page records the historical 2026-08-24 alpha acceptance evidence, not current-HEAD timings.
 For the newer release/Chrome measurements and prior-PR comparison, see the
 [September 19 collections/readiness reassessment](browser-performance-readiness-2026-09-19.md).
-The matrix has since expanded from nine to sixteen fixtures. The current source of truth is
+The matrix has since expanded from nine to seventeen fixtures. The current source of truth is
 `benchmarks/alpha/matrix.json`; methodology and rerun instructions are in [`benchmarks/README.md`](../benchmarks/README.md).
 
 ## Deterministic gate result
