@@ -65,7 +65,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         .or_else(|| node.attr("title"))
                         .unwrap_or_default(),
                     form_id: nearest_form(node).map(|form| node_id(&form)),
-                    background_color: self.effective_background_color(node),
+                    background_color: self.control_background_color(node, style, kind),
                     text_color: style.color,
                     placeholder_color: self
                         .styles

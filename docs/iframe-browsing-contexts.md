@@ -7,7 +7,8 @@ document navigates with `Location.assign()` or the `href` setter.
 
 **This is a scripting/navigation slice, not complete iframe support.** Visual frame
 embedding, child persistent state, and several policy/lifecycle features remain
-unsupported. The modern search HTML fallback stays enabled; issue #89 stays open.
+unsupported. The later [modern-search acceptance](modern-search-acceptance.md)
+records the integration decision after this slice.
 
 ## Implemented contracts
 
@@ -157,9 +158,11 @@ benchmark wrapper; Chromium uses unified `--headless`, `--mute-audio`, and
   4,096 MessagePort endpoints, 16 MiB per structured message, 32 MiB queued bytes,
   1,024 window messages, and 256 messages per port. Existing HTML/script/CSS limits
   also apply. Exceeding a bound fails explicitly; it is not a successful benchmark.
-- Longer navigation/responsiveness runs and broader endpoint coverage still need
-  acceptance before removing the HTML search fallback. Three successful runs of
-  one live flow are not proof of general modern-search reliability or iframe conformance.
+- At this slice, longer navigation/responsiveness runs and broader endpoint coverage
+  still needed acceptance before removing the HTML search fallback. The later
+  [modern-search acceptance](modern-search-acceptance.md) addresses that integration
+  decision; it does not turn three successful runs into proof of general iframe
+  conformance.
 
 ## Native adapter and dependency provenance
 

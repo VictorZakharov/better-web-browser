@@ -4,13 +4,13 @@ This is the historical PR #169 report. Its iframe blocker is addressed by the
 [subsequent child-context/navigation slice](iframe-browsing-contexts.md), including
 an owned relay → Back → second-search test and three successful fresh release live runs.
 The measurements below remain the original form-slice evidence, not current iframe
-limitations. The HTML search fallback remains enabled.
+limitations. The later [modern-search acceptance](modern-search-acceptance.md)
+records retirement of the HTML fallback.
 
 This slice follows [the collections/readiness assessment](browser-performance-readiness-2026-09-19.md).
 It implements the missing native form-navigation path and diagnoses the separate modern
-DuckDuckGo result-link failure. It does **not** complete modern-search acceptance:
-the HTML search fallback remains enabled and [issue #89](https://github.com/VictorZakharov/better-web-browser/issues/89)
-remains open.
+DuckDuckGo result-link failure. At that checkpoint it did **not** complete
+modern-search acceptance; issue #89 remained open.
 
 ## Implemented contract
 

@@ -84,6 +84,7 @@ unsafe extern "system" {
         height: i32,
         repaint: i32,
     ) -> i32;
+    pub(in crate::windows_app) fn SetWindowRgn(window: Hwnd, region: Hrgn, redraw: i32) -> i32;
     pub(in crate::windows_app) fn InvalidateRect(
         window: Hwnd,
         rectangle: *const Rect,

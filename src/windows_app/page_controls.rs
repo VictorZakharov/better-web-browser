@@ -2,7 +2,10 @@
 
 use super::tab_state::TabFocus;
 use super::*;
+mod changes;
 mod placeholder;
+mod rounded_clip;
+pub(super) use changes::native_controls_changed;
 
 pub(super) struct PageControlWindow {
     pub(super) window: Hwnd,
@@ -150,6 +153,7 @@ impl BrowserState {
             });
         }
         self.sync_page_control_positions();
+        self.clip_transparent_page_controls();
         if let Some(node) = focused_node
             && let Some(control) = self
                 .page_controls

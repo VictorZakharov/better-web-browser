@@ -32,12 +32,15 @@ Existing upstream microtask WPT cases remain unmodified;
 the curated `.any.js` adapter runs the Window variant, with workers covered by the
 owned runtime tests, not an implied worker-WPT run.
 
-This fixes a browser bug, **not all modern DuckDuckGo compatibility**. The live app
+This fixed a browser bug, **not all modern DuckDuckGo compatibility at that
+checkpoint**. The live app
 then encounters a caught `ReferenceError: DOMParser is not defined` and renders only
 a partial shell. Console errors and captures must be checked even when the report's
 uncaught-error list is empty. [Issue #89](https://github.com/VictorZakharov/better-web-browser/issues/89)
-remains open; the HTML search fallback is unchanged. DOMParser requires its own
+remained open and the HTML search fallback was unchanged. DOMParser required its own
 standards-based implementation and acceptance, not a DuckDuckGo-specific patch.
+The later [modern-search acceptance](modern-search-acceptance.md) records the
+completed integration.
 
 ## Resource completion is not automatically a visual change
 

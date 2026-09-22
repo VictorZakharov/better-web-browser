@@ -3,7 +3,8 @@
 The [implementation contract](collections-and-capabilities.md) covers live indexed
 iteration, supported CSSOM properties, and deferral of unpresentable display lists.
 This follows [PR #167's URL/request assessment](browser-performance-url-2026-09-16.md).
-The HTML search fallback remains enabled: modern DuckDuckGo is not fully accepted.
+The HTML search fallback remained enabled at this historical checkpoint. The later
+[modern-search acceptance](modern-search-acceptance.md) records its retirement.
 
 This is the historical #168 assessment. The subsequent
 [form/navigation slice](form-submission-and-navigation.md) fixes query submission

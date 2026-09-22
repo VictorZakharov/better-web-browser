@@ -5,7 +5,32 @@ use fontique::{
     Attributes, Blob, Collection, CollectionOptions, FallbackKey, FontInfoOverride, FontStyle,
     FontWeight, FontWidth, GenericFamily, QueryFamily, QueryFont, QueryStatus, Script, SourceCache,
 };
+use std::borrow::Cow;
+use std::collections::HashMap;
 use unicode_script::Script as UnicodeScript;
+
+const MAX_SELECTIONS: usize = 4096;
+
+#[derive(Hash, PartialEq, Eq)]
+struct SelectionKey<'a> {
+    family: Cow<'a, str>,
+    cluster: Cow<'a, str>,
+    script: u32,
+    weight: u16,
+    italic: bool,
+}
+
+impl SelectionKey<'_> {
+    fn into_owned(self) -> SelectionKey<'static> {
+        SelectionKey {
+            family: Cow::Owned(self.family.into_owned()),
+            cluster: Cow::Owned(self.cluster.into_owned()),
+            script: self.script,
+            weight: self.weight,
+            italic: self.italic,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct SelectedFont {
@@ -25,6 +50,7 @@ pub(super) struct FontCatalog {
     collection: Collection,
     sources: SourceCache,
     registered_web_fonts: usize,
+    selections: HashMap<SelectionKey<'static>, SelectedFont>,
 }
 
 impl FontCatalog {
@@ -35,6 +61,7 @@ impl FontCatalog {
             collection: Collection::new(CollectionOptions::default()),
             sources: SourceCache::default(),
             registered_web_fonts: 0,
+            selections: HashMap::new(),
         }
     }
 
@@ -78,6 +105,16 @@ impl FontCatalog {
         script: UnicodeScript,
         cluster: &str,
     ) -> Option<SelectedFont> {
+        let key = SelectionKey {
+            family: Cow::Borrowed(family),
+            cluster: Cow::Borrowed(cluster),
+            script: script.as_iso15924_tag(),
+            weight: spec.weight,
+            italic: spec.italic,
+        };
+        if let Some(cached) = self.selections.get(&key) {
+            return Some(cached.clone());
+        }
         let mut families = Vec::with_capacity(4);
         if cluster_looks_like_emoji(cluster) {
             families.push(QueryFamily::Generic(GenericFamily::Emoji));
@@ -126,7 +163,7 @@ impl FontCatalog {
             }
         });
         let font = selected.or(first)?;
-        Some(SelectedFont {
+        let selected = SelectedFont {
             instance: FontInstanceKey {
                 blob_id: font.blob.id(),
                 index: font.index,
@@ -134,7 +171,12 @@ impl FontCatalog {
                 italic: spec.italic,
             },
             font,
-        })
+        };
+        if self.selections.len() >= MAX_SELECTIONS {
+            self.selections.clear();
+        }
+        self.selections.insert(key.into_owned(), selected.clone());
+        Some(selected)
     }
 
     #[cfg(test)]
@@ -180,4 +222,37 @@ fn cluster_looks_like_emoji(cluster: &str) -> bool {
             0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0xFE0F
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_clusters_reuse_selection_but_face_attributes_do_not_alias() {
+        let mut catalog = FontCatalog::new();
+        let mut spec = FontSpec {
+            family: "sans-serif".into(),
+            size: 16.0,
+            weight: 400,
+            italic: false,
+            underline: false,
+            letter_spacing: 0.0,
+            word_spacing: 0.0,
+        };
+        let first = catalog
+            .select(&spec.family, &spec, UnicodeScript::Latin, "A")
+            .expect("system sans-serif font");
+        assert_eq!(catalog.selections.len(), 1);
+        let again = catalog
+            .select(&spec.family, &spec, UnicodeScript::Latin, "A")
+            .unwrap();
+        assert_eq!(catalog.selections.len(), 1);
+        assert_eq!(first.instance, again.instance);
+        spec.weight = 700;
+        catalog.select(&spec.family, &spec, UnicodeScript::Latin, "A");
+        assert_eq!(catalog.selections.len(), 2);
+        catalog.select(&spec.family, &spec, UnicodeScript::Latin, "B");
+        assert_eq!(catalog.selections.len(), 3);
+    }
 }

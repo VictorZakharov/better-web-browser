@@ -39,6 +39,7 @@ pub struct NodeDiagnostics {
     pub style: StyleDiagnostics,
     pub layout_rect: Option<RectF>,
     pub control_rect: Option<RectF>,
+    pub painted_background_radius: Option<f32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -83,6 +84,7 @@ pub struct StyleDiagnostics {
     pub max_width: String,
     pub min_height: String,
     pub max_height: String,
+    pub border_radius: String,
     pub background_color: String,
     pub background_image: Option<ResourceDiagnostics>,
     pub mask_image: Option<ResourceDiagnostics>,
@@ -158,6 +160,7 @@ impl NodeDiagnostics {
             "style": self.style.to_json(),
             "layout_rect": self.layout_rect.map(rect_value),
             "control_rect": self.control_rect.map(rect_value),
+            "painted_background_radius": self.painted_background_radius,
         })
     }
 }
@@ -207,6 +210,7 @@ impl StyleDiagnostics {
             "max_width": self.max_width,
             "min_height": self.min_height,
             "max_height": self.max_height,
+            "border_radius": self.border_radius,
             "background_color": self.background_color,
             "background_image": self.background_image.as_ref().map(ResourceDiagnostics::to_json),
             "mask_image": self.mask_image.as_ref().map(ResourceDiagnostics::to_json),

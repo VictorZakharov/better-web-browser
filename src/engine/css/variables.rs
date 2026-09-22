@@ -95,6 +95,59 @@ pub(super) fn substitute_variables(
     substitute_variable_references(value, custom_properties, &mut Vec::new(), 0)
 }
 
+/// Returns true when a declaration value contains at least one syntactically valid `var()`.
+///
+/// A declaration containing a custom-property reference is valid at parse time even when the
+/// referenced property is absent or its eventual substitution would not match the property's
+/// grammar. CSS Conditional Rules therefore needs syntax validation without resolving the
+/// reference. See CSS Variables §3 and CSS Conditional Rules §6.
+pub(super) fn contains_valid_variable_reference(value: &str) -> bool {
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    let mut found = false;
+    validate_variable_references(&mut parser, &mut found).is_ok() && found
+}
+
+fn validate_variable_references<'i, 't>(
+    parser: &mut Parser<'i, 't>,
+    found: &mut bool,
+) -> Result<(), cssparser::ParseError<'i, ()>> {
+    while !parser.is_exhausted() {
+        let token = parser.next_including_whitespace_and_comments()?.clone();
+        match &token {
+            Token::Function(name) if name.eq_ignore_ascii_case("var") => {
+                *found = true;
+                parser.parse_nested_block(|nested| {
+                    let name = nested.expect_ident_cloned()?;
+                    if !name.starts_with("--") {
+                        return Err(nested.new_custom_error(()));
+                    }
+                    nested.skip_whitespace();
+                    if nested.is_exhausted() {
+                        return Ok(());
+                    }
+                    nested.expect_comma()?;
+                    validate_variable_references(nested, found)
+                })?;
+            }
+            Token::Function(_)
+            | Token::ParenthesisBlock
+            | Token::SquareBracketBlock
+            | Token::CurlyBracketBlock => {
+                parser.parse_nested_block(|nested| validate_variable_references(nested, found))?;
+            }
+            Token::BadUrl(_)
+            | Token::BadString(_)
+            | Token::CloseParenthesis
+            | Token::CloseSquareBracket
+            | Token::CloseCurlyBracket
+            | Token::Semicolon => return Err(parser.new_custom_error(())),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn substitute_variable_references(
     value: &str,
     custom_properties: &HashMap<String, String>,

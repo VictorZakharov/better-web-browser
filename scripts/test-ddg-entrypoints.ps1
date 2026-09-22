@@ -2,7 +2,8 @@
 param(
     [string] $Browser,
     [string] $OutputDirectory = 'target/ddg-entrypoints-proof',
-    [string] $Query = 'WHATWG HTML specification'
+    [string] $Query = 'WHATWG HTML specification',
+    [string] $RepeatQuery = 'browser interoperability 🦀'
 )
 $ErrorActionPreference = 'Stop'
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
@@ -10,24 +11,36 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $encoded = [Uri]::EscapeDataString($Query)
 $cases = @(
     @{ Name='homepage'; Url='https://duckduckgo.com/'; ResultSelector=$null },
-    @{ Name='homepage-search'; Url='https://duckduckgo.com/'; ResultSelector='[data-testid="result-title-a"]'; Control='textarea[name="q"]' },
+    @{ Name='homepage-search'; Url='https://duckduckgo.com/'; ResultSelector='[data-testid="result-title-a"]';
+        Control='textarea[name="q"]'; Value=$Query; ExpectedQuery=$Query },
+    # Keep this flow about search/navigation integration. The first ranked result can
+    # be the single-page HTML Standard, which exceeds Breeze's separate document limit.
+    @{ Name='modern-result-flow'; Url="https://duckduckgo.com/?q=$encoded&ia=web";
+        ResultSelector='[data-testid="result-title-a"]';
+        ActivateSelector='[data-testid="result-title-a"][href*="wikipedia.org"]';
+        Back=$true; Control='input[name="q"]'; Value=$RepeatQuery; ExpectedQuery=$RepeatQuery },
     @{ Name='html-results'; Url="https://html.duckduckgo.com/html/?q=$encoded"; ResultSelector='.result__a' },
-    @{ Name='html-search'; Url='https://html.duckduckgo.com/html/?q=test'; ResultSelector='.result__a'; Control='input[name="q"]' }
+    @{ Name='html-search'; Url='https://html.duckduckgo.com/html/?q=test'; ResultSelector='.result__a';
+        Control='input[name="q"]'; Value=$Query; ExpectedQuery=$Query }
 )
 $results = @()
 foreach ($case in $cases) {
     $output = Join-Path $OutputDirectory ($case.Name + '.json')
     $arguments = @{
         Url=$case.Url; Output=$output; Screenshot=(Join-Path $OutputDirectory ($case.Name + '.png'))
-        FreshProfile=$true; WindowWidth=1440; WindowHeight=900; SettleMs=8000; TimeoutSeconds=90
+        FreshProfile=$true; WindowWidth=1440; WindowHeight=900; SettleMs=8000; TimeoutSeconds=120
         DiagnosticSelector=@('title','textarea[name="q"]','input[name="q"]','select','option')
     }
     if ($Browser) { $arguments.Browser=$Browser }
     if ($case.ResultSelector) { $arguments.DiagnosticSelector += $case.ResultSelector }
+    if ($case.ActivateSelector) {
+        $arguments.SelectorActivationTarget=$case.ActivateSelector
+        $arguments.BackAfterReady=[bool]$case.Back
+    }
     if ($case.Control) {
-        $arguments.ControlValue=@{ $case.Control=$Query }
+        $arguments.ControlValue=@{ $case.Control=$case.Value }
         $arguments.KeyTarget='Enter,Enter'
-        $arguments.NavigationDelayMs=5000
+        $arguments.NavigationDelayMs=4000
     }
     & (Join-Path $PSScriptRoot 'run-hidden-benchmark.ps1') @arguments
     $report=Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
@@ -48,9 +61,11 @@ foreach ($case in $cases) {
             # The HTML form uses POST. Verify the returned query, not a GET-only URL.
             $fields=@(($report.diagnostics | Where-Object selector -eq 'input[name="q"]').matches)
             $returned=@($fields.attributes | Where-Object name -eq 'value' | ForEach-Object value)
-            $valid=$valid -and $returned -contains $Query -and $report.titles.document_title -eq "$Query at DuckDuckGo"
+            $valid=$valid -and $returned -contains $case.ExpectedQuery -and
+                $report.titles.document_title -eq "$($case.ExpectedQuery) at DuckDuckGo"
         } else {
-            $valid=$valid -and $submitted -contains $Query
+            $valid=$valid -and $submitted -contains $case.ExpectedQuery -and
+                $report.titles.document_title -eq "$($case.ExpectedQuery) at DuckDuckGo"
         }
     }
     if ($case.Name.StartsWith('html-')) {

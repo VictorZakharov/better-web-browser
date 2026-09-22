@@ -36,9 +36,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if child.element().is_none() {
                 if matches!(&child.data, NodeData::Text(text) | NodeData::Cdata(text) if !text.borrow().trim().is_empty())
                 {
-                    self.collect_inline(
+                    self.collect_inline_root(
                         &child,
-                        None,
                         &mut anonymous_atoms,
                         &mut pending_space,
                         false,
@@ -189,9 +188,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     percentage_basis,
                 ));
             } else {
-                self.collect_inline(
+                self.collect_inline_root(
                     &child,
-                    None,
                     &mut inline_atoms,
                     &mut pending_space,
                     false,
@@ -230,9 +228,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if child.element().is_none() {
                 if matches!(&child.data, NodeData::Text(text) | NodeData::Cdata(text) if !text.borrow().trim().is_empty())
                 {
-                    self.collect_inline(
+                    self.collect_inline_root(
                         &child,
-                        None,
                         &mut anonymous_atoms,
                         &mut pending_space,
                         false,

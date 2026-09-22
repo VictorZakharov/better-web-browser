@@ -335,6 +335,10 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
             check('unsupported-property', !CSS.supports('box-shadow', '0 0 1px black'));
             check('sticky-position', CSS.supports('position', 'sticky'));
             check('unsupported-value', !CSS.supports('position', 'not-a-position'));
+            check('variable-reference', CSS.supports('color', 'var(--test, red)'));
+            check('nested-variable-reference', CSS.supports('width', 'calc(var(--space, 1px) * 2)'));
+            check('variable-unsupported-property', !CSS.supports('box-shadow', 'var(--shadow)'));
+            check('malformed-variable-reference', !CSS.supports('color', 'var(color, red)'));
             let missingArgument = false;
             try { CSS.supports(); } catch (error) { missingArgument = error instanceof TypeError; }
             check('argument-conversion', missingArgument);
@@ -344,6 +348,27 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
+fn large_custom_property_sets_remain_complete() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id="target"></div><script>
+            const target = document.getElementById('target');
+            const declarations = [];
+            for (let index = 0; index < 400; index++) {
+                declarations.push('--theme-' + index + ':' + index + 'px');
+            }
+            declarations.push('font-size:var(--theme-399)');
+            target.setAttribute('style', declarations.join(';'));
+            document.body.setAttribute('data-result',
+                target.style.getPropertyValue('--theme-399') + '|' +
+                getComputedStyle(target).fontSize);
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("399px|399px"));
 }
 
 #[test]

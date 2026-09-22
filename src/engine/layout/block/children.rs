@@ -153,9 +153,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     absorb_start = false;
                 }
             } else {
-                self.collect_inline(
+                self.collect_inline_root(
                     child,
-                    None,
                     &mut atoms,
                     &mut pending_space,
                     true,

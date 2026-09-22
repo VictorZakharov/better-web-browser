@@ -44,12 +44,15 @@ These are functional/visual checks, not a performance comparison.
 | SVG explicit fill mixed with currentColor | Entire image tinted | Explicit and computed colours preserved |
 | Empty search submit value | Invented Go label over icon | No invented label |
 
-`scripts/test-ddg-entrypoints.ps1` checks homepage load, homepage-to-search, HTML
-results and a second HTML query. It requires visible results, correct submitted
+`scripts/test-ddg-entrypoints.ps1` checks homepage load, homepage-to-search, a
+modern result activation followed by Back and a second Unicode query, HTML results,
+and a second HTML query. It requires visible results, correct submitted
 query, compact native selects, no option layout boxes, and no JS/console errors.
 An HTTP 200, a challenge page or an empty result page is not a pass. Inspect its
 screenshots as well: the script is not a pixel-perfect compatibility oracle.
-All four cases passed with fresh profiles on the follow-up release build. HTML
+The original four cases passed with fresh profiles on the follow-up release build.
+The fifth modern-flow case and fallback retirement are covered by the later
+[modern-search acceptance](modern-search-acceptance.md). HTML
 search uses POST, so its query is verified in the returned field and page title,
 not incorrectly required in the URL.
 
@@ -77,7 +80,8 @@ The live headless Chrome HTML-results attempt received a CAPTCHA. It was not
 solved, and it is not counted as an equal-content reference or timing sample.
 The owned fixture is the deterministic reference. Live pages can vary with service
 responses, and broader visual compatibility remains unfinished. The HTML search
-fallback remains enabled; these fixes do not certify all DDG routes or features.
+At this historical checkpoint the HTML search fallback remained enabled; these
+fixes alone did not certify all DDG routes or features.
 Modern results still show visual differences, including missing result favicons
 and oversized rich-result text. Native listbox/multiple-select rendering and full
 SVG/CSS paint conformance are not established by this dropdown/currentColor slice.

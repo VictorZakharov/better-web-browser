@@ -40,6 +40,7 @@ pub(super) const WM_COMMAND: u32 = 0x0111;
 pub(super) const WM_TIMER: u32 = 0x0113;
 pub(super) const WM_VSCROLL: u32 = 0x0115;
 pub(super) const WM_CTLCOLOREDIT: u32 = 0x0133;
+pub(super) const WM_CTLCOLORSTATIC: u32 = 0x0138;
 pub(super) const WM_KEYDOWN: u32 = 0x0100;
 pub(super) const WM_KEYUP: u32 = 0x0101;
 pub(super) const WM_SYSKEYDOWN: u32 = 0x0104;

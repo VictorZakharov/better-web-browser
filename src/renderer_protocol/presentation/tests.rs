@@ -170,6 +170,11 @@ pub(super) fn sample() -> RendererPresentation {
                         descendant_count: 3,
                         text_length: 12,
                     }),
+                    style: StyleDiagnostics {
+                        border_radius: "Px(24.0)".into(),
+                        ..StyleDiagnostics::default()
+                    },
+                    painted_background_radius: Some(20.0),
                     ..NodeDiagnostics::default()
                 }],
                 ..SelectorDiagnostics::default()

@@ -5,6 +5,38 @@ mod form_fidelity;
 mod select;
 
 #[test]
+fn transparent_edit_preserves_a_rounded_ancestor_background() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .search { display: flex; width: 200px; height: 40px;
+                      background: #333; border-radius: 24px }
+            input { width: 100%; height: 100%; border: 0; padding: 0;
+                    background: transparent; color: white }
+           </style><div class="search"><input aria-label="Search"></div>"#,
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 300.0, 200.0, &mut FixedMeasurer);
+    let input = page.dom.elements_named("input").next().unwrap();
+    let control = output
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Control(control) if control.node_id == input.id() => Some(control),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(control.background_color.alpha, 0);
+    assert_eq!(
+        control.background_color.to_colorref(),
+        Color::rgb(51, 51, 51).to_colorref()
+    );
+    assert!(output.items.iter().any(|item| matches!(item,
+        DisplayItem::SolidRect { radius, .. } if *radius == 20.0
+    )));
+}
+
+#[test]
 fn icon_only_buttons_use_mask_descendants_without_accessibility_text() {
     let mut page = Page::parse(
         r#"<style>

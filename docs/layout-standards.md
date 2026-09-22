@@ -27,6 +27,7 @@ positions. The remaining difference is not represented as a pass.
 | [HTML button layout](https://html.spec.whatwg.org/multipage/rendering.html#button-layout) | Inline, block, and flex-item buttons share authored descendant layout, clipping and form metadata. Automatic inline size is fit-content, without a 70px native minimum; flex stretch reaches the same block layout. SVG/mask descendants paint as authored content. The default border-box sizing, text alignment and block content centering can be overridden by author CSS. |
 | [Block content alignment](https://www.w3.org/TR/css-align-3/#distribution-block) | Positional `align-content`, explicit safe/unsafe overflow, and single-subject distribution fallbacks move the block's in-flow contents as a unit. Non-normal alignment establishes a formatting context. Cascade, CSS-wide keywords, computed-value serialization and layout invalidation retain the value. Baseline alignment, multiline flex/grid distribution and vertical writing modes are not covered by this slice. |
 | [CSS Fonts family lists](https://drafts.csswg.org/css-fonts-4/#font-family-prop) | Preserve ordered families through cascade, inheritance, shorthand, resource discovery, and renderer font selection. Parse quoted names, commas, escapes, and generic-family identity with the existing cssparser dependency. A missing first family no longer discards the specified fallback fonts. |
+| [CSS Fonts face weight ranges](https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm) | Parse inclusive, reversible, fractional `@font-face font-weight` descriptor ranges. A face containing the requested weight wins before directional fallback matching; the loaded face is registered at the selected weight. Neutral fixture tests cover overlapping regular/medium/bold ranges and the 400–500 special search order. This does not add WOFF2 decoding or variable-font axis interpolation. |
 | [Grid spanning contributions](https://www.w3.org/TR/css-grid-1/#algo-spanning-items) | Resolve non-spanning intrinsic row contributions before spans; spans crossing flexible rows contribute to the flex fraction instead of inflating title rows. Lay out stretched items using the resolved area height, including percentage descendants and observer/paint bounds. |
 | [Table cell sizing](https://www.w3.org/TR/CSS22/tables.html#auto-table-layout) | Percentage width preferences cannot starve another cell's intrinsic content, padding, and borders. Cell boxes use the shared row height, preserving backgrounds, clips, and bounds through normal block layout. |
 | [Web IDL indexed properties](https://webidl.spec.whatwg.org/#legacy-platform-object-getownproperty) | Unsupported HTMLCollection indices fall through to ordinary property lookup (`undefined` absent an inherited property), while `item()` still returns `null`. Property indices do not undergo `item()`'s unsigned-integer conversion. Tests cover sentinel iteration, prototype lookup, and live removal. |
@@ -612,3 +613,42 @@ they are not substituted for the slower paired results. The under-two-second tar
 open. Evidence is in ignored `target/wiki-regression/load-paired-{before,after}-*.json` and
 filmstrips. The legacy `full_layout_rebuilds` field counts render-requested presentations,
 including retained layouts, and is **not** used to claim fewer layout executions here.
+
+### Transparent native text controls over rounded backgrounds (2026-09-22)
+
+[CSS Backgrounds and Borders §4.3](https://www.w3.org/TR/css-backgrounds-3/#corner-clipping)
+requires an element's background to follow its rounded border edge. The renderer already
+computed and emitted the correct used radius for rounded search wrappers, but an opaque
+Win32 EDIT child filled the same rectangle afterward when its own CSS background was
+transparent. Projected text, search, password, and textarea controls retain CSS
+transparency in their alpha channel while their RGB channels carry the composited
+ancestor color. The host uses that color in an owned opaque brush: Win32 EDIT's
+hollow-brush path failed to repaint reliably while focused and exposed a white strip.
+Where a matching rounded solid backdrop contains the control, the native child is
+clipped with a window region to that CSS edge. The region is relative to the child
+and is applied once on recreation, not on every scroll. Windows sends read-only or
+disabled EDIT controls through `WM_CTLCOLORSTATIC`, so it and `WM_CTLCOLOREDIT`
+use the same backdrop brush policy. A later CSS restyle recreates native controls
+when their paint/font spec changes; geometry-only moves preserve the live EDIT.
+This is a solid-color compositing slice, not full background-image or multi-corner
+clipping support.
+
+The hidden DDG comparison at 1454 CSS px and 125% scale measured a 24px computed radius
+in both Chrome and Breeze, with a 20px used display-list radius after fitting the 40px
+box. Before the change the top-left corner painted as an opaque rectangle; after it,
+background pixels follow the rounded edge, and the focused release capture has no white
+strip or displaced text. This validates the compositing fix, not full search-page
+parity. CSS box shadows and multi-corner radii remain separate compatibility
+slices.
+
+### Font fallback selection during repeated layout (2026-09-22)
+
+Each grapheme previously repeated font-family parsing and fallback queries across
+successive presentations. Renderer-local selection now caches the chosen face by
+family, grapheme, script, weight, and italic state, bounded to 4096 entries. Registering
+a new web font resets the catalog and its cache so late fonts cannot reuse stale
+fallback choices. On one pair of fresh-profile hidden DDG runs, measured font
+selection fell from 746.944 ms to 46.908 ms. This is a direct subsystem metric;
+live network/script timing varied, and the page can still show late CSS/script
+presentations and visible layout shifts. No claim of Chrome-equivalent load time or
+elimination of those shifts follows from this cache.

@@ -28,9 +28,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             Some("img" | "image" | "video" | "svg" | "input" | "textarea" | "select")
         ) {
             let mut atoms = Vec::new();
-            self.collect_inline(
+            self.collect_inline_root(
                 node,
-                None,
                 &mut atoms,
                 &mut None,
                 true,
@@ -124,9 +123,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 minimum = minimum.max(lo);
                 preferred = preferred.max(hi);
             } else {
-                self.collect_inline(
+                self.collect_inline_root(
                     &child,
-                    None,
                     &mut atoms,
                     &mut space,
                     true,

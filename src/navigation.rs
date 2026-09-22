@@ -112,7 +112,7 @@ pub fn normalize_user_input(input: &str) -> Result<String, UrlError> {
         || (!input.contains('.') && !input.starts_with("localhost") && !input.contains(':'));
     if looks_like_search {
         let search = format!(
-            "https://duckduckgo.com/html/?q={}",
+            "https://duckduckgo.com/?q={}&ia=web",
             encode_www_form_component(input)
         );
         if search.len() > MAX_URL_BYTES {
@@ -202,7 +202,7 @@ mod tests {
         );
         assert_eq!(
             normalize_user_input("small fast browser").unwrap(),
-            "https://duckduckgo.com/html/?q=small+fast+browser"
+            "https://duckduckgo.com/?q=small+fast+browser&ia=web"
         );
     }
 

@@ -71,6 +71,16 @@ fn node_details(
         DisplayItem::Control(control) if control.node_id == node.id() => Some(control.rect),
         _ => None,
     });
+    let painted_background_radius = layout.node_bounds.get(&node.id()).and_then(|bounds| {
+        layout.items.iter().find_map(|item| match item {
+            DisplayItem::SolidRect {
+                rect,
+                color,
+                radius,
+            } if rect == bounds && *color == style.background_color => Some(*radius),
+            _ => None,
+        })
+    });
     let shadow_root = node.shadow_root().map(|root| {
         let child_count = root.children.borrow().len() as u64;
         let descendant_count = crate::engine::dom::Node::descendants(&root).skip(1).count() as u64;
@@ -127,6 +137,7 @@ fn node_details(
             max_width: diagnostic_debug(style.max_width),
             min_height: diagnostic_debug(style.min_height),
             max_height: diagnostic_debug(style.max_height),
+            border_radius: diagnostic_debug(style.border_radius),
             background_color: color_hex(style.background_color),
             background_image: resource_details(page, layout, style.background_image.as_deref()),
             mask_image: resource_details(page, layout, style.mask_image.as_deref()),
@@ -142,6 +153,7 @@ fn node_details(
         },
         layout_rect: layout.node_bounds.get(&node.id()).copied(),
         control_rect,
+        painted_background_radius,
     }
 }
 

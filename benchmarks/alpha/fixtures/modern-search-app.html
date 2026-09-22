@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Modern search application contract</title>
+<style>
+*{box-sizing:border-box}html{background:#eef2f7;color:#172033;font:16px Arial,sans-serif}
+body{margin:0}.shell{min-height:100vh}.topbar{display:flex;gap:16px;align-items:center;padding:18px 24px;
+background:#17324d;color:#fff}.brand{font-size:24px;font-weight:700}.topbar form{display:flex;flex:1;gap:8px}
+.topbar input{min-width:0;flex:1;padding:10px 12px;border:1px solid #91a2b5;border-radius:6px}
+.topbar button{padding:10px 18px;border:0;border-radius:6px;background:#2677b8;color:#fff;font-weight:700}
+.page{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:22px;max-width:1080px;margin:auto;padding:24px}
+.results,.filters{background:#fff;border:1px solid #d5dde8;border-radius:9px;padding:20px}
+.result{padding:15px 0;border-bottom:1px solid #dce3eb}.result:last-child{border-bottom:0}
+.result a{color:#175f9e;font-size:20px;font-weight:700}.result p{margin:6px 0 0;line-height:1.45}
+.url{color:#26713f;font-size:14px}.filters h2{margin-top:0;font-size:18px}
+#status{padding:11px 14px;background:#e7f4ea;border-radius:6px}.relay{display:none}
+.shell[data-layout="compact"] .page{grid-template-columns:1fr}.shell[data-layout="compact"] .filters{order:-1}
+@media(max-width:760px){.topbar{align-items:stretch;flex-direction:column}.page{grid-template-columns:1fr}.filters{order:-1}}
+</style></head><body>
+<main id="main"><div id="app"><p>Loading application…</p></div></main>
+<script>
+(async () => {
+  const facts = [];
+  const check = (name, condition) => {
+    facts.push([name, Boolean(condition)]);
+    if (!condition) throw new Error(name);
+  };
+  const query = 'web platform';
+  const entries = [
+    ['https://standards.example/html', 'HTML and the open web', 'Living standards for documents and application semantics.'],
+    ['https://standards.example/dom', 'DOM integration', 'Nodes, events, ranges, and mutation behavior for portable applications.'],
+    ['https://standards.example/fetch', 'Fetch architecture', 'Request, response, streaming, and security behavior across contexts.']
+  ];
+  try {
+    await Promise.resolve();
+    const parsed = new DOMParser().parseFromString(
+      '<section class="results"><h1>Results</h1><p id="status">Bootstrapping…</p><div id="list"></div></section>',
+      'text/html');
+    const shell = document.createElement('div');
+    shell.className = 'shell';
+    shell.innerHTML =
+      '<header class="topbar"><strong class="brand">Standards Search</strong>' +
+      '<form><input name="q" aria-label="Search"><button>Search</button></form></header>' +
+      '<div class="page"></div>';
+    const page = shell.querySelector('.page');
+    page.append(parsed.body.firstElementChild);
+    const filters = document.createElement('aside');
+    filters.className = 'filters';
+    filters.innerHTML = '<h2>Filters</h2><label><input type="radio" name="period" checked> Any time</label>' +
+      '<p>Original fixture content; no provider code or assets.</p>';
+    page.append(filters);
+    app.replaceChildren(shell);
+
+    const form = shell.querySelector('form');
+    const input = form.elements.namedItem('q');
+    input.value = query;
+    const list = shell.querySelector('#list');
+    const render = value => {
+      list.replaceChildren();
+      for (const [href, title, summary] of entries) {
+        const article = document.createElement('article');
+        article.className = 'result';
+        article.innerHTML = '<div class="url"></div><a></a><p></p>';
+        article.querySelector('.url').textContent = new URL(href).host;
+        const link = article.querySelector('a');
+        link.href = href;
+        link.textContent = title + ' — ' + value;
+        article.querySelector('p').textContent = summary;
+        list.append(article);
+      }
+    };
+    render(query);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      render(input.value);
+    });
+
+    const media = matchMedia('(max-width: 760px)');
+    const updateLayout = () => shell.dataset.layout = media.matches ? 'compact' : 'wide';
+    media.addEventListener('change', updateLayout);
+    updateLayout();
+    check('responsive branch reflects the viewport', media.matches === (innerWidth <= 760));
+    check('module-style bootstrap populated results', list.children.length === entries.length);
+    check('form ownership and named lookup', input.form === form && form.elements.namedItem('q') === input);
+
+    const first = list.querySelector('a');
+    const visible = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('intersection delivery timed out')), 3000);
+      const observer = new IntersectionObserver(records => {
+        if (!records.some(record => record.target === first && record.isIntersecting)) return;
+        clearTimeout(timeout); observer.disconnect(); resolve(true);
+      });
+      observer.observe(first);
+    });
+    check('visible result is delivered to IntersectionObserver', visible);
+
+    const activated = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('result relay timed out')), 3000);
+      first.addEventListener('click', event => {
+        event.preventDefault();
+        const relay = document.createElement('iframe');
+        relay.className = 'relay';
+        relay.srcdoc = '<script>parent.postMessage({kind:"result",href:' +
+          JSON.stringify(first.href) + '}, ' + JSON.stringify(location.origin) + ')<\/script>';
+        const receive = message => {
+          if (message.source !== relay.contentWindow || message.origin !== location.origin ||
+              message.data?.kind !== 'result') return;
+          removeEventListener('message', receive);
+          clearTimeout(timeout);
+          history.pushState({result: message.data.href}, '', '?selected=1');
+          relay.remove();
+          resolve(message.data.href);
+        };
+        addEventListener('message', receive);
+        document.body.append(relay);
+      }, {once:true});
+      first.click();
+    });
+    check('result activation completed through a child relay',
+      await activated === entries[0][0] && history.state.result === entries[0][0]);
+
+    input.value = 'browser interoperability';
+    form.requestSubmit();
+    check('repeat submission rerendered the application',
+      list.children.length === entries.length && list.firstElementChild.textContent.includes(input.value));
+    const status = shell.querySelector('#status');
+    status.dataset.contract = 'pass';
+    status.dataset.facts = JSON.stringify(facts);
+    status.textContent = facts.length + ' / ' + facts.length + ' contracts passed';
+    document.documentElement.dataset.fixtureReady = 'true';
+  } catch (error) {
+    app.textContent = 'FAIL: ' + error.message;
+    document.documentElement.dataset.fixtureReady = 'true';
+    console.error(error);
+  }
+})();
+</script></body></html>

@@ -156,7 +156,7 @@ unsafe fn dispatch_window_message(
             SetBkColor(dc, CHROME_THEME.field);
             state.omnibox_brush as Lresult
         }
-        WM_CTLCOLOREDIT => {
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
             let control_window = lparam as Hwnd;
             if let Some(control) = state
                 .page_controls

@@ -12,6 +12,7 @@
     { "id": "encyclopedia-main", "path": "/encyclopedia-main.html", "role": "Wikipedia main-page structure", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://en.wikipedia.org/wiki/Main_Page" },
     { "id": "responsive-blog", "path": "/responsive-blog.html", "role": "Public responsive blog structure", "early_scroll": true, "max_visual_difference": 0.20, "live_url": "https://www.neolisk.blog/" },
     { "id": "search-results", "path": "/search-results.html", "role": "DuckDuckGo HTML-style results", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://html.duckduckgo.com/html/?q=web+standards" },
+    { "id": "modern-search-app", "path": "/modern-search-app.html", "role": "Modern search bootstrap, responsive layout, observer delivery, form reuse, and child-relay result activation", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://duckduckgo.com/?q=web+standards&ia=web" },
     { "id": "compatibility-dashboard", "path": "/compatibility-dashboard.html", "role": "HTML5test-style capability dashboard", "early_scroll": false, "max_visual_difference": 0.12, "live_url": "https://html5test.com/" },
     { "id": "forms-storage", "path": "/forms-storage.html", "role": "Forms and Web Storage", "early_scroll": false, "max_visual_difference": 0.12 },
     { "id": "layout-matrix", "path": "/layout-matrix.html", "role": "Flex, grid, table, and float layout", "early_scroll": false, "max_visual_difference": 0.12 },

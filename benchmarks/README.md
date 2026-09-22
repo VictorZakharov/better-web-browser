@@ -20,6 +20,7 @@ A nonblank shell or an empty uncaught-error list alone does not establish readin
 | `encyclopedia-main` | Dense portal/main-page structure | Structural and visual checks |
 | `responsive-blog` | Responsive article and cards | Six-second early-scroll trace |
 | `search-results` | Search form and result list | Form/layout/visual checks |
+| `modern-search-app` | Dynamic search bootstrap and repeat interaction | Promise, DOMParser, responsive media, observer, iframe relay, history, and form checks |
 | `compatibility-dashboard` | Script-populated capability dashboard | DOM mutation and visual checks |
 | `forms-storage` | Forms, validation, and Web Storage | Script and structural checks |
 | `layout-matrix` | Flex, grid, table, float, overflow | Layout and visual checks |

@@ -18,7 +18,10 @@ pub const MAX_CSS_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_CSS_RULES_PER_STYLESHEET: usize = 30_000;
 pub const MAX_PAGE_CSS_RULES: usize = 100_000;
 pub const MAX_CSS_NESTING_DEPTH: usize = 64;
-pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 256;
+/// Theme and design-system roots commonly carry hundreds of custom properties in one rule.
+/// Keep the parser bounded without truncating production bundles such as DuckDuckGo's root
+/// palette (currently more than 350 declarations).
+pub const MAX_CSS_DECLARATIONS_PER_RULE: usize = 4_096;
 pub const MAX_ADOPTED_STYLESHEETS: usize = 256;
 pub const MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 

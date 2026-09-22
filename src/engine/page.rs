@@ -220,6 +220,8 @@ impl Page {
         let face = WebFontFace {
             family,
             weight,
+            weight_min: f32::from(weight),
+            weight_max: f32::from(weight),
             italic,
             url,
         };

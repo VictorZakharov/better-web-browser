@@ -78,13 +78,13 @@ from the content-frame sequence and cannot inflate its FPS.
 
 ## Chromium comparison
 
-The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against sixteen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
+The repository-owned public-alpha gate runs Breeze and unified-headless Chromium against seventeen deterministic, original fixtures. Every sample uses a fresh hidden profile on the same machine; the harness aligns viewport, Windows scale, locale, fixture bytes, settle period, and cache policy, then records compatibility captures plus timing, scroll, memory, CPU, and process metrics.
 
 ```powershell
 .\benchmarks\run-alpha.ps1 -Iterations 3
 ```
 
-The visual benchmark runs on every push to `main`, not on pull requests. It requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. PRs retain core, renderer, and focused Windows integration tests, lint, formatting, dependency/security policy, and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main. Relevant local integration tests and visual comparisons remain necessary before review: deferred CI checks can first detect a regression after merge. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md), [CI policy and timings](docs/build-performance.md), and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
+The visual benchmark runs on every push to `main`, not on pull requests. It requires intact major content, nonblank captures, no Breeze script errors, bounded visual difference, Breeze page-ready no slower than two times Chromium load, and stable six-second early scrolling on the long-form fixtures. PRs retain core, renderer, and focused Windows integration tests, lint, formatting, dependency/security policy, and harness self-tests. Curated WPT and full-browser end-to-end tests also run on main. Relevant local integration tests and visual comparisons remain necessary before review: deferred CI checks can first detect a regression after merge. Performance claims remain valid only for feature-equivalent controlled paths. See [the benchmark methodology](benchmarks/README.md), [CI policy and timings](docs/build-performance.md), [modern-search acceptance](docs/modern-search-acceptance.md), and [latest alpha evidence](docs/alpha-compatibility.md) for the matrix, metric definitions, thresholds, medians, and limitations.
 
 ### Last performance assessment — September 19, 2026 (#168)
 
@@ -131,7 +131,7 @@ modern DDG → Wikipedia result → Back → another search, each with ten final
 links and no reported JavaScript/console errors. Chrome did not present the
 same requested live result link, so no live performance comparison is claimed.
 Visual iframe embedding, persistent child state, complete policy support, and broader
-live reliability remain unfinished. **The HTML search fallback stays enabled.**
+live reliability remain unfinished.
 
 User testing then exposed two entrypoints missing from that assessment: the DDG
 homepage crashed, and HTML-results dropdown options spilled into the page.
@@ -140,6 +140,12 @@ blockified-select rendering, framework-compatible user editing, correct empty
 button labels, and per-element SVG colour. It records the reproduced failures and
 adds a homepage/HTML-results acceptance script. Earlier direct-results evidence
 must not be read as a claim that every DDG entrypoint or visual detail worked.
+
+The final [modern-search acceptance](docs/modern-search-acceptance.md) adds an
+original composed application fixture and a strict live result → Back → Unicode
+re-search case. Address-bar searches now use DuckDuckGo's modern `/?q=…&ia=web`
+route; the HTML endpoint remains covered as a compatibility regression, not as the
+browser default.
 
 The [full September 19 assessment](docs/browser-performance-readiness-2026-09-19.md)
 records the before/after results, populated-UI evidence, validation, outliers, and
@@ -359,11 +365,12 @@ compatibility baseline: previous tests encountered anti-automation responses, wh
 with profile, network, and time. Breeze renders the actual response; it does not silently substitute
 another search provider. Passing a deterministic search fixture does not establish live Google support.
 
-The 2026-09-16 fresh-profile hidden release run at
-[`cb50f83`](https://github.com/VictorZakharov/better-web-browser/commit/cb50f83247d42b1deeafcff6a47999915b1b8eb3)
-rendered **285 / 588** on HTML5test,
-with zero JavaScript errors and no renderer exit. This replaces the older 284-point observation;
-it does not imply that the site's layout is pixel-correct or that every detected API is complete.
+The 2026-09-22 fresh-profile hidden release run at
+[`157ee94`](https://github.com/VictorZakharov/better-web-browser/commit/157ee94)
+rendered **317 / 588** on HTML5test,
+with zero JavaScript errors and no renderer exit. The previous dated observation was
+[285 / 588 on 2026-09-16](https://github.com/VictorZakharov/better-web-browser/commit/cb50f83247d42b1deeafcff6a47999915b1b8eb3).
+The score does not imply that the site's layout is pixel-correct or that every detected API is complete.
 HTML5test is a capability inventory, not a percentage of browser completion or a conformance claim;
 specifications and individual Web Platform Tests define the implementation/regression contracts.
 
@@ -374,7 +381,7 @@ Reproduce that snapshot on Windows x64 with the release build above (1280×720 h
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 5000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-16.json -Screenshot target/html5test/2026-09-16.png
+  -Output target/html5test/2026-09-22.json -Screenshot target/html5test/2026-09-22.png
 ```
 
 New releases must refresh or explicitly date these observations using the

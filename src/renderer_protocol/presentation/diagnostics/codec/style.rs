@@ -21,6 +21,7 @@ pub(super) fn encode_style(
         &value.max_width,
         &value.min_height,
         &value.max_height,
+        &value.border_radius,
         &value.background_color,
     ] {
         string(writer, text, MAX_DIAGNOSTIC_TEXT_BYTES)?;
@@ -72,6 +73,7 @@ pub(super) fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleDiagnosti
     let max_width = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let min_height = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let max_height = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
+    let border_radius = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let background_color = reader.string(MAX_DIAGNOSTIC_TEXT_BYTES)?;
     let visibility = reader.bool()?;
     let opacity = reader.f32()?;
@@ -123,6 +125,7 @@ pub(super) fn decode_style(reader: &mut WireReader<'_>) -> Result<StyleDiagnosti
         max_width,
         min_height,
         max_height,
+        border_radius,
         background_color,
         background_image,
         mask_image,
