@@ -84,6 +84,7 @@ unsafe extern "system" {
         height: i32,
         repaint: i32,
     ) -> i32;
+    pub(in crate::windows_app) fn SetWindowRgn(window: Hwnd, region: Hrgn, redraw: i32) -> i32;
     pub(in crate::windows_app) fn InvalidateRect(
         window: Hwnd,
         rectangle: *const Rect,
@@ -209,7 +210,6 @@ unsafe extern "system" {
         size: *mut Size,
     ) -> i32;
     pub(in crate::windows_app) fn CreateSolidBrush(color: u32) -> Hbrush;
-    pub(in crate::windows_app) fn GetStockObject(index: i32) -> Hgdiobj;
     pub(in crate::windows_app) fn SaveDC(dc: Hdc) -> i32;
     pub(in crate::windows_app) fn RestoreDC(dc: Hdc, saved: i32) -> i32;
     pub(in crate::windows_app) fn IntersectClipRect(

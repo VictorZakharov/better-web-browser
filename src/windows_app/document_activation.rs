@@ -180,7 +180,9 @@ impl BrowserState {
         );
         let damage = DisplayListDamage::between(&self.page_layout, &next_layout);
         let layout_changed = !damage.is_empty();
-        let controls_changed = first_presentation || self.page_layout.forms != next_layout.forms;
+        let controls_changed = first_presentation
+            || self.page_layout.forms != next_layout.forms
+            || page_controls::native_controls_changed(&self.page_layout, &next_layout);
         if layout_changed {
             self.page_layout = next_layout;
             let retained_items = self.page_layout.items.clone();

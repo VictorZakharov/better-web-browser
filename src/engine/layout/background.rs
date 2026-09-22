@@ -7,14 +7,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         style: &ComputedStyle,
         kind: ControlKind,
     ) -> Color {
-        // Native EDIT windows paint above the page display list. An opaque fallback brush
-        // would cover a transparent input's ancestor background (including rounded corners).
+        // Keep CSS transparency in alpha, but carry the composited backdrop in RGB.
+        // Native EDIT controls cannot reliably repaint with a hollow brush while focused;
+        // the host uses this color for a stable opaque child surface and clips its HWND
+        // to any rounded backdrop in the display list.
         if matches!(
             kind,
             ControlKind::Text | ControlKind::TextArea | ControlKind::Password | ControlKind::Search
         ) && style.background_color.alpha == 0
         {
-            Color::TRANSPARENT
+            Color {
+                alpha: 0,
+                ..self.effective_background_color(node)
+            }
         } else {
             self.effective_background_color(node)
         }

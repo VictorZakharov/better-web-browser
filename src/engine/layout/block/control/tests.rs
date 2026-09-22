@@ -27,6 +27,10 @@ fn transparent_edit_preserves_a_rounded_ancestor_background() {
         })
         .unwrap();
     assert_eq!(control.background_color.alpha, 0);
+    assert_eq!(
+        control.background_color.to_colorref(),
+        Color::rgb(51, 51, 51).to_colorref()
+    );
     assert!(output.items.iter().any(|item| matches!(item,
         DisplayItem::SolidRect { radius, .. } if *radius == 20.0
     )));

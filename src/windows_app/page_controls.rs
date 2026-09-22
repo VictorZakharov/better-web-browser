@@ -2,7 +2,10 @@
 
 use super::tab_state::TabFocus;
 use super::*;
+mod changes;
 mod placeholder;
+mod rounded_clip;
+pub(super) use changes::native_controls_changed;
 
 pub(super) struct PageControlWindow {
     pub(super) window: Hwnd,
@@ -21,7 +24,7 @@ impl Drop for PageControlWindow {
             if !self.bubble.is_null() && IsWindow(self.bubble) != 0 {
                 DestroyWindow(self.bubble);
             }
-            if self.spec.background_color.alpha > 0 && !self.brush.is_null() {
+            if !self.brush.is_null() {
                 DeleteObject(self.brush);
             }
         }
@@ -125,11 +128,7 @@ impl BrowserState {
             {
                 placeholder::install(window, &spec);
             }
-            let brush = if spec.background_color.alpha == 0 {
-                GetStockObject(HOLLOW_BRUSH)
-            } else {
-                CreateSolidBrush(spec.background_color.to_colorref())
-            };
+            let brush = CreateSolidBrush(spec.background_color.to_colorref());
             // A reported invalid control gets a browser-owned message bubble.
             // It is a plain STATIC window: no DOM node, no author styling.
             let bubble = if spec.invalid && !spec.validation_message.is_empty() {
@@ -154,6 +153,7 @@ impl BrowserState {
             });
         }
         self.sync_page_control_positions();
+        self.clip_transparent_page_controls();
         if let Some(node) = focused_node
             && let Some(control) = self
                 .page_controls

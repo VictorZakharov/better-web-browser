@@ -109,7 +109,6 @@ pub(super) const IDC_ARROW: u16 = 32512;
 pub(super) const IDC_HAND: u16 = 32649;
 pub(super) const HTCLIENT: u16 = 1;
 pub(super) const TRANSPARENT: i32 = 1;
-pub(super) const HOLLOW_BRUSH: i32 = 5;
 pub(super) const VK_RETURN: usize = 0x0D;
 pub(super) const VK_BACK: usize = 0x08;
 pub(super) const VK_TAB: usize = 0x09;
