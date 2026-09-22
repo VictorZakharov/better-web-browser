@@ -1,6 +1,25 @@
 use super::*;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn control_background_color(
+        &self,
+        node: &NodeRef,
+        style: &ComputedStyle,
+        kind: ControlKind,
+    ) -> Color {
+        // Native EDIT windows paint above the page display list. An opaque fallback brush
+        // would cover a transparent input's ancestor background (including rounded corners).
+        if matches!(
+            kind,
+            ControlKind::Text | ControlKind::TextArea | ControlKind::Password | ControlKind::Search
+        ) && style.background_color.alpha == 0
+        {
+            Color::TRANSPARENT
+        } else {
+            self.effective_background_color(node)
+        }
+    }
+
     pub(super) fn effective_background_color(&self, node: &NodeRef) -> Color {
         let mut colors = Vec::new();
         let mut candidate = Some(node.clone());

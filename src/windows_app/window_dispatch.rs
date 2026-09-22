@@ -156,7 +156,7 @@ unsafe fn dispatch_window_message(
             SetBkColor(dc, CHROME_THEME.field);
             state.omnibox_brush as Lresult
         }
-        WM_CTLCOLOREDIT => {
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
             let control_window = lparam as Hwnd;
             if let Some(control) = state
                 .page_controls
@@ -165,7 +165,11 @@ unsafe fn dispatch_window_message(
             {
                 let dc = wparam as Hdc;
                 SetTextColor(dc, control.spec.text_color.to_colorref());
-                SetBkColor(dc, control.spec.background_color.to_colorref());
+                if control.spec.background_color.alpha == 0 {
+                    SetBkMode(dc, TRANSPARENT);
+                } else {
+                    SetBkColor(dc, control.spec.background_color.to_colorref());
+                }
                 control.brush as Lresult
             } else {
                 DefWindowProcW(window, message, wparam, lparam)

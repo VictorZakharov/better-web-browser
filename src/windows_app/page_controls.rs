@@ -21,7 +21,7 @@ impl Drop for PageControlWindow {
             if !self.bubble.is_null() && IsWindow(self.bubble) != 0 {
                 DestroyWindow(self.bubble);
             }
-            if !self.brush.is_null() {
+            if self.spec.background_color.alpha > 0 && !self.brush.is_null() {
                 DeleteObject(self.brush);
             }
         }
@@ -125,7 +125,11 @@ impl BrowserState {
             {
                 placeholder::install(window, &spec);
             }
-            let brush = CreateSolidBrush(spec.background_color.to_colorref());
+            let brush = if spec.background_color.alpha == 0 {
+                GetStockObject(HOLLOW_BRUSH)
+            } else {
+                CreateSolidBrush(spec.background_color.to_colorref())
+            };
             // A reported invalid control gets a browser-owned message bubble.
             // It is a plain STATIC window: no DOM node, no author styling.
             let bubble = if spec.invalid && !spec.validation_message.is_empty() {

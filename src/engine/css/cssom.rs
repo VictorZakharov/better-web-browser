@@ -10,12 +10,21 @@ pub(crate) fn diagnostic_custom_properties(style: &ComputedStyle) -> (u64, Vec<(
     names.sort_unstable();
     let count = names.len() as u64;
     if names.len() > MAX_DIAGNOSTIC_CUSTOM_PROPERTIES {
-        let half = MAX_DIAGNOSTIC_CUSTOM_PROPERTIES / 2;
-        names = names[..half]
+        let edge = 24;
+        let radius = names
             .iter()
-            .chain(&names[names.len() - half..])
+            .filter(|name| name.contains("radius"))
+            .take(16)
+            .copied()
+            .collect::<Vec<_>>();
+        names = names[..edge]
+            .iter()
+            .chain(&radius)
+            .chain(&names[names.len() - edge..])
             .copied()
             .collect();
+        names.sort_unstable();
+        names.dedup();
     }
     let values = names
         .into_iter()

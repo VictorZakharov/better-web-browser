@@ -613,3 +613,23 @@ they are not substituted for the slower paired results. The under-two-second tar
 open. Evidence is in ignored `target/wiki-regression/load-paired-{before,after}-*.json` and
 filmstrips. The legacy `full_layout_rebuilds` field counts render-requested presentations,
 including retained layouts, and is **not** used to claim fewer layout executions here.
+
+### Transparent native text controls over rounded backgrounds (2026-09-22)
+
+[CSS Backgrounds and Borders §4.3](https://www.w3.org/TR/css-backgrounds-3/#corner-clipping)
+requires an element's background to follow its rounded border edge. The renderer already
+computed and emitted the correct used radius for rounded search wrappers, but an opaque
+Win32 EDIT child filled the same rectangle afterward when its own CSS background was
+transparent. Projected text, search, password, and textarea controls now retain their
+transparent CSS background. The host returns a hollow brush and transparent text
+background mode for those EDIT windows, while opaque controls keep their owned brush.
+Windows sends read-only or disabled EDIT controls through `WM_CTLCOLORSTATIC`, so both
+that message and `WM_CTLCOLOREDIT` use the same control brush policy.
+This prevents a native control from squaring off an ancestor's rounded background.
+
+The hidden DDG comparison at 1454 CSS px and 125% scale measured a 24px computed radius
+in both Chrome and Breeze, with a 20px used display-list radius after fitting the 40px
+box. Before the change the top-left corner painted as an opaque rectangle; after it,
+background pixels follow the rounded edge. This validates the compositing fix, not full
+search-page parity. CSS box shadows and multi-corner radii remain separate compatibility
+slices.

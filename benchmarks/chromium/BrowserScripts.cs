@@ -105,7 +105,9 @@ internal static class BrowserScripts
                 'grid-template-columns', 'grid-template-rows',
                 'overflow-x', 'overflow-y', 'aspect-ratio', 'object-fit',
                 'inset', 'top', 'right', 'bottom', 'left', 'z-index',
-                'transform', 'background-color', 'background-image', 'color',
+                'transform', 'background-color', 'background-image', 'box-shadow',
+                'border-radius', 'border-top-left-radius', 'border-top-right-radius',
+                'border-bottom-right-radius', 'border-bottom-left-radius', 'color',
                 'font-family', 'font-size', 'line-height', 'mask-image', 'clip', 'clip-path'
               ];
               const authoredRules = [];
@@ -181,7 +183,9 @@ internal static class BrowserScripts
                 const names = Array.from({ length: style.length }, (_, index) => style.item(index))
                   .filter(name => name.startsWith('--')).sort();
                 const retained = names.length <= 64 ? names :
-                  [...names.slice(0, 32), ...names.slice(-32)];
+                  Array.from(new Set([...names.slice(0, 24),
+                    ...names.filter(name => name.includes('radius')).slice(0, 16),
+                    ...names.slice(-24)]));
                 return { count: names.length, truncated: retained.length < names.length,
                   values: Object.fromEntries(retained.map(name =>
                     [name, style.getPropertyValue(name)])) };

@@ -141,6 +141,13 @@ fn encode_node(writer: &mut WireWriter, value: &NodeDiagnostics) -> Result<(), P
     encode_style(writer, &value.style)?;
     encode_optional_rect(writer, value.layout_rect)?;
     encode_optional_rect(writer, value.control_rect)?;
+    writer.bool(value.painted_background_radius.is_some());
+    if let Some(radius) = value.painted_background_radius {
+        if !radius.is_finite() || radius < 0.0 {
+            return invalid();
+        }
+        writer.f32(radius);
+    }
     Ok(())
 }
 
@@ -177,7 +184,7 @@ fn decode_node(reader: &mut WireReader<'_>) -> Result<NodeDiagnostics, ProtocolE
     } else {
         None
     };
-    Ok(NodeDiagnostics {
+    let node = NodeDiagnostics {
         node_id,
         tag,
         id,
@@ -194,7 +201,17 @@ fn decode_node(reader: &mut WireReader<'_>) -> Result<NodeDiagnostics, ProtocolE
         style: decode_style(reader)?,
         layout_rect: decode_optional_rect(reader)?,
         control_rect: decode_optional_rect(reader)?,
-    })
+        painted_background_radius: if reader.bool()? {
+            let radius = reader.f32()?;
+            if !radius.is_finite() || radius < 0.0 {
+                return invalid();
+            }
+            Some(radius)
+        } else {
+            None
+        },
+    };
+    Ok(node)
 }
 
 fn encode_optional_identity(
