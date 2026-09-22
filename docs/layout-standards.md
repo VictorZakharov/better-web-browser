@@ -620,16 +620,35 @@ including retained layouts, and is **not** used to claim fewer layout executions
 requires an element's background to follow its rounded border edge. The renderer already
 computed and emitted the correct used radius for rounded search wrappers, but an opaque
 Win32 EDIT child filled the same rectangle afterward when its own CSS background was
-transparent. Projected text, search, password, and textarea controls now retain their
-transparent CSS background. The host returns a hollow brush and transparent text
-background mode for those EDIT windows, while opaque controls keep their owned brush.
-Windows sends read-only or disabled EDIT controls through `WM_CTLCOLORSTATIC`, so both
-that message and `WM_CTLCOLOREDIT` use the same control brush policy.
-This prevents a native control from squaring off an ancestor's rounded background.
+transparent. Projected text, search, password, and textarea controls retain CSS
+transparency in their alpha channel while their RGB channels carry the composited
+ancestor color. The host uses that color in an owned opaque brush: Win32 EDIT's
+hollow-brush path failed to repaint reliably while focused and exposed a white strip.
+Where a matching rounded solid backdrop contains the control, the native child is
+clipped with a window region to that CSS edge. The region is relative to the child
+and is applied once on recreation, not on every scroll. Windows sends read-only or
+disabled EDIT controls through `WM_CTLCOLORSTATIC`, so it and `WM_CTLCOLOREDIT`
+use the same backdrop brush policy. A later CSS restyle recreates native controls
+when their paint/font spec changes; geometry-only moves preserve the live EDIT.
+This is a solid-color compositing slice, not full background-image or multi-corner
+clipping support.
 
 The hidden DDG comparison at 1454 CSS px and 125% scale measured a 24px computed radius
 in both Chrome and Breeze, with a 20px used display-list radius after fitting the 40px
 box. Before the change the top-left corner painted as an opaque rectangle; after it,
-background pixels follow the rounded edge. This validates the compositing fix, not full
-search-page parity. CSS box shadows and multi-corner radii remain separate compatibility
+background pixels follow the rounded edge, and the focused release capture has no white
+strip or displaced text. This validates the compositing fix, not full search-page
+parity. CSS box shadows and multi-corner radii remain separate compatibility
 slices.
+
+### Font fallback selection during repeated layout (2026-09-22)
+
+Each grapheme previously repeated font-family parsing and fallback queries across
+successive presentations. Renderer-local selection now caches the chosen face by
+family, grapheme, script, weight, and italic state, bounded to 4096 entries. Registering
+a new web font resets the catalog and its cache so late fonts cannot reuse stale
+fallback choices. On one pair of fresh-profile hidden DDG runs, measured font
+selection fell from 746.944 ms to 46.908 ms. This is a direct subsystem metric;
+live network/script timing varied, and the page can still show late CSS/script
+presentations and visible layout shifts. No claim of Chrome-equivalent load time or
+elimination of those shifts follows from this cache.
