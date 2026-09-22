@@ -335,6 +335,10 @@ fn css_supports_uses_the_same_conservative_capability_table_as_feature_queries()
             check('unsupported-property', !CSS.supports('box-shadow', '0 0 1px black'));
             check('sticky-position', CSS.supports('position', 'sticky'));
             check('unsupported-value', !CSS.supports('position', 'not-a-position'));
+            check('variable-reference', CSS.supports('color', 'var(--test, red)'));
+            check('nested-variable-reference', CSS.supports('width', 'calc(var(--space, 1px) * 2)'));
+            check('variable-unsupported-property', !CSS.supports('box-shadow', 'var(--shadow)'));
+            check('malformed-variable-reference', !CSS.supports('color', 'var(color, red)'));
             let missingArgument = false;
             try { CSS.supports(); } catch (error) { missingArgument = error instanceof TypeError; }
             check('argument-conversion', missingArgument);

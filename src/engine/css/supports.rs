@@ -45,20 +45,33 @@ pub(crate) fn supports_property(property: &str) -> bool {
 }
 
 fn supports_declaration(property: &str, value: &str) -> bool {
-    if property.is_empty() || value.is_empty() || value.ends_with("!important") {
+    if property.is_empty()
+        || value.is_empty()
+        || value
+            .trim_end()
+            .to_ascii_lowercase()
+            .ends_with("!important")
+    {
         return false;
     }
     if property.starts_with("--") {
         return true;
     }
     let property = property.to_ascii_lowercase();
-    let value = value.to_ascii_lowercase();
     if matches!(
         property.as_str(),
         "perspective" | "transform-style" | "filter"
     ) {
         return false;
     }
+    // A supported property with a syntactically valid var() reference is valid at parse time.
+    // Its computed value may still become invalid after substitution; CSS.supports() must not
+    // resolve variables or use the property's final-value parser for this case.
+    // https://www.w3.org/TR/css-variables-1/#using-variables
+    if supports_property(&property) && variables::contains_valid_variable_reference(value) {
+        return true;
+    }
+    let value = value.to_ascii_lowercase();
     if super::css_wide::supports_css_wide_keyword(&property, &value) {
         return true;
     }
@@ -327,5 +340,18 @@ mod tests {
         assert!(supports_matches("@supports (z-index: -12)"));
         assert!(supports_matches("@supports (z-index: auto)"));
         assert!(!supports_matches("@supports (z-index: 1.5)"));
+    }
+
+    #[test]
+    fn feature_queries_accept_valid_variable_references_without_resolving_them() {
+        assert!(supports_matches("@supports (color: var(--test, red))"));
+        assert!(supports_matches("@supports (position: var(--position))"));
+        assert!(supports_matches(
+            "@supports (width: calc(var(--space, var(--fallback)) * 2))"
+        ));
+        assert!(supports_matches("@supports (color: var(--empty,))"));
+        assert!(!supports_matches("@supports (box-shadow: var(--shadow))"));
+        assert!(!supports_matches("@supports (color: var(color, red))"));
+        assert!(!supports_matches("@supports (color: var())"));
     }
 }
