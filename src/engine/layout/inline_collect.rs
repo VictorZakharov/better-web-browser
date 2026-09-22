@@ -5,6 +5,36 @@ mod intrinsic;
 mod replaced_constraints;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
+    pub(super) fn collect_inline_root(
+        &self,
+        node: &NodeRef,
+        output: &mut Vec<InlineAtom>,
+        pending_space: &mut fragments::PendingSpace,
+        honor_block_boundaries: bool,
+        containing_block: InlineContainingBlock,
+    ) {
+        // CSS anonymous-block splitting can promote descendants out of a boxless inline anchor.
+        // Recover its activation target once at the promoted formatting-root boundary; recursive
+        // collection then propagates the link without repeating an ancestor walk for every run.
+        let inherited_link =
+            std::iter::successors(Node::composed_parent(node), Node::composed_parent)
+                .find(|ancestor| ancestor.tag_name() == Some("a"))
+                .and_then(|anchor| {
+                    anchor
+                        .attr("href")
+                        .and_then(|href| resolve_url(&self.page.source_url, &href))
+                        .map(|url| (url, anchor.id()))
+                });
+        self.collect_inline(
+            node,
+            inherited_link,
+            output,
+            pending_space,
+            honor_block_boundaries,
+            containing_block,
+        );
+    }
+
     pub(super) fn collect_inline(
         &self,
         node: &NodeRef,

@@ -169,25 +169,23 @@ fn parse_rule_list(
             }
         } else if !prelude.starts_with('@') {
             let declarations = parse_declarations(body);
-            for selector_text in split_css_top_level(prelude, ',') {
-                if output.len() >= rule_limit {
-                    break;
-                }
-                let Some((selector_text, rule_scope, host_condition_text)) =
-                    scoped_selector(selector_text.trim(), scope)
-                else {
-                    continue;
-                };
-                let host_condition = match host_condition_text {
-                    Some(condition) => {
-                        let Some(condition) = parse_selector(condition) else {
-                            continue;
-                        };
-                        Some(condition)
+            // A selector list is unforgiving: one invalid member invalidates the complete style
+            // rule. In particular, a leading, repeated, or trailing comma must not turn its
+            // empty member into a universal selector and leak declarations onto the page.
+            // https://www.w3.org/TR/selectors-4/#selector-list
+            let parsed_selectors = split_css_top_level(prelude, ',')
+                .map(|selector_text| {
+                    let selector_text = selector_text.trim();
+                    if selector_text.is_empty() {
+                        return None;
                     }
-                    None => None,
-                };
-                if let Some((mut selector, pseudo)) = parse_style_rule_selector(selector_text) {
+                    let (selector_text, rule_scope, host_condition_text) =
+                        scoped_selector(selector_text, scope)?;
+                    let host_condition = match host_condition_text {
+                        Some(condition) => Some(parse_selector(condition)?),
+                        None => None,
+                    };
+                    let (mut selector, pseudo) = parse_style_rule_selector(selector_text)?;
                     if let Some(condition) = host_condition.as_ref() {
                         selector.specificity.ids = selector
                             .specificity
@@ -201,6 +199,14 @@ fn parse_rule_list(
                             .specificity
                             .tags
                             .saturating_add(condition.specificity.tags);
+                    }
+                    Some((selector, pseudo, host_condition, rule_scope))
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(parsed_selectors) = parsed_selectors {
+                for (selector, pseudo, host_condition, rule_scope) in parsed_selectors {
+                    if output.len() >= rule_limit {
+                        break;
                     }
                     output.push(Rule {
                         order: *next_order,
@@ -317,66 +323,4 @@ fn split_important_annotation(value: &str) -> (&str, bool) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_large_earlier_stylesheet_does_not_starve_later_cascade_rules() {
-        let first = ".early{color:red}".repeat(20_000);
-        let mut rules = Vec::new();
-        let mut order = 0;
-        let environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
-
-        parse_stylesheet(
-            &first,
-            "https://example.test/early.css",
-            environment,
-            &mut order,
-            &mut rules,
-            RuleScope::Document,
-        );
-        parse_stylesheet(
-            ".late{display:block}",
-            "https://example.test/late.css",
-            environment,
-            &mut order,
-            &mut rules,
-            RuleScope::Document,
-        );
-
-        assert_eq!(rules.len(), 20_001);
-        assert_eq!(rules.last().unwrap().order, 20_000);
-    }
-
-    #[test]
-    fn semicolon_at_rules_do_not_consume_the_following_qualified_rule() {
-        let mut rules = Vec::new();
-        let mut order = 0;
-        let environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
-
-        parse_stylesheet(
-            r#"@charset "UTF-8";@import url("theme.css");
-               .player{position:relative;width:100%;height:100%}"#,
-            "https://example.test/player.css",
-            environment,
-            &mut order,
-            &mut rules,
-            RuleScope::Document,
-        );
-
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].selector.compounds[0].classes, ["player"]);
-        assert_eq!(
-            rules[0]
-                .declarations
-                .iter()
-                .map(|declaration| (declaration.name.as_str(), declaration.value.as_str()))
-                .collect::<Vec<_>>(),
-            [
-                ("position", "relative"),
-                ("width", "100%"),
-                ("height", "100%")
-            ]
-        );
-    }
-}
+mod tests;

@@ -259,7 +259,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let style = engine.styles.get(&child);
             let children = engine.box_children(&child);
             let boxless_inline = child.element().is_some()
-                && child.tag_name() != Some("a")
                 && style.display == Display::Inline
                 && style.margin.left == Length::Px(0.0)
                 && style.margin.right == Length::Px(0.0)

@@ -40,3 +40,31 @@ fn style_named_properties_do_not_claim_unknown_capabilities() {
         "yes"
     );
 }
+
+#[test]
+fn react_webkit_clamp_properties_round_trip_through_named_style_members() {
+    let (dom, outcome) = execute_html(
+        r#"<body><span id="target"></span><output></output><script>
+        const target = document.getElementById('target');
+        Object.assign(target.style, {
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            display: '-webkit-box'
+        });
+        document.querySelector('output').textContent = [
+            target.style.WebkitLineClamp,
+            target.style.getPropertyValue('-webkit-line-clamp'),
+            target.style.WebkitBoxOrient,
+            target.style.getPropertyValue('-webkit-box-orient'),
+            target.style.display,
+            target.getAttribute('style')
+        ].join('|');
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "2|2|vertical|vertical|-webkit-box|-webkit-line-clamp: 2; \
+         -webkit-box-orient: vertical; display: -webkit-box"
+    );
+}
