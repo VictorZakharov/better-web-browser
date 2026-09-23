@@ -33,6 +33,52 @@ const PROBE: &str = r#"
     });
 "#;
 
+// Resolving a thenable queues a PromiseResolveThenableJob rather than recursively
+// entering its `then` method. This also keeps unrelated HTML microtasks in FIFO
+// order while long resolution chains settle.
+// https://tc39.es/ecma262/#sec-promise-resolve-functions
+const PROMISE_RESOLUTION_PROBE: &str = r#"
+    const order = ['sync'];
+    const expected = new Error('expected');
+    function chain(remaining) {
+        return { then(resolve) {
+            if (remaining === 512) order.push('assimilate');
+            resolve(remaining ? chain(remaining - 1) : 'settled');
+        } };
+    }
+    const deep = Promise.resolve(chain(512)).then(value => {
+        if (value !== 'settled') throw Error('thenable result');
+        order.push('settled');
+    });
+    queueMicrotask(() => order.push('between'));
+
+    let resolveSelf;
+    const self = new Promise(resolve => { resolveSelf = resolve; });
+    resolveSelf(self);
+    const selfRejected = self.then(
+        () => { throw Error('self-resolution fulfilled'); },
+        error => { if (!(error instanceof TypeError)) throw Error('self-resolution error'); }
+    );
+    const firstCallWins = Promise.resolve({ then(resolve, reject) {
+        resolve('first'); reject(expected); throw expected;
+    } }).then(value => {
+        if (value !== 'first') throw Error('thenable settled twice');
+    });
+    const getterThrows = Promise.resolve({ get then() { throw expected; } })
+        .then(() => { throw Error('throwing getter fulfilled'); }, error => {
+            if (error !== expected) throw Error('wrong getter error');
+        });
+    const reactionThrows = Promise.resolve().then(() => { throw expected; })
+        .catch(error => { if (error !== expected) throw Error('wrong reaction error'); });
+
+    Promise.all([deep, selfRejected, firstCallWins, getterThrows, reactionThrows])
+        .then(() => {
+            if (order.join(',') !== 'sync,assimilate,between,settled')
+                throw Error('thenable job/checkpoint order: ' + order);
+            console.log('promise resolution passed');
+        });
+"#;
+
 #[test]
 fn document_microtasks_are_native_jobs_independent_of_author_promises() {
     let (_, outcome) = execute_html(&format!("<body><script>{PROBE}</script>"));
@@ -51,6 +97,28 @@ fn worker_microtasks_use_the_same_queue_and_report_exceptions() {
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.console, ["log: native microtasks passed"]);
+}
+
+#[test]
+fn document_promise_resolution_queues_thenables_and_preserves_reactions() {
+    let (_, outcome) = execute_html(&format!(
+        "<body><script>{PROMISE_RESOLUTION_PROBE}</script>"
+    ));
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.console, ["log: promise resolution passed"]);
+}
+
+#[test]
+fn worker_promise_resolution_uses_the_same_job_and_rejection_contract() {
+    let (_, outcome) = WorkerRuntime::start(
+        "https://example.com/promises.js",
+        PROMISE_RESOLUTION_PROBE,
+        "",
+        ScriptKind::Classic,
+        Arc::new(|url, _| Err(format!("unexpected {url}"))),
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.console, ["log: promise resolution passed"]);
 }
 
 #[test]
