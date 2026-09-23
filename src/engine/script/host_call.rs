@@ -57,6 +57,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::media_host::media_host_call(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
+        return Ok(value);
+    }
     if let Some(value) = super::attribute_host::attribute_host_call(operation, args, state)? {
         return Ok(value);
     }

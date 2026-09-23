@@ -92,29 +92,55 @@
         __reset() {
             this.__fill = normalizedColor('#000000');
             this.__globalAlpha = 1;
+            this.__compositeOperation = 'source-over';
+            this.__stroke = normalizedColor('#000000');
+            this.__lineWidth = 1;
+            this.__lineDash = [];
+            this.__dashOffset = 0;
+            this.__path = newCanvasPath();
             this.__stack = [];
         }
-        get fillStyle() { return this.__fill.serialized; }
+        get fillStyle() { return this.__fill instanceof CanvasGradient ? this.__fill : this.__fill.serialized; }
         set fillStyle(value) {
+            if (value instanceof CanvasGradient) { this.__fill = value; return; }
             const color = normalizedColor(value);
             if (color) this.__fill = color;
+        }
+        createLinearGradient(x0, y0, x1, y1) { return canvasGradient('linear', [x0, y0, x1, y1]); }
+        createRadialGradient(x0, y0, r0, x1, y1, r1) {
+            return canvasGradient('radial', [x0, y0, r0, x1, y1, r1]);
         }
         get globalAlpha() { return this.__globalAlpha; }
         set globalAlpha(value) {
             value = Number(value);
             if (Number.isFinite(value) && value >= 0 && value <= 1) this.__globalAlpha = value;
         }
+        get globalCompositeOperation() { return this.__compositeOperation; }
+        set globalCompositeOperation(value) {
+            value = String(value);
+            if (canvasCompositeOperators.has(value)) this.__compositeOperation = value;
+        }
         save() {
             if (this.__stack.length < 64)
-                this.__stack.push({ fill: this.__fill, globalAlpha: this.__globalAlpha });
+                this.__stack.push({ fill: this.__fill, globalAlpha: this.__globalAlpha,
+                    compositeOperation: this.__compositeOperation, stroke: this.__stroke,
+                    lineWidth: this.__lineWidth, lineDash: [...this.__lineDash], dashOffset: this.__dashOffset });
         }
         restore() {
             const state = this.__stack.pop();
-            if (state) { this.__fill = state.fill; this.__globalAlpha = state.globalAlpha; }
+            if (state) {
+                this.__fill = state.fill;
+                this.__globalAlpha = state.globalAlpha;
+                this.__compositeOperation = state.compositeOperation;
+                this.__stroke = state.stroke;
+                this.__lineWidth = state.lineWidth;
+                this.__lineDash = state.lineDash;
+                this.__dashOffset = state.dashOffset;
+            }
         }
         clearRect(x, y, width, height) { this.__paintRect(x, y, width, height, null); }
-        fillRect(x, y, width, height) { this.__paintRect(x, y, width, height, this.__fill.channels); }
-        __paintRect(x, y, width, height, color) {
+        fillRect(x, y, width, height) { this.__paintRect(x, y, width, height, this.__fill); }
+        __paintRect(x, y, width, height, style) {
             const rect = normalizedRectangle(x, y, width, height);
             const state = stateForCanvas(this.canvas);
             if (!rect || !state.pixels) return;
@@ -122,22 +148,14 @@
             const top = Math.max(0, rect.y);
             const right = Math.min(state.width, rect.x + rect.width);
             const bottom = Math.min(state.height, rect.y + rect.height);
-            const sourceAlpha = color ? color[3] / 255 * this.__globalAlpha : 0;
             for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
                 const offset = (row * state.width + column) * 4;
-                if (!color) {
+                if (!style) {
                     state.pixels.fill(0, offset, offset + 4);
                     continue;
                 }
-                const destinationAlpha = state.pixels[offset + 3] / 255;
-                const outputAlpha = sourceAlpha + destinationAlpha * (1 - sourceAlpha);
-                for (let channel = 0; channel < 3; channel++) {
-                    const value = outputAlpha === 0 ? 0 :
-                        (color[channel] * sourceAlpha + state.pixels[offset + channel] *
-                            destinationAlpha * (1 - sourceAlpha)) / outputAlpha;
-                    state.pixels[offset + channel] = Math.round(value);
-                }
-                state.pixels[offset + 3] = Math.round(outputAlpha * 255);
+                compositeCanvasPixel(state.pixels, offset, canvasPaintAt(style, column + 0.5, row + 0.5),
+                    this.__globalAlpha, this.__compositeOperation);
             }
         }
         createImageData(widthOrImageData, height, settings) {

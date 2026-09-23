@@ -3,6 +3,7 @@
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::worker_runtime::WorkerPortEvent;
 use super::*;
+use crate::navigation::resolve_url;
 use serde::Serialize;
 use std::sync::Arc;
 

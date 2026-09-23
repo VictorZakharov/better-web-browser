@@ -8,7 +8,6 @@ use crate::limits::{
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
     MAX_SCRIPT_NAVIGATIONS,
 };
-use crate::navigation::resolve_url;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -16,6 +15,7 @@ use std::time::{Duration, Instant};
 mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
+mod canvas_host;
 mod cssom_host;
 mod document_streams;
 mod dom_host;
