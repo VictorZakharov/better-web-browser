@@ -79,27 +79,6 @@ pub fn renderer_user_agent() -> &'static str {
         .user_agent()
 }
 
-#[cfg(test)]
-mod user_agent_tests {
-    use super::*;
-
-    #[test]
-    fn identities_remain_distinct_and_attributable() {
-        assert_eq!(UserAgentMode::default(), UserAgentMode::Breeze);
-        assert_eq!(UserAgentMode::Breeze.user_agent(), USER_AGENT);
-        assert!(UserAgentMode::Chrome.user_agent().contains("Chrome/153."));
-        assert!(UserAgentMode::Firefox.user_agent().contains("Firefox/156."));
-        for mode in [
-            UserAgentMode::Breeze,
-            UserAgentMode::Chrome,
-            UserAgentMode::Firefox,
-        ] {
-            assert_eq!(UserAgentMode::parse(mode.setting()), Some(mode));
-            assert!(mode.user_agent().contains("Breeze/"));
-        }
-        assert_eq!(UserAgentMode::parse("unknown"), None);
-    }
-}
 pub const HOME_URL: &str = "https://browser.local/";
 
 pub const HOME_HTML: &str = r#"
@@ -124,3 +103,25 @@ pub const HOME_HTML: &str = r#"
         <p>Try <a href="https://www.google.com/">Google</a> or <a href="https://example.org/">example.org</a>.</p>
     </main>
 "#;
+
+#[cfg(test)]
+mod user_agent_tests {
+    use super::*;
+
+    #[test]
+    fn identities_remain_distinct_and_attributable() {
+        assert_eq!(UserAgentMode::default(), UserAgentMode::Breeze);
+        assert_eq!(UserAgentMode::Breeze.user_agent(), USER_AGENT);
+        assert!(UserAgentMode::Chrome.user_agent().contains("Chrome/153."));
+        assert!(UserAgentMode::Firefox.user_agent().contains("Firefox/156."));
+        for mode in [
+            UserAgentMode::Breeze,
+            UserAgentMode::Chrome,
+            UserAgentMode::Firefox,
+        ] {
+            assert_eq!(UserAgentMode::parse(mode.setting()), Some(mode));
+            assert!(mode.user_agent().contains("Breeze/"));
+        }
+        assert_eq!(UserAgentMode::parse("unknown"), None);
+    }
+}
