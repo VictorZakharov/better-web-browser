@@ -4,7 +4,9 @@ use super::renderer_lifecycle::{RendererTaskRegistry, SharedRendererRegistry};
 use super::tab_state::ClosedTab;
 use super::tabs::{RecentlyClosedTabs, TabId};
 use super::*;
+use better_web_browser::branding::UserAgentMode;
 use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +43,9 @@ impl TabMessageRouter {
 
 pub(super) struct BrowserApplication {
     pub(super) instance: Hinstance,
+    pub(super) profile: PathBuf,
+    pub(super) active_user_agent_mode: UserAgentMode,
+    pub(super) selected_user_agent_mode: Cell<UserAgentMode>,
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
@@ -57,14 +62,21 @@ impl BrowserApplication {
         metrics: Arc<BrowserMetrics>,
     ) -> Result<Rc<Self>, String> {
         let profile = super::profile::directory()?;
+        let user_agent_mode = super::user_agent_preferences::load(&profile)?;
         let local_storage = Arc::new(
             better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
                 .map_err(|error| error.to_string())?,
         );
         Ok(Rc::new(Self {
             instance,
+            profile: profile.clone(),
+            active_user_agent_mode: user_agent_mode,
+            selected_user_agent_mode: Cell::new(user_agent_mode),
             metrics,
-            http_client: Arc::new(winhttp::HttpClient::with_profile(&profile)?),
+            http_client: Arc::new(winhttp::HttpClient::with_profile_user_agent(
+                &profile,
+                user_agent_mode,
+            )?),
             storage_coordinator: better_web_browser::storage::StorageCoordinator::new(
                 local_storage,
             ),

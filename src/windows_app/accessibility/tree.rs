@@ -19,6 +19,7 @@ pub(super) const ADDRESS_ID: NodeId = NodeId(13);
 pub(super) const GO_ID: NodeId = NodeId(14);
 pub(super) const READER_ID: NodeId = NodeId(15);
 pub(super) const TASK_MANAGER_ID: NodeId = NodeId(16);
+pub(super) const OPTIONS_ID: NodeId = NodeId(19);
 pub(super) const SEARCH_TABS_ID: NodeId = NodeId(17);
 pub(super) const NEW_TAB_ID: NodeId = NodeId(18);
 const TAB_ID_BASE: u64 = 1 << 20;
@@ -163,6 +164,7 @@ unsafe fn focus_id(state: &BrowserState) -> NodeId {
         (state.controls.go, GO_ID),
         (state.controls.reader, READER_ID),
         (state.controls.task_manager, TASK_MANAGER_ID),
+        (state.controls.options, OPTIONS_ID),
     ] {
         if focused == window {
             return id;

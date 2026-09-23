@@ -15,13 +15,19 @@
     };
 
     const navigatorUserAgent = host('userAgent');
+    const geckoCompatibility = /\bFirefox\/\d/.test(navigatorUserAgent);
     windowObject.navigator = {
         userAgent: navigatorUserAgent,
+        appCodeName: 'Mozilla',
         appName: 'Netscape',
-        // HTML defines this legacy value as the default UA after "Mozilla/".
+        // HTML's legacy value differs between Gecko and Chrome compatibility.
         appVersion: navigatorUserAgent.startsWith('Mozilla/5.0 (')
-            ? navigatorUserAgent.slice('Mozilla/'.length) : '',
+            ? (geckoCompatibility ? '5.0 (Windows)' : navigatorUserAgent.slice('Mozilla/'.length)) : '',
         platform: 'Win32',
+        product: 'Gecko',
+        productSub: geckoCompatibility ? '20100101' : '20030107',
+        vendor: geckoCompatibility ? '' : navigatorUserAgent.includes('Chrome/') ? 'Google Inc.' : '',
+        vendorSub: '',
         language: 'en-CA',
         languages: ['en-CA', 'en'],
         onLine: true,
@@ -37,6 +43,10 @@
         sendBeacon(url) { host('console', 'beacon', String(url)); return false; },
         javaEnabled() { return false; }
     };
+    if (geckoCompatibility) {
+        windowObject.navigator.oscpu = 'Windows NT 10.0; Win64; x64';
+        windowObject.navigator.taintEnabled = () => false;
+    }
     const validPositiveMediaNumber = value => Number.isFinite(Number(value)) && Number(value) > 0;
     const mediaConfigurationSnapshot = configuration => {
         if (configuration == null || typeof configuration !== 'object' ||

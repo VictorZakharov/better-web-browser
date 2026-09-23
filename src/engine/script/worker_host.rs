@@ -142,7 +142,9 @@ pub(super) fn dispatch_worker_host_call(
         "apiBaseUrl" | "apiOriginUrl" => Ok(js_string(state.source_url.clone())),
         "workerLocation" => Ok(js_string(state.source_url.clone())),
         "workerName" => Ok(js_string(state.name.clone())),
-        "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
+        "userAgent" => Ok(js_string(
+            crate::branding::renderer_user_agent().to_string(),
+        )),
         "console" => {
             let level = argument_string(args, 1)?;
             let message = argument_string(args, 2)?;

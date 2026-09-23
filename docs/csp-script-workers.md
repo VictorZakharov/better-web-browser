@@ -70,10 +70,12 @@ identity and a modern `<textarea>` form with a Chrome-compatible identity.
 Google supplied the legacy form's `ie=ISO-8859-1` and empty `biw`/`bih` hidden
 fields; Breeze did not add them during submission. A temporary hidden Breeze
 capture with a Chrome UA also received the modern form, but exposed a separate
-missing CSS Font Loading API (`document.fonts.load`). The browser now advertises
-a Chrome-compatible UA with a Breeze product suffix across all sites. That is
-content negotiation, not proof that Google will stop challenging searches or
-that the modern page is fully compatible; normal-session acceptance remains open.
+missing CSS Font Loading API (`document.fonts.load`). A subsequent normal Breeze
+test with that Chrome-compatible UA still reached `/sorry/`; it changed content
+negotiation but did not prevent Google's challenge. The UA is therefore an opt-in
+profile setting in **Options**, with the Breeze identity restored as the default.
+The selected mode applies after a restart and keeps a Breeze product suffix for
+attribution. Normal-session Google search-result acceptance remains open.
 
 The earlier Breeze capture had an empty challenge frame. A fresh-profile
 hidden replay after these slices showed a live checkbox and, after an automated

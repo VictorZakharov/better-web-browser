@@ -3,6 +3,7 @@ use super::paint_primitives::{
     paint_border_colors, paint_rounded_panel,
 };
 use super::platform::*;
+use super::user_agent_options::ID_OPTIONS;
 use super::{BrowserState, Surface};
 
 impl BrowserState {
@@ -169,6 +170,8 @@ impl BrowserState {
             ID_READER => "Reader",
             ID_TASK_MANAGER if compact => "⋯",
             ID_TASK_MANAGER => "Task manager",
+            ID_OPTIONS if compact => "⋮",
+            ID_OPTIONS => "Options",
             ID_GO => "Go",
             _ => "",
         };

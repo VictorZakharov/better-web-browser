@@ -65,6 +65,7 @@ pub(super) unsafe fn nodes(state: &BrowserState) -> Vec<(NodeId, Node)> {
         GO_ID,
         READER_ID,
         TASK_MANAGER_ID,
+        OPTIONS_ID,
     ]);
     toolbar.set_bounds(AccessRect {
         x0: 0.0,
@@ -121,6 +122,13 @@ pub(super) unsafe fn nodes(state: &BrowserState) -> Vec<(NodeId, Node)> {
         Role::Button,
         "Task manager",
         child_rect(state.window, state.controls.task_manager),
+        false,
+    ));
+    nodes.push(chrome_button(
+        OPTIONS_ID,
+        Role::Button,
+        "Options",
+        child_rect(state.window, state.controls.options),
         false,
     ));
     let mut status = Node::new(Role::Status);

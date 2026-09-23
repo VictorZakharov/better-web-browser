@@ -40,6 +40,8 @@ mod tab_search;
 mod tab_state;
 mod tabs;
 mod task_manager;
+mod user_agent_options;
+mod user_agent_preferences;
 mod video_presentation;
 mod viewport;
 mod win32_helpers;
@@ -72,6 +74,7 @@ use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use user_agent_options::ID_OPTIONS;
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
 use window_dispatch::{

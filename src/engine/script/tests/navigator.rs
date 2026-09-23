@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn navigator_exposes_browser_identity_and_html_app_version() {
+fn navigator_defaults_to_honest_breeze_identity() {
     let (dom, outcome) = execute_html(
         r#"<body><script>
         const ua = navigator.userAgent;
-        if (!ua.startsWith('Mozilla/5.0 (') || !ua.includes('Chrome/') || !/Breeze\/\d+\.\d+\.\d+$/.test(ua))
-            throw new Error('missing Breeze browser identity');
-        if (navigator.appVersion !== ua.slice('Mozilla/'.length))
-            throw new Error('legacy appVersion must follow the HTML algorithm');
+        if (!/^Breeze\/\d+\.\d+\.\d+$/.test(ua))
+            throw new Error('Breeze must be the default identity');
+        if (navigator.appVersion !== '' || navigator.product !== 'Gecko')
+            throw new Error('legacy NavigatorID values are inconsistent');
         document.body.dataset.result = 'passed';
         </script>"#,
     );

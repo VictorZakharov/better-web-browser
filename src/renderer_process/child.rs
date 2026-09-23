@@ -23,6 +23,7 @@ use windows_sys::Win32::System::Threading::{
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
     crate::engine::script::install_runtime_panic_hook();
     let mut options = ChildOptions::parse(arguments)?;
+    crate::branding::install_renderer_user_agent_mode(options.user_agent_mode)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     if !valid_handle(input_handle) || !valid_handle(output_handle) {
@@ -338,6 +339,7 @@ enum StartupFault {
 struct ChildOptions {
     nonce: Nonce,
     session: RendererSessionId,
+    user_agent_mode: crate::branding::UserAgentMode,
     test_mode: bool,
     fault: Option<StartupFault>,
     media: Option<media::ChildMediaOptions>,
@@ -358,6 +360,17 @@ impl ChildOptions {
             .parse::<u64>()
             .map_err(|_| "--renderer-session requires an integer".to_string())
             .and_then(|value| RendererSessionId::new(value).map_err(|error| error.to_string()))?;
+        let user_agent_mode = arguments
+            .iter()
+            .any(|argument| argument == "--renderer-user-agent")
+            .then(|| value("--renderer-user-agent"))
+            .transpose()?
+            .map(|value| {
+                crate::branding::UserAgentMode::parse(value)
+                    .ok_or_else(|| format!("unknown renderer User-Agent mode: {value}"))
+            })
+            .transpose()?
+            .unwrap_or_default();
         let fault = arguments
             .iter()
             .any(|argument| argument == "--renderer-startup-fault")
@@ -375,6 +388,7 @@ impl ChildOptions {
         Ok(Self {
             nonce,
             session,
+            user_agent_mode,
             test_mode: arguments
                 .iter()
                 .any(|argument| argument == "--renderer-test-mode"),

@@ -259,6 +259,7 @@ impl BrowserState {
             self.controls.go,
             self.controls.task_manager,
             self.controls.reader,
+            self.controls.options,
         ] {
             ShowWindow(control, command);
         }

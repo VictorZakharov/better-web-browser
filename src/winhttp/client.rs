@@ -5,7 +5,7 @@ mod protocol_tests;
 
 use super::cookies::CookieStore;
 use super::ffi::*;
-use crate::branding::USER_AGENT;
+use crate::branding::UserAgentMode;
 use crate::fetch::{
     Body, FetchError, FetchRequest, FetchResponse, FetchSignal, FetchUrl, HeaderList, RequestCache,
 };
@@ -101,21 +101,44 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn new() -> Result<Self, String> {
-        Self::with_store(configured_access_type(), CookieStore::in_memory())
+        Self::with_store(
+            configured_access_type(),
+            CookieStore::in_memory(),
+            UserAgentMode::Breeze,
+        )
     }
 
     pub fn with_profile(profile_directory: &Path) -> Result<Self, String> {
+        Self::with_profile_user_agent(profile_directory, UserAgentMode::Breeze)
+    }
+
+    pub fn with_profile_user_agent(
+        profile_directory: &Path,
+        user_agent_mode: UserAgentMode,
+    ) -> Result<Self, String> {
         let store = CookieStore::open(profile_directory.join("cookies.json"))?;
-        Self::with_store(configured_access_type(), store)
+        Self::with_store(configured_access_type(), store, user_agent_mode)
     }
 
     #[cfg(test)]
     pub(super) fn with_access_type(access_type: u32) -> Result<Self, String> {
-        Self::with_store(access_type, CookieStore::in_memory())
+        Self::with_store(access_type, CookieStore::in_memory(), UserAgentMode::Breeze)
     }
 
-    fn with_store(access_type: u32, cookie_store: CookieStore) -> Result<Self, String> {
-        let agent = wide(USER_AGENT);
+    #[cfg(test)]
+    pub(super) fn with_access_type_and_user_agent(
+        access_type: u32,
+        mode: UserAgentMode,
+    ) -> Result<Self, String> {
+        Self::with_store(access_type, CookieStore::in_memory(), mode)
+    }
+
+    fn with_store(
+        access_type: u32,
+        cookie_store: CookieStore,
+        user_agent_mode: UserAgentMode,
+    ) -> Result<Self, String> {
+        let agent = wide(user_agent_mode.user_agent());
         let session = InternetHandle::new(unsafe {
             WinHttpOpen(agent.as_ptr(), access_type, null(), null(), 0)
         })?;

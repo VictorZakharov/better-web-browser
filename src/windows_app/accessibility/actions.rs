@@ -175,6 +175,7 @@ impl BrowserState {
             GO_ID => Some((self.controls.go, ID_GO)),
             READER_ID => Some((self.controls.reader, ID_READER)),
             TASK_MANAGER_ID => Some((self.controls.task_manager, ID_TASK_MANAGER)),
+            OPTIONS_ID => Some((self.controls.options, ID_OPTIONS)),
             _ => None,
         };
         if let Some((window, command)) = control {

@@ -5,15 +5,101 @@
 
 pub const PRODUCT_NAME: &str = "Breeze";
 pub const BENCHMARK_ID: &str = "breeze";
-// A conventional desktop compatibility UA receives modern content on sites
-// that still branch on browser identity. Keep Breeze's own product token so
-// the request remains attributable; review the compatibility major version
-// alongside web-platform support rather than silently tracking local Chrome.
-pub const USER_AGENT: &str = concat!(
+pub const USER_AGENT: &str = concat!("Breeze/", env!("CARGO_PKG_VERSION"));
+const CHROME_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ",
     "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Breeze/",
     env!("CARGO_PKG_VERSION")
 );
+const FIREFOX_USER_AGENT: &str = concat!(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) ",
+    "Gecko/20100101 Firefox/156.0 Breeze/",
+    env!("CARGO_PKG_VERSION")
+);
+
+/// Profile-wide, opt-in content negotiation identity. Compatibility modes do
+/// not imply that Breeze implements every feature of the named browser.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UserAgentMode {
+    #[default]
+    Breeze,
+    Chrome,
+    Firefox,
+}
+
+impl UserAgentMode {
+    pub const fn setting(self) -> &'static str {
+        match self {
+            Self::Breeze => "breeze",
+            Self::Chrome => "chrome",
+            Self::Firefox => "firefox",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Breeze => "Breeze (default)",
+            Self::Chrome => "Chrome compatible",
+            Self::Firefox => "Firefox compatible",
+        }
+    }
+
+    pub const fn user_agent(self) -> &'static str {
+        match self {
+            Self::Breeze => USER_AGENT,
+            Self::Chrome => CHROME_USER_AGENT,
+            Self::Firefox => FIREFOX_USER_AGENT,
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "breeze" => Some(Self::Breeze),
+            "chrome" => Some(Self::Chrome),
+            "firefox" => Some(Self::Firefox),
+            _ => None,
+        }
+    }
+}
+
+static RENDERER_MODE: std::sync::OnceLock<UserAgentMode> = std::sync::OnceLock::new();
+
+/// Called once during the isolated renderer bootstrap, before any page realm.
+pub fn install_renderer_user_agent_mode(mode: UserAgentMode) -> Result<(), &'static str> {
+    RENDERER_MODE
+        .set(mode)
+        .map_err(|_| "renderer User-Agent mode was already initialized")
+}
+
+pub fn renderer_user_agent() -> &'static str {
+    RENDERER_MODE
+        .get()
+        .copied()
+        .unwrap_or_default()
+        .user_agent()
+}
+
+#[cfg(test)]
+mod user_agent_tests {
+    use super::*;
+
+    #[test]
+    fn identities_remain_distinct_and_attributable() {
+        assert_eq!(UserAgentMode::default(), UserAgentMode::Breeze);
+        assert_eq!(UserAgentMode::Breeze.user_agent(), USER_AGENT);
+        assert!(UserAgentMode::Chrome.user_agent().contains("Chrome/153."));
+        assert!(UserAgentMode::Firefox.user_agent().contains("Firefox/156."));
+        for mode in [
+            UserAgentMode::Breeze,
+            UserAgentMode::Chrome,
+            UserAgentMode::Firefox,
+        ] {
+            assert_eq!(UserAgentMode::parse(mode.setting()), Some(mode));
+            assert!(mode.user_agent().contains("Breeze/"));
+        }
+        assert_eq!(UserAgentMode::parse("unknown"), None);
+    }
+}
 pub const HOME_URL: &str = "https://browser.local/";
 
 pub const HOME_HTML: &str = r#"

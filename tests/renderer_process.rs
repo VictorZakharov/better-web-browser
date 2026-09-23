@@ -58,6 +58,8 @@ mod support;
 mod termination;
 #[path = "renderer_process/title_navigation.rs"]
 mod title_navigation;
+#[path = "renderer_process/user_agent.rs"]
+mod user_agent;
 #[path = "renderer_process/viewport_observers.rs"]
 mod viewport_observers;
 #[path = "renderer_process/xhr_reuse.rs"]
