@@ -4,7 +4,7 @@
         _name(name) { name = String(name); return name.startsWith('--') ? name : name.toLowerCase(); }
         _map() {
             const map = new Map();
-            for (const declaration of (this.element.getAttribute('style') || '').split(';')) {
+            for (const declaration of this.cssText.split(';')) {
                 const split = declaration.indexOf(':');
                 if (split > 0) {
                     const name = declaration.slice(0, split).trim();
@@ -13,9 +13,12 @@
             }
             return map;
         }
-        _write(map) { this.element.setAttribute('style', [...map].map(([name, value]) => name + ': ' + value).join('; ')); }
-        get cssText() { return this.element.getAttribute('style') || ''; }
-        set cssText(value) { this.element.setAttribute('style', String(value)); }
+        _write(map) {
+            setAttributeValueInternal(this.element, 'style', [...map]
+                .map(([name, value]) => name + ': ' + value).join('; '));
+        }
+        get cssText() { return host('attrGet', nodeId(this.element), 'style') || ''; }
+        set cssText(value) { setAttributeValueInternal(this.element, 'style', String(value)); }
         getPropertyValue(name) { return this._map().get(this._name(name)) || ''; }
         setProperty(name, value, priority = '') {
             const map = this._map();

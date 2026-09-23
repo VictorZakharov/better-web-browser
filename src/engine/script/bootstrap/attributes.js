@@ -131,6 +131,23 @@
         if (record.namespace === null && record.localName === 'src' && newValue !== null
             && element instanceof HTMLMediaElement) mediaSourceAttributeChanged(element);
     };
+    // DOM's "set an attribute value" is an internal algorithm. CSSOM uses it
+    // to update inline style without invoking an author-overridden setAttribute.
+    const setAttributeValueInternal = (element, name, value) => {
+        const record = host('attrSet', nodeId(element), name, value);
+        const oldValue = record?.value ?? null;
+        const current = record ? { ...record, value } : {
+            namespace: null, prefix: null, localName: name, qualifiedName: name, value
+        };
+        if (element.localName === 'img' &&
+            (current.localName === 'src' || current.localName === 'srcset')) {
+            resetImageElementState(element);
+        }
+        queueAttributeMutation(element, current, oldValue, value);
+        maybeRefreshNamedProperties(element, current.namespace, current.localName, oldValue, value);
+        maybeRefreshPatternVerdict(element, current.localName);
+        scheduleSlotChangeCheck();
+    };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));
         detachAttributeState(attribute, record.value);
