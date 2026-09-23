@@ -44,6 +44,14 @@ The original cross-browser collection/capability fixture checks closed, open,
 and closed-again menu geometry without copying site code. Broader declaration
 parsing, serialization, and full transform/filter rendering remain separate work.
 
+Inline declaration writes follow CSSOM's
+[update style attribute](https://drafts.csswg.org/cssom/#update-style-attribute-for)
+algorithm: the browser changes the underlying DOM attribute without calling an
+author-overridden `Element.setAttribute` or `getAttribute` method. The shared
+internal attribute path still queues MutationObserver records and custom-element
+`attributeChangedCallback` reactions. This avoids a recursive author override
+on modern component pages without suppressing observable DOM mutations.
+
 ## Render blocking and explicit geometry
 
 While the document's existing render-blocking gate is closed, the renderer keeps

@@ -68,3 +68,65 @@ fn react_webkit_clamp_properties_round_trip_through_named_style_members() {
          -webkit-box-orient: vertical; display: -webkit-box"
     );
 }
+
+#[test]
+fn inline_style_writes_use_internal_attribute_steps_not_overridden_set_attribute() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+        const element = document.createElement('div');
+        let authorSetCalls = 0;
+        let authorGetCalls = 0;
+        const originalGetAttribute = element.getAttribute;
+        element.setAttribute = () => { authorSetCalls++; throw Error('author setAttribute called'); };
+        element.getAttribute = () => { authorGetCalls++; throw Error('author getAttribute called'); };
+        const records = [];
+        new MutationObserver(items => records.push(...items.map(item =>
+            item.attributeName + ':' + item.oldValue)))
+            .observe(element, {attributes:true, attributeOldValue:true});
+        element.style.setProperty('color', 'red');
+        element.style.backgroundColor = 'blue';
+        element.style.removeProperty('color');
+        element.style.cssText = 'width: 12px';
+        queueMicrotask(() => {
+            document.querySelector('output').textContent = [
+                authorSetCalls,
+                authorGetCalls,
+                originalGetAttribute.call(element, 'style'),
+                element.style.width,
+                records.join('|')
+            ].join(';');
+        });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "0;0;width: 12px;12px;style:null|style:color: red|style:color: red; background-color: blue|style:background-color: blue"
+    );
+}
+
+#[test]
+fn inline_style_writes_still_trigger_custom_element_attribute_reactions() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+        const changes = [];
+        class StyledElement extends HTMLElement {
+            static get observedAttributes() { return ['style']; }
+            attributeChangedCallback(name, oldValue, newValue, namespace) {
+                changes.push([name, oldValue, newValue, namespace].join(':'));
+            }
+        }
+        customElements.define('x-styled', StyledElement);
+        const element = document.createElement('x-styled');
+        element.style.color = 'red';
+        element.style.setProperty('width', '12px');
+        element.style.removeProperty('color');
+        document.querySelector('output').textContent = changes.join('|');
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "style::color: red:|style:color: red:color: red; width: 12px:|style:color: red; width: 12px:width: 12px:"
+    );
+}

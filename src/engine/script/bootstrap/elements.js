@@ -83,20 +83,7 @@
         }
         setAttribute(name, value) {
             name = normalizedQualifiedName(this, validateAttributeLocalName(String(name)));
-            value = String(value);
-            const record = host('attrSet', nodeId(this), name, value);
-            const oldValue = record?.value ?? null;
-            const current = record ? { ...record, value } : {
-                namespace: null, prefix: null, localName: name, qualifiedName: name, value
-            };
-            if (this.localName === 'img' &&
-                (current.localName === 'src' || current.localName === 'srcset')) {
-                resetImageElementState(this);
-            }
-            queueAttributeMutation(this, current, oldValue, value);
-            maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
-            maybeRefreshPatternVerdict(this, current.localName);
-            scheduleSlotChangeCheck();
+            setAttributeValueInternal(this, name, String(value));
         }
         setAttributeNS(namespace, qualifiedName, value) {
             const extracted = validateAndExtractAttributeName(namespace, qualifiedName);
