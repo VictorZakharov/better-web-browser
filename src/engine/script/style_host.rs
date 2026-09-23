@@ -57,22 +57,7 @@ pub(super) fn style_host_call(
     }
     if operation == "normalizeCssColor" {
         let value = argument_string(args, 1)?;
-        let Some(color) = crate::engine::css::parse_color(&value) else {
-            return Ok(Some(js_string(String::new())));
-        };
-        let serialized = if color.alpha == u8::MAX {
-            format!("#{:02x}{:02x}{:02x}", color.red, color.green, color.blue)
-        } else {
-            let alpha = f32::from(color.alpha) / 255.0;
-            format!(
-                "rgba({}, {}, {}, {})",
-                color.red, color.green, color.blue, alpha
-            )
-        };
-        return Ok(Some(js_string(format!(
-            "{serialized}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
-            color.red, color.green, color.blue, color.alpha
-        ))));
+        return Ok(Some(normalize_css_color(&value)));
     }
     if operation == "offsetParent" {
         let parent = state
@@ -109,4 +94,23 @@ pub(super) fn style_host_call(
         })
         .unwrap_or_default();
     Ok(Some(js_string(value)))
+}
+
+pub(super) fn normalize_css_color(value: &str) -> JsValue {
+    let Some(color) = crate::engine::css::parse_color(value) else {
+        return js_string(String::new());
+    };
+    let serialized = if color.alpha == u8::MAX {
+        format!("#{:02x}{:02x}{:02x}", color.red, color.green, color.blue)
+    } else {
+        let alpha = f32::from(color.alpha) / 255.0;
+        format!(
+            "rgba({}, {}, {}, {})",
+            color.red, color.green, color.blue, alpha
+        )
+    };
+    js_string(format!(
+        "{serialized}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        color.red, color.green, color.blue, color.alpha
+    ))
 }

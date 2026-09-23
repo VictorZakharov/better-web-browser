@@ -2,13 +2,28 @@
 
 use super::binding_helpers::argument_id;
 use super::*;
-use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
+use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
 use std::io::Cursor;
 
 const MAX_CANVAS_PIXELS: usize = 4 * 1024 * 1024;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasDecode" {
+        let Some(bytes) = args.get(1).and_then(JsValue::as_bytes) else {
+            return Err(JsNativeError::typ()
+                .with_message("ImageBitmap decoding requires an image byte array")
+                .into());
+        };
+        return Ok(Some(match decode(bytes) {
+            Some((width, height, pixels)) => JsValue::Array(vec![
+                JsValue::from(f64::from(width)),
+                JsValue::from(f64::from(height)),
+                JsValue::Bytes(pixels),
+            ]),
+            None => JsValue::Null,
+        }));
+    }
     if operation != "canvasEncode" {
         return Ok(None);
     }
@@ -44,6 +59,27 @@ pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Op
         JsValue::from(mime.to_string()),
         JsValue::Bytes(bytes),
     ])))
+}
+
+fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
+        return None;
+    }
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?;
+    let (width, height) = (decoded.width(), decoded.height());
+    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_CANVAS_PIXELS as u64
+    {
+        return None;
+    }
+    Some((width, height, decoded.into_rgba8().into_raw()))
 }
 
 fn encode(
@@ -105,5 +141,14 @@ mod tests {
         ];
         assert!(canvas_host_call("canvasEncode", &args).is_err());
         assert!(encode(0, 1, &[], "image/png", None).is_none());
+    }
+
+    #[test]
+    fn decodes_encoded_pixels_and_rejects_invalid_sources() {
+        let pixels = [9, 44, 201, 255];
+        let encoded = encode(1, 1, &pixels, "image/png", None).unwrap();
+        assert_eq!(decode(&encoded), Some((1, 1, pixels.to_vec())));
+        assert!(decode(&[]).is_none());
+        assert!(decode(b"not an image").is_none());
     }
 }

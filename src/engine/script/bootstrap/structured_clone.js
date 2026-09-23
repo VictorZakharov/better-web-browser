@@ -19,8 +19,11 @@
             throw new TypeError('transfer must be an iterable');
         const result = [...source], seen = new Set();
         for (const value of result) {
-            if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value)) ||
-                value.detached || seen.has(value)) fail();
+            const canvas = globalThis.__cloneCanvasBindings;
+            if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value) &&
+                !canvas?.isBitmap(value) && !canvas?.isOffscreen(value)) ||
+                value.detached || ((canvas?.isBitmap(value) || canvas?.isOffscreen(value)) &&
+                    canvas.isDetached(value)) || seen.has(value)) fail();
             if (globalThis.__clonePortBindings?.isPort(value)) globalThis.__clonePortBindings.describe(value);
             seen.add(value);
         }
@@ -49,6 +52,14 @@
             if (globalThis.__clonePortBindings?.isPort(value)) {
                 if (!portDescriptors.has(value)) return fail();
                 return { t: 'port', id, v: portDescriptors.get(value) };
+            }
+            const canvas = globalThis.__cloneCanvasBindings;
+            if (canvas?.isBitmap(value) || canvas?.isOffscreen(value)) {
+                if (canvas.isOffscreen(value) && !transfers.includes(value)) return fail();
+                if (canvas.isDetached(value)) return fail();
+                const record = canvas.snapshot(value);
+                return { t: record.kind, id, w: record.width, h: record.height,
+                    m: record.mode, p: bytesToBase64(record.pixels) };
             }
             if (Array.isArray(value)) return {
                 t: 'array', id, l: value.length,
@@ -83,6 +94,9 @@
         const serialized = JSON.stringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
         for (const value of transfers) {
             if (value instanceof ArrayBuffer) __hostCall('arrayBufferDetach', value);
+            else if (globalThis.__cloneCanvasBindings?.isBitmap(value) ||
+                globalThis.__cloneCanvasBindings?.isOffscreen(value))
+                globalThis.__cloneCanvasBindings.detach(value);
             else globalThis.__clonePortBindings.detach(value);
         }
         return serialized;
@@ -109,6 +123,8 @@
             if (node.t === 'number') return ({ nan: NaN, infinity: Infinity, '-infinity': -Infinity, '-0': -0 })[node.v];
             let value;
             if (node.t === 'port') value = receive(node.v);
+            else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
+                value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p)) ?? fail();
             else if (node.t === 'array') value = new Array(node.l);
             else if (node.t === 'date') value = new Date(node.v);
             else if (node.t === 'regexp') value = new RegExp(node.s, node.f);

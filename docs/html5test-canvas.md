@@ -1,10 +1,12 @@
 # Bounded Canvas 2D capability slice
 
 The Windows x64 hidden release run of HTML5test.co moved from **323 / 588** to
-**334 / 588** on 2026-09-23 (1280×720, 125% scale, `en-US`, fresh profile,
-5-second settle). The score is a detected-capability count, not a Canvas or
-browser conformance score. The benchmark completed with HTTP 200, no JavaScript
-errors, and no renderer exit. Reproduce it using the command in the README.
+**334 / 588** for the initial Canvas 2D slice, then to **337 / 588** for the
+bitmap/OffscreenCanvas slice on 2026-09-23 (1280×720, 125% scale, `en-US`,
+fresh profile, 5-second settle). The score is a detected-capability count, not
+a Canvas or browser conformance score. The latest benchmark completed with HTTP
+200, no JavaScript errors, and no renderer exit. Reproduce it using the command
+in the README.
 
 ## Implemented behavior
 
@@ -27,11 +29,23 @@ errors, and no renderer exit. Reproduce it using the command in the README.
 - `globalCompositeOperation` currently supports `source-over`,
   `destination-over`, `copy`, `lighter`, `multiply`, and `screen` on the owned
   bitmap. Unsupported operators are ignored by the setter.
+- `ImageBitmap` owns a closeable snapshot; `createImageBitmap()` accepts
+  `ImageData`, HTML/Offscreen Canvas, another bitmap, and decoded PNG/JPEG/WebP
+  `Blob` input. Crop, orientation flip, resize dimensions and quality are
+  applied to pixels. `drawImage()` accepts Canvas and ImageBitmap sources in
+  its three standard argument forms with bounded nearest/bilinear sampling.
+- `bitmaprenderer` consumes an `ImageBitmap` into an exclusive Canvas context.
+  `OffscreenCanvas` shares the same real 2D raster implementation, supports
+  `convertToBlob()` and `transferToImageBitmap()`, and is exposed in dedicated
+  workers. Structured clone copies bitmaps, and transferring an ImageBitmap or
+  OffscreenCanvas detaches the sender after serialization. A Canvas transferred
+  from a DOM placeholder can export its live bitmap.
 
 ## Intentional limits
 
 This is not full Canvas 2D. The bitmap is not yet painted into the page's
-display list. Text, image drawing, patterns, clipping, shadows, transforms,
+display list, including an OffscreenCanvas linked to a DOM placeholder.
+Text, HTML image-element and video image sources, patterns, clipping, shadows, transforms,
 conic gradients, nonseparable blend modes, most SVG path-string commands, and
 pixel antialiasing are not implemented. Stroke caps and joins are simplified;
 ellipse/curve geometry is flattened to bounded line segments. Large bitmaps,
@@ -41,6 +55,7 @@ not no-op signatures for score probes.
 
 Behavioral tests cover decoded PNG/JPEG/WebP output, asynchronous blob delivery,
 blend pixels, path fill rules, ellipse and dashed strokes, SVG input, affine
-`addPath()`, gradient interpolation, and invalid inputs. The relevant normative
+`addPath()`, gradient interpolation, ImageBitmap ownership and sampling,
+bitmap export, cross-realm pixel transfer, and invalid inputs. The relevant normative
 references are [HTML Canvas 2D](https://html.spec.whatwg.org/multipage/canvas.html)
 and [CSS Compositing and Blending Level 1](https://drafts.fxtf.org/compositing-1/).

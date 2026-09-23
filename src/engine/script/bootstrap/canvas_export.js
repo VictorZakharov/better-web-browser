@@ -1,7 +1,8 @@
     // HTML §4.12.5: serialize the canvas's owned bitmap, never an empty stand-in.
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl-dev
     const encodedCanvas = (canvas, type, quality) => {
-        const state = stateForCanvas(canvas);
+        const owned = stateForCanvas(canvas);
+        const state = owned.placeholder ? stateForCanvas(owned.placeholder) : owned;
         if (!state.width || !state.height || !state.pixels) return null;
         return host('canvasEncode', state.width, state.height, type, quality, state.pixels);
     };

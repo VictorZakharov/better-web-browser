@@ -60,6 +60,10 @@
     windowObject.HTMLAudioElement = HTMLAudioElement;
     windowObject.HTMLCanvasElement = HTMLCanvasElement;
     windowObject.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    windowObject.OffscreenCanvasRenderingContext2D = OffscreenCanvasRenderingContext2D;
+    windowObject.OffscreenCanvas = OffscreenCanvas;
+    windowObject.ImageBitmap = ImageBitmap;
+    windowObject.ImageBitmapRenderingContext = ImageBitmapRenderingContext;
     windowObject.Path2D = Path2D;
     windowObject.CanvasGradient = CanvasGradient;
     windowObject.ImageData = ImageData;

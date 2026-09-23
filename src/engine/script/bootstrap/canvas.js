@@ -54,21 +54,21 @@
         return { serialized, channels: [Number(red), Number(green), Number(blue), Number(alpha)] };
     };
 
-    const stateForCanvas = canvas => {
+    const stateForCanvas = (canvas, forceReset = false) => {
         const width = canvas.width;
         const height = canvas.height;
         let state = canvasStates.get(canvas);
         if (!state) {
-            state = { width: -1, height: -1, pixels: null, context: null };
+            state = { width: -1, height: -1, pixels: null, context: null, mode: 'none', placeholder: null };
             canvasStates.set(canvas, state);
         }
-        if (state.width !== width || state.height !== height) {
+        if (forceReset || state.width !== width || state.height !== height) {
             state.width = width;
             state.height = height;
             state.pixels = width * height <= MAX_CANVAS_PIXELS
                 ? new Uint8ClampedArray(width * height * 4)
                 : null;
-            if (state.context) state.context.__reset();
+            state.context?.__reset?.();
         }
         return state;
     };
@@ -97,6 +97,8 @@
             this.__lineWidth = 1;
             this.__lineDash = [];
             this.__dashOffset = 0;
+            this.__imageSmoothingEnabled = true;
+            this.__imageSmoothingQuality = 'low';
             this.__path = newCanvasPath();
             this.__stack = [];
         }
@@ -124,7 +126,9 @@
             if (this.__stack.length < 64)
                 this.__stack.push({ fill: this.__fill, globalAlpha: this.__globalAlpha,
                     compositeOperation: this.__compositeOperation, stroke: this.__stroke,
-                    lineWidth: this.__lineWidth, lineDash: [...this.__lineDash], dashOffset: this.__dashOffset });
+                    lineWidth: this.__lineWidth, lineDash: [...this.__lineDash], dashOffset: this.__dashOffset,
+                    imageSmoothingEnabled: this.__imageSmoothingEnabled,
+                    imageSmoothingQuality: this.__imageSmoothingQuality });
         }
         restore() {
             const state = this.__stack.pop();
@@ -136,6 +140,8 @@
                 this.__lineWidth = state.lineWidth;
                 this.__lineDash = state.lineDash;
                 this.__dashOffset = state.dashOffset;
+                this.__imageSmoothingEnabled = state.imageSmoothingEnabled;
+                this.__imageSmoothingQuality = state.imageSmoothingQuality;
             }
         }
         clearRect(x, y, width, height) { this.__paintRect(x, y, width, height, null); }
@@ -204,16 +210,20 @@
         get width() { return canvasDimension(this, 'width', 300); }
         set width(value) {
             this.setAttribute('width', Math.max(0, Math.trunc(Number(value))) || 0);
-            stateForCanvas(this);
+            stateForCanvas(this, true);
         }
         get height() { return canvasDimension(this, 'height', 150); }
         set height(value) {
             this.setAttribute('height', Math.max(0, Math.trunc(Number(value))) || 0);
-            stateForCanvas(this);
+            stateForCanvas(this, true);
         }
         getContext(contextId) {
-            if (String(contextId).toLowerCase() !== '2d') return null;
+            const mode = String(contextId).toLowerCase();
+            if (mode !== '2d' && mode !== 'bitmaprenderer') return null;
             const state = stateForCanvas(this);
-            return state.context ||= new CanvasRenderingContext2D(this);
+            if (state.mode !== 'none' && state.mode !== mode) return null;
+            state.mode = mode;
+            return state.context ||= mode === '2d' ? new CanvasRenderingContext2D(this) :
+                new ImageBitmapRenderingContext(canvasBitmapContextToken, this);
         }
     }

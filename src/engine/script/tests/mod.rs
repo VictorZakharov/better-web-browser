@@ -25,6 +25,7 @@ mod adjacent_insertion;
 mod attributes;
 mod bindings;
 mod canvas;
+mod canvas_bitmap;
 mod channel_messaging;
 mod checkable;
 mod collections;
