@@ -199,6 +199,16 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         }
         "list-style" | "list-style-type" => matches!(value.as_str(), "none" | "disc"),
         "margin" | "padding" | "border-width" => edge_lengths_supported(&value),
+        "scroll-margin"
+        | "scroll-margin-top"
+        | "scroll-margin-right"
+        | "scroll-margin-bottom"
+        | "scroll-margin-left"
+        | "scroll-padding"
+        | "scroll-padding-top"
+        | "scroll-padding-right"
+        | "scroll-padding-bottom"
+        | "scroll-padding-left" => super::scroll_spacing::supports(&property, &value),
         "border-radius" => parse_length(&value).is_some(),
         "justify-content" | "-webkit-justify-content" | "-webkit-box-pack" => matches!(
             value.as_str(),

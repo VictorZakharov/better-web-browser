@@ -99,3 +99,140 @@ fn sticky_client_rects_update_synchronously_when_an_element_scrolls() {
         "[[10,0,185,85],[10,0,185,85],[10,0,185,85],[10,0,185,85],[10,0,185,85]]"
     );
 }
+
+#[test]
+fn scroll_into_view_aligns_nested_scroll_box_without_moving_viewport() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const content = document.getElementById('content');
+        const returned = content.scrollIntoView({block:'end', inline:'end', container:'nearest'});
+        document.body.dataset.result = JSON.stringify([
+            pane.scrollLeft, pane.scrollTop, scrollY, returned instanceof Promise,
+            content.getBoundingClientRect().bottom <= pane.getBoundingClientRect().bottom,
+            content.getBoundingClientRect().right <= pane.getBoundingClientRect().right
+        ]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "[215,415,0,true,true,true]");
+}
+
+#[test]
+fn scroll_into_view_legacy_boolean_and_viewport_alignment() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        pane.before(Object.assign(document.createElement('div'), {id:'spacer'}));
+        document.getElementById('spacer').style.height = '900px';
+        const footer = document.createElement('div');
+        footer.style.height = '1600px';
+        pane.after(footer);
+        const top = pane.getBoundingClientRect().top;
+        const height = pane.getBoundingClientRect().height;
+        const maxScroll = document.documentElement.scrollHeight - innerHeight;
+        pane.scrollIntoView();
+        const start = scrollY;
+        const afterStartTop = pane.getBoundingClientRect().top;
+        pane.scrollIntoView(false);
+        const end = scrollY;
+        document.body.dataset.result = JSON.stringify([top, height, maxScroll, start, afterStartTop, end, typeof pane.scrollIntoView]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    // The runtime viewport is 720px high, though the layout fixture is 600px.
+    assert_eq!(result(&dom), "[900,100,1880,900,0,280,\"function\"]");
+}
+
+#[test]
+fn scroll_into_view_nearest_does_not_move_an_already_visible_target() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const target = document.createElement('div');
+        target.style.cssText = 'width:20px;height:20px;margin:30px';
+        pane.firstElementChild.prepend(target);
+        pane.scrollTo(0, 10);
+        const before = [pane.scrollLeft, pane.scrollTop];
+        target.scrollIntoView({block:'nearest', inline:'nearest', container:'nearest'});
+        document.body.dataset.result = JSON.stringify([before, [pane.scrollLeft, pane.scrollTop]]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "[[0,10],[0,10]]");
+}
+
+#[test]
+fn scroll_into_view_validates_options_without_scrolling_detached_elements() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const detached = document.createElement('div');
+        const failures = [];
+        for (const options of [{block:'middle'}, {inline:'far'},
+            {container:'invalid'}, {behavior:'warp'}]) {
+            try { pane.scrollIntoView(options); } catch (error) { failures.push(error.name); }
+        }
+        detached.scrollIntoView();
+        document.body.dataset.result = JSON.stringify([failures, pane.scrollTop, scrollY]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        result(&dom),
+        "[[\"TypeError\",\"TypeError\",\"TypeError\",\"TypeError\"],0,0]"
+    );
+}
+
+#[test]
+fn scroll_into_view_converts_legacy_boolean_union_and_ignores_overridden_geometry() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const target = document.getElementById('content');
+        target.getBoundingClientRect = () => { throw new Error('author override'); };
+        target.getClientRects = () => { throw new Error('author override'); };
+        target.scrollIntoView({block:'end', container:'nearest'});
+        const end = pane.scrollTop;
+        pane.scrollTop = 0;
+        target.scrollIntoView(0);
+        const legacyFalse = pane.scrollTop;
+        pane.scrollTop = 100;
+        target.scrollIntoView(1);
+        const legacyTrue = pane.scrollTop;
+        pane.scrollTop = 100;
+        target.scrollIntoView(null);
+        document.body.dataset.result = JSON.stringify([end, legacyFalse, legacyTrue, pane.scrollTop]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "[415,415,0,0]");
+}
+
+#[test]
+fn scroll_into_view_applies_scroll_margin_and_scroll_padding_to_both_axes() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const content = document.getElementById('content');
+        content.style.position = 'relative';
+        content.innerHTML = '<div id="target" style="position:absolute;left:200px;top:200px;width:20px;height:20px;scroll-margin:10px 15px"></div>';
+        pane.style.scrollPadding = '6px 8px';
+        const target = document.getElementById('target');
+        const css = getComputedStyle(target);
+        const supported = [CSS.supports('scroll-margin', '10px 15px'), CSS.supports('scroll-padding', '6px 8px')];
+        target.scrollIntoView({block:'start', inline:'start', container:'nearest'});
+        const targetRect = target.getBoundingClientRect(), paneRect = pane.getBoundingClientRect();
+        document.body.dataset.result = JSON.stringify([
+            supported, css.scrollMarginTop, getComputedStyle(pane).scrollPaddingLeft,
+            pane.scrollLeft, pane.scrollTop,
+            targetRect.left - paneRect.left, targetRect.top - paneRect.top
+        ]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "[[true,true],\"10px\",\"8px\",177,184,23,16]");
+}
+
+#[test]
+fn root_scroll_padding_adjusts_viewport_scroll_into_view_position() {
+    let (dom, outcome) = run(r#"
+        document.documentElement.style.scrollPaddingTop = '25px';
+        const spacer = document.createElement('div'); spacer.style.height = '900px';
+        const target = document.createElement('div'); target.style.cssText = 'height:20px;scroll-margin-top:10px';
+        const footer = document.createElement('div'); footer.style.height = '900px';
+        document.body.replaceChildren(spacer, target, footer);
+        target.scrollIntoView({block:'start'});
+        document.body.dataset.result = JSON.stringify([scrollY, target.getBoundingClientRect().top]);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "[865,35]");
+}

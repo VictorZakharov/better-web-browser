@@ -209,6 +209,8 @@ pub struct ComputedStyle {
     pub max_height: Length,
     pub margin: Edges,
     pub padding: Edges,
+    pub scroll_margin: Edges,
+    pub scroll_padding: Edges,
     pub border_width: Edges,
     /// Top, right, bottom, left; None is the computed `currentcolor` keyword.
     pub border_colors: [Option<Color>; 4],
@@ -298,6 +300,13 @@ impl ComputedStyle {
             max_height: Length::Auto,
             margin: Edges::ZERO,
             padding: Edges::ZERO,
+            scroll_margin: Edges::ZERO,
+            scroll_padding: Edges {
+                top: Length::Auto,
+                right: Length::Auto,
+                bottom: Length::Auto,
+                left: Length::Auto,
+            },
             border_width: Edges::ZERO,
             border_colors: [None; 4],
             border_radius: Length::Px(0.0),

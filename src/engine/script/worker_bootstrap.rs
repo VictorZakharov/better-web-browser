@@ -8,6 +8,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/network_body.js"),
     include_str!("bootstrap/network_types.js"),
     include_str!("bootstrap/network_fetch.js"),
+    include_str!("bootstrap/event_source.js"),
     include_str!("bootstrap/network_xhr_response.js"),
     include_str!("bootstrap/network_xhr.js"),
     include_str!("bootstrap/file_reader.js"),

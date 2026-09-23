@@ -262,6 +262,18 @@ pub(super) fn apply_declaration(
         "padding-right" => assign_length(&mut style.padding.right, value),
         "padding-bottom" => assign_length(&mut style.padding.bottom, value),
         "padding-left" => assign_length(&mut style.padding.left, value),
+        "scroll-margin"
+        | "scroll-margin-top"
+        | "scroll-margin-right"
+        | "scroll-margin-bottom"
+        | "scroll-margin-left"
+        | "scroll-padding"
+        | "scroll-padding-top"
+        | "scroll-padding-right"
+        | "scroll-padding-bottom"
+        | "scroll-padding-left" => {
+            super::scroll_spacing::apply(style, name, value);
+        }
         "border-width" => assign_edges(&mut style.border_width, value),
         "border-top-width" => assign_length(&mut style.border_width.top, value),
         "border-right-width" => assign_length(&mut style.border_width.right, value),
