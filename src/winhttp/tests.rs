@@ -1,4 +1,5 @@
 use super::*;
+use crate::branding::USER_AGENT;
 use crate::navigation::ParsedUrl;
 use crate::winhttp::cookies::{cookie_matches, parse_cookie};
 use crate::winhttp::ffi::{ACCEPT_TYPES, WINHTTP_ACCESS_TYPE_NO_PROXY};
@@ -127,6 +128,13 @@ fn sends_javascript_cookies_on_the_next_http_request() {
     );
     assert!(
         request.contains("Accept-Language: en-CA,en;q=0.9\r\n"),
+        "{request}"
+    );
+    assert!(
+        request.to_ascii_lowercase().contains(&format!(
+            "user-agent: {}\r\n",
+            USER_AGENT.to_ascii_lowercase()
+        )),
         "{request}"
     );
     assert!(

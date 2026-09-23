@@ -62,6 +62,19 @@ profile/cookies, browser identity, and automated/headless traffic differ.
 The server chooses the response; Breeze must render it, not silently substitute
 search results or evade the challenge.
 
+On September 23, the user confirmed that normal Chrome and Breeze reached the
+Internet through the same public IP, but a normal Breeze search still received
+`/sorry/`. A passive homepage comparison using the same HTTP client and changing
+only `User-Agent` received Google's legacy `<input>` form with the Breeze-only
+identity and a modern `<textarea>` form with a Chrome-compatible identity.
+Google supplied the legacy form's `ie=ISO-8859-1` and empty `biw`/`bih` hidden
+fields; Breeze did not add them during submission. A temporary hidden Breeze
+capture with a Chrome UA also received the modern form, but exposed a separate
+missing CSS Font Loading API (`document.fonts.load`). The browser now advertises
+a Chrome-compatible UA with a Breeze product suffix across all sites. That is
+content negotiation, not proof that Google will stop challenging searches or
+that the modern page is fully compatible; normal-session acceptance remains open.
+
 The earlier Breeze capture had an empty challenge frame. A fresh-profile
 hidden replay after these slices showed a live checkbox and, after an automated
 checkbox click, a nine-image challenge with distinct clipped tiles. A paired

@@ -5,10 +5,14 @@
 
 pub const PRODUCT_NAME: &str = "Breeze";
 pub const BENCHMARK_ID: &str = "breeze";
+// A conventional desktop compatibility UA receives modern content on sites
+// that still branch on browser identity. Keep Breeze's own product token so
+// the request remains attributable; review the compatibility major version
+// alongside web-platform support rather than silently tracking local Chrome.
 pub const USER_AGENT: &str = concat!(
-    "Breeze/",
-    env!("CARGO_PKG_VERSION"),
-    " (+https://localhost)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ",
+    "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Breeze/",
+    env!("CARGO_PKG_VERSION")
 );
 pub const HOME_URL: &str = "https://browser.local/";
 

@@ -63,6 +63,15 @@ the public suffix list; it considers the full redirect chain. Direct browser-UI 
 input; startup and scripted benchmark navigation do not claim user activation. These headers
 describe request provenance but do not override a server's abuse or CAPTCHA decision.
 
+The HTTP `User-Agent` and `navigator.userAgent` use the same desktop compatibility
+identity: conventional Chrome/WebKit tokens followed by Breeze's own versioned
+product token. This is an explicit content-negotiation tradeoff, not a claim that
+the engine implements every Chrome feature. The legacy `navigator.appVersion`
+follows the [HTML algorithm](https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-appversion)
+for that value. Keep the compatibility major version under review as both sites
+and Breeze's web-platform coverage evolve; do not vary identity by site or
+fabricate user activation to obtain different server responses.
+
 ## Cancellation and resource bounds
 
 Every active document owns a `FetchController`. Navigation aborts the previous controller before

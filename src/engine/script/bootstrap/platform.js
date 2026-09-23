@@ -14,10 +14,13 @@
         back() {}, forward() {}, go() {}
     };
 
+    const navigatorUserAgent = host('userAgent');
     windowObject.navigator = {
-        userAgent: host('userAgent'),
+        userAgent: navigatorUserAgent,
         appName: 'Netscape',
-        appVersion: '5.0',
+        // HTML defines this legacy value as the default UA after "Mozilla/".
+        appVersion: navigatorUserAgent.startsWith('Mozilla/5.0 (')
+            ? navigatorUserAgent.slice('Mozilla/'.length) : '',
         platform: 'Win32',
         language: 'en-CA',
         languages: ['en-CA', 'en'],
