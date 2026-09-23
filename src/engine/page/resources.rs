@@ -34,6 +34,13 @@ pub(super) fn discover_resources(
                     url: script.source_url.clone(),
                     kind: script.kind,
                     fetch_options: script.fetch_options,
+                    script_source: crate::fetch::csp::ScriptSource {
+                        nonce: script.node.attr("nonce"),
+                        parser_inserted: script
+                            .node
+                            .element()
+                            .is_some_and(|element| element.script_parser_inserted.get()),
+                    },
                 };
                 if seen_script_resources.insert(resource.clone()) {
                     resources.push(resource);

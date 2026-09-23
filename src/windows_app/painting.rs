@@ -75,7 +75,8 @@ impl BrowserState {
                             .unwrap_or(dc);
                         match item {
                             DisplayItem::NodeBoundary { .. }
-                            | DisplayItem::PaintBoundary { .. } => continue,
+                            | DisplayItem::PaintBoundary { .. }
+                            | DisplayItem::EmbeddedFrame { .. } => continue,
                             DisplayItem::BeginOpacity { bounds, opacity } => {
                                 if *opacity <= 0.0 {
                                     skipped_opacity_depth = 1;

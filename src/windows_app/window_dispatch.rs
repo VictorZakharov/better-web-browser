@@ -128,6 +128,7 @@ unsafe fn dispatch_window_message(
                 ID_GO => state.navigate_from_address(),
                 ID_TASK_MANAGER => state.open_task_manager(),
                 ID_READER => state.toggle_reader(),
+                ID_OPTIONS => state.open_user_agent_options(),
                 ID_PAGE_CONTROL_BASE.. => state.activate_page_control(id, notification),
                 _ => {}
             }
@@ -137,7 +138,7 @@ unsafe fn dispatch_window_message(
             let item = &*(lparam as *const DrawItemStruct);
             if matches!(
                 item.control_id as usize,
-                ID_BACK | ID_FORWARD | ID_RELOAD | ID_GO | ID_TASK_MANAGER | ID_READER
+                ID_BACK | ID_FORWARD | ID_RELOAD | ID_GO | ID_TASK_MANAGER | ID_READER | ID_OPTIONS
             ) {
                 state.paint_chrome_button(item);
                 1

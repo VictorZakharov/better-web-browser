@@ -10,6 +10,7 @@ pub(super) struct Controls {
     pub(super) go: Hwnd,
     pub(super) task_manager: Hwnd,
     pub(super) reader: Hwnd,
+    pub(super) options: Hwnd,
 }
 
 impl Default for Controls {
@@ -22,6 +23,7 @@ impl Default for Controls {
             go: null_mut(),
             task_manager: null_mut(),
             reader: null_mut(),
+            options: null_mut(),
         }
     }
 }
@@ -46,6 +48,7 @@ impl BrowserState {
         self.controls.task_manager =
             self.create_control("BUTTON", "Task manager", button_style, ID_TASK_MANAGER);
         self.controls.reader = self.create_control("BUTTON", "Reader", button_style, ID_READER);
+        self.controls.options = self.create_control("BUTTON", "Options", button_style, ID_OPTIONS);
 
         let all = [
             self.controls.back,
@@ -55,6 +58,7 @@ impl BrowserState {
             self.controls.go,
             self.controls.task_manager,
             self.controls.reader,
+            self.controls.options,
         ];
         if all.iter().any(|window| window.is_null()) {
             return Err(last_error("create browser controls"));
@@ -139,6 +143,7 @@ impl BrowserState {
             self.controls.go,
             self.controls.task_manager,
             self.controls.reader,
+            self.controls.options,
         ] {
             if !control.is_null() {
                 SendMessageW(control, WM_SETFONT, interface_font as usize, 1);
@@ -175,12 +180,22 @@ impl BrowserState {
 
         let task_width = self.scale(if compact { 42 } else { 116 });
         let reader_width = self.scale(if compact { 42 } else { 78 });
+        let options_width = self.scale(if compact { 42 } else { 80 });
         let go_width = self.scale(if very_compact { 40 } else { 48 });
-        let task_left = (width - margin - task_width).max(left);
+        let options_left = (width - margin - options_width).max(left);
+        let task_left = (options_left - gap - task_width).max(left);
         let reader_left = (task_left - gap - reader_width).max(left);
         let go_left = (reader_left - gap - go_width).max(left);
 
         MoveWindow(self.controls.go, go_left, top, go_width, control_height, 1);
+        MoveWindow(
+            self.controls.options,
+            options_left,
+            top,
+            options_width,
+            control_height,
+            1,
+        );
         MoveWindow(
             self.controls.reader,
             reader_left,

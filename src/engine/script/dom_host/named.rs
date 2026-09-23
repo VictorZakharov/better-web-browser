@@ -71,8 +71,10 @@ fn named_values(node: &NodeRef) -> Vec<String> {
     if let Some(id) = node.attr("id").filter(|id| !id.is_empty()) {
         names.push(id);
     }
-    if matches!(node.tag_name(), Some("embed" | "form" | "img" | "object"))
-        && let Some(name) = node.attr("name").filter(|name| !name.is_empty())
+    if matches!(
+        node.tag_name(),
+        Some("embed" | "form" | "iframe" | "img" | "object")
+    ) && let Some(name) = node.attr("name").filter(|name| !name.is_empty())
     {
         names.push(name);
     }

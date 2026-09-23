@@ -162,18 +162,17 @@ pub(super) fn resolve_svg_replaced_size(
         containing_block.height,
         style.font_size,
     );
-    let (width, height) = match (width, height) {
-        (Some(width), Some(height)) => (width, height),
-        (Some(width), None) if intrinsic_width > 0.0 => {
-            (width, width * intrinsic_height / intrinsic_width)
+    // SVG 2 geometry: `auto` on an inline <svg> has a 100% used size, not
+    // the number of user units in viewBox. The decoded raster's dimensions
+    // provide only an aspect ratio when the containing height is indefinite.
+    let width = width.unwrap_or(containing_block.width);
+    let height = height.or(containing_block.height).unwrap_or_else(|| {
+        if intrinsic_width > 0.0 {
+            width * intrinsic_height / intrinsic_width
+        } else {
+            intrinsic_height
         }
-        (None, Some(height)) if intrinsic_height > 0.0 => {
-            (height * intrinsic_width / intrinsic_height, height)
-        }
-        (Some(width), None) => (width, intrinsic_height),
-        (None, Some(height)) => (intrinsic_width, height),
-        (None, None) => (intrinsic_width, intrinsic_height),
-    };
+    });
     (width.max(0.0), height.max(0.0))
 }
 

@@ -159,6 +159,23 @@ unsafe extern "system" {
         caption: *const u16,
         kind: u32,
     ) -> i32;
+    pub(in crate::windows_app) fn CreatePopupMenu() -> Hmenu;
+    pub(in crate::windows_app) fn AppendMenuW(
+        menu: Hmenu,
+        flags: u32,
+        item: usize,
+        text: *const u16,
+    ) -> i32;
+    pub(in crate::windows_app) fn TrackPopupMenu(
+        menu: Hmenu,
+        flags: u32,
+        x: i32,
+        y: i32,
+        reserved: i32,
+        window: Hwnd,
+        rectangle: *const Rect,
+    ) -> u32;
+    pub(in crate::windows_app) fn DestroyMenu(menu: Hmenu) -> i32;
     pub(in crate::windows_app) fn DrawTextW(
         dc: Hdc,
         text: *const u16,

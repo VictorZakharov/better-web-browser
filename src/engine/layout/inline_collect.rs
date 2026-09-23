@@ -2,7 +2,9 @@ use text_atoms::{collect_text_atoms, pending_space_atom};
 mod text_atoms;
 use super::*;
 mod intrinsic;
+mod positioned;
 mod replaced_constraints;
+use positioned::relative_replaced_offset;
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn collect_inline_root(
@@ -94,7 +96,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         output.push(InlineAtom::Break);
                         *pending_space = None;
                     }
-                    "img" | "image" | "video" => {
+                    "img" | "image" | "video" | "iframe" => {
                         self.collect_image(node, style, link, output, containing_block)
                     }
                     "input" | "textarea" => {
@@ -207,17 +209,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         output: &mut Vec<InlineAtom>,
         containing_block: InlineContainingBlock,
     ) {
-        let url = self.page.image_url(node);
+        let is_frame = node.tag_name() == Some("iframe");
+        let url = if is_frame {
+            Some(String::new())
+        } else {
+            self.page.image_url(node)
+        };
         let intrinsic = url.as_ref().and_then(|url| self.page.images.get(url));
         let is_video = node.tag_name() == Some("video");
         let placeholder =
             is_video && url.as_deref() == Some(crate::engine::page::MEDIA_VIDEO_PLACEHOLDER);
-        let intrinsic_width = if placeholder {
+        let intrinsic_width = if is_frame || placeholder {
             300.0
         } else {
             intrinsic.map(|image| image.width as f32).unwrap_or(16.0)
         };
-        let intrinsic_height = if placeholder {
+        let intrinsic_height = if is_frame || placeholder {
             150.0
         } else {
             intrinsic.map(|image| image.height as f32).unwrap_or(16.0)
@@ -238,9 +245,16 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         );
         let mut width = specified_width.unwrap_or(intrinsic_width);
         let mut height = specified_height.unwrap_or(intrinsic_height);
-        if specified_width.is_some() && specified_height.is_none() && intrinsic_width > 0.0 {
+        if !is_frame
+            && specified_width.is_some()
+            && specified_height.is_none()
+            && intrinsic_width > 0.0
+        {
             height = width * intrinsic_height / intrinsic_width;
-        } else if specified_height.is_some() && specified_width.is_none() && intrinsic_height > 0.0
+        } else if !is_frame
+            && specified_height.is_some()
+            && specified_width.is_none()
+            && intrinsic_height > 0.0
         {
             width = height * intrinsic_width / intrinsic_height;
         }
@@ -278,6 +292,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 inset_y: margin.top + padding.top + border.top,
                 image_width: width,
                 image_height: height,
+                relative_offset: relative_replaced_offset(style, containing_block),
                 transform: style.transform.clone(),
                 transform_font_size: style.font_size,
                 opacity: style.opacity,
@@ -338,6 +353,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 inset_y: margin.top + border.top + padding.top,
                 image_width: width,
                 image_height: height,
+                relative_offset: relative_replaced_offset(style, containing_block),
                 transform: style.transform.clone(),
                 transform_font_size: style.font_size,
                 opacity: style.opacity,

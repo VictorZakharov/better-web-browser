@@ -19,7 +19,9 @@
             throw new TypeError('transfer must be an iterable');
         const result = [...source], seen = new Set();
         for (const value of result) {
-            if (!(value instanceof ArrayBuffer) || value.detached || seen.has(value)) fail();
+            if ((!(value instanceof ArrayBuffer) && !globalThis.__clonePortBindings?.isPort(value)) ||
+                value.detached || seen.has(value)) fail();
+            if (globalThis.__clonePortBindings?.isPort(value)) globalThis.__clonePortBindings.describe(value);
             seen.add(value);
         }
         return result;
@@ -27,6 +29,9 @@
     globalThis.__serializeClone = (input, transfers = []) => {
         transfers = transferList(transfers);
         const seen = new Map(); let nextId = 1;
+        const portDescriptors = new Map();
+        for (const port of transfers.filter(value => globalThis.__clonePortBindings?.isPort(value)))
+            portDescriptors.set(port, globalThis.__clonePortBindings.describe(port));
         const encode = value => {
             if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
             if (typeof value === 'undefined') return { t: 'undefined' };
@@ -41,6 +46,10 @@
             if (typeof value !== 'object') return fail();
             if (seen.has(value)) return { t: 'reference', v: seen.get(value) };
             const id = nextId++; seen.set(value, id);
+            if (globalThis.__clonePortBindings?.isPort(value)) {
+                if (!portDescriptors.has(value)) return fail();
+                return { t: 'port', id, v: portDescriptors.get(value) };
+            }
             if (Array.isArray(value)) return {
                 t: 'array', id, l: value.length,
                 v: Object.keys(value).map(key => [key, encode(value[key])])
@@ -69,12 +78,26 @@
             for (const key of Object.keys(value)) entries.push([key, encode(value[key])]);
             return { t: 'object', id, n: prototype === null, v: entries };
         };
-        const serialized = JSON.stringify(encode(input));
-        for (const buffer of transfers) __hostCall('arrayBufferDetach', buffer);
+        const payload = encode(input);
+        const ports = [...portDescriptors.values()];
+        const serialized = JSON.stringify(ports.length ? { __breezeClonePorts: true, payload, ports } : payload);
+        for (const value of transfers) {
+            if (value instanceof ArrayBuffer) __hostCall('arrayBufferDetach', value);
+            else globalThis.__clonePortBindings.detach(value);
+        }
         return serialized;
     };
-    globalThis.__deserializeClone = serialized => {
+    globalThis.__deserializeCloneWithPorts = (serialized, context) => {
+        const envelope = JSON.parse(String(serialized));
+        const transfers = envelope?.__breezeClonePorts === true ? envelope.ports : [];
+        const payload = envelope?.__breezeClonePorts === true ? envelope.payload : envelope;
         const references = new Map();
+        const ports = new Map();
+        const receive = descriptor => {
+            const key = JSON.stringify(descriptor);
+            if (!ports.has(key)) ports.set(key, globalThis.__clonePortBindings?.receive(descriptor, context) ?? fail());
+            return ports.get(key);
+        };
         const decode = node => {
             if (node === null || typeof node !== 'object') return node;
             if (node.t === 'reference') {
@@ -85,7 +108,8 @@
             if (node.t === 'bigint') return BigInt(node.v);
             if (node.t === 'number') return ({ nan: NaN, infinity: Infinity, '-infinity': -Infinity, '-0': -0 })[node.v];
             let value;
-            if (node.t === 'array') value = new Array(node.l);
+            if (node.t === 'port') value = receive(node.v);
+            else if (node.t === 'array') value = new Array(node.l);
             else if (node.t === 'date') value = new Date(node.v);
             else if (node.t === 'regexp') value = new RegExp(node.s, node.f);
             else if (node.t === 'map') value = new Map();
@@ -111,8 +135,10 @@
             else if (node.t === 'object') for (const [key, item] of node.v) value[key] = decode(item);
             return value;
         };
-        return decode(JSON.parse(String(serialized)));
+        const data = decode(payload);
+        return { data, ports: transfers.map(receive) };
     };
+    globalThis.__deserializeClone = serialized => __deserializeCloneWithPorts(serialized).data;
     globalThis.__cloneTransferList = transferList;
     globalThis.structuredClone = (value, options = {}) =>
         __deserializeClone(__serializeClone(value, transferList(options)));

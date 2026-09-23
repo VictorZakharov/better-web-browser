@@ -14,6 +14,7 @@ fn discovers_external_scripts_and_executes_dom_mutations() {
         url: "https://example.com/library.js".into(),
         kind: ScriptKind::Classic,
         fetch_options: options,
+        script_source: crate::fetch::csp::ScriptSource::default(),
     }));
     page.add_script(
         "https://example.com/library.js",
@@ -52,6 +53,7 @@ fn discovers_module_script_fetch_policy() {
         url: "https://example.com/app.js".into(),
         kind: ScriptKind::Module,
         fetch_options: options,
+        script_source: crate::fetch::csp::ScriptSource::default(),
     }));
 }
 
@@ -106,6 +108,7 @@ fn keeps_async_scripts_off_the_first_paint_path() {
         url: format!("https://example.com/{name}.js"),
         kind: ScriptKind::Classic,
         fetch_options: options,
+        script_source: crate::fetch::csp::ScriptSource::default(),
     };
     assert!(!page.resource_blocks_first_paint(&resource("analytics")));
     assert!(page.resource_blocks_first_paint(&resource("application")));

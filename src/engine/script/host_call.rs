@@ -86,6 +86,11 @@ pub(super) fn dispatch_host_call(
     }
 
     match operation {
+        "windowName" => Ok(js_string(state.browsing_context_name.borrow().clone())),
+        "setWindowName" => {
+            *state.browsing_context_name.borrow_mut() = argument_string(args, 1)?;
+            Ok(JsValue::undefined())
+        }
         "parent" => {
             let parent = state
                 .node(argument_id(args, 1))
@@ -201,7 +206,9 @@ pub(super) fn dispatch_host_call(
             state.set_cookie(argument_string(args, 1)?);
             Ok(JsValue::undefined())
         }
-        "userAgent" => Ok(js_string(crate::branding::USER_AGENT.to_string())),
+        "userAgent" => Ok(js_string(
+            crate::branding::renderer_user_agent().to_string(),
+        )),
         "resolveUrl" => {
             let value = argument_string(args, 1)?;
             Ok(js_string(state.resolved_url(&value)))

@@ -6,14 +6,14 @@ mod thread;
 use thread::run_worker;
 
 use self::network::{
-    PendingWorkerFetch, WorkerNetworkRequest, finish_ready_network_batches,
+    PendingWorkerFetch, WorkerNetworkRequest, WorkerSourceRequest, finish_ready_network_batches,
     start_ready_network_batch, worker_source_request,
 };
 use super::fetch::validate_script_response;
 use super::merge_outcome;
 use crate::engine::{
     ScriptFetchAction, ScriptFetchEvent, ScriptKind, ScriptOutcome, ScriptRuntime,
-    ScriptWorkerAction, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
+    ScriptWorkerAction, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 use crate::fetch::CredentialsMode;
 use crate::renderer_process::child::connection::ChildConnection;
@@ -106,6 +106,17 @@ impl RendererWorkers {
                 let worker = runtime.complete_worker_event_with_loader(event.id, message, None);
                 merge_outcome(outcome, worker, document_root);
             }
+            for port_event in event.port_events {
+                let (endpoint, message) = match port_event {
+                    WorkerPortEvent::Message {
+                        endpoint,
+                        serialized,
+                    } => (endpoint, Some(serialized)),
+                    WorkerPortEvent::Closed { endpoint } => (endpoint, None),
+                };
+                let worker = runtime.complete_worker_port_event(event.id, endpoint, message);
+                merge_outcome(outcome, worker, document_root);
+            }
             outcome.console.extend(
                 event
                     .console
@@ -144,6 +155,7 @@ impl RendererWorkers {
                     credentials,
                     document_url,
                     client,
+                    worker_client,
                 } => {
                     if self.handles.len() >= MAX_DEDICATED_WORKERS {
                         outcome.errors.push(format!(
@@ -161,6 +173,7 @@ impl RendererWorkers {
                         credentials,
                         document_url,
                         client,
+                        worker_client,
                         network: self.network_sender.clone(),
                         events: self.event_sender.clone(),
                         commands: receiver,
@@ -181,6 +194,23 @@ impl RendererWorkers {
                 ScriptWorkerAction::PostMessage { id, serialized } => {
                     if let Some(worker) = self.handles.get(&id) {
                         let _ = worker.commands.send(WorkerCommand::Message(serialized));
+                    }
+                }
+                ScriptWorkerAction::PortPostMessage {
+                    id,
+                    endpoint,
+                    serialized,
+                } => {
+                    if let Some(worker) = self.handles.get(&id) {
+                        let _ = worker.commands.send(WorkerCommand::PortMessage {
+                            endpoint,
+                            serialized,
+                        });
+                    }
+                }
+                ScriptWorkerAction::PortClose { id, endpoint } => {
+                    if let Some(worker) = self.handles.get(&id) {
+                        let _ = worker.commands.send(WorkerCommand::PortClose(endpoint));
                     }
                 }
                 ScriptWorkerAction::Terminate { id } => {
@@ -216,6 +246,8 @@ impl WorkerHandle {
 
 enum WorkerCommand {
     Message(String),
+    PortMessage { endpoint: u32, serialized: String },
+    PortClose(u32),
     Fetch { id: u32, event: ScriptFetchEvent },
     Terminate,
 }
@@ -224,6 +256,7 @@ struct WorkerEvent {
     id: u32,
     fetch_actions: Vec<ScriptFetchAction>,
     messages: Vec<Result<String, String>>,
+    port_events: Vec<WorkerPortEvent>,
     console: Vec<String>,
     errors: Vec<String>,
     closed: bool,
@@ -237,6 +270,7 @@ struct WorkerConfig {
     credentials: CredentialsMode,
     document_url: String,
     client: crate::fetch::RequestClient,
+    worker_client: crate::fetch::RequestClient,
     network: mpsc::Sender<WorkerNetworkRequest>,
     events: mpsc::Sender<WorkerEvent>,
     commands: mpsc::Receiver<WorkerCommand>,

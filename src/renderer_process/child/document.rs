@@ -5,6 +5,7 @@ mod diagnostics;
 mod document_streams;
 mod dynamic_scripts;
 mod fetch;
+mod frames_paint;
 mod fullscreen;
 mod geometry;
 mod interaction;
@@ -66,6 +67,7 @@ pub(super) struct DocumentRuntime {
     script_layout_page: Rc<RefCell<Page>>,
     script_layout_viewport: Rc<Cell<crate::renderer_protocol::PresentedViewport>>,
     layout: crate::engine::LayoutOutput,
+    frame_paint: Vec<frames_paint::PaintedFrame>,
     loaded_resources: HashSet<PageResource>,
     resource_budget: u64,
     pending_fetches: Vec<ScriptFetchAction>,
@@ -247,6 +249,7 @@ impl DocumentRuntime {
                 });
             }
         }
+        frames_paint::append_images(&self.frame_paint, &mut self.sent_images, &mut images);
         let next_timer_micros = self.next_timer_micros();
         let glyph_epoch = self.text.borrow().glyph_epoch();
         let glyphs = self.text.borrow_mut().take_pending_glyphs();

@@ -55,6 +55,28 @@ removes credentials when policy or origin changes require it, and applies a boun
 HTTP errors such as 404 or 503 are responses with bodies; DNS, connection, abort, redirect-policy,
 body-budget, and CORS failures are typed `FetchError` values.
 
+For potentially trustworthy network URLs, the browser also appends
+[`Sec-Fetch-Dest`, `Sec-Fetch-Mode`, and `Sec-Fetch-Site`](https://www.w3.org/TR/fetch-metadata/)
+from the typed request, not from page-supplied headers. Site classification is schemeful and uses
+the public suffix list; it considers the full redirect chain. Direct browser-UI navigation uses
+`Sec-Fetch-Site: none`. `Sec-Fetch-User: ?1` is sent only for a navigation backed by trusted user
+input; startup and scripted benchmark navigation do not claim user activation. These headers
+describe request provenance but do not override a server's abuse or CAPTCHA decision.
+
+The HTTP `User-Agent` and `navigator.userAgent` use the same profile-wide identity.
+The default is Breeze's own versioned product token. The browser's **Options** menu
+also offers opt-in Chrome and Firefox compatibility identities. The Chrome option
+uses the exact desktop Chrome UA string for a controlled comparison; the Firefox
+option retains a Breeze token for attribution. The choice is saved in the profile
+and takes effect after restarting Breeze so that existing requests, documents, and workers never
+disagree about the active identity. Compatibility identity is a content-negotiation
+tradeoff, not a claim that the engine implements every feature of the named browser.
+The legacy `navigator.appVersion` follows the
+[HTML algorithm](https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-appversion)
+for the selected identity. Keep compatibility major versions under review as sites
+and Breeze's web-platform coverage evolve; do not vary identity by site or
+fabricate user activation to obtain different server responses.
+
 ## Cancellation and resource bounds
 
 Every active document owns a `FetchController`. Navigation aborts the previous controller before

@@ -66,6 +66,7 @@ mod microtasks;
 mod modules;
 mod mutations;
 mod native_editing;
+mod navigator;
 mod network;
 mod network_body;
 mod network_diagnostics;

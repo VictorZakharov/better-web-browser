@@ -73,7 +73,9 @@ pub(super) fn decode_layout(reader: &mut WireReader<'_>) -> Result<PresentedLayo
 
 fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), ProtocolError> {
     match item {
-        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => {
+        DisplayItem::NodeBoundary { .. }
+        | DisplayItem::PaintBoundary { .. }
+        | DisplayItem::EmbeddedFrame { .. } => {
             return Err(ProtocolError::InvalidPayload("renderer-local paint anchor"));
         }
         DisplayItem::BeginClip { bounds } => {

@@ -2,6 +2,7 @@ use super::windows::{
     AppContainerSid, LaunchAttributes, PipeSet, create_renderer_job, last_error, random_nonce, raw,
     set_handle_inheritance,
 };
+use crate::branding::UserAgentMode;
 use crate::limits::{
     RENDERER_FIRST_PRESENTATION_TIMEOUT, RENDERER_HEARTBEAT_INTERVAL, RENDERER_SHUTDOWN_TIMEOUT,
     RENDERER_STARTUP_TIMEOUT, RENDERER_UNRESPONSIVE_KILL_TIMEOUT, RENDERER_UNRESPONSIVE_TIMEOUT,
@@ -38,6 +39,7 @@ pub enum StartupFault {
 #[derive(Clone, Debug)]
 pub struct RendererLaunchOptions {
     pub executable: PathBuf,
+    pub user_agent_mode: UserAgentMode,
     pub browsing_context: BrowsingContextId,
     pub startup_timeout: Duration,
     pub shutdown_timeout: Duration,
@@ -55,6 +57,7 @@ impl RendererLaunchOptions {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
             executable: executable.into(),
+            user_agent_mode: UserAgentMode::Breeze,
             browsing_context: BrowsingContextId::new(1).expect("default browsing context"),
             startup_timeout: RENDERER_STARTUP_TIMEOUT,
             shutdown_timeout: RENDERER_SHUTDOWN_TIMEOUT,
@@ -206,10 +209,11 @@ fn command_line(
     media: Option<&LaunchedMediaWorker>,
 ) -> String {
     let mut command = format!(
-        "\"{}\" --renderer-process --renderer-nonce {} --renderer-session {}",
+        "\"{}\" --renderer-process --renderer-nonce {} --renderer-session {} --renderer-user-agent {}",
         options.executable.display(),
         nonce.to_hex(),
-        session.get()
+        session.get(),
+        options.user_agent_mode.setting()
     );
     if options.test_mode {
         command.push_str(" --renderer-test-mode");

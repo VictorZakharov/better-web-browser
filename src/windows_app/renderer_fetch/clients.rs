@@ -58,7 +58,12 @@ impl Clients {
         head: &FetchRequestHead,
     ) -> Result<(), FetchError> {
         self.check_document(document)?;
-        if head.initiator != FetchInitiator::ChildNavigation {
+        let worker_entry = matches!(
+            head.initiator,
+            FetchInitiator::ClassicWorker | FetchInitiator::ModuleWorker
+        ) && head.destination == ResourceDestination::Worker
+            && head.resulting_client.id & (1_u64 << 63) != 0;
+        if head.initiator != FetchInitiator::ChildNavigation && !worker_entry {
             return if head.resulting_client.id == 0 {
                 Ok(())
             } else {
@@ -68,7 +73,7 @@ impl Clients {
         let id = head.resulting_client.id;
         if id == 0 || self.records.contains_key(&id) {
             return Err(invalid(
-                "child navigation must have a fresh nonzero client identifier",
+                "child navigation or Worker entry needs a fresh nonzero client identifier",
             ));
         }
         // Retained old realms may still refer to an earlier document; never recycle its identity.
@@ -267,5 +272,57 @@ mod tests {
             .headers
             .push(("Origin".into(), "https://forged.test".into()));
         assert!(reconstruct("https://parent.test/", intent).is_err());
+    }
+
+    #[test]
+    fn worker_entry_response_owns_its_policy_and_origin() {
+        let document = DocumentId::new(1).unwrap();
+        let mut clients = Clients::default();
+        clients.activate(document);
+        let mut entry =
+            super::super::tests::intent(document, "https://example.test/worker.js").head;
+        entry.initiator = FetchInitiator::ClassicWorker;
+        entry.destination = ResourceDestination::Worker;
+        entry.resulting_client = RequestClient {
+            id: (1_u64 << 63) | 1,
+            opaque: false,
+        };
+        clients.reserve(document, &entry).unwrap();
+        assert!(
+            clients
+                .resolve(document, "https://parent.test/", entry.resulting_client)
+                .is_err()
+        );
+        let mut headers = better_web_browser::fetch::HeaderList::new();
+        headers
+            .append(
+                "content-security-policy",
+                "script-src 'none'; connect-src 'self'",
+            )
+            .unwrap();
+        clients
+            .commit(
+                document,
+                entry.resulting_client,
+                "https://example.test/worker.js",
+                &headers,
+            )
+            .unwrap();
+        let worker = clients
+            .resolve(document, "https://parent.test/", entry.resulting_client)
+            .unwrap();
+        assert_eq!(worker.origin.serialize(), "https://example.test");
+        assert!(
+            worker
+                .policy
+                .check_request(RequestDestination::Script, "https://example.test/a.js", 0)
+                .is_err()
+        );
+        assert!(
+            worker
+                .policy
+                .check_request(RequestDestination::Fetch, "https://example.test/api", 0)
+                .is_ok()
+        );
     }
 }

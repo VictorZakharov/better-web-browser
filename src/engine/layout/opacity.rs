@@ -12,7 +12,8 @@ pub(super) fn display_item_bounds(item: &DisplayItem) -> Option<RectF> {
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
-        | DisplayItem::Image { rect, .. } => Some(*rect),
+        | DisplayItem::Image { rect, .. }
+        | DisplayItem::EmbeddedFrame { rect, .. } => Some(*rect),
         DisplayItem::BackgroundImage { clip_rect, .. } => Some(*clip_rect),
         DisplayItem::Control(spec) => Some(spec.rect),
     }

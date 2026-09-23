@@ -44,6 +44,7 @@ impl Node {
                 control_state: RefCell::new(None),
                 script_force_async: std::cell::Cell::new(true),
                 script_started: std::cell::Cell::new(false),
+                script_parser_inserted: std::cell::Cell::new(false),
             }),
         )
     }
@@ -74,6 +75,7 @@ impl Node {
                 control_state: RefCell::new(None),
                 script_force_async: std::cell::Cell::new(true),
                 script_started: std::cell::Cell::new(false),
+                script_parser_inserted: std::cell::Cell::new(false),
             }),
         )
     }

@@ -3,7 +3,7 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
-pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
+pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, offset_y: f32) {
     for item in items {
         let rect = match item {
             DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => continue,
@@ -14,7 +14,8 @@ pub(super) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }
-            | DisplayItem::Image { rect, .. } => rect,
+            | DisplayItem::Image { rect, .. }
+            | DisplayItem::EmbeddedFrame { rect, .. } => rect,
             DisplayItem::BackgroundImage {
                 clip_rect,
                 tile_rect,

@@ -30,6 +30,8 @@ pub(super) struct HostState {
     pub(super) document: NodeRef,
     pub(super) named_property_index: super::dom_host::NamedPropertyIndex,
     pub(super) document_url: String,
+    // Browsing-context state survives child Document/Window replacement.
+    pub(super) browsing_context_name: Rc<RefCell<String>>,
     pub(super) about_base_url: Option<String>,
     pub(super) inherited_url: Option<String>,
     pub(super) document_origin: crate::fetch::Origin,
@@ -124,6 +126,7 @@ impl HostState {
             document,
             named_property_index: Default::default(),
             document_url: document_url.to_string(),
+            browsing_context_name: Rc::new(RefCell::new(String::new())),
             about_base_url: None,
             inherited_url: None,
             document_origin: crate::fetch::Origin::parse(document_url)

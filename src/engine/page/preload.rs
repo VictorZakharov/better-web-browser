@@ -119,6 +119,10 @@ impl PreloadState {
             url,
             kind,
             fetch_options,
+            script_source: crate::fetch::csp::ScriptSource {
+                nonce: attribute(tag, "nonce").map(str::to_owned),
+                parser_inserted: true,
+            },
         };
         let blocks_first_paint = kind == ScriptKind::Classic
             && attribute(tag, "async").is_none()
@@ -192,6 +196,7 @@ mod tests {
                     url: "https://example.com/app/a.js".into(),
                     kind: ScriptKind::Classic,
                     fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+                    script_source: crate::fetch::csp::ScriptSource::default(),
                 },
                 PageResource::Script {
                     url: "https://example.com/app/m.js".into(),
@@ -201,6 +206,7 @@ mod tests {
                         Some("use-credentials"),
                         Some("no-referrer"),
                     ),
+                    script_source: crate::fetch::csp::ScriptSource::default(),
                 }
             ]
         );
@@ -220,6 +226,7 @@ mod tests {
                 url: "https://example.com/assets/app.js".into(),
                 kind: ScriptKind::Classic,
                 fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+                script_source: crate::fetch::csp::ScriptSource::default(),
             }]
         );
         assert!(resources.deferred.is_empty());
@@ -240,6 +247,7 @@ mod tests {
                 url: "https://example.com/real.js".into(),
                 kind: ScriptKind::Classic,
                 fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+                script_source: crate::fetch::csp::ScriptSource::default(),
             }]
         );
         assert!(resources.deferred.is_empty());

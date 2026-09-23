@@ -5,6 +5,8 @@ mod effects;
 mod failures;
 mod file_reader;
 mod history;
+mod images;
+mod names;
 mod policy;
 mod ports;
 mod scripts;

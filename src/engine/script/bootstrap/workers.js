@@ -38,6 +38,11 @@
         postMessage(message, transfer = undefined) {
             if (this.__terminated) return;
             const transfers = __cloneTransferList(transfer);
+            for (const port of transfers) {
+                if (globalThis.__clonePortBindings?.isPort(port) &&
+                    globalThis.__clonePortBindings.describe(port).worker !== this.__id)
+                    throw new DOMException('Ports belong to a different Worker', 'DataCloneError');
+            }
             const serialized = __serializeClone(message, transfers);
             host('workerPostMessage', this.__id, serialized);
         }
@@ -45,6 +50,7 @@
             if (this.__terminated) return;
             this.__terminated = true;
             workers.delete(this.__id);
+            globalThis.__workerPortBridge.terminate(this.__id);
             host('workerTerminate', this.__id);
         }
     }
@@ -56,11 +62,16 @@
         const worker = workers.get(Number(id));
         if (!worker || worker.__terminated) return;
         if (kind === 'message') {
-            try { worker.dispatchEvent(markTrusted(new MessageEvent('message', { data: __deserializeClone(String(payload)) }))); }
+            try {
+                const {data, ports} = __deserializeCloneWithPorts(String(payload), Number(id));
+                worker.dispatchEvent(markTrusted(new MessageEvent('message', {data, ports})));
+            }
             catch (_) { worker.dispatchEvent(markTrusted(new MessageEvent('messageerror'))); }
         } else {
             worker.dispatchEvent(markTrusted(new ErrorEvent('error', { message: String(payload) })));
         }
     };
+    globalThis.__completeWorkerPortEvent = (id, endpoint, payload, closed) =>
+        globalThis.__workerPortBridge.deliver(Number(id), Number(endpoint), String(payload), !!closed);
     delete globalThis.__markTrustedEvent;
 })();

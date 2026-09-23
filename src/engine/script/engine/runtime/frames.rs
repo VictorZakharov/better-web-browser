@@ -7,6 +7,12 @@ use std::collections::HashSet;
 pub(in crate::engine::script) type ChildContext = (NodeId, Rc<RefCell<HostState>>, Box<Context>);
 
 impl Context {
+    pub(in crate::engine::script) fn child_frame_elements(
+        &self,
+        document: NodeId,
+    ) -> Vec<(NodeId, NodeId)> {
+        self._frames.child_elements(document)
+    }
     pub(in crate::engine::script) fn fail_frame_navigation(
         &self,
         navigation: &super::super::frames::FrameNavigation,

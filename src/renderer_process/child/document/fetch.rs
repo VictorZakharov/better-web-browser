@@ -41,6 +41,7 @@ pub(super) fn page_resource_request(
             url,
             kind,
             fetch_options,
+            ..
         } => (
             url,
             match kind {
@@ -66,6 +67,10 @@ pub(super) fn page_resource_request(
             document,
             initiator,
             destination,
+            script_source: match resource {
+                PageResource::Script { script_source, .. } => Some(script_source.clone()),
+                _ => None,
+            },
             url: url.clone(),
             method: "GET".into(),
             headers: Vec::new(),
@@ -108,7 +113,13 @@ pub(super) fn script_api_request(
             embedding_client: request.embedding_client,
             request_id,
             document,
-            initiator: if request.resulting_client.id != 0 {
+            initiator: if request.context == crate::fetch::RequestContext::WorkerScript {
+                if request.mode == RequestMode::Cors {
+                    FetchInitiator::ModuleWorker
+                } else {
+                    FetchInitiator::ClassicWorker
+                }
+            } else if request.resulting_client.id != 0 {
                 FetchInitiator::ChildNavigation
             } else if request.context == crate::fetch::RequestContext::Subresource {
                 FetchInitiator::ChildResource
@@ -116,6 +127,7 @@ pub(super) fn script_api_request(
                 FetchInitiator::ScriptApi
             },
             destination: destination(request.destination),
+            script_source: request.script_source,
             url: request.url.as_str().to_string(),
             method: request.method,
             headers: request
@@ -186,6 +198,7 @@ fn destination(value: RequestDestination) -> ResourceDestination {
         RequestDestination::Style => ResourceDestination::Style,
         RequestDestination::Image => ResourceDestination::Image,
         RequestDestination::Script => ResourceDestination::Script,
+        RequestDestination::Worker => ResourceDestination::Worker,
         RequestDestination::Font => ResourceDestination::Font,
         RequestDestination::Document => ResourceDestination::Document,
         RequestDestination::Fetch => ResourceDestination::Fetch,
@@ -320,6 +333,7 @@ mod tests {
                 url: "https://cdn.example/module.js".into(),
                 kind: ScriptKind::Module,
                 fetch_options: options,
+                script_source: crate::fetch::csp::ScriptSource::default(),
             },
         );
         assert_eq!(request.head.mode, FetchMode::Cors);
@@ -336,6 +350,7 @@ mod tests {
                 url: "https://example.com/classic.js".into(),
                 kind: ScriptKind::Classic,
                 fetch_options: crate::engine::ScriptFetchOptions::for_kind(ScriptKind::Classic),
+                script_source: crate::fetch::csp::ScriptSource::default(),
             },
         );
         assert_eq!(classic.head.mode, FetchMode::NoCors);

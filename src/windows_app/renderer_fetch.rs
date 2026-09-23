@@ -4,6 +4,7 @@ mod clients;
 mod pump;
 mod registry;
 mod scheduler;
+mod worker;
 
 use super::*;
 use better_web_browser::fetch::{
@@ -155,10 +156,11 @@ fn reconstruct(
             authoritative_document_url,
             destination(head.destination),
         )?,
-        FetchInitiator::ModuleScript
-        | FetchInitiator::ClassicWorker
-        | FetchInitiator::ModuleWorker => {
+        FetchInitiator::ModuleScript => {
             FetchRequest::script(&head.url, authoritative_document_url)?
+        }
+        FetchInitiator::ClassicWorker | FetchInitiator::ModuleWorker => {
+            worker::reconstruct(&head, authoritative_document_url)?
         }
         FetchInitiator::ScriptApi => {
             let mut request = FetchRequest::script(&head.url, authoritative_document_url)?;
@@ -199,12 +201,15 @@ fn reconstruct(
             FetchInitiator::ClassicScript
                 | FetchInitiator::ModuleScript
                 | FetchInitiator::ChildResource
+                | FetchInitiator::ClassicWorker
+                | FetchInitiator::ModuleWorker
         ) {
             request.mode = mode(head.mode);
             request.credentials = credentials(head.credentials);
             request.referrer_policy = referrer_policy(head.referrer_policy);
         }
     }
+    request.script_source = head.script_source;
     Ok(request)
 }
 
@@ -251,6 +256,7 @@ fn destination(value: ResourceDestination) -> RequestDestination {
         ResourceDestination::Style => RequestDestination::Style,
         ResourceDestination::Image => RequestDestination::Image,
         ResourceDestination::Script => RequestDestination::Script,
+        ResourceDestination::Worker => RequestDestination::Worker,
         ResourceDestination::Font => RequestDestination::Font,
         ResourceDestination::Fetch => RequestDestination::Fetch,
         ResourceDestination::Video => RequestDestination::Video,

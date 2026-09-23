@@ -52,6 +52,7 @@ pub enum PageResource {
         url: String,
         kind: ScriptKind,
         fetch_options: ScriptFetchOptions,
+        script_source: crate::fetch::csp::ScriptSource,
     },
     Font {
         url: String,
@@ -171,6 +172,24 @@ impl Page {
         };
         page.install_embedded_images();
         page.discover_stylesheet_dependencies();
+        page
+    }
+
+    pub(crate) fn from_frame_document(
+        document: NodeRef,
+        source_url: &str,
+        stylesheets: Vec<crate::engine::css::StylesheetSource>,
+        quirks_mode: bool,
+        media_environment: MediaEnvironment,
+    ) -> Self {
+        let quirks = if quirks_mode {
+            html5ever::tree_builder::QuirksMode::Quirks
+        } else {
+            html5ever::tree_builder::QuirksMode::NoQuirks
+        };
+        let mut page = Self::from_dom(Dom::from_existing_document(document, quirks), source_url);
+        page.stylesheet_sources = stylesheets;
+        page.media_environment = media_environment;
         page
     }
 

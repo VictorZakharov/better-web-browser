@@ -153,13 +153,7 @@ fn request_is_same_site(request: &FetchRequest) -> bool {
     let Some(target) = request.url.parsed() else {
         return false;
     };
-    source.scheme == target.scheme && site_host(&source.host) == site_host(&target.host)
-}
-
-fn site_host(host: &str) -> &str {
-    psl2::lookup(host)
-        .and_then(|domain| domain.registrable_domain())
-        .unwrap_or(host)
+    super::site::same_site(&source, target)
 }
 
 fn sort_for_header(cookies: &mut Vec<&StoredCookie>) {

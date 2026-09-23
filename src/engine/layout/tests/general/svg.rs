@@ -60,6 +60,64 @@ fn inline_svg_percentages_use_the_definite_containing_block() {
 }
 
 #[test]
+fn viewbox_only_svg_fills_its_definite_flex_item_instead_of_using_viewbox_units() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            button { display: flex; align-items: center; padding: 0; border: 0 }
+            span { width: 24px; height: 24px }
+        </style>
+        <button><span><svg viewBox="0 -960 960 960">
+            <path d="M434.5-434.5H191.87v-91H434.5v-242.63h91v242.63h242.63v91H525.5v242.63h-91V-434.5Z" />
+        </svg></span></button>"#,
+        "https://example.com/",
+    );
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let mut measurer = FixedMeasurer;
+
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+    let bounds = output.node_bounds.get(&node_id(&svg)).copied().unwrap();
+
+    assert_eq!((bounds.width, bounds.height), (24.0, 24.0));
+}
+
+#[test]
+fn block_svg_auto_dimensions_fill_a_definite_containing_box() {
+    let page = Page::parse(
+        r#"<style>
+            body { margin: 0 }
+            .frame { width: 80px; height: 40px }
+            svg { display: block }
+        </style>
+        <div class="frame"><svg viewBox="0 0 960 960"><rect width="960" height="960" /></svg></div>"#,
+        "https://example.com/",
+    );
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let mut measurer = FixedMeasurer;
+
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+    let bounds = output.node_bounds.get(&node_id(&svg)).copied().unwrap();
+
+    assert_eq!((bounds.width, bounds.height), (80.0, 40.0));
+}
+
+#[test]
+fn svg_auto_height_uses_viewbox_ratio_when_containing_height_is_indefinite() {
+    let page = Page::parse(
+        r#"<style>body { margin: 0 }.frame { width: 80px }svg { display: block }</style>
+        <div class="frame"><svg viewBox="0 0 20 10"><rect width="20" height="10" /></svg></div>"#,
+        "https://example.com/",
+    );
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let mut measurer = FixedMeasurer;
+
+    let output = layout_page(&page, 800.0, 600.0, &mut measurer);
+    let bounds = output.node_bounds.get(&node_id(&svg)).copied().unwrap();
+
+    assert_eq!((bounds.width, bounds.height), (80.0, 40.0));
+}
+
+#[test]
 fn svg_presentation_dimensions_preserve_the_viewbox_ratio() {
     let page = Page::parse(
         r#"<style>body { margin: 0 }</style>

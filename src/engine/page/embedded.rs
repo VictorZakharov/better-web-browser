@@ -3,7 +3,7 @@ use crate::limits::MAX_EMBEDDED_IMAGE_URL_BYTES;
 use data_url::DataUrl;
 
 impl Page {
-    pub(super) fn install_embedded_images(&mut self) {
+    pub(crate) fn install_embedded_images(&mut self) {
         let urls = self
             .resources
             .iter()

@@ -136,6 +136,11 @@ pub enum DisplayItem {
         alt: String,
         tint: Option<Color>,
     },
+    /// Renderer-local replaced element. The child document is composed before IPC.
+    EmbeddedFrame {
+        rect: RectF,
+        node_id: NodeId,
+    },
     BackgroundImage {
         clip_rect: RectF,
         tile_rect: RectF,
@@ -199,6 +204,7 @@ pub(super) enum InlineAtom {
         inset_y: f32,
         image_width: f32,
         image_height: f32,
+        relative_offset: (f32, f32),
         transform: crate::engine::css::transform::TransformList,
         transform_font_size: f32,
         opacity: f32,

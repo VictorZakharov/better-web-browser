@@ -2,11 +2,11 @@
 
 use super::tabs::TabId;
 use super::*;
+mod fetch;
 mod submission;
-use better_web_browser::fetch::{
-    FetchController, FetchRequest, FetchSignal, FetchUrl, Origin, Referrer,
-};
+use better_web_browser::fetch::{FetchController, Origin};
 use better_web_browser::navigation::request::FormPost;
+use fetch::fetch_navigation;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HistoryMode {
@@ -74,11 +74,17 @@ impl BrowserState {
 
     pub(super) unsafe fn navigate_from_address(&mut self) {
         let input = window_text(self.controls.address);
-        self.navigate_from_input(&input, HistoryMode::Push);
+        self.navigate_from_input(&input, HistoryMode::Push, true);
     }
 
-    pub(super) unsafe fn navigate_from_input(&mut self, input: &str, history_mode: HistoryMode) {
+    pub(super) unsafe fn navigate_from_input(
+        &mut self,
+        input: &str,
+        history_mode: HistoryMode,
+        user_activation: bool,
+    ) {
         match normalize_user_input(input) {
+            Ok(url) if user_activation => self.begin_user_navigation(url, history_mode),
             Ok(url) => self.begin_navigation(url, history_mode),
             Err(error) => self.set_status(&error.to_string()),
         }
@@ -86,6 +92,17 @@ impl BrowserState {
 
     pub(super) unsafe fn begin_navigation(&mut self, url: String, history_mode: HistoryMode) {
         self.begin_navigation_for_tab(self.tabs.active_id(), url, history_mode, None);
+    }
+
+    unsafe fn begin_user_navigation(&mut self, url: String, history_mode: HistoryMode) {
+        self.begin_navigation_request_for_tab(
+            self.tabs.active_id(),
+            url,
+            history_mode,
+            None,
+            None,
+            true,
+        );
     }
 
     pub(super) unsafe fn begin_document_navigation(
@@ -100,7 +117,19 @@ impl BrowserState {
             .get(tab.history_index)
             .filter(|value| !value.is_empty())
             .cloned();
-        self.begin_navigation_for_tab(id, url, history_mode, referrer);
+        let user_activation = matches!(
+            (tab.transient_activation, tab.navigation.active_document()),
+            (Some((gesture_document, at)), Some(active_document))
+                if gesture_document == active_document && at.elapsed() <= Duration::from_secs(5)
+        );
+        self.begin_navigation_request_for_tab(
+            id,
+            url,
+            history_mode,
+            referrer,
+            None,
+            user_activation,
+        );
     }
 
     pub(super) unsafe fn begin_navigation_for_tab(
@@ -110,7 +139,7 @@ impl BrowserState {
         history_mode: HistoryMode,
         referrer: Option<String>,
     ) {
-        self.begin_navigation_request_for_tab(id, url, history_mode, referrer, None);
+        self.begin_navigation_request_for_tab(id, url, history_mode, referrer, None, false);
     }
 
     pub(super) unsafe fn begin_navigation_request_for_tab(
@@ -120,6 +149,7 @@ impl BrowserState {
         history_mode: HistoryMode,
         referrer: Option<String>,
         post_body: Option<FormPost>,
+        user_activation: bool,
     ) {
         let is_active = self.tabs.active_id() == id && !self.processing_background_tab;
         if is_active {
@@ -249,6 +279,7 @@ impl BrowserState {
                             &fetch_signal,
                             referrer.as_deref(),
                             post_body,
+                            user_activation,
                         )?;
                         let network_time = started.elapsed();
                         let final_url = response
@@ -339,33 +370,4 @@ impl BrowserState {
         );
         EnableWindow(self.controls.reload, (!self.history.is_empty()) as i32);
     }
-}
-
-fn fetch_navigation(
-    client: &winhttp::HttpClient,
-    url: &str,
-    signal: &FetchSignal,
-    referrer: Option<&str>,
-    post_body: Option<FormPost>,
-) -> Result<winhttp::StreamingFetchResponse, String> {
-    let mut request = FetchRequest::navigation(url).map_err(|error| error.to_string())?;
-    if let Some(referrer) = referrer {
-        request.origin = Some(Origin::parse(referrer).map_err(|error| error.to_string())?);
-        request.referrer =
-            Referrer::Url(FetchUrl::parse(referrer).map_err(|error| error.to_string())?);
-    }
-    if let Some(post) = post_body {
-        request
-            .set_method("POST")
-            .map_err(|error| error.to_string())?;
-        request
-            .headers
-            .set("content-type", &post.content_type)
-            .map_err(|error| error.to_string())?;
-        request.body = Some(better_web_browser::fetch::Body::from_bytes(post.body));
-    }
-    let request = request.with_signal(signal.clone());
-    client
-        .fetch_stream(request)
-        .map_err(|error| error.to_string())
 }

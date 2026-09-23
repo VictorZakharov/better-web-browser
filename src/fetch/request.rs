@@ -10,6 +10,8 @@ pub enum RequestContext {
     Navigation,
     Subresource,
     Script,
+    /// Internal script loader: may consume no-cors bytes, never exposed as a Fetch Response.
+    WorkerScript,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +20,7 @@ pub enum RequestDestination {
     Style,
     Image,
     Script,
+    Worker,
     Font,
     Fetch,
     Video,
@@ -88,7 +91,11 @@ pub struct FetchRequest {
     pub body: Option<Body>,
     pub context: RequestContext,
     pub destination: RequestDestination,
+    /// Browser-owned CSP input for script elements; never serialized as an HTTP header.
+    pub script_source: Option<super::csp::ScriptSource>,
     pub mode: RequestMode,
+    /// True only when a navigation is backed by a trusted user gesture.
+    pub user_activation: bool,
     pub credentials: CredentialsMode,
     pub cache: RequestCache,
     pub redirect: RedirectMode,
@@ -112,7 +119,9 @@ impl FetchRequest {
             body: None,
             context: RequestContext::Navigation,
             destination: RequestDestination::Document,
+            script_source: None,
             mode: RequestMode::Navigate,
+            user_activation: false,
             credentials: CredentialsMode::Include,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
@@ -146,7 +155,9 @@ impl FetchRequest {
             body: None,
             context: RequestContext::Subresource,
             destination,
+            script_source: None,
             mode,
+            user_activation: false,
             credentials: CredentialsMode::SameOrigin,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
@@ -171,7 +182,9 @@ impl FetchRequest {
             body: None,
             context: RequestContext::Script,
             destination: RequestDestination::Fetch,
+            script_source: None,
             mode: RequestMode::Cors,
+            user_activation: false,
             credentials: CredentialsMode::SameOrigin,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
@@ -257,7 +270,10 @@ impl FetchRequest {
                 format!("{} requests cannot have a body", self.method),
             ));
         }
-        if self.context == RequestContext::Script {
+        if matches!(
+            self.context,
+            RequestContext::Script | RequestContext::WorkerScript
+        ) {
             if self.mode == RequestMode::Navigate {
                 return Err(FetchError::new(
                     FetchErrorKind::InvalidRequest,

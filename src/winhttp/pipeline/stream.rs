@@ -82,9 +82,12 @@ impl HttpClient {
     ) -> Result<StreamingFetchResponse, FetchError> {
         request.validate()?;
         request.signal.check()?;
-        request
-            .policy
-            .check_request(request.destination, request.url.as_str(), 0)?;
+        request.policy.check_request_with_script(
+            request.destination,
+            request.url.as_str(),
+            0,
+            request.script_source.as_ref(),
+        )?;
         let body_limit = request.response_body_limit;
         if request.url.is_data() {
             return fetch_data_url(request)
@@ -94,10 +97,11 @@ impl HttpClient {
         let mut url_list = vec![request.url.clone()];
         for redirect_count in 0..=MAX_REDIRECTS {
             request.signal.check()?;
-            request.policy.check_request(
+            request.policy.check_request_with_script(
                 request.destination,
                 request.url.as_str(),
                 redirect_count,
+                request.script_source.as_ref(),
             )?;
             if needs_cors_check(&request) && request.mode == RequestMode::SameOrigin {
                 return Err(FetchError::new(
@@ -109,7 +113,7 @@ impl HttpClient {
                 self.run_preflight(&request)?;
             }
 
-            let outbound_headers = self.outbound_headers(&request)?;
+            let outbound_headers = self.outbound_headers(&request, &url_list)?;
             let transport = self.send_once_stream(TransportRequest {
                 url: &request.url,
                 method: &request.method,

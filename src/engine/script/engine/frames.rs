@@ -44,6 +44,14 @@ pub(super) type RealmSnapshot = (
 );
 
 impl FrameTree {
+    pub(super) fn child_elements(&self, parent_document: NodeId) -> Vec<(NodeId, NodeId)> {
+        self.children
+            .borrow()
+            .values()
+            .filter(|child| child.parent_document == parent_document && child.active.get())
+            .map(|child| (child.element.id(), child.host.borrow().document.id()))
+            .collect()
+    }
     pub(super) fn pending_parents(&self) -> std::collections::HashSet<NodeId> {
         self.children
             .borrow()

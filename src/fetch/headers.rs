@@ -298,7 +298,16 @@ mod tests {
     #[test]
     fn rejects_script_control_of_sensitive_headers() {
         let mut headers = HeaderList::new();
-        for name in ["Cookie", "Host", "Origin", "Referer", "Sec-Fetch-Site"] {
+        for name in [
+            "Cookie",
+            "Host",
+            "Origin",
+            "Referer",
+            "Sec-Fetch-Site",
+            "Sec-Fetch-Dest",
+            "Sec-Fetch-Mode",
+            "Sec-Fetch-User",
+        ] {
             assert!(headers.append_script(name, "injected").is_err(), "{name}");
         }
         assert!(headers.append_script("X-Application", "allowed").is_ok());

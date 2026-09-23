@@ -1,4 +1,5 @@
 use super::*;
+use crate::branding::{USER_AGENT, UserAgentMode};
 use crate::navigation::ParsedUrl;
 use crate::winhttp::cookies::{cookie_matches, parse_cookie};
 use crate::winhttp::ffi::{ACCEPT_TYPES, WINHTTP_ACCESS_TYPE_NO_PROXY};
@@ -7,6 +8,42 @@ use std::net::TcpListener;
 
 mod fetch_pipeline;
 mod support;
+
+#[test]
+fn selected_user_agent_is_sent_on_the_wire() {
+    for mode in [UserAgentMode::Chrome, UserAgentMode::Firefox] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let receiver = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).unwrap();
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        let client =
+            HttpClient::with_access_type_and_user_agent(WINHTTP_ACCESS_TYPE_NO_PROXY, mode)
+                .unwrap();
+        client.get(&format!("http://127.0.0.1:{port}/")).unwrap();
+        let request = receiver.join().unwrap();
+        assert!(
+            request.to_ascii_lowercase().contains(&format!(
+                "user-agent: {}\r\n",
+                mode.user_agent().to_ascii_lowercase()
+            )),
+            "selected mode {mode:?} was not sent: {request}"
+        );
+    }
+}
 
 #[test]
 fn decodes_utf_boms() {
@@ -129,6 +166,22 @@ fn sends_javascript_cookies_on_the_next_http_request() {
         request.contains("Accept-Language: en-CA,en;q=0.9\r\n"),
         "{request}"
     );
+    assert!(
+        request.to_ascii_lowercase().contains(&format!(
+            "user-agent: {}\r\n",
+            USER_AGENT.to_ascii_lowercase()
+        )),
+        "{request}"
+    );
+    assert!(
+        request.contains("sec-fetch-dest: document\r\n"),
+        "{request}"
+    );
+    assert!(
+        request.contains("sec-fetch-mode: navigate\r\n"),
+        "{request}"
+    );
+    assert!(request.contains("sec-fetch-site: none\r\n"), "{request}");
 }
 
 #[test]

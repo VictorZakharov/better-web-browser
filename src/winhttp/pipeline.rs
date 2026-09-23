@@ -1,5 +1,6 @@
 //! Fetch policy orchestration over the one-hop WinHTTP transport.
 
+mod metadata;
 mod stream;
 
 use super::client::{HttpClient, TransportRequest};
@@ -57,8 +58,13 @@ impl HttpClient {
         validate_preflight_response(request, &response.headers)
     }
 
-    fn outbound_headers(&self, request: &FetchRequest) -> Result<HeaderList, FetchError> {
+    fn outbound_headers(
+        &self,
+        request: &FetchRequest,
+        url_list: &[crate::fetch::FetchUrl],
+    ) -> Result<HeaderList, FetchError> {
         let mut headers = request.headers.clone();
+        metadata::append_fetch_metadata(&mut headers, request, url_list)?;
         match request.cache {
             RequestCache::NoStore | RequestCache::Reload => {
                 headers.set("pragma", "no-cache")?;

@@ -66,6 +66,7 @@ impl Page {
                 url,
                 kind,
                 fetch_options,
+                ..
             } => self.scripts.iter().any(|script| {
                 script.source_url.as_str() == url
                     && script.kind == *kind

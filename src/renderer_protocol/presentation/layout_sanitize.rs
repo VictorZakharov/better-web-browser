@@ -2,7 +2,7 @@
 
 use super::PresentedLayout;
 use crate::engine::{ControlSpec, DisplayItem, FontSpec, LayoutOutput, PositionedGlyph, RectF};
-use crate::limits::MAX_PRESENTATION_COORDINATE;
+use crate::limits::{MAX_PRESENTATION_COORDINATE, MAX_URL_BYTES};
 
 pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
     let mut offsets = Vec::with_capacity(layout.items.len() + 1);
@@ -58,7 +58,9 @@ pub(super) fn sanitize(layout: LayoutOutput) -> PresentedLayout {
 
 fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
     Some(match item {
-        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => return None,
+        DisplayItem::NodeBoundary { .. }
+        | DisplayItem::PaintBoundary { .. }
+        | DisplayItem::EmbeddedFrame { .. } => return None,
         DisplayItem::BeginClip { bounds } => DisplayItem::BeginClip {
             bounds: sanitize_rect(bounds)?,
         },
@@ -118,7 +120,13 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
             tint,
         } => DisplayItem::Image {
             rect: sanitize_rect(rect)?,
-            url,
+            // The browser process cannot accept a resource key beyond the wire
+            // URL budget. Omit that paint item instead of failing the document.
+            url: if url.len() <= MAX_URL_BYTES {
+                url
+            } else {
+                return None;
+            },
             alt,
             tint,
         },
@@ -131,7 +139,11 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
         } => DisplayItem::BackgroundImage {
             clip_rect: sanitize_rect(clip_rect)?,
             tile_rect: sanitize_rect(tile_rect)?,
-            url,
+            url: if url.len() <= MAX_URL_BYTES {
+                url
+            } else {
+                return None;
+            },
             repeat_x,
             repeat_y,
         },
@@ -188,7 +200,9 @@ fn sanitize_rect(mut rect: RectF) -> Option<RectF> {
 
 fn item_rect(item: &DisplayItem) -> Option<RectF> {
     match item {
-        DisplayItem::NodeBoundary { .. } | DisplayItem::PaintBoundary { .. } => None,
+        DisplayItem::NodeBoundary { .. }
+        | DisplayItem::PaintBoundary { .. }
+        | DisplayItem::EmbeddedFrame { .. } => None,
         DisplayItem::BeginClip { bounds }
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
@@ -291,5 +305,38 @@ mod tests {
         assert_eq!(rect.height, MAX_PRESENTATION_COORDINATE);
         assert_eq!(radius, 0.0);
         assert_eq!(presented.content_height, 0.0);
+    }
+
+    #[test]
+    fn overlong_image_resource_key_does_not_invalidate_the_document() {
+        let layout = LayoutOutput {
+            items: vec![
+                DisplayItem::Image {
+                    rect: RectF {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 20.0,
+                        height: 20.0,
+                    },
+                    url: format!("data:image/svg+xml,{}", "a".repeat(MAX_URL_BYTES)),
+                    alt: String::new(),
+                    tint: None,
+                },
+                DisplayItem::SolidRect {
+                    rect: RectF {
+                        x: 20.0,
+                        y: 0.0,
+                        width: 20.0,
+                        height: 20.0,
+                    },
+                    color: Color::default(),
+                    radius: 0.0,
+                },
+            ],
+            ..LayoutOutput::default()
+        };
+        let presented = sanitize(layout);
+        assert_eq!(presented.items.len(), 1);
+        assert!(matches!(presented.items[0], DisplayItem::SolidRect { .. }));
     }
 }

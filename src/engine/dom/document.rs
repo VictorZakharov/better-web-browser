@@ -49,6 +49,18 @@ impl Dom {
             parser_elements: Default::default(),
         }
     }
+
+    pub(crate) fn from_existing_document(document: NodeRef, quirks_mode: QuirksMode) -> Self {
+        Self {
+            identity: Rc::clone(&document.identity),
+            document,
+            errors: RefCell::new(Vec::new()),
+            quirks_mode: Cell::new(quirks_mode),
+            observable_parser: false,
+            parser_mutations: Default::default(),
+            parser_elements: Default::default(),
+        }
+    }
 }
 
 pub fn parse(html: &str) -> Dom {

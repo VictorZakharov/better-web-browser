@@ -40,3 +40,4 @@ pub use model::{
 pub use scrolling::ScrollBox;
 use std::collections::HashMap;
 pub use sticky::StickyLayer;
+pub(crate) use translate::translate_display_items;

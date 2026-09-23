@@ -143,9 +143,11 @@ benchmark wrapper; Chromium uses unified `--headless`, `--mute-audio`, and
   history restoration are incomplete. Unsupported embedded POST/target requests
   report a diagnostic instead of silently becoming a GET or parent navigation.
 - The CSP implementation is a **child response-header subset**, not general CSP
-  conformance. Meta policies, top-level response-policy integration, nonce/hash and
-  strict-dynamic, reporting, Trusted Types, and policy-bearing workers remain work.
-  Workers from policy-bearing child documents are refused for now. Full sandbox
+  conformance. Nonced parser scripts, CSP3 `strict-dynamic` script loading, and
+  external dedicated-worker entry/response policies are covered by the
+  [script/worker policy slice](csp-script-workers.md). Meta policies, top-level
+  response-policy integration, hash sources, violation reporting, Trusted Types,
+  and general Worker/MessagePort interoperability remain work. Full sandbox
   token coverage and transient-activation lifetime propagation are not claimed.
 - Stylesheet discovery/MIME/import ordering is covered; child image/font/media load
   obligations, full CSS encoding rules, and complete resource/observer interoperability

@@ -13,6 +13,12 @@ impl DocumentRuntime {
                 cursor: None,
             });
         }
+        if input.target.is_none()
+            && input.phase != PointerPhase::Leave
+            && let Some(interaction) = self.frame_pointer_input(input)
+        {
+            return Ok(interaction);
+        }
         let target = (input.phase != PointerPhase::Leave)
             .then(|| {
                 input
@@ -100,6 +106,75 @@ impl DocumentRuntime {
             outcome,
             navigation,
             cursor,
+        })
+    }
+}
+
+impl DocumentRuntime {
+    fn frame_pointer_input(&mut self, input: PointerInput) -> Option<PointerInteraction> {
+        let (document, target, x, y) =
+            crate::renderer_process::child::document::frames_paint::hit_frame(
+                &self.frame_paint,
+                input.x,
+                input.y,
+            )
+            .map(|(frame, target, x, y)| (frame.document, target, x, y))?;
+        let target_id = target.as_ref().map(|node| node.id());
+        let button_index = dom_button(input.button) as usize;
+        if input.phase != PointerPhase::Activate {
+            for (index, mask) in [1, 4, 2].into_iter().enumerate() {
+                if input.buttons & mask == 0
+                    && !(input.phase == PointerPhase::Up && button_index == index)
+                {
+                    self.pointer_down[index] = None;
+                }
+            }
+        }
+        let activate = match input.phase {
+            PointerPhase::Down => {
+                if input.button != PointerButton::None {
+                    self.pointer_down[button_index] = target_id;
+                }
+                false
+            }
+            PointerPhase::Up => {
+                self.pointer_down[button_index]
+                    .take()
+                    .is_some_and(|id| Some(id) == target_id)
+                    && matches!(input.button, PointerButton::Primary | PointerButton::Middle)
+            }
+            PointerPhase::Activate => {
+                matches!(input.button, PointerButton::Primary | PointerButton::Middle)
+            }
+            PointerPhase::Move | PointerPhase::Leave => false,
+        };
+        let result = self.script_runtime.as_mut()?.dispatch_frame_input(
+            document,
+            UserInputEvent::Pointer {
+                target,
+                phase: match input.phase {
+                    PointerPhase::Move => "move",
+                    PointerPhase::Leave => "leave",
+                    PointerPhase::Down => "down",
+                    PointerPhase::Up => "up",
+                    PointerPhase::Activate => "activate",
+                },
+                button: dom_button(input.button),
+                buttons: input.buttons,
+                x,
+                y,
+                activate,
+                modifiers: input.modifiers.into(),
+            },
+        )?;
+        Some(PointerInteraction {
+            outcome: result.outcome,
+            navigation: None,
+            cursor: (input.phase == PointerPhase::Move).then_some(PointerCursorResult {
+                document: self.id,
+                sequence: input.sequence,
+                cursor: PointerCursor::Pointer,
+            }),
         })
     }
 }
