@@ -67,6 +67,9 @@ hidden replay after these slices showed a live checkbox and, after an automated
 checkbox click, a nine-image challenge with distinct clipped tiles. A paired
 hidden Chromium capture also showed the image challenge. The challenge was not
 solved in automation, and no normal Google search-result acceptance is claimed.
+On September 23, a manual Breeze attempt could select image tiles but the
+Verify/Skip action did not advance the challenge. This remains an open
+compatibility defect; rendering the tile grid is not challenge completion.
 Remaining standards work includes broader CSP delivery/reporting and hash
 handling, complete MessagePort lifecycle/inter-agent transfer behavior, and
 live-site validation when Google serves search results. Do not replace these

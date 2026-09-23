@@ -113,7 +113,7 @@ impl HttpClient {
                 self.run_preflight(&request)?;
             }
 
-            let outbound_headers = self.outbound_headers(&request)?;
+            let outbound_headers = self.outbound_headers(&request, &url_list)?;
             let transport = self.send_once_stream(TransportRequest {
                 url: &request.url,
                 method: &request.method,

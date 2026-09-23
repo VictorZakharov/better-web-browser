@@ -94,6 +94,8 @@ pub struct FetchRequest {
     /// Browser-owned CSP input for script elements; never serialized as an HTTP header.
     pub script_source: Option<super::csp::ScriptSource>,
     pub mode: RequestMode,
+    /// True only when a navigation is backed by a trusted user gesture.
+    pub user_activation: bool,
     pub credentials: CredentialsMode,
     pub cache: RequestCache,
     pub redirect: RedirectMode,
@@ -119,6 +121,7 @@ impl FetchRequest {
             destination: RequestDestination::Document,
             script_source: None,
             mode: RequestMode::Navigate,
+            user_activation: false,
             credentials: CredentialsMode::Include,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
@@ -154,6 +157,7 @@ impl FetchRequest {
             destination,
             script_source: None,
             mode,
+            user_activation: false,
             credentials: CredentialsMode::SameOrigin,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,
@@ -180,6 +184,7 @@ impl FetchRequest {
             destination: RequestDestination::Fetch,
             script_source: None,
             mode: RequestMode::Cors,
+            user_activation: false,
             credentials: CredentialsMode::SameOrigin,
             cache: RequestCache::Default,
             redirect: RedirectMode::Follow,

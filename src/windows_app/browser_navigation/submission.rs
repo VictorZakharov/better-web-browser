@@ -73,6 +73,7 @@ impl BrowserState {
             history,
             referrer,
             options.post.clone(),
+            options.user_initiated,
         );
         true
     }

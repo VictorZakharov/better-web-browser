@@ -55,6 +55,14 @@ removes credentials when policy or origin changes require it, and applies a boun
 HTTP errors such as 404 or 503 are responses with bodies; DNS, connection, abort, redirect-policy,
 body-budget, and CORS failures are typed `FetchError` values.
 
+For potentially trustworthy network URLs, the browser also appends
+[`Sec-Fetch-Dest`, `Sec-Fetch-Mode`, and `Sec-Fetch-Site`](https://www.w3.org/TR/fetch-metadata/)
+from the typed request, not from page-supplied headers. Site classification is schemeful and uses
+the public suffix list; it considers the full redirect chain. Direct browser-UI navigation uses
+`Sec-Fetch-Site: none`. `Sec-Fetch-User: ?1` is sent only for a navigation backed by trusted user
+input; startup and scripted benchmark navigation do not claim user activation. These headers
+describe request provenance but do not override a server's abuse or CAPTCHA decision.
+
 ## Cancellation and resource bounds
 
 Every active document owns a `FetchController`. Navigation aborts the previous controller before

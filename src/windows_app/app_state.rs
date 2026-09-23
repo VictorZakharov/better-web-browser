@@ -119,7 +119,7 @@ impl BrowserState {
             self.open_task_manager();
         }
         if let Some(url) = self.startup_url.take() {
-            self.navigate_from_input(&url, HistoryMode::Push);
+            self.navigate_from_input(&url, HistoryMode::Push, false);
         } else {
             SetFocus(self.controls.address);
         }

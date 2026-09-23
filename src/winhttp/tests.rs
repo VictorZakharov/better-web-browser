@@ -129,6 +129,15 @@ fn sends_javascript_cookies_on_the_next_http_request() {
         request.contains("Accept-Language: en-CA,en;q=0.9\r\n"),
         "{request}"
     );
+    assert!(
+        request.contains("sec-fetch-dest: document\r\n"),
+        "{request}"
+    );
+    assert!(
+        request.contains("sec-fetch-mode: navigate\r\n"),
+        "{request}"
+    );
+    assert!(request.contains("sec-fetch-site: none\r\n"), "{request}");
 }
 
 #[test]
