@@ -39,6 +39,7 @@ mod document_streams;
 mod element_scrolling;
 mod embedded_elements;
 mod event_handler_attributes;
+mod event_source;
 mod events;
 mod form_review_regressions;
 mod form_selectors;

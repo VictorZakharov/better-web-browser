@@ -36,6 +36,12 @@ impl ComputedStyle {
         self.padding = self
             .padding
             .resolve_relative_units(width, height, root_font_size);
+        self.scroll_margin =
+            self.scroll_margin
+                .resolve_relative_units(width, height, root_font_size);
+        self.scroll_padding =
+            self.scroll_padding
+                .resolve_relative_units(width, height, root_font_size);
         self.border_width = self
             .border_width
             .resolve_relative_units(width, height, root_font_size);

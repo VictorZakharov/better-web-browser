@@ -116,6 +116,26 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "padding-left" => serialize_length(style.padding.left),
         "padding-right" => serialize_length(style.padding.right),
         "padding-top" => serialize_length(style.padding.top),
+        "scroll-margin-top" => serialize_scroll_spacing(style.scroll_margin.top, style.font_size),
+        "scroll-margin" => serialize_scroll_edges(style.scroll_margin, style.font_size),
+        "scroll-margin-right" => {
+            serialize_scroll_spacing(style.scroll_margin.right, style.font_size)
+        }
+        "scroll-margin-bottom" => {
+            serialize_scroll_spacing(style.scroll_margin.bottom, style.font_size)
+        }
+        "scroll-margin-left" => serialize_scroll_spacing(style.scroll_margin.left, style.font_size),
+        "scroll-padding-top" => serialize_scroll_spacing(style.scroll_padding.top, style.font_size),
+        "scroll-padding" => serialize_scroll_edges(style.scroll_padding, style.font_size),
+        "scroll-padding-right" => {
+            serialize_scroll_spacing(style.scroll_padding.right, style.font_size)
+        }
+        "scroll-padding-bottom" => {
+            serialize_scroll_spacing(style.scroll_padding.bottom, style.font_size)
+        }
+        "scroll-padding-left" => {
+            serialize_scroll_spacing(style.scroll_padding.left, style.font_size)
+        }
         "overflow" | "overflow-x" | "overflow-y" => style.serialize_overflow(property),
         "position" => match style.position {
             Position::Static => "static",
@@ -165,6 +185,45 @@ fn serialize_length(value: Length) -> String {
         Length::Auto => "auto".to_string(),
         _ => "0px".to_string(),
     }
+}
+
+// These computed properties are exposed to CSSOM View's scroll-into-view
+// algorithm. Relative font/viewport units have already been normalized by
+// the cascade; scroll-padding percentages retain their scrollport basis.
+fn serialize_scroll_spacing(value: Length, font_size: f32) -> String {
+    match value {
+        Length::Auto => "auto".to_string(),
+        Length::Percent(percent) => format!("{}%", serialize_number(percent)),
+        Length::Calc { percent, .. } if percent != 0.0 => {
+            let px = value.resolve(0.0, font_size).unwrap_or(0.0);
+            let sign = if percent < 0.0 { "-" } else { "+" };
+            format!(
+                "calc({}px {} {}%)",
+                serialize_number(px),
+                sign,
+                serialize_number(percent.abs())
+            )
+        }
+        _ => serialize_px(value.resolve(0.0, font_size).unwrap_or(0.0)),
+    }
+}
+
+fn serialize_scroll_edges(edges: Edges, font_size: f32) -> String {
+    let top = serialize_scroll_spacing(edges.top, font_size);
+    let right = serialize_scroll_spacing(edges.right, font_size);
+    let bottom = serialize_scroll_spacing(edges.bottom, font_size);
+    let left = serialize_scroll_spacing(edges.left, font_size);
+    let mut parts = vec![top];
+    if bottom != parts[0] || right != parts[0] || left != parts[0] {
+        parts.push(right);
+        if bottom != parts[0] || left != parts[1] {
+            parts.push(bottom);
+            if left != parts[1] {
+                parts.push(left);
+            }
+        }
+    }
+    parts.join(" ")
 }
 
 fn serialize_number(value: f32) -> String {

@@ -1,6 +1,9 @@
 use super::*;
 use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 
+#[path = "worker_runtime_tests/event_source.rs"]
+mod event_source;
+
 #[test]
 fn isolated_worker_dispatches_messages_and_timers() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));

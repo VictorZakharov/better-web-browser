@@ -218,7 +218,7 @@ impl StyleSet {
     fn compute_style(&self, node: &NodeRef, parent: Option<&ComputedStyle>) -> ComputedStyle {
         let mut style = ComputedStyle::inherit_from(parent);
         style.root_font_size = root_font_size_for(&self.styles, node);
-        apply_user_agent_defaults(node, &mut style, parent);
+        user_agent::apply_user_agent_defaults(node, &mut style, parent);
         let lower_origin = style.clone();
         // HTML hints precede author rules, including an explicit width/height:auto.
         apply_presentational_hints(node, &mut style);

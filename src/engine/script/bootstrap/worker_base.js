@@ -98,16 +98,39 @@
             destination.set(bytes.subarray(0, written)); return { read: String(value).length, written };
         }
     }
+    const decoderInputView = input => {
+        if (input === undefined) return new Uint8Array();
+        if (input instanceof ArrayBuffer) return new Uint8Array(input);
+        if (ArrayBuffer.isView?.(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+        throw new TypeError('input must be an ArrayBuffer or an ArrayBuffer view');
+    };
     class TextDecoder {
         constructor(label = 'utf-8', options = {}) {
-            if (!['utf-8', 'utf8'].includes(String(label).toLowerCase())) throw new RangeError('Only UTF-8 is supported');
-            this.fatal = !!options.fatal; this.ignoreBOM = !!options.ignoreBOM; this.encoding = 'utf-8';
+            label = String(label).trim().toLowerCase();
+            if (!['utf-8', 'utf8', 'unicode-1-1-utf-8'].includes(label))
+                throw new RangeError('Only UTF-8 decoding is implemented');
+            this.__fatal = !!options.fatal;
+            this.__ignoreBOM = !!options.ignoreBOM;
+            this.__pending = new Uint8Array();
+            this.__streaming = false;
+            this.__bomSeen = false;
         }
-        decode(input = new Uint8Array()) {
-            const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-            let encoded = ''; for (const byte of bytes) encoded += '%' + byte.toString(16).padStart(2, '0');
-            try { return decodeURIComponent(encoded); }
-            catch (_) { if (this.fatal) throw new TypeError('Invalid UTF-8'); return '\ufffd'; }
+        get encoding() { return 'utf-8'; }
+        get fatal() { return this.__fatal; }
+        get ignoreBOM() { return this.__ignoreBOM; }
+        decode(input, options = {}) {
+            const stream = !!options.stream;
+            const result = host('utf8Decode', decoderInputView(input),
+                this.__streaming ? this.__pending : new Uint8Array(),
+                stream, this.__fatal, this.__ignoreBOM, this.__bomSeen);
+            this.__pending = result[1];
+            this.__streaming = stream;
+            this.__bomSeen = result[2];
+            if (!stream) {
+                this.__pending = new Uint8Array();
+                this.__bomSeen = false;
+            }
+            return result[0];
         }
     }
     Object.assign(globalThis, { TextEncoder, TextDecoder });
