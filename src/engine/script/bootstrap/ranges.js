@@ -49,6 +49,7 @@
     };
 
     const abstractRangeToken = {};
+    const liveRangeReferences = new Set();
     class AbstractRange {
         constructor(token, start, end) {
             if (token !== abstractRangeToken) throw new TypeError('Illegal constructor');
@@ -64,10 +65,28 @@
         }
     }
 
+    class StaticRange extends AbstractRange {
+        constructor(init) {
+            if (!init || typeof init !== 'object')
+                throw new TypeError('StaticRange requires boundary points');
+            for (const name of ['startContainer', 'startOffset', 'endContainer', 'endOffset'])
+                if (!(name in init)) throw new TypeError(`StaticRange requires ${name}`);
+            const start = { node: init.startContainer, offset: Number(init.startOffset) >>> 0 };
+            const end = { node: init.endContainer, offset: Number(init.endOffset) >>> 0 };
+            for (const boundary of [start, end]) {
+                if (!isNode(boundary.node)) throw new TypeError('StaticRange boundary requires Node');
+                if (boundary.node instanceof DocumentType || boundary.node instanceof Attr)
+                    throw new DOMException('Invalid StaticRange boundary node', 'InvalidNodeTypeError');
+            }
+            super(abstractRangeToken, start, end);
+        }
+    }
+
     class Range extends AbstractRange {
         constructor() {
             const boundary = { node: document, offset: 0 };
             super(abstractRangeToken, boundary, boundary);
+            liveRangeReferences.add(new WeakRef(this));
         }
         get commonAncestorContainer() {
             const endAncestors = new Set(ancestorChain(this.endContainer));
@@ -117,53 +136,42 @@
             if (order === null) throw new DOMException('Ranges have different roots', 'WrongDocumentError');
             return order;
         }
-        _sameContainerContents(extract) {
-            const fragment = document.createDocumentFragment();
-            if (this.collapsed || this.startContainer !== this.endContainer) return fragment;
-            const container = this.startContainer;
-            if (container instanceof CharacterData) {
-                const clone = container.cloneNode(false);
-                clone.data = container.data.slice(this.startOffset, this.endOffset);
-                fragment.appendChild(clone);
-                if (extract) container.replaceData(this.startOffset, this.endOffset - this.startOffset, '');
-            } else {
-                const selected = Array.from(container.childNodes)
-                    .slice(this.startOffset, this.endOffset);
-                for (const node of selected) fragment.appendChild(extract ? node : node.cloneNode(true));
-            }
-            if (extract) this.__end = this.__start;
-            return fragment;
-        }
-        deleteContents() {
-            if (this.collapsed || this.startContainer !== this.endContainer) return;
-            if (this.startContainer instanceof CharacterData) {
-                this.startContainer.replaceData(this.startOffset,
-                    this.endOffset - this.startOffset, '');
-            } else {
-                const selected = Array.from(this.startContainer.childNodes)
-                    .slice(this.startOffset, this.endOffset);
-                for (const node of selected) node.remove();
-            }
-            this.__end = this.__start;
-        }
-        extractContents() { return this._sameContainerContents(true); }
-        cloneContents() { return this._sameContainerContents(false); }
+        deleteContents() { rangeDeleteContents(this); }
+        extractContents() { return rangeCopyContents(this, true); }
+        cloneContents() { return rangeCopyContents(this, false); }
         insertNode(node) {
             if (!(isNode(node))) throw new TypeError('insertNode requires a Node');
-            let parent = this.startContainer;
-            let reference;
-            if (parent instanceof CharacterData) {
-                const suffix = document.createTextNode(parent.data.slice(this.startOffset));
-                parent.data = parent.data.slice(0, this.startOffset);
-                parent.parentNode.insertBefore(suffix, parent.nextSibling);
-                reference = suffix;
-                parent = parent.parentNode;
-            } else reference = parent.childNodes[this.startOffset] || null;
+            const start = this.startContainer;
+            if (start instanceof Comment || start instanceof ProcessingInstruction ||
+                (start instanceof Text && !start.parentNode) || start === node)
+                throw new DOMException('Invalid insertion boundary', 'HierarchyRequestError');
+            let reference = start instanceof Text ? start : start.childNodes[this.startOffset] || null;
+            const parent = reference ? reference.parentNode : start;
+            if (!parent) throw new DOMException('Invalid insertion parent', 'HierarchyRequestError');
+            ensurePreInsertionValidity(node, parent, start instanceof Text ? start.nextSibling : reference);
+            if (start instanceof Text) reference = start.splitText(this.startOffset);
+            if (node === reference) reference = reference.nextSibling;
+            if (node.parentNode) node.remove();
+            let newOffset = reference ? nodeIndex(reference) : parent.childNodes.length;
+            newOffset += node instanceof DocumentFragment ? node.childNodes.length : 1;
+            const wasCollapsed = this.collapsed;
             parent.insertBefore(node, reference);
+            if (wasCollapsed) this.__end = { node: parent, offset: newOffset };
         }
         surroundContents(newParent) {
             if (!(isNode(newParent))) throw new TypeError('surroundContents requires a Node');
+            if (newParent instanceof Document || newParent instanceof DocumentType ||
+                newParent instanceof DocumentFragment)
+                throw new DOMException('Invalid wrapper node', 'InvalidNodeTypeError');
+            const common = this.commonAncestorContainer;
+            for (const boundary of [this.startContainer, this.endContainer]) {
+                for (let node = boundary; node && node !== common; node = node.parentNode) {
+                    if (!(node instanceof Text))
+                        throw new DOMException('Range partially contains a non-Text node', 'InvalidStateError');
+                }
+            }
             const fragment = this.extractContents();
+            while (newParent.firstChild) newParent.firstChild.remove();
             this.insertNode(newParent);
             newParent.appendChild(fragment);
             this.selectNode(newParent);
@@ -304,6 +312,12 @@
             this._ranges = [range];
             this._backward = order > 0;
         }
+        extend(node, offset = 0) {
+            const focus = checkedBoundary(node, offset);
+            if (!this.rangeCount) throw new DOMException('Selection is empty', 'InvalidStateError');
+            if (rangeRoot(focus.node) !== rangeRoot(this.anchorNode)) return;
+            this.setBaseAndExtent(this.anchorNode, this.anchorOffset, focus.node, focus.offset);
+        }
         deleteFromDocument() { if (this.rangeCount) this._ranges[0].deleteContents(); }
         containsNode(node, allowPartialContainment = false) {
             if (!this.rangeCount) return false;
@@ -321,5 +335,6 @@
     Document.prototype.getSelection = function getSelection() { return documentSelection; };
     windowObject.getSelection = () => documentSelection;
     windowObject.AbstractRange = AbstractRange;
+    windowObject.StaticRange = StaticRange;
     windowObject.Range = Range;
     windowObject.Selection = Selection;

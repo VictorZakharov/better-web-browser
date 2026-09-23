@@ -53,6 +53,7 @@
             pressure: input.buttons ? 0.5 : 0,
             ...nativeModifiers(input)
         };
+        if (processDragPointer(input, target, init)) return true;
         dispatchPointerBoundary(input.boundary, init);
         if (input.phase === 'leave') return true;
         if (input.phase === 'activate') {

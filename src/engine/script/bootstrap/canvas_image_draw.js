@@ -51,12 +51,12 @@
             set(value) { if (['low', 'medium', 'high'].includes(value)) this.__imageSmoothingQuality = value; }
         }
     });
-    CanvasRenderingContext2D.prototype.drawImage = function(source, ...coordinates) {
+    const paintCanvasImage = function(source, ...coordinates) {
         if (![2, 4, 8].includes(coordinates.length))
             throw new TypeError('drawImage requires 3, 5, or 9 arguments');
         const image = imageSourceSnapshot(source);
         const values = coordinates.map(Number);
-        if (!values.every(Number.isFinite)) return;
+        if (!values.every(Number.isFinite)) return false;
         let sourceX = 0, sourceY = 0, sourceWidth = image.width, sourceHeight = image.height;
         let destinationX, destinationY, destinationWidth, destinationHeight;
         if (values.length === 2) {
@@ -68,24 +68,37 @@
             [sourceX, sourceY, sourceWidth, sourceHeight,
                 destinationX, destinationY, destinationWidth, destinationHeight] = values;
         }
-        if (!sourceWidth || !sourceHeight || !destinationWidth || !destinationHeight) return;
+        if (!sourceWidth || !sourceHeight || !destinationWidth || !destinationHeight) return false;
         if (sourceWidth < 0) { sourceX += sourceWidth; sourceWidth = -sourceWidth; }
         if (sourceHeight < 0) { sourceY += sourceHeight; sourceHeight = -sourceHeight; }
         if (destinationWidth < 0) { destinationX += destinationWidth; destinationWidth = -destinationWidth; }
         if (destinationHeight < 0) { destinationY += destinationHeight; destinationHeight = -destinationHeight; }
         const target = stateForCanvas(this.canvas);
         if (!target.pixels) throw new DOMException('Canvas bitmap exceeds the budget', 'NotSupportedError');
-        const left = Math.max(0, Math.floor(destinationX));
-        const top = Math.max(0, Math.floor(destinationY));
-        const right = Math.min(target.width, Math.ceil(destinationX + destinationWidth));
-        const bottom = Math.min(target.height, Math.ceil(destinationY + destinationHeight));
+        const bounds = canvasTransformedBounds(this.__transform,
+            destinationX, destinationY, destinationWidth, destinationHeight, target);
+        const inverse = matrixInverse2D(this.__transform);
+        if (!inverse) return false;
+        // A valid image entirely outside the bitmap still has a transparent source
+        // layer for whole-canvas Porter-Duff operators such as copy/source-in.
+        if (!bounds) return true;
+        const [left, top, right, bottom] = bounds;
         for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
-            const sampleX = sourceX + (column + 0.5 - destinationX) * sourceWidth / destinationWidth - 0.5;
-            const sampleY = sourceY + (row + 0.5 - destinationY) * sourceHeight / destinationHeight - 0.5;
+            if (!canvasClipAllows(this, column, row, target.width)) continue;
+            const [paintX, paintY] = matrixPoint2D(inverse, column + 0.5, row + 0.5);
+            if (paintX < destinationX || paintY < destinationY ||
+                paintX >= destinationX + destinationWidth || paintY >= destinationY + destinationHeight)
+                continue;
+            const sampleX = sourceX + (paintX - destinationX) * sourceWidth / destinationWidth - 0.5;
+            const sampleY = sourceY + (paintY - destinationY) * sourceHeight / destinationHeight - 0.5;
             if (sampleX < -0.5 || sampleY < -0.5 ||
                 sampleX >= image.width - 0.5 || sampleY >= image.height - 0.5) continue;
             const pixel = sampleCanvasBitmap(image, sampleX, sampleY, this.__imageSmoothingEnabled);
             compositeCanvasPixel(target.pixels, (row * target.width + column) * 4,
                 pixel, this.__globalAlpha, this.__compositeOperation);
         }
+        return true;
+    };
+    CanvasRenderingContext2D.prototype.drawImage = function(source, ...coordinates) {
+        paintCanvasImage.call(this, source, ...coordinates);
     };

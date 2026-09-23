@@ -11,6 +11,55 @@ fn run_canvas_case(body: &str, expected: &str) {
 }
 
 #[test]
+fn worker_canvas_path_filter_and_reset_share_window_behavior() {
+    let (_, outcome) = WorkerRuntime::start(
+        "https://example.com/canvas-worker.js",
+        r#"const canvas = new OffscreenCanvas(4, 2);
+            const ctx = canvas.getContext('2d');
+            const path = new Path2D('M0 0 H2 V2 H0 Z');
+            ctx.fillStyle = '#ff0000';
+            ctx.filter = 'invert(1)';
+            ctx.fill(path);
+            const color = Array.from(ctx.getImageData(0, 0, 1, 1).data);
+            const checks = [color.join(',') === '0,255,255,255',
+                ctx.getImageData(3, 0, 1, 1).data[3] === 0,
+                ctx instanceof OffscreenCanvasRenderingContext2D];
+            ctx.reset();
+            checks.push(ctx.filter === 'none', ctx.fillStyle === '#000000',
+                ctx.getImageData(0, 0, 1, 1).data[3] === 0);
+            if (!checks.every(Boolean)) throw new Error('worker canvas: ' + checks.join(','));"#,
+        "canvas-worker",
+        ScriptKind::Classic,
+        Arc::new(|_, _| Err("unexpected import".into())),
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+}
+
+#[test]
+fn worker_geometry_matrix_quad_and_clone_preserve_values() {
+    let (_, outcome) = WorkerRuntime::start(
+        "https://example.com/geometry-worker.js",
+        r#"const matrix = new DOMMatrix().translate(4, 5, 6).scale(2, 3, 1);
+            const point = new DOMPoint(1, 2, 3, 1);
+            const transformed = point.matrixTransform(matrix);
+            const quad = DOMQuad.fromRect({x: 3, y: 4, width: 5, height: 6});
+            const cloned = structuredClone({matrix, point, quad});
+            const bounds = cloned.quad.getBounds();
+            const checks = [transformed.x === 6, transformed.y === 11,
+                transformed.z === 9, cloned.matrix.m43 === 6,
+                cloned.point.z === 3, bounds.x === 3, bounds.y === 4,
+                bounds.width === 5, bounds.height === 6,
+                cloned.quad instanceof DOMQuad,
+                cloned.matrix instanceof DOMMatrixReadOnly];
+            if (!checks.every(Boolean)) throw new Error('worker geometry: ' + checks.join(','));"#,
+        "geometry-worker",
+        ScriptKind::Classic,
+        Arc::new(|_, _| Err("unexpected import".into())),
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+}
+
+#[test]
 fn offscreen_canvas_transfers_real_pixels_and_resets_its_bitmap() {
     run_canvas_case(
         r#"<body><output>waiting</output><canvas width="2" height="1"></canvas><script>

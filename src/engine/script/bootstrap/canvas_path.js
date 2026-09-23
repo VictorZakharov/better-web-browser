@@ -44,7 +44,7 @@
         closeCanvasPath(path);
     };
     const ellipseCanvasPath = (path, x, y, radiusX, radiusY, rotation, startAngle, endAngle,
-        counterclockwise = false) => {
+        counterclockwise = false, transform = null) => {
         [x, y, radiusX, radiusY, rotation, startAngle, endAngle] =
             [x, y, radiusX, radiusY, rotation, startAngle, endAngle].map(Number);
         if (!canvasPoint([x, y, radiusX, radiusY, rotation, startAngle, endAngle])) return;
@@ -62,14 +62,15 @@
             const localX = radiusX * Math.cos(angle), localY = radiusY * Math.sin(angle);
             const pointX = x + localX * cosine - localY * sine;
             const pointY = y + localX * sine + localY * cosine;
-            if (step === 0 && path.current === null) moveCanvasPath(path, pointX, pointY);
-            else lineCanvasPath(path, pointX, pointY);
+            const [paintX, paintY] = transform ? matrixPoint2D(transform, pointX, pointY) : [pointX, pointY];
+            if (step === 0 && path.current === null) moveCanvasPath(path, paintX, paintY);
+            else lineCanvasPath(path, paintX, paintY);
         }
     };
-    const curveCanvasPath = (path, controls, cubic) => {
+    const curveCanvasPath = (path, controls, cubic, origin = [0, 0]) => {
         const values = controls.map(Number);
         if (!canvasPoint(values)) return;
-        if (path.current === null) moveCanvasPath(path, 0, 0);
+        if (path.current === null) moveCanvasPath(path, ...origin);
         const points = path.subpaths[path.current].points;
         const [x0, y0] = points[points.length - 1];
         const steps = 24;
@@ -82,22 +83,39 @@
             lineCanvasPath(path, x, y);
         }
     };
-    const installCanvasPathMethods = (prototype, pathFor) => {
-        prototype.moveTo = function(x, y) { moveCanvasPath(pathFor(this), x, y); };
-        prototype.lineTo = function(x, y) { lineCanvasPath(pathFor(this), x, y); };
+    const installCanvasPathMethods = (prototype, pathFor, transformFor = () => null) => {
+        const point = (context, x, y) => transformFor(context) ?
+            matrixPoint2D(transformFor(context), Number(x), Number(y)) : [x, y];
+        prototype.moveTo = function(x, y) { moveCanvasPath(pathFor(this), ...point(this, x, y)); };
+        prototype.lineTo = function(x, y) { lineCanvasPath(pathFor(this), ...point(this, x, y)); };
         prototype.closePath = function() { closeCanvasPath(pathFor(this)); };
-        prototype.rect = function(x, y, width, height) { rectCanvasPath(pathFor(this), x, y, width, height); };
+        prototype.rect = function(x, y, width, height) {
+            const path = pathFor(this), transform = transformFor(this);
+            if (!transform) { rectCanvasPath(path, x, y, width, height); return; }
+            [x, y, width, height] = [x, y, width, height].map(Number);
+            if (!canvasPoint([x, y, width, height])) return;
+            const corners = [[x, y], [x + width, y], [x + width, y + height], [x, y + height]]
+                .map(([px, py]) => matrixPoint2D(transform, px, py));
+            moveCanvasPath(path, ...corners[0]);
+            for (const corner of corners.slice(1)) lineCanvasPath(path, ...corner);
+            closeCanvasPath(path);
+        };
         prototype.arc = function(x, y, radius, start, end, counterclockwise = false) {
-            ellipseCanvasPath(pathFor(this), x, y, radius, radius, 0, start, end, counterclockwise);
+            ellipseCanvasPath(pathFor(this), x, y, radius, radius, 0, start, end,
+                counterclockwise, transformFor(this));
         };
         prototype.ellipse = function(x, y, rx, ry, rotation, start, end, counterclockwise = false) {
-            ellipseCanvasPath(pathFor(this), x, y, rx, ry, rotation, start, end, counterclockwise);
+            ellipseCanvasPath(pathFor(this), x, y, rx, ry, rotation, start, end,
+                counterclockwise, transformFor(this));
         };
         prototype.quadraticCurveTo = function(cpx, cpy, x, y) {
-            curveCanvasPath(pathFor(this), [cpx, cpy, x, y], false);
+            const controls = [...point(this, cpx, cpy), ...point(this, x, y)];
+            curveCanvasPath(pathFor(this), controls, false, point(this, 0, 0));
         };
         prototype.bezierCurveTo = function(cp1x, cp1y, cp2x, cp2y, x, y) {
-            curveCanvasPath(pathFor(this), [cp1x, cp1y, cp2x, cp2y, x, y], true);
+            const controls = [...point(this, cp1x, cp1y), ...point(this, cp2x, cp2y),
+                ...point(this, x, y)];
+            curveCanvasPath(pathFor(this), controls, true, point(this, 0, 0));
         };
     };
     class Path2D {
@@ -127,32 +145,3 @@
         }
     }
     installCanvasPathMethods(Path2D.prototype, path => canvasPathData.get(path));
-    // A deliberately strict SVG subset: unsupported commands reject instead of drawing a misleading shape.
-    const parseCanvasSvgPath = source => {
-        if (source.length > 131072)
-            throw new DOMException('SVG path data exceeds the geometry budget', 'NotSupportedError');
-        const path = newCanvasPath();
-        const tokens = source.match(/[MmLlHhVvZz]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?|[^\s,]/g) || [];
-        let index = 0, command = '', x = 0, y = 0, startX = 0, startY = 0;
-        while (index < tokens.length) {
-            if (/^[A-Za-z]$/.test(tokens[index])) command = tokens[index++];
-            if (!/[MmLlHhVvZz]/.test(command)) throw new DOMException('Unsupported SVG path command', 'NotSupportedError');
-            if (/[Zz]/.test(command)) {
-                closeCanvasPath(path); x = startX; y = startY; command = '';
-                continue;
-            }
-            const count = /[HhVv]/.test(command) ? 1 : 2;
-            if (index + count > tokens.length || tokens.slice(index, index + count).some(token => !Number.isFinite(Number(token)) || /^[A-Za-z]$/.test(token)))
-                throw new DOMException('Invalid SVG path data', 'SyntaxError');
-            const values = tokens.slice(index, index + count).map(Number); index += count;
-            const relative = command === command.toLowerCase();
-            if (/[Hh]/.test(command)) x = relative ? x + values[0] : values[0];
-            else if (/[Vv]/.test(command)) y = relative ? y + values[0] : values[0];
-            else { x = relative ? x + values[0] : values[0]; y = relative ? y + values[1] : values[1]; }
-            if (/[Mm]/.test(command)) {
-                moveCanvasPath(path, x, y); startX = x; startY = y;
-                command = relative ? 'l' : 'L';
-            } else lineCanvasPath(path, x, y);
-        }
-        return path;
-    };

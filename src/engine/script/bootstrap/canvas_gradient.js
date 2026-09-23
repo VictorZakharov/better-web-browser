@@ -32,6 +32,11 @@
             const lengthSquared = dx * dx + dy * dy;
             return lengthSquared === 0 ? null : ((x - x0) * dx + (y - y0) * dy) / lengthSquared;
         }
+        if (gradient.__kind === 'conic') {
+            const [startAngle, centerX, centerY] = coordinates;
+            const turn = (Math.atan2(y - centerY, x - centerX) - startAngle) / (2 * Math.PI);
+            return ((turn % 1) + 1) % 1;
+        }
         const [x0, y0, r0, x1, y1, r1] = coordinates;
         const dx = x1 - x0, dy = y1 - y0, dr = r1 - r0;
         const px = x - x0, py = y - y0;
@@ -46,7 +51,10 @@
         const valid = [first, second].filter(t => r0 + t * dr >= 0);
         return valid.length ? Math.max(...valid) : null;
     };
-    const canvasPaintAt = (style, x, y) => {
+    const canvasPaintAt = (style, x, y, inverse = null) => {
+        if (inverse && (style instanceof CanvasGradient || style instanceof CanvasPattern))
+            [x, y] = matrixPoint2D(inverse, x, y);
+        if (style instanceof CanvasPattern) return sampleCanvasPattern(style, x, y);
         if (!(style instanceof CanvasGradient)) return style.channels;
         const stops = style.__stops;
         const position = gradientPosition(style, x, y);

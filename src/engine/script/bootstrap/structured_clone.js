@@ -61,6 +61,22 @@
                 return { t: record.kind, id, w: record.width, h: record.height,
                     m: record.mode, p: bytesToBase64(record.pixels) };
             }
+            if (typeof DOMMatrixReadOnly === 'function' && value instanceof DOMMatrixReadOnly)
+                return { t: 'dom-matrix', id, v: Array.from(value.toFloat64Array(), encode),
+                    d: value.is2D, r: value instanceof DOMMatrix };
+            if (typeof DOMPointReadOnly === 'function' && value instanceof DOMPointReadOnly)
+                return { t: 'dom-point', id, v: [value.x, value.y, value.z, value.w].map(encode),
+                    r: value instanceof DOMPoint };
+            if (typeof DOMQuad === 'function' && value instanceof DOMQuad)
+                return { t: 'dom-quad', id, v: [value.p1, value.p2, value.p3, value.p4]
+                    .map(point => [point.x, point.y, point.z, point.w].map(encode)) };
+            if (typeof DOMRectReadOnly === 'function' && value instanceof DOMRectReadOnly)
+                return { t: 'dom-rect', id, v: [value.x, value.y, value.width, value.height].map(encode),
+                    r: value instanceof DOMRect };
+            if (typeof ImageData === 'function' && value instanceof ImageData)
+                return { t: 'image-data', id, w: value.width, h: value.height,
+                    p: bytesToBase64(new Uint8Array(value.data.buffer,
+                        value.data.byteOffset, value.data.byteLength)) };
             if (Array.isArray(value)) return {
                 t: 'array', id, l: value.length,
                 v: Object.keys(value).map(key => [key, encode(value[key])])
@@ -125,6 +141,20 @@
             if (node.t === 'port') value = receive(node.v);
             else if (node.t === 'imagebitmap' || node.t === 'offscreencanvas')
                 value = globalThis.__cloneCanvasBindings?.receive(node, base64ToBytes(node.p)) ?? fail();
+            else if (node.t === 'dom-matrix') {
+                const numbers = node.v.map(decode);
+                value = new (node.r ? DOMMatrix : DOMMatrixReadOnly)(node.d ?
+                    [numbers[0], numbers[1], numbers[4], numbers[5], numbers[12], numbers[13]] : numbers);
+            }
+            else if (node.t === 'dom-point') value = new (node.r ? DOMPoint : DOMPointReadOnly)(
+                ...node.v.map(decode));
+            else if (node.t === 'dom-quad') value = new DOMQuad(...node.v.map(
+                point => ({x: decode(point[0]), y: decode(point[1]),
+                    z: decode(point[2]), w: decode(point[3])})));
+            else if (node.t === 'dom-rect') value = new (node.r ? DOMRect : DOMRectReadOnly)(
+                ...node.v.map(decode));
+            else if (node.t === 'image-data') value = new ImageData(
+                new Uint8ClampedArray(base64ToBytes(node.p).buffer), node.w, node.h);
             else if (node.t === 'array') value = new Array(node.l);
             else if (node.t === 'date') value = new Date(node.v);
             else if (node.t === 'regexp') value = new RegExp(node.s, node.f);

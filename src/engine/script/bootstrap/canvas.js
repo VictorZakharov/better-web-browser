@@ -95,22 +95,39 @@
             this.__compositeOperation = 'source-over';
             this.__stroke = normalizedColor('#000000');
             this.__lineWidth = 1;
+            this.__lineCap = 'butt';
+            this.__lineJoin = 'miter';
+            this.__miterLimit = 10;
             this.__lineDash = [];
             this.__dashOffset = 0;
             this.__imageSmoothingEnabled = true;
             this.__imageSmoothingQuality = 'low';
+            this.__transform = identity2D();
+            this.__clipBits = null;
+            this.__shadowColor = normalizedColor('rgba(0, 0, 0, 0)');
+            this.__shadowBlur = 0;
+            this.__shadowOffsetX = 0;
+            this.__shadowOffsetY = 0;
+            this.__filter = 'none';
+            this.__filterOperations = [];
             this.__path = newCanvasPath();
             this.__stack = [];
         }
-        get fillStyle() { return this.__fill instanceof CanvasGradient ? this.__fill : this.__fill.serialized; }
+        get fillStyle() { return this.__fill instanceof CanvasGradient ||
+            this.__fill instanceof CanvasPattern ? this.__fill : this.__fill.serialized; }
         set fillStyle(value) {
-            if (value instanceof CanvasGradient) { this.__fill = value; return; }
+            if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+                this.__fill = value; return;
+            }
             const color = normalizedColor(value);
             if (color) this.__fill = color;
         }
         createLinearGradient(x0, y0, x1, y1) { return canvasGradient('linear', [x0, y0, x1, y1]); }
         createRadialGradient(x0, y0, r0, x1, y1, r1) {
             return canvasGradient('radial', [x0, y0, r0, x1, y1, r1]);
+        }
+        createConicGradient(startAngle, x, y) {
+            return canvasGradient('conic', [startAngle, x, y]);
         }
         get globalAlpha() { return this.__globalAlpha; }
         set globalAlpha(value) {
@@ -126,9 +143,15 @@
             if (this.__stack.length < 64)
                 this.__stack.push({ fill: this.__fill, globalAlpha: this.__globalAlpha,
                     compositeOperation: this.__compositeOperation, stroke: this.__stroke,
-                    lineWidth: this.__lineWidth, lineDash: [...this.__lineDash], dashOffset: this.__dashOffset,
+                    lineWidth: this.__lineWidth, lineCap: this.__lineCap,
+                    lineJoin: this.__lineJoin, miterLimit: this.__miterLimit,
+                    lineDash: [...this.__lineDash], dashOffset: this.__dashOffset,
                     imageSmoothingEnabled: this.__imageSmoothingEnabled,
-                    imageSmoothingQuality: this.__imageSmoothingQuality });
+                    imageSmoothingQuality: this.__imageSmoothingQuality,
+                    transform: [...this.__transform], clipBits: this.__clipBits,
+                    shadowColor: this.__shadowColor, shadowBlur: this.__shadowBlur,
+                    shadowOffsetX: this.__shadowOffsetX, shadowOffsetY: this.__shadowOffsetY,
+                    filter: this.__filter, filterOperations: this.__filterOperations });
         }
         restore() {
             const state = this.__stack.pop();
@@ -138,10 +161,21 @@
                 this.__compositeOperation = state.compositeOperation;
                 this.__stroke = state.stroke;
                 this.__lineWidth = state.lineWidth;
+                this.__lineCap = state.lineCap;
+                this.__lineJoin = state.lineJoin;
+                this.__miterLimit = state.miterLimit;
                 this.__lineDash = state.lineDash;
                 this.__dashOffset = state.dashOffset;
                 this.__imageSmoothingEnabled = state.imageSmoothingEnabled;
                 this.__imageSmoothingQuality = state.imageSmoothingQuality;
+                this.__transform = state.transform;
+                this.__clipBits = state.clipBits;
+                this.__shadowColor = state.shadowColor;
+                this.__shadowBlur = state.shadowBlur;
+                this.__shadowOffsetX = state.shadowOffsetX;
+                this.__shadowOffsetY = state.shadowOffsetY;
+                this.__filter = state.filter;
+                this.__filterOperations = state.filterOperations;
             }
         }
         clearRect(x, y, width, height) { this.__paintRect(x, y, width, height, null); }
@@ -150,11 +184,16 @@
             const rect = normalizedRectangle(x, y, width, height);
             const state = stateForCanvas(this.canvas);
             if (!rect || !state.pixels) return;
+            if (!canvasIsIdentity(this.__transform)) {
+                paintTransformedCanvasRect(this, state, rect, style);
+                return;
+            }
             const left = Math.max(0, rect.x);
             const top = Math.max(0, rect.y);
             const right = Math.min(state.width, rect.x + rect.width);
             const bottom = Math.min(state.height, rect.y + rect.height);
             for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
+                if (!canvasClipAllows(this, column, row, state.width)) continue;
                 const offset = (row * state.width + column) * 4;
                 if (!style) {
                     state.pixels.fill(0, offset, offset + 4);
@@ -187,13 +226,23 @@
             }
             return result;
         }
-        putImageData(imageData, x, y) {
+        putImageData(imageData, x, y, dirtyX = 0, dirtyY = 0,
+            dirtyWidth = imageData?.width, dirtyHeight = imageData?.height) {
             if (!(imageData instanceof ImageData)) throw new TypeError('putImageData requires ImageData');
             const state = stateForCanvas(this.canvas);
             if (!state.pixels) return;
             x = Math.trunc(Number(x));
             y = Math.trunc(Number(y));
-            for (let row = 0; row < imageData.height; row++) for (let column = 0; column < imageData.width; column++) {
+            dirtyX = Math.trunc(Number(dirtyX)); dirtyY = Math.trunc(Number(dirtyY));
+            dirtyWidth = Math.trunc(Number(dirtyWidth));
+            dirtyHeight = Math.trunc(Number(dirtyHeight));
+            if (![x, y, dirtyX, dirtyY, dirtyWidth, dirtyHeight].every(Number.isFinite)) return;
+            if (dirtyWidth < 0) { dirtyX += dirtyWidth; dirtyWidth = -dirtyWidth; }
+            if (dirtyHeight < 0) { dirtyY += dirtyHeight; dirtyHeight = -dirtyHeight; }
+            const left = Math.max(0, dirtyX), top = Math.max(0, dirtyY);
+            const right = Math.min(imageData.width, dirtyX + dirtyWidth);
+            const bottom = Math.min(imageData.height, dirtyY + dirtyHeight);
+            for (let row = top; row < bottom; row++) for (let column = left; column < right; column++) {
                 const destinationX = x + column;
                 const destinationY = y + row;
                 if (destinationX < 0 || destinationY < 0 || destinationX >= state.width || destinationY >= state.height) continue;
@@ -203,6 +252,11 @@
             }
         }
         getContextAttributes() { return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false }; }
+        reset() {
+            const state = stateForCanvas(this.canvas);
+            state.pixels?.fill(0);
+            this.__reset();
+        }
         isContextLost() { return false; }
     }
 

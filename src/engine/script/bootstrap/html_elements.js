@@ -41,6 +41,13 @@
         get dataset() { return this.__dataset ||= datasetFor(this); }
         get title() { return this.getAttribute('title') || ''; }
         set title(value) { this.setAttribute('title', String(value)); }
+        get draggable() {
+            const value = this.getAttribute('draggable')?.toLowerCase();
+            if (value === 'true') return true;
+            if (value === 'false') return false;
+            return this.localName === 'img' || (this.localName === 'a' && this.hasAttribute('href'));
+        }
+        set draggable(value) { this.setAttribute('draggable', value ? 'true' : 'false'); }
         // HTML defines innerText on HTMLElement, not Node. The complete getter is
         // layout-aware; until whitespace and generated-line handling cross the host
         // boundary, preserve the required DOMString contract with the subtree text.
