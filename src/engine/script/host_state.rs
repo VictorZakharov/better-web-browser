@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::engine::MediaEnvironment;
+use crate::navigation::resolve_url;
 
 mod base_url;
 mod cookies;

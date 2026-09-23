@@ -60,6 +60,8 @@
     windowObject.HTMLAudioElement = HTMLAudioElement;
     windowObject.HTMLCanvasElement = HTMLCanvasElement;
     windowObject.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    windowObject.Path2D = Path2D;
+    windowObject.CanvasGradient = CanvasGradient;
     windowObject.ImageData = ImageData;
     windowObject.TimeRanges = TimeRanges;
     windowObject.MediaError = MediaError;
