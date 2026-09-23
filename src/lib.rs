@@ -3,6 +3,7 @@ pub mod document;
 pub mod engine;
 pub mod fetch;
 pub mod fuzzing;
+pub mod indexed_db;
 pub mod limits;
 pub mod metrics;
 pub mod navigation;

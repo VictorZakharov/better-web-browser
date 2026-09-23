@@ -42,6 +42,16 @@ pub(super) fn hidden_benchmark_with_fresh_profile_args(
     spawn_hidden_benchmark(url, artifacts, settle_ms, extra_arguments, Some(&profile))
 }
 
+pub(super) fn hidden_benchmark_with_reused_profile(
+    url: &str,
+    artifacts: &TestArtifacts,
+    settle_ms: u64,
+) -> std::process::Child {
+    let profile = artifacts.root.join("profile");
+    fs::create_dir_all(&profile).expect("create hidden Breeze profile");
+    spawn_hidden_benchmark(url, artifacts, settle_ms, &[], Some(&profile))
+}
+
 fn spawn_hidden_benchmark(
     url: &str,
     artifacts: &TestArtifacts,

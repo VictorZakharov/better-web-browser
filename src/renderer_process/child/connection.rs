@@ -1,5 +1,6 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
+mod database;
 mod fetch;
 mod media;
 mod mutations;
@@ -232,6 +233,7 @@ impl ChildConnection {
             BrowserMessage::StorageSnapshotEnd(end) => self.document_state_end(end),
             BrowserMessage::StorageSync(sync) => self.synchronize_storage(sync),
             BrowserMessage::WebSocketEvent(event) => self.deliver_websocket_event(event),
+            BrowserMessage::DatabaseEvent(event) => self.deliver_database_event(event),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

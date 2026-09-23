@@ -21,10 +21,10 @@ pub use layout::{
     layout_page, layout_page_with_style_viewport,
 };
 pub use page::{DecodedImage, Page, PageResource};
+pub use script::network::{ScriptDatabaseAction, ScriptWebSocketAction};
 pub use script::{
     DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions, ScriptKind,
-    ScriptOutcome, ScriptRuntime, ScriptWebSocketAction, ScriptWorkerAction, UserInputEvent,
-    UserInputModifiers, UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome,
-    WorkerSourceLoader,
+    ScriptOutcome, ScriptRuntime, ScriptWorkerAction, UserInputEvent, UserInputModifiers,
+    UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 pub(crate) use stylesheet::AdoptedStyleSheet;

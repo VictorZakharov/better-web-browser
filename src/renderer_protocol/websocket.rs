@@ -51,24 +51,23 @@ impl WebSocketCommand {
             return Err(ProtocolError::InvalidPayload("WebSocket identifier"));
         }
         match &self.operation {
-            WebSocketOperation::Open { url, protocols } => {
+            WebSocketOperation::Open { url, protocols }
                 if url.is_empty()
                     || url.len() > MAX_URL_BYTES
                     || protocols.len() > 32
-                    || protocols.iter().any(|protocol| !valid_protocol(protocol))
-                {
-                    return Err(ProtocolError::InvalidPayload(
-                        "WebSocket opening parameters",
-                    ));
-                }
+                    || protocols.iter().any(|protocol| !valid_protocol(protocol)) =>
+            {
+                return Err(ProtocolError::InvalidPayload(
+                    "WebSocket opening parameters",
+                ));
             }
             WebSocketOperation::Send { data, .. } if data.len() > MAX_WEBSOCKET_MESSAGE_BYTES => {
                 return Err(ProtocolError::InvalidPayload("WebSocket send budget"));
             }
-            WebSocketOperation::Close { code, reason } => {
-                if !matches!(code, 1000 | 3000..=4999) || reason.len() > 123 {
-                    return Err(ProtocolError::InvalidPayload("WebSocket close parameters"));
-                }
+            WebSocketOperation::Close { code, reason }
+                if !matches!(code, 1000 | 3000..=4999) || reason.len() > 123 =>
+            {
+                return Err(ProtocolError::InvalidPayload("WebSocket close parameters"));
             }
             _ => {}
         }

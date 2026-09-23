@@ -213,6 +213,7 @@ impl DocumentRuntime {
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
+        self.pending_databases.append(&mut outcome.database_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         connection.send_state_mutations(self.id, outcome)

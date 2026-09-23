@@ -24,6 +24,8 @@ mod event_source;
 mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/indexed_db.rs"]
+mod indexed_db;
 #[path = "live_runtime/inline_handlers.rs"]
 mod inline_handlers;
 #[path = "live_runtime/inserted_scripts.rs"]

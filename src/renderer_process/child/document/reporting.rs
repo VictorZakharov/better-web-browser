@@ -45,6 +45,7 @@ pub(super) fn merge_outcome(
     target
         .websocket_actions
         .append(&mut source.websocket_actions);
+    target.database_actions.append(&mut source.database_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions

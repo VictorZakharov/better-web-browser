@@ -55,6 +55,7 @@ mod form_selectors;
 mod form_state;
 mod form_submission;
 mod form_submit_reset;
+mod form_temporal_values;
 mod form_user_edits;
 mod form_validity;
 mod forms;

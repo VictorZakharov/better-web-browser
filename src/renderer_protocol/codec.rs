@@ -243,6 +243,7 @@ impl Direction {
                     | 0x014f
                     | 0x0151
                     | 0x0171
+                    | 0x0181
                     | 0x8001
             ),
             Self::Renderer => matches!(
@@ -269,6 +270,7 @@ impl Direction {
                     | 0x0150
                     | 0x0160
                     | 0x0170
+                    | 0x0180
                     | 0x8002
             ),
         }
@@ -280,6 +282,7 @@ fn payload_limit(kind: u16) -> usize {
         0x0134 => crate::limits::MAX_STORAGE_WRITE_FRAME_BYTES,
         0x0135 => crate::limits::MAX_STORAGE_FRAME_BYTES,
         0x0138 => crate::limits::MAX_STORAGE_SYNC_FRAME_BYTES,
+        0x0180 | 0x0181 => crate::limits::MAX_INDEXED_DB_IPC_BYTES + 64,
         // Document, request, response, and presentation body chunks are the only bulk frames.
         0x0103 | 0x0106 | 0x0113 | 0x0114 | 0x0160 => MAX_FRAME_PAYLOAD,
         _ => MAX_CONTROL_PAYLOAD,

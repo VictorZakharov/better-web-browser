@@ -51,6 +51,9 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::network::websocket_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = super::network::database_host::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {
         return Ok(value);
     }

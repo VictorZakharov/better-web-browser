@@ -6,7 +6,7 @@ use super::super::{AdvanceResult, DocumentRuntime};
 use crate::engine::{ScriptFetchAction, ScriptFetchEvent, ScriptOutcome, StyleRefreshStats};
 use crate::renderer_process::child::connection::{ChildConnection, ScriptFetchDelivery};
 use crate::renderer_protocol::{
-    PageLoadReport, RendererRuntimeUpdate, WebSocketEvent, WebSocketEventKind,
+    DatabaseEvent, PageLoadReport, RendererRuntimeUpdate, WebSocketEvent, WebSocketEventKind,
 };
 use std::collections::HashSet;
 use std::time::Instant;
@@ -22,6 +22,14 @@ impl DocumentRuntime {
                 socket_id: u64::from(action.id),
                 client: action.client,
                 operation: action.operation,
+            })?;
+        }
+        for action in std::mem::take(&mut self.pending_databases) {
+            connection.send_database_command(crate::renderer_protocol::DatabaseCommand {
+                document: self.id,
+                request_id: u64::from(action.id),
+                client: action.client,
+                payload: action.payload,
             })?;
         }
         let actions = std::mem::take(&mut self.pending_fetches);
@@ -175,6 +183,30 @@ impl DocumentRuntime {
         )
     }
 
+    pub(in crate::renderer_process::child) fn deliver_database_event(
+        &mut self,
+        event: DatabaseEvent,
+        connection: &mut ChildConnection,
+    ) -> Result<Option<AdvanceResult>, String> {
+        if event.document != self.id {
+            return Ok(None);
+        }
+        let previous_timer_micros = self.next_timer_micros();
+        let started = Instant::now();
+        let outcome = self
+            .script_runtime
+            .as_mut()
+            .map(|runtime| runtime.deliver_database_event(event))
+            .unwrap_or_default();
+        self.complete_network_script_outcome(
+            outcome,
+            true,
+            previous_timer_micros,
+            started,
+            connection,
+        )
+    }
+
     fn complete_network_script_outcome(
         &mut self,
         mut outcome: ScriptOutcome,
@@ -186,6 +218,7 @@ impl DocumentRuntime {
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
+        self.pending_databases.append(&mut outcome.database_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         // Abort and chained Fetch actions produced by a network callback belong to the same

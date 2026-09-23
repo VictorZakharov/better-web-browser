@@ -1,9 +1,11 @@
 //! Script-facing Fetch request translation and asynchronous completion delivery.
 
 mod base64;
+pub(super) mod database_host;
 pub(crate) mod response;
 pub(super) mod websocket_host;
 pub(super) use base64::decode_base64;
+pub use database_host::ScriptDatabaseAction;
 pub use websocket_host::ScriptWebSocketAction;
 
 use super::binding_helpers::{argument_id, argument_string, js_string};

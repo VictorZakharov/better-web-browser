@@ -6,6 +6,8 @@ use super::Node;
 use super::control_temporal::{is_temporal_state, parse_temporal};
 use super::control_validity;
 
+mod color;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InputValueMode {
     /// Hidden input: live value is the default.
@@ -64,7 +66,12 @@ pub(crate) fn canonical_input_state(raw: &str) -> String {
 
 /// Value mode for an input state name (already lowercased).
 pub(crate) fn input_value_mode(state: &str) -> InputValueMode {
-    if text_like_type(state) || state == "number" || state == "range" {
+    if text_like_type(state)
+        || matches!(
+            state,
+            "date" | "month" | "week" | "time" | "datetime-local" | "number" | "range" | "color"
+        )
+    {
         InputValueMode::Value
     } else if state == "checkbox" || state == "radio" {
         InputValueMode::DefaultOn
@@ -104,6 +111,9 @@ pub(crate) fn sanitize_input_value(state: &str, value: &str) -> String {
             return String::new();
         }
         return value.to_string();
+    }
+    if state == "color" {
+        return color::sanitize(value);
     }
     if is_temporal_state(state) {
         // Out-of-grammar temporal values sanitize to empty (required

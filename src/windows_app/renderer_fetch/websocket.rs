@@ -122,9 +122,17 @@ impl RendererWebSocketRegistry {
                 let launch = std::thread::Builder::new()
                     .name(format!("breeze-websocket-{}", command.socket_id))
                     .spawn(move || {
-                        run_socket(
-                            key, url, protocols, owner, client, signal, canceled, sink, receiver,
-                        );
+                        run_socket(SocketJob {
+                            key,
+                            url,
+                            protocols,
+                            owner,
+                            client,
+                            signal,
+                            canceled,
+                            sink,
+                            receiver,
+                        });
                         registry
                             .entries
                             .lock()
@@ -144,14 +152,14 @@ impl RendererWebSocketRegistry {
                     .entries
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
-                if let Some(entry) = entries.get(&key) {
-                    if entry.client != command.client || entry.commands.try_send(operation).is_err()
-                    {
-                        entry.canceled.store(true, Ordering::Release);
-                        entries.remove(&key);
-                        drop(entries);
-                        emit_failure(&sink, key);
-                    }
+                if let Some(entry) = entries.get(&key)
+                    && (entry.client != command.client
+                        || entry.commands.try_send(operation).is_err())
+                {
+                    entry.canceled.store(true, Ordering::Release);
+                    entries.remove(&key);
+                    drop(entries);
+                    emit_failure(&sink, key);
                 }
             }
         }
@@ -183,7 +191,7 @@ pub(super) fn reject(document: DocumentId, socket_id: u64, sink: &WebSocketEvent
     emit_failure(sink, (document, socket_id));
 }
 
-fn run_socket(
+struct SocketJob {
     key: (DocumentId, u64),
     url: String,
     protocols: Vec<String>,
@@ -193,7 +201,20 @@ fn run_socket(
     canceled: Arc<AtomicBool>,
     sink: WebSocketEventSink,
     receiver: mpsc::Receiver<WebSocketOperation>,
-) {
+}
+
+fn run_socket(job: SocketJob) {
+    let SocketJob {
+        key,
+        url,
+        protocols,
+        owner,
+        client,
+        signal,
+        canceled,
+        sink,
+        receiver,
+    } = job;
     if signal.is_aborted() || canceled.load(Ordering::Acquire) {
         return;
     }

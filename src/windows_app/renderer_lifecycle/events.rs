@@ -118,6 +118,9 @@ impl BrowserState {
                 RendererEvent::WebSocketCommand(command) => {
                     self.handle_websocket_command(id, command);
                 }
+                RendererEvent::DatabaseCommand(command) => {
+                    self.handle_database_command(id, command);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

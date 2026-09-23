@@ -161,6 +161,12 @@ impl Broker {
                     self.emit_event(RendererEvent::WebSocketCommand(command))?;
                 }
             }
+            RendererMessage::DatabaseCommand(command) => {
+                command.validate()?;
+                if self.active_document == Some(command.document) {
+                    self.emit_event(RendererEvent::DatabaseCommand(command))?;
+                }
+            }
             RendererMessage::StateSnapshotApplied(applied) => {
                 applied.validate()?;
                 if self.active_document != Some(applied.document) {

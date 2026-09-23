@@ -94,6 +94,9 @@ pub const MAX_PAGE_SCRIPTS: usize = 64;
 pub const MAX_CONTROL_PAYLOAD: usize = 256 * 1024;
 /// Complete WebSocket message sent in one bounded control frame.
 pub const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 192 * 1024;
+/// One structured-clone database request or result. Larger records require
+/// a future chunked transport rather than enlarging all control frames.
+pub const MAX_INDEXED_DB_IPC_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
 pub const MAX_FETCH_STREAM_CHUNK_BYTES: usize = 64 * 1024;
 /// Transport may retain this many unconsumed bytes per script response.

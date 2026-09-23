@@ -99,6 +99,10 @@ impl RendererSession {
         WebSocketEventSink::new(document, self.fetch_stream.clone(), self.wake.clone())
     }
 
+    pub fn database_event_sink(&self, document: DocumentId) -> DatabaseEventSink {
+        DatabaseEventSink::new(document, self.fetch_stream.clone(), self.wake.clone())
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

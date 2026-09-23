@@ -1,6 +1,7 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
 mod clients;
+mod database;
 mod pump;
 mod registry;
 mod scheduler;
@@ -41,6 +42,7 @@ pub(super) struct RendererFetchBatch {
 }
 
 pub(in crate::windows_app) use clients::Client as RendererFetchClient;
+pub(super) use database::DatabaseWorker;
 pub(super) use registry::RendererFetchRegistry;
 pub(in crate::windows_app) use websocket::RendererWebSocketRegistry;
 
