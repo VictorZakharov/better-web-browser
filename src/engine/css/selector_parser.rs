@@ -229,6 +229,8 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "root" => compound.requires_root = true,
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
+                        "read-write" => compound.requires_read_write = true,
+                        "read-only" => compound.requires_read_only = true,
                         "fullscreen" => compound.requires_fullscreen = true,
                         "hover" => compound.requires_hover = true,
                         "checked" => compound.requires_checked = true,
@@ -313,6 +315,8 @@ pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
             "checked"
                 | "indeterminate"
                 | "disabled"
+                | "read-write"
+                | "read-only"
                 | "enabled"
                 | "valid"
                 | "invalid"
@@ -371,42 +375,5 @@ pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specific
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fuzz_regression_non_ascii_attribute_suffix_does_not_panic() {
-        let attribute = parse_attribute_selector("data-value=\"x\"�").unwrap();
-
-        assert_eq!(attribute.name, "data-value");
-        assert!(!attribute.case_insensitive);
-    }
-
-    #[test]
-    fn attribute_modifiers_accept_css_whitespace_without_byte_slicing() {
-        assert!(
-            parse_attribute_selector("data-value=\"x\"\tI")
-                .unwrap()
-                .case_insensitive
-        );
-        assert!(
-            !parse_attribute_selector("data-value=\"x\"\nS")
-                .unwrap()
-                .case_insensitive
-        );
-    }
-
-    #[test]
-    fn generated_pseudo_elements_use_the_originating_selector() {
-        let (selector, pseudo) = parse_style_rule_selector(".card:before").unwrap();
-        assert_eq!(pseudo, Some(PseudoElement::Before));
-        assert_eq!(selector.specificity.classes, 1);
-        assert_eq!(selector.specificity.tags, 1);
-
-        let (selector, pseudo) = parse_style_rule_selector("#footer::AFTER").unwrap();
-        assert_eq!(pseudo, Some(PseudoElement::After));
-        assert_eq!(selector.specificity.ids, 1);
-        assert_eq!(selector.specificity.tags, 1);
-        assert!(parse_style_rule_selector(".card::marker").is_none());
-    }
-}
+#[path = "selector_parser_tests.rs"]
+mod tests;

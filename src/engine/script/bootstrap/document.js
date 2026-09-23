@@ -99,6 +99,10 @@
             if (!(isNode(root))) throw new TypeError('createTreeWalker requires a Node root');
             return new TreeWalker(treeWalkerToken, root, whatToShow, filter);
         }
+        createNodeIterator(root, whatToShow = NodeFilter.SHOW_ALL, filter = null) {
+            if (!(isNode(root))) throw new TypeError('createNodeIterator requires a Node root');
+            return new NodeIterator(nodeIteratorToken, root, whatToShow, filter);
+        }
         createAttribute(localName) { return createAttributeFor(this, localName); }
         createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
         importNode(node, deep = false) {
@@ -115,6 +119,7 @@
             const oldDocument = node.ownerDocument;
             const oldParent = node.parentNode;
             const wasConnected = node.isConnected;
+            if (oldParent) iteratorPreRemove(node);
             if (wasConnected) disconnectElementTree(node);
             const adopted = wrap(host('adoptNode', nodeId(this), nodeId(node)));
             if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');

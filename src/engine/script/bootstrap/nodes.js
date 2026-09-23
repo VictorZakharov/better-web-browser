@@ -7,6 +7,7 @@
             wasConnected: node.isConnected,
             oldDocument: node.ownerDocument,
             oldParent: node.parentNode,
+            oldIndex: node.parentNode ? Array.from(node.parentNode.childNodes).indexOf(node) : -1,
             oldPreviousSibling: node.previousSibling,
             oldNextSibling: node.nextSibling
         }));
@@ -57,9 +58,13 @@
             ? wrap(host('templateContent', nodeId(element))) : element;
         const wasConnected = target.isConnected;
         const removedChildren = [...target.childNodes];
+        for (const child of removedChildren) iteratorPreRemove(child);
         host('innerHtmlSet', nodeId(element), value == null ? '' : String(value));
+        for (let index = removedChildren.length - 1; index >= 0; index--)
+            rangeAfterRemovingNode(removedChildren[index], target, index);
         markChildCollectionsChanged(target);
         const addedChildren = [...target.childNodes];
+        rangeAfterInsertingNodes(target, 0, addedChildren.length);
         if (removedChildren.length || addedChildren.length) queueMutationRecord(target, 'childList', {
             addedNodes: addedChildren,
             removedNodes: removedChildren
@@ -77,6 +82,7 @@
         scriptChildrenChanged(target);
     };
 
+    const rangeTextEdit = new WeakSet();
     class Node extends EventTarget {
         constructor(id, type, name, localName, namespaceURI) {
             super();
@@ -113,10 +119,20 @@
                 this.nodeType === 7 || this.nodeType === 8;
             const oldValue = characterData ? this.textContent : null;
             const removedChildren = characterData ? [] : [...this.childNodes];
+            const nextText = value == null ? '' : String(value);
             const namedAccessChanged = this.isConnected && removedChildren.some(child => child.nodeType === 1);
-            host('textSet', nodeId(this), value == null ? '' : String(value));
+            for (const child of removedChildren) iteratorPreRemove(child);
+            host('textSet', nodeId(this), nextText);
+            if (characterData) {
+                if (!rangeTextEdit.has(this))
+                    rangeAfterReplacingData(this, 0, oldValue.length, nextText.length);
+            } else {
+                for (let index = removedChildren.length - 1; index >= 0; index--)
+                    rangeAfterRemovingNode(removedChildren[index], this, index);
+            }
             if (!characterData) markChildCollectionsChanged(this);
             const addedChildren = characterData ? [] : [...this.childNodes];
+            if (!characterData) rangeAfterInsertingNodes(this, 0, addedChildren.length);
             if (characterData) queueMutationRecord(this, 'characterData', { oldValue });
             else if (removedChildren.length || addedChildren.length) queueMutationRecord(this, 'childList', {
                 addedNodes: addedChildren,
@@ -134,8 +150,15 @@
             if (!(isNode(child))) throw new TypeError('appendChild requires a Node');
             ensurePreInsertionValidity(child, this);
             const records = insertionRecords(child);
+            for (const record of records) if (record.oldParent) iteratorPreRemove(record.node);
+            let insertionIndex = this.childNodes.length;
+            insertionIndex -= records.filter(record => record.oldParent === this).length;
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node => !!host('appendChild', nodeId(this), nodeId(node)));
+            if (inserted) {
+                rangeAfterRemovingRecords(records);
+                rangeAfterInsertingNodes(this, insertionIndex, nodes.length);
+            }
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
@@ -149,9 +172,19 @@
             if (reference != null && !(isNode(reference))) throw new TypeError('reference must be a Node');
             ensurePreInsertionValidity(child, this, reference);
             const records = insertionRecords(child);
+            for (const record of records) if (record.oldParent && child !== reference)
+                iteratorPreRemove(record.node);
+            let insertionIndex = reference ? Array.from(this.childNodes).indexOf(reference) :
+                this.childNodes.length;
+            insertionIndex -= records.filter(record => record.oldParent === this &&
+                record.oldIndex < insertionIndex).length;
             const nodes = child.nodeType === 11 ? [...child.childNodes] : [child];
             const inserted = nodes.every(node =>
                 !!host('insertBefore', nodeId(this), nodeId(node), nodeId(reference) || 0));
+            if (inserted && child !== reference) {
+                rangeAfterRemovingRecords(records);
+                rangeAfterInsertingNodes(this, insertionIndex, nodes.length);
+            }
             if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
                 records.map(record => record.oldParent));
             if (inserted) queueInsertionMutationRecords(this, child, records);
@@ -191,7 +224,10 @@
             const wasConnected = isNode(child) && child.isConnected;
             const previousSibling = isNode(child) ? child.previousSibling : null;
             const nextSibling = isNode(child) ? child.nextSibling : null;
+            const removedIndex = isNode(child) ? Array.from(this.childNodes).indexOf(child) : -1;
+            if (removedIndex >= 0) iteratorPreRemove(child);
             if (!(isNode(child)) || !host('removeChild', nodeId(this), nodeId(child))) throw new Error('node is not a child');
+            rangeAfterRemovingNode(child, this, removedIndex);
             markChildCollectionsChanged(this);
             queueMutationRecord(this, 'childList', {
                 removedNodes: [child], previousSibling, nextSibling
@@ -253,19 +289,37 @@
             if (offset > this.length) throw new DOMException('Offset exceeds data length', 'IndexSizeError');
             return this.data.slice(offset, offset + count);
         }
-        appendData(data) { this.data += String(data); }
+        appendData(data) { this.replaceData(this.length, 0, data); }
         insertData(offset, data) { this.replaceData(offset, 0, data); }
         deleteData(offset, count) { this.replaceData(offset, count, ''); }
         replaceData(offset, count, data) {
             offset = Number(offset) >>> 0;
             count = Number(count) >>> 0;
             if (offset > this.length) throw new DOMException('Offset exceeds data length', 'IndexSizeError');
-            this.data = this.data.slice(0, offset) + String(data) + this.data.slice(offset + count);
+            const original = this.data;
+            const inserted = String(data);
+            rangeTextEdit.add(this);
+            try { this.data = original.slice(0, offset) + inserted + original.slice(offset + count); }
+            finally { rangeTextEdit.delete(this); }
+            rangeAfterReplacingData(this, offset, Math.min(count, original.length - offset), inserted.length);
         }
     }
     installChildNodeMembers(CharacterData.prototype);
 
-    class Text extends CharacterData {}
+    class Text extends CharacterData {
+        splitText(offset) {
+            offset = Number(offset) >>> 0;
+            if (offset > this.length)
+                throw new DOMException('Offset exceeds data length', 'IndexSizeError');
+            const newNode = document.createTextNode(this.data.slice(offset));
+            rangeTextEdit.add(this);
+            try { this.data = this.data.slice(0, offset); }
+            finally { rangeTextEdit.delete(this); }
+            if (this.parentNode) this.parentNode.insertBefore(newNode, this.nextSibling);
+            rangeAfterSplittingText(this, newNode, offset);
+            return newNode;
+        }
+    }
     class CDATASection extends Text {}
     class Comment extends CharacterData {}
     class ProcessingInstruction extends CharacterData {

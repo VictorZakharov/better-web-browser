@@ -40,6 +40,23 @@
         if (index < 0) return null;
         return siblings[index + (next ? 1 : -1)] || null;
     };
+    const traversalFilterNode = (traverser, node) => {
+        if (traverser.__filterActive)
+            throw new DOMException('The traversal filter is already active', 'InvalidStateError');
+        const mask = node.nodeType > 0 && node.nodeType <= 32
+            ? (1 << (node.nodeType - 1)) >>> 0 : 0;
+        if ((traverser.whatToShow & mask) === 0) return FILTER_SKIP;
+        if (traverser.filter == null) return FILTER_ACCEPT;
+        traverser.__filterActive = true;
+        try {
+            const callback = typeof traverser.filter === 'function'
+                ? traverser.filter : traverser.filter.acceptNode;
+            if (typeof callback !== 'function') throw new TypeError('filter.acceptNode is not callable');
+            return Number(callback.call(traverser.filter, node)) & 0xFFFF;
+        } finally {
+            traverser.__filterActive = false;
+        }
+    };
 
     const treeWalkerToken = {};
     class TreeWalker {
@@ -56,23 +73,7 @@
             if (!(isNode(node))) throw new TypeError('currentNode must be a Node');
             this.__current = node;
         }
-        __accept(node) {
-            const mask = node.nodeType > 0 && node.nodeType <= 32
-                ? (1 << (node.nodeType - 1)) >>> 0 : 0;
-            if ((this.whatToShow & mask) === 0) return FILTER_SKIP;
-            if (this.filter == null) return FILTER_ACCEPT;
-            if (this.__filterActive)
-                throw new DOMException('The traversal filter is already active', 'InvalidStateError');
-            this.__filterActive = true;
-            try {
-                const callback = typeof this.filter === 'function'
-                    ? this.filter : this.filter.acceptNode;
-                if (typeof callback !== 'function') throw new TypeError('filter.acceptNode is not callable');
-                return Number(callback.call(this.filter, node)) & 0xFFFF;
-            } finally {
-                this.__filterActive = false;
-            }
-        }
+        __accept(node) { return traversalFilterNode(this, node); }
         parentNode() {
             let node = this.__current;
             while (node && node !== this.root) {

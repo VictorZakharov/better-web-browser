@@ -331,13 +331,15 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
-| ◩ | Canvas, media, and downloads | A bounded software Canvas 2D slice provides real sRGB pixels, paths, fills/strokes, gradients, selected compositing modes, `ImageData`, and PNG/JPEG/WebP export. The contained media worker provides user-visible non-DRM H.264/AAC MP4 playback, synchronized XAudio2 output, progressive and bounded Media Source input, play/pause/seek/volume/mute controls, and fullscreen video. [Canvas limitations](docs/html5test-canvas.md) include no page-visible bitmap painting, text drawing, image drawing, or complete path/paint behavior; downloads, broader codecs, DRM, captions, track selection, and picture-in-picture remain incomplete. |
+| ◩ | Canvas, media, and downloads | A bounded software Canvas 2D slice provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. The contained media worker provides user-visible non-DRM H.264/AAC MP4 playback, synchronized XAudio2 output, progressive and bounded Media Source input, play/pause/seek/volume/mute controls, and fullscreen video. [Canvas limitations](docs/html5test-canvas.md) include no page-visible bitmap painting, text drawing, or HTML image/video sources; downloads, broader codecs, DRM, captions, track selection, and picture-in-picture remain incomplete. |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
 
 See [JavaScript networking, modules, and workers](docs/javascript-network-runtime.md) for the
 implemented contracts, ownership model, standards references, and narrower remaining boundaries.
+The [DOM traversal and editing notes](docs/dom-traversal-editing.md) describe live
+iterators/ranges, editable-state reflection, drag-data phases, and their remaining limits.
 
 [Cooperative idle scheduling](docs/idle-callback-scheduling.md) covers scheduler-backed
 `requestIdleCallback`, bounded native deadlines, timeout races, cancellation, and task fairness.
@@ -368,11 +370,16 @@ The [CSP3, Worker messaging, and embedded-document slice](docs/csp-script-worker
 records the challenge-page diagnosis and hidden iframe/image verification without
 claiming that Google will serve results in a normal session.
 
-The 2026-09-23 fresh-profile hidden release run for the Canvas 2D slice
-rendered **334 / 588** on HTML5test, with zero JavaScript errors and no renderer exit.
+The 2026-09-23 fresh-profile hidden release run for the Canvas bitmap/OffscreenCanvas slice
+rendered **337 / 588** on HTML5test, up from **334 / 588** on the preceding
+Canvas 2D slice, with zero JavaScript errors and no renderer exit.
+The broader Canvas/Geometry/DOM standards batch in PR #180 remained at **337 / 588**
+in the same hidden release conditions, also with zero JavaScript errors and
+no renderer exit; the score does not measure most of those behavioral changes.
 The preceding [EventSource/scroll-into-view slice](docs/html5test-eventsource-scroll.md)
 rendered **323 / 588** on the same date. The 11-point increase reflects tested Canvas
-path, ellipse, dash, blend, and export features. See the
+path, ellipse, dash, blend, and export features in the prior slice; the additional
+three points reflect bitmap and OffscreenCanvas capability probes. See the
 [Canvas implementation and limitations](docs/html5test-canvas.md) for the behavioral scope.
 The score does not imply that the site's layout is pixel-correct or that every detected API is complete.
 HTML5test is a capability inventory, not a percentage of browser completion or a conformance claim;

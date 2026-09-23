@@ -108,7 +108,13 @@ pub(super) fn dispatch_worker_host_call(
     if let Some(value) = super::url_host::dispatch(operation, args)? {
         return Ok(value);
     }
+    if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
+        return Ok(value);
+    }
     match operation {
+        "normalizeCssColor" => Ok(super::style_host::normalize_css_color(&argument_string(
+            args, 1,
+        )?)),
         "performanceNow" => Ok(JsValue::from(state.performance_clock.now())),
         "performanceTimeOrigin" => Ok(JsValue::from(state.performance_clock.time_origin())),
         "performanceTaskSchedule" => {

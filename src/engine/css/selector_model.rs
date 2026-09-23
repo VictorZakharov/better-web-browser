@@ -24,6 +24,8 @@ pub(super) struct CompoundSelector {
     pub(super) requires_root: bool,
     pub(super) requires_enabled: bool,
     pub(super) requires_disabled: bool,
+    pub(super) requires_read_write: bool,
+    pub(super) requires_read_only: bool,
     pub(super) requires_fullscreen: bool,
     pub(super) requires_hover: bool,
     pub(super) requires_checked: bool,

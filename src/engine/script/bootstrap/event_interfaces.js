@@ -48,6 +48,15 @@
             this.isPrimary = init?.isPrimary === undefined ? false : !!init.isPrimary;
         }
     }
+    class DragEvent extends MouseEvent {
+        constructor(type, init = {}) {
+            super(type, init);
+            const transfer = init?.dataTransfer ?? null;
+            if (transfer !== null && !(transfer instanceof DataTransfer))
+                throw new TypeError('DragEvent dataTransfer must be a DataTransfer');
+            Object.defineProperty(this, 'dataTransfer', { enumerable: true, value: transfer });
+        }
+    }
     class WheelEvent extends MouseEvent {
         constructor(type, init = {}) {
             super(type, init);

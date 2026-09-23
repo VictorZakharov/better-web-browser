@@ -37,6 +37,7 @@
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.NodeFilter = NodeFilter;
     windowObject.TreeWalker = TreeWalker;
+    windowObject.NodeIterator = NodeIterator;
     windowObject.HTMLElement = HTMLElement;
     windowObject.HTMLDivElement = HTMLDivElement;
     windowObject.HTMLHtmlElement = HTMLHtmlElement;
@@ -60,8 +61,13 @@
     windowObject.HTMLAudioElement = HTMLAudioElement;
     windowObject.HTMLCanvasElement = HTMLCanvasElement;
     windowObject.CanvasRenderingContext2D = CanvasRenderingContext2D;
+    windowObject.OffscreenCanvasRenderingContext2D = OffscreenCanvasRenderingContext2D;
+    windowObject.OffscreenCanvas = OffscreenCanvas;
+    windowObject.ImageBitmap = ImageBitmap;
+    windowObject.ImageBitmapRenderingContext = ImageBitmapRenderingContext;
     windowObject.Path2D = Path2D;
     windowObject.CanvasGradient = CanvasGradient;
+    windowObject.CanvasPattern = CanvasPattern;
     windowObject.ImageData = ImageData;
     windowObject.TimeRanges = TimeRanges;
     windowObject.MediaError = MediaError;
@@ -106,6 +112,11 @@
     windowObject.UIEvent = UIEvent;
     windowObject.FocusEvent = FocusEvent;
     windowObject.MouseEvent = MouseEvent;
+    windowObject.DragEvent = DragEvent;
+    windowObject.DataTransfer = DataTransfer;
+    windowObject.DataTransferItem = DataTransferItem;
+    windowObject.DataTransferItemList = DataTransferItemList;
+    windowObject.FileList = FileList;
     windowObject.PointerEvent = PointerEvent;
     windowObject.WheelEvent = WheelEvent;
     windowObject.KeyboardEvent = KeyboardEvent;
