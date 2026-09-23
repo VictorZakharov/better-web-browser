@@ -45,7 +45,7 @@ use queue_depth::QueueDepth;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-pub use stream::FetchResponseSink;
+pub use stream::{FetchResponseSink, WebSocketEventSink};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
     Running,
@@ -107,6 +107,7 @@ pub enum RendererEvent {
     FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
+    WebSocketCommand(crate::renderer_protocol::WebSocketCommand),
     Unresponsive,
     Exited(RendererExit),
 }

@@ -115,6 +115,9 @@ impl BrowserState {
                         tab.renderer_fetches.abort(document, request_id);
                     }
                 }
+                RendererEvent::WebSocketCommand(command) => {
+                    self.handle_websocket_command(id, command);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

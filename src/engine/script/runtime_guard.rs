@@ -92,6 +92,9 @@ pub(super) fn finish_host(
         .fetch_actions
         .append(&mut state.pending_fetch_actions);
     outcome
+        .websocket_actions
+        .append(&mut state.pending_websocket_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome

@@ -4,6 +4,7 @@ mod clients;
 mod pump;
 mod registry;
 mod scheduler;
+mod websocket;
 mod worker;
 
 use super::*;
@@ -39,7 +40,9 @@ pub(super) struct RendererFetchBatch {
     pub(super) tab_router: super::browser_app::TabMessageRouter,
 }
 
+pub(in crate::windows_app) use clients::Client as RendererFetchClient;
 pub(super) use registry::RendererFetchRegistry;
+pub(in crate::windows_app) use websocket::RendererWebSocketRegistry;
 
 pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String> {
     let RendererFetchBatch {

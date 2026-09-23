@@ -58,6 +58,8 @@ mod streaming_network;
 mod stylesheets;
 #[path = "live_runtime/table_scrolling.rs"]
 mod table_scrolling;
+#[path = "live_runtime/websocket.rs"]
+mod websocket;
 #[path = "live_runtime/window.rs"]
 mod window;
 #[path = "live_runtime/youtube.rs"]

@@ -100,5 +100,6 @@ mod tasks;
 mod template_inertness;
 mod timer_diagnostics;
 mod traversal;
+mod websocket;
 mod workers;
 mod xhr_reuse;

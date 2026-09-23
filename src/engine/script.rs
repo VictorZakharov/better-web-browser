@@ -63,7 +63,7 @@ use engine::{
 pub use execution::{execute, execute_with_loader};
 use host_state::HostState;
 pub(crate) use host_state::geometry::LayoutFlushCallback;
-pub use network::{ScriptFetchAction, ScriptFetchEvent};
+pub use network::{ScriptFetchAction, ScriptFetchEvent, ScriptWebSocketAction};
 pub use runtime::ScriptRuntime;
 pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;

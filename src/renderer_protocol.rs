@@ -12,8 +12,10 @@ mod message;
 mod presentation;
 mod state;
 mod video;
+mod websocket;
 mod wire;
 pub use video::{VideoFrameAssembler, VideoFrameChunk, VideoFrameIdentity, VideoFrameUpdate};
+pub use websocket::{WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation};
 
 pub use accessibility::{
     AccessibilityUpdate, SemanticActions, SemanticNode, SemanticRole, SemanticSelection,

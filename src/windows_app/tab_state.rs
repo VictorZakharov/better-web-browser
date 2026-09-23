@@ -56,6 +56,7 @@ pub(super) struct BrowserTab {
     pub(super) crashed: bool,
     pub(super) document_fetch: FetchController,
     pub(super) renderer_fetches: renderer_fetch::RendererFetchRegistry,
+    pub(super) renderer_websockets: renderer_fetch::RendererWebSocketRegistry,
     pub(super) session_storage: SessionStorage,
     pub(super) storage_subscription:
         Option<(DocumentId, better_web_browser::storage::StorageSubscription)>,
@@ -118,6 +119,7 @@ impl BrowserTab {
             crashed: false,
             document_fetch: FetchController::new(),
             renderer_fetches: renderer_fetch::RendererFetchRegistry::default(),
+            renderer_websockets: Default::default(),
             session_storage: SessionStorage::default(),
             storage_subscription: None,
             deferred_renderer_events: Default::default(),
@@ -160,6 +162,7 @@ impl BrowserTab {
         self.crashed = true;
         self.status_text = status;
         self.document_fetch.abort();
+        self.renderer_websockets.cancel_all();
         self.renderer_input_sequence = 0;
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;

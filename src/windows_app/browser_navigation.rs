@@ -167,6 +167,7 @@ impl BrowserState {
             tab.incidents
                 .record("navigation", format!("begin {history_mode:?}: {url}"));
             tab.document_fetch.abort();
+            tab.renderer_websockets.cancel_all();
             tab.document_fetch = FetchController::new();
             let generation = match history_mode {
                 HistoryMode::Recovery => {
@@ -294,6 +295,13 @@ impl BrowserState {
                             .get("content-type")
                             .unwrap_or_default()
                             .to_string();
+                        let policy = std::sync::Arc::new(
+                            better_web_browser::fetch::csp::PolicyContainer::from_headers(
+                                &final_url,
+                                &response.headers,
+                            )
+                            .map_err(|error| error.to_string())?,
+                        );
                         if !post(Ok(super::document_activation::NavigationResult::Headers(
                             LoadedPage {
                                 stream: Some(stream.clone()),
@@ -301,6 +309,7 @@ impl BrowserState {
                                 final_url,
                                 status,
                                 content_type,
+                                policy,
                                 bytes: 0,
                                 network_time,
                             },

@@ -41,6 +41,7 @@ impl DocumentRuntime {
 
     fn has_post_load_work(&self) -> bool {
         !self.pending_fetches.is_empty()
+            || !self.pending_websockets.is_empty()
             || !self.pending_worker_actions.is_empty()
             || self.workers.has_work()
             || self
@@ -166,6 +167,8 @@ impl DocumentRuntime {
             merge_outcome(&mut outcome, timed, self.page.dom.document.id());
         }
         self.pending_fetches.append(&mut outcome.fetch_actions);
+        self.pending_websockets
+            .append(&mut outcome.websocket_actions);
         self.start_dynamic_script_fetches(connection)?;
         let worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.report_renderer_task_stage(format!(
@@ -184,6 +187,8 @@ impl DocumentRuntime {
             },
         )?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
+        self.pending_websockets
+            .append(&mut outcome.websocket_actions);
         self.apply_media_actions(&mut outcome, connection)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
         // Media events execute author script too. Admit their fetch/worker/media

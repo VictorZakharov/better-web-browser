@@ -1,4 +1,4 @@
-pub(super) fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
     if !input.len().is_multiple_of(4) {
         return Err("request body has invalid base64 length".into());
     }

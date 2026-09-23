@@ -42,6 +42,9 @@ pub(super) fn merge_outcome(
         .storage_event_receipts
         .append(&mut source.storage_event_receipts);
     target.fetch_actions.append(&mut source.fetch_actions);
+    target
+        .websocket_actions
+        .append(&mut source.websocket_actions);
     target.worker_actions.append(&mut source.worker_actions);
     target
         .fullscreen_actions

@@ -211,6 +211,8 @@ impl DocumentRuntime {
         // Collect those after the bounded media-action drain, not before it.
         self.apply_media_actions(outcome, connection)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
+        self.pending_websockets
+            .append(&mut outcome.websocket_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         connection.send_state_mutations(self.id, outcome)

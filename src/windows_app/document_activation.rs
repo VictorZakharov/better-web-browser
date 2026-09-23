@@ -17,6 +17,7 @@ pub(super) struct LoadedPage {
     pub(super) final_url: String,
     pub(super) status: u16,
     pub(super) content_type: String,
+    pub(super) policy: std::sync::Arc<better_web_browser::fetch::csp::PolicyContainer>,
     pub(super) bytes: u64,
     pub(super) network_time: Duration,
 }
@@ -29,6 +30,7 @@ impl LoadedPage {
             final_url: HOME_URL.into(),
             status: 200,
             content_type: "text/html".into(),
+            policy: Default::default(),
             bytes: HOME_HTML.len() as u64,
             network_time: Duration::ZERO,
         }

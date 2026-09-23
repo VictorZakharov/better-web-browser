@@ -94,6 +94,7 @@ impl Broker {
                     | RendererMessage::FullscreenRequest(_)
                     | RendererMessage::CookieMutation(_)
                     | RendererMessage::StorageMutation(_)
+                    | RendererMessage::WebSocketCommand(_)
                     | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {

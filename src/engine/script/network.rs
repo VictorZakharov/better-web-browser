@@ -2,7 +2,9 @@
 
 mod base64;
 pub(crate) mod response;
-use base64::decode_base64;
+pub(super) mod websocket_host;
+pub(super) use base64::decode_base64;
+pub use websocket_host::ScriptWebSocketAction;
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;

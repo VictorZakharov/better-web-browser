@@ -1,6 +1,7 @@
 //! Public script inputs/outcomes and shared execution limits.
 
 use super::network::ScriptFetchAction;
+use super::network::ScriptWebSocketAction;
 use super::workers::ScriptWorkerAction;
 use crate::engine::dom::NodeRef;
 use crate::engine::invalidation::RenderInvalidation;
@@ -118,6 +119,7 @@ pub struct ScriptOutcome {
     pub storage_updates: Vec<StorageWrite>,
     pub storage_event_receipts: Vec<(crate::storage::StorageAreaKind, u64)>,
     pub fetch_actions: Vec<ScriptFetchAction>,
+    pub websocket_actions: Vec<ScriptWebSocketAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub media_actions: Vec<ScriptMediaAction>,

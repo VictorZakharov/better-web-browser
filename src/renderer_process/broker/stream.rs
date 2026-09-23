@@ -3,7 +3,7 @@
 use crate::limits::MAX_FETCH_STREAM_CHUNK_BYTES;
 use crate::renderer_protocol::{
     BrowserFetchError, DocumentId, FetchResponseAbort, FetchResponseEnd, FetchResponseHead,
-    TransferChunk,
+    TransferChunk, WebSocketEvent,
 };
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -14,6 +14,15 @@ pub struct FetchResponseSink {
     sender: mpsc::SyncSender<FetchStreamEvent>,
     wake: super::wake::BrokerWake,
     flow: Arc<super::flow::FetchFlow>,
+}
+
+/// Browser-owned socket workers enqueue frames through the same bounded
+/// broker mailbox as Fetch, preserving backpressure and document retirement.
+#[derive(Clone)]
+pub struct WebSocketEventSink {
+    document: DocumentId,
+    sender: mpsc::SyncSender<FetchStreamEvent>,
+    wake: super::wake::BrokerWake,
 }
 
 pub(super) enum FetchStreamEvent {
@@ -33,6 +42,34 @@ pub(super) enum FetchStreamEvent {
         document: DocumentId,
         abort: FetchResponseAbort,
     },
+    WebSocket(WebSocketEvent),
+}
+
+impl WebSocketEventSink {
+    pub(super) fn new(
+        document: DocumentId,
+        sender: mpsc::SyncSender<FetchStreamEvent>,
+        wake: super::wake::BrokerWake,
+    ) -> Self {
+        Self {
+            document,
+            sender,
+            wake,
+        }
+    }
+
+    pub fn send(&self, event: WebSocketEvent) -> Result<(), String> {
+        event.validate().map_err(|error| error.to_string())?;
+        if event.document != self.document {
+            return Err("WebSocket event document mismatch".into());
+        }
+        self.wake.notify();
+        self.sender
+            .send(FetchStreamEvent::WebSocket(event))
+            .map_err(|_| "renderer network stream is no longer available".to_string())?;
+        self.wake.notify();
+        Ok(())
+    }
 }
 
 impl FetchResponseSink {

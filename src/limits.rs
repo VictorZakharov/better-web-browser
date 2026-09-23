@@ -92,6 +92,8 @@ pub const MAX_STYLESHEETS: usize = 16;
 pub const MAX_PAGE_SCRIPTS: usize = 64;
 
 pub const MAX_CONTROL_PAYLOAD: usize = 256 * 1024;
+/// Complete WebSocket message sent in one bounded control frame.
+pub const MAX_WEBSOCKET_MESSAGE_BYTES: usize = 192 * 1024;
 pub const MAX_FRAME_PAYLOAD: usize = 8 * 1024 * 1024;
 pub const MAX_FETCH_STREAM_CHUNK_BYTES: usize = 64 * 1024;
 /// Transport may retain this many unconsumed bytes per script response.

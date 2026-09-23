@@ -59,6 +59,7 @@ impl EventSender {
             RendererEvent::FetchBatch { .. }
                 | RendererEvent::FetchAbort { .. }
                 | RendererEvent::StorageMutation(_)
+                | RendererEvent::WebSocketCommand(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -247,6 +248,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::RuntimeUpdate(update) => Some(update.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
+        RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }
         | RendererEvent::Unresponsive

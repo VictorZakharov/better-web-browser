@@ -7,11 +7,12 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub(super) struct Clients {
     document: Option<DocumentId>,
+    root: Option<Client>,
     records: HashMap<u64, Option<Client>>,
 }
 
 #[derive(Clone)]
-pub(super) struct Client {
+pub(in crate::windows_app) struct Client {
     pub policy: Arc<better_web_browser::fetch::csp::PolicyContainer>,
     pub url: String,
     pub origin: Origin,
@@ -22,8 +23,25 @@ impl Clients {
     pub fn activate(&mut self, document: DocumentId) {
         if self.document != Some(document) {
             self.document = Some(document);
+            self.root = None;
             self.records.clear();
         }
+    }
+
+    pub fn install_root(
+        &mut self,
+        document: DocumentId,
+        url: &str,
+        policy: Arc<better_web_browser::fetch::csp::PolicyContainer>,
+    ) -> Result<(), FetchError> {
+        self.activate(document);
+        let origin = FetchUrl::parse(url)?.origin();
+        self.root = Some(Client {
+            url: url.into(),
+            origin,
+            policy,
+        });
+        Ok(())
     }
 
     pub fn resolve(
@@ -34,10 +52,13 @@ impl Clients {
     ) -> Result<Client, FetchError> {
         self.check_document(document)?;
         let mut client = if requested.id == 0 {
-            Client {
-                policy: Default::default(),
-                url: root.into(),
-                origin: FetchUrl::parse(root)?.origin(),
+            match self.root.clone() {
+                Some(client) => client,
+                None => Client {
+                    policy: Default::default(),
+                    url: root.into(),
+                    origin: FetchUrl::parse(root)?.origin(),
+                },
             }
         } else {
             self.records

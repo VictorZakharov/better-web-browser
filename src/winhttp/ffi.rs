@@ -16,6 +16,7 @@ pub(super) const WINHTTP_QUERY_RAW_HEADERS_CRLF: u32 = 22;
 pub(super) const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;
 pub(super) const WINHTTP_OPTION_DECOMPRESSION: u32 = 118;
 pub(super) const WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL: u32 = 133;
+pub(super) const WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET: u32 = 114;
 pub(super) const WINHTTP_PROTOCOL_FLAG_HTTP2: u32 = 1;
 pub(super) const WINHTTP_PROTOCOL_FLAG_HTTP3: u32 = 2;
 pub(super) const WINHTTP_OPTION_DISABLE_FEATURE: u32 = 63;
@@ -91,6 +92,33 @@ unsafe extern "system" {
         bytes_to_read: u32,
         bytes_read: *mut u32,
     ) -> i32;
+    pub(super) fn WinHttpWebSocketCompleteUpgrade(request: HInternet, context: usize) -> HInternet;
+    pub(super) fn WinHttpWebSocketSend(
+        socket: HInternet,
+        buffer_type: u32,
+        buffer: *mut c_void,
+        buffer_length: u32,
+    ) -> u32;
+    pub(super) fn WinHttpWebSocketReceive(
+        socket: HInternet,
+        buffer: *mut c_void,
+        buffer_length: u32,
+        bytes_read: *mut u32,
+        buffer_type: *mut u32,
+    ) -> u32;
+    pub(super) fn WinHttpWebSocketShutdown(
+        socket: HInternet,
+        status: u16,
+        reason: *mut c_void,
+        reason_length: u32,
+    ) -> u32;
+    pub(super) fn WinHttpWebSocketQueryCloseStatus(
+        socket: HInternet,
+        status: *mut u16,
+        reason: *mut c_void,
+        reason_length: u32,
+        reason_bytes_read: *mut u32,
+    ) -> u32;
     fn WinHttpCloseHandle(internet: HInternet) -> i32;
 }
 

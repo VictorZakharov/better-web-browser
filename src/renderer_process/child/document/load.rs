@@ -99,6 +99,7 @@ impl DocumentRuntime {
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
             pending_fetches: Vec::new(),
+            pending_websockets: Vec::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -188,6 +189,7 @@ impl DocumentRuntime {
         );
         runtime.apply_media_actions(&mut outcome, connection)?;
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
+        runtime.pending_websockets = std::mem::take(&mut outcome.websocket_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.send_state_mutations(document, &mut outcome)?;
         let script_time = script_started.elapsed();
