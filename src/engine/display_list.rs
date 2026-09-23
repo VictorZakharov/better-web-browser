@@ -79,7 +79,8 @@ fn item_bounds(item: &DisplayItem) -> RectF {
         | DisplayItem::EndClip { bounds }
         | DisplayItem::BeginOpacity { bounds, .. }
         | DisplayItem::EndOpacity { bounds } => *bounds,
-        DisplayItem::SolidRect { rect, .. }
+        DisplayItem::EmbeddedFrame { rect, .. }
+        | DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
         | DisplayItem::Image { rect, .. } => *rect,

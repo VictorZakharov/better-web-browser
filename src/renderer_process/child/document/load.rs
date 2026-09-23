@@ -95,6 +95,7 @@ impl DocumentRuntime {
             script_layout_page,
             script_layout_viewport,
             layout: Default::default(),
+            frame_paint: Vec::new(),
             loaded_resources: HashSet::new(),
             resource_budget: PAGE_RESOURCE_BUDGET,
             pending_fetches: Vec::new(),

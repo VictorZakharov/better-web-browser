@@ -73,7 +73,7 @@ pub use types::{
     ScriptOutcome, UserInputEvent, UserInputModifiers, UserInputResult,
 };
 pub use worker_host::WorkerSourceLoader;
-pub use worker_runtime::{WorkerRuntime, WorkerRuntimeOutcome};
+pub use worker_runtime::{WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome};
 pub use workers::ScriptWorkerAction;
 #[cfg(test)]
 #[path = "script/tests/mod.rs"]

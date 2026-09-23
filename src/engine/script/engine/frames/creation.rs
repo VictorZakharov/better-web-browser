@@ -29,6 +29,10 @@ pub(super) fn create<'s>(
         "UTF-8",
         Rc::new(WebModuleLoader::new()),
     )));
+    host.borrow_mut().browsing_context_name = replacement
+        .as_ref()
+        .map(|input| Rc::clone(&input.name))
+        .unwrap_or_else(|| Rc::new(RefCell::new(node.attr("name").unwrap_or_default())));
     if let Some(bridge) = parent.get_slot::<HostBridge>()
         && let HostBridge::Document(parent_host) = &*bridge
         && let Some(parent_host) = parent_host.upgrade()

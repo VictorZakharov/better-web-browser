@@ -1,6 +1,14 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
 use super::*;
 
+enum WorkerDelivery {
+    Global(Result<String, String>),
+    Port {
+        endpoint: u32,
+        message: Option<String>,
+    },
+}
+
 impl ScriptRuntime {
     /// Delivers one asynchronous Fetch result into this document's retained realm.
     pub fn complete_fetch_with_loader(
@@ -137,6 +145,24 @@ impl ScriptRuntime {
         event: Result<String, String>,
         dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
     ) -> ScriptOutcome {
+        self.complete_worker_delivery(id, WorkerDelivery::Global(event), dynamic_script_loader)
+    }
+
+    pub fn complete_worker_port_event(
+        &mut self,
+        id: u32,
+        endpoint: u32,
+        message: Option<String>,
+    ) -> ScriptOutcome {
+        self.complete_worker_delivery(id, WorkerDelivery::Port { endpoint, message }, None)
+    }
+
+    fn complete_worker_delivery(
+        &mut self,
+        id: u32,
+        delivery: WorkerDelivery,
+        dynamic_script_loader: Option<&mut DynamicScriptLoader<'_>>,
+    ) -> ScriptOutcome {
         self.sync_child_runtimes();
         let owner = self.host.borrow().worker_identifiers.borrow().owner(id);
         if owner.is_none() {
@@ -145,7 +171,7 @@ impl ScriptRuntime {
             return ScriptOutcome::default();
         }
         if let Some(child) = self.child_for_worker(id) {
-            let outcome = child.complete_worker_event_with_loader(id, event, dynamic_script_loader);
+            let outcome = child.complete_worker_delivery(id, delivery, dynamic_script_loader);
             let outcome = self.collect_frame_result(owner.unwrap(), outcome);
             return self.finish_guarded_run(Ok(outcome));
         }
@@ -161,7 +187,15 @@ impl ScriptRuntime {
             host.borrow_mut().begin_task();
             let mut outcome = ScriptOutcome::default();
             let callback_started = Instant::now();
-            if let Err(error) = super::workers::deliver_worker_event(context, id, event) {
+            let delivered = match delivery {
+                WorkerDelivery::Global(event) => {
+                    super::workers::deliver_worker_event(context, id, event)
+                }
+                WorkerDelivery::Port { endpoint, message } => {
+                    super::workers::deliver_worker_port_event(context, id, endpoint, message)
+                }
+            };
+            if let Err(error) = delivered {
                 outcome
                     .errors
                     .push(format!("Worker event callback: {error}"));

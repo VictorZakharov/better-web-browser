@@ -177,6 +177,9 @@ pub(in crate::engine::script::runtime) fn append(
     outcome.diagnostics.append(&mut other.diagnostics);
     outcome.fetch_actions.append(&mut other.fetch_actions);
     outcome.worker_actions.append(&mut other.worker_actions);
+    // A child document's nodes are not parent invalidation roots, but its paint
+    // still has to be recomposed when a streamed resource completes.
+    outcome.render_requested |= other.render_requested;
     if other.navigation_url.is_some() {
         outcome.navigation_url = other.navigation_url;
         outcome.navigation_options = other.navigation_options;

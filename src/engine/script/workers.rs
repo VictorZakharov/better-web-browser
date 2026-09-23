@@ -21,6 +21,15 @@ pub enum ScriptWorkerAction {
         id: u32,
         serialized: String,
     },
+    PortPostMessage {
+        id: u32,
+        endpoint: u32,
+        serialized: String,
+    },
+    PortClose {
+        id: u32,
+        endpoint: u32,
+    },
     Terminate {
         id: u32,
     },
@@ -131,6 +140,31 @@ pub(super) fn worker_host_call(
                 });
             Ok(Some(JsValue::undefined()))
         }
+        "workerPortPostMessage" => {
+            let id = argument_id(args, 1);
+            if state.worker_identifiers.borrow().owner(id) == Some(state.document.id()) {
+                state
+                    .pending_worker_actions
+                    .push(ScriptWorkerAction::PortPostMessage {
+                        id,
+                        endpoint: argument_id(args, 2),
+                        serialized: argument_string(args, 3)?,
+                    });
+            }
+            Ok(Some(JsValue::undefined()))
+        }
+        "workerPortClose" => {
+            let id = argument_id(args, 1);
+            if state.worker_identifiers.borrow().owner(id) == Some(state.document.id()) {
+                state
+                    .pending_worker_actions
+                    .push(ScriptWorkerAction::PortClose {
+                        id,
+                        endpoint: argument_id(args, 2),
+                    });
+            }
+            Ok(Some(JsValue::undefined()))
+        }
         "workerTerminate" => {
             let id = argument_id(args, 1);
             if state.worker_identifiers.borrow().owner(id) != Some(state.document.id()) {
@@ -161,6 +195,25 @@ pub(super) fn deliver_worker_event(
             JsValue::from(id),
             js_string(kind.to_string()),
             js_string(payload),
+        ],
+    )?;
+    context.run_jobs()
+}
+
+pub(super) fn deliver_worker_port_event(
+    context: &mut Context,
+    id: u32,
+    endpoint: u32,
+    event: Option<String>,
+) -> JsResult<()> {
+    let closed = event.is_none();
+    context.call_global(
+        "__completeWorkerPortEvent",
+        &[
+            JsValue::from(id),
+            JsValue::from(endpoint),
+            js_string(event.unwrap_or_default()),
+            JsValue::from(closed),
         ],
     )?;
     context.run_jobs()

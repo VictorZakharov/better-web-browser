@@ -1,6 +1,7 @@
 //! Native state and host calls for an isolated dedicated-worker realm.
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
+use super::worker_runtime::WorkerPortEvent;
 use super::*;
 use serde::Serialize;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub(super) struct WorkerHostState {
     pub(super) next_fetch_id: u32,
     pub(super) fetch_actions: Vec<ScriptFetchAction>,
     pub(super) messages: Vec<String>,
+    pub(super) port_events: Vec<WorkerPortEvent>,
     pub(super) console: Vec<String>,
     pub(super) closed: bool,
     pub(super) module_evaluation_pending: bool,
@@ -50,6 +52,7 @@ impl WorkerHostState {
             next_fetch_id: 1,
             fetch_actions: Vec::new(),
             messages: Vec::new(),
+            port_events: Vec::new(),
             console: Vec::new(),
             closed: false,
             module_evaluation_pending: false,
@@ -185,6 +188,19 @@ pub(super) fn dispatch_worker_host_call(
         }
         "workerPost" => {
             state.messages.push(argument_string(args, 1)?);
+            Ok(JsValue::undefined())
+        }
+        "workerPortPost" => {
+            state.port_events.push(WorkerPortEvent::Message {
+                endpoint: argument_id(args, 1),
+                serialized: argument_string(args, 2)?,
+            });
+            Ok(JsValue::undefined())
+        }
+        "workerPortClosed" => {
+            state.port_events.push(WorkerPortEvent::Closed {
+                endpoint: argument_id(args, 1),
+            });
             Ok(JsValue::undefined())
         }
         "workerClose" => {

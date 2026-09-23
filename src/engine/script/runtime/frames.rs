@@ -1,6 +1,7 @@
 //! Scheduling and outcome ownership for the related child document realms.
 use super::*;
 pub(super) mod documents;
+mod images;
 mod navigation;
 mod resources;
 mod script_fetches;
@@ -8,7 +9,20 @@ mod streaming;
 mod styles;
 use crate::engine::script::engine::frames::FrameNavigation;
 use documents::FrameDocument;
+use images::FrameImages;
 use resources::FrameFetch;
+
+pub(crate) struct FramePaintSnapshot {
+    pub element: NodeId,
+    pub document: NodeId,
+    pub dom: NodeRef,
+    pub url: String,
+    pub stylesheets: Vec<crate::engine::css::StylesheetSource>,
+    pub media_environment: crate::engine::MediaEnvironment,
+    pub quirks_mode: bool,
+    pub images: HashMap<String, crate::engine::DecodedImage>,
+    pub children: Vec<FramePaintSnapshot>,
+}
 
 #[derive(Default)]
 pub(super) struct ChildRuntimes {
@@ -20,10 +34,70 @@ pub(super) struct ChildRuntimes {
     fetches: HashMap<u32, FrameFetch>,
     prefer_message: bool,
     styles: HashMap<NodeId, styles::Sheets>,
+    images: HashMap<NodeId, FrameImages>,
     pending: ScriptOutcome,
 }
 
 impl ScriptRuntime {
+    pub(crate) fn frame_paint_snapshots(&mut self) -> Vec<FramePaintSnapshot> {
+        self.frame_paint_snapshots_bounded(0)
+    }
+
+    fn frame_paint_snapshots_bounded(&mut self, depth: usize) -> Vec<FramePaintSnapshot> {
+        if depth >= 8 {
+            return Vec::new();
+        }
+        self.sync_child_runtimes();
+        let document = self.host.borrow().document.id();
+        let elements = self
+            .context
+            .as_ref()
+            .map(|context| context.child_frame_elements(document))
+            .unwrap_or_default();
+        let Some(frames) = self.frames.as_mut() else {
+            return Vec::new();
+        };
+        elements
+            .into_iter()
+            .filter_map(|(element, id)| {
+                let child = frames.children.get_mut(&id)?;
+                let snapshot = {
+                    let host = child.host.borrow();
+                    FramePaintSnapshot {
+                        element,
+                        document: id,
+                        dom: host.document.clone(),
+                        url: host.script_base_url(),
+                        stylesheets: host.stylesheet_sources.clone(),
+                        media_environment: host.media_environment,
+                        quirks_mode: host.quirks_mode,
+                        images: frames
+                            .images
+                            .get(&id)
+                            .map(|images| images.decoded.clone())
+                            .unwrap_or_default(),
+                        children: Vec::new(),
+                    }
+                };
+                Some(FramePaintSnapshot {
+                    children: child.frame_paint_snapshots_bounded(depth + 1),
+                    ..snapshot
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn dispatch_frame_input(
+        &mut self,
+        document: NodeId,
+        event: UserInputEvent,
+    ) -> Option<UserInputResult> {
+        self.sync_child_runtimes();
+        let child = self.frames.as_mut()?.children.get_mut(&document)?;
+        let mut result = child.dispatch_user_input(event);
+        result.outcome = self.collect_frame_result(document, result.outcome);
+        Some(result)
+    }
     pub(super) fn advance_message_task(&mut self) -> Option<ScriptOutcome> {
         let frames = self.frames.as_mut()?;
         frames.prefer_message = !frames.prefer_message;
@@ -59,6 +133,7 @@ impl ScriptRuntime {
         let active = context.child_documents();
         frames.documents.retain(|id, _| active.contains(id));
         frames.styles.retain(|id, _| active.contains(id));
+        frames.images.retain(|id, _| active.contains(id));
         for navigation in context.frame_navigations() {
             frames
                 .navigations
@@ -228,6 +303,7 @@ impl ScriptRuntime {
     pub(super) fn collect_child_outcomes(&mut self, mut outcome: ScriptOutcome) -> ScriptOutcome {
         self.sync_child_runtimes();
         self.start_frame_styles();
+        self.start_frame_images();
         self.start_frame_resources();
         if let Some(frames) = &mut self.frames {
             documents::append(&mut outcome, std::mem::take(&mut frames.pending));

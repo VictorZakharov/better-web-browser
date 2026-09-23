@@ -76,6 +76,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 inset_y,
                 image_width,
                 image_height,
+                relative_offset,
                 transform,
                 transform_font_size,
                 opacity,
@@ -84,8 +85,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             } => {
                 let item_start = self.output.items.len();
                 let mut rect = RectF {
-                    x: x + inset_x,
-                    y: atom_y + inset_y,
+                    x: x + inset_x + relative_offset.0,
+                    y: atom_y + inset_y + relative_offset.1,
                     width: *image_width,
                     height: *image_height,
                 };
@@ -96,12 +97,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 self.output.node_bounds.insert(*node_id, rect);
                 self.output.resize_boxes.insert(*node_id, *resize_box);
                 if self.emit_paint && *visible {
-                    self.output.items.push(DisplayItem::Image {
-                        rect,
-                        url: url.clone(),
-                        alt: alt.clone(),
-                        tint: *tint,
-                    });
+                    if self
+                        .styles
+                        .node(*node_id)
+                        .is_some_and(|node| node.tag_name() == Some("iframe"))
+                    {
+                        self.output.items.push(DisplayItem::EmbeddedFrame {
+                            rect,
+                            node_id: *node_id,
+                        });
+                    } else {
+                        self.output.items.push(DisplayItem::Image {
+                            rect,
+                            url: url.clone(),
+                            alt: alt.clone(),
+                            tint: *tint,
+                        });
+                    }
                 }
                 self.wrap_opacity(item_start, *opacity);
             }

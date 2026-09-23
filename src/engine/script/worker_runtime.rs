@@ -10,10 +10,17 @@ use std::sync::Arc;
 #[derive(Debug, Default)]
 pub struct WorkerRuntimeOutcome {
     pub messages: Vec<String>,
+    pub port_events: Vec<WorkerPortEvent>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub console: Vec<String>,
     pub errors: Vec<String>,
     pub closed: bool,
+}
+
+#[derive(Debug)]
+pub enum WorkerPortEvent {
+    Message { endpoint: u32, serialized: String },
+    Closed { endpoint: u32 },
 }
 
 pub struct WorkerRuntime {
@@ -108,6 +115,38 @@ impl WorkerRuntime {
                 .push(format!("dispatch Worker message: {error}"));
         }
         self.settle_module_evaluation(&mut outcome);
+        self.collect(&mut outcome);
+        outcome
+    }
+
+    pub fn dispatch_port_message(
+        &mut self,
+        endpoint: u32,
+        serialized: &str,
+    ) -> WorkerRuntimeOutcome {
+        self.dispatch_port_call("__dispatchWorkerPortMessage", endpoint, Some(serialized))
+    }
+
+    pub fn dispatch_port_close(&mut self, endpoint: u32) -> WorkerRuntimeOutcome {
+        self.dispatch_port_call("__dispatchWorkerPortClose", endpoint, None)
+    }
+
+    fn dispatch_port_call(
+        &mut self,
+        function: &str,
+        endpoint: u32,
+        serialized: Option<&str>,
+    ) -> WorkerRuntimeOutcome {
+        let mut outcome = WorkerRuntimeOutcome::default();
+        let mut arguments = vec![JsValue::from(endpoint)];
+        if let Some(serialized) = serialized {
+            arguments.push(JsValue::from(JsString::from(serialized)));
+        }
+        if let Err(error) = self.context.call_global(function, &arguments) {
+            outcome
+                .errors
+                .push(format!("dispatch Worker port event: {error}"));
+        }
         self.collect(&mut outcome);
         outcome
     }
@@ -265,6 +304,7 @@ impl WorkerRuntime {
     fn collect(&mut self, outcome: &mut WorkerRuntimeOutcome) {
         let mut host = self.host.borrow_mut();
         outcome.messages.append(&mut host.messages);
+        outcome.port_events.append(&mut host.port_events);
         outcome.fetch_actions.append(&mut host.fetch_actions);
         outcome.console.append(&mut host.console);
         outcome.closed |= host.closed;

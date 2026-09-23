@@ -86,6 +86,11 @@ pub(super) fn dispatch_host_call(
     }
 
     match operation {
+        "windowName" => Ok(js_string(state.browsing_context_name.borrow().clone())),
+        "setWindowName" => {
+            *state.browsing_context_name.borrow_mut() = argument_string(args, 1)?;
+            Ok(JsValue::undefined())
+        }
         "parent" => {
             let parent = state
                 .node(argument_id(args, 1))

@@ -13,7 +13,7 @@ use super::fetch::validate_script_response;
 use super::merge_outcome;
 use crate::engine::{
     ScriptFetchAction, ScriptFetchEvent, ScriptKind, ScriptOutcome, ScriptRuntime,
-    ScriptWorkerAction, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
+    ScriptWorkerAction, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 use crate::fetch::CredentialsMode;
 use crate::renderer_process::child::connection::ChildConnection;
@@ -106,6 +106,17 @@ impl RendererWorkers {
                 let worker = runtime.complete_worker_event_with_loader(event.id, message, None);
                 merge_outcome(outcome, worker, document_root);
             }
+            for port_event in event.port_events {
+                let (endpoint, message) = match port_event {
+                    WorkerPortEvent::Message {
+                        endpoint,
+                        serialized,
+                    } => (endpoint, Some(serialized)),
+                    WorkerPortEvent::Closed { endpoint } => (endpoint, None),
+                };
+                let worker = runtime.complete_worker_port_event(event.id, endpoint, message);
+                merge_outcome(outcome, worker, document_root);
+            }
             outcome.console.extend(
                 event
                     .console
@@ -185,6 +196,23 @@ impl RendererWorkers {
                         let _ = worker.commands.send(WorkerCommand::Message(serialized));
                     }
                 }
+                ScriptWorkerAction::PortPostMessage {
+                    id,
+                    endpoint,
+                    serialized,
+                } => {
+                    if let Some(worker) = self.handles.get(&id) {
+                        let _ = worker.commands.send(WorkerCommand::PortMessage {
+                            endpoint,
+                            serialized,
+                        });
+                    }
+                }
+                ScriptWorkerAction::PortClose { id, endpoint } => {
+                    if let Some(worker) = self.handles.get(&id) {
+                        let _ = worker.commands.send(WorkerCommand::PortClose(endpoint));
+                    }
+                }
                 ScriptWorkerAction::Terminate { id } => {
                     if let Some(worker) = self.handles.remove(&id) {
                         worker.terminate();
@@ -218,6 +246,8 @@ impl WorkerHandle {
 
 enum WorkerCommand {
     Message(String),
+    PortMessage { endpoint: u32, serialized: String },
+    PortClose(u32),
     Fetch { id: u32, event: ScriptFetchEvent },
     Terminate,
 }
@@ -226,6 +256,7 @@ struct WorkerEvent {
     id: u32,
     fetch_actions: Vec<ScriptFetchAction>,
     messages: Vec<Result<String, String>>,
+    port_events: Vec<WorkerPortEvent>,
     console: Vec<String>,
     errors: Vec<String>,
     closed: bool,

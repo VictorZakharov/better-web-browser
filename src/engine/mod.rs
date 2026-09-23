@@ -24,6 +24,6 @@ pub use page::{DecodedImage, Page, PageResource};
 pub use script::{
     DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions, ScriptKind,
     ScriptOutcome, ScriptRuntime, ScriptWorkerAction, UserInputEvent, UserInputModifiers,
-    UserInputResult, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
+    UserInputResult, WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome, WorkerSourceLoader,
 };
 pub(crate) use stylesheet::AdoptedStyleSheet;

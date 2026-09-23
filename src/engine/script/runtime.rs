@@ -15,6 +15,7 @@ mod document_streams;
 mod dynamic_modules;
 mod dynamic_scripts;
 mod frames;
+pub(crate) use frames::FramePaintSnapshot;
 mod geometry;
 mod memory;
 mod module_preparation;

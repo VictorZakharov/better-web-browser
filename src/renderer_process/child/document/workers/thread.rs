@@ -114,6 +114,21 @@ pub(super) fn run_worker(config: WorkerConfig) {
                     break;
                 }
             }
+            Ok(WorkerCommand::PortMessage {
+                endpoint,
+                serialized,
+            }) => {
+                let event = runtime.dispatch_port_message(endpoint, &serialized);
+                if drive_worker_outcome(&config, event) {
+                    break;
+                }
+            }
+            Ok(WorkerCommand::PortClose(endpoint)) => {
+                let event = runtime.dispatch_port_close(endpoint);
+                if drive_worker_outcome(&config, event) {
+                    break;
+                }
+            }
             Ok(WorkerCommand::Terminate) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
@@ -146,6 +161,7 @@ fn emit(config: &WorkerConfig, mut outcome: WorkerRuntimeOutcome) {
         id: config.id,
         fetch_actions: outcome.fetch_actions,
         messages,
+        port_events: outcome.port_events,
         console: outcome.console,
         closed: outcome.closed || !outcome.errors.is_empty(),
         errors: outcome.errors,
@@ -160,6 +176,7 @@ fn emit_error(config: &WorkerConfig, error: String) {
         id: config.id,
         fetch_actions: Vec::new(),
         messages: vec![Err(error.clone())],
+        port_events: Vec::new(),
         console: Vec::new(),
         errors: vec![error],
         closed: true,

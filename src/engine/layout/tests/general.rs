@@ -2,6 +2,8 @@ use super::*;
 use crate::engine::layout::test_support::{CountingMeasurer, FixedMeasurer};
 
 mod grid;
+mod iframe;
+mod image_position;
 mod media;
 mod opacity;
 mod positioned;

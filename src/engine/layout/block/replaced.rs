@@ -9,12 +9,27 @@ pub(super) struct BlockImage {
     tint: Option<Color>,
     alt: String,
     available: bool,
+    embedded_frame: bool,
 }
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_image(&self, node: &NodeRef) -> Option<BlockImage> {
-        if !matches!(node.tag_name(), Some("img" | "image" | "video" | "svg")) {
+        if !matches!(
+            node.tag_name(),
+            Some("img" | "image" | "video" | "svg" | "iframe")
+        ) {
             return None;
+        }
+        if node.tag_name() == Some("iframe") {
+            return Some(BlockImage {
+                url: String::new(),
+                intrinsic_width: 300.0,
+                intrinsic_height: 150.0,
+                tint: None,
+                alt: String::new(),
+                available: true,
+                embedded_frame: true,
+            });
         }
         if node.tag_name() == Some("svg") {
             let url = inline_svg_key(node);
@@ -29,6 +44,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 tint: None,
                 alt: node.attr("aria-label").unwrap_or_default(),
                 available: image.is_some(),
+                embedded_frame: false,
             });
         }
         let url = self.page.image_url(node)?;
@@ -54,6 +70,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             tint: None,
             alt: node.attr("alt").unwrap_or_default(),
             available: true,
+            embedded_frame: false,
         })
     }
 }
@@ -84,7 +101,8 @@ impl BlockImage {
         content_width: f32,
         percentage_basis: Option<f32>,
     ) -> f32 {
-        let scaled_height = if self.intrinsic_width > 0.0
+        let scaled_height = if !self.embedded_frame
+            && self.intrinsic_width > 0.0
             && (style.width != Length::Auto || node.attr("width").is_some())
         {
             content_width * self.intrinsic_height / self.intrinsic_width
@@ -116,8 +134,15 @@ impl BlockImage {
         }
     }
 
-    pub(super) fn paint(self, _node: &NodeRef, output: &mut LayoutOutput, rect: RectF) {
+    pub(super) fn paint(self, node: &NodeRef, output: &mut LayoutOutput, rect: RectF) {
         if !self.available {
+            return;
+        }
+        if self.embedded_frame {
+            output.items.push(DisplayItem::EmbeddedFrame {
+                rect,
+                node_id: node.id(),
+            });
             return;
         }
         output.items.push(DisplayItem::Image {

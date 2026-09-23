@@ -4,6 +4,11 @@
     const frameElementObject = globalThis.__frameElement || null;
     delete globalThis.__frameElement;
     Object.defineProperties(windowObject, {
+        name: { configurable: true, enumerable: true,
+            get: () => host('windowName'),
+            set: value => host('setWindowName', String(value)) },
+        length: { configurable: true, enumerable: true,
+            get: () => document.querySelectorAll('iframe').length },
         frameElement: { configurable: true, enumerable: true,
             get: () => host('frameActive') ? frameElementObject : null },
         closed: { configurable: true, enumerable: true, get: () => !host('frameActive') }
@@ -19,6 +24,7 @@
     Object.setPrototypeOf(windowObject, Window.prototype);
     windowObject.window = windowObject;
     windowObject.self = windowObject;
+    windowObject.frames = windowObject;
     windowObject.top = windowObject;
     windowObject.parent = windowObject;
     windowObject.document = document;
@@ -132,6 +138,8 @@
         if (installedGetter || name in windowObject) return;
         const getter = () => {
             const current = list(host('namedProperty', name));
+            if (current.length === 1 && current[0]?.localName === 'iframe')
+                return current[0].contentWindow;
             return current.length > 1 ? current : current[0];
         };
         const setter = value => {

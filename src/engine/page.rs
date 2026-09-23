@@ -175,6 +175,24 @@ impl Page {
         page
     }
 
+    pub(crate) fn from_frame_document(
+        document: NodeRef,
+        source_url: &str,
+        stylesheets: Vec<crate::engine::css::StylesheetSource>,
+        quirks_mode: bool,
+        media_environment: MediaEnvironment,
+    ) -> Self {
+        let quirks = if quirks_mode {
+            html5ever::tree_builder::QuirksMode::Quirks
+        } else {
+            html5ever::tree_builder::QuirksMode::NoQuirks
+        };
+        let mut page = Self::from_dom(Dom::from_existing_document(document, quirks), source_url);
+        page.stylesheet_sources = stylesheets;
+        page.media_environment = media_environment;
+        page
+    }
+
     pub(crate) fn set_media_environment(&mut self, environment: MediaEnvironment) {
         if (self.media_environment.resolution_dppx - environment.resolution_dppx).abs() >= 0.01
             || self.media_environment.prefers_dark_color_scheme

@@ -15,6 +15,10 @@ pub(super) enum Purpose {
         document: NodeId,
         url: String,
     },
+    Image {
+        document: NodeId,
+        url: String,
+    },
     Script {
         document: NodeId,
         resource: PageResource,
@@ -33,9 +37,9 @@ impl FrameFetch {
     pub fn current(&self, context: &Context, active: &HashSet<NodeId>) -> bool {
         match &self.purpose {
             Purpose::Navigation(navigation) => context.frame_navigation_current(navigation),
-            Purpose::Script { document, .. } | Purpose::Style { document, .. } => {
-                active.contains(document)
-            }
+            Purpose::Script { document, .. }
+            | Purpose::Style { document, .. }
+            | Purpose::Image { document, .. } => active.contains(document),
         }
     }
     pub fn navigation(request: FrameNavigation) -> Self {
@@ -49,6 +53,14 @@ impl FrameFetch {
     pub(super) fn style(document: NodeId, url: String) -> Self {
         Self {
             purpose: Purpose::Style { document, url },
+            head: None,
+            bytes: Vec::new(),
+            received: 0,
+        }
+    }
+    pub(super) fn image(document: NodeId, url: String) -> Self {
+        Self {
+            purpose: Purpose::Image { document, url },
             head: None,
             bytes: Vec::new(),
             received: 0,
@@ -110,6 +122,8 @@ impl ScriptRuntime {
                         crate::limits::MAX_HTML_INPUT_BYTES
                     } else if matches!(fetch.purpose, Purpose::Style { .. }) {
                         crate::limits::MAX_CSS_SOURCE_BYTES
+                    } else if matches!(fetch.purpose, Purpose::Image { .. }) {
+                        crate::limits::MAX_IMAGE_SOURCE_BYTES
                     } else {
                         MAX_SCRIPT_BYTES
                     };
@@ -165,6 +179,17 @@ impl ScriptRuntime {
                     head
                 });
                 self.finish_frame_style(document, url, response);
+            }
+            Purpose::Image { document, url } => {
+                let response =
+                    fetch
+                        .head
+                        .filter(|head| success && head.is_success())
+                        .map(|mut head| {
+                            head.body = crate::fetch::Body::from_bytes(fetch.bytes);
+                            head
+                        });
+                self.finish_frame_image(document, url, response, outcome);
             }
             Purpose::Navigation(navigation) => {
                 if !success {

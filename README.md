@@ -364,8 +364,9 @@ Its opt-in live URLs are observations, not CI truth. Modern Google results are n
 compatibility baseline: previous tests encountered anti-automation responses, which can change
 with profile, network, and time. Breeze renders the actual response; it does not silently substitute
 another search provider. Passing a deterministic search fixture does not establish live Google support.
-The [CSP3 script and Worker slice](docs/csp-script-workers.md) records the challenge-page
-diagnosis and remaining Worker MessagePort boundary without claiming that Google will serve results.
+The [CSP3, Worker messaging, and embedded-document slice](docs/csp-script-workers.md)
+records the challenge-page diagnosis and hidden iframe/image verification without
+claiming that Google will serve results in a normal session.
 
 The 2026-09-22 fresh-profile hidden release run at
 [`157ee94`](https://github.com/VictorZakharov/better-web-browser/commit/157ee94)

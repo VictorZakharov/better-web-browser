@@ -23,7 +23,8 @@
     };
     self.__dispatchWorkerMessage = serialized => {
         try {
-            const event = markTrusted(new MessageEvent('message', { data: __deserializeClone(String(serialized)) }));
+            const {data, ports} = __deserializeCloneWithPorts(String(serialized));
+            const event = markTrusted(new MessageEvent('message', {data, ports}));
             target.dispatchEvent(event); messageHandler?.call(self, event);
         } catch (_) {
             const event = markTrusted(new MessageEvent('messageerror'));

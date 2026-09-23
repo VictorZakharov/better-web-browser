@@ -1,6 +1,6 @@
 use super::*;
 
-fn requests(runtime: &mut ScriptRuntime) -> Vec<(u32, Box<crate::fetch::FetchRequest>)> {
+pub(super) fn requests(runtime: &mut ScriptRuntime) -> Vec<(u32, Box<crate::fetch::FetchRequest>)> {
     let mut requests = Vec::new();
     for _ in 0..30 {
         let result = runtime.advance_time(Duration::ZERO, 1);

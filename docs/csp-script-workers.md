@@ -1,4 +1,4 @@
-# CSP3 script and external Worker policies
+# CSP3 scripts, Worker ports, and embedded challenge documents
 
 This slice implements a bounded part of [CSP Level 3](https://www.w3.org/TR/CSP3/)
 and the [HTML Worker script-fetch algorithms](https://html.spec.whatwg.org/multipage/webappapis.html#fetching-scripts).
@@ -29,21 +29,45 @@ The owned tests cover the fallback chain, nonce case sensitivity, strict-dynamic
 script admission, blocked Worker imports/Fetch, broker-owned Worker policy
 registration, and malformed Worker request modes/destinations.
 
+## Worker messages and embedded documents
+
+The next compatibility slices implement bounded Worker-origin `MessageChannel`
+and transferable `MessagePort` delivery across the Worker thread boundary,
+using the [HTML messaging](https://html.spec.whatwg.org/multipage/web-messaging.html)
+and [structured clone](https://html.spec.whatwg.org/multipage/structured-data.html)
+algorithms as the contracts. A transferred wrapper is detached in its old
+realm; queued messages are delivered through the owning endpoint, not by
+sharing JavaScript objects across threads. This covers the Worker-to-Window
+transfer used by the observed challenge, not every possible cross-agent
+transfer or the complete garbage-collection semantics of MessagePorts.
+
+An [iframe browsing context](https://html.spec.whatwg.org/multipage/iframe-embed-object.html)
+now paints its child document in the iframe's replaced-element box, clips it
+to that viewport, and routes pointer input back into child-local coordinates.
+Child image requests use the normal Fetch/CSP policy and bounded decoder, and
+their completion requests a new presentation. For inline replaced images,
+[CSS 2.2 relative positioning](https://www.w3.org/TR/CSS22/visuren.html#relative-positioning)
+now resolves `left`/`top` percentages against the containing block while
+keeping the original image dimensions under overflow clipping. This fixes a
+generic large-image tile pattern; it does not special-case reCAPTCHA markup.
+
 ## Observed live boundary
 
 On September 22, 2026, fresh-profile hidden Breeze and unified-headless
-Chromium both received Google's HTTP 429 `/sorry/` response to a Google.ca
-search from this environment. The server chooses that response; standards
-implementation cannot guarantee search results or silently bypass a challenge.
-The earlier Breeze capture had an empty challenge frame because its CSP header
-was rejected. With this slice, the reCAPTCHA frame's nonced script and
-dedicated Worker/imported script progress, but the Worker then needs a
-`MessageChannel` with a transferable `MessagePort`. Breeze's Window
-MessagePorts are not yet transferable across the Worker thread boundary, so
-the challenge is **still not functional**. These live observations are not a
-deterministic compatibility test or a claim that the user will see HTTP 429.
+Chromium both reached Google's `/sorry/` response to the same Google.ca search
+from this machine. Breeze observed HTTP 429; the Chromium capture reported the
+final challenge document as HTTP 200. The user's regular Chrome did not show
+the challenge. Google's exact decision criteria are not observable here:
+profile/cookies, browser identity, and automated/headless traffic differ.
+The server chooses the response; Breeze must render it, not silently substitute
+search results or evade the challenge.
 
-Remaining standards work includes cross-agent MessagePort transfer, broader
-CSP delivery/reporting and hash handling, and live-site validation without
-anti-automation responses. Do not replace these with site-specific response
-substitution or challenge evasion.
+The earlier Breeze capture had an empty challenge frame. A fresh-profile
+hidden replay after these slices showed a live checkbox and, after an automated
+checkbox click, a nine-image challenge with distinct clipped tiles. A paired
+hidden Chromium capture also showed the image challenge. The challenge was not
+solved in automation, and no normal Google search-result acceptance is claimed.
+Remaining standards work includes broader CSP delivery/reporting and hash
+handling, complete MessagePort lifecycle/inter-agent transfer behavior, and
+live-site validation when Google serves search results. Do not replace these
+with site-specific response substitution or challenge evasion.

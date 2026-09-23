@@ -22,6 +22,7 @@ pub(in crate::engine::script) struct Replacement<'s> {
     pub document: NodeRef,
     pub url: String,
     pub proxy: v8::Local<'s, v8::Object>,
+    pub name: Rc<RefCell<String>>,
 }
 
 impl FrameTree {
@@ -130,7 +131,7 @@ impl FrameTree {
         document: NodeRef,
         url: String,
     ) -> Option<NodeId> {
-        let (old, parent_document, node, attributes, epoch) = {
+        let (old, parent_document, node, attributes, epoch, name) = {
             let children = self.children.borrow();
             let child = children.get(&element)?;
             (
@@ -139,6 +140,7 @@ impl FrameTree {
                 child.element.clone(),
                 child.attributes.clone(),
                 child.navigation_epoch,
+                Rc::clone(&child.host.borrow().browsing_context_name),
             )
         };
         let parent = self
@@ -162,6 +164,7 @@ impl FrameTree {
             document,
             url,
             proxy,
+            name,
         };
         let mut child = create(
             parent_scope,

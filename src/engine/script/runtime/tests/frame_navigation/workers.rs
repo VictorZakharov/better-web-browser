@@ -78,3 +78,39 @@ fn child_cannot_forge_a_parent_worker_identifier() {
         result.worker_actions
     );
 }
+
+#[test]
+fn worker_port_arrives_in_message_event_and_round_trips() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        window.worker = new Worker('/worker.js');
+        window.portReply = '';
+        worker.onmessage = event => {
+            window.port = event.data.port;
+            window.portIdentity = event.ports[0] === port && port instanceof MessagePort;
+            port.onmessage = reply => portReply = reply.data;
+            port.postMessage('ping');
+        };
+        </script>"#,
+    );
+    let serialized = r#"{"__breezeClonePorts":true,"payload":{"t":"object","id":1,"n":false,"v":[["port",{"t":"port","id":2,"v":{"id":2}}]]},"ports":[{"id":2}]}"#;
+    let event = runtime.complete_worker_event_with_loader(1, Ok(serialized.into()), None);
+    assert!(event.errors.is_empty(), "{:?}", event.errors);
+    assert!(event.worker_actions.iter().any(|action| matches!(
+        action,
+        ScriptWorkerAction::PortPostMessage {id:1, endpoint:2, serialized}
+            if serialized == "\"ping\""
+    )));
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(!portIdentity) throw Error('transferred port identity');",
+    );
+    let delivered = runtime.complete_worker_port_event(1, 2, Some("\"pong\"".into()));
+    assert!(delivered.errors.is_empty(), "{:?}", delivered.errors);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(portReply !== 'pong') throw Error('port reply');",
+    );
+}

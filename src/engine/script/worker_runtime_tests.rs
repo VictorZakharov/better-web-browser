@@ -29,6 +29,43 @@ fn isolated_worker_dispatches_messages_and_timers() {
 }
 
 #[test]
+fn worker_channel_transfers_a_port_and_keeps_the_peer_live() {
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    let (runtime, initial) = WorkerRuntime::start(
+        "https://example.com/worker.js",
+        r#"const channel = new MessageChannel();
+           channel.port1.onmessage = event => channel.port1.postMessage('pong:' + event.data);
+           postMessage({port: channel.port2}, [channel.port2]);
+           let detached = false;
+           try { postMessage(channel.port2, [channel.port2]); } catch (error) {
+               detached = error.name === 'DataCloneError';
+           }
+           postMessage(detached);"#,
+        "",
+        ScriptKind::Classic,
+        loader,
+    );
+    assert!(initial.errors.is_empty(), "{:?}", initial.errors);
+    assert_eq!(initial.messages.len(), 2);
+    let envelope: serde_json::Value = serde_json::from_str(&initial.messages[0]).unwrap();
+    assert_eq!(envelope["__breezeClonePorts"], true);
+    assert_eq!(envelope["ports"][0]["id"], 2);
+    assert_eq!(initial.messages[1], "true");
+    let mut runtime = runtime.expect("Worker failed to start");
+
+    let received = runtime.dispatch_port_message(2, "\"ping\"");
+    assert!(received.errors.is_empty(), "{:?}", received.errors);
+    assert!(received.port_events.is_empty());
+    let reply = runtime.advance_time(Duration::ZERO, 4);
+    assert!(reply.errors.is_empty(), "{:?}", reply.errors);
+    assert!(matches!(
+        reply.port_events.as_slice(),
+        [WorkerPortEvent::Message {endpoint:2, serialized}]
+            if serialized == "\"pong:ping\""
+    ));
+}
+
+#[test]
 fn isolated_worker_fetch_resolves_in_its_own_realm() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
     let (runtime, initial) = WorkerRuntime::start(
