@@ -292,13 +292,27 @@ pub(super) fn evaluate_script(
     dynamic_script_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
-    if host.borrow().sandbox.scripts_blocked
-        || (!host.borrow().script_is_external(&script.node)
-            && !host.borrow().policy.allows_inline(false))
-    {
+    let source = crate::fetch::csp::ScriptSource {
+        nonce: script.node.attr("nonce"),
+        parser_inserted: script
+            .node
+            .element()
+            .is_some_and(|element| element.script_parser_inserted.get()),
+    };
+    let external = host.borrow().script_is_external(&script.node);
+    let allowed = if external {
+        host.borrow()
+            .policy
+            .allows_script_url("script-src-elem", &script.source_url, 0, &source)
+    } else {
+        host.borrow()
+            .policy
+            .allows_inline_with_nonce(false, source.nonce.as_deref())
+    };
+    if host.borrow().sandbox.scripts_blocked || !allowed {
         outcome
             .diagnostics
-            .push("inline script blocked by document policy".into());
+            .push("script blocked by document policy".into());
         return false;
     }
     context.register_script_origin(&script.source_url, &script.source_url, script.fetch_options);

@@ -96,6 +96,7 @@ impl DocumentRuntime {
                     url,
                     kind,
                     fetch_options,
+                    ..
                 } => {
                     let code = crate::winhttp::decode_text(&bytes, content_type.as_deref());
                     if code.len() > crate::limits::MAX_SCRIPT_BYTES {

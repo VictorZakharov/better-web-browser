@@ -1,12 +1,21 @@
-//! CSP URL-source matching, with explicit rejection of unsupported expressions.
+//! CSP source-expression recognition and URL matching.
 use url::Url;
 
 pub(super) fn supported(source: &str) -> bool {
     let lower = source.to_ascii_lowercase();
     if matches!(
         lower.as_str(),
-        "'none'" | "'self'" | "'unsafe-inline'" | "'unsafe-eval'" | "*"
+        "'none'"
+            | "'self'"
+            | "'unsafe-inline'"
+            | "'unsafe-eval'"
+            | "'strict-dynamic'"
+            | "'report-sample'"
+            | "*"
     ) {
+        return true;
+    }
+    if nonce_value(source).is_some() {
         return true;
     }
     if source.contains(['\'', '"', '@', '?', '#', '\\']) || !source.is_ascii() {
@@ -16,6 +25,28 @@ pub(super) fn supported(source: &str) -> bool {
         return valid_scheme(scheme);
     }
     host_parts(source, "https").is_some()
+}
+
+pub(super) fn nonce_value(source: &str) -> Option<&str> {
+    let value = source.strip_prefix("'nonce-")?.strip_suffix('\'')?;
+    valid_base64_value(value).then_some(value)
+}
+
+pub(super) fn hash_source(source: &str) -> bool {
+    ["'sha256-", "'sha384-", "'sha512-"].iter().any(|prefix| {
+        source
+            .strip_prefix(prefix)
+            .and_then(|value| value.strip_suffix('\''))
+            .is_some_and(valid_base64_value)
+    })
+}
+
+fn valid_base64_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'-' | b'_' | b'=')
+        })
 }
 
 pub(super) fn matches(source: &str, url: &Url, origin: &Url, redirects: usize) -> bool {

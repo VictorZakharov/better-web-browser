@@ -12,6 +12,23 @@ pub struct PolicyContainer {
     policies: Vec<Policy>,
 }
 
+/// Element metadata needed by CSP3 before a script request is sent or executed.
+/// Absence of metadata is treated as parser-inserted with no nonce (fail closed).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ScriptSource {
+    pub nonce: Option<String>,
+    pub parser_inserted: bool,
+}
+
+impl Default for ScriptSource {
+    fn default() -> Self {
+        Self {
+            nonce: None,
+            parser_inserted: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Policy {
     origin: url::Url,
@@ -43,6 +60,10 @@ impl PolicyContainer {
                     let values: Vec<_> = tokens.map(str::to_owned).collect();
                     if name == "block-all-mixed-content" {
                         policy.mixed_content = true;
+                    } else if name == "report-uri" {
+                        // Reporting does not affect enforcement. Until reporting is
+                        // implemented, preserve the remaining directives in this policy.
+                        continue;
                     } else if !matches!(
                         name.as_str(),
                         "default-src"
@@ -82,6 +103,9 @@ impl PolicyContainer {
     }
 
     pub fn allows_url(&self, directive: &str, url: &str, redirects: usize) -> bool {
+        if matches!(directive, "script-src" | "script-src-elem") {
+            return self.allows_script_url(directive, url, redirects, &ScriptSource::default());
+        }
         let Ok(url) = url::Url::parse(url) else {
             return false;
         };
@@ -94,16 +118,62 @@ impl PolicyContainer {
         })
     }
 
-    pub fn allows_inline(&self, attribute: bool) -> bool {
-        self.allows_keyword(
-            if attribute {
-                "script-src-attr"
-            } else {
-                "script-src-elem"
-            },
-            "'unsafe-inline'",
-        )
+    pub fn allows_script_url(
+        &self,
+        directive: &str,
+        url: &str,
+        redirects: usize,
+        script: &ScriptSource,
+    ) -> bool {
+        let Ok(url) = url::Url::parse(url) else {
+            return false;
+        };
+        self.policies.iter().all(|policy| {
+            if policy.mixed_content && policy.origin.scheme() == "https" && url.scheme() == "http" {
+                return false;
+            }
+            policy.list(directive).is_none_or(|list| {
+                if nonce_matches(list, script.nonce.as_deref()) {
+                    return true;
+                }
+                // CSP3 ignores host/scheme sources under strict-dynamic. Only a
+                // non-parser-inserted script can inherit the trusted loader's authority.
+                if has_keyword(list, "'strict-dynamic'") {
+                    return !script.parser_inserted;
+                }
+                list.iter()
+                    .any(|source| sources::matches(source, &url, &policy.origin, redirects))
+            })
+        })
     }
+
+    pub fn allows_inline(&self, attribute: bool) -> bool {
+        self.allows_inline_with_nonce(attribute, None)
+    }
+
+    pub fn allows_inline_with_nonce(&self, attribute: bool, nonce: Option<&str>) -> bool {
+        let directive = if attribute {
+            "script-src-attr"
+        } else {
+            "script-src-elem"
+        };
+        self.policies.iter().all(|policy| {
+            policy.list(directive).is_none_or(|list| {
+                if !attribute && nonce_matches(list, nonce) {
+                    return true;
+                }
+                if has_keyword(list, "'strict-dynamic'")
+                    || list.iter().any(|source| {
+                        sources::nonce_value(source).is_some() || sources::hash_source(source)
+                    })
+                {
+                    return false;
+                }
+                has_keyword(list, "'unsafe-inline'")
+            })
+        })
+    }
+
     pub fn allows_eval(&self) -> bool {
         self.allows_keyword("script-src", "'unsafe-eval'")
     }
@@ -132,16 +202,37 @@ impl PolicyContainer {
         url: &str,
         redirects: usize,
     ) -> Result<(), FetchError> {
+        self.check_request_with_script(destination, url, redirects, None)
+    }
+
+    pub fn check_request_with_script(
+        &self,
+        destination: RequestDestination,
+        url: &str,
+        redirects: usize,
+        script: Option<&ScriptSource>,
+    ) -> Result<(), FetchError> {
         let directive = match destination {
             RequestDestination::Document => "frame-src",
             RequestDestination::Script => "script-src-elem",
+            RequestDestination::Worker => "worker-src",
             RequestDestination::Fetch => "connect-src",
             RequestDestination::Style => "style-src-elem",
             RequestDestination::Image => "img-src",
             RequestDestination::Font => "font-src",
             RequestDestination::Video => "media-src",
         };
-        if self.allows_url(directive, url, redirects) {
+        let allowed = if destination == RequestDestination::Script {
+            self.allows_script_url(
+                directive,
+                url,
+                redirects,
+                script.unwrap_or(&ScriptSource::default()),
+            )
+        } else {
+            self.allows_url(directive, url, redirects)
+        };
+        if allowed {
             Ok(())
         } else {
             Err(FetchError::new(
@@ -150,6 +241,20 @@ impl PolicyContainer {
             ))
         }
     }
+}
+
+fn has_keyword(list: &[String], keyword: &str) -> bool {
+    list.iter()
+        .any(|source| source.eq_ignore_ascii_case(keyword))
+}
+
+fn nonce_matches(list: &[String], nonce: Option<&str>) -> bool {
+    nonce.is_some_and(|nonce| {
+        !nonce.is_empty()
+            && list
+                .iter()
+                .any(|source| sources::nonce_value(source) == Some(nonce))
+    })
 }
 
 impl Policy {

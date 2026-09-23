@@ -22,6 +22,14 @@ pub(super) fn encode_request_head(
     writer.u8(u8::from(head.embedding_client.opaque));
     writer.u8(initiator_tag(head.initiator));
     writer.u8(destination_tag(head.destination));
+    match &head.script_source {
+        Some(source) => {
+            writer.u8(1);
+            writer.u8(u8::from(source.parser_inserted));
+            writer.string(source.nonce.as_deref().unwrap_or(""))?;
+        }
+        None => writer.u8(0),
+    }
     writer.string(&head.url)?;
     writer.string(&head.method)?;
     encode_headers(writer, &head.headers)?;
@@ -46,6 +54,22 @@ pub(super) fn decode_request_head(
         embedding_client: decode_client(reader)?,
         initiator: decode_initiator(reader.u8()?)?,
         destination: decode_destination(reader.u8()?)?,
+        script_source: match reader.u8()? {
+            0 => None,
+            1 => {
+                let parser_inserted = match reader.u8()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(ProtocolError::InvalidPayload("script parser flag")),
+                };
+                let nonce = reader.string(256)?;
+                Some(crate::fetch::csp::ScriptSource {
+                    nonce: (!nonce.is_empty()).then_some(nonce),
+                    parser_inserted,
+                })
+            }
+            _ => return Err(ProtocolError::InvalidPayload("script CSP metadata")),
+        },
         url: reader.string(MAX_URL_BYTES)?,
         method: reader.string(64)?,
         headers: decode_headers(reader)?,
@@ -224,7 +248,7 @@ macro_rules! tagged_enum {
 }
 
 tagged_enum!(initiator_tag, decode_initiator, FetchInitiator, "Fetch initiator", { FetchInitiator::Subresource => 1, FetchInitiator::ClassicScript => 2, FetchInitiator::ModuleScript => 3, FetchInitiator::ScriptApi => 4, FetchInitiator::ClassicWorker => 5, FetchInitiator::ModuleWorker => 6, FetchInitiator::ChildNavigation => 7, FetchInitiator::ChildResource => 8 });
-tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5, ResourceDestination::Video => 6, ResourceDestination::Document => 7 });
+tagged_enum!(destination_tag, decode_destination, ResourceDestination, "Fetch destination", { ResourceDestination::Style => 1, ResourceDestination::Image => 2, ResourceDestination::Script => 3, ResourceDestination::Font => 4, ResourceDestination::Fetch => 5, ResourceDestination::Video => 6, ResourceDestination::Document => 7, ResourceDestination::Worker => 8 });
 tagged_enum!(mode_tag, decode_mode, FetchMode, "Fetch mode", { FetchMode::SameOrigin => 1, FetchMode::NoCors => 2, FetchMode::Cors => 3 });
 tagged_enum!(credentials_tag, decode_credentials, FetchCredentials, "Fetch credentials", { FetchCredentials::Omit => 1, FetchCredentials::SameOrigin => 2, FetchCredentials::Include => 3 });
 tagged_enum!(cache_tag, decode_cache, FetchCache, "Fetch cache", { FetchCache::Default => 1, FetchCache::NoStore => 2, FetchCache::Reload => 3, FetchCache::NoCache => 4, FetchCache::ForceCache => 5, FetchCache::OnlyIfCached => 6 });

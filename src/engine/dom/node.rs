@@ -195,6 +195,8 @@ pub struct ElementData {
     /// HTML script flags belong to the element, including across adoption and cloning.
     pub(crate) script_force_async: Cell<bool>,
     pub(crate) script_started: Cell<bool>,
+    /// HTML's parser-inserted flag, used by CSP3 strict-dynamic script checks.
+    pub(crate) script_parser_inserted: Cell<bool>,
 }
 
 #[derive(Debug)]

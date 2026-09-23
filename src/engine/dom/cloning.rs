@@ -65,6 +65,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
             // HTML cloning copies already-started, but not the original force-async flag.
             script_force_async: std::cell::Cell::new(source.attr("async").is_none()),
             script_started: std::cell::Cell::new(element.script_started.get()),
+            script_parser_inserted: std::cell::Cell::new(false),
         }),
     };
     let clone = Node::new_in(identity, data);

@@ -55,6 +55,64 @@ fn isolated_worker_fetch_resolves_in_its_own_realm() {
 }
 
 #[test]
+fn worker_response_policy_blocks_imports_and_fetches_without_affecting_its_entry() {
+    let mut headers = HeaderList::new();
+    headers
+        .append(
+            "content-security-policy",
+            "script-src 'none'; connect-src 'none'",
+        )
+        .unwrap();
+    let policy = Arc::new(
+        crate::fetch::csp::PolicyContainer::from_headers("https://example.com/worker.js", &headers)
+            .unwrap(),
+    );
+    let loader: Arc<WorkerSourceLoader> =
+        Arc::new(|_, _| panic!("CSP must block import before source loading"));
+    let (runtime, outcome) = WorkerRuntime::start_with_policy(
+        "https://example.com/worker.js",
+        "let blocked = false; try { importScripts('/extra.js'); } catch (_) { blocked = true; } fetch('/data'); postMessage(blocked);",
+        "",
+        ScriptKind::Classic,
+        loader,
+        policy,
+    );
+    assert!(runtime.is_some());
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert!(outcome.fetch_actions.is_empty());
+    assert_eq!(outcome.messages, ["true"]);
+}
+
+#[test]
+fn worker_module_dependency_obeys_entry_response_policy() {
+    let mut headers = HeaderList::new();
+    headers
+        .append("content-security-policy", "script-src 'none'")
+        .unwrap();
+    let policy = Arc::new(
+        crate::fetch::csp::PolicyContainer::from_headers("https://example.com/worker.js", &headers)
+            .unwrap(),
+    );
+    let loader: Arc<WorkerSourceLoader> =
+        Arc::new(|_, _| panic!("CSP must block module import before source loading"));
+    let (runtime, outcome) = WorkerRuntime::start_with_policy(
+        "https://example.com/worker.js",
+        "import '/extra.js';",
+        "",
+        ScriptKind::Module,
+        loader,
+        policy,
+    );
+    assert!(runtime.is_none());
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.contains("script-src-elem"))
+    );
+}
+
+#[test]
 fn isolated_worker_exposes_dom_exception_legacy_codes() {
     let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
     let (runtime, outcome) = WorkerRuntime::start(

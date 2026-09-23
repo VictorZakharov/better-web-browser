@@ -2,7 +2,7 @@
 
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
-use crate::fetch::CredentialsMode;
+use crate::fetch::{CredentialsMode, RequestDestination};
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,7 @@ pub enum ScriptWorkerAction {
         credentials: CredentialsMode,
         document_url: String,
         client: crate::fetch::RequestClient,
+        worker_client: crate::fetch::RequestClient,
     },
     PostMessage {
         id: u32,
@@ -50,14 +51,16 @@ pub(super) fn worker_host_call(
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "workerStart" => {
-            if !state.policy.is_empty() {
+            let url = state.resolved_url(&argument_string(args, 1)?);
+            if state
+                .policy
+                .check_request(RequestDestination::Worker, &url, 0)
+                .is_err()
+            {
                 return Err(JsNativeError::typ()
-                    .with_message(
-                        "Workers with inherited Content Security Policy are not yet supported",
-                    )
+                    .with_message("Content Security Policy blocked Worker script")
                     .into());
             }
-            let url = state.resolved_url(&argument_string(args, 1)?);
             let options: WorkerOptions =
                 serde_json::from_str(&argument_string(args, 2)?).map_err(|error| {
                     JsNativeError::typ().with_message(format!("invalid Worker options: {error}"))
@@ -85,6 +88,18 @@ pub(super) fn worker_host_call(
                 .worker_identifiers
                 .borrow_mut()
                 .allocate(state.document.id())?;
+            // Keep Worker clients outside the u32 child-frame client namespace.
+            // Both counters are bounded by their owning document and broker quotas.
+            let parent_id = u32::try_from(state.fetch_client.id)
+                .ok()
+                .filter(|id| *id < 0x8000_0000)
+                .ok_or_else(|| {
+                    JsNativeError::range().with_message("Worker client identifier exhausted")
+                })?;
+            let worker_client = crate::fetch::RequestClient {
+                id: (1_u64 << 63) | (u64::from(parent_id) << 32) | u64::from(id),
+                opaque: state.fetch_client.opaque,
+            };
             state
                 .pending_worker_actions
                 .push(ScriptWorkerAction::Start {
@@ -99,6 +114,7 @@ pub(super) fn worker_host_call(
                         .unwrap_or(&state.document_url)
                         .clone(),
                     client: state.fetch_client,
+                    worker_client,
                 });
             Ok(Some(JsValue::from(id)))
         }

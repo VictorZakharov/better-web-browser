@@ -31,6 +31,18 @@ pub(super) fn evaluate(
         let source_loader = Rc::clone(host).borrow().source_loader.clone();
         let mut loaded = false;
         for url in missing {
+            host.borrow()
+                .policy
+                .check_request_with_script(
+                    crate::fetch::RequestDestination::Script,
+                    &url,
+                    0,
+                    Some(&crate::fetch::csp::ScriptSource {
+                        nonce: None,
+                        parser_inserted: false,
+                    }),
+                )
+                .map_err(|error| error.to_string())?;
             let code = source_loader(&url, ScriptKind::Module)
                 .map_err(|error| format!("{url}: {error}"))?;
             if total_script_bytes.saturating_add(code.len()) > MAX_SCRIPT_BYTES {

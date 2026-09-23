@@ -86,9 +86,23 @@ fn start(
             (owner, policy)
         };
         let mut request = reconstruct(&owner.url, request)?;
+        let creator_origin = owner.origin.clone();
+        let worker_entry = request.destination == RequestDestination::Worker;
         request.origin = Some(owner.origin);
         request.policy = policy;
-        client.fetch_stream(request.with_signal(signal))
+        let response = client.fetch_stream(request.with_signal(signal))?;
+        if worker_entry
+            && !response
+                .url_list
+                .last()
+                .is_some_and(|url| url.origin().is_same_origin(&creator_origin))
+        {
+            return Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                "Worker entry redirect changed origin",
+            ));
+        }
+        Ok(response)
     })();
     let response = match result {
         Ok(response) => response,

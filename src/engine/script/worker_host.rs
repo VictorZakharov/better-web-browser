@@ -13,6 +13,7 @@ pub(super) struct WorkerHostState {
     pub(super) name: String,
     pub(super) kind: ScriptKind,
     pub(super) source_loader: Arc<WorkerSourceLoader>,
+    pub(super) policy: Arc<crate::fetch::csp::PolicyContainer>,
     pub(super) next_fetch_id: u32,
     pub(super) fetch_actions: Vec<ScriptFetchAction>,
     pub(super) messages: Vec<String>,
@@ -38,12 +39,14 @@ impl WorkerHostState {
         name: &str,
         kind: ScriptKind,
         source_loader: Arc<WorkerSourceLoader>,
+        policy: Arc<crate::fetch::csp::PolicyContainer>,
     ) -> Self {
         Self {
             source_url: source_url.into(),
             name: name.into(),
             kind,
             source_loader,
+            policy,
             next_fetch_id: 1,
             fetch_actions: Vec::new(),
             messages: Vec::new(),
@@ -146,6 +149,14 @@ pub(super) fn dispatch_worker_host_call(
         "fetchStart" => {
             let serialized = argument_string(args, 1)?;
             let request = super::network::request_from_serialized(&state.source_url, &serialized)?;
+            state
+                .policy
+                .check_request(
+                    crate::fetch::RequestDestination::Fetch,
+                    request.url.as_str(),
+                    0,
+                )
+                .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
             let id = state.next_fetch_id;
             state.next_fetch_id = state.next_fetch_id.checked_add(1).ok_or_else(|| {
                 JsNativeError::range().with_message("Worker Fetch identifiers were exhausted")
@@ -214,6 +225,18 @@ fn import_scripts(args: &[JsValue], state: &mut WorkerHostState) -> JsResult<JsV
         let url = resolve_url(&state.source_url, &value).ok_or_else(|| {
             JsNativeError::typ().with_message(format!("invalid importScripts URL: {value}"))
         })?;
+        state
+            .policy
+            .check_request_with_script(
+                crate::fetch::RequestDestination::Script,
+                &url,
+                0,
+                Some(&crate::fetch::csp::ScriptSource {
+                    nonce: None,
+                    parser_inserted: false,
+                }),
+            )
+            .map_err(|error| JsNativeError::typ().with_message(error.to_string()))?;
         let code = (state.source_loader)(&url, ScriptKind::Classic)
             .map_err(|error| JsNativeError::error().with_message(error))?;
         if state.imported_script_bytes.saturating_add(code.len()) > MAX_SCRIPT_BYTES {

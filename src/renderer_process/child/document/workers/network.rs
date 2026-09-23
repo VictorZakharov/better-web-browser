@@ -2,7 +2,10 @@
 
 use super::super::fetch::{into_fetch_result, script_api_request};
 use super::*;
-use crate::fetch::{FetchError, FetchErrorKind, FetchRequest, FetchResponse, RequestMode};
+use crate::fetch::{
+    FetchError, FetchErrorKind, FetchRequest, FetchResponse, RequestContext, RequestDestination,
+    RequestMode,
+};
 use crate::limits::MAX_RENDERER_FETCH_REQUESTS_PER_BATCH;
 use crate::renderer_process::child::connection::PendingFetchBatch;
 
@@ -98,23 +101,48 @@ pub(super) fn finish_ready_network_batches(
     Ok(())
 }
 
+pub(super) struct WorkerSourceRequest {
+    pub(super) network: mpsc::Sender<WorkerNetworkRequest>,
+    pub(super) cancelled: Arc<AtomicBool>,
+    pub(super) base_url: String,
+    pub(super) credentials: CredentialsMode,
+    pub(super) creator_client: crate::fetch::RequestClient,
+    pub(super) worker_client: crate::fetch::RequestClient,
+}
+
 pub(super) fn worker_source_request(
-    network: &mpsc::Sender<WorkerNetworkRequest>,
-    cancelled: &Arc<AtomicBool>,
-    document_url: &str,
+    source: &WorkerSourceRequest,
     url: &str,
     kind: ScriptKind,
-    credentials: CredentialsMode,
-    client: crate::fetch::RequestClient,
+    entry: bool,
 ) -> Result<FetchResponse, FetchError> {
-    let mut request = FetchRequest::script(url, document_url)?;
+    let mut request = FetchRequest::script(url, &source.base_url)?;
+    request.context = RequestContext::WorkerScript;
+    if entry {
+        request.destination = RequestDestination::Worker;
+        request.resulting_client = source.worker_client;
+    } else {
+        request.destination = RequestDestination::Script;
+        // HTML assigns `not parser-inserted` metadata to worker-imported scripts.
+        request.script_source = Some(crate::fetch::csp::ScriptSource {
+            nonce: None,
+            parser_inserted: false,
+        });
+    }
     request.mode = match kind {
-        ScriptKind::Classic => RequestMode::SameOrigin,
+        ScriptKind::Classic if entry => RequestMode::SameOrigin,
+        // HTML's classic importScripts fetch is no-cors, unlike the
+        // same-origin top-level classic Worker script fetch.
+        ScriptKind::Classic => RequestMode::NoCors,
         ScriptKind::Module => RequestMode::Cors,
     };
-    request.credentials = credentials;
-    request.client = client;
-    request_network(network, cancelled, request)
+    request.credentials = source.credentials;
+    request.client = if entry {
+        source.creator_client
+    } else {
+        source.worker_client
+    };
+    request_network(&source.network, &source.cancelled, request)
 }
 
 pub(super) fn request_network(

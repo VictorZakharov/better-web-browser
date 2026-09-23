@@ -11,6 +11,7 @@ pub enum ResourceDestination {
     Style,
     Image,
     Script,
+    Worker,
     Font,
     Fetch,
     Video,
@@ -96,6 +97,8 @@ pub struct FetchRequestHead {
     pub document: DocumentId,
     pub initiator: FetchInitiator,
     pub destination: ResourceDestination,
+    /// Internal CSP element metadata. It is not forwarded as an HTTP request header.
+    pub script_source: Option<crate::fetch::csp::ScriptSource>,
     pub url: String,
     pub method: String,
     pub headers: Vec<(String, String)>,
@@ -115,6 +118,28 @@ impl FetchRequestHead {
         }
         if self.method.is_empty() || self.method.len() > 64 {
             return Err(ProtocolError::InvalidPayload("renderer Fetch method"));
+        }
+        if let Some(source) = &self.script_source
+            && (self.destination != ResourceDestination::Script
+                || !matches!(
+                    self.initiator,
+                    FetchInitiator::ClassicScript
+                        | FetchInitiator::ModuleScript
+                        | FetchInitiator::ChildResource
+                        | FetchInitiator::ClassicWorker
+                        | FetchInitiator::ModuleWorker
+                )
+                || source.nonce.as_ref().is_some_and(|nonce| {
+                    nonce.len() > 256
+                        || !nonce.bytes().all(|byte| {
+                            byte.is_ascii_alphanumeric()
+                                || matches!(byte, b'+' | b'/' | b'-' | b'_' | b'=')
+                        })
+                }))
+        {
+            return Err(ProtocolError::InvalidPayload(
+                "renderer script CSP metadata",
+            ));
         }
         if self.headers.len() > MAX_RENDERER_FETCH_HEADERS
             || self.headers.iter().any(|(name, value)| {
@@ -139,6 +164,13 @@ impl FetchRequestHead {
         let mut total = self.url.len().checked_add(self.method.len())?;
         if let FetchReferrer::Url(url) = &self.referrer {
             total = total.checked_add(url.len())?;
+        }
+        if let Some(nonce) = self
+            .script_source
+            .as_ref()
+            .and_then(|source| source.nonce.as_ref())
+        {
+            total = total.checked_add(nonce.len())?;
         }
         for (name, value) in &self.headers {
             total = total.checked_add(name.len())?.checked_add(value.len())?;

@@ -32,6 +32,7 @@ impl DocumentRuntime {
                 url: script.source_url,
                 kind: script.kind,
                 fetch_options: script.fetch_options,
+                script_source: crate::fetch::csp::ScriptSource::default(),
             };
             // Share in-flight bytes without conflating each element's execution or events.
             let owners = self
@@ -60,6 +61,7 @@ impl DocumentRuntime {
                 url,
                 kind: ScriptKind::Module,
                 fetch_options,
+                script_source: crate::fetch::csp::ScriptSource::default(),
             };
             let id = connection.allocate_request_id();
             requests.push(page_resource_request(id, self.id, &resource));

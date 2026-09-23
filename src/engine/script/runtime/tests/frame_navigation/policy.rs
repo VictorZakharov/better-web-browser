@@ -133,6 +133,20 @@ fn policy_blocks_inline_parser_code_and_allows_explicit_inline_without_eval() {
         "if(messages.length!==1 || messages[0].some(v=>!v)) throw Error(JSON.stringify(messages));",
     );
 }
+
+#[test]
+fn child_nonce_policy_admits_only_matching_parser_script() {
+    let csp = "script-src 'report-sample' 'nonce-VGVzdA==' 'unsafe-inline' 'strict-dynamic' https:; object-src 'none'; base-uri 'self'; report-uri https://reports.example.test/csp";
+    let (dom, mut runtime) = loaded(
+        csp,
+        "<script>parent.postMessage('BAD','*')</script><script nonce='VGVzdA=='>parent.postMessage('GOOD','*')</script>",
+    );
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(messages.join(',')!=='GOOD') throw Error(JSON.stringify(messages));",
+    );
+}
 #[test]
 fn policy_checks_ancestor_and_base_url_and_inherits_into_srcdoc() {
     let (dom, mut runtime) = loaded(

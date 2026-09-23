@@ -25,6 +25,7 @@ impl ScriptRuntime {
                         url: request.source_url,
                         kind: request.kind,
                         fetch_options: request.fetch_options,
+                        script_source: crate::fetch::csp::ScriptSource::default(),
                     },
                     ScriptOwner::Dynamic(request.node),
                 ));
@@ -36,6 +37,7 @@ impl ScriptRuntime {
                         url: url.clone(),
                         kind: ScriptKind::Module,
                         fetch_options,
+                        script_source: crate::fetch::csp::ScriptSource::default(),
                     },
                     ScriptOwner::Module(url),
                 ));
@@ -43,7 +45,10 @@ impl ScriptRuntime {
         }
         for (document, resource, owner) in jobs {
             let PageResource::Script {
-                url, fetch_options, ..
+                url,
+                fetch_options,
+                script_source,
+                ..
             } = &resource
             else {
                 continue;
@@ -57,9 +62,14 @@ impl ScriptRuntime {
             );
             let result = request
                 .and_then(|mut request| {
-                    host.policy
-                        .check_request(RequestDestination::Script, url, 0)?;
+                    host.policy.check_request_with_script(
+                        RequestDestination::Script,
+                        url,
+                        0,
+                        Some(script_source),
+                    )?;
                     request.policy = host.policy.clone();
+                    request.script_source = Some(script_source.clone());
                     request.origin = Some(host.document_origin.clone());
                     request.client = host.fetch_client;
                     request.mode = fetch_options.mode;

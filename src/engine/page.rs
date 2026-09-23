@@ -52,6 +52,7 @@ pub enum PageResource {
         url: String,
         kind: ScriptKind,
         fetch_options: ScriptFetchOptions,
+        script_source: crate::fetch::csp::ScriptSource,
     },
     Font {
         url: String,

@@ -6,7 +6,7 @@ mod thread;
 use thread::run_worker;
 
 use self::network::{
-    PendingWorkerFetch, WorkerNetworkRequest, finish_ready_network_batches,
+    PendingWorkerFetch, WorkerNetworkRequest, WorkerSourceRequest, finish_ready_network_batches,
     start_ready_network_batch, worker_source_request,
 };
 use super::fetch::validate_script_response;
@@ -144,6 +144,7 @@ impl RendererWorkers {
                     credentials,
                     document_url,
                     client,
+                    worker_client,
                 } => {
                     if self.handles.len() >= MAX_DEDICATED_WORKERS {
                         outcome.errors.push(format!(
@@ -161,6 +162,7 @@ impl RendererWorkers {
                         credentials,
                         document_url,
                         client,
+                        worker_client,
                         network: self.network_sender.clone(),
                         events: self.event_sender.clone(),
                         commands: receiver,
@@ -237,6 +239,7 @@ struct WorkerConfig {
     credentials: CredentialsMode,
     document_url: String,
     client: crate::fetch::RequestClient,
+    worker_client: crate::fetch::RequestClient,
     network: mpsc::Sender<WorkerNetworkRequest>,
     events: mpsc::Sender<WorkerEvent>,
     commands: mpsc::Receiver<WorkerCommand>,

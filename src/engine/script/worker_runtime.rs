@@ -32,12 +32,31 @@ impl WorkerRuntime {
         kind: ScriptKind,
         source_loader: Arc<WorkerSourceLoader>,
     ) -> (Option<Self>, WorkerRuntimeOutcome) {
+        Self::start_with_policy(
+            source_url,
+            source,
+            name,
+            kind,
+            source_loader,
+            Arc::new(crate::fetch::csp::PolicyContainer::default()),
+        )
+    }
+
+    pub fn start_with_policy(
+        source_url: &str,
+        source: &str,
+        name: &str,
+        kind: ScriptKind,
+        source_loader: Arc<WorkerSourceLoader>,
+        policy: Arc<crate::fetch::csp::PolicyContainer>,
+    ) -> (Option<Self>, WorkerRuntimeOutcome) {
         let module_loader = Rc::new(WebModuleLoader::new());
         let host = Rc::new(RefCell::new(WorkerHostState::new(
             source_url,
             name,
             kind,
             source_loader,
+            policy,
         )));
         let mut context = Box::new(
             Context::new(HostBridge::Worker(Rc::downgrade(&host)))

@@ -121,6 +121,7 @@ impl ModuleGraphs {
                     url: url.clone(),
                     kind: ScriptKind::Module,
                     fetch_options: script.fetch_options,
+                    script_source: crate::fetch::csp::ScriptSource::default(),
                 };
                 if !self.requested.contains(&resource)
                     && self.requested.len() >= MAX_DYNAMIC_SCRIPTS
