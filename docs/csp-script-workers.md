@@ -74,8 +74,12 @@ missing CSS Font Loading API (`document.fonts.load`). A subsequent normal Breeze
 test with that Chrome-compatible UA still reached `/sorry/`; it changed content
 negotiation but did not prevent Google's challenge. The UA is therefore an opt-in
 profile setting in **Options**, with the Breeze identity restored as the default.
-The selected mode applies after a restart and keeps a Breeze product suffix for
-attribution. Normal-session Google search-result acceptance remains open.
+The selected mode applies after a restart. With the user's approval, the Chrome
+option now uses Chrome's exact desktop UA string for a controlled test; Breeze
+remains the default, and Firefox mode retains a Breeze suffix. The earlier
+attributed Chrome UA did not prevent the challenge. A fresh-profile hidden
+search with the exact Chrome UA also reached HTTP 429 `/sorry/`; normal-session
+Google search-result acceptance remains open.
 
 The earlier Breeze capture had an empty challenge frame. A fresh-profile
 hidden replay after these slices showed a live checkbox and, after an automated

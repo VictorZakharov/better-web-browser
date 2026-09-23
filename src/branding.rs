@@ -8,8 +8,7 @@ pub const BENCHMARK_ID: &str = "breeze";
 pub const USER_AGENT: &str = concat!("Breeze/", env!("CARGO_PKG_VERSION"));
 const CHROME_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ",
-    "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Breeze/",
-    env!("CARGO_PKG_VERSION")
+    "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
 );
 const FIREFOX_USER_AGENT: &str = concat!(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) ",
@@ -39,7 +38,7 @@ impl UserAgentMode {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Breeze => "Breeze (default)",
-            Self::Chrome => "Chrome compatible",
+            Self::Chrome => "Chrome exact UA (test)",
             Self::Firefox => "Firefox compatible",
         }
     }
@@ -109,7 +108,7 @@ mod user_agent_tests {
     use super::*;
 
     #[test]
-    fn identities_remain_distinct_and_attributable() {
+    fn identities_round_trip_and_chrome_test_mode_omits_the_breeze_suffix() {
         assert_eq!(UserAgentMode::default(), UserAgentMode::Breeze);
         assert_eq!(UserAgentMode::Breeze.user_agent(), USER_AGENT);
         assert!(UserAgentMode::Chrome.user_agent().contains("Chrome/153."));
@@ -120,8 +119,10 @@ mod user_agent_tests {
             UserAgentMode::Firefox,
         ] {
             assert_eq!(UserAgentMode::parse(mode.setting()), Some(mode));
-            assert!(mode.user_agent().contains("Breeze/"));
         }
+        assert!(UserAgentMode::Breeze.user_agent().contains("Breeze/"));
+        assert!(!UserAgentMode::Chrome.user_agent().contains("Breeze/"));
+        assert!(UserAgentMode::Firefox.user_agent().contains("Breeze/"));
         assert_eq!(UserAgentMode::parse("unknown"), None);
     }
 }

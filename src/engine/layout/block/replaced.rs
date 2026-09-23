@@ -90,8 +90,11 @@ impl BlockImage {
             Some(percentage_basis),
             style.font_size,
         )
-        .unwrap_or(self.intrinsic_width)
-            + horizontal_insets
+        .unwrap_or(if node.tag_name() == Some("svg") {
+            percentage_basis
+        } else {
+            self.intrinsic_width
+        }) + horizontal_insets
     }
 
     pub(super) fn content_height(
@@ -101,7 +104,15 @@ impl BlockImage {
         content_width: f32,
         percentage_basis: Option<f32>,
     ) -> f32 {
-        let scaled_height = if !self.embedded_frame
+        let scaled_height = if node.tag_name() == Some("svg") {
+            percentage_basis.unwrap_or_else(|| {
+                if self.intrinsic_width > 0.0 {
+                    content_width * self.intrinsic_height / self.intrinsic_width
+                } else {
+                    self.intrinsic_height
+                }
+            })
+        } else if !self.embedded_frame
             && self.intrinsic_width > 0.0
             && (style.width != Length::Auto || node.attr("width").is_some())
         {

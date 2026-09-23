@@ -65,9 +65,10 @@ describe request provenance but do not override a server's abuse or CAPTCHA deci
 
 The HTTP `User-Agent` and `navigator.userAgent` use the same profile-wide identity.
 The default is Breeze's own versioned product token. The browser's **Options** menu
-also offers opt-in Chrome-compatible and Firefox-compatible identities, each retaining
-a Breeze token for attribution. The choice is saved in the profile and takes effect
-after restarting Breeze so that existing requests, documents, and workers never
+also offers opt-in Chrome and Firefox compatibility identities. The Chrome option
+uses the exact desktop Chrome UA string for a controlled comparison; the Firefox
+option retains a Breeze token for attribution. The choice is saved in the profile
+and takes effect after restarting Breeze so that existing requests, documents, and workers never
 disagree about the active identity. Compatibility identity is a content-negotiation
 tradeoff, not a claim that the engine implements every feature of the named browser.
 The legacy `navigator.appVersion` follows the
