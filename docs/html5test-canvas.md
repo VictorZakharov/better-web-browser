@@ -3,10 +3,14 @@
 The Windows x64 hidden release run of HTML5test.co moved from **323 / 588** to
 **334 / 588** for the first Canvas 2D slice, then to **337 / 588** for the
 bitmap/OffscreenCanvas slice on 2026-09-23 (1280×720, 125% scale, `en-US`,
-fresh profile, 5-second settle). These are the last measured results before
-the additional path, paint, geometry, and DOM work in PR #180; do not interpret
-them as the score of the final branch. The score is a detected-capability count,
-not a Canvas or browser conformance score. Reproduce it using the README command.
+fresh profile, 5-second settle). The expanded path, paint, geometry, and DOM
+batch in PR #180 also measured **337 / 588** with HTTP 200, zero JavaScript
+errors, and no renderer exit. Thus this batch improves tested behavior but
+does not raise this particular score. The test page logs that its drag/drop
+and editing groups are blacklisted for an unknown browser, and it does not
+award new points for the added Canvas/Geometry operations. The score is a
+detected-capability count, not a conformance measure. Reproduce it using the
+README command.
 
 ## Bitmap and image sources
 

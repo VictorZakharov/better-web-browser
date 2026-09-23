@@ -373,6 +373,9 @@ claiming that Google will serve results in a normal session.
 The 2026-09-23 fresh-profile hidden release run for the Canvas bitmap/OffscreenCanvas slice
 rendered **337 / 588** on HTML5test, up from **334 / 588** on the preceding
 Canvas 2D slice, with zero JavaScript errors and no renderer exit.
+The broader Canvas/Geometry/DOM standards batch in PR #180 remained at **337 / 588**
+in the same hidden release conditions, also with zero JavaScript errors and
+no renderer exit; the score does not measure most of those behavioral changes.
 The preceding [EventSource/scroll-into-view slice](docs/html5test-eventsource-scroll.md)
 rendered **323 / 588** on the same date. The 11-point increase reflects tested Canvas
 path, ellipse, dash, blend, and export features in the prior slice; the additional
