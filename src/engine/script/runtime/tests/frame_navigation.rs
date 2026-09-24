@@ -7,6 +7,7 @@ mod file_reader;
 mod history;
 mod images;
 mod names;
+mod observers;
 mod policy;
 mod ports;
 mod scripts;

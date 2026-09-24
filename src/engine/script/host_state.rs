@@ -115,6 +115,11 @@ pub(super) struct HostState {
     pub(super) layout_viewport_width: f32,
     pub(super) layout_viewport_height: f32,
     pub(super) layout_content_height: f32,
+    /// The iframe content box in its parent document's layout coordinates.
+    pub(super) embedding_rect: Option<RectF>,
+    /// A child document changed since its layout was composed into the parent.
+    pub(super) frame_layout_pending: bool,
+    pub(super) frame_viewport_dispatched: Option<(f32, f32)>,
     pub(super) quirks_mode: bool,
     pub(super) pending_invalidation: render_invalidation::PendingInvalidation,
     pub(super) pending_layout_invalidation: render_invalidation::PendingInvalidation,
@@ -213,6 +218,9 @@ impl HostState {
             layout_viewport_width: 1280.0,
             layout_viewport_height: 720.0,
             layout_content_height: 720.0,
+            embedding_rect: None,
+            frame_layout_pending: true,
+            frame_viewport_dispatched: None,
             quirks_mode: false,
             pending_invalidation: render_invalidation::PendingInvalidation::default(),
             pending_layout_invalidation: render_invalidation::PendingInvalidation::default(),

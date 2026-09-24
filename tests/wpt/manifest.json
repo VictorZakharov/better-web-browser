@@ -17,6 +17,7 @@
     "url/resources/urltestdata-javascript-only.json",
     "url/resources/setters_tests.json",
     "intersection-observer/resources/intersection-observer-test-utils.js",
+    "intersection-observer/resources/iframe-no-root-subframe.html",
     "html/semantics/scripting-1/the-script-element/module/imports-a.js",
     "html/semantics/scripting-1/the-script-element/module/syntaxerror.js",
     "html/semantics/scripting-1/the-script-element/module/bad-module-specifier.js",
@@ -109,6 +110,8 @@
       "area": "Intersection Observer",
       "expected": "pass"
     },
+    {"path":"intersection-observer/client-rect.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/document-scrolling-element-root.html","area":"Intersection Observer","expected":"pass"},
     {
       "path": "intersection-observer/display-none.html",
       "area": "Intersection Observer",
@@ -124,6 +127,20 @@
       "area": "Intersection Observer",
       "expected": "pass"
     },
+    {"path":"intersection-observer/root-margin-rounding.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/target-in-detached-document.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/visibility-hidden.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/zero-area-element-hidden.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/explicit-root-different-document.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/grow-height-and-scrolled.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/inline-with-block-child-client-rect.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/intersection-ratio-ib-split.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/intersection-ratio-with-fractional-bounds.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/intersection-ratio-with-fractional-bounds-2.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/isIntersecting-change-events.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/multicol.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/multicol-2.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/multiple-targets.html","area":"Intersection Observer","expected":"pass"},
     {
       "path": "intersection-observer/multiple-thresholds.html",
       "area": "Intersection Observer",

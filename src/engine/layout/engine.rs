@@ -104,8 +104,8 @@ fn layout_page_for_output<M: TextMeasurer>(
                 })
     });
     let mut root = fullscreen_root
-        .or_else(|| page.dom.elements_named("body").next())
         .or_else(|| page.dom.elements_named("html").next())
+        .or_else(|| page.dom.elements_named("body").next())
         .unwrap_or_else(|| page.dom.document.clone());
     // A layout-only cache can stop at a display:none ancestor of the usual body root.
     if !root.is_fullscreen()
@@ -169,10 +169,24 @@ fn layout_page_for_output<M: TextMeasurer>(
         // A fullscreen element is painted in the top layer over the default black backdrop.
         // Selecting it as the layout root also excludes page siblings from display and hit testing.
         engine.output.background = Color::BLACK;
-    } else if let Some(body_style) = engine.styles.styles.get(&node_id(&root))
-        && body_style.background_color.alpha > 0
-    {
-        engine.output.background = body_style.background_color.composite_over(Color::WHITE);
+    } else {
+        let backdrop = engine
+            .styles
+            .styles
+            .get(&node_id(&root))
+            .filter(|style| style.background_color.alpha > 0)
+            .or_else(|| {
+                page.dom.elements_named("body").next().and_then(|body| {
+                    engine
+                        .styles
+                        .styles
+                        .get(&node_id(&body))
+                        .filter(|style| style.background_color.alpha > 0)
+                })
+            });
+        if let Some(style) = backdrop {
+            engine.output.background = style.background_color.composite_over(Color::WHITE);
+        }
     }
     let metrics = engine.layout_block(
         &root,

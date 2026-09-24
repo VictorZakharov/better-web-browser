@@ -9,6 +9,7 @@ mod opacity;
 mod positioned;
 mod svg;
 mod table;
+mod visibility;
 
 #[test]
 fn lays_out_centered_image_form_and_links() {

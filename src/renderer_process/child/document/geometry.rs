@@ -203,6 +203,17 @@ impl DocumentRuntime {
         );
         drop(text);
         self.compose_embedded_frames();
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            runtime.finish_frame_layout_attempt();
+            let mut frame_viewports = Vec::new();
+            super::frames_paint::viewports(&self.frame_paint, &mut frame_viewports);
+            let child_outcome = runtime.dispatch_frame_viewports(&frame_viewports);
+            merge_outcome(
+                &mut self.pending_async_outcome,
+                child_outcome,
+                self.page.dom.document.id(),
+            );
+        }
         self.compose_media_captions();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);

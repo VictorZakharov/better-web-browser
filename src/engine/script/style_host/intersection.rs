@@ -2,11 +2,63 @@
 //! https://w3c.github.io/IntersectionObserver/#compute-the-intersection
 use super::*;
 use crate::engine::css::{Display, Position};
+use crate::engine::dom::NodeData;
+
+#[derive(Clone, Copy)]
+pub(in crate::engine::script) struct Clip {
+    pub rect: RectF,
+    pub x: bool,
+    pub y: bool,
+    pub scroll: bool,
+}
+
+pub(in crate::engine::script) struct Geometry {
+    pub valid: bool,
+    pub target: RectF,
+    /// Root-space target for intersection; target stays in its own viewport.
+    pub mapped_target: RectF,
+    pub root: RectF,
+    pub root_scroll: bool,
+    pub clips: Vec<Clip>,
+}
+
+impl Geometry {
+    pub fn value(self) -> JsValue {
+        JsValue::Array(vec![
+            JsValue::from(self.valid),
+            rect_value(self.target),
+            rect_value(self.root),
+            JsValue::from(self.root_scroll),
+            JsValue::Array(
+                self.clips
+                    .into_iter()
+                    .map(|clip| {
+                        JsValue::Array(vec![
+                            rect_value(clip.rect),
+                            JsValue::from(clip.x),
+                            JsValue::from(clip.y),
+                            JsValue::from(clip.scroll),
+                        ])
+                    })
+                    .collect(),
+            ),
+            rect_value(self.mapped_target),
+        ])
+    }
+}
 
 pub(super) fn geometry(args: &[JsValue], state: &mut HostState) -> JsValue {
-    state.flush_layout_if_needed();
     let target = state.node(argument_id(args, 1));
     let root = state.node(argument_id(args, 2));
+    calculate(state, target, root).value()
+}
+
+pub(in crate::engine::script) fn calculate(
+    state: &mut HostState,
+    target: Option<NodeRef>,
+    root: Option<NodeRef>,
+) -> Geometry {
+    state.flush_layout_if_needed();
     let explicit = root.as_ref().filter(|node| node.element().is_some());
     let mut root_scroll = true;
     let mut root_rect = RectF {
@@ -16,6 +68,14 @@ pub(super) fn geometry(args: &[JsValue], state: &mut HostState) -> JsValue {
         height: state.media_environment.viewport_height,
     };
     let mut valid = root.as_ref().is_none_or(|root| state.is_connected(root));
+    if root
+        .as_ref()
+        .is_some_and(|root| matches!(root.data, NodeData::Document))
+    {
+        valid &= root
+            .as_ref()
+            .is_some_and(|root| root.id() == state.document.id());
+    }
     if let Some(root) = explicit {
         let scroll = state.scroll_boxes.get(&root.id()).copied();
         root_scroll = scroll.is_some_and(|s| s.scroll_x || s.scroll_y);
@@ -41,12 +101,12 @@ pub(super) fn geometry(args: &[JsValue], state: &mut HostState) -> JsValue {
                 }
                 if let Some(scroll) = state.scroll_boxes.get(&ancestor.id()).copied() {
                     let rect = viewport_rect(state, &ancestor, clip_box(scroll));
-                    clips.push(JsValue::Array(vec![
-                        rect_value(rect),
-                        JsValue::from(scroll.clip_x),
-                        JsValue::from(scroll.clip_y),
-                        JsValue::from(scroll.scroll_x || scroll.scroll_y),
-                    ]));
+                    clips.push(Clip {
+                        rect,
+                        x: scroll.clip_x,
+                        y: scroll.clip_y,
+                        scroll: scroll.scroll_x || scroll.scroll_y,
+                    });
                 }
             }
         }
@@ -54,13 +114,14 @@ pub(super) fn geometry(args: &[JsValue], state: &mut HostState) -> JsValue {
     if !valid {
         root_rect = RectF::default();
     }
-    JsValue::Array(vec![
-        JsValue::from(valid),
-        rect_value(target_rect),
-        rect_value(root_rect),
-        JsValue::from(root_scroll),
-        JsValue::Array(clips),
-    ])
+    Geometry {
+        valid,
+        target: target_rect,
+        mapped_target: target_rect,
+        root: root_rect,
+        root_scroll,
+        clips,
+    }
 }
 
 fn clip_box(scroll: crate::engine::layout::ScrollBox) -> RectF {
@@ -93,7 +154,11 @@ fn bounds(state: &HostState, node: &NodeRef) -> Option<RectF> {
     }))
 }
 
-fn viewport_rect(state: &mut HostState, node: &NodeRef, mut rect: RectF) -> RectF {
+pub(in crate::engine::script) fn viewport_rect(
+    state: &mut HostState,
+    node: &NodeRef,
+    mut rect: RectF,
+) -> RectF {
     let viewport = state.document.scroll_offset.get();
     let (offset, fixed) = client_rect::scroll_adjustment(state, node, viewport != (0.0, 0.0));
     if !fixed {

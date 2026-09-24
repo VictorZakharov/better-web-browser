@@ -1,6 +1,7 @@
 //! Scheduling and outcome ownership for the related child document realms.
 use super::*;
 pub(super) mod documents;
+mod geometry;
 mod images;
 mod navigation;
 mod resources;
@@ -22,6 +23,9 @@ pub(crate) struct FramePaintSnapshot {
     pub quirks_mode: bool,
     pub images: HashMap<String, crate::engine::DecodedImage>,
     pub children: Vec<FramePaintSnapshot>,
+    /// Publish the exact child layout used for paint to its script realm. A child
+    /// document has its own viewport and cannot use the parent document's boxes.
+    pub publish_geometry: Box<dyn Fn(&crate::engine::LayoutOutput, RectF)>,
 }
 
 #[derive(Default)]
@@ -77,6 +81,30 @@ impl ScriptRuntime {
                             .map(|images| images.decoded.clone())
                             .unwrap_or_default(),
                         children: Vec::new(),
+                        publish_geometry: {
+                            let host = Rc::clone(&child.host);
+                            Box::new(move |layout, viewport| {
+                                let mut host = host.borrow_mut();
+                                host.media_environment = host
+                                    .media_environment
+                                    .with_viewport(viewport.width, viewport.height);
+                                host.layout_viewport_width = viewport.width;
+                                host.layout_viewport_height = viewport.height;
+                                host.embedding_rect = Some(viewport);
+                                host.frame_layout_pending = false;
+                                host.layout_geometry.clone_from(&layout.node_bounds);
+                                host.layout_fragments = layout.fragments.clone();
+                                host.scroll_boxes.clone_from(&layout.scroll_boxes);
+                                host.resize_boxes.clone_from(&layout.resize_boxes);
+                                host.sticky_offsets.clone_from(&layout.sticky_offsets);
+                                host.layout_content_height = layout.content_height;
+                                host.layout_geometry_version =
+                                    host.document.subtree_mutation_version();
+                                host.layout_geometry_initialized = true;
+                                host.pending_layout_invalidation
+                                    .acknowledge_published_geometry();
+                            })
+                        },
                     }
                 };
                 Some(FramePaintSnapshot {
@@ -339,6 +367,14 @@ impl ScriptRuntime {
         id: NodeId,
         mut outcome: ScriptOutcome,
     ) -> ScriptOutcome {
+        if outcome.render_requested
+            && let Some(child) = self
+                .frames
+                .as_ref()
+                .and_then(|frames| frames.children.get(&id))
+        {
+            child.host.borrow_mut().frame_layout_pending = true;
+        }
         // These browser-owned effects have no child-document wire identity yet. Never
         // apply a child's cookie/storage/media/fullscreen action to its parent's identity.
         outcome.cookie_updates.clear();

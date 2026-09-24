@@ -3,7 +3,7 @@
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
 mod client_rect;
-mod intersection;
+pub(in crate::engine::script) mod intersection;
 
 pub(super) fn style_host_call(
     operation: &str,

@@ -27,7 +27,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         used_content_height: Option<f32>,
     ) -> BlockMetrics {
         let style = self.styles.get(node).clone();
-        if style.display == Display::None || !style.visibility {
+        if style.display == Display::None {
             return BlockMetrics { bottom: y };
         }
         let own_context = self.block_establishes_context(node);
@@ -296,6 +296,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.layout_positioned_children(
             node,
             positioning_box,
+            (content_x, content_y),
             in_flow_paint_start,
             in_flow_node_start,
         );
@@ -319,9 +320,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 height: padding.top + content_height + padding.bottom,
             },
         );
-        self.paint_scrollbars(node, &style);
+        if style.visibility {
+            self.paint_scrollbars(node, &style);
+        }
         self.finish_block_decoration(&style, rect, decoration);
         if self.emit_paint
+            && style.visibility
             && let Some(image) = block_image
         {
             image.paint(

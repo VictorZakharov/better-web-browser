@@ -34,6 +34,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         authored_content: bool,
     ) {
         if self.emit_paint
+            && style.visibility
             && let Some((kind, value)) = block_control
         {
             let icon = self.control_background_icon(style, rect.width, rect.height);

@@ -6,7 +6,10 @@
     const rectangle = values => new DOMRectReadOnly(...values);
     const zero = () => new DOMRectReadOnly();
     const targetCheck = target => {
-        if (!(target instanceof Element)) throw new TypeError('Observation target must be an Element');
+        // A target from an active child browsing context has a different global's
+        // Element prototype. Native node branding prevents forged nodeType objects.
+        if (!isNode(target) || target.nodeType !== 1)
+            throw new TypeError('Observation target must be an Element');
     };
     const drain = observer => {
         const state = branded(states, observer), records = state.records;
@@ -38,11 +41,20 @@
         return parsed;
     };
     const serialize = values => values.map(v => `${v.value}${v.unit}`).join(' ');
-    const expand = (rect, margins) => {
-        const [t, r, b, l] = margins.map(m => m.unit === '%' ? m.value * rect.width / 100 : m.value);
-        // Keep inverted edges for over-contracted margins; DOMRect normalizes negative sizes.
-        return {left: rect.left - l, top: rect.top - t, right: rect.right + r, bottom: rect.bottom + b,
-            width: rect.width + l + r, height: rect.height + t + b};
+    const expand = (rect, margins, additional = null) => {
+        const length = m => m.unit === '%' ? m.value * rect.width / 100 : m.value;
+        const [t, r, b, l] = margins.map((m, i) => length(m) + (additional ? length(additional[i]) : 0));
+        let left = rect.left - l, top = rect.top - t;
+        let right = rect.right + r, bottom = rect.bottom + b;
+        // A margin may contract an axis beyond zero. Its intersection rectangle
+        // is then a zero-area edge, not a negative-size rectangle. Preserve the
+        // relative contraction from both sides so fractional margins do not
+        // spuriously report a target spanning the root as non-intersecting.
+        const collapse = (start, end, before, after) =>
+            start + (end - start) * before / (before + after);
+        if (left > right) left = right = collapse(rect.left, rect.right, -l, -r);
+        if (top > bottom) top = bottom = collapse(rect.top, rect.bottom, -t, -b);
+        return {left, top, right, bottom, width: right - left, height: bottom - top};
     };
     const intersect = (a, b, x = true, y = true) => {
         if (!a) return null;
@@ -72,7 +84,7 @@
             if (typeof callback !== 'function') throw new TypeError('IntersectionObserver requires a callback');
             options = dictionary(options);
             const root = options.root ?? null;
-            if (root !== null && !(root instanceof Element) && !(root instanceof Document))
+            if (root !== null && (!isNode(root) || (root.nodeType !== 1 && root.nodeType !== 9)))
                 throw new TypeError('Root must be an Element, Document, or null');
             const rootMargin = parseMargin(options.rootMargin), scrollMargin = parseMargin(options.scrollMargin);
             const threshold = options.threshold === undefined ? 0 : options.threshold;
@@ -125,6 +137,13 @@
         for (const observer of observers) {
             const state = states.get(observer);
             for (const [target, previous] of state.targets) {
+                // An implicit-root observation in an inactive Document waits for
+                // adoption. An explicit root in an active Document instead gets an
+                // initial non-intersecting entry for a target in another Document.
+                // https://w3c.github.io/IntersectionObserver/#update-intersection-observations
+                const rootDocument = state.root?.nodeType === 9
+                    ? state.root : state.root?.ownerDocument;
+                if (!target.ownerDocument?.defaultView && !rootDocument?.defaultView) continue;
                 const remaining = state.delay - (time - previous.time);
                 if (remaining > 0) {
                     if (!state.wakeup) {
@@ -136,20 +155,17 @@
                     continue;
                 }
                 previous.time = time;
-                const [valid, targetBox, rootBox, rootScroll, clips] =
+                const [valid, targetBox, rootBox, rootScroll, clips, mappedBox] =
                     host('intersectionGeometry', nodeId(target), nodeId(state.root) ?? 0);
                 const boundingClientRect = rectangle(targetBox);
                 const rootBounds = expand(rectangle(rootBox), state.rootMargin);
-                let root = rootBounds;
-                // Root and scroll margins both apply to a scrolling root; percentages use
-                // the original undilated rectangle's width, not the previously expanded width.
-                if (rootScroll) {
-                    const delta = expand(rectangle(rootBox), state.scrollMargin);
-                    root = {left: root.left + delta.left - rootBox[0], top: root.top + delta.top - rootBox[1],
-                        right: root.right + delta.right - rootBox[0] - rootBox[2],
-                        bottom: root.bottom + delta.bottom - rootBox[1] - rootBox[3]};
-                }
-                let intersection = valid ? boundingClientRect : null;
+                // Root and scroll margins apply together to a scrolling root. Resolve
+                // both against the same undilated width and collapse once, avoiding
+                // roundoff that can turn a zero-area edge into an inverted rectangle.
+                const root = rootScroll
+                    ? expand(rectangle(rootBox), state.rootMargin, state.scrollMargin)
+                    : rootBounds;
+                let intersection = valid ? rectangle(mappedBox) : null;
                 for (const [box, x, y, scroll] of clips)
                     intersection = intersect(intersection, scroll ? expand(rectangle(box), state.scrollMargin) : rectangle(box), x, y);
                 intersection = intersect(intersection, root);

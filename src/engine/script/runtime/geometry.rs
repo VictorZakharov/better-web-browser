@@ -32,15 +32,17 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn has_pending_intersection_observers(&self) -> bool {
-        self.host.borrow().intersection_observers_pending
+        self.host.borrow().intersection_observers_pending || self.child_observers_pending(false)
     }
 
     pub(crate) fn has_intersection_task(&self) -> bool {
-        self.host.borrow().intersection_task_pending
+        self.host.borrow().intersection_task_pending || self.child_observers_pending(true)
     }
 
     pub(crate) fn gather_intersection_observers(&mut self) -> ScriptOutcome {
-        self.notify_observers(false, false, true)
+        let mut outcome = self.notify_observers(false, false, true);
+        super::frames::documents::append(&mut outcome, self.collect_child_observers(false));
+        outcome
     }
     pub(crate) fn set_layout_content_height(&mut self, height: f32) {
         self.host.borrow_mut().layout_content_height = height;
@@ -72,7 +74,9 @@ impl ScriptRuntime {
     }
 
     pub(crate) fn notify_intersection_observers(&mut self) -> ScriptOutcome {
-        self.notify_observers(false, true, false)
+        let mut outcome = self.notify_observers(false, true, false);
+        super::frames::documents::append(&mut outcome, self.collect_child_observers(true));
+        outcome
     }
 
     fn notify_observers(

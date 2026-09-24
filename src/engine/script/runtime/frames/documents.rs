@@ -11,12 +11,14 @@ pub(super) struct FrameDocument {
     pub queue: ParserScripts,
     pub requested: HashSet<PageResource>,
     ordinal: usize,
+    last_layout_version: u64,
     pub(super) styles_pending: bool,
     pub(super) styles_load_pending: bool,
 }
 
 impl FrameDocument {
     pub fn new(parser: HtmlParser, scripts: bool) -> Self {
+        let last_layout_version = parser.dom().document.subtree_mutation_version();
         let mut queue = ParserScripts::default();
         queue.set_parsing(true);
         Self {
@@ -26,6 +28,7 @@ impl FrameDocument {
             queue,
             requested: HashSet::new(),
             ordinal: 0,
+            last_layout_version,
             styles_pending: false,
             styles_load_pending: false,
         }
@@ -50,7 +53,14 @@ impl FrameDocument {
             return ScriptOutcome::default();
         };
         let step = parser.advance();
-        let mut outcome = runtime.parser_dom_changed(parser.dom().take_parser_mutations());
+        let mutations = parser.dom().take_parser_mutations();
+        let version = parser.dom().document.subtree_mutation_version();
+        let changed = version != self.last_layout_version;
+        self.last_layout_version = version;
+        let mut outcome = runtime.parser_dom_changed(mutations);
+        // The parent owns the frame paint list. Parser mutations bypass normal JS
+        // mutation recording, so explicitly recompose it as a child stream advances.
+        outcome.render_requested |= changed;
         runtime.set_quirks_mode(
             parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
         );

@@ -56,7 +56,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             let child_style = self.styles.get(&child).clone();
             if child_style.display == Display::None
-                || !child_style.visibility
                 || style_collapses_overflow(&child_style, self.viewport)
             {
                 continue;
@@ -250,7 +249,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             }
             let child_style = self.styles.get(&child).clone();
             if child_style.display == Display::None
-                || !child_style.visibility
                 || matches!(child_style.position, Position::Absolute | Position::Fixed)
                 || style_collapses_overflow(&child_style, self.viewport)
             {

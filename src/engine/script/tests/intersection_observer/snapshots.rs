@@ -151,3 +151,35 @@ fn observer_options_are_readonly_branded_and_validate_webidl_inputs() {
         ]
     );
 }
+
+#[test]
+fn explicit_active_root_reports_detached_document_target_but_implicit_root_waits() {
+    let (dom, mut runtime) = start(
+        r#"
+        const detached = document.implementation.createHTMLDocument('');
+        const foreignTarget = detached.createElement('div');
+        detached.body.append(foreignTarget);
+        const root = document.getElementById('target');
+        const explicit = new IntersectionObserver(entries => console.log(
+            'explicit:' + entries[0].isIntersecting), {root});
+        explicit.observe(foreignTarget);
+        const implicit = new IntersectionObserver(entries => console.log(
+            'implicit:' + entries[0].isIntersecting));
+        implicit.observe(foreignTarget);
+    "#,
+    );
+    sample(&dom, &mut runtime, 10.0);
+    let result = runtime.notify_intersection_observers();
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(result.console, ["log: explicit:false"]);
+
+    evaluate(
+        &dom,
+        &mut runtime,
+        "document.body.append(document.adoptNode(foreignTarget))",
+    );
+    sample(&dom, &mut runtime, 10.0);
+    let result = runtime.notify_intersection_observers();
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(result.console, ["log: implicit:false"]);
+}
