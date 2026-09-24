@@ -41,7 +41,7 @@ use crate::limits::{
 };
 use crate::navigation::resolve_url;
 use image::ImageReader;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -70,6 +70,7 @@ pub struct Page {
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
+    hidden_media_video: HashSet<NodeId>,
     inline_svg_versions: HashMap<NodeId, u64>,
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
@@ -136,6 +137,7 @@ impl Page {
             stylesheet_discovery: None,
             cached_styles: None,
             images,
+            hidden_media_video: HashSet::new(),
             inline_svg_versions,
             fonts: Vec::new(),
             diagnostics,

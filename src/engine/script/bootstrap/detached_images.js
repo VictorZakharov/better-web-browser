@@ -23,31 +23,50 @@
         const state = { controller, promise, settle, decoded: null };
         detachedImageLoads.set(element, state);
         const url = element.src;
-        // The decoder only receives bytes visible to this realm. Opaque Fetch
-        // responses must not be turned into readable Canvas pixels.
-        fetch(url, {
-            mode: 'no-cors', credentials: 'include',
-            referrerPolicy: 'no-referrer-when-downgrade', signal: controller.signal
-        }).then(async response => {
-            if (!response.ok && response.type !== 'opaque') throw imageDecodeError();
-            const bytes = new Uint8Array(await response.arrayBuffer());
-            const decoded = host('canvasDecode', bytes);
-            if (!decoded) throw imageDecodeError();
-            return decoded;
-        }).then(decoded => {
+        // Resource selection is asynchronous. A script can set src and insert
+        // the image in the same task; the document image loader then owns the
+        // request instead of racing a second, generic Fetch request here.
+        Promise.resolve().then(() => {
             if (detachedImageLoads.get(element) !== state) return;
-            state.decoded = {
-                width: Number(decoded[0]), height: Number(decoded[1]),
-                pixels: new Uint8ClampedArray(decoded[2])
-            };
-            updateImageElementState(element, true, decoded[0], decoded[1]);
-            state.settle(true);
-            if (!element.isConnected) element.dispatchEvent(new Event('load'));
-        }, () => {
-            if (detachedImageLoads.get(element) !== state) return;
-            updateImageElementState(element, true, 0, 0);
-            state.settle(false);
-            if (!element.isConnected) element.dispatchEvent(new Event('error'));
+            if (element.isConnected) {
+                detachedImageLoads.delete(element);
+                state.settle(false);
+                return;
+            }
+            // The decoder only receives bytes visible to this realm. Opaque
+            // Fetch responses must not become readable Canvas pixels.
+            fetch(url, {
+                mode: 'no-cors', credentials: 'include',
+                referrerPolicy: 'no-referrer-when-downgrade', signal: controller.signal
+            }).then(async response => {
+                if (!response.ok && response.type !== 'opaque') throw imageDecodeError();
+                const bytes = new Uint8Array(await response.arrayBuffer());
+                const decoded = host('canvasDecode', bytes);
+                if (!decoded) throw imageDecodeError();
+                return decoded;
+            }).then(decoded => {
+                if (detachedImageLoads.get(element) !== state) return;
+                if (element.isConnected) {
+                    cancelDetachedImage(element);
+                    return;
+                }
+                state.decoded = {
+                    width: Number(decoded[0]), height: Number(decoded[1]),
+                    pixels: new Uint8ClampedArray(decoded[2])
+                };
+                updateImageElementState(element, true, decoded[0], decoded[1]);
+                state.settle(true);
+                element.dispatchEvent(new Event('load'));
+            }, () => {
+                if (detachedImageLoads.get(element) !== state) return;
+                if (element.isConnected) {
+                    cancelDetachedImage(element);
+                    return;
+                }
+                updateImageElementState(element, true, 0, 0);
+                state.settle(false);
+                element.dispatchEvent(new Event('error'));
+            });
         });
     };
 

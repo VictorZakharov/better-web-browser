@@ -242,3 +242,117 @@ fn computed_timing_preserves_auto_and_accepts_infinite_iteration_values() {
         Some("true:true:true")
     );
 }
+
+#[test]
+fn property_indexed_keyframes_keep_independent_offsets_and_specified_nulls() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id=target></div><script>
+        const target = document.getElementById('target');
+        const effect = new KeyframeEffect(target, {
+            opacity: [0, 1], left: ['0px', '30px', '60px', '90px']
+        }, {duration: 1000, fill: 'both'});
+        const frames = effect.getKeyframes();
+        const offsets = frames.map(frame => frame.computedOffset).join(',');
+        const specified = frames.every(frame => frame.offset === null);
+        const animation = new Animation(effect);
+        animation.play(); animation.pause(); animation.currentTime = 500;
+        const result = [offsets, specified, getComputedStyle(target).opacity,
+            getComputedStyle(target).left].join(':');
+        animation.cancel();
+        document.body.setAttribute('data-result', result);
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("0,0.3333333333333333,0.6666666666666666,1:true:0.5:45px")
+    );
+}
+
+#[test]
+fn keyframe_input_rejects_invalid_explicit_offsets_and_unsupported_composition() {
+    let (dom, outcome) = execute_html(
+        r#"<body><script>
+        const target = document.createElement('div');
+        const rejects = callback => { try { callback(); return false; }
+            catch (error) { return error instanceof TypeError || error.name === 'NotSupportedError'; } };
+        const results = [
+            rejects(() => new KeyframeEffect(target, {opacity: [0, 1], offset: [0, 2]})),
+            rejects(() => new KeyframeEffect(target, {opacity: [0, 1], offset: [0.8, 0.2]})),
+            rejects(() => new KeyframeEffect(target, [{opacity: 0, composite: 'add'}])),
+            rejects(() => new KeyframeEffect(target, {opacity: [0, 1], composite: 'accumulate'}))
+        ];
+        document.body.setAttribute('data-result', results.join(':'));
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("true:true:true:true")
+    );
+}
+
+#[test]
+fn effect_can_have_only_one_animation_owner_and_reassignment_removes_old_style() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id=target style='opacity:.2'></div><script>
+        const target = document.getElementById('target');
+        const effect = new KeyframeEffect(target, [{opacity: 0}, {opacity: 1}],
+            {duration: 1000, fill: 'both'});
+        const first = new Animation(effect);
+        first.play(); first.pause(); first.currentTime = 500;
+        const before = getComputedStyle(target).opacity;
+        const second = new Animation(effect);
+        const detached = first.effect === null && getComputedStyle(target).opacity === '0.2';
+        second.play(); second.pause(); second.currentTime = 250;
+        const after = getComputedStyle(target).opacity;
+        second.cancel();
+        document.body.setAttribute('data-result', [before, detached, after].join(':'));
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("0.5:true:0.25")
+    );
+}
+
+#[test]
+fn adding_a_property_to_running_effect_uses_its_underlying_value() {
+    let (dom, outcome) = execute_html(
+        r#"<body><div id=target style='opacity:.2;left:10px'></div><script>
+        const target = document.getElementById('target');
+        const animation = target.animate([{opacity: 0}, {opacity: 1}],
+            {duration: 1000, fill: 'both'});
+        animation.pause(); animation.currentTime = 500;
+        animation.effect.setKeyframes([
+            {opacity: 0}, {opacity: 1, left: '50px'}
+        ]);
+        const value = getComputedStyle(target).left;
+        const opacity = getComputedStyle(target).opacity;
+        animation.cancel();
+        document.body.setAttribute('data-result', [value, opacity].join(':'));
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .unwrap()
+            .attr("data-result")
+            .as_deref(),
+        Some("30px:0.5")
+    );
+}

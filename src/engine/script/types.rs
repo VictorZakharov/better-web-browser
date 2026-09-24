@@ -167,6 +167,9 @@ pub enum ScriptMediaCommand {
     Configure {
         volume_millis: u16,
     },
+    SelectVideo {
+        selected: bool,
+    },
     Seek {
         position_100ns: u64,
     },

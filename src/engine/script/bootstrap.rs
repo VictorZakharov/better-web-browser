@@ -42,6 +42,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/activation.js"),
     include_str!("bootstrap/media.js"),
     include_str!("bootstrap/media_text_tracks.js"),
+    include_str!("bootstrap/media_audio_tracks.js"),
+    include_str!("bootstrap/media_video_tracks.js"),
     include_str!("bootstrap/media_webvtt.js"),
     include_str!("bootstrap/media_source_buffers.js"),
     include_str!("bootstrap/media_source.js"),

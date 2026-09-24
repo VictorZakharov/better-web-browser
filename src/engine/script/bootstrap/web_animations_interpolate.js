@@ -2,7 +2,15 @@
         ((1 - t) ** 3 * 0) + 3 * (1 - t) ** 2 * t * a +
         3 * (1 - t) * t * t * b + t ** 3;
     const cubicAnimationEasing = (x1, y1, x2, y2, progress) => {
-        if (progress <= 0 || progress >= 1) return progress;
+        if (progress < 0) {
+            const slope = x1 > 0 ? y1 / x1 : x2 > 0 ? y2 / x2 : 1;
+            return progress * slope;
+        }
+        if (progress > 1) {
+            const slope = x2 < 1 ? (1 - y2) / (1 - x2) :
+                x1 < 1 ? (1 - y1) / (1 - x1) : 1;
+            return 1 + (progress - 1) * slope;
+        }
         let low = 0, high = 1;
         for (let step = 0; step < 18; step++) {
             const middle = (low + high) / 2;
@@ -17,8 +25,28 @@
             'ease-out': [0, 0, 0.58, 1], 'ease-in-out': [0.42, 0, 0.58, 1]
         };
         if (name === 'linear') return progress;
+        if (name.startsWith('linear(')) {
+            const points = parseLinearAnimationEasing(name);
+            if (!points) return progress;
+            if (points.length === 1) return points[0].y;
+            // At a discontinuity, CSS Easing selects the last matching point.
+            for (let index = points.length - 1; index >= 0; index--)
+                if (points[index].x === progress) return points[index].y;
+            let first = 0, last = 1;
+            if (progress < points[0].x) [first, last] = [0, 1];
+            else if (progress > points.at(-1).x)
+                [first, last] = [points.length - 2, points.length - 1];
+            else for (let index = 1; index < points.length; index++) {
+                if (progress < points[index].x) {
+                    first = index - 1; last = index; break;
+                }
+            }
+            const a = points[first], b = points[last];
+            if (a.x === b.x) return progress < a.x ? a.y : b.y;
+            return a.y + (b.y - a.y) * (progress - a.x) / (b.x - a.x);
+        }
         if (builtins[name]) return cubicAnimationEasing(...builtins[name], progress);
-        if (name === 'step-start') return Math.ceil(progress);
+        if (name === 'step-start') return 1;
         if (name === 'step-end') return Math.floor(progress);
         if (name.startsWith('cubic-bezier(')) {
             const values = name.slice(13, -1).split(',').map(Number);
@@ -27,8 +55,12 @@
         const match = /^steps\(\s*(\d+)\s*(?:,\s*(\S+)\s*)?\)$/.exec(name);
         if (match) {
             const count = Number(match[1]);
-            const start = ['start', 'jump-start'].includes(match[2]);
-            return Math.min(1, (start ? Math.ceil(progress * count) : Math.floor(progress * count)) / count);
+            const position = match[2] ?? 'end';
+            if (progress >= 1) return 1;
+            const interval = Math.floor(progress * count);
+            if (position === 'jump-none') return interval / (count - 1);
+            if (position === 'jump-both') return (interval + 1) / (count + 1);
+            return Math.min(1, (interval + (['start', 'jump-start'].includes(position) ? 1 : 0)) / count);
         }
         return progress;
     };
@@ -74,8 +106,9 @@
         return parts.length === 5 ? parts.slice(1).map(Number) : null;
     };
     const interpolateAnimationValue = (property, from, to, progress) => {
-        if (progress <= 0) return from;
-        if (progress >= 1) return to;
+        // Easing output is not restricted to [0,1]. Numeric properties can
+        // extrapolate, while unsupported discrete types hold their endpoint.
+        // https://www.w3.org/TR/web-animations-1/#the-effect-value-of-a-keyframe-effect
         if (property === 'transform') {
             const transform = interpolateAnimationTransform(from, to, progress);
             if (transform !== null) return transform;
@@ -86,6 +119,8 @@
             const value = Number(first[1]) + (Number(last[1]) - Number(first[1])) * progress;
             return String(Math.round(value * 10000) / 10000) + first[2];
         }
+        if (progress <= 0) return from;
+        if (progress >= 1) return to;
         if (property.includes('color') || property === 'fill' || property === 'stroke') {
             const a = animationColor(from), b = animationColor(to);
             if (a && b) {
@@ -115,22 +150,25 @@
         const properties = new Set(effect.__frames.flatMap(frame => [...frame.values.keys()]));
         for (const property of properties) {
             const frames = effect.__frames.filter(frame => frame.values.has(property))
-                .map(frame => ({ offset: frame.offset, value: frame.values.get(property),
+                .map(frame => ({ offset: frame.computedOffset, value: frame.values.get(property),
                     easing: frame.easing }));
             if (!frames.length) continue;
             if (frames[0].offset > 0) frames.unshift({ offset: 0,
                 value: underlying.get(property) ?? '', easing: 'linear' });
             if (frames.at(-1).offset < 1) frames.push({ offset: 1,
                 value: underlying.get(property) ?? '', easing: 'linear' });
-            let start = frames[0], end = frames.at(-1);
+            let start = frames[0], end = frames[1] ?? frames[0];
             for (let index = 1; index < frames.length; index++) {
                 if (progress <= frames[index].offset) {
                     start = frames[index - 1]; end = frames[index]; break;
                 }
+                if (index === frames.length - 1) {
+                    start = frames[index - 1]; end = frames[index];
+                }
             }
             const segment = end.offset === start.offset ? 1 :
                 (progress - start.offset) / (end.offset - start.offset);
-            const eased = animationEasingProgress(start.easing, Math.max(0, Math.min(1, segment)));
+            const eased = animationEasingProgress(start.easing, segment);
             values.set(property, interpolateAnimationValue(property, start.value, end.value, eased));
         }
         return values;
