@@ -75,3 +75,45 @@ fn blocked_inline_script_queues_trusted_policy_event_with_sample_and_policy() {
         "true|script|inline|script-src-elem|script-src 'nonce-allowed' 'report-sample'|true"
     );
 }
+
+#[test]
+fn blocked_external_script_reports_origin_without_cross_origin_path_or_sample() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><output></output><script nonce=allowed>
+        document.addEventListener('securitypolicyviolation', event => {
+            document.querySelector('output').textContent = [event.isTrusted,
+                event.target.localName, event.blockedURI,
+                event.effectiveDirective, event.sample, event.sourceFile].join('|');
+        });</script><script src='https://cdn.example.test/private/app.js?token=secret'></script></body>"#,
+        true,
+    );
+    let mut headers = HeaderList::new();
+    headers
+        .append("content-security-policy", "script-src 'nonce-allowed'")
+        .unwrap();
+    let policy = PolicyContainer::from_headers("https://example.com/", &headers).unwrap();
+    let scripts = dom
+        .elements_named("script")
+        .map(|node| ScriptInput {
+            source_url: node
+                .attr("src")
+                .unwrap_or_else(|| "https://example.com/".into()),
+            code: node.text_content(),
+            node,
+            kind: ScriptKind::Classic,
+            fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+            finish_lifecycle: true,
+        })
+        .collect::<Vec<_>>();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.host.borrow_mut().policy = Arc::new(policy);
+    let outcome = runtime.execute_initial(&scripts);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.executed, 1);
+    let event = runtime.advance_time(Duration::from_millis(10), 8);
+    assert!(event.errors.is_empty(), "{:?}", event.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true|script|https://cdn.example.test|script-src-elem||"
+    );
+}

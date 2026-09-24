@@ -130,23 +130,30 @@ impl PolicyContainer {
         let Ok(url) = url::Url::parse(url) else {
             return false;
         };
-        self.policies.iter().all(|policy| {
-            if policy.mixed_content && policy.origin.scheme() == "https" && url.scheme() == "http" {
-                return false;
-            }
-            policy.list(directive).is_none_or(|list| {
-                if nonce_matches(list, script.nonce.as_deref()) {
-                    return true;
-                }
-                // CSP3 ignores host/scheme sources under strict-dynamic. Only a
-                // non-parser-inserted script can inherit the trusted loader's authority.
-                if has_keyword(list, "'strict-dynamic'") {
-                    return !script.parser_inserted;
-                }
-                list.iter()
-                    .any(|source| sources::matches(source, &url, &policy.origin, redirects))
+        self.policies
+            .iter()
+            .all(|policy| policy_allows_script_url(policy, directive, &url, redirects, script))
+    }
+
+    /// Return each enforcing policy that rejected a script URL. The caller owns
+    /// event queuing; pure admission must not dispatch events during Fetch retries.
+    pub fn script_url_violations(
+        &self,
+        directive: &str,
+        url: &str,
+        redirects: usize,
+        script: &ScriptSource,
+    ) -> Vec<UrlViolation<'_>> {
+        let Ok(url) = url::Url::parse(url) else {
+            return Vec::new();
+        };
+        self.policies
+            .iter()
+            .filter(|policy| !policy_allows_script_url(policy, directive, &url, redirects, script))
+            .map(|policy| UrlViolation {
+                original_policy: &policy.serialized,
             })
-        })
+            .collect()
     }
 
     pub fn allows_inline(&self, attribute: bool) -> bool {
@@ -275,6 +282,35 @@ impl PolicyContainer {
 pub struct InlineScriptViolation<'a> {
     pub original_policy: &'a str,
     pub report_sample: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UrlViolation<'a> {
+    pub original_policy: &'a str,
+}
+
+fn policy_allows_script_url(
+    policy: &Policy,
+    directive: &str,
+    url: &url::Url,
+    redirects: usize,
+    script: &ScriptSource,
+) -> bool {
+    if policy.mixed_content && policy.origin.scheme() == "https" && url.scheme() == "http" {
+        return false;
+    }
+    policy.list(directive).is_none_or(|list| {
+        if nonce_matches(list, script.nonce.as_deref()) {
+            return true;
+        }
+        // A trusted non-parser-inserted script may inherit strict-dynamic's
+        // authority; host/scheme expressions do not regain authority here.
+        if has_keyword(list, "'strict-dynamic'") {
+            return !script.parser_inserted;
+        }
+        list.iter()
+            .any(|source| sources::matches(source, url, &policy.origin, redirects))
+    })
 }
 
 fn has_keyword(list: &[String], keyword: &str) -> bool {

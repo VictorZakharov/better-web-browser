@@ -180,6 +180,37 @@ fn inline_violations_preserve_each_enforcing_policy_and_sample_permission() {
 }
 
 #[test]
+fn external_script_violations_share_exact_admission_rules() {
+    let container = policy(&[
+        "script-src https://cdn.example.test",
+        "script-src 'nonce-permitted'",
+        "default-src 'none'",
+    ]);
+    let url = "https://cdn.example.test/app.js";
+    let source = ScriptSource::default();
+    let violations = container.script_url_violations("script-src-elem", url, 0, &source);
+    assert_eq!(violations.len(), 2);
+    assert_eq!(
+        violations[0].original_policy,
+        "script-src 'nonce-permitted'"
+    );
+    assert_eq!(violations[1].original_policy, "default-src 'none'");
+    assert!(!container.allows_script_url("script-src-elem", url, 0, &source));
+
+    let allowed = policy(&["script-src 'nonce-permitted'"]);
+    let nonce_source = ScriptSource {
+        nonce: Some("permitted".into()),
+        parser_inserted: true,
+    };
+    assert!(
+        allowed
+            .script_url_violations("script-src-elem", url, 0, &nonce_source)
+            .is_empty()
+    );
+    assert!(allowed.allows_script_url("script-src-elem", url, 0, &nonce_source));
+}
+
+#[test]
 fn strict_dynamic_requires_a_nonce_for_parser_scripts_and_ignores_hosts() {
     let policy = strict_policy();
     let url = "https://cdn.example.test/app.js";

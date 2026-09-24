@@ -9,24 +9,35 @@ pub(super) fn queue_script_violation(
     script: &ScriptInput,
     external: bool,
 ) {
-    if external {
-        // External Fetch/CSP admission has its own reporting path. It must not
-        // be conflated with an inline-script violation or leak a blocked URL.
-        return;
-    }
     let (violations, node_id, document_url) = {
         let state = host.borrow();
-        let violations = state
-            .policy
-            .inline_script_violations(script.node.attr("nonce").as_deref())
-            .into_iter()
-            .map(|violation| {
-                (
-                    violation.original_policy.to_owned(),
-                    violation.report_sample,
-                )
-            })
-            .collect::<Vec<_>>();
+        let violations = if external {
+            let source = crate::fetch::csp::ScriptSource {
+                nonce: script.node.attr("nonce"),
+                parser_inserted: script
+                    .node
+                    .element()
+                    .is_some_and(|element| element.script_parser_inserted.get()),
+            };
+            state
+                .policy
+                .script_url_violations("script-src-elem", &script.source_url, 0, &source)
+                .into_iter()
+                .map(|violation| (violation.original_policy.to_owned(), false))
+                .collect::<Vec<_>>()
+        } else {
+            state
+                .policy
+                .inline_script_violations(script.node.attr("nonce").as_deref())
+                .into_iter()
+                .map(|violation| {
+                    (
+                        violation.original_policy.to_owned(),
+                        violation.report_sample,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
         let node_id = state
             .node_ids
             .get(&script.node.id())
@@ -38,18 +49,23 @@ pub(super) fn queue_script_violation(
         return;
     }
     for (original_policy, report_sample) in violations {
-        let sample = if report_sample {
+        let sample = if report_sample && !external {
             script.code.chars().take(40).collect::<String>()
         } else {
             String::new()
         };
+        let blocked_uri = if external {
+            strip_blocked_url(&script.source_url, &document_url)
+        } else {
+            "inline".to_owned()
+        };
         let init = serde_json::json!({
             "documentURI": document_url,
-            "blockedURI": "inline",
+            "blockedURI": blocked_uri,
             "effectiveDirective": "script-src-elem",
             "violatedDirective": "script-src-elem",
             "originalPolicy": original_policy,
-            "sourceFile": document_url,
+            "sourceFile": if external { "" } else { &document_url },
             "sample": sample,
             "disposition": "enforce",
         });
@@ -60,6 +76,25 @@ pub(super) fn queue_script_violation(
                 script.source_url
             ));
         }
+    }
+}
+
+fn strip_blocked_url(source: &str, document_url: &str) -> String {
+    let Ok(mut url) = url::Url::parse(source) else {
+        return String::new();
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return format!("{}:", url.scheme());
+    }
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_fragment(None);
+    let same_origin =
+        url::Url::parse(document_url).is_ok_and(|document| document.origin() == url.origin());
+    if same_origin {
+        url.to_string()
+    } else {
+        url.origin().ascii_serialization()
     }
 }
 
