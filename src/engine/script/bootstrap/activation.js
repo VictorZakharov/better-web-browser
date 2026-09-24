@@ -1,5 +1,9 @@
     // Activation is a DOM event default, including synthetic MouseEvent clicks. Trusted
     // links remain renderer-owned (fragment scrolling, modifiers and tab disposition).
+    const imageSubmitCoordinates = new WeakMap();
+    Object.defineProperty(globalThis, '__imageSubmitCoordinates', {
+        configurable: true, value: submitter => imageSubmitCoordinates.get(submitter) || [0, 0]
+    });
     function activateNavigation(target, event) {
         if (!(event instanceof MouseEvent) || event.type !== 'click' || event.defaultPrevented || event.button !== 0) return;
         const element = target instanceof Element ? target : target.parentElement;
@@ -14,7 +18,14 @@
                 else host('navigateRequest', url, JSON.stringify({ target }));
             }
         } else if (activation.form && /^(submit|image)$/i.test(activation.type)) {
-            HTMLFormElement.prototype.requestSubmit.call(activation.form, activation);
+            if (activation.type === 'image') {
+                const rect = activation.getBoundingClientRect();
+                const x = Math.max(0, Math.floor(event.clientX - rect.left));
+                const y = Math.max(0, Math.floor(event.clientY - rect.top));
+                imageSubmitCoordinates.set(activation, [x, y]);
+            }
+            try { HTMLFormElement.prototype.requestSubmit.call(activation.form, activation); }
+            finally { imageSubmitCoordinates.delete(activation); }
         } else if (activation.form && activation.type === 'reset') {
             HTMLFormElement.prototype.reset.call(activation.form);
         }

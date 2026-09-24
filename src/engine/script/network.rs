@@ -69,6 +69,19 @@ pub(super) fn network_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     match operation {
+        "integrityVerify" => {
+            let metadata = argument_string(args, 1)?;
+            let bytes = args
+                .get(2)
+                .and_then(JsValue::as_bytes)
+                .ok_or_else(|| type_error("integrity verification requires bytes"))?;
+            let eligible = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
+            Ok(Some(JsValue::Boolean(
+                metadata.len() <= 16 * 1024
+                    && bytes.len() <= MAX_RESPONSE_BODY_BYTES
+                    && crate::fetch::integrity::verify(&metadata, bytes, eligible).is_ok(),
+            )))
+        }
         "fetchStart" => {
             let serialized = argument_string(args, 1)?;
             let mut request = request_from_serialized(

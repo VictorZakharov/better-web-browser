@@ -1,10 +1,16 @@
 mod embedded;
+mod integrity;
+pub(crate) use integrity::{resource_integrity, stylesheet_crossorigin};
+mod link_preloads;
 mod media;
 mod parsing;
 mod preload;
 mod refresh;
 mod rendering;
 mod resource_events;
+mod resource_types;
+mod responsive_images;
+pub use resource_types::{PageResource, PageScript, PreloadAs};
 mod resources;
 pub(crate) use resources::prepare_script as prepare_written_script;
 mod scripts;
@@ -35,43 +41,6 @@ use image::ImageReader;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PageResource {
-    Stylesheet {
-        url: String,
-    },
-    Image {
-        url: String,
-    },
-    Media {
-        url: String,
-        node: dom::NodeId,
-    },
-    Script {
-        url: String,
-        kind: ScriptKind,
-        fetch_options: ScriptFetchOptions,
-        script_source: crate::fetch::csp::ScriptSource,
-    },
-    Font {
-        url: String,
-        family: String,
-        weight: u16,
-        italic: bool,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct PageScript {
-    pub node: NodeRef,
-    pub source_url: String,
-    pub code: Option<String>,
-    pub kind: ScriptKind,
-    pub fetch_options: ScriptFetchOptions,
-    pub blocks_first_paint: bool,
-    pub executes_after_parsing: bool,
-}
 
 #[derive(Debug, Clone)]
 pub struct DecodedImage {

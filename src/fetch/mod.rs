@@ -10,6 +10,7 @@ mod cors;
 pub mod csp;
 mod error;
 mod headers;
+pub mod integrity;
 mod request;
 mod response;
 mod url;

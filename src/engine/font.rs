@@ -17,6 +17,8 @@ pub struct WebFontFace {
 mod face_match;
 #[cfg(windows)]
 pub(crate) mod shaping;
+#[cfg(test)]
+mod tests;
 
 #[derive(Debug, Clone)]
 pub struct WebFont {
@@ -24,6 +26,9 @@ pub struct WebFont {
     pub weight: u16,
     pub italic: bool,
     pub sfnt: Vec<u8>,
+    pub source_url: String,
+    /// Script-owned FontFaceSet membership; stylesheet faces have no source ID.
+    pub script_source_id: Option<u32>,
 }
 
 pub fn discover_font_faces(css: &str, stylesheet_url: &str) -> Vec<WebFontFace> {
@@ -77,15 +82,31 @@ pub fn decode_web_font(face: &WebFontFace, bytes: &[u8]) -> Result<WebFont, Stri
     }
     let sfnt = match bytes.get(..4) {
         Some(b"wOFF") => decode_woff(bytes)?,
-        Some(b"wOF2") => return Err("WOFF2 fonts are not supported yet".into()),
+        Some(b"wOF2") => {
+            // Reject oversized containers before the decoder allocates reconstructed tables.
+            if bytes.len() < 48
+                || read_u32(bytes, 16)? as usize > MAX_FONT_BYTES
+                || read_u16(bytes, 12)? as usize > MAX_FONT_TABLES
+            {
+                return Err("WOFF2 font exceeds the browser font limits".into());
+            }
+            wuff::decompress_woff2(bytes).map_err(|error| format!("invalid WOFF2 font: {error}"))?
+        }
         Some(b"OTTO") | Some([0, 1, 0, 0]) | Some(b"true") | Some(b"typ1") => bytes.to_vec(),
         _ => return Err("unsupported webfont container".into()),
     };
+    if sfnt.len() > MAX_FONT_BYTES {
+        return Err(format!(
+            "decoded webfont exceeds the {MAX_FONT_BYTES}-byte limit"
+        ));
+    }
     Ok(WebFont {
         family: face.family.clone(),
         weight: face.weight,
         italic: face.italic,
         sfnt,
+        source_url: face.url.clone(),
+        script_source_id: None,
     })
 }
 
@@ -115,21 +136,25 @@ fn supported_font_url(source: &str) -> Option<String> {
             .next()
             .unwrap_or(&url)
             .to_ascii_lowercase();
-        let is_woff = descriptor.contains("format(\"woff\")")
-            || descriptor.contains("format('woff')")
-            || path.ends_with(".woff");
-        let is_sfnt = descriptor.contains("format(\"truetype\")")
-            || descriptor.contains("format('truetype')")
-            || descriptor.contains("format(\"opentype\")")
-            || descriptor.contains("format('opentype')")
+        let is_woff2 = has_font_format(descriptor, "woff2") || path.ends_with(".woff2");
+        let is_woff = has_font_format(descriptor, "woff") || path.ends_with(".woff");
+        let is_sfnt = has_font_format(descriptor, "truetype")
+            || has_font_format(descriptor, "opentype")
             || path.ends_with(".ttf")
             || path.ends_with(".otf");
-        if (is_woff || is_sfnt) && !url.starts_with("data:") {
+        if (is_woff2 || is_woff || is_sfnt) && !url.starts_with("data:") {
             return Some(url);
         }
         cursor = close + 1;
     }
     None
+}
+
+fn has_font_format(descriptor: &str, format: &str) -> bool {
+    descriptor.split("format(").skip(1).any(|tail| {
+        tail.split_once(')')
+            .is_some_and(|(value, _)| value.trim().trim_matches(['\'', '"']) == format)
+    })
 }
 
 fn parse_font_weight(value: &str) -> Option<(f32, f32)> {
@@ -352,47 +377,4 @@ fn write_u32(bytes: &mut [u8], offset: usize, value: u32) -> Result<(), String> 
         .ok_or_else(|| "truncated font output".to_string())?
         .copy_from_slice(&value.to_be_bytes());
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn discovers_a_supported_fallback_source_for_font_faces() {
-        let faces = discover_font_faces(
-            r#"@font-face {
-                font-family: "Montserrat";
-                font-weight: 700;
-                font-style: normal;
-                src: url(../fonts/montserrat.woff2) format("woff2"),
-                     url('../fonts/montserrat.woff') format('woff');
-            }"#,
-            "https://example.com/css/main.css",
-        );
-        assert_eq!(faces.len(), 1);
-        assert_eq!(faces[0].family, "Montserrat");
-        assert_eq!(faces[0].weight, 700);
-        assert_eq!(faces[0].url, "https://example.com/fonts/montserrat.woff");
-    }
-
-    #[test]
-    fn reconstructs_an_uncompressed_woff_container() {
-        let mut woff = vec![0_u8; 76];
-        woff[..4].copy_from_slice(b"wOFF");
-        woff[4..8].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
-        woff[8..12].copy_from_slice(&76_u32.to_be_bytes());
-        woff[12..14].copy_from_slice(&1_u16.to_be_bytes());
-        woff[16..20].copy_from_slice(&40_u32.to_be_bytes());
-        woff[44..48].copy_from_slice(b"head");
-        woff[48..52].copy_from_slice(&64_u32.to_be_bytes());
-        woff[52..56].copy_from_slice(&12_u32.to_be_bytes());
-        woff[56..60].copy_from_slice(&12_u32.to_be_bytes());
-
-        let sfnt = decode_woff(&woff).unwrap();
-        assert_eq!(sfnt.len(), 40);
-        assert_eq!(&sfnt[..4], &0x0001_0000_u32.to_be_bytes());
-        assert_eq!(&sfnt[12..16], b"head");
-        assert_ne!(&sfnt[36..40], &[0, 0, 0, 0]);
-    }
 }

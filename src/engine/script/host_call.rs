@@ -3,6 +3,7 @@
 use super::binding_helpers::*;
 use super::*;
 
+mod font_host;
 pub(super) mod navigation;
 mod storage;
 mod task_scheduling;
@@ -61,6 +62,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = super::media_host::media_host_call(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = font_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {

@@ -225,6 +225,9 @@ impl DocumentRuntime {
         // networking task. Submit them before accepting the next response chunk so cancellation
         // does not wait for an unrelated clock tick.
         self.start_pending_fetches(connection)?;
+        // A FontFace URL load resolves from this networking task, not from a clock or input
+        // task. Install its decoded face before deciding whether this callback needs layout.
+        self.apply_font_actions(&mut outcome);
         connection.send_state_mutations(self.id, &mut outcome)?;
 
         let script_time = started.elapsed();

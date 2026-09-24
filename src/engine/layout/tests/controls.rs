@@ -173,3 +173,33 @@ fn text_input_auto_height_does_not_duplicate_css_padding() {
     assert_eq!(control.rect.height, 24.0);
     assert_eq!(output.node_bounds[&input.id()].height, 24.0);
 }
+
+#[test]
+fn image_submit_is_loaded_and_laid_out_as_replaced_image() {
+    let mut page = Page::parse(
+        "<form><input type='IMAGE' src='/submit.png' width='80' height='32' alt='Send'></form>",
+        "https://example.com/",
+    );
+    let input = page.dom.elements_named("input").next().unwrap();
+    let resource = crate::engine::page::PageResource::Image {
+        url: "https://example.com/submit.png".into(),
+    };
+    assert!(page.resources.contains(&resource));
+    assert_eq!(page.resource_event_key(&input), Some(resource.clone()));
+    assert!(page.document_load_resources().contains(&resource));
+    page.images.insert(
+        "https://example.com/submit.png".into(),
+        crate::engine::DecodedImage {
+            width: 80,
+            height: 32,
+            bgra: vec![255; 80 * 32 * 4].into(),
+        },
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    assert!(output.items.iter().any(|item| matches!(item,
+        DisplayItem::Image { url, .. } if url == "https://example.com/submit.png")));
+    assert!(!output.items.iter().any(|item| matches!(item,
+        DisplayItem::Control(spec) if spec.node_id == input.id())));
+    assert_eq!(output.node_bounds[&input.id()].width, 80.0);
+    assert_eq!(output.node_bounds[&input.id()].height, 32.0);
+}

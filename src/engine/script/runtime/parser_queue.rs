@@ -101,6 +101,17 @@ impl ParserScripts {
             || self.modules.contains(resource)
     }
 
+    pub(crate) fn integrity(&self, resource: &PageResource) -> Vec<String> {
+        self.waiting
+            .iter()
+            .chain(self.deferred.iter())
+            .chain(self.blocking.iter())
+            .filter(|script| script_resource(script) == *resource)
+            .map(|script| script.integrity.clone())
+            .filter(|value| !value.trim().is_empty())
+            .collect()
+    }
+
     pub(crate) fn resources(&self) -> impl Iterator<Item = PageResource> + '_ {
         self.waiting
             .iter()

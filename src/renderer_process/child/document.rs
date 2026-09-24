@@ -5,6 +5,7 @@ mod diagnostics;
 mod document_streams;
 mod dynamic_scripts;
 mod fetch;
+mod font_actions;
 mod frames_paint;
 mod fullscreen;
 mod geometry;
@@ -69,6 +70,8 @@ pub(super) struct DocumentRuntime {
     layout: crate::engine::LayoutOutput,
     frame_paint: Vec<frames_paint::PaintedFrame>,
     loaded_resources: HashSet<PageResource>,
+    preload_cache: HashMap<resources::preloads::PreloadKey, crate::fetch::FetchResponse>,
+    preload_cache_bytes: usize,
     resource_budget: u64,
     pending_fetches: Vec<ScriptFetchAction>,
     pending_websockets: Vec<crate::engine::ScriptWebSocketAction>,

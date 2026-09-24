@@ -104,6 +104,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     height: containing_height,
                 },
             ),
+            "input"
+                if node
+                    .attr("type")
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))
+                    && node.attr("src").is_some_and(|src| !src.trim().is_empty()) =>
+            {
+                self.collect_image(
+                    node,
+                    &style,
+                    None,
+                    &mut atoms,
+                    InlineContainingBlock {
+                        width,
+                        height: containing_height,
+                    },
+                )
+            }
             "input" | "textarea" => self.collect_input(
                 node,
                 &style,

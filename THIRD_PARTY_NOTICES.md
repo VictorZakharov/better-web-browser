@@ -3,8 +3,8 @@
 This file describes the complete third-party Rust graph linked into the Windows x64 release. It is generated from the locked target graph by `scripts/generate-third-party-notices.ps1`; CI rejects a stale copy.
 
 - Target: `x86_64-pc-windows-msvc`
-- Cargo.lock SHA-256: `1dd4fab7b578e35eaa48bb1abd749aa70ddfb947e8a8d27ac8365489b8ff51b0`
-- Third-party packages: 198
+- Cargo.lock SHA-256: `ed46c02583c076577c67be06507ecc0af92773b78d3eb3a4016d339ceaee35a0`
+- Third-party packages: 212
 
 | Package | Version | License expression | Source |
 |---|---:|---|---|
@@ -13,14 +13,19 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `accesskit_windows` | 0.34.0 | MIT OR Apache-2.0 | [upstream](https://github.com/AccessKit/accesskit) |
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | [upstream](https://github.com/oyvindln/adler2) |
 | `aho-corasick` | 1.1.5 | Unlicense OR MIT | [upstream](https://github.com/BurntSushi/aho-corasick) |
+| `alloc-no-stdlib` | 2.0.4 | BSD-3-Clause | [upstream](https://github.com/dropbox/rust-alloc-no-stdlib) |
 | `arrayref` | 0.3.9 | BSD-2-Clause | [upstream](https://github.com/droundy/arrayref) |
 | `arrayvec` | 0.7.8 | MIT OR Apache-2.0 | [upstream](https://github.com/bluss/arrayvec) |
 | `autocfg` | 1.5.1 | Apache-2.0 OR MIT | [upstream](https://github.com/cuviper/autocfg) |
+| `base64` | 0.22.1 | MIT OR Apache-2.0 | [upstream](https://github.com/marshallpierce/rust-base64) |
 | `bindgen` | 0.72.1 | BSD-3-Clause | [upstream](https://github.com/rust-lang/rust-bindgen) |
 | `bitflags` | 2.13.1 | MIT OR Apache-2.0 | [upstream](https://github.com/bitflags/bitflags) |
+| `block-buffer` | 0.10.4 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
+| `brotli-decompressor` | 5.0.3 | BSD-3-Clause/MIT | [upstream](https://github.com/dropbox/rust-brotli-decompressor) |
 | `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `bytemuck_derive` | 1.12.0 | Zlib OR Apache-2.0 OR MIT | [upstream](https://github.com/Lokathor/bytemuck) |
 | `byteorder-lite` | 0.1.0 | Unlicense OR MIT | [upstream](https://github.com/image-rs/byteorder-lite) |
+| `bytes` | 1.12.1 | MIT | [upstream](https://github.com/tokio-rs/bytes) |
 | `calendrical_calculations` | 0.2.4 | Apache-2.0 | [upstream](https://github.com/unicode-org/icu4x) |
 | `cc` | 1.4.7 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/cc-rs) |
 | `cexpr` | 0.6.0 | Apache-2.0/MIT | [upstream](https://github.com/jethrogb/rust-cexpr) |
@@ -28,11 +33,14 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `clang-sys` | 1.9.1 | Apache-2.0 | [upstream](https://github.com/KyleMayes/clang-sys) |
 | `color_quant` | 1.1.0 | MIT | [upstream](https://github.com/image-rs/color_quant.git) |
 | `core_maths` | 0.1.1 | MIT | [upstream](https://github.com/robertbastian/core_maths) |
+| `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/utils) |
 | `crc32fast` | 1.5.0 | MIT OR Apache-2.0 | [upstream](https://github.com/srijs/rust-crc32fast) |
+| `crypto-common` | 0.1.7 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/traits) |
 | `cssparser` | 0.37.0 | MPL-2.0 | [upstream](https://github.com/servo/rust-cssparser) |
 | `cssparser-macros` | 0.7.0 | MPL-2.0 | [upstream](https://github.com/servo/rust-cssparser) |
 | `data-url` | 0.3.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `deranged` | 0.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/jhpratt/deranged) |
+| `digest` | 0.10.7 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/traits) |
 | `diplomat` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-diplomat/diplomat) |
 | `diplomat-runtime` | 0.16.0 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-diplomat/diplomat) |
 | `diplomat_core` | 0.16.1 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-diplomat/diplomat) |
@@ -53,6 +61,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `fontique` | 0.11.1 | Apache-2.0 OR MIT | [upstream](https://github.com/linebender/parley) |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/rust-url) |
 | `fslock` | 0.2.1 | MIT | [upstream](https://github.com/brunoczim/fslock) |
+| `generic-array` | 0.14.7 | MIT | [upstream](https://github.com/fizyk20/generic-array.git) |
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-random/getrandom) |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/image-gif) |
 | `glob` | 0.3.4 | MIT OR Apache-2.0 | [upstream](https://github.com/rust-lang/glob) |
@@ -137,6 +146,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `serde_core` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
 | `serde_derive` | 1.0.229 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/serde) |
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 | [upstream](https://github.com/serde-rs/json) |
+| `sha2` | 0.10.9 | MIT OR Apache-2.0 | [upstream](https://github.com/RustCrypto/hashes) |
 | `shlex` | 1.3.0 | MIT OR Apache-2.0 | [upstream](https://github.com/comex/rust-shlex) |
 | `shlex` | 2.0.1 | MIT OR Apache-2.0 | [upstream](https://github.com/comex/rust-shlex) |
 | `simd-adler32` | 0.3.10 | MIT | [upstream](https://github.com/mcountryman/simd-adler32) |
@@ -160,10 +170,12 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `tendril` | 0.5.1 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `time` | 0.3.55 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
 | `time-core` | 0.1.9 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
+| `time-macros` | 0.2.32 | MIT OR Apache-2.0 | [upstream](https://github.com/time-rs/time) |
 | `timezone_provider` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/boa-dev/temporal) |
 | `tiny-skia` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia) |
 | `tiny-skia-path` | 0.12.0 | BSD-3-Clause | [upstream](https://github.com/linebender/tiny-skia/tree/master/path) |
 | `tinystr` | 0.8.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `typenum` | 1.20.0 | MIT OR Apache-2.0 | [upstream](https://github.com/paholg/typenum) |
 | `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/unicode-bidi) |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | [upstream](https://github.com/dtolnay/unicode-ident) |
 | `unicode-script` | 0.5.8 | MIT OR Apache-2.0 | [upstream](https://github.com/unicode-rs/unicode-script) |
@@ -173,6 +185,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT | [upstream](https://github.com/hsivonen/utf8_iter) |
 | `uuid` | 1.25.0 | Apache-2.0 OR MIT | [upstream](https://github.com/uuid-rs/uuid) |
 | `v8` | 152.2.0 | MIT | [upstream](https://github.com/denoland/rusty_v8) |
+| `version_check` | 0.9.5 | MIT/Apache-2.0 | [upstream](https://github.com/SergioBenitez/version_check) |
 | `web_atoms` | 0.2.6 | MIT OR Apache-2.0 | [upstream](https://github.com/servo/html5ever) |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 | [upstream](https://github.com/image-rs/weezl) |
 | `which` | 6.0.3 | MIT | [upstream](https://github.com/harryfei/which-rs.git) |
@@ -191,6 +204,7 @@ This file describes the complete third-party Rust graph linked into the Windows 
 | `windows-threading` | 0.2.1 | MIT OR Apache-2.0 | [upstream](https://github.com/microsoft/windows-rs) |
 | `winsafe` | 0.0.19 | MIT | [upstream](https://github.com/rodrigocfd/winsafe) |
 | `writeable` | 0.6.4 | Unicode-3.0 | [upstream](https://github.com/unicode-org/icu4x) |
+| `wuff` | 0.2.9 | MIT | [upstream](https://github.com/nicoburns/wuff) |
 | `xml` | 1.4.0 | MIT | [upstream](https://github.com/kornelski/xml-rs) |
 | `xmlparser` | 0.13.6 | MIT/Apache-2.0 | [upstream](https://github.com/RazrFalcon/xmlparser) |
 | `yazi` | 0.2.1 | Apache-2.0 OR MIT | [upstream](https://github.com/dfrg/yazi) |

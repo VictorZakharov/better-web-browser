@@ -19,6 +19,18 @@
             naturalHeight: 0,
         };
     };
+    // Image/button dimension attributes contribute even before resource completion.
+    // A loaded image supplies the unsized fallback; full CSS used dimensions remain
+    // the layout engine's responsibility.
+    const imageDimension = (element, name) => {
+        const raw = element.getAttribute(name);
+        if (raw !== null && /^\s*\d+\s*$/.test(raw)) return Number(raw.trim()) >>> 0;
+        return imageElementState(element)[name === 'width' ? 'naturalWidth' : 'naturalHeight'];
+    };
+    const setImageDimension = (element, name, value) => {
+        const number = Number(value);
+        element.setAttribute(name, String(Number.isFinite(number) ? Math.max(0, Math.trunc(number)) : 0));
+    };
 
     class Element extends Node {
         get tagName() { return this.__nodeName; }

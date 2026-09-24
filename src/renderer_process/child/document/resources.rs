@@ -3,12 +3,13 @@
 pub(super) mod events;
 mod installation;
 mod lifecycle;
+pub(super) mod preloads;
 mod streaming;
 mod stylesheets;
 
 use super::DocumentRuntime;
 use super::fetch::{into_fetch_result, page_resource_request, validate_script_response};
-use crate::engine::{PageResource, ScriptKind, ScriptOutcome, ScriptRuntime};
+use crate::engine::{Page, PageResource, ScriptKind, ScriptOutcome, ScriptRuntime};
 use crate::limits::bounded_utf8_prefix;
 use crate::renderer_process::child::connection::{ChildConnection, PendingFetchBatch};
 use crate::renderer_protocol::{BrowserFetchResponse, DocumentId};
@@ -17,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 pub(super) struct PendingResourceFetch {
     batch: PendingFetchBatch,
     by_request: HashMap<u64, PageResource>,
+    integrity_by_request: HashMap<u64, Vec<String>>,
     load_blockers: HashSet<PageResource>,
 }
 
@@ -37,10 +39,11 @@ pub(super) fn start_resource_preloads(
     first_paint: Vec<PageResource>,
     deferred: Vec<PageResource>,
 ) -> Result<(Option<PendingResourceFetch>, Option<PendingResourceFetch>), String> {
-    let (mut requests, first_by_request) = resource_requests(connection, document, first_paint);
+    let (mut requests, first_by_request, first_integrity) =
+        resource_requests(connection, document, first_paint, None);
     let first_ids = first_by_request.keys().copied().collect();
-    let (deferred_requests, deferred_by_request) =
-        resource_requests(connection, document, deferred);
+    let (deferred_requests, deferred_by_request, deferred_integrity) =
+        resource_requests(connection, document, deferred, None);
     requests.extend(deferred_requests);
     let Some(batch) = connection.start_fetch_batch(document, requests)? else {
         return Ok((None, None));
@@ -50,11 +53,13 @@ pub(super) fn start_resource_preloads(
         first_batch.map(|batch| PendingResourceFetch {
             batch,
             by_request: first_by_request,
+            integrity_by_request: first_integrity,
             load_blockers: HashSet::new(),
         }),
         deferred_batch.map(|batch| PendingResourceFetch {
             batch,
             by_request: deferred_by_request,
+            integrity_by_request: deferred_integrity,
             load_blockers: HashSet::new(),
         }),
     ))
@@ -99,11 +104,14 @@ impl DocumentRuntime {
             })
             .filter(|resource| seen.insert(resource.clone()))
             .collect::<Vec<_>>();
-        let (requests, by_request) = resource_requests(connection, self.id, resources);
+        let resources = self.admit_cached_preloads(connection, resources)?;
+        let (requests, by_request, integrity_by_request) =
+            resource_requests(connection, self.id, resources, Some(&self.page));
         if let Some(batch) = connection.start_fetch_batch(self.id, requests)? {
             self.pending_resource_preloads.push(PendingResourceFetch {
                 batch,
                 by_request,
+                integrity_by_request,
                 load_blockers: HashSet::new(),
             });
         }
@@ -180,6 +188,7 @@ impl DocumentRuntime {
                     connection,
                     responses,
                     &mut pending.by_request,
+                    &mut pending.integrity_by_request,
                     true,
                 )?;
                 let changes = changed.get_or_insert(ResourceChanges {
@@ -200,7 +209,8 @@ impl DocumentRuntime {
 fn is_presentational_resource(resource: &PageResource) -> bool {
     matches!(
         resource,
-        PageResource::Stylesheet { .. }
+        PageResource::Preload { .. }
+            | PageResource::Stylesheet { .. }
             | PageResource::Image { .. }
             | PageResource::Media { .. }
             | PageResource::Font { .. }
@@ -209,6 +219,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
 
 fn resource_label(resource: &PageResource) -> String {
     let (kind, url) = match resource {
+        PageResource::Preload { url, .. } => ("preload", url),
         PageResource::Stylesheet { url } => ("stylesheet", url),
         PageResource::Image { url } => ("image", url),
         PageResource::Media { url, .. } => ("media", url),
@@ -219,34 +230,73 @@ fn resource_label(resource: &PageResource) -> String {
     format!("{kind} {url}")
 }
 
+type ResourceRequestBatch = (
+    Vec<crate::renderer_protocol::RendererFetchRequest>,
+    HashMap<u64, PageResource>,
+    HashMap<u64, Vec<String>>,
+);
+
 fn resource_requests(
     connection: &mut ChildConnection,
     document: DocumentId,
     resources: Vec<PageResource>,
-) -> (
-    Vec<crate::renderer_protocol::RendererFetchRequest>,
-    HashMap<u64, PageResource>,
-) {
+    page: Option<&Page>,
+) -> ResourceRequestBatch {
     let mut by_request = HashMap::new();
+    let mut integrity_by_request = HashMap::new();
     let requests = resources
         .into_iter()
         .map(|resource| {
             let id = connection.allocate_request_id();
-            let request = page_resource_request(id, document, &resource);
+            let mut request = page_resource_request(id, document, &resource);
+            if let (Some(page), PageResource::Stylesheet { url }) = (page, &resource)
+                && let Some(crossorigin) = page.stylesheet_crossorigin(url)
+            {
+                request.head.mode = crate::renderer_protocol::FetchMode::Cors;
+                request.head.credentials = if crossorigin.eq_ignore_ascii_case("use-credentials") {
+                    crate::renderer_protocol::FetchCredentials::Include
+                } else {
+                    crate::renderer_protocol::FetchCredentials::SameOrigin
+                };
+            }
+            let metadata = page.map_or_else(
+                || match &resource {
+                    PageResource::Preload { integrity, .. } if !integrity.trim().is_empty() => {
+                        vec![integrity.clone()]
+                    }
+                    _ => Vec::new(),
+                },
+                |page| page.resource_integrity(&resource),
+            );
+            if !metadata.is_empty() {
+                integrity_by_request.insert(id, metadata);
+            }
             by_request.insert(id, resource);
             request
         })
         .collect();
-    (requests, by_request)
+    (requests, by_request, integrity_by_request)
 }
 
 pub(super) fn decode_script_response(
     response: BrowserFetchResponse,
     kind: ScriptKind,
+    metadata: &[String],
 ) -> Result<(String, String), String> {
     let response = into_fetch_result(response).map_err(|error| error.to_string())?;
     if !response.is_success() {
         return Err(format!("server returned HTTP {}", response.status));
+    }
+    for value in metadata {
+        crate::fetch::integrity::verify(
+            value,
+            response.body.as_bytes(),
+            matches!(
+                response.response_type,
+                crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
+            ),
+        )
+        .map_err(|error| error.to_string())?;
     }
     crate::engine::script::network::response::decode(response, kind)
 }

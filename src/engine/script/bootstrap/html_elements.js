@@ -79,6 +79,17 @@
         set media(value) { this.setAttribute('media', value); }
         get type() { return this.getAttribute('type') || ''; }
         set type(value) { this.setAttribute('type', value); }
+        get integrity() { return this.getAttribute('integrity') || ''; }
+        set integrity(value) { this.setAttribute('integrity', String(value)); }
+        get crossOrigin() { return this.getAttribute('crossorigin'); }
+        set crossOrigin(value) {
+            if (value == null) this.removeAttribute('crossorigin');
+            else this.setAttribute('crossorigin', String(value));
+        }
+        get as() { return this.getAttribute('as') || ''; }
+        set as(value) { this.setAttribute('as', String(value)); }
+        get referrerPolicy() { return this.getAttribute('referrerpolicy') || ''; }
+        set referrerPolicy(value) { this.setAttribute('referrerpolicy', String(value)); }
         get disabled() { return this.hasAttribute('disabled'); }
         set disabled(value) { this.toggleAttribute('disabled', !!value); }
     }
@@ -131,6 +142,10 @@
         set text(value) { this.textContent = String(value); }
     }
     class HTMLImageElement extends HTMLElement {
+        get width() { return imageDimension(this, 'width'); }
+        set width(value) { setImageDimension(this, 'width', value); }
+        get height() { return imageDimension(this, 'height'); }
+        set height(value) { setImageDimension(this, 'height', value); }
         get complete() { return imageElementState(this).complete; }
         get currentSrc() { return imageElementState(this).source; }
         get naturalWidth() { return imageElementState(this).naturalWidth; }

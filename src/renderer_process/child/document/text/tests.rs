@@ -214,6 +214,8 @@ fn registers_bounded_in_memory_font_bytes_under_the_css_family_alias() {
         weight: 600,
         italic: false,
         sfnt: bytes,
+        source_url: "test-font:alias".into(),
+        script_source_id: None,
     }]);
     assert!(text.catalog.contains_family("Breeze Test Alias"));
     let mut aliased = spec();

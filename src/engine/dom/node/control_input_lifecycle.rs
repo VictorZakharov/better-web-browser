@@ -70,6 +70,7 @@ impl Node {
             state.type_seen = Some(current);
             state.value = next_value;
             state.editing = None;
+            state.file_names.clear();
             state.reported = false;
             if previous_mode != InputValueMode::Value || !value_mode {
                 state.dirty = false;

@@ -74,9 +74,10 @@ impl Page {
                     && script.blocks_first_paint
             }),
             PageResource::Stylesheet { .. } => true,
-            PageResource::Image { .. } | PageResource::Media { .. } | PageResource::Font { .. } => {
-                false
-            }
+            PageResource::Preload { .. }
+            | PageResource::Image { .. }
+            | PageResource::Media { .. }
+            | PageResource::Font { .. } => false,
         }
     }
 

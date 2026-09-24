@@ -96,6 +96,13 @@ impl RendererTextSystem {
         }
     }
 
+    pub(super) fn invalidate_web_fonts(&mut self) {
+        self.catalog.reset_web_fonts();
+        self.registered_web_fonts = 0;
+        self.shaper.clear();
+        self.reset_glyph_state();
+    }
+
     pub(super) fn reset_for_navigation(&mut self) {
         if self.catalog.reset_web_fonts() {
             self.shaper.clear();

@@ -14,10 +14,17 @@ pub(super) struct BlockImage {
 
 impl<M: TextMeasurer> LayoutEngine<'_, M> {
     pub(super) fn block_image(&self, node: &NodeRef) -> Option<BlockImage> {
-        if !matches!(
-            node.tag_name(),
-            Some("img" | "image" | "video" | "svg" | "iframe")
-        ) {
+        let image_input = node.tag_name() == Some("input")
+            && node
+                .attr("type")
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))
+            && node.attr("src").is_some_and(|src| !src.trim().is_empty());
+        if !image_input
+            && !matches!(
+                node.tag_name(),
+                Some("img" | "image" | "video" | "svg" | "iframe")
+            )
+        {
             return None;
         }
         if node.tag_name() == Some("iframe") {

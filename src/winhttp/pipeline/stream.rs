@@ -1,9 +1,11 @@
 //! Fetch policy orchestration whose final response body remains incremental.
 
+use super::cache::{CacheCandidate, CachedResponse, cacheable_request, request_forces_validation};
 use super::{
     HttpClient, fetch_data_url, is_redirect_status, needs_cors_check, needs_preflight,
     rewrite_redirect_method,
 };
+use crate::fetch::RequestCache;
 use crate::fetch::{
     Body, FetchError, FetchErrorKind, FetchRequest, FetchResponse, FetchUrl, HeaderList,
     RedirectMode, RequestContext, RequestMode, ResponseType, cors_filtered_headers,
@@ -11,6 +13,7 @@ use crate::fetch::{
 };
 use crate::limits::{MAX_FETCH_STREAM_CHUNK_BYTES, MAX_REDIRECTS};
 use crate::winhttp::client::{TransportBodyStream, TransportRequest, TransportStreamResponse};
+use std::time::Instant;
 
 pub struct StreamingFetchResponse {
     pub response_type: ResponseType,
@@ -22,15 +25,37 @@ pub struct StreamingFetchResponse {
 }
 
 enum StreamingBody {
-    Network(TransportBodyStream),
+    Network(Box<NetworkBodyState>),
     Memory { bytes: Vec<u8>, cursor: usize },
     Empty,
+}
+
+struct NetworkBodyState {
+    body: TransportBodyStream,
+    candidate: Option<CacheCandidate>,
 }
 
 impl StreamingFetchResponse {
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, FetchError> {
         match &mut self.body {
-            StreamingBody::Network(body) => body.next_chunk(),
+            StreamingBody::Network(state) => match state.body.next_chunk() {
+                Ok(Some(chunk)) => {
+                    if let Some(candidate) = &mut state.candidate {
+                        candidate.push(&chunk);
+                    }
+                    Ok(Some(chunk))
+                }
+                Ok(None) => {
+                    if let Some(candidate) = state.candidate.take() {
+                        candidate.finish();
+                    }
+                    Ok(None)
+                }
+                Err(error) => {
+                    state.candidate.take();
+                    Err(error)
+                }
+            },
             StreamingBody::Memory { bytes, cursor } => {
                 if *cursor == bytes.len() {
                     return Ok(None);
@@ -113,7 +138,39 @@ impl HttpClient {
                 self.run_preflight(&request)?;
             }
 
-            let outbound_headers = self.outbound_headers(&request, &url_list)?;
+            let mut outbound_headers = self.outbound_headers(&request, &url_list)?;
+            let eligible = cacheable_request(&request, &outbound_headers);
+            let cached = if eligible && request.cache != RequestCache::Reload {
+                self.response_cache
+                    .lock()
+                    .map_err(|_| FetchError::network("response cache lock failed"))?
+                    .lookup(&request, &outbound_headers)
+            } else {
+                None
+            };
+            if let Some(response) = cached.as_ref() {
+                let reuse = match request.cache {
+                    RequestCache::Default => {
+                        response.fresh() && !request_forces_validation(&request)
+                    }
+                    RequestCache::ForceCache | RequestCache::OnlyIfCached => {
+                        response.fresh() || response.can_serve_stale()
+                    }
+                    _ => false,
+                };
+                if reuse {
+                    validate_cors_response(&request, &response.headers)?;
+                    return Ok(filtered_cached(request, url_list, response.clone()));
+                }
+                response.add_validator(&mut outbound_headers);
+            }
+            if request.cache == RequestCache::OnlyIfCached {
+                return Err(FetchError::new(
+                    FetchErrorKind::Network,
+                    "only-if-cached request has no reusable HTTP cache entry",
+                ));
+            }
+            let requested_at = Instant::now();
             let transport = self.send_once_stream(TransportRequest {
                 url: &request.url,
                 method: &request.method,
@@ -124,6 +181,18 @@ impl HttpClient {
                 cache: request.cache,
             })?;
             self.store_response_cookies(&request, &transport.headers)?;
+            if transport.status == 304
+                && let Some(previous) = cached
+                && previous.has_validator()
+                && let Some(revalidated) = previous.revalidated(&transport.headers)
+            {
+                validate_cors_response(&request, &revalidated.headers)?;
+                self.response_cache
+                    .lock()
+                    .map_err(|_| FetchError::network("response cache lock failed"))?
+                    .insert(revalidated.clone());
+                return Ok(filtered_cached(request, url_list, revalidated));
+            }
             validate_cors_response(&request, &transport.headers)?;
 
             if is_redirect_status(transport.status)
@@ -157,7 +226,15 @@ impl HttpClient {
                 continue;
             }
 
-            return Ok(filtered(request, url_list, transport));
+            let candidate = CacheCandidate::new(
+                self.response_cache.clone(),
+                &request,
+                &outbound_headers,
+                transport.status,
+                &transport.headers,
+                requested_at,
+            );
+            return Ok(filtered(request, url_list, transport, candidate));
         }
         unreachable!("the bounded redirect loop always returns")
     }
@@ -183,7 +260,10 @@ fn manual_redirect(
         url_list,
         status: transport.status,
         headers: transport.headers,
-        body: StreamingBody::Network(transport.body),
+        body: StreamingBody::Network(Box::new(NetworkBodyState {
+            body: transport.body,
+            candidate: None,
+        })),
         body_limit: request.response_body_limit,
     }
 }
@@ -192,6 +272,7 @@ fn filtered(
     request: FetchRequest,
     url_list: Vec<FetchUrl>,
     transport: TransportStreamResponse,
+    candidate: Option<CacheCandidate>,
 ) -> StreamingFetchResponse {
     let cross_origin = needs_cors_check(&request);
     if request.context == RequestContext::Script
@@ -222,7 +303,53 @@ fn filtered(
         url_list,
         status: transport.status,
         headers,
-        body: StreamingBody::Network(transport.body),
+        body: StreamingBody::Network(Box::new(NetworkBodyState {
+            body: transport.body,
+            candidate,
+        })),
+        body_limit: request.response_body_limit,
+    }
+}
+
+fn filtered_cached(
+    request: FetchRequest,
+    url_list: Vec<FetchUrl>,
+    response: CachedResponse,
+) -> StreamingFetchResponse {
+    let cross_origin = needs_cors_check(&request);
+    if request.context == RequestContext::Script
+        && cross_origin
+        && request.mode == RequestMode::NoCors
+    {
+        return StreamingFetchResponse {
+            response_type: ResponseType::Opaque,
+            url_list,
+            status: 0,
+            headers: HeaderList::new(),
+            body: StreamingBody::Empty,
+            body_limit: request.response_body_limit,
+        };
+    }
+    let response_type = if request.context == RequestContext::Script && cross_origin {
+        ResponseType::Cors
+    } else {
+        ResponseType::Basic
+    };
+    let headers = response.response_headers();
+    let headers = if request.context == RequestContext::Script {
+        cors_filtered_headers(&headers, &request)
+    } else {
+        headers
+    };
+    StreamingFetchResponse {
+        response_type,
+        url_list,
+        status: response.status,
+        headers,
+        body: StreamingBody::Memory {
+            bytes: response.body,
+            cursor: 0,
+        },
         body_limit: request.response_body_limit,
     }
 }

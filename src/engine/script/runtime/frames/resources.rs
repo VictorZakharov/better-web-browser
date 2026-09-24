@@ -5,7 +5,7 @@ use crate::fetch::FetchResponse;
 
 pub(super) enum ScriptOwner {
     Parser,
-    Dynamic(NodeId),
+    Dynamic(NodeId, String),
     Module(String),
 }
 
@@ -14,6 +14,7 @@ pub(super) enum Purpose {
     Style {
         document: NodeId,
         url: String,
+        integrity: Vec<String>,
     },
     Image {
         document: NodeId,
@@ -23,6 +24,7 @@ pub(super) enum Purpose {
         document: NodeId,
         resource: PageResource,
         owner: ScriptOwner,
+        integrity: Vec<String>,
     },
 }
 
@@ -50,9 +52,13 @@ impl FrameFetch {
             received: 0,
         }
     }
-    pub(super) fn style(document: NodeId, url: String) -> Self {
+    pub(super) fn style(document: NodeId, url: String, integrity: Vec<String>) -> Self {
         Self {
-            purpose: Purpose::Style { document, url },
+            purpose: Purpose::Style {
+                document,
+                url,
+                integrity,
+            },
             head: None,
             bytes: Vec::new(),
             received: 0,
@@ -66,12 +72,18 @@ impl FrameFetch {
             received: 0,
         }
     }
-    pub(super) fn script(document: NodeId, resource: PageResource, owner: ScriptOwner) -> Self {
+    pub(super) fn script(
+        document: NodeId,
+        resource: PageResource,
+        owner: ScriptOwner,
+        integrity: Vec<String>,
+    ) -> Self {
         Self {
             purpose: Purpose::Script {
                 document,
                 resource,
                 owner,
+                integrity,
             },
             head: None,
             bytes: Vec::new(),
@@ -173,12 +185,16 @@ impl ScriptRuntime {
         outcome: &mut ScriptOutcome,
     ) {
         match fetch.purpose {
-            Purpose::Style { document, url } => {
+            Purpose::Style {
+                document,
+                url,
+                integrity,
+            } => {
                 let response = fetch.head.filter(|_| success).map(|mut head| {
                     head.body = crate::fetch::Body::from_bytes(fetch.bytes);
                     head
                 });
-                self.finish_frame_style(document, url, response);
+                self.finish_frame_style(document, url, integrity, response);
             }
             Purpose::Image { document, url } => {
                 let response =
@@ -210,6 +226,7 @@ impl ScriptRuntime {
                 document,
                 resource,
                 owner,
+                integrity,
             } => {
                 let PageResource::Script { kind, .. } = &resource else {
                     return;
@@ -220,6 +237,18 @@ impl ScriptRuntime {
                     .ok_or_else(|| "iframe script fetch failed".to_string())
                     .and_then(|mut head| {
                         head.body = crate::fetch::Body::from_bytes(fetch.bytes);
+                        for value in &integrity {
+                            crate::fetch::integrity::verify(
+                                value,
+                                head.body.as_bytes(),
+                                matches!(
+                                    head.response_type,
+                                    crate::fetch::ResponseType::Basic
+                                        | crate::fetch::ResponseType::Cors
+                                ),
+                            )
+                            .map_err(|error| error.to_string())?;
+                        }
                         crate::engine::script::network::response::decode(head, *kind)
                     });
                 self.finish_frame_script(document, resource, owner, result);

@@ -14,6 +14,7 @@ pub(super) fn dispatch(
         operation,
         "inputValue"
             | "inputSetValue"
+            | "inputSetFiles"
             | "inputUserEdit"
             | "inputDefaultValue"
             | "textareaValue"
@@ -53,6 +54,21 @@ pub(super) fn dispatch(
         "inputSetValue" => {
             node.set_input_value(&string_argument(args, 2));
             js_string(node.input_value())
+        }
+        "inputSetFiles" => {
+            // File bytes stay in JS File objects; only bounded basenames cross
+            // into native state for value/required/layout consistency.
+            let names = serde_json::from_str::<Vec<String>>(&string_argument(args, 2))
+                .ok()
+                .filter(|names| {
+                    names.len() <= 128
+                        && names
+                            .iter()
+                            .all(|name| name.len() <= 255 && !name.contains(['/', '\\', '\0']))
+                })
+                .unwrap_or_default();
+            node.set_input_files(names);
+            JsValue::undefined()
         }
         "inputUserEdit" => JsValue::from(node.user_edit_input(&string_argument(args, 2))),
         "inputDefaultValue" => js_string(node.input_default_value()),

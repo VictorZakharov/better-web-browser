@@ -1,6 +1,5 @@
 use super::{MAX_IMAGES, PageResource, PageScript};
 use crate::engine::css::media::{MediaEnvironment, media_matches_for_environment};
-use crate::engine::css::parse_length;
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
 use crate::limits::{
@@ -59,10 +58,22 @@ pub(super) fn discover_non_script_resources(
 ) -> Vec<PageResource> {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
+    let mut preload_count = 0;
     for link in Node::shadow_including_descendants(&dom.document)
         .filter(|node| node.tag_name() == Some("link"))
     {
         let rel = link.attr("rel").unwrap_or_default();
+        if preload_count < 32
+            && rel.split_ascii_whitespace().any(|token| {
+                token.eq_ignore_ascii_case("preload") || token.eq_ignore_ascii_case("modulepreload")
+            })
+            && let Some(preload) =
+                super::link_preloads::discover_link_preload(&link, base_url, environment)
+            && !resources.contains(&preload)
+        {
+            resources.push(preload);
+            preload_count += 1;
+        }
         if !rel
             .split_ascii_whitespace()
             .any(|token| token.eq_ignore_ascii_case("stylesheet"))
@@ -84,7 +95,12 @@ pub(super) fn discover_non_script_resources(
 
     let mut seen_images = HashSet::new();
     for node in Node::shadow_including_descendants(&dom.document) {
-        if !matches!(node.tag_name(), Some("img" | "image")) {
+        if !(matches!(node.tag_name(), Some("img" | "image"))
+            || (node.tag_name() == Some("input")
+                && node
+                    .attr("type")
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))))
+        {
             continue;
         }
         if seen_images.len() >= MAX_IMAGES {
@@ -169,6 +185,7 @@ pub(crate) fn prepare_script(node: NodeRef, base_url: &str, ordinal: usize) -> O
     let blocks_first_paint = kind == script::ScriptKind::Classic
         && (!is_external || (!executes_after_parsing && node.attr("async").is_none()));
     Some(PageScript {
+        integrity: node.attr("integrity").unwrap_or_default(),
         node,
         source_url,
         code,
@@ -227,83 +244,15 @@ fn picture_source(node: &NodeRef, environment: MediaEnvironment) -> Option<Strin
 
 fn responsive_source(node: &NodeRef, environment: MediaEnvironment) -> Option<String> {
     let srcset = node.attr("srcset")?;
-    let slot_width = source_size(
-        node.attr("sizes").as_deref().unwrap_or("100vw"),
+    super::responsive_images::select_source(
+        &srcset,
+        node.attr("sizes").as_deref(),
+        node.attr("src").as_deref(),
         environment,
-    );
-    preferred_srcset_candidate(&srcset, slot_width, 2.0)
+    )
 }
 
-#[derive(Debug)]
-struct ImageCandidate<'a> {
-    url: &'a str,
-    density: f32,
-}
-
-fn preferred_srcset_candidate(
-    srcset: &str,
-    slot_width: f32,
-    target_density: f32,
-) -> Option<String> {
-    let mut candidates = srcset
-        .split(',')
-        .filter_map(|candidate| {
-            let mut parts = candidate.split_ascii_whitespace();
-            let url = parts.next()?.trim();
-            if url.is_empty() {
-                return None;
-            }
-            let descriptor = parts.next();
-            let density = match descriptor {
-                Some(value) if value.ends_with('w') => {
-                    value[..value.len() - 1].parse::<f32>().ok()? / slot_width.max(1.0)
-                }
-                Some(value) if value.ends_with('x') => {
-                    value[..value.len() - 1].parse::<f32>().ok()?
-                }
-                Some(_) => return None,
-                None => 1.0,
-            };
-            (density.is_finite() && density > 0.0).then_some(ImageCandidate { url, density })
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.density.total_cmp(&right.density));
-    candidates
-        .iter()
-        .find(|candidate| candidate.density >= target_density)
-        .or_else(|| candidates.last())
-        .map(|candidate| candidate.url.to_string())
-}
-
-fn source_size(sizes: &str, environment: MediaEnvironment) -> f32 {
-    for entry in sizes
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-    {
-        let (condition, length) = if entry.starts_with('(') {
-            let Some(close) = entry.find(')') else {
-                continue;
-            };
-            (Some(&entry[..=close]), entry[close + 1..].trim())
-        } else {
-            (None, entry)
-        };
-        if condition.is_some_and(|condition| !media_matches_for_environment(condition, environment))
-        {
-            continue;
-        }
-        if let Some(size) = parse_length(length)
-            .and_then(|length| length.resolve(environment.viewport_width, 16.0))
-            .filter(|size| *size >= 0.0)
-        {
-            return size;
-        }
-    }
-    environment.viewport_width
-}
-
-fn supported_image_type(kind: &str) -> bool {
+pub(super) fn supported_image_type(kind: &str) -> bool {
     matches!(
         kind.split(';')
             .next()
