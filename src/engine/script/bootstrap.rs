@@ -8,6 +8,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/events.js"),
     include_str!("bootstrap/event_handlers.js"),
     include_str!("bootstrap/event_interfaces.js"),
+    include_str!("bootstrap/security_policy_violation.js"),
     include_str!("bootstrap/drag_data.js"),
     include_str!("bootstrap/form_date.js"),
     include_str!("bootstrap/node_insertion.js"),

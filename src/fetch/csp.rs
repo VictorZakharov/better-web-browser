@@ -32,6 +32,7 @@ impl Default for ScriptSource {
 #[derive(Debug, Clone)]
 struct Policy {
     origin: url::Url,
+    serialized: String,
     directives: HashMap<String, Vec<String>>,
     mixed_content: bool,
 }
@@ -46,6 +47,7 @@ impl PolicyContainer {
                 }
                 let mut policy = Policy {
                     origin: url::Url::parse(url).map_err(|_| unsupported("origin URL"))?,
+                    serialized: serialized.trim().to_owned(),
                     directives: HashMap::new(),
                     mixed_content: false,
                 };
@@ -174,6 +176,32 @@ impl PolicyContainer {
         })
     }
 
+    /// Each enforcing policy that rejects an inline script reports separately.
+    /// Keep the original serialization for `SecurityPolicyViolationEvent`, not a
+    /// reconstructed directive map which could change casing or source order.
+    pub fn inline_script_violations(&self, nonce: Option<&str>) -> Vec<InlineScriptViolation<'_>> {
+        self.policies
+            .iter()
+            .filter_map(|policy| {
+                let list = policy.list("script-src-elem")?;
+                if nonce_matches(list, nonce) {
+                    return None;
+                }
+                let restricted = has_keyword(list, "'strict-dynamic'")
+                    || list.iter().any(|source| {
+                        sources::nonce_value(source).is_some() || sources::hash_source(source)
+                    });
+                if !restricted && has_keyword(list, "'unsafe-inline'") {
+                    return None;
+                }
+                Some(InlineScriptViolation {
+                    original_policy: &policy.serialized,
+                    report_sample: has_keyword(list, "'report-sample'"),
+                })
+            })
+            .collect()
+    }
+
     pub fn allows_eval(&self) -> bool {
         self.allows_keyword("script-src", "'unsafe-eval'")
     }
@@ -241,6 +269,12 @@ impl PolicyContainer {
             ))
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InlineScriptViolation<'a> {
+    pub original_policy: &'a str,
+    pub report_sample: bool,
 }
 
 fn has_keyword(list: &[String], keyword: &str) -> bool {

@@ -142,6 +142,9 @@ fn strict_policy() -> PolicyContainer {
     PolicyContainer {
         policies: vec![Policy {
             origin: url::Url::parse("https://example.test/").unwrap(),
+            serialized:
+                "script-src 'report-sample' 'nonce-AbC123=' 'unsafe-inline' 'strict-dynamic' https:"
+                    .into(),
             directives: HashMap::from([(
                 "script-src".into(),
                 vec![
@@ -155,6 +158,25 @@ fn strict_policy() -> PolicyContainer {
             mixed_content: false,
         }],
     }
+}
+
+#[test]
+fn inline_violations_preserve_each_enforcing_policy_and_sample_permission() {
+    let container = policy(&[
+        "script-src 'unsafe-inline'",
+        "script-src 'report-sample' 'nonce-allowed'",
+        "default-src 'none'",
+    ]);
+    let blocked = container.inline_script_violations(None);
+    assert_eq!(blocked.len(), 2);
+    assert_eq!(
+        blocked[0].original_policy,
+        "script-src 'report-sample' 'nonce-allowed'"
+    );
+    assert!(blocked[0].report_sample);
+    assert_eq!(blocked[1].original_policy, "default-src 'none'");
+    assert!(!blocked[1].report_sample);
+    assert_eq!(container.inline_script_violations(Some("allowed")).len(), 1);
 }
 
 #[test]

@@ -39,6 +39,7 @@ mod checkable;
 mod collections;
 mod compatibility;
 mod crypto;
+mod csp_events;
 mod cssom;
 mod cssom_owned;
 mod cssom_view;

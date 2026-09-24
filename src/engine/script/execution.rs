@@ -1,4 +1,6 @@
 //! Script evaluation and bounded event-loop settlement for an owned document realm.
+#[path = "csp_reporting.rs"]
+mod csp_reporting;
 
 use super::dynamic_scripts::drain_dynamic_scripts;
 use super::timer_execution::{
@@ -310,6 +312,9 @@ pub(super) fn evaluate_script(
             .allows_inline_with_nonce(false, source.nonce.as_deref())
     };
     if host.borrow().sandbox.scripts_blocked || !allowed {
+        if !allowed {
+            csp_reporting::queue_script_violation(context, host, outcome, script, external);
+        }
         outcome
             .diagnostics
             .push("script blocked by document policy".into());
