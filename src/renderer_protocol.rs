@@ -5,6 +5,7 @@
 
 mod accessibility;
 mod codec;
+mod database;
 mod document;
 mod fetch;
 mod input;
@@ -12,8 +13,11 @@ mod message;
 mod presentation;
 mod state;
 mod video;
+mod websocket;
 mod wire;
+pub use database::{DatabaseCommand, DatabaseEvent};
 pub use video::{VideoFrameAssembler, VideoFrameChunk, VideoFrameIdentity, VideoFrameUpdate};
+pub use websocket::{WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation};
 
 pub use accessibility::{
     AccessibilityUpdate, SemanticActions, SemanticNode, SemanticRole, SemanticSelection,
@@ -58,7 +62,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 0;
+pub const PROTOCOL_MINOR: u16 = 1;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

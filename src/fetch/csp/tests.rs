@@ -84,6 +84,22 @@ fn source_matching_preserves_scheme_host_port_path_and_redirect_rules() {
     assert!(!policies.allows_url("connect-src", "https://other.test/redirect", 1));
 }
 #[test]
+fn connect_src_self_matches_secure_websocket_but_not_foreign_or_downgraded_hosts() {
+    let secure = policy(&["connect-src 'self'"]);
+    assert!(secure.allows_url("connect-src", "wss://example.test/socket", 0));
+    assert!(!secure.allows_url("connect-src", "ws://example.test/socket", 0));
+    assert!(!secure.allows_url("connect-src", "wss://other.test/socket", 0));
+    assert!(!secure.allows_url("connect-src", "wss://example.test:8443/socket", 0));
+
+    let mut headers = HeaderList::new();
+    headers
+        .append("content-security-policy", "connect-src 'self'")
+        .unwrap();
+    let insecure = PolicyContainer::from_headers("http://example.test/", &headers).unwrap();
+    assert!(insecure.allows_url("connect-src", "ws://example.test/socket", 0));
+    assert!(insecure.allows_url("connect-src", "wss://example.test/socket", 0));
+}
+#[test]
 fn unimplemented_features_refuse_policy_instead_of_bypassing_it() {
     for value in [
         "script-src 'sha256-hash'",

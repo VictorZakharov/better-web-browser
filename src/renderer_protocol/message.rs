@@ -8,8 +8,9 @@ use super::state::{
     StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart, StorageSync,
 };
 use super::{
-    DocumentId, DocumentStart, FetchRequestHead, FetchResponseAbort, FetchResponseEnd,
-    FetchResponseHead, PresentedViewport, TransferChunk,
+    DatabaseCommand, DatabaseEvent, DocumentId, DocumentStart, FetchRequestHead,
+    FetchResponseAbort, FetchResponseEnd, FetchResponseHead, PresentedViewport, TransferChunk,
+    WebSocketCommand, WebSocketEvent,
 };
 use crate::limits::{MAX_RENDERER_DIAGNOSTIC_BYTES, RENDERER_HEARTBEAT_INTERVAL};
 use crate::renderer_protocol::RendererRuntimeUpdate;
@@ -151,6 +152,8 @@ pub enum BrowserMessage {
     FetchResponseChunk(TransferChunk),
     FetchResponseEnd(FetchResponseEnd),
     FetchResponseAbort(FetchResponseAbort),
+    WebSocketEvent(WebSocketEvent),
+    DatabaseEvent(DatabaseEvent),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -184,6 +187,8 @@ pub enum TestCommand {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RendererMessage {
+    WebSocketCommand(WebSocketCommand),
+    DatabaseCommand(DatabaseCommand),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

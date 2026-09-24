@@ -1,11 +1,13 @@
 //! Renderer endpoint state machine over the two inherited anonymous pipes.
 
+mod database;
 mod fetch;
 mod media;
 mod mutations;
 mod navigation;
 mod runtime;
 mod state;
+mod websocket;
 mod writer;
 
 pub(in crate::renderer_process::child) use self::fetch::PendingFetchBatch;
@@ -230,6 +232,8 @@ impl ChildConnection {
             BrowserMessage::StorageSnapshotEntry(entry) => self.document_state_entry(entry),
             BrowserMessage::StorageSnapshotEnd(end) => self.document_state_end(end),
             BrowserMessage::StorageSync(sync) => self.synchronize_storage(sync),
+            BrowserMessage::WebSocketEvent(event) => self.deliver_websocket_event(event),
+            BrowserMessage::DatabaseEvent(event) => self.deliver_database_event(event),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

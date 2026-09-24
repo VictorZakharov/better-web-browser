@@ -61,6 +61,22 @@ impl Broker {
 
     fn process_fetch_stream_event(&mut self, event: FetchStreamEvent) -> Result<(), String> {
         match event {
+            FetchStreamEvent::Database(event) => {
+                if self.active_document == Some(event.document) {
+                    event.validate().map_err(|error| error.to_string())?;
+                    self.writer()
+                        .send_browser(&BrowserMessage::DatabaseEvent(event))
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            FetchStreamEvent::WebSocket(event) => {
+                if self.active_document == Some(event.document) {
+                    event.validate().map_err(|error| error.to_string())?;
+                    self.writer()
+                        .send_browser(&BrowserMessage::WebSocketEvent(event))
+                        .map_err(|error| error.to_string())?;
+                }
+            }
             FetchStreamEvent::Start { document, head } => {
                 if self.active_document != Some(document) {
                     return Ok(());

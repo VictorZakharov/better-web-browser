@@ -6,8 +6,9 @@ pub(crate) mod launcher;
 pub(crate) mod windows;
 
 pub use broker::{
-    FetchResponseSink, NavigationBody, RendererCrashSurface, RendererEvent, RendererExit,
-    RendererExitReason, RendererSession, RendererSnapshot, RendererState,
+    DatabaseEventSink, FetchResponseSink, NavigationBody, RendererCrashSurface, RendererEvent,
+    RendererExit, RendererExitReason, RendererSession, RendererSnapshot, RendererState,
+    WebSocketEventSink,
 };
 pub use launcher::{RendererLaunchOptions, StartupFault};
 

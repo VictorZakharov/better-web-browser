@@ -281,7 +281,7 @@ impl HttpClient {
         })
     }
 
-    fn connection(&self, parsed: &ParsedUrl) -> Result<Arc<InternetHandle>, String> {
+    pub(super) fn connection(&self, parsed: &ParsedUrl) -> Result<Arc<InternetHandle>, String> {
         let key = (parsed.scheme.clone(), parsed.host.clone(), parsed.port);
         let mut connections = self
             .connections
@@ -299,7 +299,7 @@ impl HttpClient {
     }
 }
 
-fn configure_request(request: HInternet) -> Result<(), FetchError> {
+pub(super) fn configure_request(request: HInternet) -> Result<(), FetchError> {
     // Authentication must remain policy-controlled too; Breeze has no HTTP-auth credential store
     // yet, so allowing WinHTTP to select ambient credentials would violate CredentialsMode.
     let mut disabled =

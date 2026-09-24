@@ -51,12 +51,17 @@ fn valid_base64_value(value: &str) -> bool {
 
 pub(super) fn matches(source: &str, url: &Url, origin: &Url, redirects: usize) -> bool {
     if source.eq_ignore_ascii_case("'self'") {
+        if url.scheme() == "blob" {
+            return false;
+        }
+        // CSP3 §6.7.2.8 includes same-host secure upgrades such as wss:.
+        // Explicit non-default ports still have to agree.
+        // https://www.w3.org/TR/CSP/#match-url-to-source-expression
         return url.origin() == origin.origin()
-            || (origin.scheme() == "http"
-                && url.scheme() == "https"
-                && origin.host_str() == url.host_str()
-                && origin.port().is_none()
-                && url.port().is_none());
+            || (origin.host_str() == url.host_str()
+                && origin.port() == url.port()
+                && (matches!(url.scheme(), "https" | "wss")
+                    || (origin.scheme() == "http" && matches!(url.scheme(), "http" | "ws"))));
     }
     if source == "*" {
         return matches!(url.scheme(), "http" | "https" | "ws" | "wss" | "ftp")

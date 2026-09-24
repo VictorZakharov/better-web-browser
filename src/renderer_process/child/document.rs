@@ -71,6 +71,8 @@ pub(super) struct DocumentRuntime {
     loaded_resources: HashSet<PageResource>,
     resource_budget: u64,
     pending_fetches: Vec<ScriptFetchAction>,
+    pending_websockets: Vec<crate::engine::ScriptWebSocketAction>,
+    pending_databases: Vec<crate::engine::ScriptDatabaseAction>,
     active_script_fetches: HashMap<u64, u32>,
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,

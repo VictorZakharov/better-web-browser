@@ -97,16 +97,32 @@
         setCustomValidity(message) { host('controlSetCustomValidity', nodeId(this), String(message)); }
         checkValidity() { return checkControlValidity(this); }
         reportValidity() { return reportControlValidity(this); }
-        get valueAsNumber() { return host('controlValueAsNumber', nodeId(this)); }
+        get valueAsNumber() {
+            return inputNumericDateTypes.has(this.type)
+                ? inputNumberFromValue(this.type, this.value)
+                : host('controlValueAsNumber', nodeId(this));
+        }
         set valueAsNumber(value) {
+            if (inputNumericDateTypes.has(this.type)) {
+                const number = Number(value);
+                if (!Number.isFinite(number) && !Number.isNaN(number))
+                    throw new TypeError('Value is not a finite number.');
+                this.value = inputValueFromNumber(this.type, number);
+                return;
+            }
             const result = JSON.parse(host('controlSetValueAsNumber', nodeId(this), Number(value)));
             if (result.status === 'type') throw new TypeError('Value is not a finite number.');
             if (result.status === 'state') throw new DOMException('The input does not support numeric values.', 'InvalidStateError');
         }
-        // Temporal value access stays an explicit boundary: no date parsing
-        // in this experiment, so the API reports its inapplicability.
-        get valueAsDate() { return null; }
-        set valueAsDate(_value) { throw new DOMException('The input does not support dates.', 'InvalidStateError'); }
+        get valueAsDate() { return inputDateFromValue(this.type, this.value); }
+        set valueAsDate(value) {
+            if (!inputDateTypes.has(this.type))
+                throw new DOMException('The input does not support dates.', 'InvalidStateError');
+            if (value !== null && !(value instanceof Date))
+                throw new TypeError('valueAsDate requires a Date or null');
+            this.value = value === null || !Number.isFinite(value.getTime())
+                ? '' : inputValueFromDate(this.type, value);
+        }
         stepUp(n = 1) { stepControlValue(this, n, true); }
         stepDown(n = 1) { stepControlValue(this, n, false); }
     }

@@ -18,6 +18,14 @@ impl BrowserState {
                 return;
             }
         };
+        if let Err(error) =
+            self.renderer_fetches
+                .install_root(document, &page.final_url, Arc::clone(&page.policy))
+        {
+            self.navigation.fail();
+            self.set_status(&format!("Could not install document policy: {error}"));
+            return;
+        }
         let body_length = match u32::try_from(page.body.len()) {
             Ok(length) => length,
             Err(_) => {

@@ -195,6 +195,8 @@ impl ScriptRuntime {
         host.prepared_script_external.clear();
         host.completed_module_evaluations.clear();
         host.pending_fetch_actions.clear();
+        host.pending_websocket_actions.clear();
+        host.pending_database_actions.clear();
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
         host.pending_media_actions.clear();

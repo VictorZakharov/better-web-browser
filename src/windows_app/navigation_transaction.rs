@@ -212,6 +212,7 @@ mod tests {
             final_url: "https://example.test/".into(),
             status: 200,
             content_type: "text/html".into(),
+            policy: Default::default(),
             bytes: 4,
             network_time: Duration::ZERO,
         }

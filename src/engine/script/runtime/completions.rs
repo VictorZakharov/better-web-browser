@@ -1,5 +1,6 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
 use super::*;
+use crate::renderer_protocol::{DatabaseEvent, WebSocketEvent, WebSocketEventKind};
 
 enum WorkerDelivery {
     Global(Result<String, String>),
@@ -10,6 +11,73 @@ enum WorkerDelivery {
 }
 
 impl ScriptRuntime {
+    pub fn deliver_database_event(&mut self, event: DatabaseEvent) -> ScriptOutcome {
+        let id = event.request_id as u32;
+        if let Some(child) = self.child_for_fetch(id) {
+            let owner = child.host.borrow().document.id();
+            let outcome = child.deliver_database_event(event);
+            let outcome = self.collect_frame_result(owner, outcome);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let host = Rc::clone(&self.host);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
+            let mut outcome = ScriptOutcome::default();
+            let started = Instant::now();
+            if let Err(error) = super::network::database_host::deliver_event(context, event) {
+                outcome
+                    .errors
+                    .push(format!("IndexedDB event callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript IndexedDB event", started.elapsed());
+            outcome
+        }));
+        self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+        self.finish_guarded_run(result)
+    }
+    /// Deliver a WebSocket event on the socket's owning document/frame task.
+    pub fn deliver_websocket_event(&mut self, event: WebSocketEvent) -> ScriptOutcome {
+        let id = event.socket_id as u32;
+        if let Some(child) = self.child_for_fetch(id) {
+            let owner = child.host.borrow().document.id();
+            let outcome = child.deliver_websocket_event(event);
+            let outcome = self.collect_frame_result(owner, outcome);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let terminal = matches!(event.kind, WebSocketEventKind::Close { .. });
+        let host = Rc::clone(&self.host);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
+            let mut outcome = ScriptOutcome::default();
+            let started = Instant::now();
+            if let Err(error) = super::network::websocket_host::deliver_event(context, event) {
+                outcome
+                    .errors
+                    .push(format!("WebSocket event callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript WebSocket event", started.elapsed());
+            outcome
+        }));
+        if terminal {
+            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+        }
+        self.finish_guarded_run(result)
+    }
+
     /// Delivers one asynchronous Fetch result into this document's retained realm.
     pub fn complete_fetch_with_loader(
         &mut self,

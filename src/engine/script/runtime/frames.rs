@@ -323,6 +323,12 @@ impl ScriptRuntime {
             .fetch_actions
             .append(&mut self.host.borrow_mut().pending_fetch_actions);
         outcome
+            .websocket_actions
+            .append(&mut self.host.borrow_mut().pending_websocket_actions);
+        outcome
+            .database_actions
+            .append(&mut self.host.borrow_mut().pending_database_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome

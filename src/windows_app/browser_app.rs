@@ -49,6 +49,7 @@ pub(super) struct BrowserApplication {
     pub(super) metrics: Arc<BrowserMetrics>,
     pub(super) http_client: Arc<winhttp::HttpClient>,
     pub(super) storage_coordinator: better_web_browser::storage::StorageCoordinator,
+    pub(super) database_worker: super::renderer_fetch::DatabaseWorker,
     pub(super) renderer_registry: SharedRendererRegistry,
     pub(super) tab_router: TabMessageRouter,
     pub(super) prefers_dark_color_scheme: Cell<bool>,
@@ -67,6 +68,11 @@ impl BrowserApplication {
             better_web_browser::storage::LocalStorage::open(profile.join("local-storage.json"))
                 .map_err(|error| error.to_string())?,
         );
+        let indexed_db = Arc::new(
+            better_web_browser::indexed_db::IndexedDb::open(profile.join("indexed-db.json"))
+                .map_err(|error| error.to_string())?,
+        );
+        let database_worker = super::renderer_fetch::DatabaseWorker::new(indexed_db)?;
         Ok(Rc::new(Self {
             instance,
             profile: profile.clone(),
@@ -80,6 +86,7 @@ impl BrowserApplication {
             storage_coordinator: better_web_browser::storage::StorageCoordinator::new(
                 local_storage,
             ),
+            database_worker,
             renderer_registry: Arc::new(Mutex::new(RendererTaskRegistry::default())),
             tab_router: TabMessageRouter::default(),
             prefers_dark_color_scheme: Cell::new(super::color_scheme::prefers_dark_color_scheme()),

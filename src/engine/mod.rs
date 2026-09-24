@@ -21,6 +21,7 @@ pub use layout::{
     layout_page, layout_page_with_style_viewport,
 };
 pub use page::{DecodedImage, Page, PageResource};
+pub use script::network::{ScriptDatabaseAction, ScriptWebSocketAction};
 pub use script::{
     DynamicScriptRequest, ScriptFetchAction, ScriptFetchEvent, ScriptFetchOptions, ScriptKind,
     ScriptOutcome, ScriptRuntime, ScriptWorkerAction, UserInputEvent, UserInputModifiers,
