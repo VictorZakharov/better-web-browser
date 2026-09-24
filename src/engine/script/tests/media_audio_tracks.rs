@@ -149,3 +149,63 @@ fn replacing_media_removes_tracks_and_cancels_stale_addtrack_tasks() {
             .any(|action| matches!(action.command, ScriptMediaCommand::Reset))
     );
 }
+
+#[test]
+fn audio_track_changes_are_idempotent_and_removed_tracks_cannot_reconfigure_audio() {
+    let (dom, mut runtime, outcome) = execute_media_source(
+        r#"<video></video><output></output><script>
+        const movie = document.querySelector('video');
+        const tracks = movie.audioTracks;
+        const events = [];
+        tracks.onaddtrack = event => {
+            const track = event.track;
+            track.enabled = false;
+            track.enabled = false;
+            track.enabled = true;
+            movie.load();
+            track.enabled = false;
+            document.querySelector('output').textContent = [
+                tracks.length === 0, tracks[0] === undefined,
+                !track.enabled, movie.volume === 1, !movie.muted
+            ].join(':');
+        };
+        tracks.onchange = () => events.push('change');
+        tracks.onremovetrack = () => {
+            document.querySelector('output').textContent += ':' + events.length;
+        };
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
+        target: dom.elements_named("video").next().unwrap(),
+        request_id: 0,
+        disposition: "loaded",
+        current_time: 0.0,
+        duration: 8.0,
+        width: 320,
+        height: 240,
+        buffered: None,
+    });
+    assert!(
+        result.outcome.errors.is_empty(),
+        "{:?}",
+        result.outcome.errors
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:true:true:true:true:2"
+    );
+    let volumes: Vec<_> = result
+        .outcome
+        .media_actions
+        .iter()
+        .filter_map(|action| {
+            if let ScriptMediaCommand::Configure { volume_millis, .. } = action.command {
+                Some(volume_millis)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(volumes, [0, 1000]);
+}
