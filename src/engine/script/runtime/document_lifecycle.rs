@@ -200,6 +200,7 @@ impl ScriptRuntime {
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
         host.pending_media_actions.clear();
+        host.pending_font_actions.clear();
         host.storage_event = None;
         host.storage_updates.clear();
         host.local_storage = Default::default();

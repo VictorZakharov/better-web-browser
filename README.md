@@ -391,7 +391,7 @@ preceding 337 / 588 baseline, with no JavaScript errors or renderer exits.
 Intermediate headless runs measured 352 after WebSocket, 354 after the
 temporal/color controls, and 379 after IndexedDB. These are feature-probe
 observations, not a measure of full API conformance.
-The current [indexes, Canvas text, Web Crypto, WebVTT, and Gamepad slice](docs/html5test-indexes-crypto-media.md)
+The preceding [indexes, Canvas text, Web Crypto, WebVTT, and Gamepad slice](docs/html5test-indexes-crypto-media.md)
 renders **396 / 588** in a 2026-09-24 fresh-profile hidden release run
 at 1280×720, 125% scale, and `en-US`: **+17** versus the prior 379 / 588
 release observation. The added APIs are tested beyond
@@ -400,6 +400,18 @@ The score does not imply that the site's layout is pixel-correct or that every d
 HTML5test is a capability inventory, not a percentage of browser completion or a conformance claim;
 specifications and individual Web Platform Tests define the implementation/regression contracts.
 
+The subsequent [resource loading, CSS Font Loading, responsive images, and forms batch](docs/resource-loading-fonts-responsive-forms.md)
+adds bounded private HTTP caching, Subresource Integrity, preloads and modulepreloads,
+WOFF2 decoding, document font APIs, DPR-aware source selection, image submit controls,
+and programmatic FileList assignment. Its acceptance tests cover actual bytes,
+network outcomes, rendering, and form entries; the HTML5test score alone does not
+capture most of these contracts. The file picker and full module graph remain open.
+The 2026-09-24 fresh-profile hidden release run for this batch rendered
+**401 / 588**, **+5** over the preceding 396 / 588 release observation, at
+1280×720, 125% scale, `en-US`, and 10 seconds' settle. It returned HTTP 200
+with zero JavaScript errors and no renderer exit. The score is an inventory
+observation, not an assertion that every newly added API is complete.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -407,7 +419,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-24.json -Screenshot target/html5test/2026-09-24.png
+  -Output target/html5test/2026-09-24-resource-slice.json `
+  -Screenshot target/html5test/2026-09-24-resource-slice.png
 ```
 
 New releases must refresh or explicitly date these observations using the

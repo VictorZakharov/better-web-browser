@@ -1,5 +1,6 @@
 //! Child stylesheet dependencies share the page's import discovery and CSSOM payloads.
 use super::*;
+use crate::engine::PageResource;
 use crate::engine::css::StylesheetSource;
 use crate::engine::page::{is_stylesheet, stylesheet_dependencies};
 use crate::fetch::{FetchRequest, FetchResponse, RequestDestination};
@@ -83,6 +84,14 @@ impl ScriptRuntime {
                 document.update_pending(child);
             }
             for url in jobs {
+                let integrity = {
+                    let host = child.host.borrow();
+                    crate::engine::page::resource_integrity(
+                        &host.document,
+                        &host.script_base_url(),
+                        &PageResource::Stylesheet { url: url.clone() },
+                    )
+                };
                 let result = {
                     let host = child.host.borrow();
                     host.policy
@@ -95,6 +104,19 @@ impl ScriptRuntime {
                             )
                         })
                         .map(|mut request| {
+                            if let Some(crossorigin) = crate::engine::page::stylesheet_crossorigin(
+                                &host.document,
+                                &host.script_base_url(),
+                                &url,
+                            ) {
+                                request.mode = crate::fetch::RequestMode::Cors;
+                                request.credentials =
+                                    if crossorigin.eq_ignore_ascii_case("use-credentials") {
+                                        crate::fetch::CredentialsMode::Include
+                                    } else {
+                                        crate::fetch::CredentialsMode::SameOrigin
+                                    };
+                            }
                             request.origin = Some(host.document_origin.clone());
                             request.client = host.fetch_client;
                             request.policy = host.policy.clone();
@@ -112,7 +134,9 @@ impl ScriptRuntime {
                 };
                 match result {
                     Ok((fetch, request)) => {
-                        frames.fetches.insert(fetch, FrameFetch::style(*id, url));
+                        frames
+                            .fetches
+                            .insert(fetch, FrameFetch::style(*id, url, integrity));
                         child.host.borrow_mut().pending_fetch_actions.push(
                             ScriptFetchAction::Start {
                                 id: fetch,
@@ -149,6 +173,7 @@ impl ScriptRuntime {
         &mut self,
         document: NodeId,
         url: String,
+        integrity: Vec<String>,
         response: Option<FetchResponse>,
     ) {
         let Some(frames) = &mut self.frames else {
@@ -160,6 +185,17 @@ impl ScriptRuntime {
         let mut host = child.host.borrow_mut();
         let response = response.filter(|response| {
             response.is_success()
+                && integrity.iter().all(|value| {
+                    crate::fetch::integrity::verify(
+                        value,
+                        response.body.as_bytes(),
+                        matches!(
+                            response.response_type,
+                            crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
+                        ),
+                    )
+                    .is_ok()
+                })
                 && response.content_type().is_none_or(|mime| {
                     mime.split(';')
                         .next()

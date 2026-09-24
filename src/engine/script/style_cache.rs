@@ -7,6 +7,16 @@ mod viewport;
 #[cfg(test)]
 mod source_order;
 
+impl ScriptRuntime {
+    pub(crate) fn set_loaded_font_urls(&mut self, fonts: &[crate::engine::WebFont]) {
+        self.host.borrow_mut().loaded_css_font_urls = fonts
+            .iter()
+            .filter(|font| font.script_source_id.is_none())
+            .map(|font| font.source_url.clone())
+            .collect();
+    }
+}
+
 impl HostState {
     pub(super) fn invalidate_style_rules_for_mutation(
         &mut self,

@@ -51,6 +51,7 @@ pub(super) fn merge_outcome(
         .fullscreen_actions
         .append(&mut source.fullscreen_actions);
     target.media_actions.append(&mut source.media_actions);
+    target.font_actions.append(&mut source.font_actions);
     target.runtime_stopped |= source.runtime_stopped;
     target.render_requested |= source.render_requested;
 }

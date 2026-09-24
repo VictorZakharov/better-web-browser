@@ -1,5 +1,6 @@
 //! Translation between engine Fetch values and the authority-free renderer wire intent.
 
+use crate::engine::page::PreloadAs;
 use crate::engine::{PageResource, ScriptKind};
 use crate::fetch::{
     Body, CredentialsMode, FetchError, FetchErrorKind, FetchRequest, FetchResponse, FetchUrl,
@@ -19,6 +20,26 @@ pub(super) fn page_resource_request(
     resource: &PageResource,
 ) -> RendererFetchRequest {
     let (url, initiator, destination, mode) = match resource {
+        PageResource::Preload {
+            url,
+            as_type,
+            mode: request_mode,
+            ..
+        } => (
+            url,
+            if *as_type == PreloadAs::ModuleScript {
+                FetchInitiator::ModuleScript
+            } else {
+                FetchInitiator::Subresource
+            },
+            match as_type {
+                PreloadAs::Script | PreloadAs::ModuleScript => ResourceDestination::Script,
+                PreloadAs::Style => ResourceDestination::Style,
+                PreloadAs::Image => ResourceDestination::Image,
+                PreloadAs::Font => ResourceDestination::Font,
+            },
+            mode(*request_mode),
+        ),
         PageResource::Stylesheet { url } => (
             url,
             FetchInitiator::Subresource,
@@ -69,6 +90,14 @@ pub(super) fn page_resource_request(
             destination,
             script_source: match resource {
                 PageResource::Script { script_source, .. } => Some(script_source.clone()),
+                PageResource::Preload {
+                    as_type: PreloadAs::Script | PreloadAs::ModuleScript,
+                    nonce,
+                    ..
+                } => Some(crate::fetch::csp::ScriptSource {
+                    nonce: nonce.clone(),
+                    parser_inserted: false,
+                }),
                 _ => None,
             },
             url: url.clone(),
@@ -76,6 +105,9 @@ pub(super) fn page_resource_request(
             headers: Vec::new(),
             mode,
             credentials: match resource {
+                PageResource::Preload {
+                    credentials: value, ..
+                } => credentials(*value),
                 PageResource::Script { fetch_options, .. } => {
                     credentials(fetch_options.credentials)
                 }
@@ -85,6 +117,10 @@ pub(super) fn page_resource_request(
             redirect: FetchRedirect::Follow,
             referrer: FetchReferrer::Client,
             referrer_policy: match resource {
+                PageResource::Preload {
+                    referrer_policy: value,
+                    ..
+                } => referrer_policy(*value),
                 PageResource::Script { fetch_options, .. } => {
                     referrer_policy(fetch_options.referrer_policy)
                 }

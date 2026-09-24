@@ -97,6 +97,8 @@ impl DocumentRuntime {
             layout: Default::default(),
             frame_paint: Vec::new(),
             loaded_resources: HashSet::new(),
+            preload_cache: HashMap::new(),
+            preload_cache_bytes: 0,
             resource_budget: PAGE_RESOURCE_BUDGET,
             pending_fetches: Vec::new(),
             pending_websockets: Vec::new(),
@@ -190,6 +192,7 @@ impl DocumentRuntime {
             runtime.page.dom.document.id(),
         );
         runtime.apply_media_actions(&mut outcome, connection)?;
+        runtime.apply_font_actions(&mut outcome);
         runtime.pending_fetches = std::mem::take(&mut outcome.fetch_actions);
         runtime.pending_websockets = std::mem::take(&mut outcome.websocket_actions);
         runtime.pending_databases = std::mem::take(&mut outcome.database_actions);

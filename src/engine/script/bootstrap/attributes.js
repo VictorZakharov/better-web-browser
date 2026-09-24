@@ -121,6 +121,10 @@
             refreshWindowNamedPropertyValues([oldValue, newValue]);
     };
     const queueAttributeMutation = (element, record, oldValue, newValue) => {
+        if (record.namespace === null && record.localName === 'type'
+            && element.localName === 'input'
+            && String(oldValue || '').toLowerCase() !== String(newValue || '').toLowerCase())
+            inputFileSelections.delete(element);
         eventHandlerAttributeChanged(element, record, newValue);
         queueMutationRecord(element, 'attributes', {
             attributeName: record.localName,

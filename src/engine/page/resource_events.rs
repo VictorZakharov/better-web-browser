@@ -9,11 +9,20 @@ impl Page {
         let mut blockers = self
             .resources
             .iter()
-            .filter(|resource| !matches!(resource, PageResource::Image { .. }))
+            .filter(|resource| {
+                !matches!(
+                    resource,
+                    PageResource::Image { .. } | PageResource::Preload { .. }
+                )
+            })
             .cloned()
             .collect::<std::collections::HashSet<_>>();
         for node in Node::shadow_including_descendants(&self.dom.document) {
-            if matches!(node.tag_name(), Some("img" | "image"))
+            if (matches!(node.tag_name(), Some("img" | "image"))
+                || node.tag_name() == Some("input")
+                    && node
+                        .attr("type")
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("image")))
                 && !node
                     .attr("loading")
                     .is_some_and(|value| value.eq_ignore_ascii_case("lazy"))
@@ -42,6 +51,20 @@ impl Page {
         match node.tag_name()? {
             "link"
                 if node.attr("rel").is_some_and(|rel| {
+                    rel.split_ascii_whitespace().any(|token| {
+                        token.eq_ignore_ascii_case("preload")
+                            || token.eq_ignore_ascii_case("modulepreload")
+                    })
+                }) =>
+            {
+                super::link_preloads::discover_link_preload(
+                    node,
+                    &self.base_url,
+                    self.media_environment,
+                )
+            }
+            "link"
+                if node.attr("rel").is_some_and(|rel| {
                     rel.split_ascii_whitespace()
                         .any(|token| token.eq_ignore_ascii_case("stylesheet"))
                 }) =>
@@ -52,6 +75,13 @@ impl Page {
                     .map(|url| PageResource::Stylesheet { url })
             }
             "img" | "image" => self.image_url(node).map(|url| PageResource::Image { url }),
+            "input"
+                if node
+                    .attr("type")
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("image")) =>
+            {
+                self.image_url(node).map(|url| PageResource::Image { url })
+            }
             _ => None,
         }
     }

@@ -27,7 +27,7 @@ impl ScriptRuntime {
                         fetch_options: request.fetch_options,
                         script_source: crate::fetch::csp::ScriptSource::default(),
                     },
-                    ScriptOwner::Dynamic(request.node),
+                    ScriptOwner::Dynamic(request.node, request.integrity),
                 ));
             }
             for (url, fetch_options) in child.take_module_requests() {
@@ -54,6 +54,17 @@ impl ScriptRuntime {
                 continue;
             };
             let frames = self.frames.as_mut().unwrap();
+            let integrity = match &owner {
+                ScriptOwner::Parser => frames
+                    .documents
+                    .get(&document)
+                    .map(|frame| frame.queue.integrity(&resource))
+                    .unwrap_or_default(),
+                ScriptOwner::Dynamic(_, metadata) if !metadata.trim().is_empty() => {
+                    vec![metadata.clone()]
+                }
+                _ => Vec::new(),
+            };
             let host = frames.children[&document].host.borrow();
             let request = FetchRequest::subresource(
                 url,
@@ -91,7 +102,7 @@ impl ScriptRuntime {
                 Ok((id, request)) => {
                     frames
                         .fetches
-                        .insert(id, FrameFetch::script(document, resource, owner));
+                        .insert(id, FrameFetch::script(document, resource, owner, integrity));
                     frames.children[&document]
                         .host
                         .borrow_mut()
@@ -131,7 +142,7 @@ impl ScriptRuntime {
                     );
                 }
             }
-            ScriptOwner::Dynamic(node) => {
+            ScriptOwner::Dynamic(node, _) => {
                 child.complete_dynamic_script(node, result.map(|(_, code)| code))
             }
             ScriptOwner::Module(url) => child.complete_module_fetch(url, result),

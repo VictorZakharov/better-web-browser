@@ -78,11 +78,15 @@ fn discovers_stylesheets_and_images_inside_shadow_trees() {
 
 #[test]
 fn prefers_lazy_and_high_density_image_sources_over_placeholders() {
-    let page = Page::parse(
+    let mut page = Page::parse(
         r#"<img src="data:image/svg+xml,placeholder" data-src="portrait.jpg">
                <img src="small.jpg" srcset="small.jpg 1x, large.jpg 2x">"#,
         "https://example.com/posts/",
     );
+    page.set_media_environment(crate::engine::css::media::MediaEnvironment::new(
+        1280.0, 720.0, 2.0, false,
+    ));
+    page.refresh_resources(1280.0);
     assert!(page.resources.contains(&PageResource::Image {
         url: "https://example.com/posts/portrait.jpg".into()
     }));
@@ -126,6 +130,9 @@ fn uses_sizes_to_choose_width_described_srcset_candidates() {
                      src="fallback.jpg">"#,
         "https://example.com/",
     );
+    page.set_media_environment(crate::engine::css::media::MediaEnvironment::new(
+        400.0, 720.0, 2.0, false,
+    ));
     page.refresh_resources(400.0);
     let image = page.dom.elements_named("img").next().unwrap();
     assert_eq!(

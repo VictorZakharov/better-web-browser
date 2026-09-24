@@ -69,6 +69,7 @@ impl ScriptQueue {
                 source_url: script.source_url.clone(),
                 kind: ScriptKind::Classic,
                 fetch_options: script.fetch_options,
+                integrity: script.node.attr("integrity").unwrap_or_default(),
             })
             .collect()
     }

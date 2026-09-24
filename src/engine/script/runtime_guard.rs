@@ -106,6 +106,7 @@ pub(super) fn finish_host(
     outcome
         .media_actions
         .append(&mut state.pending_media_actions);
+    outcome.font_actions.append(&mut state.pending_font_actions);
     outcome.render_requested |= state.timers.take_render_request();
     outcome.invalidation.merge_conservatively(
         state.pending_invalidation.take(mutations),

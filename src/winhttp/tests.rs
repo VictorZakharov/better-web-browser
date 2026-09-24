@@ -6,6 +6,7 @@ use crate::winhttp::ffi::{ACCEPT_TYPES, WINHTTP_ACCESS_TYPE_NO_PROXY};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 
+mod cache;
 mod fetch_pipeline;
 mod support;
 

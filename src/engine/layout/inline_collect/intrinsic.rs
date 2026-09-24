@@ -21,7 +21,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             _ => return None,
         };
         let node = self.styles.node(id)?;
-        if !matches!(node.tag_name(), Some("img" | "image" | "video")) {
+        if !(matches!(node.tag_name(), Some("img" | "image" | "video"))
+            || (node.tag_name() == Some("input")
+                && node
+                    .attr("type")
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))))
+        {
             return None;
         }
         let mut style = self.styles.get(&node).clone();

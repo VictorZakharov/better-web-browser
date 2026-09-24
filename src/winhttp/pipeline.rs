@@ -1,5 +1,6 @@
 //! Fetch policy orchestration over the one-hop WinHTTP transport.
 
+pub(super) mod cache;
 mod metadata;
 mod stream;
 

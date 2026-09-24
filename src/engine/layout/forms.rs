@@ -31,17 +31,25 @@ pub(super) fn input_control_data(node: &NodeRef) -> Option<(ControlKind, String)
     ) {
         return None;
     }
+    if input_type == "image" && node.attr("src").is_some_and(|src| !src.trim().is_empty()) {
+        return None;
+    }
     let kind = match input_type.as_str() {
         "password" => ControlKind::Password,
         "search" => ControlKind::Search,
-        "submit" => ControlKind::Submit,
+        "submit" | "image" => ControlKind::Submit,
         "button" => ControlKind::Button,
         "reset" => ControlKind::Reset,
         _ => ControlKind::Text,
     };
     // Live control state owns the painted value; pristine controls mirror
     // their default through the same accessor scripted getters use.
-    Some((kind, node.input_display_value()))
+    let value = if input_type == "image" {
+        node.attr("alt").unwrap_or_default()
+    } else {
+        node.input_display_value()
+    };
+    Some((kind, value))
 }
 
 /// Invalid-and-reported feedback for a control, for native presentation.

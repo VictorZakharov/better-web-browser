@@ -25,6 +25,7 @@ pub struct DynamicScriptRequest {
     pub source_url: String,
     pub kind: ScriptKind,
     pub fetch_options: ScriptFetchOptions,
+    pub integrity: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,9 +126,21 @@ pub struct ScriptOutcome {
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub media_actions: Vec<ScriptMediaAction>,
+    pub font_actions: Vec<ScriptFontAction>,
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
+}
+
+#[derive(Debug, Clone)]
+pub enum ScriptFontAction {
+    Add {
+        id: u32,
+        font: crate::engine::WebFont,
+    },
+    Remove {
+        id: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

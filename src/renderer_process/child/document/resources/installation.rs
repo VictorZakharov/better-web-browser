@@ -9,6 +9,7 @@ impl DocumentRuntime {
         connection: &mut ChildConnection,
         responses: Vec<BrowserFetchResponse>,
         by_request: &mut HashMap<u64, PageResource>,
+        integrity_by_request: &mut HashMap<u64, Vec<String>>,
         require_authoritative_match: bool,
     ) -> Result<bool, String> {
         let mut retained = false;
@@ -16,6 +17,9 @@ impl DocumentRuntime {
             let Some(resource) = by_request.remove(&response.head.request_id) else {
                 return Err("browser returned an unknown resource request".into());
             };
+            let integrity = integrity_by_request
+                .remove(&response.head.request_id)
+                .unwrap_or_default();
             let label = resource_label(&resource);
             // A speculative source may finish before its element has been parsed. Retain the
             // validated, budgeted bytes; only enqueueing the actual element permits execution.
@@ -40,6 +44,40 @@ impl DocumentRuntime {
                     response.status
                 ));
                 retained |= self.dispatch_resource_event(&resource, "error")?;
+                continue;
+            }
+            let eligible = matches!(
+                response.response_type,
+                crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
+            );
+            if let Some(error) = integrity.iter().find_map(|metadata| {
+                crate::fetch::integrity::verify(metadata, response.body.as_bytes(), eligible).err()
+            }) {
+                self.record_resource_diagnostic(format!("{label}: {error}"));
+                retained |= self.dispatch_resource_event(&resource, "error")?;
+                continue;
+            }
+            if matches!(resource, PageResource::Preload { .. }) {
+                if matches!(
+                    resource,
+                    PageResource::Preload {
+                        as_type: crate::engine::page::PreloadAs::ModuleScript,
+                        ..
+                    }
+                ) && let Err(error) = validate_script_response(&response, ScriptKind::Module)
+                {
+                    self.record_resource_diagnostic(format!("{label}: {error}"));
+                    retained |= self.dispatch_resource_event(&resource, "error")?;
+                    continue;
+                }
+                if self.store_preload(&resource, response) {
+                    retained |= self.dispatch_resource_event(&resource, "load")?;
+                } else {
+                    self.record_resource_diagnostic(format!(
+                        "{label}: document preload cache limit reached"
+                    ));
+                    retained |= self.dispatch_resource_event(&resource, "error")?;
+                }
                 continue;
             }
             if matches!(resource, PageResource::Stylesheet { .. })
@@ -72,6 +110,7 @@ impl DocumentRuntime {
             let final_url = response.final_url().as_str().to_string();
             let bytes = response.body.into_bytes();
             let installed = match resource {
+                PageResource::Preload { .. } => unreachable!("preload handled before installation"),
                 PageResource::Stylesheet { url } => self
                     .page
                     .add_linked_stylesheet_response(
@@ -122,6 +161,11 @@ impl DocumentRuntime {
             };
             match installed {
                 Ok(()) => {
+                    if matches!(event_resource, PageResource::Font { .. })
+                        && let Some(runtime) = self.script_runtime.as_mut()
+                    {
+                        runtime.set_loaded_font_urls(&self.page.fonts);
+                    }
                     // Fetching source alone does not change the rendered document. Its later
                     // script task and load handlers carry their own DOM invalidation.
                     retained |= !matches!(event_resource, PageResource::Script { .. });

@@ -210,6 +210,7 @@ impl DocumentRuntime {
         self.collect_document_stream_changes();
         // Collect those after the bounded media-action drain, not before it.
         self.apply_media_actions(outcome, connection)?;
+        self.apply_font_actions(outcome);
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);

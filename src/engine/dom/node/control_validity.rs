@@ -188,8 +188,7 @@ fn validity_for_input(
                 };
         }
         "file" => {
-            // No picker exists; required files are always missing.
-            flags.value_missing = required;
+            flags.value_missing = required && node.control_state_snapshot().file_names.is_empty();
         }
         "range" | "submit" | "image" | "reset" | "button" | "hidden" => {}
         _ if required
@@ -355,110 +354,12 @@ pub(crate) fn store_pattern_verdict(
     });
     changed
 }
-/// Single email address per the HTML grammar (single-label domains valid).
-fn is_valid_email(value: &str) -> bool {
-    let Some((local, domain)) = value.split_once('@') else {
-        return false;
-    };
-    if local.is_empty() || domain.is_empty() {
-        return false;
-    }
-    if !local.bytes().all(|byte| {
-        matches!(
-            byte,
-            b'a'..=b'z'
-                | b'A'..=b'Z'
-                | b'0'..=b'9'
-                | b'.'
-                | b'!'
-                | b'#'
-                | b'$'
-                | b'%'
-                | b'&'
-                | b'\''
-                | b'*'
-                | b'+'
-                | b'/'
-                | b'='
-                | b'?'
-                | b'^'
-                | b'_'
-                | b'`'
-                | b'{'
-                | b'|'
-                | b'}'
-                | b'~'
-                | b'-'
-        )
-    }) {
-        return false;
-    }
-    for label in domain.split('.') {
-        let bytes = label.as_bytes();
-        if bytes.is_empty()
-            || bytes.len() > 63
-            || !bytes[0].is_ascii_alphanumeric()
-            || !bytes[bytes.len() - 1].is_ascii_alphanumeric()
-            || !bytes
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
-        {
-            return false;
-        }
-    }
-    true
-}
-
-fn email_matches(value: &str, multiple: bool) -> bool {
-    if !multiple {
-        return is_valid_email(value);
-    }
-    value.split(',').map(str::trim).all(is_valid_email)
-}
-
-/// Actionable, category-distinguishing message; empty when valid or barred.
-pub(crate) fn validation_message(node: &NodeRef, flags: &ValidityFlags) -> String {
-    if !will_validate(node) || flags.valid() {
-        return String::new();
-    }
-    if flags.custom_error {
-        return node.control_state_snapshot().custom_message.clone();
-    }
-    if flags.value_missing {
-        return "Please fill out this field.".to_string();
-    }
-    if flags.type_mismatch {
-        return match node.tag_name() {
-            Some("input") if node.input_state_name() == "email" => {
-                "Please enter an email address.".to_string()
-            }
-            Some("input") if node.input_state_name() == "url" => "Please enter a URL.".to_string(),
-            _ => "Please match the requested format.".to_string(),
-        };
-    }
-    if flags.pattern_mismatch {
-        return "Please match the requested format.".to_string();
-    }
-    if flags.too_long {
-        return "Please shorten this text.".to_string();
-    }
-    if flags.too_short {
-        return "Please lengthen this text.".to_string();
-    }
-    if flags.range_underflow {
-        return "Value is below the minimum.".to_string();
-    }
-    if flags.range_overflow {
-        return "Value is above the maximum.".to_string();
-    }
-    if flags.step_mismatch {
-        return "Please enter a valid stepped value.".to_string();
-    }
-    if flags.bad_input {
-        return "Please enter a number.".to_string();
-    }
-    "Please enter a valid value.".to_string()
-}
+mod email;
+mod messages;
+use email::email_matches;
+#[cfg(test)]
+use email::is_valid_email;
+pub(crate) use messages::validation_message;
 
 #[cfg(test)]
 mod tests {

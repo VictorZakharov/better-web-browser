@@ -9,7 +9,7 @@ use html5ever::tokenizer::{
     BufferQueue, EndTag, StartTag, Tag, TagToken, Token, TokenSink, TokenSinkResult, Tokenizer,
 };
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ScriptPreloads {
@@ -32,6 +32,22 @@ pub(crate) fn discover_script_preloads(html: &str, document_url: &str) -> Script
     let state = tokenizer.sink.state.into_inner();
     let mut result = ScriptPreloads::default();
     for preload in state.resources {
+        // A modulepreload link owns the shared module response. Do not start a second
+        // speculative script fetch before authoritative link discovery can reuse it.
+        if let PageResource::Script {
+            url,
+            kind: ScriptKind::Module,
+            fetch_options,
+            script_source,
+        } = &preload.resource
+            && state.module_hints.contains(&(
+                url.clone(),
+                *fetch_options,
+                script_source.nonce.clone(),
+            ))
+        {
+            continue;
+        }
         if preload.blocks_first_paint {
             result.first_paint.push(preload.resource);
         } else {
@@ -52,6 +68,7 @@ struct PreloadState {
     script_count: usize,
     resources: Vec<DiscoveredPreload>,
     seen: HashMap<PageResource, usize>,
+    module_hints: HashSet<(String, ScriptFetchOptions, Option<String>)>,
 }
 
 struct DiscoveredPreload {
@@ -68,6 +85,7 @@ impl PreloadState {
             script_count: 0,
             resources: Vec::new(),
             seen: HashMap::new(),
+            module_hints: HashSet::new(),
         }
     }
 
@@ -87,6 +105,10 @@ impl PreloadState {
                     self.base_url = url;
                 }
             }
+            return;
+        }
+        if name == "link" {
+            self.record_module_hint(tag);
             return;
         }
         if name != "script" || self.script_count >= MAX_PAGE_SCRIPTS {
@@ -112,6 +134,12 @@ impl PreloadState {
         let Some(source) = attribute(tag, "src").filter(|source| !source.trim().is_empty()) else {
             return;
         };
+        // Integrity is element-owned and must be checked before a response is retained as
+        // executable code. Defer these to authoritative parser discovery so speculative bytes
+        // cannot bypass the owner's expected digest.
+        if attribute(tag, "integrity").is_some_and(|value| !value.trim().is_empty()) {
+            return;
+        }
         let Some(url) = resolve_url(&self.base_url, source.trim()) else {
             return;
         };
@@ -136,6 +164,38 @@ impl PreloadState {
                 blocks_first_paint,
             });
         }
+    }
+
+    fn record_module_hint(&mut self, tag: &Tag) {
+        let has_rel = attribute(tag, "rel").is_some_and(|value| {
+            value
+                .split_ascii_whitespace()
+                .any(|token| token.eq_ignore_ascii_case("modulepreload"))
+        });
+        if !has_rel
+            || attribute(tag, "as").is_some_and(|value| !value.eq_ignore_ascii_case("script"))
+            || attribute(tag, "integrity").is_some_and(|value| !value.trim().is_empty())
+            || attribute(tag, "media").is_some()
+        {
+            return;
+        }
+        if let Some(mime) = attribute(tag, "type")
+            && !script::is_classic_javascript_type(mime.split(';').next().unwrap_or("").trim())
+        {
+            return;
+        }
+        let Some(url) =
+            attribute(tag, "href").and_then(|href| resolve_url(&self.base_url, href.trim()))
+        else {
+            return;
+        };
+        let options = ScriptFetchOptions::for_element(
+            ScriptKind::Module,
+            attribute(tag, "crossorigin"),
+            attribute(tag, "referrerpolicy"),
+        );
+        self.module_hints
+            .insert((url, options, attribute(tag, "nonce").map(str::to_owned)));
     }
 }
 

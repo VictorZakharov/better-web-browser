@@ -17,12 +17,16 @@ mod deferred;
 mod document_lifecycle;
 #[path = "async_scripts/dynamic.rs"]
 mod dynamic;
+#[path = "async_scripts/font_loading.rs"]
+mod font_loading;
 #[path = "async_scripts/nonvisual.rs"]
 mod nonvisual;
 #[path = "async_scripts/parsing.rs"]
 mod parsing;
 #[path = "async_scripts/rendering.rs"]
 mod rendering;
+#[path = "async_scripts/resource_integrity.rs"]
+mod resource_integrity;
 #[path = "async_scripts/stylesheets.rs"]
 mod stylesheets;
 
@@ -205,6 +209,63 @@ impl Driver {
                 }
                 RendererEvent::Diagnostic { .. } => {}
                 event => panic!("unexpected event: {event:?}"),
+            }
+        }
+    }
+
+    fn until_request(&mut self, suffix: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.requests.keys().any(|url| url.ends_with(suffix)) {
+            assert!(Instant::now() < deadline, "never requested {suffix}");
+            match self.session.wait_for_event(Duration::from_secs(3)).unwrap() {
+                RendererEvent::FetchBatch { requests, .. } => {
+                    for request in requests {
+                        self.requests.insert(request.head.url.clone(), request);
+                    }
+                }
+                RendererEvent::RuntimeUpdate(update) if update.next_timer_micros.is_some() => {
+                    self.advance()
+                }
+                RendererEvent::Presentation(presentation)
+                    if presentation.next_timer_micros.is_some() =>
+                {
+                    self.advance()
+                }
+                RendererEvent::RuntimeUpdate(_)
+                | RendererEvent::Presentation(_)
+                | RendererEvent::Diagnostic { .. } => {}
+                event => panic!("unexpected event while waiting for {suffix}: {event:?}"),
+            }
+        }
+    }
+
+    fn until_replacement_request(&mut self, suffix: &str, previous_id: u64) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(Instant::now() < deadline, "never retried {suffix}");
+            match self.session.wait_for_event(Duration::from_secs(3)).unwrap() {
+                RendererEvent::FetchBatch { requests, .. } => {
+                    for request in requests {
+                        let replaced = request.head.url.ends_with(suffix)
+                            && request.head.request_id != previous_id;
+                        self.requests.insert(request.head.url.clone(), request);
+                        if replaced {
+                            return;
+                        }
+                    }
+                }
+                RendererEvent::RuntimeUpdate(update) if update.next_timer_micros.is_some() => {
+                    self.advance()
+                }
+                RendererEvent::Presentation(presentation)
+                    if presentation.next_timer_micros.is_some() =>
+                {
+                    self.advance()
+                }
+                RendererEvent::RuntimeUpdate(_)
+                | RendererEvent::Presentation(_)
+                | RendererEvent::Diagnostic { .. } => {}
+                event => panic!("unexpected event while waiting for retry: {event:?}"),
             }
         }
     }

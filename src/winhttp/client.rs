@@ -95,6 +95,7 @@ pub(super) struct TransportRequest<'a> {
 
 pub struct HttpClient {
     connections: Mutex<HashMap<(String, String, u16), Arc<InternetHandle>>>,
+    pub(super) response_cache: Arc<Mutex<super::pipeline::cache::ResponseCache>>,
     pub(super) cookie_store: CookieStore,
     session: InternetHandle,
 }
@@ -148,6 +149,7 @@ impl HttpClient {
         }
         Ok(Self {
             connections: Mutex::new(HashMap::new()),
+            response_cache: Arc::new(Mutex::new(super::pipeline::cache::ResponseCache::default())),
             cookie_store,
             session,
         })

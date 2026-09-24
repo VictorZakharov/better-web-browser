@@ -36,7 +36,9 @@ impl ResourceEvents {
     pub(super) fn complete(&mut self, resource: &PageResource, event: &'static str) {
         if matches!(
             resource,
-            PageResource::Stylesheet { .. } | PageResource::Image { .. }
+            PageResource::Stylesheet { .. }
+                | PageResource::Image { .. }
+                | PageResource::Preload { .. }
         ) {
             self.completed.insert(resource.clone(), event);
             self.scanned_version = None;

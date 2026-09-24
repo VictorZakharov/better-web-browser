@@ -4,6 +4,8 @@
     const typeOf = control => String(control.type || 'text').toLowerCase();
     const formsBeingConstructed = new WeakSet();
     const eventData = new WeakMap();
+    const imageSubmitCoordinates = globalThis.__imageSubmitCoordinates;
+    delete globalThis.__imageSubmitCoordinates;
     class FormDataEvent extends Event {
         constructor(type, init) {
             super(type, init);
@@ -36,8 +38,9 @@
                         if (control !== submitter) continue;
                     }
                     if (type === 'image') {
-                        this.append(name ? name + '.x' : 'x', '0');
-                        this.append(name ? name + '.y' : 'y', '0');
+                        const [x, y] = imageSubmitCoordinates(control);
+                        this.append(name ? name + '.x' : 'x', String(x));
+                        this.append(name ? name + '.y' : 'y', String(y));
                         continue;
                     }
                     if (!name || (/^(checkbox|radio)$/.test(type) && !control.checked)) continue;

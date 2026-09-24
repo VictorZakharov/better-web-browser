@@ -99,6 +99,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "img" | "image" | "video" | "iframe" => {
                         self.collect_image(node, style, link, output, containing_block)
                     }
+                    "input"
+                        if node
+                            .attr("type")
+                            .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))
+                            && node.attr("src").is_some_and(|src| !src.trim().is_empty()) =>
+                    {
+                        self.collect_image(node, style, link, output, containing_block)
+                    }
                     "input" | "textarea" => {
                         self.collect_input(node, style, output, containing_block)
                     }

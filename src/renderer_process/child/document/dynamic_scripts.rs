@@ -10,6 +10,7 @@ struct Owners {
     resource: PageResource,
     nodes: Vec<NodeId>,
     module: bool,
+    integrity: Vec<String>,
 }
 
 pub(super) struct PendingDynamicScriptFetch {
@@ -43,6 +44,9 @@ impl DocumentRuntime {
                 .find(|owners| owners.resource == resource);
             if let Some(owners) = owners {
                 owners.nodes.push(script.node);
+                if !script.integrity.trim().is_empty() {
+                    owners.integrity.push(script.integrity);
+                }
                 continue;
             }
             let id = connection.allocate_request_id();
@@ -53,6 +57,10 @@ impl DocumentRuntime {
                     resource,
                     nodes: vec![script.node],
                     module: false,
+                    integrity: (!script.integrity.trim().is_empty())
+                        .then_some(script.integrity)
+                        .into_iter()
+                        .collect(),
                 },
             );
         }
@@ -71,6 +79,7 @@ impl DocumentRuntime {
                     resource,
                     nodes: Vec::new(),
                     module: true,
+                    integrity: Vec::new(),
                 },
             );
         }
@@ -96,7 +105,7 @@ impl DocumentRuntime {
                 } else {
                     ScriptKind::Classic
                 };
-                let result = decode_script_response(response, kind);
+                let result = decode_script_response(response, kind, &owners.integrity);
                 if let Some(runtime) = self.script_runtime.as_mut() {
                     if owners.module {
                         let PageResource::Script { url, .. } = owners.resource else {
