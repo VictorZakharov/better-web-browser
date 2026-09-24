@@ -5,10 +5,20 @@ use super::*;
 use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
 use std::io::Cursor;
 
+#[cfg(windows)]
+mod text;
+
 const MAX_CANVAS_PIXELS: usize = 4 * 1024 * 1024;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {
+    if operation == "canvasTextAvailable" {
+        return Ok(Some(JsValue::Boolean(cfg!(windows))));
+    }
+    #[cfg(windows)]
+    if let Some(value) = text::dispatch(operation, args)? {
+        return Ok(Some(value));
+    }
     if operation == "canvasDecode" {
         let Some(bytes) = args.get(1).and_then(JsValue::as_bytes) else {
             return Err(JsNativeError::typ()

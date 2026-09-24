@@ -15,6 +15,8 @@ pub struct WebFontFace {
 }
 
 mod face_match;
+#[cfg(windows)]
+pub(crate) mod shaping;
 
 #[derive(Debug, Clone)]
 pub struct WebFont {

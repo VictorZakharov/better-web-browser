@@ -42,7 +42,11 @@ impl Ord for Key {
                 }
                 (Self::Number(left), Self::Number(right))
                 | (Self::Date(left), Self::Date(right)) => left.total_cmp(right),
-                (Self::String(left), Self::String(right)) => left.cmp(right),
+                // IndexedDB string keys use ECMAScript string ordering (UTF-16 code units),
+                // which differs from Rust's UTF-8 byte order around supplementary characters.
+                (Self::String(left), Self::String(right)) => {
+                    left.encode_utf16().cmp(right.encode_utf16())
+                }
                 (Self::Binary(left), Self::Binary(right)) => left.cmp(right),
                 (Self::Array(left), Self::Array(right)) => left.cmp(right),
                 _ => unreachable!(),

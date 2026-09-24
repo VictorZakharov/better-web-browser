@@ -6,14 +6,15 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+mod index;
 mod inline_key;
 mod keys;
 mod records;
 mod types;
 pub use keys::{Key, KeyRange};
 pub use types::{
-    CursorRecord, DatabaseInfo, DatabaseListing, DbError, DbOperation, DbResult, StoreDefinition,
-    TransactionMode,
+    CursorRecord, DatabaseInfo, DatabaseListing, DbError, DbOperation, DbResult, IndexDefinition,
+    IndexKeyPath, StoreDefinition, TransactionMode,
 };
 
 const MAX_ORIGIN_BYTES: usize = 16 * 1024 * 1024;
@@ -137,6 +138,32 @@ impl IndexedDb {
         remove: &[String],
         writes: &[DbOperation],
     ) -> Result<Vec<DbResult>, DbError> {
+        self.upgrade_with_schema(
+            url,
+            name,
+            previous_version,
+            version,
+            create,
+            remove,
+            writes,
+            &[],
+        )
+    }
+
+    /// The final schema is supplied by the upgrade transaction. Index changes
+    /// and writes commit together, so failed uniqueness backfills roll back.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upgrade_with_schema(
+        &self,
+        url: &str,
+        name: &str,
+        previous_version: u64,
+        version: u64,
+        create: &[StoreDefinition],
+        remove: &[String],
+        writes: &[DbOperation],
+        definitions: &[StoreDefinition],
+    ) -> Result<Vec<DbResult>, DbError> {
         validate_name(name)?;
         if version == 0 || version <= previous_version || writes.len() > MAX_OPERATIONS {
             return Err(DbError::Version);
@@ -171,8 +198,27 @@ impl IndexedDb {
                     },
                 );
             }
+            if !definitions.is_empty() {
+                if definitions.len() != db.stores.len() {
+                    return Err(DbError::Data("incomplete object-store schema"));
+                }
+                for definition in definitions {
+                    definition.validate()?;
+                    let store = db
+                        .stores
+                        .get_mut(&definition.name)
+                        .ok_or(DbError::Data("object-store schema names do not match"))?;
+                    if store.definition.key_path != definition.key_path
+                        || store.definition.auto_increment != definition.auto_increment
+                    {
+                        return Err(DbError::Data("object-store key configuration changed"));
+                    }
+                    store.definition.indexes = definition.indexes.clone();
+                }
+            }
             let results = db.apply(TransactionMode::ReadWrite, writes)?;
             validate_results(&results)?;
+            db.validate_indexes()?;
             db.version = version;
             db.generation = db.generation.wrapping_add(1);
             group.insert(name.to_string(), db);
@@ -306,18 +352,6 @@ impl IndexedDb {
     }
 }
 
-impl StoreDefinition {
-    fn validate(&self) -> Result<(), DbError> {
-        validate_name(&self.name)?;
-        if let Some(path) = &self.key_path
-            && (path.len() > MAX_NAME_BYTES || path.split('.').any(|part| part.is_empty()))
-        {
-            return Err(DbError::Data("invalid key path"));
-        }
-        Ok(())
-    }
-}
-
 fn validate_name(name: &str) -> Result<(), DbError> {
     if name.len() > MAX_NAME_BYTES {
         Err(DbError::Quota)
@@ -367,6 +401,7 @@ impl State {
                     {
                         return Err(DbError::Data("unsorted or duplicate persisted keys"));
                     }
+                    store.validate_indexes()?;
                 }
             }
         }

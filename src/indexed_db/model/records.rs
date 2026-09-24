@@ -30,6 +30,10 @@ impl Database {
                     DbOperation::DeleteRange { store, .. } => (store, true),
                     DbOperation::Clear { store } => (store, true),
                     DbOperation::Count { store, .. } => (store, false),
+                    DbOperation::IndexGet { store, .. }
+                    | DbOperation::IndexGetAll { store, .. }
+                    | DbOperation::IndexCount { store, .. }
+                    | DbOperation::IndexScan { store, .. } => (store, false),
                 };
                 if writable && mode == TransactionMode::ReadOnly {
                     return Err(DbError::ReadOnly);
@@ -79,6 +83,7 @@ impl ObjectStore {
                 } else {
                     value.clone()
                 };
+                self.check_unique_index_values(&key, &stored_value)?;
                 if let Key::Number(number) = &key
                     && self.definition.auto_increment
                     && *number >= self.next_key as f64
@@ -174,6 +179,7 @@ impl ObjectStore {
                     .nth(*skip as usize);
                 Ok(DbResult::Record(record.map(|record| CursorRecord {
                     key: record.key.clone(),
+                    primary_key: None,
                     value: (!*keys_only).then(|| record.value.clone()),
                 })))
             }
@@ -208,6 +214,10 @@ impl ObjectStore {
                         .count() as u64,
                 ))
             }
+            DbOperation::IndexGet { .. }
+            | DbOperation::IndexGetAll { .. }
+            | DbOperation::IndexCount { .. }
+            | DbOperation::IndexScan { .. } => self.apply_index(operation),
         }
     }
 }

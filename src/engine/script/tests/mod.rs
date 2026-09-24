@@ -31,6 +31,8 @@ mod canvas_filter;
 mod canvas_shadow;
 mod canvas_stroke_styles;
 mod canvas_svg_path;
+#[cfg(windows)]
+mod canvas_text;
 mod canvas_transform;
 mod channel_messaging;
 mod checkable;
@@ -62,6 +64,8 @@ mod forms;
 mod fragment_geometry;
 mod fragment_navigation;
 mod fullscreen;
+#[cfg(windows)]
+mod gamepads;
 mod hyperlinks;
 mod inserted_scripts;
 mod intersection_observer;
@@ -99,6 +103,7 @@ mod svg;
 mod table_geometry;
 mod tasks;
 mod template_inertness;
+mod text_tracks;
 mod timer_diagnostics;
 mod traversal;
 mod websocket;

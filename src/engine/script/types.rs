@@ -144,6 +144,9 @@ pub struct ScriptFullscreenAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptMediaCommand {
+    Caption {
+        cues: Vec<ScriptCaptionCue>,
+    },
     SetPlayback {
         playing: bool,
         volume_millis: u16,
@@ -169,6 +172,18 @@ pub enum ScriptMediaCommand {
         audio_bytes: Vec<u8>,
     },
     Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptCaptionCue {
+    pub text: String,
+    pub line: Option<i16>,
+    pub line_percent: Option<u16>,
+    pub position_percent: u16,
+    pub size_percent: u16,
+    pub align: String,
+    pub position_align: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -52,6 +52,7 @@
         state.videoWidth = state.videoHeight = 0;
         state.playbackRate = state.defaultPlaybackRate;
         mediaCommand(element, 0, 'reset');
+        updateTextTracks(element);
         if (hadResource) queueMediaEvent(element, 'emptied');
         if (positionChanged) queueMediaEvent(element, 'timeupdate');
     };

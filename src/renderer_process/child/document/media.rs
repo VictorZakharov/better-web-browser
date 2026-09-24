@@ -2,6 +2,7 @@
 
 mod actions;
 mod async_operations;
+mod captions;
 mod failure;
 mod frame_presentation;
 mod policy;

@@ -1,6 +1,7 @@
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod indexes;
 mod inline_key;
 mod sessions;
 
@@ -12,6 +13,7 @@ fn definition(name: &str, automatic: bool) -> StoreDefinition {
         name: name.into(),
         key_path: None,
         auto_increment: automatic,
+        indexes: Vec::new(),
     }
 }
 
@@ -372,12 +374,12 @@ fn cursor_scans_advance_without_exporting_a_whole_store() {
         )
         .unwrap();
     assert!(matches!(&results[0], DbResult::Record(Some(CursorRecord {
-        key: Key::Number(1.0), value: Some(value) })) if value == "one"));
+        key: Key::Number(1.0), value: Some(value), .. })) if value == "one"));
     assert!(matches!(&results[1], DbResult::Record(Some(CursorRecord {
-        key: Key::Number(2.0), value: Some(value) })) if value == "two"));
+        key: Key::Number(2.0), value: Some(value), .. })) if value == "two"));
     assert!(matches!(&results[2], DbResult::Record(Some(CursorRecord {
-        key: Key::Number(3.0), value: Some(value) })) if value == "three"));
+        key: Key::Number(3.0), value: Some(value), .. })) if value == "three"));
     assert!(matches!(&results[3], DbResult::Record(Some(CursorRecord {
-        key: Key::Number(3.0), value: Some(value) })) if value == "three"));
+        key: Key::Number(3.0), value: Some(value), .. })) if value == "three"));
     assert!(matches!(&results[4], DbResult::Record(None)));
 }
