@@ -142,6 +142,9 @@ fn strict_policy() -> PolicyContainer {
     PolicyContainer {
         policies: vec![Policy {
             origin: url::Url::parse("https://example.test/").unwrap(),
+            serialized:
+                "script-src 'report-sample' 'nonce-AbC123=' 'unsafe-inline' 'strict-dynamic' https:"
+                    .into(),
             directives: HashMap::from([(
                 "script-src".into(),
                 vec![
@@ -155,6 +158,56 @@ fn strict_policy() -> PolicyContainer {
             mixed_content: false,
         }],
     }
+}
+
+#[test]
+fn inline_violations_preserve_each_enforcing_policy_and_sample_permission() {
+    let container = policy(&[
+        "script-src 'unsafe-inline'",
+        "script-src 'report-sample' 'nonce-allowed'",
+        "default-src 'none'",
+    ]);
+    let blocked = container.inline_script_violations(None);
+    assert_eq!(blocked.len(), 2);
+    assert_eq!(
+        blocked[0].original_policy,
+        "script-src 'report-sample' 'nonce-allowed'"
+    );
+    assert!(blocked[0].report_sample);
+    assert_eq!(blocked[1].original_policy, "default-src 'none'");
+    assert!(!blocked[1].report_sample);
+    assert_eq!(container.inline_script_violations(Some("allowed")).len(), 1);
+}
+
+#[test]
+fn external_script_violations_share_exact_admission_rules() {
+    let container = policy(&[
+        "script-src https://cdn.example.test",
+        "script-src 'nonce-permitted'",
+        "default-src 'none'",
+    ]);
+    let url = "https://cdn.example.test/app.js";
+    let source = ScriptSource::default();
+    let violations = container.script_url_violations("script-src-elem", url, 0, &source);
+    assert_eq!(violations.len(), 2);
+    assert_eq!(
+        violations[0].original_policy,
+        "script-src 'nonce-permitted'"
+    );
+    assert_eq!(violations[1].original_policy, "default-src 'none'");
+    assert!(!container.allows_script_url("script-src-elem", url, 0, &source));
+
+    let allowed = policy(&["script-src 'nonce-permitted'"]);
+    let nonce_source = ScriptSource {
+        nonce: Some("permitted".into()),
+        parser_inserted: true,
+    };
+    assert!(
+        allowed
+            .script_url_violations("script-src-elem", url, 0, &nonce_source)
+            .is_empty()
+    );
+    assert!(allowed.allows_script_url("script-src-elem", url, 0, &nonce_source));
 }
 
 #[test]

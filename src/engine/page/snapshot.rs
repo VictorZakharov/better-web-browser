@@ -38,6 +38,7 @@ impl Page {
             stylesheet_discovery: None,
             cached_styles: None,
             images: layout_image_metadata(&self.images),
+            hidden_media_video: self.hidden_media_video.clone(),
             inline_svg_versions: HashMap::new(),
             fonts: Vec::new(),
             diagnostics: Vec::new(),
@@ -60,6 +61,8 @@ impl Page {
         self.stylesheet_sources = source.stylesheet_sources.clone();
         self.stylesheet_discovery = None;
         self.images = layout_image_metadata(&source.images);
+        self.hidden_media_video
+            .clone_from(&source.hidden_media_video);
         self.media_environment = source.media_environment;
         self.layout_viewport = source.layout_viewport;
         if style_sources_changed {

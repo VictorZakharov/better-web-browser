@@ -36,7 +36,8 @@
     const mediaStates = new WeakMap();
     let nextMediaRequest = 1;
     const pendingMediaRequests = new Map();
-    const effectiveVolumeMillis = state => state.muted ? 0 : Math.round(state.volume * 1000);
+    const effectiveVolumeMillis = state => state.muted || state.audioTrackEnabled === false
+        ? 0 : Math.round(state.volume * 1000);
     const mediaCommand = (element, requestId, command, ...args) => {
         const pending = pendingMediaRequests.get(requestId);
         if (pending) pending.element = element;
@@ -69,6 +70,7 @@
                 defaultPlaybackRate: 1,
                 playbackRate: 1,
                 volume: 1,
+                audioTrackEnabled: true,
                 muted: element.hasAttribute('muted'),
                 paused: true,
                 ended: false,
@@ -309,6 +311,8 @@
                 state.duration = Number(input.duration);
                 state.videoWidth = Number(input.width) || 0;
                 state.videoHeight = Number(input.height) || 0;
+                exposeDecodedAudioTrack(element);
+                if (state.videoWidth && state.videoHeight) exposeDecodedVideoTrack(element);
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 notifyMediaSourceLoaded(element, state.duration, input.buffered);

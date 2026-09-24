@@ -38,6 +38,9 @@
         if (state.networkState === HTMLMediaElement.NETWORK_LOADING
             || state.networkState === HTMLMediaElement.NETWORK_IDLE) queueMediaEvent(element, 'abort');
         detachMediaSource(element);
+        clearDecodedAudioTrack(element);
+        clearDecodedVideoTrack(element);
+        state.audioTrackEnabled = true;
         state.networkState = HTMLMediaElement.NETWORK_EMPTY;
         state.readyState = HTMLMediaElement.HAVE_NOTHING;
         state.error = null;

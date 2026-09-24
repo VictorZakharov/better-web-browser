@@ -33,13 +33,13 @@ pub(super) fn decode_inline_svg(
     decode_svg(source.as_bytes(), "inline SVG")
 }
 
-pub(super) fn looks_like_svg(bytes: &[u8]) -> bool {
+pub(crate) fn looks_like_svg(bytes: &[u8]) -> bool {
     let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(512)]);
     let prefix = prefix.trim_start_matches('\u{feff}').trim_start();
     prefix.starts_with("<svg") || (prefix.starts_with("<?xml") && prefix.contains("<svg"))
 }
 
-pub(super) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImage, String> {
+pub(crate) fn decode_svg(source: &[u8], description: &str) -> Result<DecodedImage, String> {
     if source.len() > MAX_SVG_SOURCE_BYTES {
         return Err(format!(
             "{description} exceeds the {MAX_SVG_SOURCE_BYTES}-byte limit"

@@ -178,6 +178,16 @@
             const target = wrap(id);
             if (target) target.dispatchEvent(markTrusted(new Event(String(type))));
         }
+        __queuePolicyViolation(id, init) {
+            // CSP reports after the responsible script's task has completed. A removed
+            // element reports at Document so the violation is not silently lost.
+            setTimeout(() => {
+                const node = wrap(id);
+                const target = node?.isConnected ? node : this;
+                target.dispatchEvent(markTrusted(new SecurityPolicyViolationEvent(
+                    'securitypolicyviolation', { ...init, bubbles: true, composed: true })));
+            }, 0);
+        }
         write(...parts) {
             const text = parts.map(value => {
                 if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
@@ -257,7 +267,8 @@
             const Constructor = namespace === htmlNamespace
                 ? htmlElementConstructor(metadata[2])
                 : namespace === svgNamespace
-                    ? metadata[2] === 'svg' ? SVGSVGElement : SVGElement
+                    ? metadata[2] === 'svg' ? SVGSVGElement :
+                        svgFilterElementInterfaces[metadata[2]] || SVGElement
                     : Element;
             node = Constructor === HTMLTitleElement
                 ? new HTMLTitleElement(id, type, metadata[1], metadata[2], namespace, htmlTitleConstructionToken)

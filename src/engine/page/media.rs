@@ -56,7 +56,7 @@ fn fits_decoded_image_budget(retained_bytes: usize, incoming_bytes: usize) -> bo
 pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
     (node.tag_name() == Some("video")).then(|| {
         let frame = frame_key(node.id());
-        if page.images.contains_key(&frame) {
+        if !page.hidden_media_video.contains(&node.id()) && page.images.contains_key(&frame) {
             frame
         } else {
             MEDIA_VIDEO_PLACEHOLDER.into()
@@ -65,6 +65,16 @@ pub(super) fn image_url(page: &Page, node: &NodeRef) -> Option<String> {
 }
 
 impl Page {
+    /// Deselected in-band video is not presented, even while the decoder and
+    /// synchronized audio clock continue advancing.
+    pub fn select_media_video_track(&mut self, node: NodeId, selected: bool) -> bool {
+        if selected {
+            self.hidden_media_video.remove(&node)
+        } else {
+            self.hidden_media_video.insert(node)
+        }
+    }
+
     pub(super) fn install_decoded_image(
         &mut self,
         url: String,
@@ -148,5 +158,22 @@ mod tests {
         let image = image(4);
         let clone = image.clone();
         assert!(Arc::ptr_eq(&image.bgra, &clone.bgra));
+    }
+
+    #[test]
+    fn deselected_video_uses_placeholder_without_discarding_decoded_frame() {
+        let mut page = Page::parse("<video></video>", "https://example.com/");
+        let video = page.dom.elements_named("video").next().unwrap();
+        let key = page.install_media_frame(video.id(), image(4)).unwrap();
+        assert_eq!(image_url(&page, &video).as_deref(), Some(key.as_str()));
+        assert!(page.select_media_video_track(video.id(), false));
+        assert_eq!(
+            image_url(&page, &video).as_deref(),
+            Some(MEDIA_VIDEO_PLACEHOLDER)
+        );
+        assert!(page.images.contains_key(&key));
+        assert!(!page.select_media_video_track(video.id(), false));
+        assert!(page.select_media_video_track(video.id(), true));
+        assert_eq!(image_url(&page, &video).as_deref(), Some(key.as_str()));
     }
 }

@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn synthetic_clipboard_events_keep_data_isolated_from_other_events() {
+    let (dom, outcome) = execute_html(
+        r#"<div></div><output>no</output><script>
+            const first = new ClipboardEvent('paste', {bubbles:true, cancelable:true});
+            const second = new ClipboardEvent('paste');
+            first.clipboardData.setData('text/plain', 'private');
+            const supplied = new DataTransfer();
+            supplied.setData('text/plain', 'provided');
+            const third = new ClipboardEvent('copy', {clipboardData:supplied});
+            let invalid = false;
+            try { new ClipboardEvent('paste', {clipboardData:{}}); }
+            catch (error) { invalid = error instanceof TypeError; }
+            const seen = [];
+            document.querySelector('div').addEventListener('paste', event => {
+                seen.push(event instanceof ClipboardEvent, event.clipboardData === first.clipboardData,
+                    event.clipboardData.getData('text/plain'));
+            });
+            document.querySelector('div').dispatchEvent(first);
+            const checks = [first instanceof Event, first.bubbles, first.cancelable,
+                second.clipboardData instanceof DataTransfer,
+                second.clipboardData.getData('text/plain') === '',
+                third.clipboardData === supplied,
+                third.clipboardData.getData('text/plain') === 'provided', invalid,
+                seen.join('|') === 'true|true|private'];
+            document.querySelector('output').textContent = checks.every(Boolean) ? 'yes' : checks.join(',');
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn data_transfer_normalizes_types_and_enforces_item_list_rules() {
     let (dom, outcome) = execute_html(
         r#"<output></output><script>

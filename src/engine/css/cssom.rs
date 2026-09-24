@@ -99,6 +99,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         .to_string(),
         "font-size" => serialize_px(style.font_size),
         "font-weight" => style.font_weight.to_string(),
+        "top" => serialize_length(style.top),
+        "right" => serialize_length(style.right),
+        "bottom" => serialize_length(style.bottom),
+        "left" => serialize_length(style.left),
         "letter-spacing" => serialize_px(style.letter_spacing),
         "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => {

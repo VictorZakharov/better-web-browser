@@ -33,6 +33,20 @@
     windowObject.SVGAnimatedString = SVGAnimatedString;
     windowObject.SVGElement = SVGElement;
     windowObject.SVGSVGElement = SVGSVGElement;
+    windowObject.SVGAnimatedEnumeration = SVGAnimatedEnumeration;
+    windowObject.SVGNumber = SVGNumber;
+    windowObject.SVGNumberList = SVGNumberList;
+    windowObject.SVGAnimatedNumberList = SVGAnimatedNumberList;
+    windowObject.SVGFEColorMatrixElement = SVGFEColorMatrixElement;
+    windowObject.SVGLength = SVGLength;
+    windowObject.SVGAnimatedLength = SVGAnimatedLength;
+    windowObject.SVGUnitTypes = SVGUnitTypes;
+    windowObject.SVGFilterElement = SVGFilterElement;
+    Object.assign(windowObject, {
+        SVGFEOffsetElement, SVGFEGaussianBlurElement, SVGFECompositeElement,
+        SVGFEBlendElement, SVGFEFloodElement, SVGFEMergeElement, SVGFEMergeNodeElement
+    });
+    windowObject.SVGAnimatedNumber = SVGAnimatedNumber;
     windowObject.Attr = Attr;
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.NodeFilter = NodeFilter;
@@ -113,6 +127,7 @@
     windowObject.FocusEvent = FocusEvent;
     windowObject.MouseEvent = MouseEvent;
     windowObject.DragEvent = DragEvent;
+    windowObject.ClipboardEvent = ClipboardEvent;
     windowObject.DataTransfer = DataTransfer;
     windowObject.DataTransferItem = DataTransferItem;
     windowObject.DataTransferItemList = DataTransferItemList;

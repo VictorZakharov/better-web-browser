@@ -75,6 +75,30 @@ fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     if bytes.is_empty() || bytes.len() > MAX_ENCODED_BYTES {
         return None;
     }
+    if crate::engine::page::looks_like_svg_image(bytes) {
+        let image = crate::engine::page::decode_svg_image(bytes, "Canvas SVG").ok()?;
+        let mut rgba = image.bgra.to_vec();
+        for pixel in rgba.chunks_exact_mut(4) {
+            let alpha = u32::from(pixel[3]);
+            if alpha == 0 {
+                pixel[..3].fill(0);
+            } else {
+                let blue = u32::from(pixel[0]);
+                let green = u32::from(pixel[1]);
+                let red = u32::from(pixel[2]);
+                let unpremultiply = |channel: u32| {
+                    (channel * 255 + alpha / 2)
+                        .checked_div(alpha)
+                        .unwrap_or(0)
+                        .min(255) as u8
+                };
+                pixel[0] = unpremultiply(red);
+                pixel[1] = unpremultiply(green);
+                pixel[2] = unpremultiply(blue);
+            }
+        }
+        return Some((image.width, image.height, rgba));
+    }
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .ok()?;
@@ -160,5 +184,14 @@ mod tests {
         assert_eq!(decode(&encoded), Some((1, 1, pixels.to_vec())));
         assert!(decode(&[]).is_none());
         assert!(decode(b"not an image").is_none());
+    }
+
+    #[test]
+    fn decodes_svg_into_straight_alpha_canvas_pixels() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="1"><rect width="1" height="1" fill="#f00"/></svg>"##;
+        let (width, height, rgba) = decode(svg).unwrap();
+        assert_eq!((width, height), (2, 1));
+        assert_eq!(&rgba[..4], &[255, 0, 0, 255]);
+        assert_eq!(&rgba[4..], &[0, 0, 0, 0]);
     }
 }

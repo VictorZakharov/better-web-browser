@@ -32,6 +32,9 @@ impl DocumentRuntime {
             return Ok(Some("not-allowed"));
         }
         if matches!(&action.command, ScriptMediaCommand::Reset) {
+            if self.page.select_media_video_track(action.node, true) {
+                self.rendering.dirty = true;
+            }
             if self.media_captions.remove(&action.node).is_some() {
                 self.rendering.dirty = true;
             }
@@ -173,6 +176,12 @@ impl DocumentRuntime {
                 let state =
                     connection.set_media_playback(source_id, playback.playing, *volume_millis)?;
                 self.apply_playback_state(state);
+                Ok(Some("configured"))
+            }
+            ScriptMediaCommand::SelectVideo { selected } => {
+                if self.page.select_media_video_track(action.node, *selected) {
+                    self.rendering.dirty = true;
+                }
                 Ok(Some("configured"))
             }
             ScriptMediaCommand::Seek { position_100ns } => {

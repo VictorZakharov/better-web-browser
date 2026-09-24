@@ -21,6 +21,8 @@
             this.screenY = Number(init.screenY) || 0;
             this.clientX = Number(init.clientX) || 0;
             this.clientY = Number(init.clientY) || 0;
+            this.movementX = Number(init.movementX) || 0;
+            this.movementY = Number(init.movementY) || 0;
             this.ctrlKey = !!init.ctrlKey;
             this.shiftKey = !!init.shiftKey;
             this.altKey = !!init.altKey;
@@ -55,6 +57,21 @@
             if (transfer !== null && !(transfer instanceof DataTransfer))
                 throw new TypeError('DragEvent dataTransfer must be a DataTransfer');
             Object.defineProperty(this, 'dataTransfer', { enumerable: true, value: transfer });
+        }
+    }
+    // Synthetic clipboard events own an isolated drag data store. They must never
+    // expose the operating-system clipboard: only a trusted user action may do so.
+    // https://w3c.github.io/clipboard-apis/#clipboard-event-interfaces
+    class ClipboardEvent extends Event {
+        constructor(type, init = {}) {
+            super(type, init);
+            init = init == null ? {} : Object(init);
+            const transfer = init.clipboardData === undefined ? new DataTransfer() : init.clipboardData;
+            if (transfer !== null && !(transfer instanceof DataTransfer))
+                throw new TypeError('ClipboardEvent clipboardData must be a DataTransfer');
+            Object.defineProperty(this, 'clipboardData', {
+                enumerable: true, value: transfer
+            });
         }
     }
     class WheelEvent extends MouseEvent {

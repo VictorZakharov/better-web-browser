@@ -331,10 +331,11 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | ◩ | Web Workers | Isolated classic and module dedicated workers are implemented. Shared Workers and Service Workers are not. |
 | ◩ | Web Crypto and Gamepad | Secure Window and dedicated-worker realms expose CNG-backed digests, HMAC, AES, key derivation, NIST-curve ECDH/ECDSA, and RSA-OAEP/PSS/PKCS#1 v1.5 with bounded key import/export. The Windows Gamepad API polls XInput controllers after user interaction. Other algorithms, hardware-backed key storage, non-XInput devices, and haptics remain gaps; see the [current standards slice](docs/html5test-indexes-crypto-media.md). |
 | ◩ | Script scheduling | Streaming parsing, [synchronous writes](docs/synchronous-document-write.md), [document replacement](docs/document-streams-and-pre-wrap.md), [synchronous dynamic inline classics](docs/inline-scripts-and-table-geometry.md), parser mutation notifications, autonomous custom-element construction/reactions, independently ready classic `async` scripts, deferred/module readiness, [dynamic module insertion](docs/dynamic-modules.md), and document load tasks are implemented slices. Stylesheets have separate parser-script and paint gates. Customized built-ins and the complete HTML rendering/event-loop model remain incomplete. |
-| ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and JavaScript-created `Image` fetch/decode remain incomplete. |
+| ◩ | Images and fonts | Document images, CSS backgrounds, SVG, alpha compositing, detached JavaScript-created `Image` fetch/decode, and webfonts are supported. The sandboxed renderer owns font parsing, advanced shaping, fallback, and glyph rasterization; the browser validates and composites only bounded raster assets and placements, so remote font bytes never enter the privileged process. CSS Fonts coverage, variable-font controls, vertical text, and broader image resource-selection behavior remain incomplete. |
 | ◩ | Forms and input | Native text, search, password, select, and button controls plus GET forms are supported through renderer-owned DOM state and default actions. Checkboxes/radios have separate checked/default state, activation, grouping, and reset behavior. Date/month/week/time/datetime-local numeric values, applicable UTC date values, and color sanitization have targeted standards coverage. Control styling, broader form/reset behavior, IME/composition, cancelable `beforeinput`, and document text selection remain incomplete. |
 | ☑ | Tabs and windows | Multiple live tabs, history, tab search and restoration, keyboard shortcuts, multi-selection, reordering, and detach/redock across windows are supported. Persistent tab sessions across browser restarts are not. |
-| ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. The contained media worker provides non-DRM H.264/AAC MP4 playback, synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. HTML text tracks can load WebVTT and paint bounded captions over video. [Remaining limits](docs/html5test-indexes-crypto-media.md) include broader codecs, DRM, full caption styling/regions, track selection, picture-in-picture, and mature downloads. |
+| ◩ | Canvas, media, and downloads | Bounded software Canvas 2D provides real sRGB pixels, SVG paths, fills/strokes, gradients/patterns, clipping, shadows, filters, compositing, shaped/rasterized text, Geometry Interfaces, `ImageData`, image drawing, `ImageBitmap`, `OffscreenCanvas` (including workers), and PNG/JPEG/WebP export. The contained media worker provides non-DRM H.264/AAC MP4 playback, synchronized XAudio2 output, progressive Media Source input, and play/pause/seek/volume/mute/fullscreen controls. HTML text tracks can load WebVTT and paint bounded captions; audio/video track lists expose the accepted decoder streams and allow disabling their output. [Remaining limits](docs/html5test-animation-media-csp.md) include broader codecs, DRM, multiple selectable decoded streams, full caption styling/regions, picture-in-picture, and mature downloads. |
+| ◩ | Web Animations | Script-created keyframe animations participate in the CSS cascade, with document timelines, effect inspection, playback promises/events, easing, replacement, and bounded style commitment. Painter interpolation covers numbers, colors, and supported 2D translations; compositor offloading and the full animation/transition model remain open. See the [animation contract](docs/html5test-animation-media-csp.md). |
 | ◩ | Accessibility | A bounded renderer semantic tree is validated and exposed with browser chrome through AccessKit and Windows UI Automation, including focus/invoke/value actions. Accessible-name/ARIA coverage, rich text patterns, live regions, and non-Windows adapters remain incomplete; see [Accessibility architecture](docs/accessibility.md). |
 | ◩ | Process and site isolation | Each tab has a capability-free AppContainer renderer that owns remote-document parsing, JavaScript/DOM, CSS/layout, image/font decoding, Workers, and immutable presentation construction. The browser reconstructs privileged Fetch requests and owns persistent state; bounded IPC/queues, Job limits, hang detection, and tab-local containment cover aborts, access violations, OOM termination, and native stack overflow. Cross-site frame isolation is not implemented. |
 | ☐ | Security-audited browsing | The browser has not received a security audit and is not suitable for sensitive authenticated browsing. |
@@ -412,6 +413,16 @@ The 2026-09-24 fresh-profile hidden release run for this batch rendered
 with zero JavaScript errors and no renderer exit. The score is an inventory
 observation, not an assertion that every newly added API is complete.
 
+The subsequent [image, editing, SVG filter, Web Animations, media-track, and CSP batch](docs/html5test-animation-media-csp.md)
+rendered **420 / 588** with Breeze's default identity in a 2026-09-24
+fresh-profile hidden run at 1280×720, 125% scale, `en-US`, and 10 seconds'
+settle: **+19** over the preceding 401 / 588 release observation. In an
+isolated Chrome-compatible User-Agent profile it rendered **432 / 588**;
+the user-reported pre-batch baseline for that mode was **411 / 588** (**+21**).
+Both runs returned HTTP 200 without JavaScript errors or renderer exits.
+Different User-Agent modes can receive different test code, so their scores
+should not be treated as interchangeable or as full conformance evidence.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -419,8 +430,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-24-resource-slice.json `
-  -Screenshot target/html5test/2026-09-24-resource-slice.png
+  -Output target/html5test/2026-09-24-animation-media-breeze.json `
+  -Screenshot target/html5test/2026-09-24-animation-media-breeze.png
 ```
 
 New releases must refresh or explicitly date these observations using the

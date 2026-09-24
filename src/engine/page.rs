@@ -24,6 +24,9 @@ pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
+pub(crate) use self::svg::{
+    decode_svg as decode_svg_image, looks_like_svg as looks_like_svg_image,
+};
 use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, Node, NodeId, NodeRef};
@@ -38,7 +41,7 @@ use crate::limits::{
 };
 use crate::navigation::resolve_url;
 use image::ImageReader;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -67,6 +70,7 @@ pub struct Page {
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
+    hidden_media_video: HashSet<NodeId>,
     inline_svg_versions: HashMap<NodeId, u64>,
     pub fonts: Vec<WebFont>,
     pub diagnostics: Vec<String>,
@@ -133,6 +137,7 @@ impl Page {
             stylesheet_discovery: None,
             cached_styles: None,
             images,
+            hidden_media_video: HashSet::new(),
             inline_svg_versions,
             fonts: Vec::new(),
             diagnostics,

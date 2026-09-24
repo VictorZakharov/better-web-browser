@@ -22,6 +22,22 @@
         return document.designMode === 'on' ? document.body : null;
     };
     Object.defineProperties(HTMLElement.prototype, {
+        spellcheck: {
+            configurable: true, enumerable: true,
+            get() {
+                const value = this.getAttribute('spellcheck');
+                if (value !== null) {
+                    const state = value.toLowerCase();
+                    if (state === '' || state === 'true') return true;
+                    if (state === 'false') return false;
+                }
+                // Breeze's default is false-by-default, inherited by descendants.
+                // The IDL value reflects the chosen behavior, not the availability
+                // of a user's dictionary or a future platform checker.
+                return this.parentElement instanceof HTMLElement && this.parentElement.spellcheck;
+            },
+            set(value) { this.setAttribute('spellcheck', Boolean(value) ? 'true' : 'false'); }
+        },
         contentEditable: {
             configurable: true, enumerable: true,
             get() { return editableState(this); },

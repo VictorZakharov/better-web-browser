@@ -100,3 +100,46 @@ fn synthetic_mouse_page_coordinates_follow_native_scroll_and_ignore_page_initial
         "[[5,6,5,6,5,6,false],[5,6,45,906,5,6,false],[5,6,45,906,5,6,false],[5,6,45,906,5,6,false],[5,6,85,1006,5,6,false]]"
     );
 }
+
+#[test]
+fn native_pointer_movement_is_relative_and_synthetic_movement_uses_its_initializer() {
+    let (dom, mut runtime) = initialize(
+        r#"<!doctype html><body><span></span><script>
+        const samples = [];
+        document.addEventListener('pointermove', e => samples.push([e.movementX,e.movementY]));
+        document.addEventListener('mousemove', e => samples.push([e.movementX,e.movementY]));
+        const synthetic = new MouseEvent('mousemove', {movementX:7,movementY:-3});
+        samples.push([synthetic.movementX,synthetic.movementY]);
+        </script></body>"#,
+        |dom| {
+            HashMap::from([(
+                dom.elements_named("span").next().unwrap().id(),
+                box_at(0.0, 0.0),
+            )])
+        },
+    );
+    let target = dom.elements_named("span").next();
+    for (x, y) in [(10.0, 20.0), (14.0, 27.0)] {
+        let response = runtime.dispatch_user_input(UserInputEvent::Pointer {
+            target: target.clone(),
+            phase: "move",
+            button: 0,
+            buttons: 0,
+            x,
+            y,
+            activate: false,
+            modifiers: UserInputModifiers::default(),
+        });
+        assert!(
+            response.outcome.errors.is_empty(),
+            "{:?}",
+            response.outcome.errors
+        );
+    }
+    evaluate(
+        &dom,
+        &mut runtime,
+        "document.body.dataset.result=JSON.stringify(samples)",
+    );
+    assert_eq!(result(&dom), "[[7,-3],[0,0],[0,0],[4,7],[4,7]]");
+}

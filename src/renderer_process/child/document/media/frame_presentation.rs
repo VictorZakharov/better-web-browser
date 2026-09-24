@@ -8,6 +8,9 @@ impl DocumentRuntime {
         decode: RendererMediaDecode,
         mime_type: String,
     ) -> Result<(), String> {
+        if self.page.select_media_video_track(node, true) {
+            self.rendering.dirty = true;
+        }
         let metadata = decode.frame.metadata;
         let report = decode.report;
         let key = self.page.install_media_frame(

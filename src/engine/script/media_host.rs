@@ -90,6 +90,9 @@ pub(super) fn media_host_call(
         "configure" => ScriptMediaCommand::Configure {
             volume_millis: volume(args.get(4)),
         },
+        "select-video" => ScriptMediaCommand::SelectVideo {
+            selected: args.get(4).and_then(JsValue::as_boolean).unwrap_or(false),
+        },
         "seek" => {
             let seconds = args
                 .get(4)

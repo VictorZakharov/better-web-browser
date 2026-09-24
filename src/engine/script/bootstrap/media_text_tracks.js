@@ -5,6 +5,39 @@
     const lastMediaCaptions = new WeakMap();
     const cueOwners = new WeakMap(), cueLists = new WeakMap();
     const trackKinds = new Set(['subtitles', 'captions', 'descriptions', 'chapters', 'metadata']);
+    // Web IDL legacy indexed properties are observable beyond bracket reads:
+    // property presence, enumeration, and descriptors follow the live list.
+    // https://webidl.spec.whatwg.org/#legacy-platform-object
+    const mediaTrackListProxy = list => new Proxy(list, {
+        get(target, name, receiver) {
+            const index = collectionIndex(name);
+            if (index !== null) return target.item(index) ?? undefined;
+            return Reflect.get(target, name, receiver);
+        },
+        has(target, name) {
+            const index = collectionIndex(name);
+            return index !== null ? index < target.length : Reflect.has(target, name);
+        },
+        ownKeys(target) {
+            return [...Array(target.length).keys()].map(String).concat(Reflect.ownKeys(target));
+        },
+        getOwnPropertyDescriptor(target, name) {
+            const index = collectionIndex(name);
+            return index !== null ? index < target.length ? {
+                value: target.item(index), writable: false, enumerable: true, configurable: true
+            } : undefined : Reflect.getOwnPropertyDescriptor(target, name);
+        },
+        set(target, name, value, receiver) {
+            return collectionIndex(name) === null && Reflect.set(target, name, value, receiver);
+        },
+        defineProperty(target, name, descriptor) {
+            return collectionIndex(name) === null && Reflect.defineProperty(target, name, descriptor);
+        },
+        deleteProperty(target, name) {
+            const index = collectionIndex(name);
+            return index === null || index >= target.length && Reflect.deleteProperty(target, name);
+        }
+    });
     class TextTrackCue extends EventTarget {
         constructor(startTime, endTime) {
             super();
@@ -62,12 +95,7 @@
         getCueById(id) { return this._getItems().find(cue => cue.id === String(id)) ?? null; }
         [Symbol.iterator]() { return this._getItems()[Symbol.iterator](); }
     }
-    const cueList = getItems => new Proxy(new TextTrackCueList(getItems), {
-        get(target, name, receiver) {
-            if (typeof name === 'string' && /^(0|[1-9]\d*)$/.test(name)) return target.item(name);
-            return Reflect.get(target, name, receiver);
-        }
-    });
+    const cueList = getItems => mediaTrackListProxy(new TextTrackCueList(getItems));
     class TextTrack extends EventTarget {
         constructor(token, media, element, kind, label, language) {
             super();
@@ -130,12 +158,7 @@
     const textTrackListFor = media => {
         let list = textTrackLists.get(media);
         if (!list) {
-            list = new Proxy(new TextTrackList(media), {
-                get(target, name, receiver) {
-                    if (typeof name === 'string' && /^(0|[1-9]\d*)$/.test(name)) return target.item(name);
-                    return Reflect.get(target, name, receiver);
-                }
-            });
+            list = mediaTrackListProxy(new TextTrackList(media));
             textTrackLists.set(media, list);
         }
         return list;
@@ -168,7 +191,8 @@
         const track = new TextTrack(trackConstructionToken, this, null, kind, String(label), String(language));
         const list = addedTextTracks.get(this) ?? [];
         list.push(track); addedTextTracks.set(this, list);
-        textTrackListFor(this).dispatchEvent(new Event('addtrack'));
+        const trackList = textTrackListFor(this);
+        queueMediaTask(() => trackList.dispatchEvent(markTrusted(new TrackEvent('addtrack', { track }))));
         return track;
     };
     class HTMLTrackElement extends HTMLElement {

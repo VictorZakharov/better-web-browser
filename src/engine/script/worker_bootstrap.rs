@@ -2,6 +2,7 @@ pub(super) const WORKER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/web_url.js"),
     include_str!("bootstrap/worker_base.js"),
+    include_str!("bootstrap/security_policy_violation.js"),
     include_str!("bootstrap/crypto.js"),
     include_str!("bootstrap/web_crypto.js"),
     include_str!("bootstrap/web_crypto_keys.js"),
