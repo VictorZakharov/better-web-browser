@@ -70,7 +70,7 @@ fn script_text_track_list_shares_the_same_indexed_property_contract() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        vec!["true"; 10].join(",")
+        ["true"; 10].join(",")
     );
 }
 

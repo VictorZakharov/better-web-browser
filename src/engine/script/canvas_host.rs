@@ -86,9 +86,15 @@ fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
                 let blue = u32::from(pixel[0]);
                 let green = u32::from(pixel[1]);
                 let red = u32::from(pixel[2]);
-                pixel[0] = ((red * 255 + alpha / 2) / alpha).min(255) as u8;
-                pixel[1] = ((green * 255 + alpha / 2) / alpha).min(255) as u8;
-                pixel[2] = ((blue * 255 + alpha / 2) / alpha).min(255) as u8;
+                let unpremultiply = |channel: u32| {
+                    (channel * 255 + alpha / 2)
+                        .checked_div(alpha)
+                        .unwrap_or(0)
+                        .min(255) as u8
+                };
+                pixel[0] = unpremultiply(red);
+                pixel[1] = unpremultiply(green);
+                pixel[2] = unpremultiply(blue);
             }
         }
         return Some((image.width, image.height, rgba));
