@@ -33,6 +33,11 @@
     windowObject.SVGAnimatedString = SVGAnimatedString;
     windowObject.SVGElement = SVGElement;
     windowObject.SVGSVGElement = SVGSVGElement;
+    windowObject.SVGAnimatedEnumeration = SVGAnimatedEnumeration;
+    windowObject.SVGNumber = SVGNumber;
+    windowObject.SVGNumberList = SVGNumberList;
+    windowObject.SVGAnimatedNumberList = SVGAnimatedNumberList;
+    windowObject.SVGFEColorMatrixElement = SVGFEColorMatrixElement;
     windowObject.Attr = Attr;
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.NodeFilter = NodeFilter;
@@ -113,6 +118,7 @@
     windowObject.FocusEvent = FocusEvent;
     windowObject.MouseEvent = MouseEvent;
     windowObject.DragEvent = DragEvent;
+    windowObject.ClipboardEvent = ClipboardEvent;
     windowObject.DataTransfer = DataTransfer;
     windowObject.DataTransferItem = DataTransferItem;
     windowObject.DataTransferItemList = DataTransferItemList;

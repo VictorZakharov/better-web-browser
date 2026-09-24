@@ -148,50 +148,6 @@
         },
         escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); }
     };
-    const detachedImageLoads = new WeakMap();
-    windowObject.Image = class Image extends HTMLImageElement {
-        constructor(width, height) {
-            const element = document.createElement('img');
-            Object.setPrototypeOf(element, new.target.prototype);
-            if (width !== undefined) element.setAttribute('width', String(Number(width) >>> 0));
-            if (height !== undefined) element.setAttribute('height', String(Number(height) >>> 0));
-            Object.defineProperty(element, 'src', {
-                configurable: true,
-                get() { const value = this.getAttribute('src'); return value == null ? '' : host('resolveUrl', value); },
-                set(value) {
-                    const source = String(value);
-                    this.setAttribute('src', source);
-                    const token = (detachedImageLoads.get(this)?.token || 0) + 1;
-                    const state = { token, complete: false, promise: null };
-                    detachedImageLoads.set(this, state);
-                    state.promise = fetch(this.src, {
-                        mode: 'no-cors',
-                        credentials: 'include',
-                        referrerPolicy: 'no-referrer-when-downgrade'
-                    }).then(response => {
-                        if (!response.ok && response.type !== 'opaque') throw new TypeError('Image request failed');
-                        return response.arrayBuffer();
-                    }).then(() => {
-                        if (detachedImageLoads.get(this)?.token !== token) return;
-                        state.complete = true;
-                        this.dispatchEvent(new Event('load'));
-                    }, () => {
-                        if (detachedImageLoads.get(this)?.token !== token) return;
-                        state.complete = true;
-                        this.dispatchEvent(new Event('error'));
-                    });
-                }
-            });
-            Object.defineProperty(element, 'complete', {
-                configurable: true,
-                get() { return detachedImageLoads.get(this)?.complete ?? true; }
-            });
-            element.decode = function decode() {
-                return detachedImageLoads.get(this)?.promise || Promise.resolve();
-            };
-            return element;
-        }
-    };
     const mutationRegistrations = new WeakMap();
     const pendingMutationObservers = new Set();
     const mutationAncestorCache = new WeakMap();

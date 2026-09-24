@@ -24,6 +24,9 @@ pub(crate) use self::preload::discover_script_preloads;
 use self::resources::{discover_resources, document_base_url, resolve_image_url};
 pub(crate) use self::svg::inline_svg_key;
 use self::svg::{decode_inline_svg, decode_svg, looks_like_svg};
+pub(crate) use self::svg::{
+    decode_svg as decode_svg_image, looks_like_svg as looks_like_svg_image,
+};
 use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, Node, NodeId, NodeRef};

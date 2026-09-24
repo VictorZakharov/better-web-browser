@@ -88,6 +88,7 @@ mod navigator;
 mod network;
 mod network_body;
 mod network_diagnostics;
+mod network_images;
 mod network_integrity;
 mod node_equality;
 mod node_standard;

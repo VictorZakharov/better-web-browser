@@ -39,6 +39,15 @@
         }
         if (source instanceof HTMLCanvasElement || source instanceof OffscreenCanvas)
             return canvasBitmapSnapshot(source);
+        if (source instanceof HTMLImageElement) {
+            // Only decoded, same-origin/CORS-readable bytes may enter Canvas.
+            // Opaque image responses remain inaccessible through this path.
+            const decoded = detachedImageLoads.get(source)?.decoded;
+            if (!decoded || !source.complete)
+                throw new DOMException('Image has no available bitmap', 'InvalidStateError');
+            return { width: decoded.width, height: decoded.height,
+                pixels: new Uint8ClampedArray(decoded.pixels) };
+        }
         if (allowImageData && source instanceof ImageData)
             return { width: source.width, height: source.height, pixels: new Uint8ClampedArray(source.data) };
         throw new TypeError('Unsupported Canvas image source');

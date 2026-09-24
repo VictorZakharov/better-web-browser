@@ -57,3 +57,20 @@ fn svg_inline_color_and_presentation_color_are_resolved_per_element() {
     assert_eq!(pixel(image, 15), [0, 128, 0, 255]);
     assert_eq!(pixel(image, 25), [255, 0, 0, 255]);
 }
+
+#[test]
+fn svg_color_matrix_filter_changes_the_rendered_pixel() {
+    let mut page = Page::parse(
+        r#"<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+        <defs><filter id="gray"><feColorMatrix type="saturate" values="0"/></filter></defs>
+        <rect width="10" height="10" fill="red" filter="url(#gray)"/></svg>"#,
+        "https://example.test/",
+    );
+    page.refresh_resources(800.0);
+    let svg = page.dom.elements_named("svg").next().unwrap();
+    let image = &page.images[&inline_svg_key(&svg)];
+    let filtered = pixel(image, 5);
+    assert_eq!(filtered[0], filtered[1]);
+    assert_eq!(filtered[1], filtered[2]);
+    assert_eq!(filtered[3], 255);
+}

@@ -257,7 +257,8 @@
             const Constructor = namespace === htmlNamespace
                 ? htmlElementConstructor(metadata[2])
                 : namespace === svgNamespace
-                    ? metadata[2] === 'svg' ? SVGSVGElement : SVGElement
+                    ? metadata[2] === 'svg' ? SVGSVGElement :
+                        metadata[2] === 'feColorMatrix' ? SVGFEColorMatrixElement : SVGElement
                     : Element;
             node = Constructor === HTMLTitleElement
                 ? new HTMLTitleElement(id, type, metadata[1], metadata[2], namespace, htmlTitleConstructionToken)
