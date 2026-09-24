@@ -228,6 +228,10 @@ impl StyleSet {
             .attr("style")
             .map(|inline| parse_declarations(&inline))
             .unwrap_or_default();
+        let animation_declarations = node
+            .animation_style()
+            .map(|style| parse_declarations(&style))
+            .unwrap_or_default();
 
         self.apply_author_cascade(
             &mut style,
@@ -235,6 +239,7 @@ impl StyleSet {
             &lower_origin,
             &matching,
             &inline_declarations,
+            &animation_declarations,
         );
         style.resolve_relative_units(
             self.viewport_width,
@@ -312,6 +317,7 @@ impl StyleSet {
         lower_origin: &ComputedStyle,
         matching: &[&Rule],
         inline_declarations: &[Declaration],
+        animation_declarations: &[Declaration],
     ) {
         // CSS Cascade places every important author declaration above every normal author
         // declaration. Inline declarations retain their higher specificity within each group.
@@ -332,6 +338,18 @@ impl StyleSet {
                     .filter(|declaration| declaration.important == important)
                     .map(|declaration| (declaration, self.document_base_url.as_str())),
             );
+            if !important {
+                // CSS Cascading §6.2: animation values outrank normal author
+                // declarations, but author !important still wins. Never admit
+                // !important inside an animation-origin declaration.
+                // https://www.w3.org/TR/css-cascade-5/#cascading-origins
+                cascaded.extend(
+                    animation_declarations
+                        .iter()
+                        .filter(|declaration| !declaration.important)
+                        .map(|declaration| (declaration, self.document_base_url.as_str())),
+                );
+            }
         }
 
         for &(declaration, _) in &cascaded {

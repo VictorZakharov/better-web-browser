@@ -59,6 +59,21 @@ pub(super) fn style_host_call(
         let value = argument_string(args, 1)?;
         return Ok(Some(normalize_css_color(&value)));
     }
+    if operation == "setAnimationStyle" {
+        let node = state.node(argument_id(args, 1));
+        let declarations = argument_string(args, 2)?;
+        if declarations.len() > 8 * 1024 {
+            return Err(JsNativeError::typ()
+                .with_message("animation declarations exceed the per-element budget")
+                .into());
+        }
+        if let Some(node) = node
+            && node.set_animation_style(&declarations)
+        {
+            state.record_mutation(Some(&node), MutationKind::State);
+        }
+        return Ok(Some(JsValue::undefined()));
+    }
     if operation == "offsetParent" {
         let parent = state
             .node(argument_id(args, 1))

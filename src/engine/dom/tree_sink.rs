@@ -62,6 +62,7 @@ impl TreeSink for Dom {
                     ..Default::default()
                 }),
                 attrs: RefCell::new(attrs),
+                animation_style: RefCell::new(None),
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: flags

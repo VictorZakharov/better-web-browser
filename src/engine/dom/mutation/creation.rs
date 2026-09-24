@@ -35,6 +35,7 @@ impl Node {
             NodeData::Element(ElementData {
                 name: QualName::new(prefix, namespace, LocalName::from(local_name)),
                 attrs: RefCell::new(Vec::new()),
+                animation_style: RefCell::new(None),
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
@@ -66,6 +67,7 @@ impl Node {
                     LocalName::from(local_name.clone()),
                 ),
                 attrs: RefCell::new(Vec::new()),
+                animation_style: RefCell::new(None),
                 template_contents: RefCell::new(template_contents),
                 shadow_root: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,

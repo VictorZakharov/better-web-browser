@@ -125,7 +125,14 @@ impl StyleSet {
             style.color = Color::rgb(117, 117, 117);
         }
         let lower_origin = style.clone();
-        self.apply_author_cascade(&mut style, Some(origin_style), &lower_origin, matching, &[]);
+        self.apply_author_cascade(
+            &mut style,
+            Some(origin_style),
+            &lower_origin,
+            matching,
+            &[],
+            &[],
+        );
         // Generated pseudo-elements are flex/grid items just like real children. CSS Display
         // blockifies their outer display type at computed-value time, including nonexistent
         // pseudos queried through getComputedStyle.

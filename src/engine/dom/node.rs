@@ -1,4 +1,5 @@
 //! DOM node identity, data model, read access, and traversal.
+mod animation;
 mod attributes;
 pub(super) mod checkable;
 mod control_decimal;
@@ -183,6 +184,8 @@ pub enum NodeData {
 pub struct ElementData {
     pub name: QualName,
     pub attrs: RefCell<Vec<Attribute>>,
+    /// Web Animations declarations have their own cascade origin, not a style attribute.
+    pub(crate) animation_style: RefCell<Option<Box<str>>>,
     pub template_contents: RefCell<Option<NodeRef>>,
     pub shadow_root: RefCell<Option<NodeRef>>,
     pub mathml_annotation_xml_integration_point: bool,

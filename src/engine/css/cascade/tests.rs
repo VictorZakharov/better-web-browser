@@ -2,6 +2,30 @@ use super::*;
 use crate::limits::MAX_DOM_DEPTH;
 
 #[test]
+fn animation_origin_overrides_normal_author_but_not_important_author_style() {
+    let dom = dom::parse(
+        "<style>div { color: red; opacity: .2 }</style><div style='color: blue; opacity: .4'></div>",
+    );
+    let target = dom.elements_named("div").next().unwrap();
+    let mut styles = StyleSet::from_dom(&dom, &[], 800.0);
+    assert_eq!(styles.get(&target).color, Color::rgb(0, 0, 255));
+    assert!(target.set_animation_style("color: green; opacity: .8"));
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&target), &[]);
+    assert_eq!(styles.get(&target).color, Color::rgb(0, 128, 0));
+    assert_eq!(
+        target.attr("style").as_deref(),
+        Some("color: blue; opacity: .4")
+    );
+
+    target.set_attr("style", "color: blue !important; opacity: .4");
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&target), &[]);
+    assert_eq!(styles.get(&target).color, Color::rgb(0, 0, 255));
+    assert!(target.set_animation_style(""));
+    styles.refresh_subtrees(&dom.document, std::slice::from_ref(&target), &[]);
+    assert_eq!(styles.get(&target).color, Color::rgb(0, 0, 255));
+}
+
+#[test]
 fn unmatched_pseudos_are_lazy_but_cssom_and_later_matches_remain_live() {
     let dom = dom::parse(
         "<style>p {color:red} p.active::before {content:attr(data-label);color:blue}</style><p data-label=first>text</p>",

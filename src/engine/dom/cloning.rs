@@ -46,6 +46,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
         NodeData::Element(element) => NodeData::Element(ElementData {
             name: element.name.clone(),
             attrs: RefCell::new(element.attrs.borrow().clone()),
+            animation_style: RefCell::new(None),
             template_contents: RefCell::new(
                 element
                     .template_contents
