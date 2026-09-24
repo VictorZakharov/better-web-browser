@@ -32,6 +32,7 @@
         if (localName === 'iframe') return HTMLIFrameElement;
         if (localName === 'video') return HTMLVideoElement;
         if (localName === 'audio') return HTMLAudioElement;
+        if (localName === 'track') return HTMLTrackElement;
         if (localName === 'canvas') return HTMLCanvasElement;
         if (localName === 'input') return HTMLInputElement;
         if (localName === 'textarea') return HTMLTextAreaElement;

@@ -1,7 +1,7 @@
 //! Direct Swash rasterization for renderer-owned shaped glyphs.
 
-use super::catalog::{FontInstanceKey, SelectedFont};
 use crate::engine::DecodedImage;
+use crate::engine::font::shaping::{FontInstanceKey, SelectedFont};
 use crate::limits::{
     MAX_GLYPH_RASTER_BYTES, MAX_GLYPH_RASTER_DIMENSION, MAX_GLYPH_RASTER_PIXELS, MAX_GLYPH_RASTERS,
     MAX_PRESENTED_GLYPH_BYTES,

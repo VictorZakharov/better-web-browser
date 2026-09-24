@@ -7,6 +7,22 @@ impl DocumentRuntime {
         action: &ScriptMediaAction,
         connection: &mut ChildConnection,
     ) -> Result<Option<&'static str>, String> {
+        if let ScriptMediaCommand::Caption { cues } = &action.command {
+            if self
+                .media_captions
+                .get(&action.node)
+                .map_or(&[][..], Vec::as_slice)
+                != cues
+            {
+                if cues.is_empty() {
+                    self.media_captions.remove(&action.node);
+                } else {
+                    self.media_captions.insert(action.node, cues.clone());
+                }
+                self.rendering.dirty = true;
+            }
+            return Ok(None);
+        }
         if let ScriptMediaCommand::SetPlayback {
             playing: true,
             volume_millis,
@@ -16,6 +32,9 @@ impl DocumentRuntime {
             return Ok(Some("not-allowed"));
         }
         if matches!(&action.command, ScriptMediaCommand::Reset) {
+            if self.media_captions.remove(&action.node).is_some() {
+                self.rendering.dirty = true;
+            }
             if self
                 .media
                 .as_ref()
@@ -130,6 +149,7 @@ impl DocumentRuntime {
             return Ok(Some("media-error"));
         }
         match &action.command {
+            ScriptMediaCommand::Caption { .. } => unreachable!(),
             ScriptMediaCommand::SetPlayback {
                 playing,
                 volume_millis,

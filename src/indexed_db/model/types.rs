@@ -8,6 +8,24 @@ pub struct StoreDefinition {
     pub name: String,
     pub key_path: Option<String>,
     pub auto_increment: bool,
+    #[serde(default)]
+    pub indexes: Vec<IndexDefinition>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum IndexKeyPath {
+    Single(String),
+    Compound(Vec<String>),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexDefinition {
+    pub name: String,
+    pub key_path: IndexKeyPath,
+    pub unique: bool,
+    pub multi_entry: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,6 +94,36 @@ pub enum DbOperation {
         store: String,
         range: Option<KeyRange>,
     },
+    IndexGet {
+        store: String,
+        index: String,
+        range: KeyRange,
+        keys_only: bool,
+    },
+    IndexGetAll {
+        store: String,
+        index: String,
+        range: Option<KeyRange>,
+        limit: Option<u32>,
+        keys_only: bool,
+    },
+    IndexCount {
+        store: String,
+        index: String,
+        range: Option<KeyRange>,
+    },
+    IndexScan {
+        store: String,
+        index: String,
+        range: Option<KeyRange>,
+        after: Option<Key>,
+        after_primary: Option<Key>,
+        inclusive: bool,
+        skip: u32,
+        reverse: bool,
+        unique: bool,
+        keys_only: bool,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,6 +140,8 @@ pub enum DbResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CursorRecord {
     pub key: Key,
+    #[serde(rename = "primaryKey", skip_serializing_if = "Option::is_none")]
+    pub primary_key: Option<Key>,
     pub value: Option<String>,
 }
 

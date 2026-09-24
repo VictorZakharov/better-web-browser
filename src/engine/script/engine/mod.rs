@@ -7,6 +7,8 @@ mod crypto;
 mod dynamic_imports;
 mod event_handlers;
 pub(super) mod frames;
+#[cfg(windows)]
+mod gamepad;
 mod message_clone;
 mod messaging;
 mod modules;
@@ -18,6 +20,8 @@ pub(crate) mod runtime;
 mod v8_api;
 mod value;
 pub(crate) mod watchdog;
+#[cfg(target_os = "windows")]
+mod web_crypto;
 mod window_access;
 
 pub(super) use bridge::HostBridge;

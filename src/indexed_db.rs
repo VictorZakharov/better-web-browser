@@ -11,5 +11,5 @@ mod tests;
 
 pub use model::{
     CursorRecord, DatabaseInfo, DatabaseListing, DbError, DbOperation, DbResult, DbSession,
-    IndexedDb, Key, KeyRange, StoreDefinition, TransactionMode,
+    IndexDefinition, IndexKeyPath, IndexedDb, Key, KeyRange, StoreDefinition, TransactionMode,
 };

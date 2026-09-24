@@ -1,7 +1,7 @@
 pub mod css;
 pub mod display_list;
 pub mod dom;
-mod font;
+pub(crate) mod font;
 pub(crate) mod fragment_navigation;
 pub mod invalidation;
 pub mod layout;

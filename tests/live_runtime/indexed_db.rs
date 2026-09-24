@@ -2,6 +2,100 @@
 use super::*;
 
 #[test]
+fn indexed_db_secondary_indexes_and_upgrade_work_in_hidden_browser() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind page fixture");
+    let address = listener.local_addr().unwrap();
+    let html = r#"<!doctype html><title>index pending</title>
+        <style>body { background: rgb(220,20,20); } #state { height: 600px; }</style>
+        <div id="state">pending</div><script>
+        const fail = message => {
+            document.title = 'index failure ' + (message?.name || message);
+            document.getElementById('state').textContent = document.title;
+        };
+        const done = () => {
+            document.title = 'index complete';
+            document.getElementById('state').textContent = document.title;
+            document.body.style.backgroundColor = 'rgb(17,170,34)';
+        };
+        const opened = indexedDB.open('index-runtime', 1);
+        opened.onupgradeneeded = () => {
+            const store = opened.result.createObjectStore('items');
+            store.createIndex('by_group', 'group');
+            store.createIndex('by_slug', 'slug', { unique: true });
+            store.createIndex('by_tags', 'tags', { multiEntry: true });
+            store.put({ group: 'b', slug: 'beta', tags: ['shared', 'shared'] }, 2);
+            store.put({ group: 'a', slug: 'alpha', tags: ['shared', 'other'] }, 1);
+        };
+        opened.onerror = () => fail(opened.error);
+        opened.onsuccess = () => {
+            const db = opened.result;
+            const tx = db.transaction('items');
+            const store = tx.objectStore('items');
+            if (!store.indexNames.contains('by_group') || store.indexNames.length !== 3)
+                return fail('index names');
+            const group = store.index('by_group');
+            const first = group.get('a');
+            const key = group.getKey('b');
+            const keys = group.getAllKeys();
+            const count = store.index('by_tags').count('shared');
+            const cursor = group.openCursor();
+            const tagCursor = store.index('by_tags').openCursor(IDBKeyRange.only('shared'));
+            const seen = [];
+            const jumped = [];
+            cursor.onsuccess = () => {
+                if (!cursor.result) return;
+                seen.push([cursor.result.key, cursor.result.primaryKey,
+                    cursor.result.value.slug]);
+                cursor.result.continue();
+            };
+            tagCursor.onsuccess = () => {
+                if (!tagCursor.result) return;
+                jumped.push(tagCursor.result.primaryKey);
+                if (jumped.length === 1)
+                    tagCursor.result.continuePrimaryKey('shared', 2);
+                else tagCursor.result.continue();
+            };
+            tx.oncomplete = () => {
+                if (first.result?.slug !== 'alpha' || key.result !== 2 ||
+                    String(keys.result) !== '1,2' || count.result !== 2 ||
+                    String(jumped) !== '1,2' ||
+                    JSON.stringify(seen) !== JSON.stringify([
+                        ['a', 1, 'alpha'], ['b', 2, 'beta']]))
+                    return fail('ordered index queries');
+                db.close();
+                const upgraded = indexedDB.open('index-runtime', 2);
+                upgraded.onupgradeneeded = () => upgraded.transaction.objectStore('items')
+                    .createIndex('by_pair', ['group', 'slug']);
+                upgraded.onerror = () => fail(upgraded.error);
+                upgraded.onsuccess = () => {
+                    const next = upgraded.result.transaction('items');
+                    const pair = next.objectStore('items').index('by_pair')
+                        .getKey(['b', 'beta']);
+                    next.oncomplete = () => pair.result === 2 ? done() : fail('upgrade backfill');
+                };
+            };
+        };
+        </script>"#
+        .to_string();
+    let server = thread::spawn(move || {
+        serve_parallel_fixtures(listener, 1, move |_| FixtureResponse::html(html.clone()))
+    });
+    let artifacts = TestArtifacts::new();
+    let url = format!("http://{address}/page");
+    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let status = wait_for_child(&mut child, Duration::from_secs(25));
+    server.join().unwrap().unwrap();
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+    let report = fs::read_to_string(&artifacts.json).unwrap();
+    assert!(report.contains("\"javascript_errors\": []"), "{report}");
+    assert!(
+        report.contains("index complete"),
+        "index API did not finish: {report}"
+    );
+    assert_green_capture(&artifacts, "index API did not repaint the page");
+}
+
+#[test]
 fn indexed_db_upgrade_write_and_read_complete_in_hidden_browser() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind page fixture");
     let address = listener.local_addr().unwrap();

@@ -14,6 +14,7 @@ fn generated_inline_keys_are_injected_into_persisted_structured_clones() {
                 name: "records".into(),
                 key_path: Some("meta.id".into()),
                 auto_increment: true,
+                indexes: Vec::new(),
             }],
             &[],
             &[],

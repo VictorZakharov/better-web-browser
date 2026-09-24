@@ -110,6 +110,11 @@
             this.__shadowOffsetY = 0;
             this.__filter = 'none';
             this.__filterOperations = [];
+            this.__font = '10px sans-serif';
+            this.__fontSpec = host('canvasParseFont', this.__font);
+            this.__textAlign = 'start';
+            this.__textBaseline = 'alphabetic';
+            this.__direction = 'inherit';
             this.__path = newCanvasPath();
             this.__stack = [];
         }
@@ -151,7 +156,10 @@
                     transform: [...this.__transform], clipBits: this.__clipBits,
                     shadowColor: this.__shadowColor, shadowBlur: this.__shadowBlur,
                     shadowOffsetX: this.__shadowOffsetX, shadowOffsetY: this.__shadowOffsetY,
-                    filter: this.__filter, filterOperations: this.__filterOperations });
+                    filter: this.__filter, filterOperations: this.__filterOperations,
+                    text: { font: this.__font, fontSpec: this.__fontSpec,
+                        textAlign: this.__textAlign, textBaseline: this.__textBaseline,
+                        direction: this.__direction } });
         }
         restore() {
             const state = this.__stack.pop();
@@ -176,6 +184,11 @@
                 this.__shadowOffsetY = state.shadowOffsetY;
                 this.__filter = state.filter;
                 this.__filterOperations = state.filterOperations;
+                this.__font = state.text.font;
+                this.__fontSpec = state.text.fontSpec;
+                this.__textAlign = state.text.textAlign;
+                this.__textBaseline = state.text.textBaseline;
+                this.__direction = state.text.direction;
             }
         }
         clearRect(x, y, width, height) { this.__paintRect(x, y, width, height, null); }

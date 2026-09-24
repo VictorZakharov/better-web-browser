@@ -66,7 +66,8 @@
             const command = this._upgrade ? {
                 kind: 'upgrade', name: this.db.name,
                 previousVersion: this.db._previousVersion, version: this.db.version,
-                create: this._created, remove: this._removed, writes: operations
+                create: this._created, remove: this._removed, writes: operations,
+                definitions: [...this.db._stores.values()]
             } : {
                 kind: 'transaction', name: this.db.name, version: this.db.version,
                 transactionId: this._id, phase: 'step',
@@ -144,7 +145,7 @@
             this.name = definition.name;
             this.keyPath = definition.keyPath;
             this.autoIncrement = definition.autoIncrement;
-            this.indexNames = new DOMStringList([]);
+            this._definition = definition;
         }
         _put(value, key, overwrite) {
             if (this.transaction.mode === 'readonly')

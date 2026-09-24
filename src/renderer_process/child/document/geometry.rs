@@ -203,6 +203,7 @@ impl DocumentRuntime {
         );
         drop(text);
         self.compose_embedded_frames();
+        self.compose_media_captions();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
             runtime.set_layout_fragments(&self.layout.fragments);

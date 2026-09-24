@@ -2,6 +2,28 @@
 //! https://drafts.csswg.org/css-fonts-4/#font-family-prop
 use cssparser::{Parser, ParserInput};
 
+/// Canvas `font` attributes share page text's CSS shorthand parser. A sentinel family
+/// distinguishes a valid declaration equal to initial values from an invalid one.
+pub(crate) fn parse_canvas_font(value: &str) -> Option<crate::engine::FontSpec> {
+    let mut style = super::ComputedStyle {
+        font_family: String::new(),
+        ..super::ComputedStyle::initial()
+    };
+    super::apply_font_shorthand(&mut style, value, 10.0, 300.0, 150.0);
+    if style.font_family.is_empty() {
+        return None;
+    }
+    Some(crate::engine::FontSpec {
+        family: style.font_family,
+        size: style.font_size,
+        weight: style.font_weight,
+        italic: style.italic,
+        underline: false,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+    })
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum Family {
     Named(String),

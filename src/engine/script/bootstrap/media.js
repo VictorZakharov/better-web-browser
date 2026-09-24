@@ -123,10 +123,12 @@
             value = Math.max(0, Number.isFinite(state.duration) ? Math.min(value, state.duration) : value);
             if (state.readyState === HTMLMediaElement.HAVE_NOTHING) {
                 state.currentTime = value;
+                updateTextTracks(this);
                 return;
             }
             state.seeking = true;
             state.currentTime = value;
+            updateTextTracks(this);
             queueMediaEvent(this, 'seeking');
             if (!beginMediaSourceSeek(this)) mediaCommand(this, 0, 'seek', value);
         }
@@ -300,6 +302,7 @@
         switch (input.disposition) {
             case 'loaded':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                updateTextTracks(element);
                 state.networkState = HTMLMediaElement.NETWORK_IDLE;
                 state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
                 state.currentSrc = element.src;
@@ -333,12 +336,14 @@
             case 'time':
                 traceMediaClock(element, input);
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                updateTextTracks(element);
                 updateMediaCanPlay(element);
                 state.played = new TimeRanges(timeRangesConstructionToken, [[0, state.currentTime]]);
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));
                 return true;
             case 'seeked':
                 state.currentTime = Math.max(0, Number(input.currentTime) || 0);
+                updateTextTracks(element);
                 state.seeking = false;
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));
                 element.dispatchEvent(markTrusted(new Event('seeked')));
@@ -370,6 +375,7 @@
             case 'ended':
                 if (waitForMediaSourceData(element, input.currentTime)) return true;
                 state.currentTime = Number.isFinite(state.duration) ? state.duration : state.currentTime;
+                updateTextTracks(element);
                 state.paused = true;
                 state.ended = true;
                 element.dispatchEvent(markTrusted(new Event('timeupdate')));

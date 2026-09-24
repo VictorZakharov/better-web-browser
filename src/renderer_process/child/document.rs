@@ -100,6 +100,8 @@ pub(super) struct DocumentRuntime {
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
+    media_captions:
+        HashMap<crate::engine::dom::NodeId, Vec<crate::engine::script::ScriptCaptionCue>>,
     media_activation: media::MediaActivation,
     media_failure: Option<String>,
     pending_media_action: Option<media::PendingMediaAction>,

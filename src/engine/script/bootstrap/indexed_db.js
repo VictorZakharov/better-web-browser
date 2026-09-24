@@ -26,7 +26,7 @@
                 !/^[A-Za-z_$][\w$]*$/.test(part))))
                 throw new DOMException('Invalid object-store key path', 'SyntaxError');
             const autoIncrement = Boolean(options.autoIncrement);
-            const definition = { name, keyPath, autoIncrement };
+            const definition = { name, keyPath, autoIncrement, indexes: [] };
             this._stores.set(name, definition);
             transaction._created.push(definition);
             transaction.objectStoreNames = new DOMStringList(this._stores.keys());

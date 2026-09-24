@@ -1,4 +1,4 @@
-use super::value::{JsError, JsErrorKind, JsResult, JsValue};
+use super::value::{JsError, JsErrorKind, JsNativeError, JsResult, JsValue};
 use crate::engine::script::host_state::HostState;
 use crate::engine::script::worker_host::WorkerHostState;
 use std::cell::RefCell;
@@ -35,6 +35,25 @@ impl HostBridge {
                     .clone(),
             };
             return Ok(JsValue::from(super::crypto::trustworthy_url(&url)));
+        }
+        if operation == "cryptoSubtleAvailable" {
+            return Ok(JsValue::from(cfg!(target_os = "windows")));
+        }
+        if operation == "gamepadAvailable" {
+            return Ok(JsValue::from(cfg!(windows)));
+        }
+        #[cfg(windows)]
+        if operation == "gamepadPoll" {
+            return match self {
+                Self::Document(_) => Ok(super::gamepad::poll()),
+                Self::Worker(_) => Err(JsNativeError::typ()
+                    .with_message("Gamepads are not exposed in workers")
+                    .into()),
+            };
+        }
+        #[cfg(target_os = "windows")]
+        if operation.starts_with("cryptoSubtle") {
+            return super::web_crypto::dispatch(&operation, arguments);
         }
         match self {
             Self::Document(host) => {

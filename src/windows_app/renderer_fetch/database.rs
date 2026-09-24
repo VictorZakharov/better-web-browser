@@ -41,6 +41,8 @@ enum Request {
         create: Vec<StoreDefinition>,
         remove: Vec<String>,
         writes: Vec<DbOperation>,
+        #[serde(default)]
+        definitions: Vec<StoreDefinition>,
     },
     Transaction {
         transaction_id: u64,
@@ -194,8 +196,9 @@ fn execute(
             create,
             remove,
             writes,
+            definitions,
         } => database
-            .upgrade(
+            .upgrade_with_schema(
                 &job.origin_url,
                 &name,
                 previous_version,
@@ -203,6 +206,7 @@ fn execute(
                 &create,
                 &remove,
                 &writes,
+                &definitions,
             )
             .map(|results| results_payload("upgrade", results)),
         Request::Transaction {

@@ -17,7 +17,8 @@
     ).split(/\s+/);
     const windowHandlerTypes = (
         'afterprint beforeprint beforeunload hashchange languagechange message messageerror offline online ' +
-        'pagehide pagereveal pageshow pageswap popstate rejectionhandled storage unhandledrejection unload'
+        'pagehide pagereveal pageshow pageswap popstate rejectionhandled storage unhandledrejection unload ' +
+        'gamepadconnected gamepaddisconnected'
     ).split(/\s+/);
     const reflectedBodyHandlerTypes = new Set([
         ...windowHandlerTypes, 'blur', 'error', 'focus', 'load', 'resize', 'scroll'

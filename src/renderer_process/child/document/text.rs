@@ -3,14 +3,9 @@
 //! Page font bytes and page text stay inside the AppContainer. The browser receives only bounded
 //! glyph placements and premultiplied raster assets over the validated presentation protocol.
 
-mod catalog;
-mod geometry;
 mod raster;
-mod shape;
-
-use self::catalog::FontCatalog;
 use self::raster::{GlyphRasterCache, RasterizedGlyph};
-use self::shape::TextShaper;
+use crate::engine::font::shaping::{FontCatalog, TextShaper};
 use crate::engine::layout::{TextCluster, TextGeometry};
 use crate::engine::{FontSpec, PositionedGlyph, ShapedText, TextMeasurer, WebFont};
 use crate::renderer_protocol::{PageLoadReport, PresentedGlyphRaster};

@@ -11,24 +11,24 @@ use unicode_bidi::BidiInfo;
 use unicode_script::{Script, UnicodeScript};
 use unicode_segmentation::UnicodeSegmentation;
 
-pub(super) struct ShapedGlyph {
-    pub(super) font: SelectedFont,
-    pub(super) glyph_id: u16,
-    pub(super) x: f32,
-    pub(super) baseline: f32,
+pub(crate) struct ShapedGlyph {
+    pub(crate) font: SelectedFont,
+    pub(crate) glyph_id: u16,
+    pub(crate) x: f32,
+    pub(crate) baseline: f32,
 }
 
-pub(super) struct ShapeOutput {
+pub(crate) struct ShapeOutput {
     pending_clusters: Vec<TextCluster>,
-    pub(super) geometry: TextGeometry,
-    pub(super) width: f32,
-    pub(super) height: f32,
-    pub(super) glyphs: Vec<ShapedGlyph>,
-    pub(super) font_select_time: Duration,
-    pub(super) open_type_time: Duration,
+    pub(crate) geometry: TextGeometry,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) glyphs: Vec<ShapedGlyph>,
+    pub(crate) font_select_time: Duration,
+    pub(crate) open_type_time: Duration,
 }
 
-pub(super) struct TextShaper {
+pub(crate) struct TextShaper {
     data: HashMap<(u64, u32), ShaperData>,
     buffer: Option<UnicodeBuffer>,
 }
@@ -43,12 +43,12 @@ impl Default for TextShaper {
 }
 
 impl TextShaper {
-    pub(super) fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.data.clear();
         self.buffer = Some(UnicodeBuffer::new());
     }
 
-    pub(super) fn shape(
+    pub(crate) fn shape(
         &mut self,
         catalog: &mut FontCatalog,
         text: &str,

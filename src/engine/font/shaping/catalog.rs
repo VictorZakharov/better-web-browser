@@ -33,20 +33,20 @@ impl SelectionKey<'_> {
 }
 
 #[derive(Clone)]
-pub(super) struct SelectedFont {
-    pub(super) font: QueryFont,
-    pub(super) instance: FontInstanceKey,
+pub(crate) struct SelectedFont {
+    pub(crate) font: QueryFont,
+    pub(crate) instance: FontInstanceKey,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct FontInstanceKey {
-    pub(super) blob_id: u64,
-    pub(super) index: u32,
-    pub(super) weight: u16,
-    pub(super) italic: bool,
+pub(crate) struct FontInstanceKey {
+    pub(crate) blob_id: u64,
+    pub(crate) index: u32,
+    pub(crate) weight: u16,
+    pub(crate) italic: bool,
 }
 
-pub(super) struct FontCatalog {
+pub(crate) struct FontCatalog {
     collection: Collection,
     sources: SourceCache,
     registered_web_fonts: usize,
@@ -54,7 +54,7 @@ pub(super) struct FontCatalog {
 }
 
 impl FontCatalog {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             // Fontique asks DirectWrite for family metadata lazily. On Windows this avoids the
             // eager scan of every installed font that dominated the previous cold path.
@@ -65,7 +65,7 @@ impl FontCatalog {
         }
     }
 
-    pub(super) fn register_web_fonts(&mut self, fonts: &[WebFont]) -> bool {
+    pub(crate) fn register_web_fonts(&mut self, fonts: &[WebFont]) -> bool {
         if self.registered_web_fonts == fonts.len() {
             return false;
         }
@@ -90,7 +90,7 @@ impl FontCatalog {
         true
     }
 
-    pub(super) fn reset_web_fonts(&mut self) -> bool {
+    pub(crate) fn reset_web_fonts(&mut self) -> bool {
         if self.registered_web_fonts == 0 {
             return false;
         }
@@ -98,7 +98,7 @@ impl FontCatalog {
         true
     }
 
-    pub(super) fn select(
+    pub(crate) fn select(
         &mut self,
         family: &str,
         spec: &FontSpec,
@@ -180,12 +180,12 @@ impl FontCatalog {
     }
 
     #[cfg(test)]
-    pub(super) fn contains_family(&mut self, family: &str) -> bool {
+    pub(crate) fn contains_family(&mut self, family: &str) -> bool {
         self.collection.family_by_name(family).is_some()
     }
 
     #[cfg(test)]
-    pub(super) fn first_system_font_bytes(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn first_system_font_bytes(&mut self) -> Option<Vec<u8>> {
         let family = self.collection.family_names().next()?.to_owned();
         let info = self.collection.family_by_name(&family)?;
         info.fonts()

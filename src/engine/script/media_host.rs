@@ -52,6 +52,37 @@ pub(super) fn media_host_call(
         _ => return Ok(Some(JsValue::undefined())),
     };
     let command = match operation {
+        "caption" => {
+            let Some(JsValue::String(json)) = args.get(4) else {
+                return Ok(Some(JsValue::undefined()));
+            };
+            if json.len() > 4096 {
+                return Ok(Some(JsValue::undefined()));
+            }
+            let cues: Vec<super::types::ScriptCaptionCue> = serde_json::from_str(json)
+                .map_err(|_| JsNativeError::typ().with_message("Invalid caption cues"))?;
+            if cues.len() > 4
+                || cues.iter().any(|cue| {
+                    cue.text.len() > 512
+                        || cue.position_percent > 100
+                        || cue.size_percent > 100
+                        || cue.line_percent.is_some_and(|line| line > 100)
+                        || !matches!(
+                            cue.align.as_str(),
+                            "start" | "center" | "end" | "left" | "right"
+                        )
+                        || !matches!(
+                            cue.position_align.as_str(),
+                            "auto" | "line-left" | "center" | "line-right"
+                        )
+                })
+            {
+                return Err(JsNativeError::typ()
+                    .with_message("Invalid caption cue bounds")
+                    .into());
+            }
+            ScriptMediaCommand::Caption { cues }
+        }
         "playback" => ScriptMediaCommand::SetPlayback {
             playing: args.get(4).and_then(JsValue::as_boolean).unwrap_or(false),
             volume_millis: volume(args.get(5)),

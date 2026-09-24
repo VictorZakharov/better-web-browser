@@ -131,6 +131,7 @@ impl DocumentRuntime {
             diagnostic_selectors: start.diagnostic_selectors,
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
             media: None,
+            media_captions: HashMap::new(),
             media_activation: Default::default(),
             media_failure: None,
             pending_media_action: None,
