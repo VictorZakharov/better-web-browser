@@ -38,6 +38,15 @@
     windowObject.SVGNumberList = SVGNumberList;
     windowObject.SVGAnimatedNumberList = SVGAnimatedNumberList;
     windowObject.SVGFEColorMatrixElement = SVGFEColorMatrixElement;
+    windowObject.SVGLength = SVGLength;
+    windowObject.SVGAnimatedLength = SVGAnimatedLength;
+    windowObject.SVGUnitTypes = SVGUnitTypes;
+    windowObject.SVGFilterElement = SVGFilterElement;
+    Object.assign(windowObject, {
+        SVGFEOffsetElement, SVGFEGaussianBlurElement, SVGFECompositeElement,
+        SVGFEBlendElement, SVGFEFloodElement, SVGFEMergeElement, SVGFEMergeNodeElement
+    });
+    windowObject.SVGAnimatedNumber = SVGAnimatedNumber;
     windowObject.Attr = Attr;
     windowObject.NamedNodeMap = NamedNodeMap;
     windowObject.NodeFilter = NodeFilter;

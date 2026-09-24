@@ -25,7 +25,13 @@
         altKey: !!input.alt, ctrlKey: !!input.control,
         shiftKey: !!input.shift, metaKey: !!input.meta
     });
+    let previousPointerPosition = null;
     const dispatchNativePointer = input => {
+        const position = { x: Number(input.x) - viewportScrollX,
+            y: Number(input.y) - viewportScrollY };
+        const movementX = previousPointerPosition ? position.x - previousPointerPosition.x : 0;
+        const movementY = previousPointerPosition ? position.y - previousPointerPosition.y : 0;
+        previousPointerPosition = input.phase === 'leave' ? null : position;
         const target = nativeTarget(input.target);
         const dispatchPair = (phase, init) => {
             const names = phase === 'down'
@@ -46,7 +52,7 @@
         const init = {
             bubbles: true, cancelable: true, composed: true,
             // The renderer hit-tests document coordinates; DOM client coordinates use viewport space.
-            clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,
+            clientX: position.x, clientY: position.y, movementX, movementY,
             view: windowObject,
             button: input.button, buttons: input.buttons,
             pointerId: 1, pointerType: 'mouse', isPrimary: true,

@@ -20,6 +20,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/node_equality.js"),
     include_str!("bootstrap/elements.js"),
     include_str!("bootstrap/svg_filter_interfaces.js"),
+    include_str!("bootstrap/svg_filter_lengths.js"),
+    include_str!("bootstrap/svg_filter_primitives.js"),
     include_str!("bootstrap/html_elements.js"),
     include_str!("bootstrap/adjacent_insertion.js"),
     include_str!("bootstrap/disclosure_elements.js"),

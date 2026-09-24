@@ -21,6 +21,8 @@
             this.screenY = Number(init.screenY) || 0;
             this.clientX = Number(init.clientX) || 0;
             this.clientY = Number(init.clientY) || 0;
+            this.movementX = Number(init.movementX) || 0;
+            this.movementY = Number(init.movementY) || 0;
             this.ctrlKey = !!init.ctrlKey;
             this.shiftKey = !!init.shiftKey;
             this.altKey = !!init.altKey;

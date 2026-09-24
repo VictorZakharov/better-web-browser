@@ -258,7 +258,7 @@
                 ? htmlElementConstructor(metadata[2])
                 : namespace === svgNamespace
                     ? metadata[2] === 'svg' ? SVGSVGElement :
-                        metadata[2] === 'feColorMatrix' ? SVGFEColorMatrixElement : SVGElement
+                        svgFilterElementInterfaces[metadata[2]] || SVGElement
                     : Element;
             node = Constructor === HTMLTitleElement
                 ? new HTMLTitleElement(id, type, metadata[1], metadata[2], namespace, htmlTitleConstructionToken)
