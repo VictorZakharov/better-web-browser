@@ -222,6 +222,11 @@ pub(super) fn apply_declaration(
             }
         }
         "visibility" => style.visibility = value != "hidden" && value != "collapse",
+        "pointer-events" => {
+            if matches!(value, "auto" | "none") {
+                style.pointer_events = value == "auto";
+            }
+        }
         "opacity" => style.opacity = parse_opacity(value).unwrap_or(style.opacity),
         "transform" => {
             if let Some(transform) = super::transform::parse_transform(value) {

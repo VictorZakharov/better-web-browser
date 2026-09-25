@@ -99,6 +99,7 @@ mod node_equality;
 mod node_standard;
 mod nodes;
 mod performance;
+mod point_queries;
 mod pointer_hover;
 mod published_geometry;
 mod ranges;

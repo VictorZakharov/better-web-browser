@@ -152,6 +152,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             sticky_layers: Vec::new(),
             scroll_boxes: HashMap::new(),
             clip_paths: HashMap::new(),
+            hit_excluded: HashSet::new(),
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,
@@ -203,6 +204,24 @@ fn layout_page_for_output<M: TextMeasurer>(
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
     block::paint_order::finalize(&mut engine.output);
+    if emit_paint {
+        // Text display items retain text-node IDs, so resolve their inherited
+        // eligibility alongside element IDs in one ancestor-first DOM walk.
+        for node in Node::shadow_including_descendants(&page.dom.document) {
+            let eligible = styles
+                .styles
+                .get(&node.id())
+                .map(|style| style.pointer_events && style.visibility)
+                .or_else(|| {
+                    Node::composed_parent(&node)
+                        .map(|parent| !engine.output.hit_excluded.contains(&parent.id()))
+                })
+                .unwrap_or(true);
+            if !eligible {
+                engine.output.hit_excluded.insert(node.id());
+            }
+        }
+    }
     box_tree.remove_anonymous_geometry(&mut engine.output);
     engine.output.update_sticky_positions(
         page,

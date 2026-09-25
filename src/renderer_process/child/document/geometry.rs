@@ -151,6 +151,7 @@ impl DocumentRuntime {
             // style-before-layout gate used by mature rendering engines and prevents repeated
             // ARIA/data updates from forcing full synchronous page layouts.
             if geometry_ready
+                && !metrics.hit_test_requested
                 && !metrics.scroll_changed
                 && !style_refresh.layout_changed
                 && !invalidation.impact.affects_intrinsic_size()
@@ -164,16 +165,33 @@ impl DocumentRuntime {
                 profile: metrics.profile,
                 elapsed: Duration::ZERO,
             };
-            let geometry = crate::engine::layout_geometry_with_style_viewport(
-                &page,
-                viewport.width,
-                viewport.height,
-                viewport.style_width,
-                &mut geometry_text,
-            );
+            let geometry = if metrics.hit_test_requested {
+                crate::engine::layout_page_with_style_viewport(
+                    &page,
+                    viewport.width,
+                    viewport.height,
+                    viewport.style_width,
+                    &mut geometry_text,
+                )
+            } else {
+                crate::engine::layout_geometry_with_style_viewport(
+                    &page,
+                    viewport.width,
+                    viewport.height,
+                    viewport.style_width,
+                    &mut geometry_text,
+                )
+            };
             metrics.text_measure = geometry_text.elapsed;
             metrics.layout = started.elapsed();
             metrics.content_height = Some(geometry.content_height);
+            if metrics.hit_test_requested {
+                metrics.hit_test_snapshot =
+                    Some(crate::engine::layout::HitTestSnapshot::from_layout(
+                        &geometry,
+                        &page.dom.document,
+                    ));
+            }
             metrics.resize_boxes = Some(geometry.resize_boxes);
             metrics.fragments = Some(geometry.fragments);
             metrics.scroll_boxes = Some(geometry.scroll_boxes);
@@ -217,6 +235,7 @@ impl DocumentRuntime {
         self.compose_media_captions();
         if let Some(runtime) = self.script_runtime.as_mut() {
             runtime.set_layout_geometry(&self.layout.node_bounds);
+            runtime.set_hit_test_snapshot(&self.layout);
             runtime.set_layout_fragments(&self.layout.fragments);
             runtime.set_resize_boxes(&self.layout.resize_boxes);
             runtime.set_scroll_boxes(&self.layout.scroll_boxes);

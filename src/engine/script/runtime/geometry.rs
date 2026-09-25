@@ -1,6 +1,12 @@
 use super::*;
 
 impl ScriptRuntime {
+    pub(crate) fn set_hit_test_snapshot(&mut self, layout: &crate::engine::LayoutOutput) {
+        let mut host = self.host.borrow_mut();
+        host.hit_test_snapshot =
+            crate::engine::layout::HitTestSnapshot::from_layout(layout, &host.document);
+        host.hit_test_geometry_version = Some(host.document.subtree_mutation_version());
+    }
     pub(crate) fn set_layout_fragments(
         &mut self,
         fragments: &std::sync::Arc<crate::engine::layout::FragmentGeometry>,

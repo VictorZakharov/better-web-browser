@@ -3,6 +3,8 @@ use super::*;
 
 #[derive(Default)]
 pub struct LayoutFlushMetrics {
+    pub(crate) hit_test_snapshot: Option<crate::engine::layout::HitTestSnapshot>,
+    pub(crate) hit_test_requested: bool,
     pub(crate) fragments: Option<std::sync::Arc<crate::engine::layout::FragmentGeometry>>,
     pub(crate) sticky_offsets: Option<HashMap<NodeId, (f32, f32)>>,
     pub(crate) scroll_changed: bool,
@@ -24,6 +26,14 @@ pub(crate) type LayoutFlushCallback =
 
 impl HostState {
     pub(in crate::engine::script) fn flush_layout_if_needed(&mut self) {
+        self.flush_layout(false);
+    }
+
+    pub(in crate::engine::script) fn flush_hit_test_if_needed(&mut self) {
+        self.flush_layout(true);
+    }
+
+    fn flush_layout(&mut self, hit_test_requested: bool) {
         let version = self.document.subtree_mutation_version();
         let scroll_changed = !self.sticky_offsets.is_empty()
             && (self.geometry_scroll_dirty
@@ -31,6 +41,7 @@ impl HostState {
         if self.layout_geometry_initialized
             && self.layout_geometry_version == version
             && !scroll_changed
+            && (!hit_test_requested || self.hit_test_geometry_version == Some(version))
         {
             return;
         }
@@ -40,12 +51,17 @@ impl HostState {
         let invalidation = self.pending_layout_invalidation.take(self.mutation_count);
         let mut metrics = LayoutFlushMetrics {
             scroll_changed,
+            hit_test_requested,
             profile: self.host_call_profile.is_enabled(),
             ..LayoutFlushMetrics::default()
         };
         if let Some(geometry) = flush(&invalidation, &mut metrics) {
             self.layout_geometry = geometry;
             self.layout_fragments = metrics.fragments.take().unwrap_or_default();
+        }
+        if let Some(snapshot) = metrics.hit_test_snapshot.take() {
+            self.hit_test_snapshot = snapshot;
+            self.hit_test_geometry_version = Some(version);
         }
         if let Some(boxes) = metrics.resize_boxes {
             self.resize_boxes = boxes;

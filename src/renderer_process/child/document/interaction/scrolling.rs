@@ -69,7 +69,9 @@ impl DocumentRuntime {
             let Some(node) = self.page.dom.find_node(*id) else {
                 continue;
             };
-            if !self.layout.point_in_scroll_clips(&node, input.x, input.y) {
+            if self.layout.hit_excluded.contains(&node.id())
+                || !self.layout.point_in_scroll_clips(&node, input.x, input.y)
+            {
                 continue;
             }
             let Some(raw) = self.layout.node_bounds.get(id) else {

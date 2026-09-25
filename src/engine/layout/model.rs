@@ -170,6 +170,8 @@ pub struct LayoutOutput {
     pub scroll_boxes: HashMap<NodeId, super::ScrollBox>,
     /// Native rectangular clip paths, retained for input hit testing.
     pub clip_paths: HashMap<NodeId, RectF>,
+    /// Computed visibility and pointer-events eligibility for input hit testing.
+    pub hit_excluded: HashSet<NodeId>,
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,

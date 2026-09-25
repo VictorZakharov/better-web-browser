@@ -166,8 +166,10 @@ pub(super) fn hit_frame(
         let target = frame.layout.node_paint_order.iter().rev().find_map(|id| {
             let node = frame.page.dom.find_node(*id)?;
             let rect = frame.layout.visual_rect(&node)?;
-            (contains(rect, x, y) && frame.layout.point_in_scroll_clips(&node, x, y))
-                .then_some(node)
+            (contains(rect, x, y)
+                && !frame.layout.hit_excluded.contains(id)
+                && frame.layout.point_in_scroll_clips(&node, x, y))
+            .then_some(node)
         });
         return Some((frame, target, x, y));
     }

@@ -122,6 +122,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "border-collapse" => matches!(value.as_str(), "separate" | "collapse"),
         "caption-side" => matches!(value.as_str(), "top" | "bottom"),
         "visibility" => matches!(value.as_str(), "visible" | "hidden" | "collapse"),
+        "pointer-events" => matches!(value.as_str(), "auto" | "none"),
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
         }

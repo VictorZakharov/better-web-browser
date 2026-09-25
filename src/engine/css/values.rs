@@ -220,6 +220,7 @@ pub struct ComputedStyle {
     pub bottom: Length,
     pub left: Length,
     pub visibility: bool,
+    pub pointer_events: bool,
     pub opacity: f32,
     pub(crate) clip_path: clip_path::ClipPath,
     pub(crate) transform: transform::TransformList,
@@ -316,6 +317,7 @@ impl ComputedStyle {
             bottom: Length::Auto,
             left: Length::Auto,
             visibility: true,
+            pointer_events: true,
             opacity: 1.0,
             clip_path: clip_path::ClipPath::default(),
             transform: transform::TransformList::default(),
@@ -375,6 +377,7 @@ impl ComputedStyle {
             style.caption_side_bottom = parent.caption_side_bottom;
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
+            style.pointer_events = parent.pointer_events;
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style

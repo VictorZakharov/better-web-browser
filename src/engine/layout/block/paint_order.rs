@@ -190,17 +190,24 @@ fn parse(items: &mut std::vec::IntoIter<DisplayItem>) -> Vec<Chunk> {
                 chunks.push(Chunk::new(Phase::Content, content));
             }
             item => {
+                // Replaced controls paint without a block decoration marker.
+                // Preserve their owner in the same ordered stream as box hits.
+                let control_id = match &item {
+                    DisplayItem::Control(control) => Some(control.node_id),
+                    _ => None,
+                };
                 if let Some(last) = chunks
                     .last_mut()
                     .filter(|last| last.phase == Phase::Content && !last.escapes)
                 {
                     last.content.items.push(item);
+                    last.content.nodes.extend(control_id);
                 } else {
                     chunks.push(Chunk::new(
                         Phase::Content,
                         Contents {
                             items: vec![item],
-                            nodes: Vec::new(),
+                            nodes: control_id.into_iter().collect(),
                         },
                     ));
                 }

@@ -72,6 +72,7 @@ fn is_inherited_property(property: &str) -> bool {
             | "list-style-type"
             | "text-align"
             | "visibility"
+            | "pointer-events"
             | "white-space"
             | "word-spacing"
     )
@@ -225,6 +226,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
+        "pointer-events" => style.pointer_events = source.pointer_events,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
         "perspective" => style.perspective_non_none = source.perspective_non_none,

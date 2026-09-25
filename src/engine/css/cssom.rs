@@ -150,6 +150,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
+        "pointer-events" => if style.pointer_events { "auto" } else { "none" }.to_string(),
         "clip-path" => style.clip_path.serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {
             "preserve-3d"

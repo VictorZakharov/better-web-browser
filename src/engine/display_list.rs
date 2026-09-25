@@ -118,6 +118,7 @@ mod tests {
             sticky_layers: Default::default(),
             scroll_boxes: Default::default(),
             clip_paths: Default::default(),
+            hit_excluded: Default::default(),
             items,
             content_height: 100.0,
             background: Color::WHITE,
