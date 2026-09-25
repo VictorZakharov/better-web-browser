@@ -105,7 +105,7 @@ impl HitTestSnapshot {
                 continue;
             }
             let ancestor_index =
-                std::iter::successors(Node::composed_parent(&node), Node::composed_parent)
+                std::iter::successors(Node::composed_parent(node), Node::composed_parent)
                     .find_map(|ancestor| hits.iter().position(|hit| hit.id() == ancestor.id()));
             if let Some(index) = ancestor_index {
                 hits.insert(index, node.clone());

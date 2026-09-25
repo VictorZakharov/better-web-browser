@@ -13,6 +13,8 @@ use documents::FrameDocument;
 use images::FrameImages;
 use resources::FrameFetch;
 
+type FrameGeometryPublisher = Box<dyn Fn(&crate::engine::LayoutOutput, RectF)>;
+
 pub(crate) struct FramePaintSnapshot {
     pub element: NodeId,
     pub document: NodeId,
@@ -25,7 +27,7 @@ pub(crate) struct FramePaintSnapshot {
     pub children: Vec<FramePaintSnapshot>,
     /// Publish the exact child layout used for paint to its script realm. A child
     /// document has its own viewport and cannot use the parent document's boxes.
-    pub publish_geometry: Box<dyn Fn(&crate::engine::LayoutOutput, RectF)>,
+    pub publish_geometry: FrameGeometryPublisher,
 }
 
 #[derive(Default)]
