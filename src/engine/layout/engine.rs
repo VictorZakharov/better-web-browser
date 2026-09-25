@@ -151,6 +151,7 @@ fn layout_page_for_output<M: TextMeasurer>(
             sticky_offsets: HashMap::new(),
             sticky_layers: Vec::new(),
             scroll_boxes: HashMap::new(),
+            clip_paths: HashMap::new(),
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,

@@ -95,6 +95,7 @@ pub(in crate::engine::script) fn calculate(
             target_rect = viewport_rect(state, &target, rect);
             let chain = containing_blocks(state, &target);
             valid &= explicit.is_none_or(|root| chain.iter().any(|node| node.id() == root.id()));
+            let (version, mut styles) = state.take_offset_parent_styles();
             for ancestor in chain {
                 if explicit.is_some_and(|root| ancestor.id() == root.id()) {
                     break;
@@ -108,7 +109,29 @@ pub(in crate::engine::script) fn calculate(
                         scroll: scroll.scroll_x || scroll.scroll_y,
                     });
                 }
+                let shape = styles.computed_style_for_node(&ancestor).and_then(|style| {
+                    let border = bounds(state, &ancestor)?;
+                    let inset =
+                        style
+                            .clip_path
+                            .inset(border.width, border.height, style.font_size)?;
+                    Some(border.inset(inset))
+                });
+                if let Some(shape) = shape {
+                    // A scroll container's basic-shape clip is part of the clip
+                    // expanded by scrollMargin; a non-scrolling clip is not.
+                    clips.push(Clip {
+                        rect: viewport_rect(state, &ancestor, shape),
+                        x: true,
+                        y: true,
+                        scroll: state
+                            .scroll_boxes
+                            .get(&ancestor.id())
+                            .is_some_and(|box_| box_.scroll_x || box_.scroll_y),
+                    });
+                }
             }
+            state.offset_parent_styles = Some((version, styles));
         }
     }
     if !valid {

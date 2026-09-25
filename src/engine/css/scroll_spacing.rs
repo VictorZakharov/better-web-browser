@@ -61,7 +61,7 @@ fn parse_parts(value: &str, padding: bool) -> Option<Vec<Length>> {
 }
 
 // Whitespace separates shorthand sides except within a CSS function such as calc().
-fn split_components(value: &str) -> Option<Vec<&str>> {
+pub(super) fn split_components(value: &str) -> Option<Vec<&str>> {
     let mut parts = Vec::new();
     let mut depth = 0_u32;
     let mut start = None;
@@ -88,7 +88,7 @@ fn split_components(value: &str) -> Option<Vec<&str>> {
     Some(parts)
 }
 
-fn expand_edges(parts: &[Length]) -> Edges {
+pub(super) fn expand_edges(parts: &[Length]) -> Edges {
     let top = parts[0];
     let right = *parts.get(1).unwrap_or(&top);
     let bottom = *parts.get(2).unwrap_or(&top);

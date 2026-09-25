@@ -130,6 +130,7 @@ impl PresentedLayout {
             sticky_offsets: Default::default(),
             sticky_layers: self.sticky_layers,
             scroll_boxes: Default::default(),
+            clip_paths: Default::default(),
             items: self.items,
             content_height: self.content_height,
             background: self.background,

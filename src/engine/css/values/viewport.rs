@@ -53,6 +53,8 @@ impl ComputedStyle {
         self.flex_basis = resolve(self.flex_basis);
         self.grid_column_gap = resolve(self.grid_column_gap);
         self.grid_row_gap = resolve(self.grid_row_gap);
+        self.clip_path
+            .resolve_relative_units(width, height, root_font_size);
         self.transform.resolve_root_font_units(root_font_size);
     }
 }

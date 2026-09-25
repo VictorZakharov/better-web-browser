@@ -4,6 +4,7 @@ use super::values::LineHeight;
 use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod helpers;
+mod text;
 use helpers::*;
 pub(super) use helpers::{parse_text_spacing, parse_text_spacing_for_viewport};
 
@@ -23,6 +24,17 @@ pub(super) fn apply_declaration(
         .unwrap_or_else(|| ComputedStyle::initial().font_size);
     let root_font_size = style.root_font_size;
     if super::css_wide::apply_css_wide_keyword(style, name, value, parent, lower_origin) {
+        return;
+    }
+    if text::apply(
+        style,
+        name,
+        value,
+        inherited_font_size,
+        viewport_width,
+        viewport_height,
+        root_font_size,
+    ) {
         return;
     }
     match name {
@@ -113,6 +125,11 @@ pub(super) fn apply_declaration(
         "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             style.mask_image = parse_background_image(value, base_url)
         }
+        "clip-path" => {
+            if let Some(clip_path) = clip_path::ClipPath::parse(value) {
+                style.clip_path = clip_path;
+            }
+        }
         "background-repeat" => assign_background_repeat(style, value),
         "background-position" => {
             if let Some((x, y)) = parse_background_position(value) {
@@ -136,99 +153,6 @@ pub(super) fn apply_declaration(
             }
         }
         "background" => apply_background_shorthand(style, value, base_url),
-        "font-size" => {
-            if let Some(size) = parse_font_size_for_viewport(
-                value,
-                inherited_font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.font_size = size;
-            }
-        }
-        "font-weight" => {
-            style.font_weight = match value {
-                "normal" => 400,
-                "bold" | "bolder" => 700,
-                "lighter" => 300,
-                _ => value.parse::<u16>().unwrap_or(style.font_weight),
-            }
-        }
-        "font-style" => style.italic = matches!(value, "italic" | "oblique"),
-        "font-family" => {
-            if let Some(family) = font_family::specified(value) {
-                style.font_family = family;
-            }
-        }
-        "font" => apply_font_shorthand(
-            style,
-            value,
-            inherited_font_size,
-            viewport_width,
-            viewport_height,
-        ),
-        "letter-spacing" => {
-            if let Some(spacing) = parse_text_spacing_for_viewport(
-                value,
-                style.font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.letter_spacing = spacing;
-            }
-        }
-        "word-spacing" => {
-            if let Some(spacing) = parse_text_spacing_for_viewport(
-                value,
-                style.font_size,
-                viewport_width,
-                viewport_height,
-                root_font_size,
-            ) {
-                style.word_spacing = spacing;
-            }
-        }
-        "line-height" => {
-            if let Some(line_height) = LineHeight::parse(value) {
-                style.line_height_value = line_height;
-            }
-        }
-        "text-align" => {
-            style.text_align = match value {
-                "center" => TextAlign::Center,
-                "right" | "end" => TextAlign::End,
-                _ => TextAlign::Start,
-            }
-        }
-        "white-space" => {
-            style.white_space = match value {
-                "nowrap" => WhiteSpace::NoWrap,
-                "pre" => WhiteSpace::Pre,
-                "pre-wrap" => WhiteSpace::PreWrap,
-                "normal" => WhiteSpace::Normal,
-                _ => return,
-            }
-        }
-        "text-decoration" | "text-decoration-line" => {
-            style.text_decoration_underline = value.contains("underline");
-        }
-        "text-overflow" => {
-            if let Some(overflow) = TextOverflow::parse(value) {
-                style.text_overflow = overflow;
-            }
-        }
-        "-webkit-line-clamp" => {
-            if let Some(clamp) = LineClamp::parse(value) {
-                style.line_clamp = clamp;
-            }
-        }
-        "-webkit-box-orient" => {
-            if let Some(orient) = BoxOrient::parse(value) {
-                style.box_orient = orient;
-            }
-        }
         "width" => assign_length(&mut style.width, value),
         "height" => assign_length(&mut style.height, value),
         "min-width" => assign_length(&mut style.min_width, value),

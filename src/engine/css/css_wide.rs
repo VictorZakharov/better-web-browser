@@ -116,6 +116,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             style.mask_image.clone_from(&source.mask_image)
         }
+        "clip-path" => style.clip_path.clone_from(&source.clip_path),
         "background-repeat" => {
             style.background_repeat_x = source.background_repeat_x;
             style.background_repeat_y = source.background_repeat_y;

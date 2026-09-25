@@ -141,6 +141,7 @@
     {"path":"intersection-observer/multicol.html","area":"Intersection Observer","expected":"pass"},
     {"path":"intersection-observer/multicol-2.html","area":"Intersection Observer","expected":"pass"},
     {"path":"intersection-observer/multiple-targets.html","area":"Intersection Observer","expected":"pass"},
+    {"path":"intersection-observer/scroll-margin-clip-path.html","area":"Intersection Observer","expected":"pass"},
     {
       "path": "intersection-observer/multiple-thresholds.html",
       "area": "Intersection Observer",

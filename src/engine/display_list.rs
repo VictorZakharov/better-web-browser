@@ -117,6 +117,7 @@ mod tests {
             sticky_offsets: Default::default(),
             sticky_layers: Default::default(),
             scroll_boxes: Default::default(),
+            clip_paths: Default::default(),
             items,
             content_height: 100.0,
             background: Color::WHITE,

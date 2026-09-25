@@ -14,7 +14,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         if !self.emit_paint {
             return;
         }
-        let effect_context = style.opacity < 1.0 || !style.transform.is_none();
+        let effect_context =
+            style.opacity < 1.0 || !style.transform.is_none() || !style.clip_path.is_none();
         let positioned = style.position != Position::Static;
         let root = matches!(node.tag_name(), Some("body" | "html"));
         let isolates = root

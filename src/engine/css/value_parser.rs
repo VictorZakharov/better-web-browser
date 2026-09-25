@@ -333,7 +333,7 @@ pub(crate) fn parse_color(value: &str) -> Option<Color> {
     })
 }
 
-pub(super) fn consume_identifier(bytes: &[u8], start: usize) -> usize {
+pub(crate) fn consume_identifier(bytes: &[u8], start: usize) -> usize {
     let mut cursor = start;
     while cursor < bytes.len()
         && (bytes[cursor].is_ascii_alphanumeric()

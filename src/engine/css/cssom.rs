@@ -150,6 +150,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
+        "clip-path" => style.clip_path.serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {
             "preserve-3d"
         } else {
@@ -194,7 +195,7 @@ fn serialize_length(value: Length) -> String {
 // These computed properties are exposed to CSSOM View's scroll-into-view
 // algorithm. Relative font/viewport units have already been normalized by
 // the cascade; scroll-padding percentages retain their scrollport basis.
-fn serialize_scroll_spacing(value: Length, font_size: f32) -> String {
+pub(super) fn serialize_scroll_spacing(value: Length, font_size: f32) -> String {
     match value {
         Length::Auto => "auto".to_string(),
         Length::Percent(percent) => format!("{}%", serialize_number(percent)),

@@ -348,6 +348,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             padding,
             authored_button,
         );
+        self.wrap_clip_path(node, &style, rect, item_start);
         if node.is_generated_pseudo() {
             self.apply_generated_transform(&style, rect, item_start);
         } else {

@@ -1,5 +1,6 @@
 mod background;
 mod block;
+mod clip_path;
 mod controls;
 mod engine;
 mod flex;

@@ -162,6 +162,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "-moz-flex-basis" => parse_length(&value).is_some(),
         "opacity" => parse_opacity(&value).is_some(),
         "transform" => super::transform::parse_transform(&value).is_some(),
+        "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             value == "none" || value.starts_with("url(")
         }

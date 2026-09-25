@@ -15,6 +15,15 @@ pub struct RectF {
 }
 
 impl RectF {
+    pub fn inset(self, edges: ResolvedEdges) -> Self {
+        Self {
+            x: self.x + edges.left,
+            y: self.y + edges.top,
+            width: (self.width - edges.horizontal()).max(0.0),
+            height: (self.height - edges.vertical()).max(0.0),
+        }
+    }
+
     pub fn right(self) -> f32 {
         self.x + self.width
     }
@@ -159,6 +168,8 @@ pub struct LayoutOutput {
     pub sticky_layers: Vec<super::StickyLayer>,
     /// Renderer-local scrollports; positions are unscrolled document coordinates.
     pub scroll_boxes: HashMap<NodeId, super::ScrollBox>,
+    /// Native rectangular clip paths, retained for input hit testing.
+    pub clip_paths: HashMap<NodeId, RectF>,
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,

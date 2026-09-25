@@ -79,6 +79,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 scroll.port.x += offset_x;
                 scroll.port.y += offset_y;
             }
+            if let Some(clip) = self.output.clip_paths.get_mut(&descendant.id()) {
+                clip.x += offset_x;
+                clip.y += offset_y;
+            }
             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                 rect.x += offset_x;
                 rect.y += offset_y;
