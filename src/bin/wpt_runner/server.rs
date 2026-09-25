@@ -1,7 +1,9 @@
 use crate::manifest::TestCase;
+mod connection;
 mod metadata;
-use std::io::{ErrorKind, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use connection::handle_connection;
+use std::io::ErrorKind;
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,7 +11,6 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 const REPORTER: &str = include_str!("../../../tests/wpt/reporter.js");
-const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
 pub(crate) struct TestServer {
     address: SocketAddr,
@@ -139,39 +140,6 @@ impl Drop for ActiveConnection {
     }
 }
 
-fn handle_connection(
-    stream: &mut TcpStream,
-    root: &Path,
-    tests: &[TestCase],
-) -> Result<(), String> {
-    stream
-        .set_nonblocking(false)
-        .map_err(|error| format!("make WPT connection blocking: {error}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|error| format!("set WPT request timeout: {error}"))?;
-    let request = read_request(stream)?;
-    let (method, target) = parse_request_line(&request)?;
-    if method != "GET" && method != "HEAD" {
-        return write_response(
-            stream,
-            405,
-            "text/plain; charset=utf-8",
-            b"method not allowed",
-            false,
-        );
-    }
-    let path = target.split(['?', '#']).next().unwrap_or(target);
-    let response = route(root, tests, path);
-    write_response(
-        stream,
-        response.status,
-        &response.content_type,
-        &response.body,
-        method == "HEAD",
-    )
-}
-
 struct Response {
     status: u16,
     content_type: String,
@@ -274,76 +242,6 @@ fn hex(byte: u8) -> Option<u8> {
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
     }
-}
-
-fn parse_request_line(request: &str) -> Result<(&str, &str), String> {
-    let line = request
-        .lines()
-        .next()
-        .ok_or_else(|| "empty HTTP request".to_string())?;
-    let mut parts = line.split_whitespace();
-    let method = parts
-        .next()
-        .ok_or_else(|| "missing HTTP method".to_string())?;
-    let target = parts
-        .next()
-        .ok_or_else(|| "missing HTTP target".to_string())?;
-    if !target.starts_with('/') {
-        return Err("HTTP target must be origin-form".to_string());
-    }
-    Ok((method, target))
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<String, String> {
-    let mut bytes = Vec::new();
-    let mut chunk = [0_u8; 4096];
-    while bytes.len() < MAX_REQUEST_BYTES {
-        let count = stream
-            .read(&mut chunk)
-            .map_err(|error| format!("read WPT request: {error}"))?;
-        if count == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&chunk[..count]);
-        if bytes.windows(4).any(|window| window == b"\r\n\r\n") {
-            break;
-        }
-    }
-    if bytes.len() >= MAX_REQUEST_BYTES {
-        return Err("WPT request headers are too large".to_string());
-    }
-    String::from_utf8(bytes).map_err(|_| "WPT request is not UTF-8".to_string())
-}
-
-fn write_response(
-    stream: &mut TcpStream,
-    status: u16,
-    content_type: &str,
-    body: &[u8],
-    head_only: bool,
-) -> Result<(), String> {
-    let reason = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        _ => "Internal Server Error",
-    };
-    let headers = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\n\
-         Content-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    stream
-        .write_all(headers.as_bytes())
-        .and_then(|_| {
-            if head_only {
-                Ok(())
-            } else {
-                stream.write_all(body)
-            }
-        })
-        .map_err(|error| format!("write WPT response: {error}"))
 }
 
 fn ok(content_type: &'static str, body: Vec<u8>) -> Response {
