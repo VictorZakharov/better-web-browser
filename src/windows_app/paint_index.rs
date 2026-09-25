@@ -73,8 +73,8 @@ fn vertical_bounds(item: &DisplayItem) -> (f32, f32) {
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
         | DisplayItem::Text { rect, .. }
-        | DisplayItem::Image { rect, .. }
         | DisplayItem::EmbeddedFrame { rect, .. } => *rect,
+        DisplayItem::Image { rect, clip, .. } => clip.unwrap_or(*rect),
         DisplayItem::BackgroundImage { clip_rect, .. } => *clip_rect,
         DisplayItem::Control(spec) => spec.rect,
     };

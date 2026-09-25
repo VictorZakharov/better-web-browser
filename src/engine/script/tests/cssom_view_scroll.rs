@@ -53,6 +53,49 @@ fn scroll(runtime: &mut ScriptRuntime, x: f32, y: f32) {
     assert!(notified.errors.is_empty(), "{:?}", notified.errors);
 }
 
+#[test]
+fn native_viewport_scrollend_waits_for_idle_and_bubbles_from_document() {
+    let (dom, mut runtime) = initialize(
+        r#"<!doctype html><body><script>
+            const events = [];
+            document.addEventListener('scroll', event => events.push('scroll:' + event.isTrusted));
+            document.addEventListener('scrollend', event =>
+                events.push('end:' + event.isTrusted + ':' + event.bubbles + ':' +
+                    (event.target === document)));
+            window.addEventListener('scrollend', () => events.push('window-end'));
+        </script></body>"#,
+        |_| HashMap::new(),
+    );
+    scroll(&mut runtime, 0.0, 40.0);
+    scroll(&mut runtime, 0.0, 70.0);
+    scroll(&mut runtime, 0.0, 70.0);
+    evaluate(
+        &dom,
+        &mut runtime,
+        "document.body.dataset.result = events.join(',');",
+    );
+    assert_eq!(result(&dom), "scroll:true,scroll:true");
+    let early = runtime.advance_time(std::time::Duration::from_millis(99), 32);
+    assert!(early.errors.is_empty(), "{:?}", early.errors);
+    evaluate(
+        &dom,
+        &mut runtime,
+        "document.body.dataset.result = events.join(',');",
+    );
+    assert_eq!(result(&dom), "scroll:true,scroll:true");
+    let settled = runtime.advance_time(std::time::Duration::from_millis(1), 32);
+    assert!(settled.errors.is_empty(), "{:?}", settled.errors);
+    evaluate(
+        &dom,
+        &mut runtime,
+        "document.body.dataset.result = events.join(',');",
+    );
+    assert_eq!(
+        result(&dom),
+        "scroll:true,scroll:true,end:true:true:true,window-end"
+    );
+}
+
 fn result(dom: &dom::Dom) -> String {
     dom.elements_named("body")
         .next()

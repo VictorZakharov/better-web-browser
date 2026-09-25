@@ -2,11 +2,15 @@
 //! Cascade regression tests grouped by area.
 use super::*;
 
+mod aspect_ratio;
 mod flex_flow;
 mod fullscreen;
+mod object;
 mod queries;
 mod root_units;
 mod shadow;
+mod table_spacing;
+mod text_transform;
 #[path = "tests_truncation.rs"]
 mod truncation;
 mod wide_keywords;

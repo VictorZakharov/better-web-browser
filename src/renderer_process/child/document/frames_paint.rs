@@ -37,6 +37,13 @@ pub(super) fn append_images(
     }
 }
 
+pub(super) fn viewports(frames: &[PaintedFrame], output: &mut Vec<(NodeId, RectF)>) {
+    for frame in frames {
+        output.push((frame.document, frame.rect));
+        viewports(&frame.children, output);
+    }
+}
+
 impl DocumentRuntime {
     pub(super) fn compose_embedded_frames(&mut self) {
         self.frame_paint.clear();
@@ -93,6 +100,7 @@ fn compose_items(
         page.set_layout_viewport(rect.width, rect.height);
         let mut layout =
             layout_page_with_style_viewport(&page, rect.width, rect.height, rect.width, text);
+        (snapshot.publish_geometry)(&layout, rect);
         let mut children = Vec::new();
         let mut child_boundaries = Vec::new();
         layout.items = compose_items(
@@ -158,8 +166,10 @@ pub(super) fn hit_frame(
         let target = frame.layout.node_paint_order.iter().rev().find_map(|id| {
             let node = frame.page.dom.find_node(*id)?;
             let rect = frame.layout.visual_rect(&node)?;
-            (contains(rect, x, y) && frame.layout.point_in_scroll_clips(&node, x, y))
-                .then_some(node)
+            (contains(rect, x, y)
+                && !frame.layout.hit_excluded.contains(id)
+                && frame.layout.point_in_scroll_clips(&node, x, y))
+            .then_some(node)
         });
         return Some((frame, target, x, y));
     }
@@ -203,6 +213,7 @@ mod tests {
             quirks_mode: false,
             images: HashMap::new(),
             children: Vec::new(),
+            publish_geometry: Box::new(|_, _| {}),
         };
         let mut frames = Vec::new();
         let mut text = RendererTextSystem::new(96);

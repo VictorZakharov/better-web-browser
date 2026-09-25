@@ -24,27 +24,30 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             });
         }
         let (x, border_y, border_box_width) = (rect.x, rect.y, rect.width);
-        let background_index =
-            if self.emit_paint && style.background_color.alpha > 0 && style.mask_image.is_none() {
-                let index = self.output.items.len();
-                self.output.items.push(DisplayItem::SolidRect {
-                    rect: RectF {
-                        x,
-                        y: border_y,
-                        width: border_box_width,
-                        height: 0.0,
-                    },
-                    color: self.effective_background_color(node),
-                    radius: 0.0,
-                });
-                Some(index)
-            } else {
-                None
-            };
+        let background_index = if self.emit_paint
+            && style.visibility
+            && style.background_color.alpha > 0
+            && style.mask_image.is_none()
+        {
+            let index = self.output.items.len();
+            self.output.items.push(DisplayItem::SolidRect {
+                rect: RectF {
+                    x,
+                    y: border_y,
+                    width: border_box_width,
+                    height: 0.0,
+                },
+                color: self.effective_background_color(node),
+                radius: 0.0,
+            });
+            Some(index)
+        } else {
+            None
+        };
         let background_image_index = style
             .background_image
             .as_ref()
-            .filter(|_| self.emit_paint)
+            .filter(|_| self.emit_paint && style.visibility)
             .map(|url| {
                 let index = self.output.items.len();
                 self.output.items.push(DisplayItem::BackgroundImage {
@@ -64,7 +67,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mask_image_index = style
             .mask_image
             .as_ref()
-            .filter(|_| self.emit_paint)
+            .filter(|_| self.emit_paint && style.visibility)
             .map(|url| {
                 let index = self.output.items.len();
                 self.output.items.push(DisplayItem::Image {
@@ -77,10 +80,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     url: url.clone(),
                     alt: String::new(),
                     tint: Some(style.background_color),
+                    clip: None,
                 });
                 index
             });
         let border_index = if self.emit_paint
+            && style.visibility
             && style.resolved_border_colors().iter().any(|c| c.alpha > 0)
             && (borders.vertical() > 0.0 || borders.horizontal() > 0.0)
         {

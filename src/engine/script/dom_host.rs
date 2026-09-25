@@ -21,6 +21,24 @@ pub(super) fn dom_host_call(
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
     let value = match operation {
+        "innerHtmlGet" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .map(|node| super::binding_helpers::serialize_children(&node))
+                .unwrap_or_default(),
+        ),
+        "outerHtmlGet" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .map(|node| super::binding_helpers::serialize_html_node(&node))
+                .unwrap_or_default(),
+        ),
+        "xmlSerialize" => {
+            let node = state.node(argument_id(args, 1)).ok_or_else(|| {
+                JsNativeError::typ().with_message("serializeToString requires a Node")
+            })?;
+            js_string(super::binding_helpers::serialize_xml_node(&node))
+        }
         "nodesEqual" => JsValue::from(
             state
                 .node(argument_id(args, 1))

@@ -17,7 +17,7 @@ impl Edges {
         }
     }
 
-    pub(super) fn resolve_relative_units(
+    pub(in crate::engine::css) fn resolve_relative_units(
         self,
         width: f32,
         height: f32,

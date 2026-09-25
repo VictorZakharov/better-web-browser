@@ -1,6 +1,8 @@
 //! DOM traversal, selector matching, serialization, and host-call argument helpers.
 
 use super::*;
+mod serialization;
+pub(super) use serialization::{serialize_children, serialize_html_node, serialize_xml_node};
 
 pub(super) fn argument_string(arguments: &[JsValue], index: usize) -> JsResult<String> {
     match arguments.get(index) {
@@ -44,11 +46,8 @@ pub(super) fn node_label(node: &NodeRef) -> String {
     }
 }
 
-pub(super) fn append_html_fragment(document: &NodeRef, target: &NodeRef, html: &str) {
-    let holder = Node::create_element_for(document, "div");
-    Node::replace_inner_html(&holder, html, true);
-    // Release the immutable child-list guard before append_child detaches from that same list.
-    let children = holder.children.borrow().clone();
+pub(super) fn append_html_fragment(target: &NodeRef, html: &str) {
+    let children = Node::parse_html_fragment(target, html, true);
     for child in children {
         Node::append_child(target, child);
     }
@@ -121,61 +120,6 @@ pub(super) fn closest_matching_element(node: &NodeRef, selector: &str) -> Option
         }
     }
     None
-}
-
-pub(super) fn serialize_children(node: &NodeRef) -> String {
-    let mut output = String::new();
-    let target = node
-        .element()
-        .and_then(|element| element.template_contents.borrow().clone())
-        .unwrap_or_else(|| node.clone());
-    for child in target.children.borrow().iter() {
-        serialize_node(child, &mut output);
-    }
-    output
-}
-
-fn serialize_node(node: &NodeRef, output: &mut String) {
-    match &node.data {
-        NodeData::Element(element) => {
-            let tag = element.name.local.as_ref();
-            output.push('<');
-            output.push_str(tag);
-            for attribute in element.attrs.borrow().iter() {
-                output.push(' ');
-                output.push_str(attribute.name.local.as_ref());
-                output.push_str("=\"");
-                escape_html(&attribute.value, output, true);
-                output.push('"');
-            }
-            output.push('>');
-            for child in node.children.borrow().iter() {
-                serialize_node(child, output);
-            }
-            output.push_str("</");
-            output.push_str(tag);
-            output.push('>');
-        }
-        NodeData::Text(text) | NodeData::Cdata(text) => escape_html(&text.borrow(), output, false),
-        NodeData::Comment(comment) => {
-            output.push_str("<!--");
-            output.push_str(&comment.borrow());
-            output.push_str("-->");
-        }
-        _ => {}
-    }
-}
-
-fn escape_html(value: &str, output: &mut String, attribute: bool) {
-    for character in value.chars() {
-        match character {
-            '&' => output.push_str("&amp;"),
-            '<' => output.push_str("&lt;"),
-            '>' => output.push_str("&gt;"),
-            '"' if attribute => output.push_str("&quot;"),
-            character => output.push(character),
-        }
-    }
 }
 
 #[cfg(test)]

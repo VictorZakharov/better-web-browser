@@ -258,8 +258,11 @@ fn host_call_callback(
             }
         }
     }
-    let result = bridge
-        .dispatch(&values)
+    let routed = (operation == "intersectionGeometry")
+        .then(|| super::frames::intersection_geometry(scope, &values))
+        .flatten();
+    let result = routed
+        .map_or_else(|| bridge.dispatch(&values), Ok)
         .and_then(|value| value_to_v8(scope, &value));
     bridge.profile_bridge(&operation, bridge_started);
     match result {

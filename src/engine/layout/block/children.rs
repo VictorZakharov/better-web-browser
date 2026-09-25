@@ -33,6 +33,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 node_id: None,
                 source_node: None,
                 source_units: Vec::new(),
+                text_transform: TextTransform::None,
                 visible: style.visibility,
                 preserve_space: false,
                 line_height: style.line_height,

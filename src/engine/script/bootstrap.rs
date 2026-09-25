@@ -74,6 +74,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/traversal_iterator.js"),
     include_str!("bootstrap/document.js"),
     include_str!("bootstrap/dom_parser.js"),
+    include_str!("bootstrap/xml_serializer.js"),
     include_str!("bootstrap/document_writes.js"),
     include_str!("bootstrap/document_streams.js"),
     include_str!("bootstrap/window.js"),

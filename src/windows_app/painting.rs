@@ -267,17 +267,39 @@ impl BrowserState {
                             }
                             DisplayItem::Image {
                                 rect,
+                                clip,
                                 url,
                                 alt,
                                 tint,
                             } => {
+                                let visible = clip.unwrap_or(*rect);
                                 let screen_y =
                                     toolbar_height + (rect.y * scale).round() as i32 - tab.scroll_y;
-                                if screen_y + ((rect.height * scale).ceil() as i32) < content.top
-                                    || screen_y > content.bottom
-                                {
+                                if !intersects(
+                                    &screen_rect(visible, tab.scroll_y, toolbar_height, scale),
+                                    &content,
+                                ) {
                                     continue;
                                 }
+                                let saved = clip.map(|bounds| {
+                                    let saved = SaveDC(item_dc);
+                                    if saved != 0 {
+                                        let region = screen_rect(
+                                            bounds,
+                                            tab.scroll_y,
+                                            toolbar_height,
+                                            scale,
+                                        );
+                                        IntersectClipRect(
+                                            item_dc,
+                                            region.left,
+                                            region.top,
+                                            region.right,
+                                            region.bottom,
+                                        );
+                                    }
+                                    saved
+                                });
                                 if let Some(image) = tab.presented_images.get(url) {
                                     let bitmap = if let Some(color) = tint {
                                         tab.image_bitmaps.get_or_create_tinted(
@@ -307,6 +329,11 @@ impl BrowserState {
                                         alt.as_ptr(),
                                         alt.len() as i32,
                                     );
+                                }
+                                if let Some(saved) = saved
+                                    && saved != 0
+                                {
+                                    RestoreDC(item_dc, saved);
                                 }
                             }
                             DisplayItem::BackgroundImage {

@@ -77,6 +77,31 @@
         if (!collections.has(name)) collections.set(name, selectorCollection(document, selector));
         return collections.get(name);
     };
+    function pointElements(document, x, y) {
+        if (!(document instanceof Document) && !(document instanceof ShadowRoot))
+            throw new TypeError('Illegal invocation');
+        const owner = document instanceof Document ? document : document.ownerDocument;
+        const px = Number(x), py = Number(y), view = owner.defaultView;
+        if (!Number.isFinite(px) || !Number.isFinite(py))
+            throw new TypeError('Point coordinates must be finite numbers');
+        if (!view || px < 0 || py < 0 ||
+            px > view.innerWidth || py > view.innerHeight) return [];
+        const result = [];
+        for (let node of host('elementsAtPoint', nodeId(owner),
+            px + view.scrollX, py + view.scrollY).map(wrap)) {
+            // A point query cannot expose a nested shadow tree from an outer root.
+            while (node && node.getRootNode() !== document) {
+                const tree = node.getRootNode();
+                node = tree instanceof ShadowRoot ? tree.host : null;
+            }
+            if (node && result[result.length - 1] !== node) result.push(node);
+        }
+        if (document instanceof Document) {
+            const root = document.documentElement;
+            if (root && result[result.length - 1] !== root) result.push(root);
+        }
+        return result;
+    }
     class Document extends Node {
         constructor(id = 0, ...metadata) {
             super(Number(id) || host('createDocument', '', ''), ...metadata);
@@ -138,6 +163,14 @@
             return event;
         }
         getElementById(id) { return wrap(host('byId', nodeId(this), String(id))); }
+        elementFromPoint(x, y) {
+            if (arguments.length < 2) throw new TypeError('elementFromPoint requires two coordinates');
+            return pointElements(this, x, y)[0] || null;
+        }
+        elementsFromPoint(x, y) {
+            if (arguments.length < 2) throw new TypeError('elementsFromPoint requires two coordinates');
+            return pointElements(this, x, y);
+        }
         getElementsByTagName(name) { return selectorCollection(this, String(name)); }
         getElementsByClassName(name) {
             return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));

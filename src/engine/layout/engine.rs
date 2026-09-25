@@ -104,8 +104,8 @@ fn layout_page_for_output<M: TextMeasurer>(
                 })
     });
     let mut root = fullscreen_root
-        .or_else(|| page.dom.elements_named("body").next())
         .or_else(|| page.dom.elements_named("html").next())
+        .or_else(|| page.dom.elements_named("body").next())
         .unwrap_or_else(|| page.dom.document.clone());
     // A layout-only cache can stop at a display:none ancestor of the usual body root.
     if !root.is_fullscreen()
@@ -151,6 +151,8 @@ fn layout_page_for_output<M: TextMeasurer>(
             sticky_offsets: HashMap::new(),
             sticky_layers: Vec::new(),
             scroll_boxes: HashMap::new(),
+            clip_paths: HashMap::new(),
+            hit_excluded: HashSet::new(),
             items: Vec::new(),
             content_height: viewport_height,
             background: Color::WHITE,
@@ -169,10 +171,24 @@ fn layout_page_for_output<M: TextMeasurer>(
         // A fullscreen element is painted in the top layer over the default black backdrop.
         // Selecting it as the layout root also excludes page siblings from display and hit testing.
         engine.output.background = Color::BLACK;
-    } else if let Some(body_style) = engine.styles.styles.get(&node_id(&root))
-        && body_style.background_color.alpha > 0
-    {
-        engine.output.background = body_style.background_color.composite_over(Color::WHITE);
+    } else {
+        let backdrop = engine
+            .styles
+            .styles
+            .get(&node_id(&root))
+            .filter(|style| style.background_color.alpha > 0)
+            .or_else(|| {
+                page.dom.elements_named("body").next().and_then(|body| {
+                    engine
+                        .styles
+                        .styles
+                        .get(&node_id(&body))
+                        .filter(|style| style.background_color.alpha > 0)
+                })
+            });
+        if let Some(style) = backdrop {
+            engine.output.background = style.background_color.composite_over(Color::WHITE);
+        }
     }
     let metrics = engine.layout_block(
         &root,
@@ -188,6 +204,24 @@ fn layout_page_for_output<M: TextMeasurer>(
         .max(engine.scrollable_overflow_bottom(&root))
         .max(viewport_height);
     block::paint_order::finalize(&mut engine.output);
+    if emit_paint {
+        // Text display items retain text-node IDs, so resolve their inherited
+        // eligibility alongside element IDs in one ancestor-first DOM walk.
+        for node in Node::shadow_including_descendants(&page.dom.document) {
+            let eligible = styles
+                .styles
+                .get(&node.id())
+                .map(|style| style.pointer_events && style.visibility)
+                .or_else(|| {
+                    Node::composed_parent(&node)
+                        .map(|parent| !engine.output.hit_excluded.contains(&parent.id()))
+                })
+                .unwrap_or(true);
+            if !eligible {
+                engine.output.hit_excluded.insert(node.id());
+            }
+        }
+    }
     box_tree.remove_anonymous_geometry(&mut engine.output);
     engine.output.update_sticky_positions(
         page,

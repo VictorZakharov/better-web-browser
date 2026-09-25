@@ -152,12 +152,17 @@ fn encode_item(writer: &mut WireWriter, item: &DisplayItem) -> Result<(), Protoc
         }
         DisplayItem::Image {
             rect,
+            clip,
             url,
             alt,
             tint,
         } => {
             writer.u8(4);
             encode_rect(writer, *rect);
+            writer.bool(clip.is_some());
+            if let Some(clip) = clip {
+                encode_rect(writer, *clip);
+            }
             writer.string(url)?;
             writer.string(alt)?;
             writer.bool(tint.is_some());
@@ -275,6 +280,7 @@ fn decode_item(reader: &mut WireReader<'_>) -> Result<DisplayItem, ProtocolError
         }
         4 => Ok(DisplayItem::Image {
             rect: decode_rect(reader)?,
+            clip: reader.bool()?.then(|| decode_rect(reader)).transpose()?,
             url: reader.string(MAX_URL_BYTES)?,
             alt: reader.string(MAX_RENDERED_TEXT_BYTES)?,
             tint: reader.bool()?.then(|| decode_color(reader)).transpose()?,

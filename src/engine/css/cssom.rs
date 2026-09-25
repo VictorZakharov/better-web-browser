@@ -72,6 +72,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             "separate"
         }
         .to_string(),
+        "border-spacing" => {
+            let (horizontal, vertical) = properties::table_spacing::computed(style);
+            format!("{} {}", serialize_px(horizontal), serialize_px(vertical))
+        }
         "caption-side" => if style.caption_side_bottom {
             "bottom"
         } else {
@@ -104,6 +108,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "bottom" => serialize_length(style.bottom),
         "left" => serialize_length(style.left),
         "letter-spacing" => serialize_px(style.letter_spacing),
+        "text-transform" => style.text_transform.css_text().to_string(),
         "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => {
             if style.line_height_value == LineHeight::Normal {
@@ -113,6 +118,21 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
+        "object-fit" => style.object_fit.css_text().to_string(),
+        "object-position" => style.object_position.css_text(style.font_size),
+        "aspect-ratio" => style.aspect_ratio.css_text(),
+        "visibility" => if style.visibility {
+            "visible"
+        } else {
+            "hidden"
+        }
+        .to_string(),
+        "content-visibility" => if style.content_visibility_hidden {
+            "hidden"
+        } else {
+            "visible"
+        }
+        .to_string(),
         "text-overflow" => style.text_overflow.css_keyword().to_string(),
         "-webkit-line-clamp" => style.line_clamp.css_text(),
         "-webkit-box-orient" => style.box_orient.css_keyword().to_string(),
@@ -150,6 +170,8 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         }
         .to_string(),
         "transform" => super::transform::serialize_transform(&style.transform),
+        "pointer-events" => if style.pointer_events { "auto" } else { "none" }.to_string(),
+        "clip-path" => style.clip_path.serialize(style.font_size),
         "transform-style" => if style.transform_style_preserve_3d {
             "preserve-3d"
         } else {
@@ -194,7 +216,7 @@ fn serialize_length(value: Length) -> String {
 // These computed properties are exposed to CSSOM View's scroll-into-view
 // algorithm. Relative font/viewport units have already been normalized by
 // the cascade; scroll-padding percentages retain their scrollport basis.
-fn serialize_scroll_spacing(value: Length, font_size: f32) -> String {
+pub(super) fn serialize_scroll_spacing(value: Length, font_size: f32) -> String {
     match value {
         Length::Auto => "auto".to_string(),
         Length::Percent(percent) => format!("{}%", serialize_number(percent)),

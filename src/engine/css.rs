@@ -1,6 +1,6 @@
-//! CSS facade for values, parsing, selector matching, cascade, and media evaluation.
 mod cascade;
 mod change;
+pub(crate) mod clip_path;
 mod content;
 mod css_wide;
 mod cssom;
@@ -40,12 +40,12 @@ use std::sync::Arc;
 use stylesheet::{Declaration, Rule, RuleScope, parse_declarations};
 use syntax::*;
 pub(crate) use user_agent::is_hidden_by_html_rendering;
-use value_parser::consume_identifier;
-pub(crate) use value_parser::{parse_color, parse_length, parse_opacity};
+pub(crate) use value_parser::{consume_identifier, parse_color, parse_length, parse_opacity};
 pub use values::{
-    AlignItems, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle, ContentAlignment, Display,
-    Edges, FlexDirection, Float, JustifyContent, Length, ListStyleType, Overflow, Position,
-    ResolvedEdges, TextAlign, VerticalAlign, WhiteSpace,
+    AlignItems, AspectRatio, BackgroundSize, BoxSizing, Clear, Color, ComputedStyle,
+    ContentAlignment, Display, Edges, FlexDirection, Float, JustifyContent, Length, ListStyleType,
+    ObjectFit, ObjectPosition, Overflow, Position, ResolvedEdges, TextAlign, TextTransform,
+    VerticalAlign, WhiteSpace,
 };
 use variables::{apply_custom_properties, apply_resolved_declaration};
 mod tests;

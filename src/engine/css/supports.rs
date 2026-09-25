@@ -120,8 +120,11 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             matches!(value.as_str(), "content-box" | "border-box")
         }
         "border-collapse" => matches!(value.as_str(), "separate" | "collapse"),
+        "border-spacing" => properties::table_spacing::parse(&value).is_some(),
         "caption-side" => matches!(value.as_str(), "top" | "bottom"),
         "visibility" => matches!(value.as_str(), "visible" | "hidden" | "collapse"),
+        "content-visibility" => matches!(value.as_str(), "visible" | "hidden"),
+        "pointer-events" => matches!(value.as_str(), "auto" | "none"),
         "overflow" | "overflow-x" | "overflow-y" => {
             matches!(value.as_str(), "visible" | "hidden" | "clip")
         }
@@ -162,6 +165,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "-moz-flex-basis" => parse_length(&value).is_some(),
         "opacity" => parse_opacity(&value).is_some(),
         "transform" => super::transform::parse_transform(&value).is_some(),
+        "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             value == "none" || value.starts_with("url(")
         }
@@ -169,6 +173,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "background-position-x" => parse_background_axis(&value, true).is_some(),
         "background-position-y" => parse_background_axis(&value, false).is_some(),
         "background-size" => parse_background_size(&value).is_some(),
+        "object-fit" => ObjectFit::parse(&value).is_some(),
+        "object-position" => ObjectPosition::parse(&value).is_some(),
+        "text-transform" => TextTransform::parse(&value).is_some(),
+        "aspect-ratio" => AspectRatio::parse(&value).is_some(),
         "background-repeat" => {
             let repeats = value.split_ascii_whitespace().collect::<Vec<_>>();
             (1..=2).contains(&repeats.len())

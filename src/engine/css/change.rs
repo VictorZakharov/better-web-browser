@@ -17,6 +17,7 @@ impl ComputedStyle {
             && self.word_spacing == other.word_spacing
             && self.line_height == other.line_height
             && self.text_align == other.text_align
+            && self.text_transform == other.text_transform
             && self.white_space == other.white_space
             // `text-overflow` only swaps the painted overflow marker, so it stays
             // paint-only. Clamp state changes the line boxes and must relayout.
@@ -37,6 +38,10 @@ impl ComputedStyle {
             && self.bottom == other.bottom
             && self.left == other.left
             && self.transform == other.transform
+            // Retained paint and native hit regions depend on the basic-shape clip.
+            && self.clip_path == other.clip_path
+            && self.content_visibility_hidden == other.content_visibility_hidden
+            && self.pointer_events == other.pointer_events
             && self.perspective_non_none == other.perspective_non_none
             && self.filter_non_none == other.filter_non_none
             && self.transform_style_preserve_3d == other.transform_style_preserve_3d
@@ -56,6 +61,10 @@ impl ComputedStyle {
             && self.flex_basis == other.flex_basis
             && self.box_sizing == other.box_sizing
             && self.border_collapse == other.border_collapse
+            && self.border_spacing == other.border_spacing
+            && self.object_fit == other.object_fit
+            && self.object_position == other.object_position
+            && self.aspect_ratio == other.aspect_ratio
             && self.caption_side_bottom == other.caption_side_bottom
             && self.vertical_align == other.vertical_align
             && self.list_style_type == other.list_style_type

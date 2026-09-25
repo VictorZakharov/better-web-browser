@@ -15,6 +15,15 @@ pub struct RectF {
 }
 
 impl RectF {
+    pub fn inset(self, edges: ResolvedEdges) -> Self {
+        Self {
+            x: self.x + edges.left,
+            y: self.y + edges.top,
+            width: (self.width - edges.horizontal()).max(0.0),
+            height: (self.height - edges.vertical()).max(0.0),
+        }
+    }
+
     pub fn right(self) -> f32 {
         self.x + self.width
     }
@@ -132,6 +141,8 @@ pub enum DisplayItem {
     },
     Image {
         rect: RectF,
+        /// Replaced content may paint outside its element, but never outside its content box.
+        clip: Option<RectF>,
         url: String,
         alt: String,
         tint: Option<Color>,
@@ -159,6 +170,10 @@ pub struct LayoutOutput {
     pub sticky_layers: Vec<super::StickyLayer>,
     /// Renderer-local scrollports; positions are unscrolled document coordinates.
     pub scroll_boxes: HashMap<NodeId, super::ScrollBox>,
+    /// Native rectangular clip paths, retained for input hit testing.
+    pub clip_paths: HashMap<NodeId, RectF>,
+    /// Computed visibility and pointer-events eligibility for input hit testing.
+    pub hit_excluded: HashSet<NodeId>,
     pub items: Vec<DisplayItem>,
     pub content_height: f32,
     pub background: Color,
@@ -186,6 +201,7 @@ pub(super) enum InlineAtom {
         node_id: Option<NodeId>,
         source_node: Option<NodeId>,
         source_units: Vec<fragments::SourceUnit>,
+        text_transform: TextTransform,
         visible: bool,
         preserve_space: bool,
         line_height: f32,

@@ -33,26 +33,20 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         basis: f32,
     ) -> (f32, f32) {
         let grid = Grid::new(node, self.styles);
-        let columns = self.table_columns(&grid, basis);
+        let horizontal_spacing = self.styles.get(node).used_border_spacing().0;
+        let columns = self.table_columns(&grid, basis, horizontal_spacing);
+        let gaps = spacing_extent(grid.columns, horizontal_spacing);
         let mut caption_minimum = 0.0_f32;
         for caption in table_captions(node, self.styles) {
             caption_minimum = caption_minimum.max(self.float_intrinsic_widths(&caption, None).0);
         }
         (
-            columns
-                .iter()
-                .map(|c| c.minimum)
-                .sum::<f32>()
-                .max(caption_minimum),
-            columns
-                .iter()
-                .map(|c| c.preferred)
-                .sum::<f32>()
-                .max(caption_minimum),
+            (columns.iter().map(|c| c.minimum).sum::<f32>() + gaps).max(caption_minimum),
+            (columns.iter().map(|c| c.preferred).sum::<f32>() + gaps).max(caption_minimum),
         )
     }
 
-    pub(super) fn table_columns(&mut self, grid: &Grid, basis: f32) -> Vec<Column> {
+    pub(super) fn table_columns(&mut self, grid: &Grid, basis: f32, spacing: f32) -> Vec<Column> {
         let mut columns = vec![Column::default(); grid.columns];
         let mut cells = grid.cells.iter().collect::<Vec<_>>();
         // Single-column contributions establish tracks before spanning constraints.
@@ -87,8 +81,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 resolve_outer_size(length, basis, style.font_size, insets, style.box_sizing)
                     .unwrap_or(0.0)
             };
-            let minimum = (lo + insets).max(specified);
-            let preferred = (hi + insets).max(minimum);
+            let interior_gaps = spacing * (cell.columns - 1) as f32;
+            let minimum = (lo + insets).max(specified).max(interior_gaps) - interior_gaps;
+            let preferred =
+                ((hi + insets).max(specified).max(interior_gaps) - interior_gaps).max(minimum);
             let tracks = &mut columns[cell.column..cell.column + cell.columns];
             let minimum_extra = (minimum - tracks.iter().map(|c| c.minimum).sum::<f32>()).max(0.0)
                 / tracks.len() as f32;
@@ -144,6 +140,14 @@ pub(super) fn used_widths(columns: &[Column], available: f32) -> Vec<f32> {
         };
     }
     widths
+}
+
+pub(super) fn spacing_extent(tracks: usize, spacing: f32) -> f32 {
+    if tracks == 0 {
+        0.0
+    } else {
+        (tracks + 1) as f32 * spacing
+    }
 }
 
 fn grow_towards(widths: &mut [f32], target: &[f32], available: f32) {

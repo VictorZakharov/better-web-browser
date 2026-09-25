@@ -30,6 +30,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         &mut self,
         node: &NodeRef,
         containing_block: RectF,
+        static_position: (f32, f32),
         in_flow_paint_start: usize,
         in_flow_node_start: usize,
     ) {
@@ -58,7 +59,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let child_style = self.styles.get(&child);
             if matches!(child_style.position, Position::Absolute | Position::Fixed)
                 && child_style.display != Display::None
-                && child_style.visibility
             {
                 // CSS 2.1 section 10.1: a positioned block establishes its padding box as the
                 // containing block for absolutely positioned descendants. Fixed boxes still
@@ -78,6 +78,24 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     Some(containing_block.height),
                     None,
                 );
+                // When both insets on an axis are auto, the hypothetical in-flow
+                // position supplies that axis. Definite insets still resolve from
+                // the actual containing block, which can differ for fixed boxes.
+                // https://www.w3.org/TR/CSS22/visudet.html#abs-non-replaced-width
+                let dx = if child_style.left == Length::Auto && child_style.right == Length::Auto {
+                    static_position.0 - containing_block.x
+                } else {
+                    0.0
+                };
+                let dy = if child_style.top == Length::Auto && child_style.bottom == Length::Auto {
+                    static_position.1 - containing_block.y
+                } else {
+                    0.0
+                };
+                if dx != 0.0 || dy != 0.0 {
+                    let item_end = self.output.items.len();
+                    self.translate_layout_subtree(Some(&child), item_start, item_end, dx, dy);
+                }
                 if self.emit_paint {
                     groups.push(PositionedPaintGroup {
                         level: child_style.z_index.unwrap_or(0),

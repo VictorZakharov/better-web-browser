@@ -9,6 +9,10 @@ mod line_height;
 pub(crate) use line_height::LineHeight;
 mod overflow;
 pub use overflow::Overflow;
+mod object;
+pub use object::{ObjectFit, ObjectPosition};
+mod text_transform;
+pub use text_transform::TextTransform;
 mod vertical_align;
 mod viewport;
 pub use vertical_align::VerticalAlign;
@@ -143,6 +147,8 @@ impl WhiteSpace {
 
 mod floats;
 pub use floats::{Clear, Float};
+mod aspect_ratio;
+pub use aspect_ratio::AspectRatio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoxSizing {
@@ -181,6 +187,9 @@ pub struct ComputedStyle {
     pub background_position_x: Length,
     pub background_position_y: Length,
     pub background_size: BackgroundSize,
+    pub object_fit: ObjectFit,
+    pub object_position: ObjectPosition,
+    pub aspect_ratio: AspectRatio,
     pub font_size: f32,
     pub(crate) root_font_size: f32,
     pub font_weight: u16,
@@ -191,6 +200,7 @@ pub struct ComputedStyle {
     pub line_height: f32,
     pub(crate) line_height_value: LineHeight,
     pub text_align: TextAlign,
+    pub text_transform: TextTransform,
     pub white_space: WhiteSpace,
     pub text_decoration_underline: bool,
     pub text_overflow: TextOverflow,
@@ -220,7 +230,10 @@ pub struct ComputedStyle {
     pub bottom: Length,
     pub left: Length,
     pub visibility: bool,
+    pub(crate) content_visibility_hidden: bool,
+    pub pointer_events: bool,
     pub opacity: f32,
+    pub(crate) clip_path: clip_path::ClipPath,
     pub(crate) transform: transform::TransformList,
     pub(crate) perspective_non_none: bool,
     pub(crate) filter_non_none: bool,
@@ -242,6 +255,8 @@ pub struct ComputedStyle {
     pub flex_basis: Length,
     pub box_sizing: BoxSizing,
     pub border_collapse: bool,
+    /// Horizontal and vertical spacing in the separated table border model.
+    pub border_spacing: [Length; 2],
     pub caption_side_bottom: bool,
     pub vertical_align: VerticalAlign,
     pub list_style_type: ListStyleType,
@@ -259,7 +274,7 @@ pub struct ComputedStyle {
 }
 
 impl ComputedStyle {
-    pub(super) fn initial() -> Self {
+    pub(crate) fn initial() -> Self {
         Self {
             generated_content: GeneratedContent::Normal,
             display: Display::Inline,
@@ -276,6 +291,9 @@ impl ComputedStyle {
             background_position_x: Length::Percent(0.0),
             background_position_y: Length::Percent(0.0),
             background_size: BackgroundSize::Auto,
+            object_fit: ObjectFit::Fill,
+            object_position: ObjectPosition::default(),
+            aspect_ratio: AspectRatio::Auto,
             font_size: 16.0,
             root_font_size: 16.0,
             font_weight: 400,
@@ -286,6 +304,7 @@ impl ComputedStyle {
             line_height: 19.2,
             line_height_value: LineHeight::Normal,
             text_align: TextAlign::Start,
+            text_transform: TextTransform::None,
             white_space: WhiteSpace::Normal,
             text_decoration_underline: false,
             text_overflow: TextOverflow::Clip,
@@ -315,7 +334,10 @@ impl ComputedStyle {
             bottom: Length::Auto,
             left: Length::Auto,
             visibility: true,
+            content_visibility_hidden: false,
+            pointer_events: true,
             opacity: 1.0,
+            clip_path: clip_path::ClipPath::default(),
             transform: transform::TransformList::default(),
             perspective_non_none: false,
             filter_non_none: false,
@@ -337,6 +359,7 @@ impl ComputedStyle {
             flex_basis: Length::Auto,
             box_sizing: BoxSizing::ContentBox,
             border_collapse: false,
+            border_spacing: [Length::Px(0.0); 2],
             caption_side_bottom: false,
             vertical_align: VerticalAlign::Baseline,
             list_style_type: ListStyleType::Disc,
@@ -368,11 +391,14 @@ impl ComputedStyle {
             style.line_height = parent.line_height;
             style.line_height_value = parent.line_height_value;
             style.text_align = parent.text_align;
+            style.text_transform = parent.text_transform;
             style.white_space = parent.white_space;
             style.border_collapse = parent.border_collapse;
+            style.border_spacing = parent.border_spacing;
             style.caption_side_bottom = parent.caption_side_bottom;
             style.list_style_type = parent.list_style_type;
             style.visibility = parent.visibility;
+            style.pointer_events = parent.pointer_events;
             style.custom_properties = Arc::clone(&parent.custom_properties);
         }
         style

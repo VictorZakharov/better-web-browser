@@ -22,7 +22,30 @@ impl LayoutOutput {
     }
 
     pub fn point_in_scroll_clips(&self, node: &NodeRef, x: f32, y: f32) -> bool {
-        for parent in std::iter::successors(Node::composed_parent(node), Node::composed_parent) {
+        for parent in std::iter::successors(Some(node.clone()), Node::composed_parent) {
+            if let Some(clip) = self.clip_paths.get(&parent.id()) {
+                let Some(raw) = self.node_bounds.get(&parent.id()) else {
+                    continue;
+                };
+                let Some(visual) = self.visual_rect(&parent) else {
+                    continue;
+                };
+                let visual_clip = RectF {
+                    x: clip.x + visual.x - raw.x,
+                    y: clip.y + visual.y - raw.y,
+                    ..*clip
+                };
+                if x < visual_clip.x
+                    || x >= visual_clip.right()
+                    || y < visual_clip.y
+                    || y >= visual_clip.bottom()
+                {
+                    return false;
+                }
+            }
+            if parent.id() == node.id() {
+                continue;
+            }
             if let Some(scroll) = self.scroll_boxes.get(&parent.id()) {
                 let Some(raw) = self.node_bounds.get(&parent.id()) else {
                     continue;

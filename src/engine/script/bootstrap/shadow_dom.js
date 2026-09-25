@@ -14,6 +14,14 @@
         get slotAssignment() { return 'named'; }
         get host() { return wrap(host('shadowHost', nodeId(this))); }
         getElementById(id) { return wrap(host('byId', nodeId(this), String(id))); }
+        elementFromPoint(x, y) {
+            if (arguments.length < 2) throw new TypeError('elementFromPoint requires two coordinates');
+            return pointElements(this, x, y)[0] || null;
+        }
+        elementsFromPoint(x, y) {
+            if (arguments.length < 2) throw new TypeError('elementsFromPoint requires two coordinates');
+            return pointElements(this, x, y);
+        }
         get innerHTML() { return host('innerHtmlGet', nodeId(this)); }
         set innerHTML(value) { replaceElementInnerHtml(this, value); }
     }

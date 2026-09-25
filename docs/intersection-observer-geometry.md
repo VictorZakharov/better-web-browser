@@ -76,3 +76,39 @@ Absolute margins currently serialize at integer CSS-pixel precision, matching th
 pinned margin-unit tests, not a claim of arbitrary fractional-length precision.
 Keep #88 open. Modern DuckDuckGo compatibility and fresh performance evidence are
 reported separately; API presence alone does not establish that the site works.
+
+## 2026-09-24 follow-on: layout boxes and nested documents
+
+This follow-on keeps the existing snapshot/delivery contract and advances the
+geometry that feeds it:
+
+- `visibility: hidden` retains layout boxes while suppressing that element's
+  paint; an explicitly visible descendant can still paint. The HTML root gets
+  its own layout box instead of borrowing the body's position.
+- An absolute element with auto insets uses its static-position content origin.
+  Zero-area positioned targets consequently retain their actual coordinates.
+- A same-origin iframe publishes its painted box to the child realm and updates
+  the child's viewport through the normal resize path. An observer in the parent
+  can project a child target through the embedding frame and clip at each frame
+  boundary. `boundingClientRect` remains in the target's local viewport, while
+  `intersectionRect` is mapped to the observer root's coordinate space.
+- An iframe whose parser mutates its DOM after an early layout asks for another
+  parent frame composition. This covers external frame navigation where `load`
+  and script execution precede the final child layout.
+- An implicit-root observation of an inactive detached document stays pending;
+  an active explicit root gets an initial non-intersecting entry for a target in
+  another document, as required by the specification's step 5.
+
+The strict pinned WPT observer gate now passes **52/52 files and 141/141
+assertions**, including 16 newly promoted upstream files, with no expectations
+or fixture edits. The expanded cases cover detached documents, frame client
+rectangles, inline fragments, fractional ratios, margin rounding, hidden and
+zero-area elements, and dynamic targets. A deterministic local test additionally
+checks child viewport publication and parent scrolling against a cross-frame
+target. The broader suite still includes unsupported transform/zoom, writing
+mode, SVG and clip-path cases; this is not a claim of full conformance.
+
+```powershell
+./scripts/checkout-wpt.ps1 -Destination ../wpt
+./scripts/run-wpt.ps1 -WptRoot ../wpt -Filter 'intersection-observer/'
+```

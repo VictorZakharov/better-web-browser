@@ -3,7 +3,8 @@
 use super::binding_helpers::{argument_id, argument_string, js_string};
 use super::*;
 mod client_rect;
-mod intersection;
+pub(in crate::engine::script) mod intersection;
+mod point_query;
 
 pub(super) fn style_host_call(
     operation: &str,
@@ -12,6 +13,9 @@ pub(super) fn style_host_call(
 ) -> JsResult<Option<JsValue>> {
     if operation == "intersectionGeometry" {
         return Ok(Some(intersection::geometry(args, state)));
+    }
+    if operation == "elementsAtPoint" {
+        return Ok(Some(point_query::elements_at(args, state)));
     }
     if matches!(operation, "clientRects" | "rangeTextRects") {
         return Ok(Some(client_rect::client_rect_host_call(

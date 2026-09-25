@@ -210,12 +210,19 @@ fn geometry_preserves_shadow_assignment_hidden_roots_and_fullscreen_selection() 
     assert_eq!(fullscreen.node_bounds[&main.id()].width, 815.0);
     host.set_attr("style", "display:none");
     assert!(!assert_parity(&page).node_bounds.contains_key(&main.id()));
-    for markup in [
-        "<body style='display:none'><p>hidden</p>",
-        "<html style='display:none'><body><p>hidden</p>",
-    ] {
-        assert!(assert_parity(&parse_page(markup)).node_bounds.is_empty());
-    }
+    let body_hidden = parse_page("<body style='display:none'><p>hidden</p>");
+    let html = body_hidden.dom.elements_named("html").next().unwrap();
+    let body = body_hidden.dom.elements_named("body").next().unwrap();
+    let geometry = assert_parity(&body_hidden);
+    assert!(geometry.node_bounds.contains_key(&html.id()));
+    assert!(!geometry.node_bounds.contains_key(&body.id()));
+    assert!(
+        assert_parity(&parse_page(
+            "<html style='display:none'><body><p>hidden</p>"
+        ))
+        .node_bounds
+        .is_empty()
+    );
 }
 
 #[test]

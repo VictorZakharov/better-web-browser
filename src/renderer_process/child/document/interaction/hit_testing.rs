@@ -65,7 +65,10 @@ impl DocumentRuntime {
                     .page
                     .dom
                     .find_node(*node_id)
-                    .filter(|node| self.layout.point_in_scroll_clips(node, x, y))
+                    .filter(|node| {
+                        !self.layout.hit_excluded.contains(&node.id())
+                            && self.layout.point_in_scroll_clips(node, x, y)
+                    })
                     .map(|node| HitTarget {
                         node,
                         link: Some(link.clone()),
@@ -75,7 +78,10 @@ impl DocumentRuntime {
                     .page
                     .dom
                     .find_node(control.node_id)
-                    .filter(|node| self.layout.point_in_scroll_clips(node, x, y))
+                    .filter(|node| {
+                        !self.layout.hit_excluded.contains(&node.id())
+                            && self.layout.point_in_scroll_clips(node, x, y)
+                    })
                     .map(|node| HitTarget {
                         node,
                         link: None,
@@ -97,6 +103,7 @@ impl DocumentRuntime {
                 (rect.width > 0.0
                     && rect.height > 0.0
                     && contains(rect, x, y)
+                    && !self.layout.hit_excluded.contains(&node.id())
                     && self.layout.point_in_scroll_clips(&node, x, y))
                 .then_some(node)
             })

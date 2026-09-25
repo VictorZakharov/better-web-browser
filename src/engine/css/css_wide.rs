@@ -60,6 +60,7 @@ fn is_inherited_property(property: &str) -> bool {
         property,
         "color"
             | "border-collapse"
+            | "border-spacing"
             | "caption-side"
             | "font"
             | "font-family"
@@ -71,7 +72,9 @@ fn is_inherited_property(property: &str) -> bool {
             | "list-style"
             | "list-style-type"
             | "text-align"
+            | "text-transform"
             | "visibility"
+            | "pointer-events"
             | "white-space"
             | "word-spacing"
     )
@@ -116,6 +119,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
             style.mask_image.clone_from(&source.mask_image)
         }
+        "clip-path" => style.clip_path.clone_from(&source.clip_path),
         "background-repeat" => {
             style.background_repeat_x = source.background_repeat_x;
             style.background_repeat_y = source.background_repeat_y;
@@ -127,6 +131,9 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "background-position-x" => style.background_position_x = source.background_position_x,
         "background-position-y" => style.background_position_y = source.background_position_y,
         "background-size" => style.background_size = source.background_size,
+        "object-fit" => style.object_fit = source.object_fit,
+        "object-position" => style.object_position = source.object_position,
+        "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,
         "font" => {
             style.font_size = source.font_size;
             style.font_weight = source.font_weight;
@@ -146,6 +153,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.line_height_value = source.line_height_value;
         }
         "text-align" => style.text_align = source.text_align,
+        "text-transform" => style.text_transform = source.text_transform,
         "white-space" => style.white_space = source.white_space,
         "text-overflow" => style.text_overflow = source.text_overflow,
         "-webkit-line-clamp" => style.line_clamp = source.line_clamp,
@@ -221,9 +229,12 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         }
         "border-radius" => style.border_radius = source.border_radius,
         "border-collapse" => style.border_collapse = source.border_collapse,
+        "border-spacing" => style.border_spacing = source.border_spacing,
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
+        "content-visibility" => style.content_visibility_hidden = source.content_visibility_hidden,
+        "pointer-events" => style.pointer_events = source.pointer_events,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),
         "perspective" => style.perspective_non_none = source.perspective_non_none,

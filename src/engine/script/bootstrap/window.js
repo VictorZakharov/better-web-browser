@@ -107,6 +107,7 @@
     windowObject.HTMLDocument = Document;
     windowObject.XMLDocument = XMLDocument;
     windowObject.DOMParser = DOMParser;
+    windowObject.XMLSerializer = XMLSerializer;
     windowObject.CharacterData = CharacterData;
     windowObject.Text = Text;
     windowObject.CDATASection = CDATASection;

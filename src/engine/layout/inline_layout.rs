@@ -2,6 +2,7 @@ use super::*;
 mod boundaries;
 mod fragment_collection;
 pub(super) mod geometry;
+mod text_transform;
 #[cfg(test)]
 mod whitespace_tests;
 mod wrapping;
@@ -23,6 +24,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         clamp: &mut Option<ClampState>,
         more_follows: bool,
     ) -> f32 {
+        let transformed = text_transform::apply(atoms);
+        let atoms = transformed.as_ref();
         self.begin_inline_measurement_context();
         let policy = TruncationPolicy::for_style(style);
         let align = style.text_align;

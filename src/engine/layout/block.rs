@@ -27,7 +27,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         used_content_height: Option<f32>,
     ) -> BlockMetrics {
         let style = self.styles.get(node).clone();
-        if style.display == Display::None || !style.visibility {
+        if style.display == Display::None {
             return BlockMetrics { bottom: y };
         }
         let own_context = self.block_establishes_context(node);
@@ -54,10 +54,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let borders = table::resolved_table_borders(node, &style, percentage_basis);
         let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
+        let vertical_insets = padding.vertical() + borders.vertical();
+        let percentage_height_basis = if style.position == Position::Fixed {
+            Some(self.viewport.height)
+        } else {
+            containing_height
+        };
         let available_width = (containing_width - margins.horizontal()).max(0.0);
         let caption_width = table::caption_outer_width(node, percentage_basis, self.styles);
         let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
-            image.outer_width(node, &style, percentage_basis, horizontal_insets)
+            image.outer_width(
+                node,
+                &style,
+                percentage_basis,
+                percentage_height_basis,
+                horizontal_insets,
+                vertical_insets,
+            )
         });
         let automatic_width = if node.tag_name() == Some("select") && style.width == Length::Auto {
             select_data(node).preferred_width(style.font_size) + horizontal_insets
@@ -122,12 +135,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal() - gutter_right)
                 .max(0.0);
-        let vertical_insets = borders.vertical() + padding.vertical();
-        let percentage_height_basis = if style.position == Position::Fixed {
-            Some(self.viewport.height)
-        } else {
-            containing_height
-        };
         let (specified_height, minimum_height, maximum_height) = sizing::resolve_height_constraints(
             &style,
             used_content_height,
@@ -140,7 +147,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let minimum_height = (minimum_height - gutter_bottom).max(0.0);
         let maximum_height = maximum_height.map(|height| (height - gutter_bottom).max(0.0));
         let block_image_height = block_image.as_ref().map(|image| {
-            image.content_height(node, &style, content_width, percentage_height_basis)
+            image.content_height(
+                node,
+                &style,
+                content_width,
+                percentage_height_basis,
+                horizontal_insets,
+                vertical_insets,
+            )
         });
         let decoration = self.begin_block_decoration(
             node,
@@ -158,7 +172,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let in_flow_paint_start = self.output.items.len();
         let in_flow_node_start = self.output.node_paint_order.len();
 
-        let collapsed = style_collapses_overflow(&style, self.viewport);
+        let collapsed =
+            style.content_visibility_hidden || style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
             content_y
         } else if let Some((kind, _)) = block_control.as_ref().filter(|_| !authored_button) {
@@ -219,7 +234,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let used_content_height = if style.display.is_table() {
             natural_content_height
         } else {
-            specified_height.unwrap_or(natural_content_height)
+            specified_height.unwrap_or_else(|| {
+                if block_image.is_none() {
+                    aspect_ratio::automatic_block_height(
+                        &style,
+                        content_width,
+                        horizontal_insets,
+                        vertical_insets,
+                        natural_content_height,
+                    )
+                } else {
+                    natural_content_height
+                }
+            })
         };
         let mut content_height = used_content_height;
         if let Some(maximum_height) = maximum_height {
@@ -296,6 +323,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         self.layout_positioned_children(
             node,
             positioning_box,
+            (content_x, content_y),
             in_flow_paint_start,
             in_flow_node_start,
         );
@@ -319,14 +347,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 height: padding.top + content_height + padding.bottom,
             },
         );
-        self.paint_scrollbars(node, &style);
+        if style.visibility {
+            self.paint_scrollbars(node, &style);
+        }
         self.finish_block_decoration(&style, rect, decoration);
         if self.emit_paint
+            && style.visibility
             && let Some(image) = block_image
         {
             image.paint(
                 node,
                 &mut self.output,
+                &style,
                 RectF {
                     x: content_x,
                     y: content_y,
@@ -344,6 +376,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             padding,
             authored_button,
         );
+        self.wrap_clip_path(node, &style, rect, item_start);
         if node.is_generated_pseudo() {
             self.apply_generated_transform(&style, rect, item_start);
         } else {

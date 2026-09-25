@@ -14,6 +14,9 @@ impl ComputedStyle {
         };
         self.background_position_x = resolve(self.background_position_x);
         self.background_position_y = resolve(self.background_position_y);
+        self.object_position =
+            self.object_position
+                .resolve_relative_units(width, height, root_font_size);
         if let BackgroundSize::Explicit {
             width: background_width,
             height: background_height,
@@ -46,6 +49,7 @@ impl ComputedStyle {
             .border_width
             .resolve_relative_units(width, height, root_font_size);
         self.border_radius = resolve(self.border_radius);
+        self.border_spacing = self.border_spacing.map(resolve);
         self.top = resolve(self.top);
         self.right = resolve(self.right);
         self.bottom = resolve(self.bottom);
@@ -53,6 +57,8 @@ impl ComputedStyle {
         self.flex_basis = resolve(self.flex_basis);
         self.grid_column_gap = resolve(self.grid_column_gap);
         self.grid_row_gap = resolve(self.grid_row_gap);
+        self.clip_path
+            .resolve_relative_units(width, height, root_font_size);
         self.transform.resolve_root_font_units(root_font_size);
     }
 }

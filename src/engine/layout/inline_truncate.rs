@@ -246,6 +246,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             && let Some(url) = style.mask_image.as_ref()
         {
             self.output.items.push(DisplayItem::Image {
+                clip: None,
                 rect: border_rect,
                 url: url.clone(),
                 alt: String::new(),

@@ -43,7 +43,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 continue;
             }
             let child_style = self.styles.get(child);
-            if child_style.display == Display::None || !child_style.visibility {
+            if child_style.display == Display::None {
                 continue;
             }
             if matches!(child_style.position, Position::Absolute | Position::Fixed) {

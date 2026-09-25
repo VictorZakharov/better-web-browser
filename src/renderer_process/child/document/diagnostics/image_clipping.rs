@@ -10,10 +10,16 @@ pub(super) fn rects(items: &[DisplayItem], url: &str) -> Vec<RectF> {
             DisplayItem::EndClip { .. } => {
                 clips.pop();
             }
-            DisplayItem::Image { rect, url: key, .. } if key == url => {
-                let clipped = clips
-                    .iter()
-                    .fold(*rect, |rect, clip| intersect(rect, *clip));
+            DisplayItem::Image {
+                rect,
+                clip,
+                url: key,
+                ..
+            } if key == url => {
+                let clipped = clips.iter().fold(
+                    clip.map_or(*rect, |content_box| intersect(*rect, content_box)),
+                    |rect, clip| intersect(rect, *clip),
+                );
                 if clipped.width > 0.0 && clipped.height > 0.0 {
                     result.push(clipped);
                     if result.len() == 8 {
@@ -56,6 +62,7 @@ mod tests {
         };
         let image = DisplayItem::Image {
             rect: outer,
+            clip: None,
             url: "frame".into(),
             alt: String::new(),
             tint: None,

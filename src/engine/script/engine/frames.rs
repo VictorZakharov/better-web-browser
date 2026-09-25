@@ -7,9 +7,11 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 mod creation;
 mod navigation;
+mod observer_geometry;
 mod relations;
 use creation::create;
 pub(in crate::engine::script) use navigation::{FrameNavigation, Replacement};
+pub(super) use observer_geometry::intersection_geometry;
 pub(super) use relations::child_windows;
 
 #[derive(Default)]

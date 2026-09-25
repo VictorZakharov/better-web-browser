@@ -1,4 +1,11 @@
     const imageElementStates = new WeakMap();
+    // HTML's fragment parser uses the insertion site's context, not a generic div.
+    const parseContextualHtml = (context, markup) => {
+        if (!(context instanceof Element) ||
+            (context.namespaceURI === htmlNamespace && context.localName === 'html'))
+            context = document.createElement('body');
+        return wrap(host('parseHtmlFragment', nodeId(context), String(markup)));
+    };
     const resetImageElementState = element => imageElementStates.delete(element);
     const updateImageElementState = (element, complete, naturalWidth, naturalHeight) => {
         imageElementStates.set(element, {
@@ -76,14 +83,13 @@
         get shadowRoot() { return wrap(host('shadowRoot', nodeId(this))); }
         get innerHTML() { return host('innerHtmlGet', nodeId(this)); }
         set innerHTML(value) { replaceElementInnerHtml(this, value); }
-        get outerHTML() { return '<' + this.localName + '>' + this.innerHTML + '</' + this.localName + '>'; }
+        get outerHTML() { return host('outerHtmlGet', nodeId(this)); }
         set outerHTML(value) {
             const parent = this.parentNode;
             if (!parent) return;
-            const holder = document.createElement('div');
-            holder.innerHTML = value == null ? '' : String(value);
-            for (const child of [...holder.childNodes]) parent.insertBefore(child, this);
-            parent.removeChild(this);
+            if (parent instanceof Document)
+                throw new DOMException('Cannot replace a document child with outerHTML', 'NoModificationAllowedError');
+            parent.replaceChild(parseContextualHtml(parent, value), this);
         }
         getAttribute(name) {
             name = normalizedQualifiedName(this, name);
@@ -168,27 +174,19 @@
             return selectorCollection(this, '.' + String(name).trim().replace(/\s+/g, '.'));
         }
         insertAdjacentHTML(position, html) {
-            position = String(position).toLowerCase();
-            if (position === 'beforeend') {
-                const previousChildren = new Set(this.childNodes.map(child => nodeId(child)));
-                host('innerHtmlAppend', nodeId(this), String(html));
-                markChildCollectionsChanged(this);
-                for (const child of this.childNodes) if (!previousChildren.has(nodeId(child))) {
-                    if (this.isConnected) connectElementTree(child);
-                    else upgradeCustomElementTree(child);
-                }
-                if (this.isConnected) refreshWindowNamedProperties(
-                    this.childNodes.filter(child => !previousChildren.has(nodeId(child))));
-            }
-            else if (position === 'afterbegin') this.innerHTML = String(html) + this.innerHTML;
-            else if (position === 'beforebegin' && this.parentNode) {
-                const holder = document.createElement('div'); holder.innerHTML = String(html);
-                for (const child of [...holder.childNodes]) this.parentNode.insertBefore(child, this);
-            } else if (position === 'afterend' && this.parentNode) {
-                const holder = document.createElement('div'); holder.innerHTML = String(html);
-                let reference = this.nextSibling;
-                for (const child of [...holder.childNodes]) this.parentNode.insertBefore(child, reference);
-            }
+            position = String(position).replace(/[A-Z]/g, c => c.toLowerCase());
+            if (!['beforebegin', 'afterbegin', 'beforeend', 'afterend'].includes(position))
+                throw new DOMException('Invalid adjacent insertion position', 'SyntaxError');
+            const outside = position === 'beforebegin' || position === 'afterend';
+            const parent = this.parentNode;
+            if (outside && (!parent || parent instanceof Document))
+                throw new DOMException('Cannot insert adjacent to a document child or detached element',
+                    'NoModificationAllowedError');
+            const fragment = parseContextualHtml(outside ? parent : this, html);
+            if (position === 'beforebegin') parent.insertBefore(fragment, this);
+            else if (position === 'afterbegin') this.insertBefore(fragment, this.firstChild);
+            else if (position === 'beforeend') this.appendChild(fragment);
+            else parent.insertBefore(fragment, this.nextSibling);
         }
         get href() { const value = this.getAttribute('href'); return value == null ? '' : host('resolveUrl', value); }
         set href(value) { this.setAttribute('href', value); }

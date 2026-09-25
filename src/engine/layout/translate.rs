@@ -14,8 +14,14 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }
-            | DisplayItem::Image { rect, .. }
             | DisplayItem::EmbeddedFrame { rect, .. } => rect,
+            DisplayItem::Image { rect, clip, .. } => {
+                if let Some(clip) = clip {
+                    clip.x += offset_x;
+                    clip.y += offset_y;
+                }
+                rect
+            }
             DisplayItem::BackgroundImage {
                 clip_rect,
                 tile_rect,
@@ -78,6 +84,10 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             if let Some(scroll) = self.output.scroll_boxes.get_mut(&descendant.id()) {
                 scroll.port.x += offset_x;
                 scroll.port.y += offset_y;
+            }
+            if let Some(clip) = self.output.clip_paths.get_mut(&descendant.id()) {
+                clip.x += offset_x;
+                clip.y += offset_y;
             }
             if let Some(rect) = self.output.node_bounds.get_mut(&descendant.id()) {
                 rect.x += offset_x;

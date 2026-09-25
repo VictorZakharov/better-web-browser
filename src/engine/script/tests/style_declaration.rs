@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn inset_clip_path_is_exposed_without_claiming_unsupported_shapes() {
+    let (dom, outcome) = execute_html(
+        r#"<style>main{clip-path:inset(10% 2px)}</style><body><main></main><output></output><script>
+        const main = document.querySelector('main');
+        const style = getComputedStyle(main);
+        document.querySelector('output').textContent = [
+            CSS.supports('clip-path', 'inset(10%)'),
+            !CSS.supports('clip-path', 'circle(50%)'),
+            style.clipPath === 'inset(10% 2px 10% 2px)',
+            main.style.clipPath === ''
+        ].every(Boolean) ? 'yes' : style.clipPath;
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "yes"
+    );
+}
+
+#[test]
 fn style_named_properties_do_not_claim_unknown_capabilities() {
     let (dom, outcome) = execute_html(
         r#"<style>p{color:red}</style><body><output>no</output><script>

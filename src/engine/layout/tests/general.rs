@@ -1,6 +1,7 @@
 use super::*;
 use crate::engine::layout::test_support::{CountingMeasurer, FixedMeasurer};
 
+mod aspect_ratio;
 mod grid;
 mod iframe;
 mod image_position;
@@ -9,6 +10,8 @@ mod opacity;
 mod positioned;
 mod svg;
 mod table;
+mod text_transform;
+mod visibility;
 
 #[test]
 fn lays_out_centered_image_form_and_links() {

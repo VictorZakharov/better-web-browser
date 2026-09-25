@@ -160,7 +160,24 @@ impl Node {
                 .clone()
                 .unwrap_or_else(|| node.clone())
         };
-        let sink = Dom::with_identity(Rc::clone(&node.identity));
+        let children = Self::parse_html_fragment(&context_node, html, scripting_enabled);
+        clear_children(&target);
+        for child in children {
+            let _ = Node::append_child(&target, child);
+        }
+    }
+
+    /// Parse markup using the actual element context (including table and foreign-content
+    /// insertion modes), without changing the context element's current children.
+    pub fn parse_html_fragment(
+        context_node: &NodeRef,
+        html: &str,
+        scripting_enabled: bool,
+    ) -> Vec<NodeRef> {
+        let Some(context) = context_node.element() else {
+            return Vec::new();
+        };
+        let sink = Dom::with_identity(Rc::clone(&context_node.identity));
         let identity = Rc::clone(&sink.identity);
         let start_nodes = identity.allocated_nodes();
         let (html, _) = bounded_utf8_prefix(html, MAX_HTML_INPUT_BYTES);
@@ -195,11 +212,10 @@ impl Node {
             .first()
             .map(|root| root.children.borrow().clone())
             .unwrap_or_default();
-        clear_children(&target);
-        for child in children {
-            remove_from_parent(&child);
-            let _ = Node::append_child(&target, child);
+        for child in &children {
+            remove_from_parent(child);
         }
+        children
     }
 }
 
