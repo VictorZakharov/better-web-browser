@@ -23,5 +23,9 @@ Curated upstream CSSOM View tests cover element ordering, DOM and visibility
 changes, coordinate conversion, inline fragments, and shadow-root retargeting.
 Remaining standards work includes shape-aware SVG hit testing, image maps,
 more complete pseudo-element/anonymous-box ordering, and 3D transformed
-geometry. Those cases should be added as upstream tests when their underlying
-rendering support lands.
+geometry. Additional upstream probes expose missing RTL inline placement,
+positioned floats nested inside inline ancestors, and default table-cell
+spacing/directional mapping. A specified-height table now allocates surplus
+height to its rows rather than leaving empty cells at zero height, but that
+does not by itself satisfy those broader table tests. Promote the remaining
+upstream cases only when their underlying layout support lands.

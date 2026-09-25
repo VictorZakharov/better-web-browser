@@ -136,4 +136,24 @@ mod tests {
         assert_eq!(hits.first().map(|node| node.id()), Some(child.id()));
         assert!(!hits.iter().any(|node| node.id() == main.id()));
     }
+
+    #[test]
+    fn table_cell_background_is_a_hit_testable_box() {
+        let page = Page::parse(
+            "<style>body{margin:0}table{margin:100px;width:200px;height:200px}td{background:blue}</style><table><tr><td id=first></td><td id=second></td><td id=third></td><td id=fourth></td></tr></table>",
+            "https://example.test/",
+        );
+        let cell = page.dom.elements_named("td").next().unwrap();
+        let layout = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+        let rect = layout.node_bounds.get(&cell.id()).copied().unwrap();
+        assert!(rect.x <= 125.0 && rect.right() > 125.0, "{rect:?}");
+        assert!(rect.y <= 125.0 && rect.bottom() > 125.0, "{rect:?}");
+        let hits =
+            HitTestSnapshot::from_layout(&layout, &page.dom.document).elements_at(125.0, 125.0);
+        assert_eq!(
+            hits.first().map(|node| node.id()),
+            Some(cell.id()),
+            "{hits:?}"
+        );
+    }
 }

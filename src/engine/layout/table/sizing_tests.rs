@@ -2,6 +2,40 @@ use super::*;
 use crate::engine::layout::test_support::FixedMeasurer;
 
 #[test]
+fn explicit_table_height_is_allocated_to_empty_row_boxes() {
+    let page = Page::parse(
+        "<style>body{margin:0}table{width:200px;height:200px}td{background:blue}</style><table><tr><td></td><td></td></tr><tr><td></td><td></td></tr></table>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let cells = page.dom.elements_named("td").collect::<Vec<_>>();
+    let rects = cells
+        .iter()
+        .map(|cell| output.node_bounds[&cell.id()])
+        .collect::<Vec<_>>();
+    assert_eq!(rects[0].height, 100.0);
+    assert_eq!(rects[1].height, 100.0);
+    assert_eq!(rects[2].y, 100.0);
+    assert_eq!(rects[3].y, 100.0);
+    assert_eq!(rects[2].bottom(), 200.0);
+}
+
+#[test]
+fn explicit_table_height_preserves_intrinsic_row_minima() {
+    let page = Page::parse(
+        "<style>body{margin:0}table{width:200px;height:150px}td{padding:0}</style><table><tr style='height:100px'><td>first</td></tr><tr><td>last</td></tr></table>",
+        "https://example.test/",
+    );
+    let output = layout_page(&page, 800.0, 600.0, &mut FixedMeasurer);
+    let cells = page.dom.elements_named("td").collect::<Vec<_>>();
+    let first = output.node_bounds[&cells[0].id()];
+    let second = output.node_bounds[&cells[1].id()];
+    assert!(first.height >= 100.0, "{first:?}");
+    assert_eq!(first.bottom(), second.y);
+    assert_eq!(second.bottom(), 150.0);
+}
+
+#[test]
 fn percentage_descendants_cannot_inflate_the_table_track_they_depend_on() {
     for child in [
         "<div style='width:100%'>short text</div>",

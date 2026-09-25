@@ -563,6 +563,7 @@
     { "path": "css/cssom-view/elementFromPoint-002.html", "area": "CSSOM View hit testing", "expected": "pass" },
     { "path": "css/cssom-view/elementFromPoint-003.html", "area": "CSSOM View hit testing", "expected": "pass" },
     { "path": "css/cssom-view/elementFromPoint-parameters.html", "area": "CSSOM View hit testing", "expected": "pass" },
+    { "path": "css/cssom-view/elementsFromPoint-invalid-cases.html", "area": "CSSOM View hit testing", "expected": "pass" },
     { "path": "css/cssom-view/elementsFromPoint-inline-htb-ltr.html", "area": "CSSOM View hit testing", "expected": "pass" },
     { "path": "css/cssom-view/elementsFromPoint-inline-nested.html", "area": "CSSOM View hit testing", "expected": "pass" },
     { "path": "css/cssom-view/elementsFromPoint-shadowroot.html", "area": "CSSOM View hit testing", "expected": "pass" },

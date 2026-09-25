@@ -20,7 +20,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         x: f32,
         mut y: f32,
         width: f32,
-        containing_height: Option<f32>,
+        specified_height: Option<f32>,
         _style: &ComputedStyle,
     ) -> f32 {
         let captions = table_captions(node, self.styles);
@@ -28,7 +28,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             .into_iter()
             .filter(|caption| self.styles.get(caption).display != Display::None)
             .partition(|caption| !self.styles.get(caption).caption_side_bottom);
-        y = self.layout_captions(&top_captions, x, y, width, containing_height);
+        y = self.layout_captions(&top_captions, x, y, width, specified_height);
         let grid_top = y;
         let grid = grid::Grid::new(node, self.styles);
         let columns = self.table_columns(&grid, width);
@@ -41,7 +41,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 let style = self.styles.get(row);
                 style
                     .height
-                    .resolve(containing_height.unwrap_or(0.0), style.font_size)
+                    .resolve(specified_height.unwrap_or(0.0), style.font_size)
                     .unwrap_or(0.0)
             })
             .collect::<Vec<_>>();
@@ -52,7 +52,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let minimum = self.intrinsic_block_height(
                 &cell.node,
                 cell_width,
-                containing_height,
+                specified_height,
                 Some(UsedInlineSize {
                     outer: cell_width,
                     percentage_basis: width,
@@ -61,6 +61,17 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             let rows = &mut heights[cell.row..cell.row + cell.rows];
             let extra = (minimum - rows.iter().sum::<f32>()).max(0.0) / rows.len() as f32;
             for height in rows {
+                *height += extra;
+            }
+        }
+        // CSS 2.2 §17.5.3 requires a table with a specified height greater than
+        // the sum of its rows to distribute the extra height among rows. The
+        // distribution algorithm is UA-defined; an even share preserves every
+        // row's intrinsic minimum and gives empty cells an actual box.
+        if !heights.is_empty() {
+            let extra = (specified_height.unwrap_or(0.0) - heights.iter().sum::<f32>()).max(0.0)
+                / heights.len() as f32;
+            for height in &mut heights {
                 *height += extra;
             }
         }
@@ -79,7 +90,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 xs[cell.column],
                 ys[cell.row],
                 cell_width,
-                containing_height,
+                specified_height,
                 Some(UsedInlineSize {
                     outer: cell_width,
                     percentage_basis: width,
@@ -88,8 +99,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             );
         }
         y = *ys.last().unwrap_or(&y);
-        y = y.max(grid_top + containing_height.unwrap_or(0.0));
-        self.layout_captions(&bottom_captions, x, y, width, containing_height)
+        y = y.max(grid_top + specified_height.unwrap_or(0.0));
+        self.layout_captions(&bottom_captions, x, y, width, specified_height)
     }
 
     fn layout_captions(
