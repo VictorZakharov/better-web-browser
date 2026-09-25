@@ -21,6 +21,7 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             delta_y: 126.0,
             viewport_y: 80.0,
             modifiers,
+            target: None,
         })),
         BrowserMessage::Input(DocumentInput::Pointer(PointerInput {
             document,
@@ -210,4 +211,74 @@ fn fullscreen_requests_and_responses_round_trip_and_validate_identity() {
             "fullscreen response identifier"
         ))
     ));
+}
+
+#[test]
+fn pointer_lock_messages_and_relative_motion_round_trip() {
+    let document = DocumentId::new(19).unwrap();
+    let target = DocumentNodeId::new((9_u128 << 64) | 4).unwrap();
+    let request = RendererMessage::PointerLockRequest(PointerLockRequest {
+        document,
+        request_id: 3,
+        target: Some(target),
+    });
+    let response = BrowserMessage::PointerLockResponse(PointerLockResponse {
+        document,
+        request_id: 3,
+        disposition: PointerLockDisposition::Entered,
+    });
+    let move_input = BrowserMessage::Input(DocumentInput::Pointer(PointerInput {
+        document,
+        sequence: 4,
+        phase: PointerPhase::LockedMove,
+        button: PointerButton::None,
+        buttons: 0,
+        x: -12.5,
+        y: 6.0,
+        modifiers: InputModifiers::default(),
+        target: Some(target),
+    }));
+    let wheel = BrowserMessage::Input(DocumentInput::Wheel(WheelInput {
+        document,
+        sequence: 5,
+        x: 20.0,
+        y: 30.0,
+        delta_x: 0.0,
+        delta_y: 120.0,
+        viewport_y: 0.0,
+        modifiers: InputModifiers::default(),
+        target: Some(target),
+    }));
+    let mut renderer_bytes = Vec::new();
+    FrameWriter::new(&mut renderer_bytes, session())
+        .send_renderer(&request)
+        .unwrap();
+    assert_eq!(
+        FrameReader::new(Cursor::new(renderer_bytes), session())
+            .read_renderer()
+            .unwrap(),
+        request
+    );
+    for message in [response, move_input, wheel] {
+        let mut bytes = Vec::new();
+        FrameWriter::new(&mut bytes, session())
+            .send_browser(&message)
+            .unwrap();
+        assert_eq!(
+            FrameReader::new(Cursor::new(bytes), session())
+                .read_browser()
+                .unwrap(),
+            message
+        );
+    }
+    let invalid = RendererMessage::PointerLockRequest(PointerLockRequest {
+        document,
+        request_id: 0,
+        target: Some(target),
+    });
+    assert!(
+        FrameWriter::new(Vec::new(), session())
+            .send_renderer(&invalid)
+            .is_err()
+    );
 }

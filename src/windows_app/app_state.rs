@@ -3,6 +3,7 @@
 use super::browser_app::BrowserApplication;
 use super::browser_navigation::HistoryMode;
 use super::fullscreen::FullscreenState;
+use super::pointer_lock::PointerLockState;
 use super::renderer_lifecycle::SharedRendererRegistry;
 use super::tab_drag::TabDragGesture;
 use super::tab_state::BrowserTab;
@@ -45,6 +46,7 @@ pub(super) struct BrowserState {
     pub(super) media_viewport_width: f32,
     pub(super) outer_window_width: i32,
     pub(super) fullscreen: FullscreenState,
+    pub(super) pointer_lock: PointerLockState,
 }
 
 impl BrowserState {
@@ -105,6 +107,7 @@ impl BrowserState {
             media_viewport_width: 0.0,
             outer_window_width: 0,
             fullscreen: FullscreenState::default(),
+            pointer_lock: PointerLockState::default(),
             app,
         }
     }
@@ -251,6 +254,7 @@ impl DerefMut for BrowserState {
 impl Drop for BrowserState {
     fn drop(&mut self) {
         unsafe {
+            self.release_pointer_lock(false);
             KillTimer(self.window, ID_RENDERER_MONITOR_TIMER);
             KillTimer(self.window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(self.window, ID_SCROLL_ANIMATION_TIMER);

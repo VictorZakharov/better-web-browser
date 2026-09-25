@@ -8,10 +8,12 @@ use crate::limits::{
     MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
     MAX_SCRIPT_NAVIGATIONS,
 };
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    time::{Duration, Instant},
+};
 mod attribute_host;
 mod binding_helpers;
 mod bootstrap;
@@ -38,6 +40,8 @@ mod mutation_host;
 pub(crate) mod network;
 mod parser_writes;
 mod performance_clock;
+mod pointer_lock_host;
+mod public_types;
 mod render_invalidation;
 pub(crate) mod runtime;
 mod runtime_guard;
@@ -64,15 +68,10 @@ pub use execution::{execute, execute_with_loader};
 use host_state::HostState;
 pub(crate) use host_state::geometry::LayoutFlushCallback;
 pub use network::{ScriptFetchAction, ScriptFetchEvent};
+pub use public_types::*;
 pub use runtime::ScriptRuntime;
 pub(crate) use runtime_guard::install_runtime_panic_hook;
 pub(crate) use types::is_classic_javascript_type;
-pub use types::{
-    DynamicScriptLoader, DynamicScriptRequest, ScriptCaptionCue, ScriptFetchOptions,
-    ScriptFontAction, ScriptFullscreenAction, ScriptHistoryAction, ScriptInput, ScriptKind,
-    ScriptMediaAction, ScriptMediaCommand, ScriptOutcome, UserInputEvent, UserInputModifiers,
-    UserInputResult,
-};
 pub use worker_host::WorkerSourceLoader;
 pub use worker_runtime::{WorkerPortEvent, WorkerRuntime, WorkerRuntimeOutcome};
 pub use workers::ScriptWorkerAction;

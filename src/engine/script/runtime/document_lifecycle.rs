@@ -199,6 +199,7 @@ impl ScriptRuntime {
         host.pending_database_actions.clear();
         host.pending_worker_actions.clear();
         host.pending_fullscreen_actions.clear();
+        host.pending_pointer_lock_actions.clear();
         host.pending_media_actions.clear();
         host.pending_font_actions.clear();
         host.storage_event = None;

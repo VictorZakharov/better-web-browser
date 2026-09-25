@@ -20,6 +20,7 @@ pub(super) fn encode_browser_input(
                     writer.f32(input.delta_y);
                     writer.f32(input.viewport_y);
                     encode_modifiers(&mut writer, input.modifiers);
+                    encode_target(&mut writer, input.target);
                     0x0151
                 }
                 DocumentInput::Pointer(input) => {
@@ -79,6 +80,17 @@ pub(super) fn encode_browser_input(
             writer.u8(fullscreen_disposition_tag(response.disposition));
             0x014f
         }
+        BrowserMessage::PointerLockResponse(response) => {
+            let response = response.validate()?;
+            writer.u64(response.document.get());
+            writer.u64(response.request_id);
+            writer.u8(match response.disposition {
+                PointerLockDisposition::Entered => 1,
+                PointerLockDisposition::Exited => 2,
+                PointerLockDisposition::Denied => 3,
+            });
+            0x0153
+        }
         _ => return Err(ProtocolError::InvalidPayload("browser input message")),
     };
     Ok((kind, writer.finish()))
@@ -109,6 +121,20 @@ pub(super) fn decode_browser_input(
             }
             .validate()?,
         )
+    } else if kind == 0x0153 {
+        BrowserMessage::PointerLockResponse(
+            PointerLockResponse {
+                document,
+                request_id: reader.u64()?,
+                disposition: match reader.u8()? {
+                    1 => PointerLockDisposition::Entered,
+                    2 => PointerLockDisposition::Exited,
+                    3 => PointerLockDisposition::Denied,
+                    _ => return Err(ProtocolError::InvalidPayload("pointer lock disposition")),
+                },
+            }
+            .validate()?,
+        )
     } else {
         let sequence = reader.u64()?;
         let input = match kind {
@@ -121,6 +147,7 @@ pub(super) fn decode_browser_input(
                 delta_y: reader.f32()?,
                 viewport_y: reader.f32()?,
                 modifiers: decode_modifiers(&mut reader)?,
+                target: decode_target(&mut reader)?,
             }),
             0x0141 => DocumentInput::Pointer(PointerInput {
                 document,
@@ -180,40 +207,62 @@ pub(super) fn decode_browser_input(
 pub(super) fn encode_renderer_input(
     message: &RendererMessage,
 ) -> Result<(u16, Vec<u8>), ProtocolError> {
-    let RendererMessage::FullscreenRequest(request) = message else {
-        return Err(ProtocolError::InvalidPayload("renderer input message"));
-    };
-    let request = request.validate()?;
     let mut writer = WireWriter::new();
-    writer.u64(request.document.get());
-    writer.u64(request.request_id);
-    writer.u8(match request.action {
-        FullscreenAction::Enter => 1,
-        FullscreenAction::Exit => 2,
-    });
-    Ok((0x0150, writer.finish()))
+    let kind = match message {
+        RendererMessage::FullscreenRequest(request) => {
+            let request = request.validate()?;
+            writer.u64(request.document.get());
+            writer.u64(request.request_id);
+            writer.u8(match request.action {
+                FullscreenAction::Enter => 1,
+                FullscreenAction::Exit => 2,
+            });
+            0x0150
+        }
+        RendererMessage::PointerLockRequest(request) => {
+            let request = request.validate()?;
+            writer.u64(request.document.get());
+            writer.u64(request.request_id);
+            encode_target(&mut writer, request.target);
+            0x0152
+        }
+        _ => return Err(ProtocolError::InvalidPayload("renderer input message")),
+    };
+    Ok((kind, writer.finish()))
 }
 
 pub(super) fn decode_renderer_input(
     kind: u16,
     payload: &[u8],
 ) -> Result<RendererMessage, ProtocolError> {
-    if kind != 0x0150 {
-        return Err(ProtocolError::UnexpectedMessage(kind));
-    }
     let mut reader = WireReader::new(payload);
-    let request = FullscreenRequest {
-        document: DocumentId::new(reader.u64()?)?,
-        request_id: reader.u64()?,
-        action: match reader.u8()? {
-            1 => FullscreenAction::Enter,
-            2 => FullscreenAction::Exit,
-            _ => return Err(ProtocolError::InvalidPayload("fullscreen action")),
-        },
-    }
-    .validate()?;
+    let document = DocumentId::new(reader.u64()?)?;
+    let request_id = reader.u64()?;
+    let message = match kind {
+        0x0150 => RendererMessage::FullscreenRequest(
+            FullscreenRequest {
+                document,
+                request_id,
+                action: match reader.u8()? {
+                    1 => FullscreenAction::Enter,
+                    2 => FullscreenAction::Exit,
+                    _ => return Err(ProtocolError::InvalidPayload("fullscreen action")),
+                },
+            }
+            .validate()?,
+        ),
+        0x0152 => RendererMessage::PointerLockRequest(
+            PointerLockRequest {
+                document,
+                request_id,
+                target: decode_target(&mut reader)?,
+            }
+            .validate()?,
+        ),
+        _ => return Err(ProtocolError::UnexpectedMessage(kind)),
+    };
     reader.finish()?;
-    Ok(RendererMessage::FullscreenRequest(request))
+    Ok(message)
 }
 
 fn fullscreen_disposition_tag(disposition: FullscreenDisposition) -> u8 {
@@ -266,6 +315,7 @@ fn decode_target(reader: &mut WireReader<'_>) -> Result<Option<DocumentNodeId>, 
 fn pointer_phase_tag(phase: PointerPhase) -> u8 {
     match phase {
         PointerPhase::Move => 1,
+        PointerPhase::LockedMove => 6,
         PointerPhase::Leave => 5,
         PointerPhase::Down => 2,
         PointerPhase::Up => 3,
@@ -276,6 +326,7 @@ fn pointer_phase_tag(phase: PointerPhase) -> u8 {
 fn decode_pointer_phase(tag: u8) -> Result<PointerPhase, ProtocolError> {
     match tag {
         1 => Ok(PointerPhase::Move),
+        6 => Ok(PointerPhase::LockedMove),
         5 => Ok(PointerPhase::Leave),
         2 => Ok(PointerPhase::Down),
         3 => Ok(PointerPhase::Up),

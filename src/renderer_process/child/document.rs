@@ -16,6 +16,7 @@ mod media_environment;
 mod navigation;
 mod parser_scripts;
 mod parsing;
+mod pointer_lock;
 mod rendering;
 mod reporting;
 mod resources;

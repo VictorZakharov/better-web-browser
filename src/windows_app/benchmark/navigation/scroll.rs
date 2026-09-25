@@ -28,6 +28,7 @@ impl BrowserState {
             delta_x: 0.0,
             delta_y: delta as f32,
             modifiers: InputModifiers::default(),
+            target: None,
         }))
         .then_some(())
         .ok_or_else(|| "benchmark wheel input was rejected".into())

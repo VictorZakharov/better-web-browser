@@ -1,7 +1,6 @@
 //! Length, calc(), and color parsing.
 
 use super::*;
-use cssparser::color::{parse_hash_color, parse_named_color};
 
 pub(crate) fn parse_length(value: &str) -> Option<Length> {
     let value = value.trim().trim_end_matches("!important").trim();
@@ -262,75 +261,6 @@ pub(super) fn parse_calc_value<'i, 't>(
         }
         _ => Err(input.new_custom_error::<(), ()>(())),
     }
-}
-
-pub(crate) fn parse_color(value: &str) -> Option<Color> {
-    let value = value.trim().trim_end_matches("!important").trim();
-    if value.eq_ignore_ascii_case("transparent") {
-        return Some(Color::TRANSPARENT);
-    }
-    if let Some(hex) = value.strip_prefix('#')
-        && let Ok((red, green, blue, alpha)) = parse_hash_color(hex.as_bytes())
-    {
-        return Some(Color {
-            red,
-            green,
-            blue,
-            alpha: (alpha * 255.0).round() as u8,
-        });
-    }
-    if let Ok((red, green, blue)) = parse_named_color(value) {
-        return Some(Color::rgb(red, green, blue));
-    }
-    let lower = value.to_ascii_lowercase();
-    let function = lower
-        .strip_prefix("rgb(")
-        .and_then(|value| value.strip_suffix(')'))
-        .map(|value| (value, false))
-        .or_else(|| {
-            lower
-                .strip_prefix("rgba(")
-                .and_then(|value| value.strip_suffix(')'))
-                .map(|value| (value, true))
-        })?;
-    let components = function
-        .0
-        .split([',', ' '])
-        .filter(|part| !part.is_empty() && *part != "/")
-        .collect::<Vec<_>>();
-    if components.len() < 3 {
-        return None;
-    }
-    let channel = |component: &str| -> Option<u8> {
-        if let Some(percent) = component.strip_suffix('%') {
-            Some(
-                (percent.parse::<f32>().ok()? * 2.55)
-                    .round()
-                    .clamp(0.0, 255.0) as u8,
-            )
-        } else {
-            Some(component.parse::<f32>().ok()?.round().clamp(0.0, 255.0) as u8)
-        }
-    };
-    let alpha = if function.1 && components.len() >= 4 {
-        if let Some(percent) = components[3].strip_suffix('%') {
-            (percent.parse::<f32>().ok()? * 2.55)
-                .round()
-                .clamp(0.0, 255.0) as u8
-        } else {
-            (components[3].parse::<f32>().ok()? * 255.0)
-                .round()
-                .clamp(0.0, 255.0) as u8
-        }
-    } else {
-        255
-    };
-    Some(Color {
-        red: channel(components[0])?,
-        green: channel(components[1])?,
-        blue: channel(components[2])?,
-        alpha,
-    })
 }
 
 pub(crate) fn consume_identifier(bytes: &[u8], start: usize) -> usize {

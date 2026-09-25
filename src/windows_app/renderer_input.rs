@@ -89,6 +89,9 @@ impl BrowserState {
         button: PointerButton,
         wparam: Wparam,
     ) -> bool {
+        if let Some(owner) = self.locked_pointer_owner() {
+            return self.route_locked_pointer(owner, x, y, phase, button, wparam);
+        }
         if self.surface != Surface::Page {
             return false;
         }
@@ -377,7 +380,7 @@ unsafe fn edit_selection(window: Hwnd) -> (u32, u32) {
     (start, end)
 }
 
-unsafe fn pointer_modifiers(wparam: Wparam) -> InputModifiers {
+pub(super) unsafe fn pointer_modifiers(wparam: Wparam) -> InputModifiers {
     InputModifiers {
         control: wparam & MK_CONTROL != 0,
         shift: wparam & MK_SHIFT != 0,

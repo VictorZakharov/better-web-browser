@@ -33,11 +33,23 @@ pub(crate) fn harness_report(console: &[String]) -> Result<Option<HarnessReport>
             };
             let chunk: Chunk = serde_json::from_str(&line[start + CHUNK_MARKER.len()..])
                 .map_err(|error| format!("invalid WPT chunk: {error}"))?;
-            if chunk.index != next
-                || next >= count
-                || payload.len() + chunk.data.len() > MAX_REPORT_BYTES
-            {
-                return Err("WPT result chunks exceed budget or are out of order".into());
+            // A renderer presentation can repeat a console update before its
+            // acknowledgement. Repeated framing is harmless only when the bytes
+            // match the immediately preceding chunk exactly.
+            if next > 0 && chunk.index == next - 1 && payload.ends_with(&chunk.data) {
+                continue;
+            }
+            if chunk.index != next || next >= count {
+                return Err(format!(
+                    "WPT result chunk out of order: expected {next}/{count}, received {}",
+                    chunk.index,
+                ));
+            }
+            if payload.len() + chunk.data.len() > MAX_REPORT_BYTES {
+                return Err(format!(
+                    "WPT result chunks exceed {}-byte budget",
+                    MAX_REPORT_BYTES
+                ));
             }
             payload.push_str(&chunk.data);
             next += 1;
@@ -85,10 +97,23 @@ mod tests {
         for lines in [
             vec![end(1)],
             vec![chunk(1, "{}"), end(1)],
-            vec![chunk(0, "{}"), chunk(0, "{}"), end(2)],
+            vec![chunk(0, "{}"), chunk(0, "different"), end(1)],
             vec![end(129)],
         ] {
             assert!(harness_report(&lines).is_err());
         }
+    }
+    #[test]
+    fn ignores_only_identical_repeated_transport_chunks() {
+        let first = r#"{"overall":{"status":"OK"},"tests":["#;
+        let second = r#"{"name":"example","status":"PASS"}]}"#;
+        let lines = [
+            chunk(0, first),
+            chunk(0, first),
+            chunk(1, second),
+            chunk(1, second),
+            end(2),
+        ];
+        assert_eq!(harness_report(&lines).unwrap().unwrap().tests.len(), 1);
     }
 }

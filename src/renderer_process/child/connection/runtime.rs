@@ -330,6 +330,40 @@ impl ChildConnection {
         Ok(())
     }
 
+    pub(super) fn pointer_lock_response(
+        &mut self,
+        response: crate::renderer_protocol::PointerLockResponse,
+    ) -> Result<(), String> {
+        let response = response.validate().map_err(|error| error.to_string())?;
+        let document = response.document;
+        let Some(mut runtime) = self.document.take() else {
+            return Ok(());
+        };
+        if runtime.id() != document {
+            self.document = Some(runtime);
+            return Ok(());
+        }
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            runtime.apply_pointer_lock_response(response, self)
+        }));
+        match result {
+            Ok(Ok(Some(presentation))) => self.send_document_update(presentation)?,
+            Ok(Ok(None)) => {}
+            Ok(Err(error)) => {
+                self.send_document_failure(document, error)?;
+                return Ok(());
+            }
+            Err(payload) => {
+                self.send_document_failure(document, panic_detail(payload))?;
+                return Ok(());
+            }
+        }
+        if !self.stopping {
+            self.document = Some(runtime);
+        }
+        Ok(())
+    }
+
     pub(super) fn acknowledge_presentation(
         &mut self,
         acknowledgement: PresentationAcknowledgement,

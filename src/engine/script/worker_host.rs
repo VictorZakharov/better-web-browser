@@ -21,6 +21,8 @@ pub(super) struct WorkerHostState {
     pub(super) messages: Vec<String>,
     pub(super) port_events: Vec<WorkerPortEvent>,
     pub(super) console: Vec<String>,
+    pub(super) compression_streams: super::host_call::compression_host::CompressionStreams,
+    pub(super) text_decoders: super::text_encoding_host::TextDecoders,
     pub(super) closed: bool,
     pub(super) module_evaluation_pending: bool,
     pub(super) module_evaluation_completion: Option<Result<(), String>>,
@@ -55,6 +57,8 @@ impl WorkerHostState {
             messages: Vec::new(),
             port_events: Vec::new(),
             console: Vec::new(),
+            compression_streams: Default::default(),
+            text_decoders: Default::default(),
             closed: false,
             module_evaluation_pending: false,
             module_evaluation_completion: None,
@@ -102,7 +106,18 @@ pub(super) fn dispatch_worker_host_call(
     args: &[JsValue],
     state: &mut WorkerHostState,
 ) -> JsResult<JsValue> {
-    if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
+    if let Some(value) = super::text_encoding_host::text_encoding_host_call(
+        operation,
+        args,
+        &mut state.text_decoders,
+    )? {
+        return Ok(value);
+    }
+    if let Some(value) = super::host_call::compression_host::dispatch(
+        operation,
+        args,
+        &mut state.compression_streams,
+    )? {
         return Ok(value);
     }
     if let Some(value) = super::url_host::dispatch(operation, args)? {

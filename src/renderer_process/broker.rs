@@ -105,6 +105,7 @@ pub enum RendererEvent {
     },
     PointerCursor(PointerCursorResult),
     FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
+    PointerLockRequested(crate::renderer_protocol::PointerLockRequest),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     WebSocketCommand(crate::renderer_protocol::WebSocketCommand),

@@ -26,11 +26,13 @@
     const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
     const abortSignalToken = {};
+    const abortSignalInstances = new WeakSet();
     const createAbortSignal = () => new AbortSignal(abortSignalToken);
     class AbortSignal extends EventTarget {
         constructor(token) {
             if (token !== abortSignalToken) throw new TypeError('Illegal constructor');
             super(); this.__aborted = false; this.__reason = undefined;
+            abortSignalInstances.add(this);
         }
         get aborted() { return this.__aborted; }
         get reason() { return this.__reason; }
@@ -43,6 +45,7 @@
             this.dispatchEvent(markTrusted(new Event('abort')));
         }
         static abort(reason = undefined) { const signal = createAbortSignal(); signal.__abort(reason); return signal; }
+        static __isSignal(value) { return abortSignalInstances.has(value); }
         static timeout(milliseconds) {
             milliseconds = Number(milliseconds);
             if (!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > Number.MAX_SAFE_INTEGER)

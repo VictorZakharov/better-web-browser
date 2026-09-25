@@ -36,6 +36,19 @@ impl ChildConnection {
                 ))
                 .map_err(|error| error.to_string())?;
         }
+        for action in outcome.pointer_lock_actions.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::PointerLockRequest(
+                    crate::renderer_protocol::PointerLockRequest {
+                        document,
+                        request_id: action.request_id,
+                        target: action.target.and_then(|node| {
+                            crate::renderer_protocol::DocumentNodeId::new(node.to_wire()).ok()
+                        }),
+                    },
+                ))
+                .map_err(|error| error.to_string())?;
+        }
         for assignment in outcome.cookie_updates.drain(..) {
             self.writer
                 .send_renderer(&RendererMessage::CookieMutation(CookieMutation {

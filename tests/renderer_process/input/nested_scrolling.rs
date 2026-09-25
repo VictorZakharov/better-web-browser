@@ -15,6 +15,7 @@ fn wheel(
         delta_y: delta,
         viewport_y: 0.0,
         modifiers: InputModifiers::default(),
+        target: None,
     })
 }
 

@@ -176,6 +176,14 @@ impl RendererSession {
         self.send_command(worker::BrokerCommand::FullscreenResponse(response))
     }
 
+    pub fn respond_pointer_lock(
+        &self,
+        response: crate::renderer_protocol::PointerLockResponse,
+    ) -> Result<(), String> {
+        response.validate().map_err(|error| error.to_string())?;
+        self.send_command(worker::BrokerCommand::PointerLockResponse(response))
+    }
+
     /// Attempts one validated input enqueue without treating backpressure as a renderer failure.
     pub fn try_send_input(&self, input: DocumentInput) -> Result<bool, String> {
         self.try_send_input_retained(input)

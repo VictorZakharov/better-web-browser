@@ -247,6 +247,7 @@ impl ChildConnection {
                 self.acknowledge_presentation(acknowledgement)
             }
             BrowserMessage::FullscreenResponse(response) => self.fullscreen_response(response),
+            BrowserMessage::PointerLockResponse(response) => self.pointer_lock_response(response),
             BrowserMessage::CancelDocument(document) => self.cancel_navigation(document),
             message @ (BrowserMessage::FetchResponseStart(_)
             | BrowserMessage::FetchResponseChunk(_)

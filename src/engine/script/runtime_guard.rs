@@ -104,6 +104,9 @@ pub(super) fn finish_host(
         .fullscreen_actions
         .append(&mut state.pending_fullscreen_actions);
     outcome
+        .pointer_lock_actions
+        .append(&mut state.pending_pointer_lock_actions);
+    outcome
         .media_actions
         .append(&mut state.pending_media_actions);
     outcome.font_actions.append(&mut state.pending_font_actions);

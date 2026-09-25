@@ -37,6 +37,7 @@ pub(super) enum BrokerCommand {
     Test(TestCommand),
     Input(DocumentInput),
     FullscreenResponse(crate::renderer_protocol::FullscreenResponse),
+    PointerLockResponse(crate::renderer_protocol::PointerLockResponse),
     Shutdown(mpsc::Sender<Result<RendererExit, String>>),
     Terminate,
     CloseJobForTest(mpsc::Sender<Result<(), String>>),

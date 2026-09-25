@@ -23,6 +23,7 @@ mod painting;
 mod performance_monitor;
 mod platform;
 mod pointer_cursor;
+mod pointer_lock;
 mod process_metrics;
 mod profile;
 mod reader_layout;
@@ -109,7 +110,6 @@ pub fn run() -> Result<(), String> {
             performance_monitor::window_proc,
             COLOR_WINDOW,
         )?;
-
         let options = LaunchOptions::parse(process_started)?;
         let initial_dpi = options.initial_dpi();
         let benchmark_is_hidden = options.benchmark.is_some();

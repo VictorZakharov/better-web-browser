@@ -18,6 +18,23 @@ pub(super) struct PendingRendererInputs {
 
 impl PendingRendererInputs {
     pub(super) fn enqueue(&mut self, input: DocumentInput) -> QueueResult {
+        if let (DocumentInput::Pointer(newer), Some(DocumentInput::Pointer(previous))) =
+            (&input, self.inputs.back_mut())
+            && newer.phase == PointerPhase::LockedMove
+            && previous.phase == PointerPhase::LockedMove
+            && newer.document == previous.document
+            && newer.target == previous.target
+            && newer.buttons == previous.buttons
+            && newer.modifiers == previous.modifiers
+        {
+            // Relative movement is additive, unlike ordinary absolute mousemove.
+            // Losing a delta under renderer backpressure would rotate a game camera
+            // less than the user's actual motion.
+            previous.x = (previous.x + newer.x).clamp(-16_777_216.0, 16_777_216.0);
+            previous.y = (previous.y + newer.y).clamp(-16_777_216.0, 16_777_216.0);
+            previous.sequence = newer.sequence;
+            return QueueResult::Coalesced;
+        }
         if self
             .inputs
             .back()
@@ -102,7 +119,9 @@ fn safely_supersedes(newer: &DocumentInput, pending: &DocumentInput) -> bool {
 fn is_continuous(input: &DocumentInput) -> bool {
     match input {
         DocumentInput::Scroll(_) => true,
-        DocumentInput::Pointer(input) => input.phase == PointerPhase::Move,
+        DocumentInput::Pointer(input) => {
+            matches!(input.phase, PointerPhase::Move | PointerPhase::LockedMove)
+        }
         _ => false,
     }
 }
@@ -156,6 +175,47 @@ mod tests {
             modifiers: InputModifiers::default(),
             target: None,
         })
+    }
+
+    fn locked_move(sequence: u64, x: f32, y: f32) -> DocumentInput {
+        let target = DocumentNodeId::new((7_u128 << 64) | 2).unwrap();
+        DocumentInput::Pointer(PointerInput {
+            document: document(),
+            sequence,
+            phase: PointerPhase::LockedMove,
+            button: PointerButton::None,
+            buttons: 0,
+            x,
+            y,
+            modifiers: InputModifiers::default(),
+            target: Some(target),
+        })
+    }
+
+    #[test]
+    fn relative_motion_accumulates_without_crossing_a_discrete_event() {
+        let mut pending = PendingRendererInputs::default();
+        assert_eq!(
+            pending.enqueue(locked_move(1, 3.0, -4.0)),
+            QueueResult::Queued
+        );
+        assert_eq!(
+            pending.enqueue(locked_move(2, -2.0, 9.0)),
+            QueueResult::Coalesced
+        );
+        assert_eq!(pending.pop_front(), Some(locked_move(2, 1.0, 5.0)));
+        assert_eq!(
+            pending.enqueue(locked_move(3, 7.0, 0.0)),
+            QueueResult::Queued
+        );
+        assert_eq!(pending.enqueue(activation(4)), QueueResult::Queued);
+        assert_eq!(
+            pending.enqueue(locked_move(5, 8.0, 0.0)),
+            QueueResult::Queued
+        );
+        assert_eq!(pending.pop_front(), Some(locked_move(3, 7.0, 0.0)));
+        assert_eq!(pending.pop_front().unwrap().sequence(), 4);
+        assert_eq!(pending.pop_front(), Some(locked_move(5, 8.0, 0.0)));
     }
 
     fn activation(sequence: u64) -> DocumentInput {

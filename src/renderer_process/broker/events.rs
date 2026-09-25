@@ -252,6 +252,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::DatabaseCommand(command) => Some(command.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
+        RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }
         | RendererEvent::Unresponsive
         | RendererEvent::Exited(_) => None,

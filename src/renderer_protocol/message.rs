@@ -1,7 +1,7 @@
 use super::ProtocolError;
 use super::input::{
     DocumentInput, FullscreenRequest, FullscreenResponse, NavigationCause, NavigationDisposition,
-    PointerCursorResult, PresentationAcknowledgement,
+    PointerCursorResult, PointerLockRequest, PointerLockResponse, PresentationAcknowledgement,
 };
 use super::state::{
     CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
@@ -166,6 +166,7 @@ pub enum BrowserMessage {
     Input(DocumentInput),
     PresentationAcknowledged(PresentationAcknowledgement),
     FullscreenResponse(FullscreenResponse),
+    PointerLockResponse(PointerLockResponse),
     CancelDocument(DocumentId),
     Test(TestCommand),
 }
@@ -243,6 +244,7 @@ pub enum RendererMessage {
     },
     PointerCursor(PointerCursorResult),
     FullscreenRequest(FullscreenRequest),
+    PointerLockRequest(PointerLockRequest),
     CookieMutation(CookieMutation),
     StorageMutation(StorageMutationRequest),
     StateSnapshotApplied(StateSnapshotApplied),

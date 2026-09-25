@@ -125,6 +125,7 @@ pub struct ScriptOutcome {
     pub database_actions: Vec<ScriptDatabaseAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
+    pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
     pub media_actions: Vec<ScriptMediaAction>,
     pub font_actions: Vec<ScriptFontAction>,
     pub runtime_stopped: bool,
@@ -153,6 +154,13 @@ pub struct ScriptHistoryAction {
 pub struct ScriptFullscreenAction {
     pub request_id: u64,
     pub enter: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptPointerLockAction {
+    pub request_id: u64,
+    /// None requests release. Element identity is namespace-checked in the renderer.
+    pub target: Option<crate::engine::dom::NodeId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -299,6 +307,10 @@ pub enum UserInputEvent {
         previous: &'static str,
     },
     Fullscreen {
+        request_id: u64,
+        disposition: &'static str,
+    },
+    PointerLock {
         request_id: u64,
         disposition: &'static str,
     },

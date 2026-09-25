@@ -40,6 +40,9 @@ pub(in crate::windows_app) unsafe fn dispatch_browser_input(
             state.toggle_browser_fullscreen();
             return true;
         }
+        if message.wparam == VK_ESCAPE && state.exit_pointer_lock() {
+            return true;
+        }
         if message.wparam == VK_ESCAPE && state.exit_page_fullscreen() {
             return true;
         }
