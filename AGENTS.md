@@ -1,5 +1,10 @@
 # Repository instructions
 
+## Daily work boundary
+
+- Wrap up work by 9:00 p.m. in the user's local time zone (`America/Toronto`) each day so the user can shut down their computer. Plan checks, builds, pushes, and handoff with enough margin; do not start a new long-running task near the cutoff.
+- If a task cannot be completed by then, leave the branch and worktree in a recoverable state, report what is done and what remains, and continue only when the user resumes work on a later day. Do not keep running checks or background work past the cutoff without the user's explicit exception.
+
 ## Open-source quality
 
 - Treat this project as intended for eventual public release. Prefer maintainable, standards-based implementations over site-specific workarounds or benchmark-only behavior.
