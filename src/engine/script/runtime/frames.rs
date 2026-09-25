@@ -384,6 +384,7 @@ impl ScriptRuntime {
         outcome.storage_event_receipts.clear();
         outcome.media_actions.clear();
         outcome.fullscreen_actions.clear();
+        outcome.pointer_lock_actions.clear();
         if outcome.navigation_options.post.is_some()
             || !matches!(outcome.navigation_options.target.as_str(), "" | "_self")
         {

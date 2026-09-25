@@ -50,6 +50,9 @@ pub(super) fn merge_outcome(
     target
         .fullscreen_actions
         .append(&mut source.fullscreen_actions);
+    target
+        .pointer_lock_actions
+        .append(&mut source.pointer_lock_actions);
     target.media_actions.append(&mut source.media_actions);
     target.font_actions.append(&mut source.font_actions);
     target.runtime_stopped |= source.runtime_stopped;

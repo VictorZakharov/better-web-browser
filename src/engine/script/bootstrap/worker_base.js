@@ -87,54 +87,6 @@
         return output;
     };
 
-    class TextEncoder {
-        get encoding() { return 'utf-8'; }
-        encode(value = '') {
-            const encoded = unescape(encodeURIComponent(String(value)));
-            return new Uint8Array([...encoded].map(character => character.charCodeAt(0)));
-        }
-        encodeInto(value, destination) {
-            const bytes = this.encode(value); const written = Math.min(bytes.length, destination.length);
-            destination.set(bytes.subarray(0, written)); return { read: String(value).length, written };
-        }
-    }
-    const decoderInputView = input => {
-        if (input === undefined) return new Uint8Array();
-        if (input instanceof ArrayBuffer) return new Uint8Array(input);
-        if (ArrayBuffer.isView?.(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-        throw new TypeError('input must be an ArrayBuffer or an ArrayBuffer view');
-    };
-    class TextDecoder {
-        constructor(label = 'utf-8', options = {}) {
-            label = String(label).trim().toLowerCase();
-            if (!['utf-8', 'utf8', 'unicode-1-1-utf-8'].includes(label))
-                throw new RangeError('Only UTF-8 decoding is implemented');
-            this.__fatal = !!options.fatal;
-            this.__ignoreBOM = !!options.ignoreBOM;
-            this.__pending = new Uint8Array();
-            this.__streaming = false;
-            this.__bomSeen = false;
-        }
-        get encoding() { return 'utf-8'; }
-        get fatal() { return this.__fatal; }
-        get ignoreBOM() { return this.__ignoreBOM; }
-        decode(input, options = {}) {
-            const stream = !!options.stream;
-            const result = host('utf8Decode', decoderInputView(input),
-                this.__streaming ? this.__pending : new Uint8Array(),
-                stream, this.__fatal, this.__ignoreBOM, this.__bomSeen);
-            this.__pending = result[1];
-            this.__streaming = stream;
-            this.__bomSeen = result[2];
-            if (!stream) {
-                this.__pending = new Uint8Array();
-                this.__bomSeen = false;
-            }
-            return result[0];
-        }
-    }
-    Object.assign(globalThis, { TextEncoder, TextDecoder });
-
     const timers = new Map(); let nextTimer = 1;
     const queueTimer = (callback, delay, repeat, args, operation = 'timerSchedule') => {
         const id = nextTimer++; timers.set(id, { callback, repeat, args, cancelable: operation === 'timerSchedule' });

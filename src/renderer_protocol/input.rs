@@ -3,6 +3,9 @@
 use super::{DocumentId, ProtocolError};
 use crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES;
 
+mod pointer_lock;
+pub use pointer_lock::{PointerLockDisposition, PointerLockRequest, PointerLockResponse};
+
 const MAX_INPUT_COORDINATE: f32 = 16_777_216.0;
 const MAX_KEY_NAME_BYTES: usize = 64;
 
@@ -34,6 +37,8 @@ pub struct InputModifiers {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PointerPhase {
     Move,
+    /// Relative CSS-pixel motion while the cursor is captured by Pointer Lock.
+    LockedMove,
     Leave,
     Down,
     Up,
@@ -154,6 +159,8 @@ pub struct WheelInput {
     pub delta_y: f32,
     pub viewport_y: f32,
     pub modifiers: InputModifiers,
+    /// Pointer Lock retargets wheel events to the captured element.
+    pub target: Option<DocumentNodeId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -210,7 +217,7 @@ impl DocumentInput {
         matches!(
             self,
             Self::Pointer(PointerInput {
-                phase: PointerPhase::Move,
+                phase: PointerPhase::Move | PointerPhase::LockedMove,
                 ..
             })
         )
@@ -237,7 +244,20 @@ impl DocumentInput {
                 if input.buttons & !7 != 0 {
                     return Err(ProtocolError::InvalidPayload("pointer buttons"));
                 }
-                validate_coordinates(input.x, input.y)
+                if input.phase == PointerPhase::LockedMove {
+                    if input.target.is_none()
+                        || input.button != PointerButton::None
+                        || [input.x, input.y]
+                            .iter()
+                            .any(|value| !value.is_finite() || value.abs() > MAX_INPUT_COORDINATE)
+                    {
+                        Err(ProtocolError::InvalidPayload("locked pointer movement"))
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    validate_coordinates(input.x, input.y)
+                }
             }
             Self::Keyboard(input) => {
                 if input.key.is_empty()

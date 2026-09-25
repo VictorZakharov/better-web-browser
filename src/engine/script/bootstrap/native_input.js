@@ -26,12 +26,19 @@
         shiftKey: !!input.shift, metaKey: !!input.meta
     });
     let previousPointerPosition = null;
+    let pointerLockPosition = null;
     const dispatchNativePointer = input => {
-        const position = { x: Number(input.x) - viewportScrollX,
+        const locked = pointerLockElement !== null &&
+            nativeTarget(input.target) === pointerLockElement;
+        const relativeMove = locked && input.phase === 'lockedmove';
+        const nativePosition = { x: Number(input.x) - viewportScrollX,
             y: Number(input.y) - viewportScrollY };
-        const movementX = previousPointerPosition ? position.x - previousPointerPosition.x : 0;
-        const movementY = previousPointerPosition ? position.y - previousPointerPosition.y : 0;
-        previousPointerPosition = input.phase === 'leave' ? null : position;
+        const position = locked ? (pointerLockPosition || nativePosition) : nativePosition;
+        const movementX = relativeMove ? Number(input.x) : locked ? 0 :
+            previousPointerPosition ? position.x - previousPointerPosition.x : 0;
+        const movementY = relativeMove ? Number(input.y) : locked ? 0 :
+            previousPointerPosition ? position.y - previousPointerPosition.y : 0;
+        if (!locked) previousPointerPosition = input.phase === 'leave' ? null : position;
         const target = nativeTarget(input.target);
         const dispatchPair = (phase, init) => {
             const names = phase === 'down'
@@ -46,6 +53,7 @@
         const changedMask = [1, 4, 2][input.button] || 0;
         const names = {
             move: ['pointermove', 'mousemove'],
+            lockedmove: ['pointermove', 'mousemove'],
             down: [input.buttons === changedMask ? 'pointerdown' : 'pointermove', 'mousedown'],
             up: [input.buttons ? 'pointermove' : 'pointerup', 'mouseup']
         }[input.phase] || [];
@@ -59,8 +67,8 @@
             pressure: input.buttons ? 0.5 : 0,
             ...nativeModifiers(input)
         };
-        if (processDragPointer(input, target, init)) return true;
-        dispatchPointerBoundary(input.boundary, init);
+        if (!locked && processDragPointer(input, target, init)) return true;
+        if (!locked) dispatchPointerBoundary(input.boundary, init);
         if (input.phase === 'leave') return true;
         if (input.phase === 'activate') {
             dispatchPair('down', { ...init, buttons: 1, pressure: 0.5 });
@@ -70,7 +78,7 @@
         }
         let allowed = true;
         if (names[0]) allowed = target.dispatchEvent(markTrusted(new PointerEvent(names[0], {
-            ...init, button: input.phase === 'move' ? -1 : init.button
+            ...init, button: input.phase === 'move' || relativeMove ? -1 : init.button
         }))) && allowed;
         if (names[1]) allowed = target.dispatchEvent(markTrusted(new MouseEvent(names[1], init))) && allowed;
         if (input.phase === 'up' && input.button === 2) {
@@ -219,6 +227,7 @@
                     return true;
                 }
                 case 'fullscreen': return applyFullscreenResponse(input);
+                case 'pointerLock': return applyPointerLockResponse(input);
                 case 'media': return applyMediaResponse(input);
                 default: return false;
             }

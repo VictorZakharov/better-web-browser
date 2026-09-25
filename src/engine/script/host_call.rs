@@ -3,7 +3,9 @@
 use super::binding_helpers::*;
 use super::*;
 
+pub(super) mod compression_host;
 mod font_host;
+mod module_completion;
 pub(super) mod navigation;
 mod storage;
 mod task_scheduling;
@@ -26,25 +28,8 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     super::mutation_host::enforce_tree_budget_for_operation(operation, state)?;
-    if operation == "documentModuleComplete" {
-        let id = argument_id(args, 1);
-        let succeeded = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
-        let reason = argument_string(args, 3)?;
-        if let Some(pending) = state.pending_module_evaluations.remove(&id) {
-            let result = if succeeded {
-                Ok(())
-            } else {
-                Err(if reason.is_empty() {
-                    "module evaluation rejected".into()
-                } else {
-                    reason
-                })
-            };
-            state
-                .completed_module_evaluations
-                .push(host_state::CompletedModuleEvaluation { pending, result });
-        }
-        return Ok(JsValue::undefined());
+    if let Some(value) = module_completion::dispatch(operation, args, state)? {
+        return Ok(value);
     }
     if let Some(value) = super::network::network_host_call(operation, args, state)? {
         return Ok(value);
@@ -59,6 +44,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = super::fullscreen_host::fullscreen_host_call(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::pointer_lock_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::media_host::media_host_call(operation, args, state)? {
@@ -91,7 +79,16 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = super::mutation_host::mutation_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::text_encoding_host::text_encoding_host_call(operation, args)? {
+    if let Some(value) = super::text_encoding_host::text_encoding_host_call(
+        operation,
+        args,
+        &mut state.text_decoders,
+    )? {
+        return Ok(value);
+    }
+    if let Some(value) =
+        compression_host::dispatch(operation, args, &mut state.compression_streams)?
+    {
         return Ok(value);
     }
     if let Some(value) = super::history_host::history_host_call(operation, args, state)? {

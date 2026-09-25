@@ -6,7 +6,9 @@ impl DocumentRuntime {
         &mut self,
         input: PointerInput,
     ) -> Result<PointerInteraction, String> {
-        if let Some(outcome) = self.scrollbar_pointer(input)? {
+        if input.phase != PointerPhase::LockedMove
+            && let Some(outcome) = self.scrollbar_pointer(input)?
+        {
             return Ok(PointerInteraction {
                 outcome,
                 navigation: None,
@@ -21,6 +23,16 @@ impl DocumentRuntime {
         }
         let target = (input.phase != PointerPhase::Leave)
             .then(|| {
+                if input.phase == PointerPhase::LockedMove {
+                    return input
+                        .target
+                        .and_then(|target| self.resolve_target(target))
+                        .map(|node| HitTarget {
+                            node,
+                            link: None,
+                            control: None,
+                        });
+                }
                 input
                     .target
                     .and_then(|target| self.explicit_target(target))
@@ -61,12 +73,13 @@ impl DocumentRuntime {
             PointerPhase::Activate => {
                 matches!(input.button, PointerButton::Primary | PointerButton::Middle)
             }
-            PointerPhase::Move | PointerPhase::Leave => false,
+            PointerPhase::Move | PointerPhase::LockedMove | PointerPhase::Leave => false,
         };
         let result = self.dispatch_user_input(UserInputEvent::Pointer {
             target: target.as_ref().map(|target| target.node.clone()),
             phase: match input.phase {
                 PointerPhase::Move => "move",
+                PointerPhase::LockedMove => "lockedmove",
                 PointerPhase::Leave => "leave",
                 PointerPhase::Down => "down",
                 PointerPhase::Up => "up",
@@ -146,7 +159,7 @@ impl DocumentRuntime {
             PointerPhase::Activate => {
                 matches!(input.button, PointerButton::Primary | PointerButton::Middle)
             }
-            PointerPhase::Move | PointerPhase::Leave => false,
+            PointerPhase::Move | PointerPhase::LockedMove | PointerPhase::Leave => false,
         };
         let result = self.script_runtime.as_mut()?.dispatch_frame_input(
             document,
@@ -154,6 +167,7 @@ impl DocumentRuntime {
                 target,
                 phase: match input.phase {
                     PointerPhase::Move => "move",
+                    PointerPhase::LockedMove => "lockedmove",
                     PointerPhase::Leave => "leave",
                     PointerPhase::Down => "down",
                     PointerPhase::Up => "up",

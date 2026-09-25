@@ -74,6 +74,9 @@ unsafe fn dispatch_window_message(
             .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam)),
         WM_ACTIVATE => {
             state.update_accessibility_window_focus(wparam & 0xffff != 0);
+            if wparam & 0xffff == 0 {
+                state.exit_pointer_lock();
+            }
             DefWindowProcW(window, message, wparam, lparam)
         }
         WM_GETMINMAXINFO => {
@@ -86,6 +89,7 @@ unsafe fn dispatch_window_message(
         }
         WM_SETCURSOR if state.apply_page_cursor_for_hit_test(lparam) => 1,
         WM_SIZE => {
+            state.exit_pointer_lock();
             state.track_media_viewport_resize();
             state.mark_all_tab_layouts_dirty();
             state.resize_controls();
@@ -95,6 +99,7 @@ unsafe fn dispatch_window_message(
             0
         }
         WM_DPICHANGED => {
+            state.exit_pointer_lock();
             let dpi = (wparam & 0xffff) as u32;
             let suggested = &*(lparam as *const Rect);
             SetWindowPos(
@@ -359,6 +364,7 @@ unsafe fn dispatch_window_message(
         }
         WM_CANCELMODE | WM_CAPTURECHANGED => {
             state.cancel_tab_pointer();
+            state.exit_pointer_lock();
             0
         }
         WM_MBUTTONUP => {
@@ -404,6 +410,7 @@ unsafe fn dispatch_window_message(
             0
         }
         WM_DESTROY => {
+            state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);
             if !state.tab_search_window.is_null() {

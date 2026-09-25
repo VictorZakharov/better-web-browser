@@ -153,7 +153,10 @@ impl DocumentRuntime {
     }
 
     pub(super) fn wheel_input(&mut self, input: WheelInput) -> Result<ScriptOutcome, String> {
-        let target = self.hit_target(input.x, input.y).map(|target| target.node);
+        let target = input
+            .target
+            .and_then(|target| self.resolve_target(target))
+            .or_else(|| self.hit_target(input.x, input.y).map(|target| target.node));
         let result = self.dispatch_user_input(UserInputEvent::Wheel {
             target: target.clone(),
             x: input.x,

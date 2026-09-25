@@ -32,6 +32,8 @@ mod input;
 mod media;
 #[path = "renderer_process/pointer_buttons.rs"]
 mod pointer_buttons;
+#[path = "renderer_process/pointer_lock.rs"]
+mod pointer_lock;
 #[path = "renderer_process/presentation.rs"]
 mod presentation;
 #[path = "renderer_process/resize_observers.rs"]

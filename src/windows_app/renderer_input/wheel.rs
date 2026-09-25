@@ -17,6 +17,10 @@ impl BrowserState {
             y: ((lparam >> 16) as u16) as i16 as i32,
         };
         ScreenToClient(self.window, &mut point);
+        let locked_target = self.locked_pointer_owner().map(|owner| owner.target());
+        if let Some(owner) = self.locked_pointer_owner() {
+            point = owner.anchor_client();
+        }
         let toolbar = self.toolbar_height();
         if point.x < 0 || point.y < toolbar || point.y > toolbar + self.viewport_height() {
             return false;
@@ -36,6 +40,7 @@ impl BrowserState {
             delta_x: if modifiers.shift { distance } else { 0.0 },
             delta_y: if modifiers.shift { 0.0 } else { distance },
             modifiers,
+            target: locked_target,
         }))
     }
 }

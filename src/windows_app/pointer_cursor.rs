@@ -32,6 +32,9 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn reset_pointer_cursor(&mut self) {
+        if self.locked_pointer_owner().is_some() {
+            return;
+        }
         self.route_pointer_exit();
         self.pointer_cursor_request = None;
         self.pointer_cursor = PointerCursor::Default;
@@ -63,6 +66,10 @@ impl BrowserState {
 
     pub(super) unsafe fn apply_current_pointer_cursor(&self) {
         if self.processing_background_tab || self.window.is_null() {
+            return;
+        }
+        if self.locked_pointer_owner().is_some() {
+            SetCursor(null_mut());
             return;
         }
         let resource = match self.pointer_cursor {
