@@ -1,5 +1,6 @@
 //! Style-set construction and cascade ordering.
 
+mod author;
 mod layout;
 mod presentational;
 mod pseudo;
@@ -14,6 +15,7 @@ mod tests;
 use super::media::MediaEnvironment;
 use super::selector_match::selector_matches;
 use super::*;
+use author::AuthorCascadeInput;
 use presentational::apply_presentational_hints;
 use root_units::root_font_size_for;
 
@@ -235,11 +237,14 @@ impl StyleSet {
 
         self.apply_author_cascade(
             &mut style,
-            parent,
-            &lower_origin,
-            &matching,
-            &inline_declarations,
-            &animation_declarations,
+            AuthorCascadeInput {
+                node,
+                parent,
+                lower_origin: &lower_origin,
+                matching: &matching,
+                inline_declarations: &inline_declarations,
+                animation_declarations: &animation_declarations,
+            },
         );
         style.resolve_relative_units(
             self.viewport_width,
@@ -301,73 +306,7 @@ impl StyleSet {
                     && selector_matches(&rule.selector, node)
             }
         });
-        matching.sort_by(|left, right| {
-            left.selector
-                .specificity
-                .cmp(&right.selector.specificity)
-                .then_with(|| left.order.cmp(&right.order))
-        });
         matching
-    }
-
-    fn apply_author_cascade(
-        &self,
-        style: &mut ComputedStyle,
-        parent: Option<&ComputedStyle>,
-        lower_origin: &ComputedStyle,
-        matching: &[&Rule],
-        inline_declarations: &[Declaration],
-        animation_declarations: &[Declaration],
-    ) {
-        // CSS Cascade places every important author declaration above every normal author
-        // declaration. Inline declarations retain their higher specificity within each group.
-        // https://drafts.csswg.org/css-cascade/#importance
-        let mut cascaded = Vec::new();
-        for important in [false, true] {
-            for rule in matching {
-                cascaded.extend(
-                    rule.declarations
-                        .iter()
-                        .filter(|declaration| declaration.important == important)
-                        .map(|declaration| (declaration, rule.base_url.as_str())),
-                );
-            }
-            cascaded.extend(
-                inline_declarations
-                    .iter()
-                    .filter(|declaration| declaration.important == important)
-                    .map(|declaration| (declaration, self.document_base_url.as_str())),
-            );
-            if !important {
-                // CSS Cascading §6.2: animation values outrank normal author
-                // declarations, but author !important still wins. Never admit
-                // !important inside an animation-origin declaration.
-                // https://www.w3.org/TR/css-cascade-5/#cascading-origins
-                cascaded.extend(
-                    animation_declarations
-                        .iter()
-                        .filter(|declaration| !declaration.important)
-                        .map(|declaration| (declaration, self.document_base_url.as_str())),
-                );
-            }
-        }
-
-        for &(declaration, _) in &cascaded {
-            apply_custom_properties(style, std::slice::from_ref(declaration), parent);
-        }
-        // Font-relative line height resolves after the cascade. Do not move its
-        // declarations past later font shorthands or change importance ordering.
-        for &(declaration, base_url) in &cascaded {
-            apply_resolved_declaration(
-                style,
-                declaration,
-                parent,
-                lower_origin,
-                base_url,
-                self.viewport_width,
-                self.viewport_height,
-            );
-        }
     }
 }
 

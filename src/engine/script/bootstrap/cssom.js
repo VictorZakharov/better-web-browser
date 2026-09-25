@@ -140,7 +140,9 @@
         }
         get cssText() { return this.__text; }
         set cssText(_value) {}
-        get parentStyleSheet() { return this.__parentStyleSheet; }
+        get parentStyleSheet() {
+            return this.__parentRule ? this.__parentRule.parentStyleSheet : this.__parentStyleSheet;
+        }
         get parentRule() { return this.__parentRule; }
         get type() { return 0; }
     }
@@ -172,16 +174,41 @@
             this.__style = parsed.__style;
             this.__style.__rule = this;
             this.__pristine = false;
-            this.parentStyleSheet.__rulesChanged();
+            if (this.parentRule) this.parentRule.__changed();
+            else this.parentStyleSheet?.__rulesChanged();
         }
-        __changed() { this.__pristine = false; this.parentStyleSheet?.__rulesChanged(); }
+        __changed() {
+            this.__pristine = false;
+            if (this.parentRule) this.parentRule.__changed();
+            else this.parentStyleSheet?.__rulesChanged();
+        }
     }
 
     function createCssRule(sheet, text) {
-        const imported = /^@import\b/i.test(text.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, ''))
+        text = text.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
+        const imported = /^@import\b/i.test(text)
             ? host('stylesheetImport', text) : null;
         if (imported) return new CSSImportRule(sheet, text, imported, cssRuleConstructionToken);
+        if (/^@layer(?:\s|\{|;)/i.test(text)) {
+            const open = text.indexOf('{');
+            const block = open >= 0 && text.trimEnd().endsWith('}');
+            const prelude = (block ? text.slice(0, open) : text.slice(0, text.lastIndexOf(';'))).trim();
+            const names = host('stylesheetLayerNames', prelude, block);
+            if (names === null || (!block && !text.trimEnd().endsWith(';')))
+                throw new DOMException('Invalid @layer rule', 'SyntaxError');
+            return block
+                ? new CSSLayerBlockRule(sheet, text, names[0] || '', cssRuleConstructionToken)
+                : new CSSLayerStatementRule(sheet, text, names, cssRuleConstructionToken);
+        }
         const open = text.indexOf('{');
+        if (open >= 0 && text.trimEnd().endsWith('}')) {
+            if (/^@media\s/i.test(text))
+                return new CSSMediaRule(sheet, text, text.slice(6, open).trim(),
+                    cssRuleConstructionToken);
+            if (/^@supports\s/i.test(text))
+                return new CSSSupportsRule(sheet, text, text.slice(9, open).trim(),
+                    cssRuleConstructionToken);
+        }
         return open > 0 && !text.trimStart().startsWith('@')
             ? new CSSStyleRule(sheet, text, cssRuleConstructionToken)
             : new CSSRule(sheet, text, cssRuleConstructionToken);
@@ -189,6 +216,7 @@
 
     function parseCssRules(sheet, text) {
         let importsAllowed = true;
+        let sawImport = false;
         const rules = [];
         for (const source of scanCssRules(text)) {
             const text = source.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
@@ -196,10 +224,17 @@
             if (/^@import\b/i.test(text)) {
                 if (sheet.__constructed || !importsAllowed) continue;
                 const rule = createCssRule(sheet, text);
-                if (rule instanceof CSSImportRule) rules.push(rule);
+                if (rule instanceof CSSImportRule) { rules.push(rule); sawImport = true; }
             } else {
-                if (!/^@layer\b[^{}]*;/i.test(text)) importsAllowed = false;
-                rules.push(createCssRule(sheet, text));
+                let rule;
+                try { rule = createCssRule(sheet, text); }
+                catch (error) {
+                    if (error?.name === 'SyntaxError') continue;
+                    throw error;
+                }
+                if (!(rule instanceof CSSLayerStatementRule) || sawImport)
+                    importsAllowed = false;
+                rules.push(rule);
             }
         }
         return rules;

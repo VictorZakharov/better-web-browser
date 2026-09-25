@@ -30,6 +30,7 @@ pub(super) fn apply_css_wide_keyword(
     value: &str,
     parent: Option<&ComputedStyle>,
     lower_origin: &ComputedStyle,
+    layer_start: &ComputedStyle,
 ) -> bool {
     let Some(keyword) = CssWideKeyword::parse(value) else {
         return false;
@@ -42,10 +43,8 @@ pub(super) fn apply_css_wide_keyword(
         CssWideKeyword::Unset if property == "all" => unset.as_ref().unwrap(),
         CssWideKeyword::Unset if is_inherited_property(property) => parent.unwrap_or(&initial),
         CssWideKeyword::Unset => &initial,
-        // Breeze does not implement author cascade layers yet, so the previous layer for an
-        // unlayered author declaration is the lower origin. This makes `revert-layer` and
-        // `revert` equivalent until layered author rules are represented by the cascade.
-        CssWideKeyword::Revert | CssWideKeyword::RevertLayer => lower_origin,
+        CssWideKeyword::Revert => lower_origin,
+        CssWideKeyword::RevertLayer => layer_start,
     };
     copy_property(style, source, property);
     true

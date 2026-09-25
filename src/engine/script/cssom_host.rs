@@ -16,6 +16,15 @@ pub(super) fn cssom_host_call(
         return Ok(Some(value));
     }
     match operation {
+        "stylesheetLayerNames" => {
+            let prelude = argument_string(args, 1)?;
+            let block = matches!(args.get(2), Some(JsValue::Boolean(true)));
+            return Ok(Some(
+                crate::engine::css::cssom_layer_names(&prelude, block)
+                    .map(|names| JsValue::Array(names.into_iter().map(js_string).collect()))
+                    .unwrap_or_else(JsValue::null),
+            ));
+        }
         "stylesheetSource" => {
             let url = argument_string(args, 1)?;
             let url = url.split('#').next().unwrap_or(&url);

@@ -44,6 +44,7 @@ mod compatibility;
 mod crypto;
 mod csp_events;
 mod cssom;
+mod cssom_layers;
 mod cssom_owned;
 mod cssom_view;
 mod cssom_view_scroll;

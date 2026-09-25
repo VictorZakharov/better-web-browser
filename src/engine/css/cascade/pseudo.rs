@@ -63,7 +63,8 @@ impl StyleSet {
             // for matching rules; explicit CSSOM queries still compute initial/inherited values.
             let matching = self.matching_rules(origin, Some(pseudo));
             if !matching.is_empty() {
-                let style = self.compute_pseudo_style_from_rules(pseudo, origin_style, &matching);
+                let style =
+                    self.compute_pseudo_style_from_rules(origin, pseudo, origin_style, &matching);
                 self.install_pseudo(origin, pseudo, style);
             } else {
                 self.remove_pseudo(origin.id(), pseudo);
@@ -102,13 +103,14 @@ impl StyleSet {
     ) -> (ComputedStyle, bool) {
         let matching = self.matching_rules(origin, Some(pseudo));
         (
-            self.compute_pseudo_style_from_rules(pseudo, origin_style, &matching),
+            self.compute_pseudo_style_from_rules(origin, pseudo, origin_style, &matching),
             !matching.is_empty(),
         )
     }
 
     fn compute_pseudo_style_from_rules(
         &self,
+        origin: &NodeRef,
         pseudo: PseudoElement,
         origin_style: &ComputedStyle,
         matching: &[&Rule],
@@ -127,11 +129,14 @@ impl StyleSet {
         let lower_origin = style.clone();
         self.apply_author_cascade(
             &mut style,
-            Some(origin_style),
-            &lower_origin,
-            matching,
-            &[],
-            &[],
+            AuthorCascadeInput {
+                node: origin,
+                parent: Some(origin_style),
+                lower_origin: &lower_origin,
+                matching,
+                inline_declarations: &[],
+                animation_declarations: &[],
+            },
         );
         // Generated pseudo-elements are flex/grid items just like real children. CSS Display
         // blockifies their outer display type at computed-value time, including nonexistent

@@ -72,6 +72,10 @@ pub(super) fn append(
             source.clone_from(&own.source);
             imports = crate::engine::css::imports::parse(&source);
         }
+        let owner = inputs.len() as u32;
+        for layer in crate::engine::css::imports::leading_layer_statements(&source) {
+            inputs.push(SheetInput::layer_marker(layer, scope));
+        }
         let expansion = crate::engine::css::imports::expand_owned(
             &sheet_base,
             &imports,
@@ -79,17 +83,35 @@ pub(super) fn append(
             environment,
             &overrides,
         );
-        for imported in expansion.sheets {
+        let mut declarations = expansion.layer_declarations.into_iter().peekable();
+        for (index, imported) in expansion.sheets.into_iter().enumerate() {
+            while declarations.peek().is_some_and(|(at, _)| *at == index) {
+                let (_, layer) = declarations.next().unwrap();
+                inputs.push(SheetInput::layer_marker(
+                    import_owner_path(&layer, owner),
+                    scope,
+                ));
+            }
             inputs.push(SheetInput {
                 source: imported.source.clone(),
                 base_url: imported.base_url.clone(),
                 scope,
+                layer_prefix: import_owner_path(&imported.layer_prefix, owner),
+                declared_layer: None,
             });
+        }
+        for (_, layer) in declarations {
+            inputs.push(SheetInput::layer_marker(
+                import_owner_path(&layer, owner),
+                scope,
+            ));
         }
         inputs.push(SheetInput {
             source,
             base_url: sheet_base,
             scope,
+            layer_prefix: Vec::new(),
+            declared_layer: None,
         });
     }
 }
