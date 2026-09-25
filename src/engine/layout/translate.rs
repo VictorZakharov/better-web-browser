@@ -14,8 +14,14 @@ pub(crate) fn translate_display_items(items: &mut [DisplayItem], offset_x: f32, 
             DisplayItem::SolidRect { rect, .. }
             | DisplayItem::BorderRect { rect, .. }
             | DisplayItem::Text { rect, .. }
-            | DisplayItem::Image { rect, .. }
             | DisplayItem::EmbeddedFrame { rect, .. } => rect,
+            DisplayItem::Image { rect, clip, .. } => {
+                if let Some(clip) = clip {
+                    clip.x += offset_x;
+                    clip.y += offset_y;
+                }
+                rect
+            }
             DisplayItem::BackgroundImage {
                 clip_rect,
                 tile_rect,

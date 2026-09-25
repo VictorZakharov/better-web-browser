@@ -80,6 +80,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     url: url.clone(),
                     alt: String::new(),
                     tint: Some(style.background_color),
+                    clip: None,
                 });
                 index
             });

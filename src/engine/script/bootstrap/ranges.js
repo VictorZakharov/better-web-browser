@@ -205,13 +205,9 @@
                 compareBoundaries(parent, index, this.endContainer, this.endOffset) < 0;
         }
         createContextualFragment(markup) {
-            const fragment = document.createDocumentFragment();
             const context = this.startContainer.nodeType === 1
                 ? this.startContainer : this.startContainer.parentElement;
-            const holder = document.createElement(context?.localName || 'body');
-            holder.innerHTML = String(markup);
-            while (holder.firstChild) fragment.appendChild(holder.firstChild);
-            return fragment;
+            return parseContextualHtml(context, markup);
         }
         getClientRects() { return makeRectList(rangeClientRects(this)); }
         getBoundingClientRect() { return boundingRect(rangeClientRects(this)); }

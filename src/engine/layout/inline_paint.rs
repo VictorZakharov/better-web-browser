@@ -107,8 +107,22 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                             node_id: *node_id,
                         });
                     } else {
+                        let style = self
+                            .styles
+                            .node(*node_id)
+                            .map(|node| self.styles.get(&node));
+                        let (painted, clip) = style.as_ref().map_or((rect, None), |style| {
+                            let (natural_width, natural_height) = self
+                                .page
+                                .images
+                                .get(url)
+                                .map(|image| (image.width as f32, image.height as f32))
+                                .unwrap_or((*image_width, *image_height));
+                            object::image_paint_geometry(style, rect, natural_width, natural_height)
+                        });
                         self.output.items.push(DisplayItem::Image {
-                            rect,
+                            rect: painted,
+                            clip,
                             url: url.clone(),
                             alt: alt.clone(),
                             tint: *tint,
@@ -187,6 +201,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                         url: url.clone(),
                         alt: String::new(),
                         tint: None,
+                        clip: None,
                     });
                 }
                 self.output.items.push(DisplayItem::Control(Box::new(spec)));

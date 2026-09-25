@@ -5,7 +5,8 @@ pub(super) fn finish_geometry_checkpoint(
     document: better_web_browser::renderer_protocol::DocumentId,
 ) {
     // The real browser clock consumes the scroll's immediate observer checkpoint before
-    // becoming idle. This fixture has no observers, so it must finish without repainting.
+    // becoming idle. A future scrollend debounce may remain scheduled; it is not pending
+    // geometry work and must not be fast-forwarded by this checkpoint.
     session.advance_time(document, Duration::ZERO, 1).unwrap();
     for _ in 0..8 {
         match session.wait_for_event(Duration::from_secs(3)).unwrap() {
@@ -18,14 +19,12 @@ pub(super) fn finish_geometry_checkpoint(
                 assert!(!update.runtime.runtime_stopped);
                 assert!(!update.runtime.render_requested);
                 assert!(update.runtime.navigation_url.is_none());
+                if update.next_timer_micros != Some(0) {
+                    return;
+                }
                 if update.clock_advanced {
-                    if update.next_timer_micros.is_none() {
-                        return;
-                    }
-                    assert_eq!(update.next_timer_micros, Some(0));
                     pump_ready_task(session, document, update.next_timer_micros);
                 }
-                assert_eq!(update.next_timer_micros, Some(0));
             }
             RendererEvent::Diagnostic { .. } => {}
             event => panic!("unexpected geometry-checkpoint event: {event:?}"),

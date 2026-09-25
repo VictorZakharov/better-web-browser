@@ -1,3 +1,4 @@
+mod aspect_ratio;
 mod background;
 mod block;
 mod clip_path;
@@ -14,6 +15,7 @@ mod inline_paint;
 mod inline_text;
 mod inline_truncate;
 mod model;
+mod object;
 mod opacity;
 mod scrollable_overflow;
 mod scrolling;

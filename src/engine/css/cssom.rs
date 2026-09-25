@@ -72,6 +72,10 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             "separate"
         }
         .to_string(),
+        "border-spacing" => {
+            let (horizontal, vertical) = properties::table_spacing::computed(style);
+            format!("{} {}", serialize_px(horizontal), serialize_px(vertical))
+        }
         "caption-side" => if style.caption_side_bottom {
             "bottom"
         } else {
@@ -104,6 +108,7 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
         "bottom" => serialize_length(style.bottom),
         "left" => serialize_length(style.left),
         "letter-spacing" => serialize_px(style.letter_spacing),
+        "text-transform" => style.text_transform.css_text().to_string(),
         "word-spacing" => serialize_px(style.word_spacing),
         "line-height" => {
             if style.line_height_value == LineHeight::Normal {
@@ -113,6 +118,9 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
+        "object-fit" => style.object_fit.css_text().to_string(),
+        "object-position" => style.object_position.css_text(style.font_size),
+        "aspect-ratio" => style.aspect_ratio.css_text(),
         "visibility" => if style.visibility {
             "visible"
         } else {

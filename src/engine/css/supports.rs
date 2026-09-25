@@ -120,6 +120,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
             matches!(value.as_str(), "content-box" | "border-box")
         }
         "border-collapse" => matches!(value.as_str(), "separate" | "collapse"),
+        "border-spacing" => properties::table_spacing::parse(&value).is_some(),
         "caption-side" => matches!(value.as_str(), "top" | "bottom"),
         "visibility" => matches!(value.as_str(), "visible" | "hidden" | "collapse"),
         "content-visibility" => matches!(value.as_str(), "visible" | "hidden"),
@@ -172,6 +173,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         "background-position-x" => parse_background_axis(&value, true).is_some(),
         "background-position-y" => parse_background_axis(&value, false).is_some(),
         "background-size" => parse_background_size(&value).is_some(),
+        "object-fit" => ObjectFit::parse(&value).is_some(),
+        "object-position" => ObjectPosition::parse(&value).is_some(),
+        "text-transform" => TextTransform::parse(&value).is_some(),
+        "aspect-ratio" => AspectRatio::parse(&value).is_some(),
         "background-repeat" => {
             let repeats = value.split_ascii_whitespace().collect::<Vec<_>>();
             (1..=2).contains(&repeats.len())

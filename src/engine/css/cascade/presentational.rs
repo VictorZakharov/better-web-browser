@@ -33,6 +33,24 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
     if let Some(background) = node.attr("bgcolor").and_then(|value| parse_color(&value)) {
         style.background_color = background;
     }
+    // HTML table attributes are presentational hints, not author declarations.
+    // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+    if node.tag_name() == Some("table")
+        && let Some(spacing) = node
+            .attr("cellspacing")
+            .and_then(|v| parse_nonnegative_integer(&v))
+    {
+        style.border_spacing = [Length::Px(spacing); 2];
+    }
+    if matches!(node.tag_name(), Some("td" | "th"))
+        && let Some(table) = std::iter::successors(node.parent(), |parent| parent.parent())
+            .find(|parent| parent.tag_name() == Some("table"))
+        && let Some(padding) = table
+            .attr("cellpadding")
+            .and_then(|v| parse_nonnegative_integer(&v))
+    {
+        style.padding = uniform_edges(Length::Px(padding));
+    }
     if node.tag_name() == Some("font") {
         if let Some(face) = node
             .attr("face")
@@ -48,6 +66,24 @@ pub(super) fn apply_presentational_hints(node: &NodeRef, style: &mut ComputedSty
             style.font_size = LEGACY_SIZES[(size.clamp(1, 7) - 1) as usize];
         }
     }
+}
+
+fn parse_nonnegative_integer(value: &str) -> Option<f32> {
+    let value = value.trim_start_matches(['\t', '\n', '\u{c}', '\r', ' ']);
+    let value = value.strip_prefix('+').unwrap_or(value);
+    let digits = value
+        .bytes()
+        .take_while(u8::is_ascii_digit)
+        .collect::<Vec<_>>();
+    if digits.is_empty() {
+        return None;
+    }
+    let integer = digits.into_iter().fold(0_u32, |value, digit| {
+        value
+            .saturating_mul(10)
+            .saturating_add((digit - b'0') as u32)
+    });
+    Some(integer as f32)
 }
 
 fn parse_html_length(value: &str) -> Option<Length> {

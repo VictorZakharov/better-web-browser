@@ -251,21 +251,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             containing_block.height,
             style.font_size,
         );
-        let mut width = specified_width.unwrap_or(intrinsic_width);
-        let mut height = specified_height.unwrap_or(intrinsic_height);
-        if !is_frame
-            && specified_width.is_some()
-            && specified_height.is_none()
-            && intrinsic_width > 0.0
-        {
-            height = width * intrinsic_height / intrinsic_width;
-        } else if !is_frame
-            && specified_height.is_some()
-            && specified_width.is_none()
-            && intrinsic_height > 0.0
-        {
-            width = height * intrinsic_width / intrinsic_height;
-        }
         let margin = style
             .margin
             .resolve(containing_block.width, style.font_size);
@@ -275,6 +260,31 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let border = style
             .border_width
             .resolve(containing_block.width, style.font_size);
+        let horizontal_insets = padding.horizontal() + border.horizontal();
+        let vertical_insets = padding.vertical() + border.vertical();
+        let mut width = specified_width.unwrap_or(intrinsic_width);
+        let mut height = specified_height.unwrap_or(intrinsic_height);
+        // Iframes have 300x150 fallback dimensions, not a natural aspect ratio.
+        let natural = (!is_frame).then_some((intrinsic_width, intrinsic_height));
+        if specified_width.is_some() && specified_height.is_none() {
+            height = aspect_ratio::height_from_width(
+                style,
+                natural,
+                width,
+                horizontal_insets,
+                vertical_insets,
+            )
+            .unwrap_or(height);
+        } else if specified_height.is_some() && specified_width.is_none() {
+            width = aspect_ratio::width_from_height(
+                style,
+                natural,
+                height,
+                horizontal_insets,
+                vertical_insets,
+            )
+            .unwrap_or(width);
+        }
         (width, height) = replaced_constraints::constrain(
             width,
             height,

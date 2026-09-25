@@ -60,6 +60,7 @@ fn is_inherited_property(property: &str) -> bool {
         property,
         "color"
             | "border-collapse"
+            | "border-spacing"
             | "caption-side"
             | "font"
             | "font-family"
@@ -71,6 +72,7 @@ fn is_inherited_property(property: &str) -> bool {
             | "list-style"
             | "list-style-type"
             | "text-align"
+            | "text-transform"
             | "visibility"
             | "pointer-events"
             | "white-space"
@@ -129,6 +131,9 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "background-position-x" => style.background_position_x = source.background_position_x,
         "background-position-y" => style.background_position_y = source.background_position_y,
         "background-size" => style.background_size = source.background_size,
+        "object-fit" => style.object_fit = source.object_fit,
+        "object-position" => style.object_position = source.object_position,
+        "aspect-ratio" => style.aspect_ratio = source.aspect_ratio,
         "font" => {
             style.font_size = source.font_size;
             style.font_weight = source.font_weight;
@@ -148,6 +153,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
             style.line_height_value = source.line_height_value;
         }
         "text-align" => style.text_align = source.text_align,
+        "text-transform" => style.text_transform = source.text_transform,
         "white-space" => style.white_space = source.white_space,
         "text-overflow" => style.text_overflow = source.text_overflow,
         "-webkit-line-clamp" => style.line_clamp = source.line_clamp,
@@ -223,6 +229,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         }
         "border-radius" => style.border_radius = source.border_radius,
         "border-collapse" => style.border_collapse = source.border_collapse,
+        "border-spacing" => style.border_spacing = source.border_spacing,
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,

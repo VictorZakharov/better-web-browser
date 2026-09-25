@@ -121,7 +121,7 @@ fn anonymous_content_translates_with_its_table_in_paint_and_geometry() {
 #[test]
 fn wide_floated_table_reserves_its_minimum_content_width() {
     let (page, output) = check(
-        "<main style='width:400px'><table style='float:right;width:100px'><tr><td style='padding:0'><div style='width:250px;height:100px'></div></td></tr></table><p id=text style='margin:0'>A short paragraph beside the floating table</p></main>",
+        "<main style='width:400px'><table style='float:right;width:100px;border-spacing:0'><tr><td style='padding:0'><div style='width:250px;height:100px'></div></td></tr></table><p id=text style='margin:0'>A short paragraph beside the floating table</p></main>",
     );
     let table = page.dom.elements_named("table").next().unwrap();
     let table = output.node_bounds[&table.id()];

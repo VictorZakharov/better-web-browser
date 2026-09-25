@@ -272,6 +272,36 @@ fn balanced_opacity_groups_round_trip_through_the_checked_codec() {
 }
 
 #[test]
+fn fitted_image_clip_round_trips_through_the_checked_codec() {
+    let mut presentation = sample();
+    let content_box = RectF {
+        x: 5.0,
+        y: 5.0,
+        width: 100.0,
+        height: 50.0,
+    };
+    let fitted = RectF {
+        x: 5.0,
+        y: -20.0,
+        width: 100.0,
+        height: 100.0,
+    };
+    presentation.layout.items = vec![DisplayItem::Image {
+        rect: fitted,
+        clip: Some(content_box),
+        url: "https://example.com/image.png".into(),
+        alt: String::new(),
+        tint: None,
+    }];
+    let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+    assert!(matches!(
+        decoded.layout.items.as_slice(),
+        [DisplayItem::Image { rect, clip: Some(clip), .. }]
+            if *rect == fitted && *clip == content_box
+    ));
+}
+
+#[test]
 fn nonnegative_subpixel_font_sizes_round_trip_through_the_checked_codec() {
     for size in [0.0, 0.25] {
         let mut presentation = sample();

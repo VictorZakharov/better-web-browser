@@ -82,8 +82,8 @@ fn item_bounds(item: &DisplayItem) -> RectF {
         DisplayItem::EmbeddedFrame { rect, .. }
         | DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
-        | DisplayItem::Text { rect, .. }
-        | DisplayItem::Image { rect, .. } => *rect,
+        | DisplayItem::Text { rect, .. } => *rect,
+        DisplayItem::Image { rect, clip, .. } => clip.unwrap_or(*rect),
         DisplayItem::BackgroundImage { clip_rect, .. } => *clip_rect,
         DisplayItem::Control(spec) => spec.rect,
     }

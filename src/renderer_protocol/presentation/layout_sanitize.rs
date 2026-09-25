@@ -115,11 +115,16 @@ fn sanitize_item(item: DisplayItem) -> Option<DisplayItem> {
         },
         DisplayItem::Image {
             rect,
+            clip,
             url,
             alt,
             tint,
         } => DisplayItem::Image {
             rect: sanitize_rect(rect)?,
+            clip: match clip {
+                Some(clip) => Some(sanitize_rect(clip)?),
+                None => None,
+            },
             // The browser process cannot accept a resource key beyond the wire
             // URL budget. Omit that paint item instead of failing the document.
             url: if url.len() <= MAX_URL_BYTES {
@@ -209,8 +214,8 @@ fn item_rect(item: &DisplayItem) -> Option<RectF> {
         | DisplayItem::EndOpacity { bounds } => Some(*bounds),
         DisplayItem::SolidRect { rect, .. }
         | DisplayItem::BorderRect { rect, .. }
-        | DisplayItem::Text { rect, .. }
-        | DisplayItem::Image { rect, .. } => Some(*rect),
+        | DisplayItem::Text { rect, .. } => Some(*rect),
+        DisplayItem::Image { rect, clip, .. } => Some(clip.unwrap_or(*rect)),
         DisplayItem::BackgroundImage { clip_rect, .. } => Some(*clip_rect),
         DisplayItem::Control(spec) => Some(spec.rect),
     }
@@ -318,6 +323,7 @@ mod tests {
                         width: 20.0,
                         height: 20.0,
                     },
+                    clip: None,
                     url: format!("data:image/svg+xml,{}", "a".repeat(MAX_URL_BYTES)),
                     alt: String::new(),
                     tint: None,

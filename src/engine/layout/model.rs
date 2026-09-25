@@ -141,6 +141,8 @@ pub enum DisplayItem {
     },
     Image {
         rect: RectF,
+        /// Replaced content may paint outside its element, but never outside its content box.
+        clip: Option<RectF>,
         url: String,
         alt: String,
         tint: Option<Color>,
@@ -199,6 +201,7 @@ pub(super) enum InlineAtom {
         node_id: Option<NodeId>,
         source_node: Option<NodeId>,
         source_units: Vec<fragments::SourceUnit>,
+        text_transform: TextTransform,
         visible: bool,
         preserve_space: bool,
         line_height: f32,

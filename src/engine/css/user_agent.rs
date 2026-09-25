@@ -124,12 +124,19 @@ pub(super) fn apply_user_agent_defaults(
             style.border_width = uniform_edges(Length::Px(2.0));
             style.border_colors = [Some(Color::rgb(118, 118, 118)); 4];
         }
-        "table" => style.box_sizing = BoxSizing::BorderBox,
+        "table" => {
+            style.box_sizing = BoxSizing::BorderBox;
+            // HTML's suggested UA sheet uses 2px in the separated model.
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            style.border_spacing = [Length::Px(2.0); 2];
+        }
         "center" => style.text_align = TextAlign::Center,
         "th" => {
+            style.padding = uniform_edges(Length::Px(1.0));
             style.font_weight = 700;
             style.text_align = TextAlign::Center;
         }
+        "td" => style.padding = uniform_edges(Length::Px(1.0)),
         "ul" | "ol" => {
             style.margin.top = Length::Em(1.0);
             style.margin.bottom = Length::Em(1.0);

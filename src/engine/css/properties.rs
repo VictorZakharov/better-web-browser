@@ -4,6 +4,7 @@ use super::values::LineHeight;
 use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
 mod helpers;
+pub(super) mod table_spacing;
 mod text;
 use helpers::*;
 pub(super) use helpers::{parse_text_spacing, parse_text_spacing_for_viewport};
@@ -150,6 +151,21 @@ pub(super) fn apply_declaration(
         "background-size" => {
             if let Some(size) = parse_background_size(value) {
                 style.background_size = size;
+            }
+        }
+        "object-fit" => {
+            if let Some(fit) = ObjectFit::parse(value) {
+                style.object_fit = fit;
+            }
+        }
+        "object-position" => {
+            if let Some(position) = ObjectPosition::parse(value) {
+                style.object_position = position;
+            }
+        }
+        "aspect-ratio" => {
+            if let Some(ratio) = AspectRatio::parse(value) {
+                style.aspect_ratio = ratio;
             }
         }
         "background" => apply_background_shorthand(style, value, base_url),
@@ -316,6 +332,11 @@ pub(super) fn apply_declaration(
             }
         }
         "border-collapse" => style.border_collapse = value == "collapse",
+        "border-spacing" => {
+            if let Some(spacing) = table_spacing::parse(value) {
+                style.border_spacing = spacing;
+            }
+        }
         "caption-side" => style.caption_side_bottom = value == "bottom",
         "vertical-align" => {
             if let Some(align) = VerticalAlign::parse(value) {

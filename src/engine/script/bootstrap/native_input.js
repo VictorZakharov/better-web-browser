@@ -178,7 +178,7 @@
                     clientX: input.x - viewportScrollX, clientY: input.y - viewportScrollY,
                     deltaX: input.deltaX, deltaY: input.deltaY, deltaMode: 0, ...nativeModifiers(input)
                 })));
-                case 'elementScroll': queueElementScrollEvent(nativeTarget(input.target)); return true;
+                case 'elementScroll': queueElementScrollEvent(nativeTarget(input.target), true); return true;
                 case 'pointer': return dispatchNativePointer(input);
                 case 'keyboard': return dispatchNativeKeyboard(input);
                 case 'text': return dispatchNativeText(input);
@@ -187,9 +187,14 @@
                 case 'imageResource': return dispatchNativeImageResource(input);
                 case 'scroll': {
                     if (!setViewportScrollOffsets(Number(input.x) || 0, Number(input.y) || 0)) return true;
+                    viewportScrollDelay = userScrollEndDelay;
                     if (viewportScrollEventPending) return true;
                     // CSSOM View viewport scroll events target Document and bubble to Window.
                     const allowed = document.dispatchEvent(markTrusted(new Event('scroll', { bubbles: true })));
+                    if (!viewportScrollEventPending) {
+                        queueScrollEnd(document, userScrollEndDelay, true);
+                        viewportScrollDelay = 0;
+                    }
                     return allowed;
                 }
                 case 'viewport':

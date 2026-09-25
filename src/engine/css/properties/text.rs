@@ -79,6 +79,11 @@ pub(super) fn apply(
                 _ => TextAlign::Start,
             }
         }
+        "text-transform" => {
+            if let Some(transform) = TextTransform::parse(value) {
+                style.text_transform = transform;
+            }
+        }
         "white-space" => {
             style.white_space = match value {
                 "nowrap" => WhiteSpace::NoWrap,

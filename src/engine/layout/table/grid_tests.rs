@@ -21,7 +21,7 @@ fn css_rows_and_cells_participate_without_html_table_tags_or_spans() {
 fn layout(markup: &str) -> (Page, LayoutOutput) {
     let page = Page::parse(
         &format!(
-            "<style>body{{margin:0}}td,th{{padding:0;border:0;line-height:20px}}table{{width:300px}}</style>{markup}"
+            "<style>body{{margin:0}}td,th{{padding:0;border:0;line-height:20px}}table{{width:300px;border-spacing:0}}</style>{markup}"
         ),
         "https://example.test/",
     );

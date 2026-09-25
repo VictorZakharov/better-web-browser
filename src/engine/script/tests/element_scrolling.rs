@@ -236,3 +236,52 @@ fn root_scroll_padding_adjusts_viewport_scroll_into_view_position() {
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(result(&dom), "[865,35]");
 }
+
+#[test]
+fn instant_element_scroll_fires_trusted_scroll_then_one_scrollend() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const events = [];
+        pane.addEventListener('scroll', e => events.push([e.type, e.isTrusted, e.bubbles, pane.scrollTop]));
+        pane.addEventListener('scrollend', e => events.push([e.type, e.isTrusted, e.bubbles, pane.scrollTop]));
+        document.addEventListener('scrollend', () => events.push(['bubbled']));
+        pane.scrollTop = 20; pane.scrollTop = 30; pane.scrollTop = 30;
+        setTimeout(() => document.body.dataset.result = JSON.stringify(events), 10);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        result(&dom),
+        "[[\"scroll\",true,false,30],[\"scrollend\",true,false,30]]"
+    );
+}
+
+#[test]
+fn scroll_listener_restarts_scrolling_before_scrollend_can_fire() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        const events = [];
+        pane.addEventListener('scroll', () => {
+            events.push('scroll:' + pane.scrollTop);
+            if (pane.scrollTop === 20) pane.scrollTop = 40;
+        });
+        pane.addEventListener('scrollend', () => events.push('end:' + pane.scrollTop));
+        pane.scrollTop = 20;
+        setTimeout(() => document.body.dataset.result = events.join(','), 10);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "scroll:20,scroll:40,end:40");
+}
+
+#[test]
+fn no_op_scroll_does_not_fire_scroll_or_scrollend() {
+    let (dom, outcome) = run(r#"
+        const pane = document.getElementById('pane');
+        let events = 0;
+        pane.addEventListener('scroll', () => events++);
+        pane.addEventListener('scrollend', () => events++);
+        pane.scrollTop = 0; pane.scrollTo({top:0});
+        setTimeout(() => document.body.dataset.result = String(events), 10);
+    "#);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom), "0");
+}

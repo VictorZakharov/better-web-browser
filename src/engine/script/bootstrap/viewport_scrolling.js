@@ -2,12 +2,34 @@
     // elements without a scrolling box have zero offsets, not missing/expando properties.
     // https://drafts.csswg.org/cssom-view/#dom-element-scrolltop
     const elementScrollEvents = new WeakSet();
-    function queueElementScrollEvent(element) {
+    const scrollEndTimers = new WeakMap();
+    const elementScrollDelays = new WeakMap();
+    const userScrollEndDelay = 100;
+    function queueScrollEnd(target, delay, bubbles) {
+        const previous = scrollEndTimers.get(target);
+        if (previous !== undefined) windowObject.clearTimeout(previous);
+        const timer = windowObject.setTimeout(() => {
+            if (scrollEndTimers.get(target) !== timer) return;
+            scrollEndTimers.delete(target);
+            target.dispatchEvent(markTrusted(new Event('scrollend', { bubbles })));
+        }, delay);
+        scrollEndTimers.set(target, timer);
+    }
+    function queueElementScrollEvent(element, fromUser = false) {
+        const previousEnd = scrollEndTimers.get(element);
+        if (previousEnd !== undefined) {
+            windowObject.clearTimeout(previousEnd);
+            scrollEndTimers.delete(element);
+        }
+        if (fromUser) elementScrollDelays.set(element, userScrollEndDelay);
         if (elementScrollEvents.has(element)) return;
         elementScrollEvents.add(element);
         windowObject.setTimeout(() => {
             elementScrollEvents.delete(element);
             element.dispatchEvent(markTrusted(new Event('scroll')));
+            const delay = elementScrollDelays.get(element) || 0;
+            elementScrollDelays.delete(element);
+            if (!elementScrollEvents.has(element)) queueScrollEnd(element, delay, false);
         }, 0);
     }
     function potentiallyScrollableBody(body, axis, scrollingElementQuery = false) {
@@ -63,12 +85,21 @@
     Element.prototype.scroll = Element.prototype.scrollTo = function(...args) { elementScroll(this, args, false); };
     Element.prototype.scrollBy = function(...args) { elementScroll(this, args, true); };
     let viewportScrollEventPending = false;
+    let viewportScrollDelay = 0;
     function queueViewportScrollEvent() {
+        const previousEnd = scrollEndTimers.get(document);
+        if (previousEnd !== undefined) {
+            windowObject.clearTimeout(previousEnd);
+            scrollEndTimers.delete(document);
+        }
         if (viewportScrollEventPending) return;
         viewportScrollEventPending = true;
         windowObject.setTimeout(() => {
             viewportScrollEventPending = false;
             document.dispatchEvent(markTrusted(new Event('scroll', { bubbles: true })));
+            const delay = viewportScrollDelay;
+            viewportScrollDelay = 0;
+            if (!viewportScrollEventPending) queueScrollEnd(document, delay, true);
         }, 0);
     }
     function setViewportScrollOffsets(x, y) {

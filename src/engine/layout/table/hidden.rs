@@ -5,7 +5,7 @@ use crate::engine::layout::test_support::FixedMeasurer;
 fn layout(markup: &str, sparse: bool) -> (Page, LayoutOutput) {
     let page = Page::parse(
         &format!(
-            "<style>body{{margin:0}}table{{width:300px}}td,th{{padding:0;border:0}}\
+            "<style>body{{margin:0}}table{{width:300px;border-spacing:0}}td,th{{padding:0;border:0}}\
              .hidden{{display:none}}.box{{height:20px}}</style>{markup}"
         ),
         "https://example.com/",

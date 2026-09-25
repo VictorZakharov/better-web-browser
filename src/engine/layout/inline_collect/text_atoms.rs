@@ -114,6 +114,7 @@ pub(super) fn text_atom(
         node_id: interaction_node,
         source_node,
         source_units: Vec::new(),
+        text_transform: style.text_transform,
         visible: style.visibility,
         preserve_space: style.white_space.preserves_spaces(),
         line_height: style.line_height,

@@ -54,10 +54,23 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let borders = table::resolved_table_borders(node, &style, percentage_basis);
         let padding = style.padding.resolve(percentage_basis, style.font_size);
         let horizontal_insets = padding.horizontal() + borders.horizontal();
+        let vertical_insets = padding.vertical() + borders.vertical();
+        let percentage_height_basis = if style.position == Position::Fixed {
+            Some(self.viewport.height)
+        } else {
+            containing_height
+        };
         let available_width = (containing_width - margins.horizontal()).max(0.0);
         let caption_width = table::caption_outer_width(node, percentage_basis, self.styles);
         let normal_automatic_width = block_image.as_ref().map_or(available_width, |image| {
-            image.outer_width(node, &style, percentage_basis, horizontal_insets)
+            image.outer_width(
+                node,
+                &style,
+                percentage_basis,
+                percentage_height_basis,
+                horizontal_insets,
+                vertical_insets,
+            )
         });
         let automatic_width = if node.tag_name() == Some("select") && style.width == Length::Auto {
             select_data(node).preferred_width(style.font_size) + horizontal_insets
@@ -122,12 +135,6 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let content_width =
             (border_box_width - borders.horizontal() - padding.horizontal() - gutter_right)
                 .max(0.0);
-        let vertical_insets = borders.vertical() + padding.vertical();
-        let percentage_height_basis = if style.position == Position::Fixed {
-            Some(self.viewport.height)
-        } else {
-            containing_height
-        };
         let (specified_height, minimum_height, maximum_height) = sizing::resolve_height_constraints(
             &style,
             used_content_height,
@@ -140,7 +147,14 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let minimum_height = (minimum_height - gutter_bottom).max(0.0);
         let maximum_height = maximum_height.map(|height| (height - gutter_bottom).max(0.0));
         let block_image_height = block_image.as_ref().map(|image| {
-            image.content_height(node, &style, content_width, percentage_height_basis)
+            image.content_height(
+                node,
+                &style,
+                content_width,
+                percentage_height_basis,
+                horizontal_insets,
+                vertical_insets,
+            )
         });
         let decoration = self.begin_block_decoration(
             node,
@@ -220,7 +234,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let used_content_height = if style.display.is_table() {
             natural_content_height
         } else {
-            specified_height.unwrap_or(natural_content_height)
+            specified_height.unwrap_or_else(|| {
+                if block_image.is_none() {
+                    aspect_ratio::automatic_block_height(
+                        &style,
+                        content_width,
+                        horizontal_insets,
+                        vertical_insets,
+                        natural_content_height,
+                    )
+                } else {
+                    natural_content_height
+                }
+            })
         };
         let mut content_height = used_content_height;
         if let Some(maximum_height) = maximum_height {
@@ -332,6 +358,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             image.paint(
                 node,
                 &mut self.output,
+                &style,
                 RectF {
                     x: content_x,
                     y: content_y,

@@ -88,20 +88,44 @@ impl BlockImage {
         node: &NodeRef,
         style: &ComputedStyle,
         percentage_basis: f32,
+        percentage_height_basis: Option<f32>,
         horizontal_insets: f32,
+        vertical_insets: f32,
     ) -> f32 {
-        self.resolve_length(
+        let natural =
+            (!self.embedded_frame).then_some((self.intrinsic_width, self.intrinsic_height));
+        let specified_width = self.resolve_length(
             node,
             "width",
             style.width,
             Some(percentage_basis),
             style.font_size,
-        )
-        .unwrap_or(if node.tag_name() == Some("svg") {
-            percentage_basis
-        } else {
-            self.intrinsic_width
-        }) + horizontal_insets
+        );
+        let specified_height = self.resolve_length(
+            node,
+            "height",
+            style.height,
+            percentage_height_basis,
+            style.font_size,
+        );
+        let content_width = specified_width
+            .or_else(|| {
+                specified_height.and_then(|height| {
+                    aspect_ratio::width_from_height(
+                        style,
+                        natural,
+                        height,
+                        horizontal_insets,
+                        vertical_insets,
+                    )
+                })
+            })
+            .unwrap_or(if node.tag_name() == Some("svg") {
+                percentage_basis
+            } else {
+                self.intrinsic_width
+            });
+        content_width + horizontal_insets
     }
 
     pub(super) fn content_height(
@@ -110,20 +134,31 @@ impl BlockImage {
         style: &ComputedStyle,
         content_width: f32,
         percentage_basis: Option<f32>,
+        horizontal_insets: f32,
+        vertical_insets: f32,
     ) -> f32 {
         let scaled_height = if node.tag_name() == Some("svg") {
             percentage_basis.unwrap_or_else(|| {
-                if self.intrinsic_width > 0.0 {
-                    content_width * self.intrinsic_height / self.intrinsic_width
-                } else {
-                    self.intrinsic_height
-                }
+                aspect_ratio::height_from_width(
+                    style,
+                    Some((self.intrinsic_width, self.intrinsic_height)),
+                    content_width,
+                    horizontal_insets,
+                    vertical_insets,
+                )
+                .unwrap_or(self.intrinsic_height)
             })
-        } else if !self.embedded_frame
-            && self.intrinsic_width > 0.0
+        } else if self.intrinsic_width > 0.0
             && (style.width != Length::Auto || node.attr("width").is_some())
         {
-            content_width * self.intrinsic_height / self.intrinsic_width
+            aspect_ratio::height_from_width(
+                style,
+                (!self.embedded_frame).then_some((self.intrinsic_width, self.intrinsic_height)),
+                content_width,
+                horizontal_insets,
+                vertical_insets,
+            )
+            .unwrap_or(self.intrinsic_height)
         } else {
             self.intrinsic_height
         };
@@ -152,7 +187,13 @@ impl BlockImage {
         }
     }
 
-    pub(super) fn paint(self, node: &NodeRef, output: &mut LayoutOutput, rect: RectF) {
+    pub(super) fn paint(
+        self,
+        node: &NodeRef,
+        output: &mut LayoutOutput,
+        style: &ComputedStyle,
+        rect: RectF,
+    ) {
         if !self.available {
             return;
         }
@@ -163,8 +204,15 @@ impl BlockImage {
             });
             return;
         }
-        output.items.push(DisplayItem::Image {
+        let (painted, clip) = super::super::object::image_paint_geometry(
+            style,
             rect,
+            self.intrinsic_width,
+            self.intrinsic_height,
+        );
+        output.items.push(DisplayItem::Image {
+            rect: painted,
+            clip,
             url: self.url,
             alt: self.alt,
             tint: self.tint,

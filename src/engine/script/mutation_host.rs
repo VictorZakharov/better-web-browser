@@ -31,6 +31,7 @@ pub(super) fn mutation_host_call(
         "attrRemoveNs" => super::attribute_host::remove_attribute_ns(args, state)?,
         "innerHtmlSet" => set_inner_html(args, state)?,
         "innerHtmlAppend" => append_inner_html(args, state)?,
+        "parseHtmlFragment" => parse_html_fragment(args, state)?,
         _ => return Ok(None),
     };
     Ok(Some(value))
@@ -316,7 +317,7 @@ fn mutate_inner_html(args: &[JsValue], state: &mut HostState, append: bool) -> J
         .unwrap_or_default();
     let changed = node.as_ref().is_some_and(|node| {
         if append {
-            append_html_fragment(&state.document, node, &html);
+            append_html_fragment(node, &html);
         } else {
             Node::replace_inner_html(node, &html, true);
         }
@@ -341,6 +342,21 @@ fn mutate_inner_html(args: &[JsValue], state: &mut HostState, append: bool) -> J
         }
     }
     Ok(JsValue::from(changed))
+}
+
+fn parse_html_fragment(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let html = argument_string(args, 2)?;
+    state.ensure_node_capacity(estimated_markup_nodes(&html).saturating_add(1))?;
+    let Some(context) = state.node(argument_id(args, 1)) else {
+        return Ok(JsValue::from(0));
+    };
+    let fragment = Node::create_document_fragment_for(&context);
+    for child in Node::parse_html_fragment(&context, &html, true) {
+        let _ = Node::append_child(&fragment, child);
+    }
+    state.adopt_subtree(&context, &fragment);
+    state.register_subtree(&fragment);
+    Ok(JsValue::from(state.id_for(&fragment)))
 }
 
 pub(super) fn estimated_markup_nodes(html: &str) -> usize {

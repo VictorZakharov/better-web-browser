@@ -160,13 +160,6 @@ pub(super) fn dispatch_host_call(
                 .unwrap_or_default();
             Ok(js_string(value))
         }
-        "innerHtmlGet" => {
-            let value = state
-                .node(argument_id(args, 1))
-                .map(|node| serialize_children(&node))
-                .unwrap_or_default();
-            Ok(js_string(value))
-        }
         "query" => {
             let selector = argument_string(args, 2)?;
             let node = state

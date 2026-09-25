@@ -21,7 +21,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         mut y: f32,
         width: f32,
         specified_height: Option<f32>,
-        _style: &ComputedStyle,
+        style: &ComputedStyle,
     ) -> f32 {
         let captions = table_captions(node, self.styles);
         let (top_captions, bottom_captions): (Vec<_>, Vec<_>) = captions
@@ -31,9 +31,12 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         y = self.layout_captions(&top_captions, x, y, width, specified_height);
         let grid_top = y;
         let grid = grid::Grid::new(node, self.styles);
-        let columns = self.table_columns(&grid, width);
-        let widths = columns::used_widths(&columns, width);
-        let xs = track_offsets(&widths, x);
+        let (horizontal_spacing, vertical_spacing) = style.used_border_spacing();
+        let columns = self.table_columns(&grid, width, horizontal_spacing);
+        let width_for_tracks =
+            (width - columns::spacing_extent(grid.columns, horizontal_spacing)).max(0.0);
+        let widths = columns::used_widths(&columns, width_for_tracks);
+        let xs = track_offsets(&widths, x, horizontal_spacing);
         let mut heights = grid
             .rows
             .iter()
@@ -48,7 +51,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let mut cells = grid.cells.iter().collect::<Vec<_>>();
         cells.sort_by_key(|cell| cell.rows);
         for cell in cells {
-            let cell_width = xs[cell.column + cell.columns] - xs[cell.column];
+            let cell_width = xs[cell.column + cell.columns] - xs[cell.column] - horizontal_spacing;
             let minimum = self.intrinsic_block_height(
                 &cell.node,
                 cell_width,
@@ -59,7 +62,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 }),
             );
             let rows = &mut heights[cell.row..cell.row + cell.rows];
-            let extra = (minimum - rows.iter().sum::<f32>()).max(0.0) / rows.len() as f32;
+            let interior_gaps = vertical_spacing * (cell.rows - 1) as f32;
+            let extra =
+                (minimum - interior_gaps - rows.iter().sum::<f32>()).max(0.0) / rows.len() as f32;
             for height in rows {
                 *height += extra;
             }
@@ -69,16 +74,18 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         // distribution algorithm is UA-defined; an even share preserves every
         // row's intrinsic minimum and gives empty cells an actual box.
         if !heights.is_empty() {
-            let extra = (specified_height.unwrap_or(0.0) - heights.iter().sum::<f32>()).max(0.0)
-                / heights.len() as f32;
+            let available = (specified_height.unwrap_or(0.0)
+                - columns::spacing_extent(heights.len(), vertical_spacing))
+            .max(0.0);
+            let extra = (available - heights.iter().sum::<f32>()).max(0.0) / heights.len() as f32;
             for height in &mut heights {
                 *height += extra;
             }
         }
-        let ys = track_offsets(&heights, y);
+        let ys = track_offsets(&heights, y, vertical_spacing);
         for cell in &grid.cells {
-            let cell_width = xs[cell.column + cell.columns] - xs[cell.column];
-            let cell_height = ys[cell.row + cell.rows] - ys[cell.row];
+            let cell_width = xs[cell.column + cell.columns] - xs[cell.column] - horizontal_spacing;
+            let cell_height = ys[cell.row + cell.rows] - ys[cell.row] - vertical_spacing;
             let style = self.styles.get(&cell.node);
             let insets = style.padding.resolve(width, style.font_size).vertical()
                 + style
@@ -120,11 +127,11 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
     }
 }
 
-fn track_offsets(sizes: &[f32], start: f32) -> Vec<f32> {
+fn track_offsets(sizes: &[f32], start: f32, spacing: f32) -> Vec<f32> {
     let mut offsets = Vec::with_capacity(sizes.len() + 1);
-    offsets.push(start);
+    offsets.push(start + if sizes.is_empty() { 0.0 } else { spacing });
     for size in sizes {
-        offsets.push(offsets.last().unwrap() + size);
+        offsets.push(offsets.last().unwrap() + size + spacing);
     }
     offsets
 }

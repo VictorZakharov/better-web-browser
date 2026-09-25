@@ -6,7 +6,7 @@ fn cell_alignment_moves_content_geometry_without_moving_the_cell_background() {
     for (alignment, offset) in [("top", 0.0), ("middle", 40.0), ("bottom", 80.0)] {
         let page = Page::parse(
             &format!(
-                "<style>body{{margin:0}}table{{width:200px}}td{{padding:0;border:0;height:100px;vertical-align:{alignment}}}div{{height:20px}}</style><table><tr><td><div>content</div></td></tr></table>"
+                "<style>body{{margin:0}}table{{width:200px;border-spacing:0}}td{{padding:0;border:0;height:100px;vertical-align:{alignment}}}div{{height:20px}}</style><table><tr><td><div>content</div></td></tr></table>"
             ),
             "https://example.test/",
         );

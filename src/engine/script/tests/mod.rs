@@ -1,6 +1,7 @@
 use super::*;
 use crate::engine::dom;
 mod dom_parser;
+mod serialization;
 mod url_resolution;
 mod xhr_document;
 
@@ -55,6 +56,7 @@ mod embedded_elements;
 mod event_handler_attributes;
 mod event_source;
 mod events;
+mod feature_presence;
 mod file_input;
 mod font_loading;
 mod form_review_regressions;
@@ -68,6 +70,7 @@ mod form_validity;
 mod forms;
 mod fragment_geometry;
 mod fragment_navigation;
+mod fragment_parsing;
 mod fullscreen;
 #[cfg(windows)]
 mod gamepads;
