@@ -97,6 +97,32 @@
         return rects;
     }
     Object.defineProperties(Element.prototype, {
+        checkVisibility: { configurable: true, enumerable: true,
+            writable: true,
+            value(options = {}) {
+                if (!(this instanceof Element)) throw new TypeError('Illegal Element receiver');
+                options = options == null ? {} : Object(options);
+                // A boxless element cannot be visible. Use the captured native
+                // fragment reader, not author-overridable getClientRects().
+                if (elementClientRects(this).length === 0) return false;
+                const checkOpacity = !!(options.checkOpacity || options.opacityProperty);
+                const checkVisibilityCSS = !!(options.checkVisibilityCSS || options.visibilityProperty);
+                if (checkVisibilityCSS && computedStyleProxy(this, '').visibility !== 'visible')
+                    return false;
+                let node = this;
+                while (node instanceof Element) {
+                    const style = computedStyleProxy(node, '');
+                    // Size containment (and therefore content-visibility) does
+                    // not apply to a non-atomic inline formatting box.
+                    if (node !== this && style.contentVisibility === 'hidden' &&
+                        style.display !== 'inline') return false;
+                    if (checkOpacity && Number(style.opacity) === 0) return false;
+                    node = node.assignedSlot || node.parentElement || node.getRootNode()?.host;
+                }
+                // content-visibility:auto skipping is not implemented. The
+                // corresponding option has no additional skipped subtree yet.
+                return true;
+            } },
         getClientRects: { configurable: true, enumerable: true,
             writable: true,
             value() { return makeRectList(elementClientRects(this)); } },

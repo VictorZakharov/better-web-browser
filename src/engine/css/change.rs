@@ -39,6 +39,7 @@ impl ComputedStyle {
             && self.transform == other.transform
             // Retained paint and native hit regions depend on the basic-shape clip.
             && self.clip_path == other.clip_path
+            && self.content_visibility_hidden == other.content_visibility_hidden
             && self.pointer_events == other.pointer_events
             && self.perspective_non_none == other.perspective_non_none
             && self.filter_non_none == other.filter_non_none

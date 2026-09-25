@@ -36,6 +36,7 @@ mod canvas_svg_path;
 mod canvas_text;
 mod canvas_transform;
 mod channel_messaging;
+mod check_visibility;
 mod checkable;
 mod collections;
 mod compatibility;

@@ -158,7 +158,8 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         let in_flow_paint_start = self.output.items.len();
         let in_flow_node_start = self.output.node_paint_order.len();
 
-        let collapsed = style_collapses_overflow(&style, self.viewport);
+        let collapsed =
+            style.content_visibility_hidden || style_collapses_overflow(&style, self.viewport);
         let content_bottom = if collapsed {
             content_y
         } else if let Some((kind, _)) = block_control.as_ref().filter(|_| !authored_button) {

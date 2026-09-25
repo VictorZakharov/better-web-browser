@@ -222,6 +222,11 @@ pub(super) fn apply_declaration(
             }
         }
         "visibility" => style.visibility = value != "hidden" && value != "collapse",
+        "content-visibility" => {
+            if matches!(value, "visible" | "hidden") {
+                style.content_visibility_hidden = value == "hidden";
+            }
+        }
         "pointer-events" => {
             if matches!(value, "auto" | "none") {
                 style.pointer_events = value == "auto";

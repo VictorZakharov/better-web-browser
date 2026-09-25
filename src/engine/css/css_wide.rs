@@ -226,6 +226,7 @@ fn copy_property(style: &mut ComputedStyle, source: &ComputedStyle, property: &s
         "caption-side" => style.caption_side_bottom = source.caption_side_bottom,
         "vertical-align" => style.vertical_align = source.vertical_align,
         "visibility" => style.visibility = source.visibility,
+        "content-visibility" => style.content_visibility_hidden = source.content_visibility_hidden,
         "pointer-events" => style.pointer_events = source.pointer_events,
         "opacity" => style.opacity = source.opacity,
         "transform" => style.transform.clone_from(&source.transform),

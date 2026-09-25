@@ -113,6 +113,18 @@ pub(crate) fn resolved_property_value(style: &ComputedStyle, property: &str) -> 
             }
         }
         "opacity" => serialize_number(style.opacity),
+        "visibility" => if style.visibility {
+            "visible"
+        } else {
+            "hidden"
+        }
+        .to_string(),
+        "content-visibility" => if style.content_visibility_hidden {
+            "hidden"
+        } else {
+            "visible"
+        }
+        .to_string(),
         "text-overflow" => style.text_overflow.css_keyword().to_string(),
         "-webkit-line-clamp" => style.line_clamp.css_text(),
         "-webkit-box-orient" => style.box_orient.css_keyword().to_string(),
