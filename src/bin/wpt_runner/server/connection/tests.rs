@@ -40,7 +40,9 @@ fn canceled_browser_requests_are_not_server_failures() {
     }
     assert_eq!(read_request(&mut std::io::Cursor::new([])).unwrap(), None);
     #[cfg(windows)]
-    assert!(is_client_disconnect(&std::io::Error::from_raw_os_error(10054)));
+    assert!(is_client_disconnect(&std::io::Error::from_raw_os_error(
+        10054
+    )));
 }
 
 #[test]
