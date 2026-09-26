@@ -7,9 +7,7 @@ use super::*;
 /// actually implements. General-enclosed and selector queries stay false until supported.
 /// https://www.w3.org/TR/css-conditional-3/#at-supports
 pub(crate) fn supports_matches(prelude: &str) -> bool {
-    let condition = prelude
-        .trim()
-        .strip_prefix("@supports")
+    let condition = super::at_rule_prelude(prelude.trim(), "supports")
         .unwrap_or(prelude)
         .trim();
     evaluate_condition(condition)

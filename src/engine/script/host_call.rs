@@ -181,6 +181,13 @@ pub(super) fn dispatch_host_call(
                 .is_some_and(|node| matches_selector_list(&node, &selector));
             Ok(JsValue::from(matches))
         }
+        "setFocus" => {
+            let next = state
+                .node(argument_id(args, 1))
+                .filter(|node| node.element().is_some());
+            state.set_focus_target(next);
+            Ok(JsValue::undefined())
+        }
         "closest" => {
             let selector = argument_string(args, 2)?;
             let closest = state

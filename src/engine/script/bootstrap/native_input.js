@@ -152,6 +152,7 @@
         }
         if (next && isCommitTarget(next)) focusCommitted.set(next, { edited: false });
         const wasDocumentFocused = nativeDocumentFocused;
+        host('setFocus', next ? nodeId(next) : 0);
         if (previous) {
             previous.dispatchEvent(markTrusted(new FocusEvent('blur', { relatedTarget: next })));
             previous.dispatchEvent(markTrusted(new FocusEvent('focusout', { bubbles: true, relatedTarget: next })));

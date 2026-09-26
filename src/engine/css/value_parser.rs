@@ -262,15 +262,3 @@ pub(super) fn parse_calc_value<'i, 't>(
         _ => Err(input.new_custom_error::<(), ()>(())),
     }
 }
-
-pub(crate) fn consume_identifier(bytes: &[u8], start: usize) -> usize {
-    let mut cursor = start;
-    while cursor < bytes.len()
-        && (bytes[cursor].is_ascii_alphanumeric()
-            || matches!(bytes[cursor], b'-' | b'_')
-            || bytes[cursor] >= 0x80)
-    {
-        cursor += 1;
-    }
-    cursor
-}

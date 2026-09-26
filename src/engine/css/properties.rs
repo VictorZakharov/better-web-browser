@@ -12,19 +12,30 @@ pub(super) use helpers::{parse_text_spacing, parse_text_spacing_for_viewport};
 pub(super) fn apply_declaration(
     style: &mut ComputedStyle,
     declaration: (&str, &str),
-    parent: Option<&ComputedStyle>,
-    lower_origin: &ComputedStyle,
-    base_url: &str,
-    viewport_width: f32,
-    viewport_height: f32,
+    context: DeclarationContext<'_>,
 ) {
+    let DeclarationContext {
+        parent,
+        lower_origin,
+        layer_start,
+        base_url,
+        viewport_width,
+        viewport_height,
+    } = context;
     let (name, value) = declaration;
     let value = value.trim();
     let inherited_font_size = parent
         .map(|style| style.font_size)
         .unwrap_or_else(|| ComputedStyle::initial().font_size);
     let root_font_size = style.root_font_size;
-    if super::css_wide::apply_css_wide_keyword(style, name, value, parent, lower_origin) {
+    if super::css_wide::apply_css_wide_keyword(
+        style,
+        name,
+        value,
+        parent,
+        lower_origin,
+        layer_start,
+    ) {
         return;
     }
     if text::apply(

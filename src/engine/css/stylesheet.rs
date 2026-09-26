@@ -1,5 +1,8 @@
 //! Stylesheet rule and declaration parsing.
 
+use super::layers::{
+    LayerEvent, LayerPath, LayerSegment, layer_prelude, parse_layer_name, parse_layer_statement,
+};
 use super::media::MediaEnvironment;
 use super::*;
 use crate::limits::{
@@ -7,12 +10,17 @@ use crate::limits::{
     MAX_CSS_SOURCE_BYTES, MAX_PAGE_CSS_RULES, bounded_utf8_prefix,
 };
 use std::rc::Rc;
+mod declarations;
+mod nesting;
+pub(super) use declarations::parse_declarations;
 
 #[derive(Clone, Debug)]
 pub(super) struct Rule {
     // The same parsed payload can occur at different positions in independent cascades.
     data: Rc<RuleData>,
     pub(super) order: u32,
+    pub(super) layer: Option<LayerPath>,
+    pub(super) layer_rank: u32,
 }
 
 #[derive(Debug)]
@@ -46,6 +54,8 @@ pub(super) struct Declaration {
     pub(super) name: String,
     pub(super) value: String,
     pub(super) important: bool,
+    pub(super) possible_revert_layer: bool,
+    pub(super) may_use_var: bool,
     // Parsed declarations are immutable; shared rule payloads reuse this token preparation.
     pub(super) literal_value: std::cell::OnceCell<Option<String>>,
 }
@@ -72,6 +82,7 @@ pub(super) fn parse_stylesheet(
 
 /// Parse only the prefix that can participate in the requesting cascade. The normal source,
 /// nesting, per-sheet, declaration and total-page limits remain in force.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_stylesheet_with_rule_budget(
     css: &str,
@@ -82,6 +93,30 @@ pub(super) fn parse_stylesheet_with_rule_budget(
     scope: RuleScope,
     rule_budget: usize,
 ) {
+    let mut events = Vec::new();
+    parse_stylesheet_with_layer_events(
+        css,
+        base_url,
+        media_environment,
+        next_order,
+        output,
+        scope,
+        rule_budget,
+        &mut events,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn parse_stylesheet_with_layer_events(
+    css: &str,
+    base_url: &str,
+    media_environment: MediaEnvironment,
+    next_order: &mut u32,
+    output: &mut Vec<Rule>,
+    scope: RuleScope,
+    rule_budget: usize,
+    events: &mut Vec<LayerEvent>,
+) {
     if output.len() >= MAX_PAGE_CSS_RULES || rule_budget == 0 {
         return;
     }
@@ -91,6 +126,7 @@ pub(super) fn parse_stylesheet_with_rule_budget(
         .len()
         .saturating_add(MAX_CSS_RULES_PER_STYLESHEET.min(rule_budget))
         .min(MAX_PAGE_CSS_RULES);
+    let mut next_anonymous = 1;
     parse_rule_list(
         &css,
         base_url,
@@ -100,6 +136,9 @@ pub(super) fn parse_stylesheet_with_rule_budget(
         scope,
         0,
         rule_limit,
+        &[],
+        &mut next_anonymous,
+        events,
     );
 }
 
@@ -113,6 +152,9 @@ fn parse_rule_list(
     scope: RuleScope,
     nesting_depth: usize,
     rule_limit: usize,
+    current_layer: &[LayerSegment],
+    next_anonymous: &mut u64,
+    events: &mut Vec<LayerEvent>,
 ) {
     if nesting_depth >= MAX_CSS_NESTING_DEPTH || output.len() >= rule_limit {
         return;
@@ -130,6 +172,14 @@ fn parse_rule_list(
             // CSS Syntax allows statement at-rules such as @charset and @import to end with a
             // semicolon. They do not own the next qualified-rule block. Unknown statements are
             // ignored here; resource loading handles imports separately.
+            let prelude = css[cursor..semicolon].trim();
+            if let Some(paths) = parse_layer_statement(prelude) {
+                for name in paths {
+                    let mut path = current_layer.to_vec();
+                    path.extend(name);
+                    events.push(LayerEvent::Declare(path));
+                }
+            }
             cursor = semicolon + 1;
             continue;
         }
@@ -141,7 +191,7 @@ fn parse_rule_list(
             break;
         };
         let body = &css[open + 1..close];
-        if prelude.starts_with("@media") {
+        if at_rule_prelude(prelude, "media").is_some() {
             if media::media_matches_for_environment(prelude, media_environment) {
                 parse_rule_list(
                     body,
@@ -152,9 +202,12 @@ fn parse_rule_list(
                     scope,
                     nesting_depth + 1,
                     rule_limit,
+                    current_layer,
+                    next_anonymous,
+                    events,
                 );
             }
-        } else if prelude.starts_with("@supports") {
+        } else if at_rule_prelude(prelude, "supports").is_some() {
             if supports::supports_matches(prelude) {
                 parse_rule_list(
                     body,
@@ -165,63 +218,54 @@ fn parse_rule_list(
                     scope,
                     nesting_depth + 1,
                     rule_limit,
+                    current_layer,
+                    next_anonymous,
+                    events,
                 );
             }
-        } else if !prelude.starts_with('@') {
-            let declarations = parse_declarations(body);
-            // A selector list is unforgiving: one invalid member invalidates the complete style
-            // rule. In particular, a leading, repeated, or trailing comma must not turn its
-            // empty member into a universal selector and leak declarations onto the page.
-            // https://www.w3.org/TR/selectors-4/#selector-list
-            let parsed_selectors = split_css_top_level(prelude, ',')
-                .map(|selector_text| {
-                    let selector_text = selector_text.trim();
-                    if selector_text.is_empty() {
-                        return None;
-                    }
-                    let (selector_text, rule_scope, host_condition_text) =
-                        scoped_selector(selector_text, scope)?;
-                    let host_condition = match host_condition_text {
-                        Some(condition) => Some(parse_selector(condition)?),
-                        None => None,
-                    };
-                    let (mut selector, pseudo) = parse_style_rule_selector(selector_text)?;
-                    if let Some(condition) = host_condition.as_ref() {
-                        selector.specificity.ids = selector
-                            .specificity
-                            .ids
-                            .saturating_add(condition.specificity.ids);
-                        selector.specificity.classes = selector
-                            .specificity
-                            .classes
-                            .saturating_add(condition.specificity.classes);
-                        selector.specificity.tags = selector
-                            .specificity
-                            .tags
-                            .saturating_add(condition.specificity.tags);
-                    }
-                    Some((selector, pseudo, host_condition, rule_scope))
-                })
-                .collect::<Option<Vec<_>>>();
-            if let Some(parsed_selectors) = parsed_selectors {
-                for (selector, pseudo, host_condition, rule_scope) in parsed_selectors {
-                    if output.len() >= rule_limit {
-                        break;
-                    }
-                    output.push(Rule {
-                        order: *next_order,
-                        data: Rc::new(RuleData {
-                            selector,
-                            pseudo,
-                            host_condition,
-                            declarations: declarations.clone(),
-                            base_url: base_url.to_string(),
-                            scope: rule_scope,
-                        }),
-                    });
-                    *next_order = next_order.wrapping_add(1);
-                }
+        } else if let Some(name) = layer_prelude(prelude) {
+            let mut path = current_layer.to_vec();
+            if name.is_empty() {
+                path.push(LayerSegment::Anonymous(*next_anonymous));
+                *next_anonymous = next_anonymous.saturating_add(1);
+            } else if let Some(parsed) = parse_layer_name(name) {
+                path.extend(parsed);
+            } else {
+                cursor = close + 1;
+                continue;
             }
+            events.push(LayerEvent::Declare(path.clone()));
+            parse_rule_list(
+                body,
+                base_url,
+                media_environment,
+                next_order,
+                output,
+                scope,
+                nesting_depth + 1,
+                rule_limit,
+                &path,
+                next_anonymous,
+                events,
+            );
+        } else if !prelude.starts_with('@') {
+            nesting::parse_style_rule(
+                prelude,
+                body,
+                nesting_depth,
+                current_layer,
+                None,
+                &mut nesting::Context {
+                    base_url,
+                    environment: media_environment,
+                    next_order,
+                    output,
+                    scope,
+                    rule_limit,
+                    next_anonymous,
+                    events,
+                },
+            );
         }
         cursor = close + 1;
     }
@@ -286,40 +330,6 @@ pub(super) fn strip_comments(css: &str) -> String {
     }
     output.push_str(&css[cursor..]);
     output
-}
-
-pub(super) fn parse_declarations(body: &str) -> Vec<Declaration> {
-    split_css_top_level(body, ';')
-        .filter_map(|declaration| {
-            let (name, value) = split_css_once(declaration, ':')?;
-            let name = name.trim();
-            let name = if name.starts_with("--") {
-                name.to_string()
-            } else {
-                name.to_ascii_lowercase()
-            };
-            let (value, important) = split_important_annotation(value);
-            (!name.is_empty() && !value.is_empty()).then_some(Declaration {
-                name,
-                value: value.to_string(),
-                important,
-                literal_value: std::cell::OnceCell::new(),
-            })
-        })
-        .take(MAX_CSS_DECLARATIONS_PER_RULE)
-        .collect()
-}
-
-fn split_important_annotation(value: &str) -> (&str, bool) {
-    let value = value.trim();
-    let Some(bang) = value.rfind('!') else {
-        return (value, false);
-    };
-    if value[bang + 1..].trim().eq_ignore_ascii_case("important") {
-        (value[..bang].trim_end(), true)
-    } else {
-        (value, false)
-    }
 }
 
 #[cfg(test)]

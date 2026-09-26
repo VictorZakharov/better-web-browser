@@ -1,5 +1,6 @@
 //! Tokenized, top-level import discovery shared by loading and cascade assembly.
 //! https://www.w3.org/TR/css-cascade-5/#at-import
+use super::layers::{LayerPath, parse_layer_name};
 use super::media::{MediaEnvironment, media_matches_for_environment};
 use crate::limits::{MAX_CSS_SOURCE_BYTES, bounded_utf8_prefix};
 use cssparser::{
@@ -37,12 +38,10 @@ pub(crate) struct Import {
 
 impl Import {
     pub(crate) fn matches(&self, environment: MediaEnvironment) -> bool {
-        self.layer.is_none()
-            && self.supports.as_ref().is_none_or(|condition| {
-                super::supports::supports_matches(condition)
-                    || super::supports::supports_matches(&format!("({condition})"))
-            })
-            && media_matches_for_environment(&self.media, environment)
+        self.supports.as_ref().is_none_or(|condition| {
+            super::supports::supports_matches(condition)
+                || super::supports::supports_matches(&format!("({condition})"))
+        }) && media_matches_for_environment(&self.media, environment)
     }
 }
 
@@ -53,7 +52,11 @@ pub(crate) fn parse(source: &str) -> Vec<Import> {
     let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
     let mut input = ParserInput::new(source);
     let mut input = Parser::new(&mut input);
-    let mut rules = ImportParser { closed: false };
+    let mut rules = ImportParser {
+        closed: false,
+        before_first_import: true,
+        leading_layers: Vec::new(),
+    };
     StyleSheetParser::new(&mut input, &mut rules)
         .filter_map(Result::ok)
         .flatten()
@@ -61,8 +64,23 @@ pub(crate) fn parse(source: &str) -> Vec<Import> {
         .collect()
 }
 
+pub(crate) fn leading_layer_statements(source: &str) -> Vec<LayerPath> {
+    let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
+    let mut input = ParserInput::new(source);
+    let mut input = Parser::new(&mut input);
+    let mut rules = ImportParser {
+        closed: false,
+        before_first_import: true,
+        leading_layers: Vec::new(),
+    };
+    for _ in StyleSheetParser::new(&mut input, &mut rules) {}
+    rules.leading_layers
+}
+
 struct ImportParser {
     closed: bool,
+    before_first_import: bool,
+    leading_layers: Vec<LayerPath>,
 }
 
 impl<'i> AtRuleParser<'i> for ImportParser {
@@ -79,8 +97,17 @@ impl<'i> AtRuleParser<'i> for ImportParser {
             return Err(input.new_custom_error(()));
         }
         if name.eq_ignore_ascii_case("layer") {
-            // Layer-order statements may precede imports, unlike a layer block.
-            while input.next_including_whitespace_and_comments().is_ok() {}
+            let statement = condition_text(input, 0)?;
+            if self.before_first_import {
+                if let Some(names) =
+                    super::layers::parse_layer_statement(&format!("@layer {statement}"))
+                {
+                    self.leading_layers.extend(names);
+                }
+            } else {
+                // A layer statement following an import closes the import prefix.
+                self.closed = true;
+            }
             return Ok(None);
         }
         if !name.eq_ignore_ascii_case("import") {
@@ -88,6 +115,7 @@ impl<'i> AtRuleParser<'i> for ImportParser {
             return Err(input.new_custom_error(()));
         }
         let href = input.expect_url_or_string()?.to_string();
+        self.before_first_import = false;
         let layer = if input
             .try_parse(|p| p.expect_ident_matching("layer"))
             .is_ok()
@@ -101,6 +129,12 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         } else {
             None
         };
+        if layer
+            .as_deref()
+            .is_some_and(|name| !name.is_empty() && parse_layer_name(name).is_none())
+        {
+            return Err(input.new_custom_error(()));
+        }
         let supports = if input
             .try_parse(|p| p.expect_function_matching("supports"))
             .is_ok()
@@ -109,8 +143,6 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         } else {
             None
         };
-        // Retain layer metadata for CSSOM, but matches() will not compile layered CSS
-        // as unlayered rules while the native cascade lacks layer ordering.
         let media = condition_text(input, 0)?;
         Ok(Some(Import {
             href,
@@ -212,8 +244,17 @@ mod tests {
                 .iter()
                 .map(|i| i.matches(environment()))
                 .collect::<Vec<_>>(),
-            [true, false, false, false]
+            [true, false, false, true]
         );
         assert_eq!(parse("@import url(bad url); @import 'good';").len(), 1);
+    }
+
+    #[test]
+    fn leading_layer_statements_precede_imports_and_later_statements_close_them() {
+        let source = "@layer base, theme; @import 'a.css' layer(theme); @layer later; @import 'ignored.css';";
+        assert_eq!(leading_layer_statements(source).len(), 2);
+        let imports = parse(source);
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].layer.as_deref(), Some("theme"));
     }
 }

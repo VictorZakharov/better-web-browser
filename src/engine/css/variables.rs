@@ -27,6 +27,7 @@ pub(super) fn apply_custom_properties(
     style: &mut ComputedStyle,
     declarations: &[Declaration],
     parent: Option<&ComputedStyle>,
+    layer_start: &ComputedStyle,
 ) {
     for declaration in declarations
         .iter()
@@ -35,10 +36,19 @@ pub(super) fn apply_custom_properties(
         let value = declaration.value.trim();
         if value.eq_ignore_ascii_case("initial") {
             Arc::make_mut(&mut style.custom_properties).remove(&declaration.name);
+        } else if value.eq_ignore_ascii_case("revert-layer") {
+            if let Some(value) = layer_start
+                .custom_properties
+                .get(&declaration.name)
+                .cloned()
+            {
+                Arc::make_mut(&mut style.custom_properties).insert(declaration.name.clone(), value);
+            } else {
+                Arc::make_mut(&mut style.custom_properties).remove(&declaration.name);
+            }
         } else if value.eq_ignore_ascii_case("inherit")
             || value.eq_ignore_ascii_case("unset")
             || value.eq_ignore_ascii_case("revert")
-            || value.eq_ignore_ascii_case("revert-layer")
         {
             if let Some(value) = parent
                 .and_then(|parent| parent.custom_properties.get(&declaration.name))
@@ -55,14 +65,19 @@ pub(super) fn apply_custom_properties(
     }
 }
 
+pub(super) struct DeclarationContext<'a> {
+    pub(super) parent: Option<&'a ComputedStyle>,
+    pub(super) lower_origin: &'a ComputedStyle,
+    pub(super) layer_start: &'a ComputedStyle,
+    pub(super) base_url: &'a str,
+    pub(super) viewport_width: f32,
+    pub(super) viewport_height: f32,
+}
+
 pub(super) fn apply_resolved_declaration(
     style: &mut ComputedStyle,
     declaration: &Declaration,
-    parent: Option<&ComputedStyle>,
-    lower_origin: &ComputedStyle,
-    base_url: &str,
-    viewport_width: f32,
-    viewport_height: f32,
+    context: DeclarationContext<'_>,
 ) {
     if declaration.name.starts_with("--") {
         return;
@@ -77,15 +92,7 @@ pub(super) fn apply_resolved_declaration(
         substituted = value;
         &substituted
     };
-    apply_declaration(
-        style,
-        (&declaration.name, value),
-        parent,
-        lower_origin,
-        base_url,
-        viewport_width,
-        viewport_height,
-    );
+    apply_declaration(style, (&declaration.name, value), context);
 }
 
 pub(super) fn substitute_variables(

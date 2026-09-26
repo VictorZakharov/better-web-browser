@@ -140,48 +140,43 @@
         }
         get cssText() { return this.__text; }
         set cssText(_value) {}
-        get parentStyleSheet() { return this.__parentStyleSheet; }
+        get parentStyleSheet() {
+            return this.__parentRule ? this.__parentRule.parentStyleSheet : this.__parentStyleSheet;
+        }
         get parentRule() { return this.__parentRule; }
         get type() { return 0; }
     }
     CSSRule.STYLE_RULE = 1;
 
-    class CSSStyleRule extends CSSRule {
-        constructor(sheet, text, token) {
-            super(sheet, text, token);
-            const open = text.indexOf('{');
-            const close = text.lastIndexOf('}');
-            this.__selector = text.slice(0, open).trim();
-            this.__style = ruleStyleProxy(new RuleStyleDeclaration(
-                this, open >= 0 && close > open ? text.slice(open + 1, close) : ''
-            ));
-            this.__pristine = true;
-        }
-        get type() { return CSSRule.STYLE_RULE; }
-        get selectorText() { return this.__selector; }
-        set selectorText(value) { this.__selector = String(value).trim(); this.__changed(); }
-        get style() { return this.__style; }
-        get cssText() {
-            return this.__pristine ? this.__text :
-                this.__selector + ' { ' + this.__style.cssText + ' }';
-        }
-        set cssText(value) {
-            const parsed = createCssRule(this.parentStyleSheet, String(value));
-            if (!(parsed instanceof CSSStyleRule)) return;
-            this.__selector = parsed.__selector;
-            this.__style = parsed.__style;
-            this.__style.__rule = this;
-            this.__pristine = false;
-            this.parentStyleSheet.__rulesChanged();
-        }
-        __changed() { this.__pristine = false; this.parentStyleSheet?.__rulesChanged(); }
-    }
+    // Defined after CSSGroupingRule so CSSStyleRule has the standard grouping inheritance.
+    let CSSStyleRule;
 
-    function createCssRule(sheet, text) {
-        const imported = /^@import\b/i.test(text.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, ''))
+    function createCssRule(sheet, text, nestedContext = false) {
+        text = text.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
+        const imported = /^@import\b/i.test(text)
             ? host('stylesheetImport', text) : null;
         if (imported) return new CSSImportRule(sheet, text, imported, cssRuleConstructionToken);
+        if (/^@layer(?:\s|\{|;)/i.test(text)) {
+            const open = text.indexOf('{');
+            const block = open >= 0 && text.trimEnd().endsWith('}');
+            const prelude = (block ? text.slice(0, open) : text.slice(0, text.lastIndexOf(';'))).trim();
+            const names = host('stylesheetLayerNames', prelude, block);
+            if (names === null || (!block && !text.trimEnd().endsWith(';')))
+                throw new DOMException('Invalid @layer rule', 'SyntaxError');
+            return block
+                ? new CSSLayerBlockRule(sheet, text, names[0] || '', cssRuleConstructionToken,
+                    nestedContext)
+                : new CSSLayerStatementRule(sheet, text, names, cssRuleConstructionToken);
+        }
         const open = text.indexOf('{');
+        if (open >= 0 && text.trimEnd().endsWith('}')) {
+            if (/^@media\s/i.test(text))
+                return new CSSMediaRule(sheet, text, text.slice(6, open).trim(),
+                    cssRuleConstructionToken, nestedContext);
+            if (/^@supports\s/i.test(text))
+                return new CSSSupportsRule(sheet, text, text.slice(9, open).trim(),
+                    cssRuleConstructionToken, nestedContext);
+        }
         return open > 0 && !text.trimStart().startsWith('@')
             ? new CSSStyleRule(sheet, text, cssRuleConstructionToken)
             : new CSSRule(sheet, text, cssRuleConstructionToken);
@@ -189,6 +184,7 @@
 
     function parseCssRules(sheet, text) {
         let importsAllowed = true;
+        let sawImport = false;
         const rules = [];
         for (const source of scanCssRules(text)) {
             const text = source.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
@@ -196,10 +192,17 @@
             if (/^@import\b/i.test(text)) {
                 if (sheet.__constructed || !importsAllowed) continue;
                 const rule = createCssRule(sheet, text);
-                if (rule instanceof CSSImportRule) rules.push(rule);
+                if (rule instanceof CSSImportRule) { rules.push(rule); sawImport = true; }
             } else {
-                if (!/^@layer\b[^{}]*;/i.test(text)) importsAllowed = false;
-                rules.push(createCssRule(sheet, text));
+                let rule;
+                try { rule = createCssRule(sheet, text); }
+                catch (error) {
+                    if (error?.name === 'SyntaxError') continue;
+                    throw error;
+                }
+                if (!(rule instanceof CSSLayerStatementRule) || sawImport)
+                    importsAllowed = false;
+                rules.push(rule);
             }
         }
         return rules;

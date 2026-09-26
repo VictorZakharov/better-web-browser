@@ -32,10 +32,10 @@ impl MediaEnvironment {
 
 pub(crate) fn media_matches_for_environment(prelude: &str, environment: MediaEnvironment) -> bool {
     let input = prelude.trim();
-    let at_rule = input.starts_with("@media");
-    let queries = input.strip_prefix("@media").unwrap_or(input).trim();
+    let at_rule = super::at_rule_prelude(input, "media");
+    let queries = at_rule.unwrap_or(input).trim();
     if queries.is_empty() {
-        return !at_rule;
+        return at_rule.is_none();
     }
     if serialize_media_query_list(queries) == "not all" && queries != "not all" {
         return false;

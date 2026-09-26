@@ -40,7 +40,7 @@ Current page support includes:
 - [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
 - [URL and native request resolution](docs/url-request-resolution.md), explicit public bases, live query parameters, and requests independent of author URL replacements
 - [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
-- A growing CSS cascade with custom properties, `calc()` lengths, block/inline flow, flex, grid, table, float, and positioned layout
+- A growing CSS cascade with custom properties, `calc()` lengths, [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
@@ -320,7 +320,7 @@ important behavior is incomplete, and `☐` means the capability is not implemen
 | --- | --- | --- |
 | ◩ | Host platforms | The native shell runs on Windows; macOS and Linux shells are not implemented. |
 | ◩ | HTML and DOM | The engine owns its DOM and implements substantial HTML5 tree construction, mutation, and event propagation behavior. Web-platform conformance is still incomplete. |
-| ◩ | CSS, layout, and painting | The cascade, custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
+| ◩ | CSS, layout, and painting | The cascade, [cascade layers](docs/css-cascade-layers.md), custom properties, calculated lengths, common block/inline, flex, grid, table, float, and positioned layouts, images, SVG, and webfonts work on selected pages. Selector, layout, invalidation, and painting coverage remain incomplete. |
 | ◩ | JavaScript and browser APIs | A bounded retained V8 realm provides owned DOM bindings, capture/target/bubble events, trusted pointer/keyboard/text/focus/scroll/visibility dispatch, timers, microtasks, navigation, browser-authoritative cookie/storage projections, and other early browser APIs. IME/composition and cancelable `beforeinput`, many HTML event-loop sources, and much of the wider browser API surface remain incomplete. |
 | ☑ | HTTP navigation policy | Typed navigation and Fetch policy cover tuple origins, guarded headers, redirects, scoped cookies, CORS/preflight checks, bounded bodies, and document-wide cancellation. This is an early implementation rather than a security-audited replacement for a mature browser network stack. |
 | ◩ | Cookies and Web Storage | Browser-owned cookies implement RFC-oriented domain/path, expiry, public-suffix, Secure, HttpOnly, SameSite, prefix, ordering, quota, and restart-persistence behavior. Origin-scoped `localStorage` persists; `sessionStorage` is tab-scoped. Named properties preserve UTF-16 values, and same-origin tabs synchronize local storage with ordered `storage` events. Child-frame event scope, partitioned state, and user-facing data controls remain incomplete; see the [storage contract](docs/web-storage.md). |
@@ -423,6 +423,14 @@ Both runs returned HTTP 200 without JavaScript errors or renderer exits.
 Different User-Agent modes can receive different test code, so their scores
 should not be treated as interchangeable or as full conformance evidence.
 
+The subsequent [CSS cascade layers, nesting, and Selectors Level 4 slice](docs/css-nesting-selectors.md)
+rendered **423 / 588** with Breeze's default identity in a 2026-09-26
+fresh-profile hidden release run using the same viewport, scale, locale, and
+10-second settle: **+3** versus the prior dated 420 / 588 observation. It
+returned HTTP 200 with zero JavaScript errors and no renderer exit. This is a
+cross-date observation, not a controlled attribution of those three points
+to CSS changes.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -430,8 +438,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-24-animation-media-breeze.json `
-  -Screenshot target/html5test/2026-09-24-animation-media-breeze.png
+  -Output target/html5test/2026-09-26-batch3.json `
+  -Screenshot target/html5test/2026-09-26-batch3.png
 ```
 
 New releases must refresh or explicitly date these observations using the

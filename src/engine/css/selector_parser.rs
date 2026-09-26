@@ -1,6 +1,13 @@
 //! Selector tokenization and parsing.
 
 use super::*;
+mod attributes;
+mod functionals;
+mod ident;
+mod structural;
+mod tokens;
+pub(super) use attributes::parse_attribute_selector;
+use tokens::selector_tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PseudoElement {
@@ -10,6 +17,14 @@ pub enum PseudoElement {
 }
 
 pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option<PseudoElement>)> {
+    parse_style_rule_selector_with_parent(input, None, None)
+}
+
+pub(super) fn parse_style_rule_selector_with_parent(
+    input: &str,
+    parent: Option<&[Selector]>,
+    parent_specificity: Option<Specificity>,
+) -> Option<(Selector, Option<PseudoElement>)> {
     let input = input.trim();
     let lower = input.to_ascii_lowercase();
     let (origin, pseudo) = [
@@ -31,7 +46,16 @@ pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option
     } else {
         origin.trim()
     };
-    let mut selector = parse_selector(origin)?;
+    let mut selector = if let Some(parent) = parent {
+        let source = if contains_nesting_selector(origin) {
+            origin.to_string()
+        } else {
+            format!("& {origin}")
+        };
+        parse_selector_with_depth(&source, 0, Some(parent), parent_specificity, false)?
+    } else {
+        parse_selector(origin)?
+    };
     if pseudo.is_some() {
         selector.specificity.tags = selector.specificity.tags.saturating_add(1);
     }
@@ -39,7 +63,43 @@ pub(super) fn parse_style_rule_selector(input: &str) -> Option<(Selector, Option
 }
 
 pub(super) fn parse_selector(input: &str) -> Option<Selector> {
-    if input.is_empty() || input.contains("::") {
+    parse_selector_with_depth(input, 0, None, None, false)
+}
+
+fn contains_nesting_selector(input: &str) -> bool {
+    let mut quote = None;
+    let mut cursor = 0;
+    while let Some(character) = ident::next_char(input, cursor) {
+        if character == '\\'
+            && let Some((_, end)) = ident::consume_escape(input, cursor)
+        {
+            cursor = end;
+            continue;
+        }
+        match (quote, character) {
+            (Some(active), candidate) if candidate == active => quote = None,
+            (Some(_), _) => {}
+            (None, '\'' | '"') => quote = Some(character),
+            (None, '&') => return true,
+            _ => {}
+        }
+        cursor += character.len_utf8();
+    }
+    false
+}
+
+// Functional selector lists are recursive. Bound parsing to avoid unbounded work on hostile CSS.
+fn parse_selector_with_depth(
+    input: &str,
+    depth: usize,
+    parent: Option<&[Selector]>,
+    parent_specificity: Option<Specificity>,
+    inside_has: bool,
+) -> Option<Selector> {
+    if depth > 8 {
+        return None;
+    }
+    if input.is_empty() {
         return None;
     }
     let tokens = selector_tokens(input);
@@ -53,7 +113,13 @@ pub(super) fn parse_selector(input: &str) -> Option<Selector> {
     for token in tokens {
         match token {
             SelectorToken::Compound(text) => {
-                let (compound, compound_specificity) = parse_compound_selector(&text)?;
+                let (compound, compound_specificity) = parse_compound_selector_with_depth(
+                    &text,
+                    depth,
+                    parent,
+                    parent_specificity,
+                    inside_has,
+                )?;
                 if !expect_compound {
                     combinators.push(Combinator::Descendant);
                 }
@@ -71,15 +137,15 @@ pub(super) fn parse_selector(input: &str) -> Option<Selector> {
                 }
                 expect_compound = true;
             }
-            SelectorToken::Combinator(_) => {}
+            SelectorToken::Combinator(_) => return None,
         }
     }
     if compounds.is_empty() || expect_compound || combinators.len() + 1 != compounds.len() {
         return None;
     }
     Some(Selector {
-        compounds,
-        combinators,
+        compounds: std::rc::Rc::new(compounds),
+        combinators: std::rc::Rc::new(combinators),
         specificity,
     })
 }
@@ -89,135 +155,85 @@ pub(super) enum SelectorToken {
     Combinator(Combinator),
 }
 
-pub(super) fn selector_tokens(input: &str) -> Vec<SelectorToken> {
-    let mut tokens = Vec::new();
-    let mut start = 0;
-    let mut depth = 0_i32;
-    let mut in_attribute = 0_i32;
-    let mut pending_space = false;
-    for (index, character) in input.char_indices() {
-        match character {
-            '(' => depth += 1,
-            ')' => depth = (depth - 1).max(0),
-            '[' => in_attribute += 1,
-            ']' => in_attribute = (in_attribute - 1).max(0),
-            '>' | '+' | '~' if depth == 0 && in_attribute == 0 => {
-                if start < index {
-                    let text = input[start..index].trim();
-                    if !text.is_empty() {
-                        tokens.push(SelectorToken::Compound(text.to_string()));
-                    }
-                }
-                let combinator = match character {
-                    '>' => Combinator::Child,
-                    '+' => Combinator::AdjacentSibling,
-                    '~' => Combinator::GeneralSibling,
-                    _ => unreachable!(),
-                };
-                tokens.push(SelectorToken::Combinator(combinator));
-                start = index + character.len_utf8();
-                pending_space = false;
-            }
-            character if character.is_whitespace() && depth == 0 && in_attribute == 0 => {
-                if start < index {
-                    let text = input[start..index].trim();
-                    if !text.is_empty() {
-                        tokens.push(SelectorToken::Compound(text.to_string()));
-                    }
-                }
-                start = index + character.len_utf8();
-                pending_space = true;
-            }
-            _ => {
-                if pending_space {
-                    if !matches!(tokens.last(), Some(SelectorToken::Combinator(_))) {
-                        tokens.push(SelectorToken::Combinator(Combinator::Descendant));
-                    }
-                    pending_space = false;
-                }
-            }
-        }
-    }
-    if start < input.len() {
-        let text = input[start..].trim();
-        if !text.is_empty() {
-            tokens.push(SelectorToken::Compound(text.to_string()));
-        }
-    }
-    while matches!(tokens.last(), Some(SelectorToken::Combinator(_))) {
-        tokens.pop();
-    }
-    tokens
-}
-
-pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, Specificity)> {
+fn parse_compound_selector_with_depth(
+    input: &str,
+    depth: usize,
+    parent: Option<&[Selector]>,
+    parent_specificity: Option<Specificity>,
+    inside_has: bool,
+) -> Option<(CompoundSelector, Specificity)> {
     let mut compound = CompoundSelector::default();
     let mut specificity = Specificity::default();
     let bytes = input.as_bytes();
     let mut cursor = 0;
     if bytes.first().is_some_and(|byte| *byte == b'*') {
         cursor = 1;
-    } else if bytes
-        .first()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'-')
-    {
-        let end = consume_identifier(bytes, cursor);
-        compound.tag = Some(input[cursor..end].to_ascii_lowercase());
+    } else if let Some((tag, end)) = ident::parse_identifier(input, cursor) {
+        compound.tag = Some(tag.to_ascii_lowercase());
         specificity.tags += 1;
         cursor = end;
     }
 
     while cursor < bytes.len() {
         match bytes[cursor] {
-            b'#' => {
-                let end = consume_identifier(bytes, cursor + 1);
-                if end == cursor + 1 {
-                    return None;
+            b'&' => {
+                if let Some(parent) = parent {
+                    if parent.is_empty() {
+                        compound.never_matches = true;
+                    } else {
+                        let parent_specificity = parent_specificity.unwrap_or_else(|| {
+                            parent
+                                .iter()
+                                .map(|selector| selector.specificity)
+                                .max()
+                                .unwrap_or_default()
+                        });
+                        specificity.ids = specificity.ids.saturating_add(parent_specificity.ids);
+                        specificity.classes = specificity
+                            .classes
+                            .saturating_add(parent_specificity.classes);
+                        specificity.tags = specificity.tags.saturating_add(parent_specificity.tags);
+                        compound.functional.push(FunctionalSelector {
+                            kind: FunctionalSelectorKind::Is,
+                            selectors: parent.to_vec(),
+                        });
+                    }
+                } else {
+                    // CSS Nesting: a top-level `&` is :scope with zero specificity.
+                    compound.requires_scope = true;
                 }
-                compound.id = Some(input[cursor + 1..end].to_string());
+                cursor += 1;
+            }
+            b'#' => {
+                let (id, end) = ident::parse_identifier(input, cursor + 1)?;
+                compound.id = Some(id);
                 specificity.ids += 1;
                 cursor = end;
             }
             b'.' => {
-                let end = consume_identifier(bytes, cursor + 1);
-                if end == cursor + 1 {
-                    return None;
-                }
-                compound.classes.push(input[cursor + 1..end].to_string());
+                let (class, end) = ident::parse_identifier(input, cursor + 1)?;
+                compound.classes.push(class);
                 specificity.classes += 1;
                 cursor = end;
             }
+            b':' if bytes.get(cursor + 1) == Some(&b':') => return None,
             b':' => {
-                let name_end = consume_identifier(bytes, cursor + 1);
-                let name = input[cursor + 1..name_end].to_ascii_lowercase();
+                let (name, name_end) = ident::parse_identifier(input, cursor + 1)?;
+                let name = name.to_ascii_lowercase();
                 cursor = name_end;
                 if cursor < bytes.len() && bytes[cursor] == b'(' {
                     let end = find_matching_parenthesis(input, cursor)?;
                     let argument = input[cursor + 1..end].trim();
-                    match name.as_str() {
-                        "is" | "where" | "not" => {
-                            if let Some(selectors) = parse_simple_selector_list(argument) {
-                                if name != "where" {
-                                    let argument_specificity = selectors
-                                        .iter()
-                                        .map(simple_selector_specificity)
-                                        .max()
-                                        .unwrap_or_default();
-                                    specificity.ids += argument_specificity.ids;
-                                    specificity.classes += argument_specificity.classes;
-                                    specificity.tags += argument_specificity.tags;
-                                }
-                                if name == "not" {
-                                    compound.not.push(selectors);
-                                } else {
-                                    compound.any_of.push(selectors);
-                                }
-                            } else {
-                                compound.never_matches = true;
-                            }
-                        }
-                        _ => compound.never_matches = true,
-                    }
+                    functionals::parse_functional_pseudo(
+                        &name,
+                        argument,
+                        depth,
+                        parent,
+                        parent_specificity,
+                        inside_has,
+                        &mut compound,
+                        &mut specificity,
+                    )?;
                     cursor = end + 1;
                 } else {
                     specificity.classes += 1;
@@ -226,13 +242,20 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "first-child" => compound.requires_first_child = true,
                         "first-of-type" => compound.requires_first_of_type = true,
                         "last-child" => compound.requires_last_child = true,
+                        "last-of-type" => compound.requires_last_of_type = true,
+                        "only-child" => compound.requires_only_child = true,
+                        "only-of-type" => compound.requires_only_of_type = true,
+                        "empty" => compound.requires_empty = true,
                         "root" => compound.requires_root = true,
+                        "scope" => compound.requires_scope = true,
                         "enabled" => compound.requires_enabled = true,
                         "disabled" => compound.requires_disabled = true,
                         "read-write" => compound.requires_read_write = true,
                         "read-only" => compound.requires_read_only = true,
                         "fullscreen" => compound.requires_fullscreen = true,
                         "hover" => compound.requires_hover = true,
+                        "focus" => compound.requires_focus = true,
+                        "focus-within" => compound.requires_focus_within = true,
                         "checked" => compound.requires_checked = true,
                         "indeterminate" => compound.requires_indeterminate = true,
                         "valid" => compound.requires_valid = true,
@@ -241,16 +264,13 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
                         "optional" => compound.requires_optional = true,
                         "in-range" => compound.requires_in_range = true,
                         "out-of-range" => compound.requires_out_of_range = true,
-                        "active" | "focus" | "visited" | "focus-visible" => {
-                            compound.never_matches = true
-                        }
+                        "active" | "visited" | "focus-visible" => compound.never_matches = true,
                         _ => compound.never_matches = true,
                     }
                 }
             }
             b'[' => {
-                let relative_end = input[cursor + 1..].find(']')?;
-                let end = cursor + 1 + relative_end;
+                let end = tokens::find_attribute_end(input, cursor)?;
                 let attribute = parse_attribute_selector(&input[cursor + 1..end])?;
                 compound.attributes.push(attribute);
                 specificity.classes += 1;
@@ -262,116 +282,24 @@ pub(super) fn parse_compound_selector(input: &str) -> Option<(CompoundSelector, 
     Some((compound, specificity))
 }
 
-pub(super) fn parse_attribute_selector(input: &str) -> Option<AttributeSelector> {
-    let mut expression = input.trim();
-    let mut case_insensitive = false;
-    if let Some((modifier_start, modifier)) = expression.char_indices().next_back() {
-        let prefix = &expression[..modifier_start];
-        if matches!(modifier, 'i' | 'I' | 's' | 'S')
-            && prefix.chars().next_back().is_some_and(char::is_whitespace)
-        {
-            case_insensitive = matches!(modifier, 'i' | 'I');
-            expression = prefix.trim_end();
-        }
-    }
-
-    let operators = [
-        ("~=", AttributeOperator::Includes),
-        ("|=", AttributeOperator::DashMatch),
-        ("^=", AttributeOperator::Prefix),
-        ("$=", AttributeOperator::Suffix),
-        ("*=", AttributeOperator::Substring),
-        ("=", AttributeOperator::Equals),
-    ];
-    for (token, operator) in operators {
-        if let Some(index) = expression.find(token) {
-            let name = expression[..index].trim().to_ascii_lowercase();
-            let value = expression[index + token.len()..]
-                .trim()
-                .trim_matches(['\'', '"'])
-                .to_string();
-            return (!name.is_empty()).then_some(AttributeSelector {
-                name,
-                operator,
-                value,
-                case_insensitive,
-            });
-        }
-    }
-
-    let name = expression.to_ascii_lowercase();
-    (!name.is_empty()).then_some(AttributeSelector {
-        name,
-        operator: AttributeOperator::Exists,
-        value: String::new(),
-        case_insensitive,
+fn selector_is_supported(selector: &Selector) -> bool {
+    selector.compounds.iter().all(|compound| {
+        !compound.never_matches
+            && compound
+                .has
+                .iter()
+                .flatten()
+                .all(|relative| selector_is_supported(&relative.selector))
+            && compound
+                .nth
+                .iter()
+                .flat_map(|nth| &nth.filter)
+                .all(selector_is_supported)
+            && compound
+                .functional
+                .iter()
+                .all(|function| function.selectors.iter().all(selector_is_supported))
     })
-}
-
-pub(super) fn parse_simple_selector(input: &str) -> Option<SimpleSelector> {
-    if let Some(name) = input.strip_prefix(':')
-        && matches!(
-            name,
-            "checked"
-                | "indeterminate"
-                | "disabled"
-                | "read-write"
-                | "read-only"
-                | "enabled"
-                | "valid"
-                | "invalid"
-                | "required"
-                | "optional"
-                | "in-range"
-                | "out-of-range"
-        )
-    {
-        return Some(SimpleSelector::State(name.to_string()));
-    }
-    if let Some(id) = input.strip_prefix('#') {
-        Some(SimpleSelector::Id(id.to_string()))
-    } else if let Some(class) = input.strip_prefix('.') {
-        Some(SimpleSelector::Class(class.to_string()))
-    } else if input.starts_with('[') && input.ends_with(']') {
-        parse_attribute_selector(&input[1..input.len() - 1]).map(SimpleSelector::Attribute)
-    } else if !input.is_empty() {
-        Some(SimpleSelector::Tag(input.to_ascii_lowercase()))
-    } else {
-        None
-    }
-}
-
-pub(super) fn parse_simple_selector_list(input: &str) -> Option<Vec<SimpleSelector>> {
-    let selectors = split_css_top_level(input, ',')
-        .map(str::trim)
-        .map(parse_simple_selector)
-        .collect::<Option<Vec<_>>>()?;
-    (!selectors.is_empty()).then_some(selectors)
-}
-
-pub(super) fn simple_selector_specificity(selector: &SimpleSelector) -> Specificity {
-    match selector {
-        SimpleSelector::State(_) => Specificity {
-            classes: 1,
-            ..Specificity::default()
-        },
-        SimpleSelector::Id(_) => Specificity {
-            ids: 1,
-            ..Specificity::default()
-        },
-        SimpleSelector::Class(_) => Specificity {
-            classes: 1,
-            ..Specificity::default()
-        },
-        SimpleSelector::Attribute(_) => Specificity {
-            classes: 1,
-            ..Specificity::default()
-        },
-        SimpleSelector::Tag(_) => Specificity {
-            tags: 1,
-            ..Specificity::default()
-        },
-    }
 }
 
 #[cfg(test)]

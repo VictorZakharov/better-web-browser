@@ -110,9 +110,20 @@
             const next = createCssRule(this, parsed[0]);
             if (this.__constructed && next instanceof CSSImportRule)
                 throw new DOMException('@import is not allowed in constructed sheets', 'SyntaxError');
-            if ((next instanceof CSSImportRule && this.__rules.slice(0, index).some(r => !(r instanceof CSSImportRule))) ||
-                (!(next instanceof CSSImportRule) && this.__rules.slice(index).some(r => r instanceof CSSImportRule)))
-                throw new DOMException('Imports must precede style rules', 'HierarchyRequestError');
+            const preceding = this.__rules.slice(0, index);
+            const following = this.__rules.slice(index);
+            const lastImport = preceding.findLastIndex(r => r instanceof CSSImportRule);
+            if ((next instanceof CSSImportRule &&
+                    (preceding.some(r => !(r instanceof CSSImportRule || r instanceof CSSLayerStatementRule)) ||
+                     (lastImport >= 0 && preceding.slice(lastImport + 1)
+                         .some(r => r instanceof CSSLayerStatementRule)) ||
+                     following.some(r => r instanceof CSSLayerStatementRule))) ||
+                (next instanceof CSSLayerStatementRule &&
+                    preceding.some(r => r instanceof CSSImportRule) &&
+                    following.some(r => r instanceof CSSImportRule)) ||
+                (!(next instanceof CSSImportRule || next instanceof CSSLayerStatementRule) &&
+                    following.some(r => r instanceof CSSImportRule)))
+                throw new DOMException('Invalid ordering of @import and @layer', 'HierarchyRequestError');
             this.__rules.splice(index, 0, next);
             this.__rulesChanged();
             return index;

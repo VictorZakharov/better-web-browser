@@ -1,5 +1,6 @@
 //! Immutable compiled-rule sharing between a document's independent style consumers.
 use super::*;
+use crate::engine::css::layers::{LayerPath, import_owner_path};
 use crate::engine::css::media::MediaEnvironment;
 use crate::engine::css::rule_index::RuleIndex;
 use std::rc::Rc;
@@ -16,6 +17,8 @@ struct SheetInput {
     source: String,
     base_url: String,
     scope: RuleScope,
+    layer_prefix: LayerPath,
+    declared_layer: Option<LayerPath>,
 }
 
 #[derive(Debug, Default)]
@@ -80,23 +83,46 @@ pub(super) fn collect(
         .iter()
         .filter(|source| source.owner_url.is_none())
     {
+        let owner = inputs.len() as u32;
+        for layer in crate::engine::css::imports::leading_layer_statements(&source.source) {
+            inputs.push(SheetInput::layer_marker(layer, RuleScope::Document));
+        }
         let imports = crate::engine::css::imports::expand(
             &source.base_url,
             &source.imports,
             external_stylesheets,
             environment,
         );
-        for source in imports
-            .sheets
-            .into_iter()
-            .chain(std::iter::once(std::borrow::Cow::Borrowed(source)))
-        {
+        let mut declarations = imports.layer_declarations.into_iter().peekable();
+        for (index, imported) in imports.sheets.into_iter().enumerate() {
+            while declarations.peek().is_some_and(|(at, _)| *at == index) {
+                let (_, layer) = declarations.next().unwrap();
+                inputs.push(SheetInput::layer_marker(
+                    import_owner_path(&layer, owner),
+                    RuleScope::Document,
+                ));
+            }
             inputs.push(SheetInput {
-                source: source.source.clone(),
-                base_url: source.base_url.clone(),
+                source: imported.source.clone(),
+                base_url: imported.base_url.clone(),
                 scope: RuleScope::Document,
+                layer_prefix: import_owner_path(&imported.layer_prefix, owner),
+                declared_layer: None,
             });
         }
+        for (_, layer) in declarations {
+            inputs.push(SheetInput::layer_marker(
+                import_owner_path(&layer, owner),
+                RuleScope::Document,
+            ));
+        }
+        inputs.push(SheetInput {
+            source: source.source.clone(),
+            base_url: source.base_url.clone(),
+            scope: RuleScope::Document,
+            layer_prefix: Vec::new(),
+            declared_layer: None,
+        });
     }
     append_adopted(document, environment, &mut inputs, RuleScope::Document);
     for shadow in Node::shadow_including_descendants(document)
@@ -157,7 +183,21 @@ fn append_adopted(
             source: sheet.source,
             base_url: sheet.base_url,
             scope,
+            layer_prefix: Vec::new(),
+            declared_layer: None,
         });
+    }
+}
+
+impl SheetInput {
+    fn layer_marker(path: LayerPath, scope: RuleScope) -> Self {
+        Self {
+            source: String::new(),
+            base_url: String::new(),
+            scope,
+            layer_prefix: Vec::new(),
+            declared_layer: Some(path),
+        }
     }
 }
 

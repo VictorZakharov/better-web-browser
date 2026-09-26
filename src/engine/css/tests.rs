@@ -5,6 +5,8 @@ use super::*;
 mod aspect_ratio;
 mod flex_flow;
 mod fullscreen;
+mod layers;
+mod nesting;
 mod object;
 mod queries;
 mod root_units;
@@ -292,7 +294,7 @@ fn matches_descendants_children_compounds_and_not() {
 }
 
 #[test]
-fn matches_functional_selector_lists_and_root_conservatively() {
+fn matches_functional_selector_lists_root_and_has() {
     let dom = dom::parse(
         r#"<style>
                 :root { background-color: #010203; }
@@ -324,7 +326,7 @@ fn matches_functional_selector_lists_and_root_conservatively() {
     );
     assert_eq!(styles.get(&result).color, Color::rgb(0x12, 0x34, 0x56));
     assert_eq!(styles.get(&muted).background_color, Color::TRANSPARENT);
-    assert_eq!(styles.get(&outside).color, Color::BLACK);
+    assert_eq!(styles.get(&outside).color, Color::rgb(255, 0, 0));
 }
 
 #[test]

@@ -30,7 +30,95 @@ fn scopes_shadow_rules_and_inherits_through_slots_in_the_composed_tree() {
 
     assert_eq!(styles.get(&host).color, Color::rgb(0x12, 0x34, 0x56));
     assert_eq!(styles.get(&inside).color, Color::rgb(0, 128, 0));
+    // CSS Cascade 5 sorts encapsulation context before specificity and source order: the
+    // light-DOM normal declaration wins over a normal ::slotted() default.
+    assert_eq!(styles.get(&light).font_size, 11.0);
+}
+
+#[test]
+fn encapsulation_context_precedes_layer_order_and_reverses_for_important() {
+    let dom = dom::parse(
+        r#"<style>@layer page { #host { color: blue } .light { font-size: 11px } }</style>
+           <x-card id=host><span class=light>Light</span></x-card>"#,
+    );
+    let host = dom.elements_named("x-card").next().unwrap();
+    let light = dom.elements_named("span").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        "<style>@layer component { :host { color: red } ::slotted(.light) { font-size: 24px } }</style><slot></slot>",
+        true,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&host).color, Color::rgb(0, 0, 255));
+    assert_eq!(styles.get(&light).font_size, 11.0);
+
+    Node::replace_inner_html(
+        &root,
+        "<style>@layer component { :host { color: green !important } ::slotted(.light) { font-size: 24px !important } }</style><slot></slot>",
+        true,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&host).color, Color::rgb(0, 128, 0));
     assert_eq!(styles.get(&light).font_size, 24.0);
+
+    host.set_attr("style", "color: blue !important");
+    light.set_attr("style", "font-size: 11px !important");
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&host).color, Color::rgb(0, 128, 0));
+    assert_eq!(styles.get(&light).font_size, 24.0);
+}
+
+#[test]
+fn nested_shadow_contexts_keep_independent_layer_precedence() {
+    let dom = dom::parse("<outer-box></outer-box>");
+    let outer = dom.elements_named("outer-box").next().unwrap();
+    let outer_root = Node::attach_shadow(
+        &outer,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &outer_root,
+        "<style>@layer outer { inner-box { color: blue } }</style><inner-box></inner-box>",
+        true,
+    );
+    let inner = Node::descendants(&outer_root)
+        .find(|node| node.tag_name() == Some("inner-box"))
+        .unwrap();
+    let inner_root = Node::attach_shadow(
+        &inner,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &inner_root,
+        "<style>@layer inner { :host { color: red } }</style><slot></slot>",
+        true,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&inner).color, Color::rgb(0, 0, 255));
+
+    Node::replace_inner_html(
+        &inner_root,
+        "<style>@layer inner { :host { color: red !important } }</style><slot></slot>",
+        true,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&inner).color, Color::rgb(255, 0, 0));
 }
 
 #[test]
