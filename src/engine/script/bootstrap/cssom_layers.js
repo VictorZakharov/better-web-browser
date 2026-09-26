@@ -1,11 +1,14 @@
     // CSS Cascade 5 layer rules are live CSSOM objects, not opaque at-rule text.
     // https://drafts.csswg.org/css-cascade-5/#layer-apis
     class CSSGroupingRule extends CSSRule {
-        constructor(sheet, text, token) {
+        constructor(sheet, text, token, mode = 'normal') {
             super(sheet, text, token);
             const open = text.indexOf('{');
             const close = text.lastIndexOf('}');
-            this.__rules = parseCssRules(sheet, text.slice(open + 1, close))
+            this.__nestedContext = mode !== 'normal';
+            this.__rules = (mode === 'defer' ? [] : mode === 'nested'
+                ? parseNestedCssBody(sheet, text.slice(open + 1, close), true).children
+                : parseCssRules(sheet, text.slice(open + 1, close)))
                 .filter(rule => !(rule instanceof CSSImportRule));
             this.__ruleList = readonlyRuleList(this.__rules);
             this.__pristine = true;
@@ -19,7 +22,7 @@
             const parsed = scanCssRules(String(rule));
             if (parsed.length !== 1)
                 throw new DOMException('Expected exactly one CSS rule', 'SyntaxError');
-            const next = createCssRule(this.parentStyleSheet, parsed[0]);
+            const next = createCssRule(this.parentStyleSheet, parsed[0], this.__nestedContext);
             if (next instanceof CSSImportRule)
                 throw new DOMException('@import is not allowed in a grouping rule', 'HierarchyRequestError');
             next.__parentRule = this;
@@ -45,8 +48,8 @@
     }
 
     class CSSLayerBlockRule extends CSSGroupingRule {
-        constructor(sheet, text, name, token) {
-            super(sheet, text, token);
+        constructor(sheet, text, name, token, nestedContext = false) {
+            super(sheet, text, token, nestedContext ? 'nested' : 'normal');
             this.__name = name;
             this.__prelude = text.slice(0, text.indexOf('{')).trim();
         }
@@ -62,8 +65,8 @@
     class CSSConditionRule extends CSSGroupingRule {}
 
     class CSSMediaRule extends CSSConditionRule {
-        constructor(sheet, text, condition, token) {
-            super(sheet, text, token);
+        constructor(sheet, text, condition, token, nestedContext = false) {
+            super(sheet, text, token, nestedContext ? 'nested' : 'normal');
             this.__media = new MediaList(condition, () => this.__changed());
         }
         get type() { return CSSRule.MEDIA_RULE; }
@@ -77,8 +80,8 @@
     }
 
     class CSSSupportsRule extends CSSConditionRule {
-        constructor(sheet, text, condition, token) {
-            super(sheet, text, token);
+        constructor(sheet, text, condition, token, nestedContext = false) {
+            super(sheet, text, token, nestedContext ? 'nested' : 'normal');
             this.__condition = condition;
         }
         get type() { return CSSRule.SUPPORTS_RULE; }

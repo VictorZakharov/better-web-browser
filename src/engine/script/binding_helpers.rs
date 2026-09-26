@@ -91,7 +91,7 @@ pub(super) fn query_selector(root: &NodeRef, selector: &str) -> Option<NodeRef> 
     let selector = crate::engine::css::compile_selector_list(selector)?;
     Node::descendants(root)
         .skip(1)
-        .find(|node| node.element().is_some() && selector.matches(node))
+        .find(|node| node.element().is_some() && selector.matches_with_scope(node, root))
 }
 
 pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef> {
@@ -100,22 +100,23 @@ pub(super) fn query_selector_all(root: &NodeRef, selector: &str) -> Vec<NodeRef>
     };
     Node::descendants(root)
         .skip(1)
-        .filter(|node| node.element().is_some() && selector.matches(node))
+        .filter(|node| node.element().is_some() && selector.matches_with_scope(node, root))
         .collect()
 }
 
 pub(super) fn matches_selector_list(node: &NodeRef, selector: &str) -> bool {
     node.element().is_some()
         && crate::engine::css::compile_selector_list(selector)
-            .is_some_and(|selector| selector.matches(node))
+            .is_some_and(|selector| selector.matches_with_scope(node, node))
 }
 
 pub(super) fn closest_matching_element(node: &NodeRef, selector: &str) -> Option<NodeRef> {
     let selector = crate::engine::css::compile_selector_list(selector)?;
+    let scope = node.clone();
     let mut candidate = Some(node.clone());
     while let Some(node) = candidate {
         candidate = node.parent();
-        if node.element().is_some() && selector.matches(&node) {
+        if node.element().is_some() && selector.matches_with_scope(&node, &scope) {
             return Some(node);
         }
     }
@@ -156,6 +157,24 @@ mod tests {
         assert_eq!(
             closest_matching_element(&target, ".link").map(|node| node.id()),
             Some(target.id())
+        );
+    }
+
+    #[test]
+    fn scope_matches_the_query_root_and_original_closest_element() {
+        let dom = crate::engine::dom::parse(
+            "<main id=outer><section id=scope><p id=child></p></section></main>",
+        );
+        let section = dom.elements_named("section").next().unwrap();
+        let child = dom.elements_named("p").next().unwrap();
+        assert_eq!(
+            query_selector(&section, ":scope > p").unwrap().id(),
+            child.id()
+        );
+        assert!(matches_selector_list(&section, ":scope"));
+        assert_eq!(
+            closest_matching_element(&child, ":scope").unwrap().id(),
+            child.id()
         );
     }
 }

@@ -7,6 +7,7 @@ use crate::navigation::resolve_url;
 mod base_url;
 mod cookies;
 mod fetches;
+mod focus;
 pub(crate) mod geometry;
 mod ownership;
 mod sandbox;
@@ -42,6 +43,7 @@ pub(super) struct HostState {
     pub(super) policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
     api_base_cache: RefCell<Option<base_url::CachedBaseUrl>>,
     pub(super) pointer_path: Vec<NodeRef>,
+    pub(super) focused_node: Option<NodeRef>,
     pub(super) document_character_set: String,
     pub(super) stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
     pub(super) loaded_css_font_urls: HashSet<String>,
@@ -155,6 +157,7 @@ impl HostState {
             stylesheet_sources: Vec::new(),
             loaded_css_font_urls: HashSet::new(),
             pointer_path: Vec::new(),
+            focused_node: None,
             module_loader,
             nodes: HashMap::new(),
             node_ids: HashMap::new(),

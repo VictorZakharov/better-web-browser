@@ -12,6 +12,7 @@ pub(crate) mod control_temporal;
 pub(crate) mod control_validity;
 pub(crate) mod control_values;
 mod control_version;
+mod focus;
 pub(crate) mod stylesheets;
 
 use crate::engine::AdoptedStyleSheet;
@@ -191,6 +192,8 @@ pub struct ElementData {
     pub mathml_annotation_xml_integration_point: bool,
     pub fullscreen: Cell<bool>,
     pub hovered: Cell<bool>,
+    pub focused: Cell<bool>,
+    pub focus_within: Cell<bool>,
     pub(crate) input_state: Cell<checkable::InputState>,
     /// Authoritative form-control state (live values, dirtiness, overrides).
     /// Boxed: most elements never use it, and it keeps `NodeData` small.
@@ -296,21 +299,6 @@ impl Node {
     pub fn is_fullscreen(&self) -> bool {
         self.element()
             .is_some_and(|element| element.fullscreen.get())
-    }
-
-    pub fn is_hovered(&self) -> bool {
-        self.element().is_some_and(|element| element.hovered.get())
-    }
-
-    pub fn set_hovered(&self, hovered: bool) -> bool {
-        let Some(element) = self.element() else {
-            return false;
-        };
-        if element.hovered.replace(hovered) == hovered {
-            return false;
-        }
-        self.mark_mutated();
-        true
     }
 
     pub fn set_fullscreen(&self, fullscreen: bool) {

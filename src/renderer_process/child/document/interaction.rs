@@ -128,7 +128,14 @@ impl DocumentRuntime {
                     self.pointer_down = [None; 3];
                     self.scroll_drag = None;
                 }
+                let previous = self.focused_node.and_then(|id| self.page.dom.find_node(id));
                 let target = input.target.and_then(|target| self.resolve_target(target));
+                if self.script_runtime.is_none() {
+                    crate::engine::dom::Node::set_focus_target(
+                        previous.as_ref(),
+                        input.focused.then_some(target.as_ref()).flatten(),
+                    );
+                }
                 self.focused_node = input
                     .focused
                     .then(|| target.as_ref().map(|node| node.id()))

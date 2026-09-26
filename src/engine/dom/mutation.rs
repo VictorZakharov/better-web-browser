@@ -106,6 +106,9 @@ impl Node {
         remove_from_parent(&child);
         child.parent.set(Some(Rc::downgrade(parent)));
         parent.children.borrow_mut().insert(index, child.clone());
+        if child.has_focus_within() {
+            Node::set_focus_within_ancestors(parent, true);
+        }
         Node::checkable_subtree_inserted(&child);
         Node::control_subtree_inserted(&child);
         Node::control_child_changed(parent);
@@ -257,6 +260,9 @@ pub(super) fn append_node(parent: &NodeRef, child: NodeRef) {
     debug_assert!(child.parent().is_none());
     child.parent.set(Some(Rc::downgrade(parent)));
     parent.children.borrow_mut().push(child.clone());
+    if child.has_focus_within() {
+        Node::set_focus_within_ancestors(parent, true);
+    }
     Node::checkable_subtree_inserted(&child);
     Node::control_subtree_inserted(&child);
     Node::control_child_changed(parent);
@@ -289,6 +295,9 @@ pub(super) fn parent_and_index(target: &NodeRef) -> Option<(NodeRef, usize)> {
 
 pub(super) fn remove_from_parent(target: &NodeRef) {
     if let Some((parent, index)) = parent_and_index(target) {
+        if target.has_focus_within() {
+            Node::set_focus_within_ancestors(&parent, false);
+        }
         parent.children.borrow_mut().remove(index);
         target.parent.set(None);
         Node::stylesheet_subtree_removed(target);
@@ -300,12 +309,16 @@ pub(super) fn remove_from_parent(target: &NodeRef) {
 fn clear_children(node: &NodeRef) {
     let mut children = node.children.borrow_mut();
     let changed = !children.is_empty();
+    let contained_focus = children.iter().any(|child| child.has_focus_within());
     for child in children.drain(..) {
         child.parent.set(None);
         Node::stylesheet_subtree_removed(&child);
     }
     drop(children);
     if changed {
+        if contained_focus {
+            Node::set_focus_within_ancestors(node, false);
+        }
         Node::control_child_changed(node);
         node.mark_children_mutated();
     }

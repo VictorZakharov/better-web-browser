@@ -228,8 +228,18 @@
                 if (details instanceof HTMLDetailsElement && firstSummary === this) details.open = !details.open;
             }
         }
-        focus() { document.activeElement = this; this.dispatchEvent(new Event('focus')); }
-        blur() { if (document.activeElement === this) document.activeElement = document.body; this.dispatchEvent(new Event('blur')); }
+        focus() {
+            if (document.activeElement === this) return;
+            host('setFocus', nodeId(this));
+            document.activeElement = this;
+            this.dispatchEvent(new FocusEvent('focus'));
+        }
+        blur() {
+            if (document.activeElement !== this) return;
+            host('setFocus', 0);
+            document.activeElement = document.body;
+            this.dispatchEvent(new FocusEvent('blur'));
+        }
     }
     installParentNodeMembers(Element.prototype);
     installChildNodeMembers(Element.prototype);

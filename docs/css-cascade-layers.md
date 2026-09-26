@@ -50,7 +50,8 @@ cargo test --locked engine::script::tests::cssom_layers --lib
 ## Remaining boundaries
 
 This does not implement the full CSS Cascade 5 surface: user-origin stylesheets,
-transition origin, all name-defining at-rules (such as layered `@keyframes`), and
-the wider selector/style-rule nesting model remain separate work. The currently
+transition origin, and all name-defining at-rules (such as layered `@keyframes`)
+remain separate work. The [supported selector/style-rule nesting slice](css-nesting-selectors.md)
+is documented separately. The currently
 supported CSS properties still bound which declarations can be painted. No
 specific HTML5test score increase is expected from layers alone.

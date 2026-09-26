@@ -11,6 +11,7 @@ use crate::limits::{
 };
 use std::rc::Rc;
 mod declarations;
+mod nesting;
 pub(super) use declarations::parse_declarations;
 
 #[derive(Clone, Debug)]
@@ -190,7 +191,7 @@ fn parse_rule_list(
             break;
         };
         let body = &css[open + 1..close];
-        if prelude.starts_with("@media") {
+        if at_rule_prelude(prelude, "media").is_some() {
             if media::media_matches_for_environment(prelude, media_environment) {
                 parse_rule_list(
                     body,
@@ -206,7 +207,7 @@ fn parse_rule_list(
                     events,
                 );
             }
-        } else if prelude.starts_with("@supports") {
+        } else if at_rule_prelude(prelude, "supports").is_some() {
             if supports::supports_matches(prelude) {
                 parse_rule_list(
                     body,
@@ -248,63 +249,23 @@ fn parse_rule_list(
                 events,
             );
         } else if !prelude.starts_with('@') {
-            let declarations = parse_declarations(body);
-            // A selector list is unforgiving: one invalid member invalidates the complete style
-            // rule. In particular, a leading, repeated, or trailing comma must not turn its
-            // empty member into a universal selector and leak declarations onto the page.
-            // https://www.w3.org/TR/selectors-4/#selector-list
-            let parsed_selectors = split_css_top_level(prelude, ',')
-                .map(|selector_text| {
-                    let selector_text = selector_text.trim();
-                    if selector_text.is_empty() {
-                        return None;
-                    }
-                    let (selector_text, rule_scope, host_condition_text) =
-                        scoped_selector(selector_text, scope)?;
-                    let host_condition = match host_condition_text {
-                        Some(condition) => Some(parse_selector(condition)?),
-                        None => None,
-                    };
-                    let (mut selector, pseudo) = parse_style_rule_selector(selector_text)?;
-                    if let Some(condition) = host_condition.as_ref() {
-                        selector.specificity.ids = selector
-                            .specificity
-                            .ids
-                            .saturating_add(condition.specificity.ids);
-                        selector.specificity.classes = selector
-                            .specificity
-                            .classes
-                            .saturating_add(condition.specificity.classes);
-                        selector.specificity.tags = selector
-                            .specificity
-                            .tags
-                            .saturating_add(condition.specificity.tags);
-                    }
-                    Some((selector, pseudo, host_condition, rule_scope))
-                })
-                .collect::<Option<Vec<_>>>();
-            if let Some(parsed_selectors) = parsed_selectors {
-                for (selector, pseudo, host_condition, rule_scope) in parsed_selectors {
-                    if output.len() >= rule_limit {
-                        break;
-                    }
-                    output.push(Rule {
-                        order: *next_order,
-                        layer: (!current_layer.is_empty()).then(|| current_layer.to_vec()),
-                        layer_rank: u32::MAX,
-                        data: Rc::new(RuleData {
-                            selector,
-                            pseudo,
-                            host_condition,
-                            declarations: declarations.clone(),
-                            base_url: base_url.to_string(),
-                            scope: rule_scope,
-                        }),
-                    });
-                    events.push(LayerEvent::Rule(output.len() - 1));
-                    *next_order = next_order.wrapping_add(1);
-                }
-            }
+            nesting::parse_style_rule(
+                prelude,
+                body,
+                nesting_depth,
+                current_layer,
+                None,
+                &mut nesting::Context {
+                    base_url,
+                    environment: media_environment,
+                    next_order,
+                    output,
+                    scope,
+                    rule_limit,
+                    next_anonymous,
+                    events,
+                },
+            );
         }
         cursor = close + 1;
     }

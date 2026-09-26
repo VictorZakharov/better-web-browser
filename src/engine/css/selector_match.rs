@@ -1,7 +1,10 @@
 //! Selector matching against DOM nodes.
 mod ancestor_filter;
+mod attributes;
+mod linguistic;
 #[path = "selector_editing.rs"]
 mod selector_editing;
+mod structural;
 pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
 use super::selector_validity::{
@@ -9,6 +12,7 @@ use super::selector_validity::{
     matches_valid,
 };
 use super::*;
+use attributes::attribute_matches;
 use selector_editing::matches_read_write;
 
 pub(crate) struct CompiledSelectorList {
@@ -21,6 +25,12 @@ impl CompiledSelectorList {
             .iter()
             .any(|selector| selector_matches(selector, node))
     }
+
+    pub(crate) fn matches_with_scope(&self, node: &NodeRef, scope: &NodeRef) -> bool {
+        self.selectors
+            .iter()
+            .any(|selector| selector_matches_with_scope(selector, node, Some(scope.id())))
+    }
 }
 
 pub(crate) fn compile_selector_list(input: &str) -> Option<CompiledSelectorList> {
@@ -32,8 +42,17 @@ pub(crate) fn compile_selector_list(input: &str) -> Option<CompiledSelectorList>
 }
 
 pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
-    fn matches_at(selector: &Selector, index: usize, node: &NodeRef) -> bool {
-        if !compound_matches(&selector.compounds[index], node) {
+    selector_matches_with_scope(selector, node, None)
+}
+
+fn selector_matches_with_scope(selector: &Selector, node: &NodeRef, scope: Option<NodeId>) -> bool {
+    fn matches_at(
+        selector: &Selector,
+        index: usize,
+        node: &NodeRef,
+        scope: Option<NodeId>,
+    ) -> bool {
+        if !compound_matches(&selector.compounds[index], node, scope) {
             return false;
         }
         if index == 0 {
@@ -42,11 +61,11 @@ pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
         match selector.combinators[index - 1] {
             Combinator::Child => node
                 .parent()
-                .is_some_and(|parent| matches_at(selector, index - 1, &parent)),
+                .is_some_and(|parent| matches_at(selector, index - 1, &parent, scope)),
             Combinator::Descendant => {
                 let mut ancestor = node.parent();
                 while let Some(candidate) = ancestor {
-                    if matches_at(selector, index - 1, &candidate) {
+                    if matches_at(selector, index - 1, &candidate, scope) {
                         return true;
                     }
                     ancestor = candidate.parent();
@@ -55,13 +74,13 @@ pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
             }
             Combinator::AdjacentSibling => previous_element_siblings(node)
                 .next()
-                .is_some_and(|sibling| matches_at(selector, index - 1, &sibling)),
+                .is_some_and(|sibling| matches_at(selector, index - 1, &sibling, scope)),
             Combinator::GeneralSibling => previous_element_siblings(node)
-                .any(|sibling| matches_at(selector, index - 1, &sibling)),
+                .any(|sibling| matches_at(selector, index - 1, &sibling, scope)),
         }
     }
 
-    matches_at(selector, selector.compounds.len() - 1, node)
+    matches_at(selector, selector.compounds.len() - 1, node, scope)
 }
 
 fn previous_element_siblings(node: &NodeRef) -> impl Iterator<Item = NodeRef> {
@@ -82,7 +101,11 @@ fn previous_element_siblings(node: &NodeRef) -> impl Iterator<Item = NodeRef> {
         .into_iter()
 }
 
-pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> bool {
+pub(super) fn compound_matches(
+    selector: &CompoundSelector,
+    node: &NodeRef,
+    scope: Option<NodeId>,
+) -> bool {
     if selector.never_matches || node.element().is_none() {
         return false;
     }
@@ -120,6 +143,18 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     {
         return false;
     }
+    if selector.requires_scope {
+        let matches_scope = scope.map_or_else(
+            || {
+                node.parent()
+                    .is_some_and(|parent| matches!(parent.data, super::dom::NodeData::Document))
+            },
+            |scope| scope == node.id(),
+        );
+        if !matches_scope {
+            return false;
+        }
+    }
     if selector.requires_enabled && (!is_disableable(node) || is_disabled(node)) {
         return false;
     }
@@ -133,6 +168,12 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
         return false;
     }
     if selector.requires_hover && !node.is_hovered() {
+        return false;
+    }
+    if selector.requires_focus && !node.is_focused() {
+        return false;
+    }
+    if selector.requires_focus_within && !node.has_focus_within() {
         return false;
     }
     if selector.requires_checked && !matches_checked(node) {
@@ -162,64 +203,77 @@ pub(super) fn compound_matches(selector: &CompoundSelector, node: &NodeRef) -> b
     if selector.requires_fullscreen && !node.is_fullscreen() {
         return false;
     }
-    if selector.requires_first_child {
-        let Some(parent) = node.parent() else {
-            return false;
-        };
-        let is_first = parent
-            .children
-            .borrow()
-            .iter()
-            .find(|child| child.element().is_some())
-            .is_some_and(|child| child.id() == node.id());
-        if !is_first {
-            return false;
-        }
+    if !structural::compound_structural_matches(selector, node, scope) {
+        return false;
     }
-    if selector.requires_first_of_type {
-        let Some(parent) = node.parent() else {
-            return false;
-        };
-        let tag_name = node.tag_name();
-        let namespace = node.namespace_uri();
-        let is_first_of_type = parent
-            .children
-            .borrow()
-            .iter()
-            .filter(|child| child.element().is_some())
-            .find(|child| child.tag_name() == tag_name && child.namespace_uri() == namespace)
-            .is_some_and(|child| child.id() == node.id());
-        if !is_first_of_type {
-            return false;
-        }
+    if !linguistic::matches_languages(&selector.languages, node) {
+        return false;
     }
-    if selector.requires_last_child {
-        let Some(parent) = node.parent() else {
-            return false;
-        };
-        let is_last = parent
-            .children
-            .borrow()
-            .iter()
-            .rev()
-            .find(|child| child.element().is_some())
-            .is_some_and(|child| child.id() == node.id());
-        if !is_last {
-            return false;
-        }
+    if !linguistic::matches_directions(&selector.directions, node) {
+        return false;
     }
-    if selector.any_of.iter().any(|choices| {
-        !choices
+    if selector.has.iter().any(|alternatives| {
+        !alternatives
             .iter()
-            .any(|simple| simple_selector_matches(simple, node))
+            .any(|relative| relative_selector_matches(relative, node))
     }) {
         return false;
     }
-    !selector.not.iter().any(|choices| {
-        choices
+    selector.functional.iter().all(|function| {
+        let matches = function
+            .selectors
             .iter()
-            .any(|simple| simple_selector_matches(simple, node))
+            .any(|candidate| selector_matches_with_scope(candidate, node, scope));
+        match function.kind {
+            FunctionalSelectorKind::Is | FunctionalSelectorKind::Where => matches,
+            FunctionalSelectorKind::Not => !matches,
+        }
     })
+}
+
+fn relative_selector_matches(relative: &RelativeSelector, anchor: &NodeRef) -> bool {
+    let mut candidates = match relative.search {
+        RelativeSearch::Descendants => vec![anchor.clone()],
+        RelativeSearch::Children => anchor.children.borrow().iter().cloned().collect(),
+        RelativeSearch::FollowingSiblings
+        | RelativeSearch::NextSibling
+        | RelativeSearch::LaterSiblings => {
+            let Some(parent) = anchor.parent() else {
+                return false;
+            };
+            let siblings = parent.children.borrow();
+            let Some(index) = siblings
+                .iter()
+                .position(|sibling| sibling.id() == anchor.id())
+            else {
+                return false;
+            };
+            let mut following = siblings[index + 1..]
+                .iter()
+                .filter(|sibling| sibling.element().is_some())
+                .cloned()
+                .collect::<Vec<_>>();
+            if matches!(relative.search, RelativeSearch::NextSibling) {
+                following.truncate(1);
+            }
+            following
+        }
+    };
+    let descend = matches!(
+        relative.search,
+        RelativeSearch::Descendants | RelativeSearch::FollowingSiblings
+    );
+    while let Some(candidate) = candidates.pop() {
+        if candidate.element().is_some()
+            && selector_matches_with_scope(&relative.selector, &candidate, Some(anchor.id()))
+        {
+            return true;
+        }
+        if descend {
+            candidates.extend(candidate.children.borrow().iter().cloned());
+        }
+    }
+    false
 }
 
 fn is_disableable(node: &NodeRef) -> bool {
@@ -269,30 +323,6 @@ pub(crate) fn is_disabled(node: &NodeRef) -> bool {
     false
 }
 
-pub(super) fn simple_selector_matches(simple: &SimpleSelector, node: &NodeRef) -> bool {
-    match simple {
-        SimpleSelector::State(name) => match name.as_str() {
-            "checked" => matches_checked(node),
-            "indeterminate" => matches_indeterminate(node),
-            "disabled" => is_disableable(node) && is_disabled(node),
-            "enabled" => is_disableable(node) && !is_disabled(node),
-            "read-write" => matches_read_write(node),
-            "read-only" => !matches_read_write(node),
-            "valid" => matches_valid(node),
-            "invalid" => matches_invalid(node),
-            "required" => matches_required(node),
-            "optional" => matches_optional(node),
-            "in-range" => matches_in_range(node),
-            "out-of-range" => matches_out_of_range(node),
-            _ => false,
-        },
-        SimpleSelector::Tag(tag) => node.tag_name() == Some(tag),
-        SimpleSelector::Id(id) => node.attr_ref("id").as_deref() == Some(id),
-        SimpleSelector::Class(class) => node.has_class(class),
-        SimpleSelector::Attribute(attribute) => attribute_matches(attribute, node),
-    }
-}
-
 fn matches_checked(node: &NodeRef) -> bool {
     // Options use authoritative selectedness: the `selected` attribute is the
     // default, while user picks and `selected` writes live in control state.
@@ -306,50 +336,6 @@ fn matches_indeterminate(node: &NodeRef) -> bool {
     }
     (node.is_checkable() && node.indeterminate())
         || (node.tag_name() == Some("progress") && node.attr("value").is_none())
-}
-
-pub(super) fn attribute_matches(selector: &AttributeSelector, node: &NodeRef) -> bool {
-    let Some(actual) = node.attr_ref(&selector.name) else {
-        return false;
-    };
-    if matches!(selector.operator, AttributeOperator::Exists) {
-        return true;
-    }
-
-    let expected = selector.value.as_str();
-    let compare = |left: &str, right: &str| {
-        if selector.case_insensitive {
-            left.eq_ignore_ascii_case(right)
-        } else {
-            left == right
-        }
-    };
-    let normalized_actual;
-    let normalized_expected;
-    let (actual, expected) = if selector.case_insensitive {
-        normalized_actual = actual.to_ascii_lowercase();
-        normalized_expected = expected.to_ascii_lowercase();
-        (normalized_actual.as_str(), normalized_expected.as_str())
-    } else {
-        (&*actual, expected)
-    };
-
-    match selector.operator {
-        AttributeOperator::Exists => true,
-        AttributeOperator::Equals => compare(actual, expected),
-        AttributeOperator::Includes => actual
-            .split_ascii_whitespace()
-            .any(|value| compare(value, expected)),
-        AttributeOperator::DashMatch => {
-            compare(actual, expected)
-                || actual
-                    .strip_prefix(expected)
-                    .is_some_and(|suffix| suffix.starts_with('-'))
-        }
-        AttributeOperator::Prefix => actual.starts_with(expected),
-        AttributeOperator::Suffix => actual.ends_with(expected),
-        AttributeOperator::Substring => actual.contains(expected),
-    }
 }
 
 #[cfg(test)]
