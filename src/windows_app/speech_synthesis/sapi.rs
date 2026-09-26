@@ -290,7 +290,9 @@ mod tests {
 
     #[test]
     fn native_voice_generates_waveform_to_file_without_playing_audio() {
+        use windows::Win32::Media::Audio::{WAVE_FORMAT_PCM, WAVEFORMATEX};
         use windows::Win32::Media::Speech::{ISpStream, SPFM_CREATE_ALWAYS, SpFileStream};
+        use windows::core::GUID;
 
         let Ok(mut sapi) = SapiVoice::open() else {
             return;
@@ -310,24 +312,29 @@ mod tests {
         let stream: ISpStream =
             unsafe { CoCreateInstance(&SpFileStream, None, CLSCTX_ALL) }.expect("SAPI file stream");
         unsafe {
-            // Use the native output stream's supported PCM format. SAPI rejects
-            // a newly bound file stream without a negotiated WAVEFORMATEX.
-            let output = sapi.voice.GetOutputStream().expect("native speech output");
-            let mut format_id = windows::core::GUID::zeroed();
-            let format = output
-                // The generated binding marks this pointer const although SAPI
-                // writes the selected format identifier through it.
-                .GetFormat(std::ptr::addr_of_mut!(format_id))
-                .expect("native speech output format");
-            let bound = stream.BindToFile(
-                PCWSTR(filename.as_ptr()),
-                SPFM_CREATE_ALWAYS,
-                Some(&format_id),
-                Some(format),
-                0,
-            );
-            CoTaskMemFree(Some(format.cast()));
-            bound.expect("bind muted output stream");
+            // Use a standard SAPI PCM format, not GetOutputStream(): a headless
+            // Windows Server runner may have no default audio output endpoint.
+            // SPDFID_WaveFormatEx is SpeechAudioFormatGUIDWave in the SDK header.
+            // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms719484(v=vs.85)
+            let format_id = GUID::from_u128(0xc31adbae_527f_4ff5_a230_f62bb61ff70c);
+            let format = WAVEFORMATEX {
+                wFormatTag: WAVE_FORMAT_PCM as u16,
+                nChannels: 1,
+                nSamplesPerSec: 22_050,
+                nAvgBytesPerSec: 44_100,
+                nBlockAlign: 2,
+                wBitsPerSample: 16,
+                cbSize: 0,
+            };
+            stream
+                .BindToFile(
+                    PCWSTR(filename.as_ptr()),
+                    SPFM_CREATE_ALWAYS,
+                    Some(&format_id),
+                    Some(&format),
+                    0,
+                )
+                .expect("bind muted output stream");
             sapi.voice
                 .SetOutput(&stream, true)
                 .expect("redirect SAPI away from speakers");
