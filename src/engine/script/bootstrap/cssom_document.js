@@ -21,11 +21,19 @@
         const metadata = [href, owner.getAttribute('title'), owner.media, owner.hasAttribute('disabled'),
             host('stylesheetGeneration', nodeId(owner))].join('\u0000');
         let record = ownerStyleSheets.get(owner);
-        if (href !== null && record?.metadata === metadata) return record.sheet;
+        // A detached rule can clear its sheet's ownerNode while the sheet record
+        // remains cached. Reattaching the same element must restore that link.
+        if (href !== null && record?.metadata === metadata) {
+            record.sheet.__ownerNode = owner;
+            return record.sheet;
+        }
         const source = href === null ? owner.textContent : host('stylesheetSource', href);
         if (source === null) return null;
         const signature = href === null ? metadata + '\u0000' + source : metadata;
-        if (record?.signature === signature) return record.sheet;
+        if (record?.signature === signature) {
+            record.sheet.__ownerNode = owner;
+            return record.sheet;
+        }
         if (record) record.sheet.__ownerNode = null;
         record = { sheet: new CSSStyleSheet(), metadata: null, signature: null };
         ownerStyleSheets.set(owner, record);

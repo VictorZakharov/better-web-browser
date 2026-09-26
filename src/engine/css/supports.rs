@@ -2,36 +2,48 @@
 
 use super::values::{BoxOrient, LineClamp, TextOverflow};
 use super::*;
+mod condition;
+mod selector;
+#[cfg(test)]
+mod tests;
 
-/// Evaluates the declaration-query subset of `@supports` against capabilities this engine
-/// actually implements. General-enclosed and selector queries stay false until supported.
-/// https://www.w3.org/TR/css-conditional-3/#at-supports
+/// Evaluate CSS Conditional Rules queries against features the engine actually implements.
+/// https://drafts.csswg.org/css-conditional-3/#at-supports
+/// https://drafts.csswg.org/css-conditional-4/#at-supports
 pub(crate) fn supports_matches(prelude: &str) -> bool {
     let condition = super::at_rule_prelude(prelude.trim(), "supports")
         .unwrap_or(prelude)
         .trim();
-    evaluate_condition(condition)
+    condition::evaluate(condition)
 }
 
-fn evaluate_condition(condition: &str) -> bool {
-    let condition = condition.trim();
-    if let Some(rest) = strip_keyword(condition, "not") {
-        return !evaluate_condition(rest);
-    }
-    if let Some(parts) = split_boolean(condition, "or") {
-        return parts.into_iter().any(evaluate_condition);
-    }
-    if let Some(parts) = split_boolean(condition, "and") {
-        return parts.into_iter().all(evaluate_condition);
-    }
-    let Some(inner) = strip_outer_parentheses(condition) else {
+/// Check the syntax of a `<supports-condition>` independently of whether its features exist.
+/// An unknown but well-formed feature can evaluate false while remaining a valid import modifier.
+pub(crate) fn supports_condition_valid(prelude: &str) -> bool {
+    condition::valid(prelude)
+}
+
+/// Check the bare `<declaration>` alternative accepted inside `@import ... supports()`.
+pub(crate) fn supports_import_declaration_valid(prelude: &str) -> bool {
+    condition::declaration_valid(prelude)
+}
+
+/// Evaluate the two-argument CSS.supports(property, value) overload. Unlike a declaration-form
+/// feature query, its property name is used literally and its value cannot carry `!important`.
+/// https://drafts.csswg.org/css-conditional-3/#the-css-namespace
+pub(crate) fn supports_declaration_value(property: &str, value: &str) -> bool {
+    let mut input = ParserInput::new(property);
+    let mut parser = Parser::new(&mut input);
+    let Ok(Token::Ident(name)) = parser.next_including_whitespace_and_comments().cloned() else {
         return false;
     };
-    if let Some((property, value)) = split_css_once(inner, ':') {
-        supports_declaration(property.trim(), value.trim())
-    } else {
-        evaluate_condition(inner)
+    if name.as_ref() != property || !parser.is_exhausted() {
+        return false;
     }
+    let Some(value) = condition::property_value(value) else {
+        return false;
+    };
+    supports_declaration(property, value.trim())
 }
 
 pub(crate) fn supports_property(property: &str) -> bool {
@@ -44,7 +56,6 @@ pub(crate) fn supports_property(property: &str) -> bool {
 
 fn supports_declaration(property: &str, value: &str) -> bool {
     if property.is_empty()
-        || value.is_empty()
         || value
             .trim_end()
             .to_ascii_lowercase()
@@ -53,7 +64,10 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         return false;
     }
     if property.starts_with("--") {
-        return true;
+        return property.len() > 2;
+    }
+    if value.is_empty() {
+        return false;
     }
     let property = property.to_ascii_lowercase();
     if matches!(
@@ -160,8 +174,8 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "grid-row-gap"
         | "flex-basis"
         | "-webkit-flex-basis"
-        | "-moz-flex-basis" => parse_length(&value).is_some(),
-        "opacity" => parse_opacity(&value).is_some(),
+        | "-moz-flex-basis" => supported_length(&value),
+        "opacity" => single_component_or_calc(&value) && parse_opacity(&value).is_some(),
         "transform" => super::transform::parse_transform(&value).is_some(),
         "clip-path" => super::clip_path::ClipPath::parse(&value).is_some(),
         "background-image" | "mask" | "-webkit-mask" | "mask-image" | "-webkit-mask-image" => {
@@ -182,15 +196,19 @@ fn supports_declaration(property: &str, value: &str) -> bool {
                     .iter()
                     .all(|repeat| matches!(*repeat, "repeat" | "no-repeat"))
         }
-        "font-size" => parse_font_size(&value, 16.0).is_some(),
+        "font-size" => single_component_or_calc(&value) && parse_font_size(&value, 16.0).is_some(),
         "font-weight" => {
             matches!(value.as_str(), "normal" | "bold" | "bolder" | "lighter")
                 || value.parse::<u16>().is_ok()
         }
         "font-style" => matches!(value.as_str(), "normal" | "italic" | "oblique"),
         "font-family" => super::font_family::parse(&value).is_some(),
-        "letter-spacing" | "word-spacing" => parse_text_spacing(&value, 16.0).is_some(),
-        "line-height" => parse_line_height(&value, 16.0).is_some(),
+        "letter-spacing" | "word-spacing" => {
+            single_component_or_calc(&value) && parse_text_spacing(&value, 16.0).is_some()
+        }
+        "line-height" => {
+            single_component_or_calc(&value) && parse_line_height(&value, 16.0).is_some()
+        }
         "align-content" => ContentAlignment::parse(&value).is_some(),
         "text-align" => matches!(
             value.as_str(),
@@ -215,7 +233,7 @@ fn supports_declaration(property: &str, value: &str) -> bool {
         | "scroll-padding-right"
         | "scroll-padding-bottom"
         | "scroll-padding-left" => super::scroll_spacing::supports(&property, &value),
-        "border-radius" => parse_length(&value).is_some(),
+        "border-radius" => supported_length(&value),
         "justify-content" | "-webkit-justify-content" | "-webkit-box-pack" => matches!(
             value.as_str(),
             "start"
@@ -276,98 +294,26 @@ fn flex_flow_supported(value: &str) -> bool {
     (1..=2).contains(&count)
 }
 
+fn supported_length(value: &str) -> bool {
+    single_component_or_calc(value) && parse_length(value).is_some()
+}
+
+/// Verify a simple value's CSS token boundary before handing it to property-specific parsing.
+/// `25 %` is two tokens, not a percentage token, even if a string-oriented parser accepts it.
+/// `calc()` is validated by its own expression parser instead of this single-token check.
+fn single_component_or_calc(value: &str) -> bool {
+    if value
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("calc("))
+    {
+        return true;
+    }
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    parser.next().is_ok() && parser.is_exhausted()
+}
+
 fn edge_lengths_supported(value: &str) -> bool {
     let lengths = value.split_ascii_whitespace().collect::<Vec<_>>();
     (1..=4).contains(&lengths.len()) && lengths.iter().all(|length| parse_length(length).is_some())
-}
-
-fn strip_keyword<'a>(condition: &'a str, keyword: &str) -> Option<&'a str> {
-    let rest = condition.get(keyword.len()..)?;
-    condition[..keyword.len()]
-        .eq_ignore_ascii_case(keyword)
-        .then(|| rest.trim_start())
-        .filter(|rest| !rest.is_empty())
-}
-
-fn split_boolean<'a>(condition: &'a str, keyword: &str) -> Option<Vec<&'a str>> {
-    let bytes = condition.as_bytes();
-    let mut depth = 0_i32;
-    let mut start = 0_usize;
-    let mut parts = Vec::new();
-    let mut cursor = 0_usize;
-    while cursor < bytes.len() {
-        match bytes[cursor] {
-            b'(' => depth += 1,
-            b')' => depth = (depth - 1).max(0),
-            _ if depth == 0 && keyword_at(condition, cursor, keyword) => {
-                parts.push(condition[start..cursor].trim());
-                cursor += keyword.len();
-                start = cursor;
-                continue;
-            }
-            _ => {}
-        }
-        cursor += 1;
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    parts.push(condition[start..].trim());
-    parts.iter().all(|part| !part.is_empty()).then_some(parts)
-}
-
-fn keyword_at(input: &str, index: usize, keyword: &str) -> bool {
-    let Some(candidate) = input.get(index..index + keyword.len()) else {
-        return false;
-    };
-    candidate.eq_ignore_ascii_case(keyword)
-        && input[..index]
-            .chars()
-            .next_back()
-            .is_some_and(char::is_whitespace)
-        && input[index + keyword.len()..]
-            .chars()
-            .next()
-            .is_some_and(char::is_whitespace)
-}
-
-fn strip_outer_parentheses(input: &str) -> Option<&str> {
-    input
-        .starts_with('(')
-        .then(|| find_matching_parenthesis(input, 0))
-        .flatten()
-        .filter(|close| *close + 1 == input.len())
-        .map(|close| input[1..close].trim())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn feature_queries_are_conservative_about_unimplemented_values() {
-        assert!(supports_matches("@supports (display: grid)"));
-        assert!(supports_matches("@supports (position: sticky)"));
-        assert!(!supports_matches(
-            "@supports (grid-template-columns: subgrid)"
-        ));
-        assert!(supports_matches("@supports (justify-self: center)"));
-        assert!(supports_matches("@supports (opacity: 25%)"));
-        assert!(supports_matches("@supports (z-index: -12)"));
-        assert!(supports_matches("@supports (z-index: auto)"));
-        assert!(!supports_matches("@supports (z-index: 1.5)"));
-    }
-
-    #[test]
-    fn feature_queries_accept_valid_variable_references_without_resolving_them() {
-        assert!(supports_matches("@supports (color: var(--test, red))"));
-        assert!(supports_matches("@supports (position: var(--position))"));
-        assert!(supports_matches(
-            "@supports (width: calc(var(--space, var(--fallback)) * 2))"
-        ));
-        assert!(supports_matches("@supports (color: var(--empty,))"));
-        assert!(!supports_matches("@supports (box-shadow: var(--shadow))"));
-        assert!(!supports_matches("@supports (color: var(color, red))"));
-        assert!(!supports_matches("@supports (color: var())"));
-    }
 }

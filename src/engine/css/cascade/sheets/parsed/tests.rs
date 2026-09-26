@@ -9,7 +9,9 @@ fn input(source: &str) -> Rc<SheetInput> {
         source: source.into(),
         base_url: "https://example.test/sheet.css".into(),
         scope: RuleScope::Document,
+        implicit_scope_root: None,
         layer_prefix: Vec::new(),
+        import_scope_prefixes: Vec::new(),
         declared_layer: None,
     })
 }
@@ -148,14 +150,18 @@ fn changed_base_scope_and_media_never_reuse_stale_parsed_rules() {
         source: source.into(),
         base_url: "https://other.test/css/".into(),
         scope: RuleScope::Document,
+        implicit_scope_root: None,
         layer_prefix: Vec::new(),
+        import_scope_prefixes: Vec::new(),
         declared_layer: None,
     });
     let scoped = Rc::new(SheetInput {
         source: source.into(),
         base_url: original.base_url.clone(),
         scope: RuleScope::Shadow(Node::create_document().id()),
+        implicit_scope_root: None,
         layer_prefix: Vec::new(),
+        import_scope_prefixes: Vec::new(),
         declared_layer: None,
     });
     for changed in [moved_base, scoped] {

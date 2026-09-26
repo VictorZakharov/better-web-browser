@@ -73,9 +73,11 @@ pub(super) fn append(
             imports = crate::engine::css::imports::parse(&source);
         }
         let owner = inputs.len() as u32;
-        for layer in crate::engine::css::imports::leading_layer_statements(&source) {
-            inputs.push(SheetInput::layer_marker(layer, scope));
-        }
+        let implicit_scope_root = node
+            .parent()
+            .filter(|parent| parent.element().is_some())
+            .map(|parent| parent.id())
+            .or_else(|| default_scope_root(root));
         let expansion = crate::engine::css::imports::expand_owned(
             &sheet_base,
             &imports,
@@ -96,7 +98,9 @@ pub(super) fn append(
                 source: imported.source.clone(),
                 base_url: imported.base_url.clone(),
                 scope,
+                implicit_scope_root,
                 layer_prefix: import_owner_path(&imported.layer_prefix, owner),
+                import_scope_prefixes: imported.scope_prefixes,
                 declared_layer: None,
             });
         }
@@ -110,7 +114,9 @@ pub(super) fn append(
             source,
             base_url: sheet_base,
             scope,
+            implicit_scope_root,
             layer_prefix: Vec::new(),
+            import_scope_prefixes: Vec::new(),
             declared_layer: None,
         });
     }

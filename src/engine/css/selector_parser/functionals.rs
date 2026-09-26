@@ -69,7 +69,8 @@ pub(super) fn parse_functional_pseudo(
             specificity.tags = specificity.tags.saturating_add(filter_specificity.tags);
             compound.nth.push(nth);
         }
-        _ => compound.never_matches = true,
+        // Unknown functions are invalid selectors, not merely nonmatching ones.
+        _ => return None,
     }
     Some(())
 }

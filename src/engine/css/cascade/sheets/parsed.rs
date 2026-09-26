@@ -86,6 +86,8 @@ fn assemble_with_limit(
                         &mut rules,
                         input.scope,
                         budget,
+                        input.implicit_scope_root,
+                        &input.import_scope_prefixes,
                         &mut events,
                     );
                     let sheet = Rc::new(ParsedSheet {
