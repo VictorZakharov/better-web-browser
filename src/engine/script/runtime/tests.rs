@@ -13,6 +13,7 @@ mod frames;
 mod idle;
 mod inserted_scripts;
 mod scheduling;
+mod speech;
 mod storage_sync;
 mod storage_values;
 mod timeouts;

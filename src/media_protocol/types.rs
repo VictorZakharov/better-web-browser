@@ -112,8 +112,10 @@ pub struct MediaCapabilityReport {
     pub startup_hresult: i32,
     pub h264_hresult: i32,
     pub aac_hresult: i32,
+    pub flac_hresult: i32,
     pub h264_decoders: u16,
     pub aac_decoders: u16,
+    pub flac_decoders: u16,
     pub probe_micros: u64,
 }
 
@@ -122,10 +124,13 @@ impl MediaCapabilityReport {
         limits.validate()?;
         if self.h264_decoders > limits.max_decoder_candidates
             || self.aac_decoders > limits.max_decoder_candidates
+            || self.flac_decoders > limits.max_decoder_candidates
         {
             return Err(MediaProtocolError::InvalidPayload("decoder count"));
         }
-        if self.startup_hresult < 0 && (self.h264_decoders != 0 || self.aac_decoders != 0) {
+        if self.startup_hresult < 0
+            && (self.h264_decoders != 0 || self.aac_decoders != 0 || self.flac_decoders != 0)
+        {
             return Err(MediaProtocolError::InvalidPayload(
                 "decoders reported after backend startup failure",
             ));
@@ -138,6 +143,11 @@ impl MediaCapabilityReport {
         if self.aac_hresult < 0 && self.aac_decoders != 0 {
             return Err(MediaProtocolError::InvalidPayload(
                 "AAC decoders reported after enumeration failure",
+            ));
+        }
+        if self.flac_hresult < 0 && self.flac_decoders != 0 {
+            return Err(MediaProtocolError::InvalidPayload(
+                "FLAC decoders reported after enumeration failure",
             ));
         }
         let maximum_probe_micros = u64::from(limits.probe_timeout_millis) * 1_000;
@@ -158,6 +168,7 @@ pub enum MediaCodecFamily {
     Mp3 = 4,
     /// AAC profile not established by the native stream subtype alone.
     Aac = 5,
+    Flac = 6,
 }
 
 impl MediaCodecFamily {
@@ -173,6 +184,7 @@ impl MediaCodecFamily {
             3 => Ok(Self::Pcm),
             4 => Ok(Self::Mp3),
             5 => Ok(Self::Aac),
+            6 => Ok(Self::Flac),
             _ => Err(MediaProtocolError::InvalidPayload("codec family")),
         }
     }

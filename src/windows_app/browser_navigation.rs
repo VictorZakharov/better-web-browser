@@ -160,6 +160,8 @@ impl BrowserState {
         if is_active {
             self.cancel_scroll_animation();
         }
+        // Audio belongs to the document being replaced, not the next generation.
+        self.retire_speech_for_tab(id);
         let (generation, fetch_signal) = {
             let Some(tab) = self.tabs.get_mut(id) else {
                 return;

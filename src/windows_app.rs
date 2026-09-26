@@ -34,6 +34,7 @@ mod renderer_lifecycle;
 mod rendering_resources;
 mod runtime;
 mod scrolling;
+mod speech_synthesis;
 mod tab_drag;
 mod tab_management;
 mod tab_paint;
@@ -84,8 +85,7 @@ use window_dispatch::{
 pub fn run() -> Result<(), String> {
     unsafe {
         let process_started = Instant::now();
-        // Per-monitor V2 keeps the custom chrome crisp as windows move between displays.
-        // A failure is harmless when a host process has already selected a DPI mode.
+        // Per-monitor V2 keeps chrome crisp; a prior DPI mode makes failure harmless.
         SetProcessDpiAwarenessContext(-4_isize as Handle);
         let instance = GetModuleHandleW(null());
         if instance.is_null() {

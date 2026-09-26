@@ -40,7 +40,6 @@
                 'NotSupportedError'
             ));
         },
-        sendBeacon(url) { host('console', 'beacon', String(url)); return false; },
         javaEnabled() { return false; }
     };
     if (geckoCompatibility) {
@@ -85,7 +84,9 @@
             try { snapshot = mediaConfigurationSnapshot(configuration); }
             catch (error) { return Promise.reject(error); }
             const contentSupported = source => !source ||
-                supportedMediaType(source.contentType) !== '';
+                (snapshot.type === 'media-source'
+                    ? windowObject.MediaSource.isTypeSupported(source.contentType)
+                    : supportedMediaType(source.contentType) !== '');
             const supported = snapshot.type !== 'webrtc' &&
                 !snapshot.keySystemConfiguration &&
                 contentSupported(snapshot.video) && contentSupported(snapshot.audio);

@@ -103,6 +103,10 @@ impl RendererSession {
         DatabaseEventSink::new(document, self.fetch_stream.clone(), self.wake.clone())
     }
 
+    pub fn speech_update_sink(&self, document: DocumentId) -> SpeechUpdateSink {
+        SpeechUpdateSink::new(document, self.fetch_stream.clone(), self.wake.clone())
+    }
+
     pub fn load_streaming_document(
         &self,
         start: DocumentStart,

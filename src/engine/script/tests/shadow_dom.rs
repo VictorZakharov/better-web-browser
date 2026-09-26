@@ -43,13 +43,18 @@ fn named_and_default_slots_update_assignment_and_coalesce_slotchange() {
             slots.forEach(slot => slot.addEventListener('slotchange', () => changes.push(slot.name || 'default')));
             const title = host.children[0];
             const body = host.children[1];
-            const initial = slots[0].assignedElements()[0] === title &&
+            const initial = root.slotAssignment === 'named' &&
+                slots[0].assignedElements()[0] === title &&
                 slots[1].assignedNodes()[0] === body && title.assignedSlot === slots[0] &&
                 body.assignedSlot === slots[1];
+            slots[0].assign(body);
+            const namedUnaffected = slots[0].assignedNodes()[0] === title &&
+                slots[1].assignedNodes()[0] === body;
             title.slot = '';
             title.slot = 'title';
             queueMicrotask(() => {
-                const valid = initial && slots[0].assignedNodes({ flatten: true })[0] === title &&
+                const valid = initial && namedUnaffected &&
+                    slots[0].assignedNodes({ flatten: true })[0] === title &&
                     slots[1].assignedElements().length === 1 &&
                     changes.filter(name => name === 'title').length === 1 &&
                     changes.filter(name => name === 'default').length === 1;
@@ -73,7 +78,7 @@ fn attach_shadow_rejects_invalid_hosts_modes_and_duplicate_roots() {
             };
             expect('invalid-host', () => document.getElementById('button').attachShadow({ mode: 'open' }), 'NotSupportedError');
             expect('invalid-mode', () => document.createElement('div').attachShadow({ mode: 'private' }), 'TypeError');
-            expect('manual-slots', () => document.createElement('div').attachShadow({ mode: 'open', slotAssignment: 'manual' }), 'NotSupportedError');
+            expect('invalid-slots', () => document.createElement('div').attachShadow({ mode: 'open', slotAssignment: 'other' }), 'TypeError');
             expect('constructor', () => new ShadowRoot(), 'TypeError');
             const host = document.getElementById('host');
             host.attachShadow({ mode: 'open' });
@@ -161,6 +166,53 @@ fn closed_roots_hide_assigned_slots_but_preserve_shadow_including_custom_element
             const valid = privateAssignment && inside.isConnected &&
                 calls.join(',') === 'connected,disconnected,connected';
             document.body.setAttribute('data-result', valid ? 'pass' : 'fail:' + calls.join(','));
+        </script></body>"#,
+    );
+
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(result(&dom).as_deref(), Some("pass"));
+}
+
+#[test]
+fn manual_slots_assign_elements_and_text_without_consulting_slot_names() {
+    let (dom, outcome) = execute_html(
+        r#"<body><x-card id=host><b id=first slot=right>A</b><i id=second>B</i></x-card><script>
+            const host = document.getElementById('host');
+            const first = document.getElementById('first');
+            const second = document.getElementById('second');
+            const root = host.attachShadow({mode:'open', slotAssignment:'manual'});
+            root.innerHTML = '<slot id=left>fallback</slot><slot id=right name=right></slot>';
+            const left = root.getElementById('left');
+            const right = root.getElementById('right');
+            const initial = root.slotAssignment === 'manual' &&
+                left.assignedNodes().length === 0 && right.assignedNodes().length === 0;
+            const changes = [];
+            left.addEventListener('slotchange', () => changes.push('left'));
+            right.addEventListener('slotchange', () => changes.push('right'));
+            left.assign(second, first, second);
+            const ordered = left.assignedElements().length === 2 &&
+                left.assignedElements()[0] === second && left.assignedElements()[1] === first &&
+                first.assignedSlot === left && second.assignedSlot === left;
+            right.assign(first);
+            const moved = left.assignedElements()[0] === second &&
+                right.assignedElements()[0] === first && first.assignedSlot === right;
+            left.assign();
+            const fallback = left.assignedNodes().length === 0 &&
+                left.assignedNodes({flatten:true})[0].textContent === 'fallback';
+            const text = document.createTextNode('light text');
+            host.appendChild(text);
+            left.assign(text);
+            const textAssigned = left.assignedNodes()[0] === text && text.assignedSlot === left;
+            let rejected = false;
+            try { left.assign(document.createComment('invalid')); }
+            catch (error) { rejected = error instanceof TypeError; }
+            queueMicrotask(() => {
+                const valid = initial && ordered && moved && fallback && textAssigned && rejected &&
+                    changes.filter(name => name === 'left').length === 1 &&
+                    changes.filter(name => name === 'right').length === 1;
+                document.body.setAttribute('data-result', valid ? 'pass' :
+                    'fail:' + [initial, ordered, moved, fallback, textAssigned, rejected, changes.join(',')]);
+            });
         </script></body>"#,
     );
 

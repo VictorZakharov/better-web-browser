@@ -150,8 +150,10 @@ fn browser_and_worker_messages_round_trip() {
         startup_hresult: 0,
         h264_hresult: 0,
         aac_hresult: 0,
+        flac_hresult: 0,
         h264_decoders: 2,
         aac_decoders: 1,
+        flac_decoders: 1,
         probe_micros: 120,
     };
     let mut worker_bytes = Vec::new();

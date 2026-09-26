@@ -9,8 +9,8 @@ use crate::media_protocol::MediaCodecFamily;
 use windows::Win32::Media::MediaFoundation::{
     IMFSourceReader, MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_NUM_CHANNELS,
     MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
-    MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR, MFAudioFormat_AAC, MFAudioFormat_MP3,
-    MFAudioFormat_PCM, MFMediaType_Audio,
+    MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR, MFAudioFormat_AAC, MFAudioFormat_FLAC,
+    MFAudioFormat_MP3, MFAudioFormat_PCM, MFMediaType_Audio,
 };
 
 const PCM_BITS_PER_SAMPLE: u32 = 16;
@@ -50,6 +50,7 @@ impl AudioDecoder {
         let native_subtype = match codec {
             MediaCodecFamily::AacLc | MediaCodecFamily::Aac => MFAudioFormat_AAC,
             MediaCodecFamily::Mp3 => MFAudioFormat_MP3,
+            MediaCodecFamily::Flac => MFAudioFormat_FLAC,
             MediaCodecFamily::Pcm => MFAudioFormat_PCM,
             _ => return Err("playback audio codec is unsupported".into()),
         };

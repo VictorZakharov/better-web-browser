@@ -55,12 +55,19 @@ fn can_play_type_reports_only_decodeable_complete_source_audio_and_video() {
                 [audio, 'audio/mpeg; codecs="mp3"', 'probably'],
                 [audio, 'audio/aac', 'maybe'],
                 [audio, 'audio/aac; codecs="mp4a.40.2"', 'probably'],
+                [audio, 'audio/flac', 'maybe'],
+                [audio, 'audio/x-flac', 'maybe'],
+                [audio, 'audio/ogg; codecs="flac"', ''],
                 [audio, 'audio/mp4', 'maybe'],
                 [audio, 'audio/mp4; codecs="mp4a.40.2"', 'probably'],
+                [audio, 'audio/m4a', 'maybe'],
+                [audio, 'audio/m4a; codecs="mp4a.40.2"', 'probably'],
+                [audio, 'audio/x-m4a; codecs="mp4a.40.2"', 'probably'],
                 [video, 'video/mp4', 'maybe'],
                 [video, 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"', 'probably'],
                 [video, 'video/mp4; codecs="avc1.42E01E"', 'probably'],
                 [audio, 'audio/mp4; codecs="avc1.42E01E"', ''],
+                [audio, 'audio/m4a; codecs="avc1.42E01E"', ''],
                 [audio, 'audio/mp4; codecs="mp4a.40.5"', ''],
                 [audio, 'audio/ogg; codecs="opus"', ''],
                 [video, 'video/webm; codecs="vp9"', ''],
@@ -348,5 +355,30 @@ fn media_capabilities_reports_only_the_owned_decode_path() {
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
         "true:true:false:true:320:true:true:true:false:false:false:false:true:TypeError"
+    );
+}
+
+#[test]
+fn media_capabilities_distinguishes_native_flac_file_from_media_source() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output id="status">waiting</output><script>
+        const audio = {
+            contentType: 'audio/flac', channels: '1', bitrate: 700000, samplerate: 44100
+        };
+        Promise.all([
+            navigator.mediaCapabilities.decodingInfo({ type: 'file', audio }),
+            navigator.mediaCapabilities.decodingInfo({ type: 'media-source', audio })
+        ]).then(([file, source]) => {
+            document.getElementById('status').textContent = [
+                file.supported, file.smooth, source.supported,
+                MediaSource.isTypeSupported(audio.contentType)
+            ].join(':');
+        });
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true:true:false:false"
     );
 }

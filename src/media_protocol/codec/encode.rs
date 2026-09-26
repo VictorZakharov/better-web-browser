@@ -196,8 +196,10 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_i32(&mut payload, report.startup_hresult);
             vec_i32(&mut payload, report.h264_hresult);
             vec_i32(&mut payload, report.aac_hresult);
+            vec_i32(&mut payload, report.flac_hresult);
             vec_u16(&mut payload, report.h264_decoders);
             vec_u16(&mut payload, report.aac_decoders);
+            vec_u16(&mut payload, report.flac_decoders);
             vec_u64(&mut payload, report.probe_micros);
             WORKER_CAPABILITY
         }

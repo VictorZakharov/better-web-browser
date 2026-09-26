@@ -4,6 +4,7 @@ use better_web_browser::fetch::{Origin, RequestClient};
 use better_web_browser::renderer_protocol::FetchRequestHead;
 use std::collections::{HashMap, HashSet};
 mod hints;
+mod prefetch;
 
 #[derive(Default)]
 pub(super) struct Clients {
@@ -11,6 +12,7 @@ pub(super) struct Clients {
     root: Option<Client>,
     records: HashMap<u64, Option<Client>>,
     admitted_hint_origins: HashSet<String>,
+    admitted_prefetch_urls: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -47,6 +49,7 @@ impl Clients {
             self.root = None;
             self.records.clear();
             self.admitted_hint_origins.clear();
+            self.admitted_prefetch_urls.clear();
         }
     }
 

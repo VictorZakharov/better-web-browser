@@ -11,7 +11,7 @@
         get delegatesFocus() { return !!host('shadowDelegatesFocus', nodeId(this)); }
         get serializable() { return !!host('shadowSerializable', nodeId(this)); }
         get clonable() { return !!host('shadowClonable', nodeId(this)); }
-        get slotAssignment() { return 'named'; }
+        get slotAssignment() { return host('shadowSlotAssignment', nodeId(this)); }
         get host() { return wrap(host('shadowHost', nodeId(this))); }
         getElementById(id) { return wrap(host('byId', nodeId(this), String(id))); }
         elementFromPoint(x, y) {
@@ -37,6 +37,12 @@
         }
         assignedElements(options = {}) {
             return this.assignedNodes(options).filter(node => node.nodeType === 1);
+        }
+        assign(...nodes) {
+            if (nodes.some(node => !(node instanceof Element || node instanceof Text)))
+                throw new TypeError('slot.assign requires Element or Text nodes');
+            host('assignSlot', nodeId(this), ...nodes.map(nodeId));
+            scheduleSlotChangeCheck();
         }
     }
 

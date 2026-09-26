@@ -52,6 +52,12 @@ impl DocumentRuntime {
                 // DNS has no response body and never mutates the active document.
                 continue;
             }
+            if matches!(resource, PageResource::Prefetch { .. }) {
+                // The browser owns the HTTP cache. A prefetch response only completes the link;
+                // its bytes never become script-visible or part of the current document.
+                retained |= self.dispatch_resource_event(&resource, "load")?;
+                continue;
+            }
             let eligible = matches!(
                 response.response_type,
                 crate::fetch::ResponseType::Basic | crate::fetch::ResponseType::Cors
@@ -119,6 +125,9 @@ impl DocumentRuntime {
                 PageResource::Preload { .. } => unreachable!("preload handled before installation"),
                 PageResource::OriginHint { .. } => {
                     unreachable!("network hint handled before installation")
+                }
+                PageResource::Prefetch { .. } => {
+                    unreachable!("prefetch handled before installation")
                 }
                 PageResource::Stylesheet { url } => self
                     .page

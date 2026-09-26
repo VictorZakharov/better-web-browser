@@ -19,7 +19,7 @@ pub use body::Body;
 pub use cancellation::{FetchController, FetchSignal};
 pub use client::RequestClient;
 pub use error::{FetchError, FetchErrorKind};
-pub use headers::{Header, HeaderList};
+pub use headers::{Header, HeaderList, is_cors_safelisted_request_header};
 pub use request::{
     CredentialsMode, FetchRequest, RedirectMode, Referrer, ReferrerPolicy, RequestCache,
     RequestContext, RequestDestination, RequestMode,
@@ -31,4 +31,3 @@ pub(crate) use cors::{
     cors_filtered_headers, needs_cors_check, needs_preflight, validate_cors_response,
     validate_preflight_response,
 };
-pub(crate) use headers::is_cors_safelisted_request_header;

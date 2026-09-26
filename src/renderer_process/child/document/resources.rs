@@ -109,19 +109,31 @@ impl DocumentRuntime {
         if let Some(runtime) = self.script_runtime.as_mut() {
             self.parser_scripts.prepare_modules(runtime);
         }
-        let live_hints = self.page.current_origin_hints();
+        let live_hints = self.page.current_network_hints();
         let already_admitted = self
             .loaded_resources
             .iter()
-            .filter(|resource| is_network_hint(resource))
+            .filter(|resource| matches!(resource, PageResource::OriginHint { .. }))
             .count()
             + self
                 .pending_resource_preloads
                 .iter()
                 .flat_map(|pending| pending.by_request.values())
-                .filter(|resource| is_network_hint(resource))
+                .filter(|resource| matches!(resource, PageResource::OriginHint { .. }))
                 .count();
         let mut available_hints = 2_usize.saturating_sub(already_admitted);
+        let already_prefetched = self
+            .loaded_resources
+            .iter()
+            .filter(|resource| matches!(resource, PageResource::Prefetch { .. }))
+            .count()
+            + self
+                .pending_resource_preloads
+                .iter()
+                .flat_map(|pending| pending.by_request.values())
+                .filter(|resource| matches!(resource, PageResource::Prefetch { .. }))
+                .count();
+        let mut available_prefetches = 2_usize.saturating_sub(already_prefetched);
         let mut seen = HashSet::new();
         let mut resources = self
             .page
@@ -142,11 +154,20 @@ impl DocumentRuntime {
                 if !is_network_hint(resource) {
                     return true;
                 }
-                if available_hints == 0 || !live_hints.contains(resource) {
+                if !live_hints.contains(resource) {
                     return false;
                 }
-                available_hints -= 1;
-                true
+                match resource {
+                    PageResource::OriginHint { .. } if available_hints > 0 => {
+                        available_hints -= 1;
+                        true
+                    }
+                    PageResource::Prefetch { .. } if available_prefetches > 0 => {
+                        available_prefetches -= 1;
+                        true
+                    }
+                    _ => false,
+                }
             })
             .collect::<Vec<_>>();
         // Hints are opportunistic and must not take a transport slot ahead of resources needed
@@ -264,6 +285,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
         resource,
         PageResource::Preload { .. }
             | PageResource::OriginHint { .. }
+            | PageResource::Prefetch { .. }
             | PageResource::Stylesheet { .. }
             | PageResource::Image { .. }
             | PageResource::Media { .. }
@@ -274,6 +296,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
 fn resource_label(resource: &PageResource) -> String {
     let (kind, url) = match resource {
         PageResource::OriginHint { origin } => ("origin hint", origin),
+        PageResource::Prefetch { url } => ("prefetch", url),
         PageResource::Preload { url, .. } => ("preload", url),
         PageResource::Stylesheet { url } => ("stylesheet", url),
         PageResource::Image { url } => ("image", url),
@@ -286,7 +309,10 @@ fn resource_label(resource: &PageResource) -> String {
 }
 
 fn is_network_hint(resource: &PageResource) -> bool {
-    matches!(resource, PageResource::OriginHint { .. })
+    matches!(
+        resource,
+        PageResource::OriginHint { .. } | PageResource::Prefetch { .. }
+    )
 }
 
 type ResourceRequestBatch = (

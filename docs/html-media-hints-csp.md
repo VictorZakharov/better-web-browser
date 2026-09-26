@@ -18,11 +18,18 @@ failure and dispatches the appropriate media error; an early `play()` request
 waits for loading to finish instead of being rejected simply because no
 decoder is ready yet.
 
-The tested complete-resource formats are PCM WAV, MP3, AAC in M4A, and ADTS
-AAC. The media worker decodes audio to PCM, drives the XAudio2 output path,
+The tested complete-resource formats are PCM WAV, MP3, AAC in M4A, ADTS
+AAC, and native FLAC on Windows hosts with a Media Foundation FLAC decoder.
+The media worker decodes audio to PCM, drives the XAudio2 output path,
 and supports play, pause, volume, and seek without fabricating a video frame.
-`HTMLMediaElement.canPlayType()` and Media Capabilities make conservative
-claims about these formats. A complete H.264-only fragmented MP4 uses a
+`HTMLMediaElement.canPlayType()` makes the conservative `maybe` claim for
+`audio/flac` and its deprecated `audio/x-flac` alias, without claiming Ogg
+FLAC. Media Capabilities distinguishes complete-file FLAC from unsupported
+Media Source FLAC, but derives `decodingInfo()` support from MIME/type policy,
+not a per-host native decoder query; a host without that optional decoder may
+still report file support. `audio/m4a` and `audio/x-m4a` share the proven
+AAC-in-MP4 decoder path with `audio/mp4`; a codec hint for a video-only M4A
+still returns unsupported. A complete H.264-only fragmented MP4 uses a
 worker-owned monotonic playback clock rather than requiring a fabricated audio
 track; contained tests cover play, pause, seek, end, and replay. Media Source
 can also accept separate H.264 video and AAC audio SourceBuffers.
@@ -35,7 +42,7 @@ same-origin because the current decoder path receives opaque encoded bytes in
 the renderer. Sending cross-origin cookies with those bytes would make an
 untrusted renderer able to read cookie-protected cross-origin responses.
 
-Remaining media boundaries are important: FLAC, Ogg/WebM audio, DRM, and
+Remaining media boundaries are important: Ogg/WebM audio, DRM, and
 detached `new Audio(src)` resource discovery are not implemented here. The
 latter needs script-originated resource discovery and detached-node lifetime
 through the renderer host, not merely an `Audio` constructor property.
@@ -50,10 +57,19 @@ do not delay the document's `load` event, and are bounded by per-document and
 browser-wide admission limits. They are lower priority than normal resources.
 Only HTTP(S) origins without URL credentials are eligible.
 
-`rel=prefetch` remains unsupported. A speculative response cannot be reused
-across the current browser cache's navigation/subresource partition without a
-credential and request-context proof. Advertising or aliasing that cache
-entry would be a security and correctness regression.
+The first `rel=prefetch` subset handles up to two same-origin HTML document
+URLs per top-level document. The browser rechecks the live CSP and origin,
+then fetches with the origin, referrer, credential mode, and private-cache
+partition of a future navigation. It consumes the complete body before cache
+admission, never exposes speculative bytes to the renderer, and rejects
+redirects or responses over the 2 MiB per-entry budget. A completed link
+receives `load` or `error`, but does not delay the current document's `load`.
+Only cacheable responses with server-supplied freshness can be reused; an
+ordinary navigation still goes to the network otherwise. Cookie changes
+partition the cache and prevent reuse across credential states. Cross-origin
+and non-document prefetches, `as`, `crossorigin`, `integrity`, `media`, and explicit
+referrer policy are not yet supported. Consequently, `relList.supports()`
+does not advertise full `prefetch` support.
 
 ## CSP policy delivery and timing
 
@@ -65,6 +81,11 @@ replace response policies or retroactively change earlier requests. The
 browser receives ordered policy updates and rechecks subsequent privileged
 fetches and origin hints against the current document policy. Meta-delivered
 `report-uri`, `frame-ancestors`, and `sandbox` are ignored as specified.
+Parser-delivered and dynamically inserted meta policies also update V8's
+string-code-generation gate before subsequent author code can call `eval()` or
+`Function()`; installing a policy during a script takes effect before the DOM
+insertion call returns. Response CSP is synchronized into that gate before the
+first author script. Focused tests exercise all three timings.
 
 The implementation intentionally fails closed for *known security-sensitive*
 directives it cannot enforce. Unknown directives and invalid individual

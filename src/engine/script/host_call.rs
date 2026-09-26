@@ -7,6 +7,7 @@ pub(super) mod compression_host;
 mod font_host;
 mod module_completion;
 pub(super) mod navigation;
+pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
 
@@ -38,6 +39,9 @@ pub(super) fn dispatch_host_call(
         return Ok(value);
     }
     if let Some(value) = super::network::database_host::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
+    if let Some(value) = speech::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {

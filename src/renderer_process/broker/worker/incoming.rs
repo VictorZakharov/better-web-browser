@@ -98,6 +98,7 @@ impl Broker {
                     | RendererMessage::StorageMutation(_)
                     | RendererMessage::WebSocketCommand(_)
                     | RendererMessage::DatabaseCommand(_)
+                    | RendererMessage::SpeechRequest(_)
                     | RendererMessage::StateSnapshotApplied(_)),
                 ) => {
                     if let Err(error) = self.process_document_message(message) {

@@ -125,10 +125,21 @@ impl BrowserState {
         true
     }
 
-    fn consume_transient_activation(&mut self, tab_id: TabId, document: DocumentId) -> bool {
+    pub(super) fn consume_transient_activation(
+        &mut self,
+        tab_id: TabId,
+        document: DocumentId,
+    ) -> bool {
         self.tabs.get_mut(tab_id).is_some_and(|tab| {
             tab.transient_activation
                 .take()
+                .is_some_and(|activation| activation_authorizes(document, activation))
+        })
+    }
+
+    pub(super) fn has_transient_activation(&mut self, tab_id: TabId, document: DocumentId) -> bool {
+        self.tabs.get_mut(tab_id).is_some_and(|tab| {
+            tab.transient_activation
                 .is_some_and(|activation| activation_authorizes(document, activation))
         })
     }

@@ -11,6 +11,24 @@ pub(in crate::engine::script) enum HostBridge {
 }
 
 impl HostBridge {
+    fn policy_update_count(&self) -> Option<usize> {
+        let Self::Document(host) = self else {
+            return None;
+        };
+        Some(host.upgrade()?.borrow().pending_policy_updates.len())
+    }
+
+    pub(super) fn code_generation_allowed(&self) -> Option<bool> {
+        match self {
+            Self::Document(host) => {
+                let host = host.upgrade()?;
+                let host = host.borrow();
+                Some(!host.sandbox.scripts_blocked && host.policy.allows_eval())
+            }
+            Self::Worker(host) => Some(host.upgrade()?.borrow().policy.allows_eval()),
+        }
+    }
+
     pub(in crate::engine::script) fn dispatch(&self, arguments: &[JsValue]) -> JsResult<JsValue> {
         let operation = arguments
             .first()
@@ -261,9 +279,28 @@ fn host_call_callback(
     let routed = (operation == "intersectionGeometry")
         .then(|| super::frames::intersection_geometry(scope, &values))
         .flatten();
+    let policy_updates_before = matches!(
+        operation.as_str(),
+        "appendChild" | "insertBefore" | "innerHtmlSet" | "innerHtmlAppend"
+    )
+    .then(|| bridge.policy_update_count())
+    .flatten();
     let result = routed
         .map_or_else(|| bridge.dispatch(&values), Ok)
         .and_then(|value| value_to_v8(scope, &value));
+    // A dynamically inserted meta CSP takes effect before appendChild/insertBefore (or an
+    // HTML-fragment setter) returns to author code. V8's string-code-generation gate must
+    // follow that policy in this same task, not merely at the next parser checkpoint.
+    if policy_updates_before.is_some_and(|before| {
+        bridge
+            .policy_update_count()
+            .is_some_and(|after| after > before)
+    }) && let Some(allowed) = bridge.code_generation_allowed()
+    {
+        scope
+            .get_current_context()
+            .set_allow_generation_from_strings(allowed);
+    }
     bridge.profile_bridge(&operation, bridge_started);
     match result {
         Ok(value) => return_value.set(value),

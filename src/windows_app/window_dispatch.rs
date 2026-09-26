@@ -410,6 +410,7 @@ unsafe fn dispatch_window_message(
             0
         }
         WM_DESTROY => {
+            state.retire_speech_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);

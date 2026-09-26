@@ -39,6 +39,20 @@ pub(super) fn shadow_host_call(
                 .unwrap_or_default()
                 .to_string(),
         ),
+        "shadowSlotAssignment" => js_string(
+            state
+                .node(argument_id(args, 1))
+                .and_then(|root| match root.data {
+                    NodeData::ShadowRoot(ref shadow) => Some(if shadow.manual_slot_assignment {
+                        "manual"
+                    } else {
+                        "named"
+                    }),
+                    _ => None,
+                })
+                .unwrap_or_default()
+                .to_string(),
+        ),
         "shadowDelegatesFocus" => JsValue::from(state.node(argument_id(args, 1)).is_some_and(
             |root| matches!(root.data, NodeData::ShadowRoot(ref shadow) if shadow.delegates_focus),
         )),
@@ -79,6 +93,7 @@ pub(super) fn shadow_host_call(
                 .unwrap_or_default();
             js_string(join_node_ids(state, &nodes, false))
         }
+        "assignSlot" => assign_slot(args, state)?,
         _ => return Ok(None),
     };
     Ok(Some(value))
@@ -97,8 +112,15 @@ fn attach_shadow(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let delegates_focus = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
     let serializable = args.get(4).and_then(JsValue::as_boolean).unwrap_or(false);
     let clonable = args.get(5).and_then(JsValue::as_boolean).unwrap_or(false);
-    let Some(root) = Node::attach_shadow(&host, mode, delegates_focus, serializable, clonable)
-    else {
+    let manual = matches!(args.get(6), Some(JsValue::String(assignment)) if assignment == "manual");
+    let Some(root) = Node::attach_shadow_with_assignment(
+        &host,
+        mode,
+        delegates_focus,
+        serializable,
+        clonable,
+        manual,
+    ) else {
         return Ok(JsValue::from(0));
     };
     state.register_subtree(&root);
@@ -108,4 +130,31 @@ fn attach_shadow(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
         host.id().to_wire()
     ));
     Ok(JsValue::from(state.id_for(&root)))
+}
+
+fn assign_slot(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
+    let Some(slot) = state.node(argument_id(args, 1)) else {
+        return Ok(JsValue::undefined());
+    };
+    if slot.tag_name() != Some("slot") {
+        return Ok(JsValue::undefined());
+    }
+    let mut nodes = Vec::new();
+    for index in 2..args.len() {
+        let Some(node) = state.node(argument_id(args, index)) else {
+            return Err(JsNativeError::typ()
+                .with_message("slot.assign requires Element or Text nodes")
+                .into());
+        };
+        if !matches!(node.data, NodeData::Element(_) | NodeData::Text(_)) {
+            return Err(JsNativeError::typ()
+                .with_message("slot.assign requires Element or Text nodes")
+                .into());
+        }
+        nodes.push(node);
+    }
+    for changed in Node::assign_manual_nodes(&slot, &nodes) {
+        state.record_mutation(Some(&changed), MutationKind::Stylesheet);
+    }
+    Ok(JsValue::undefined())
 }

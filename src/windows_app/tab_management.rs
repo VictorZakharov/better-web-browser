@@ -89,6 +89,7 @@ impl BrowserState {
         if !self.tabs.contains(id) {
             return;
         }
+        self.retire_speech_for_tab(id);
         if close_tab_action(self.tabs.len(), self.tabs.active_id() == id)
             == CloseTabAction::CloseWindow
         {

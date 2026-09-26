@@ -228,6 +228,7 @@ impl DocumentRuntime {
                     crate::media_protocol::MediaCodecFamily::AacLc => "AAC-LC",
                     crate::media_protocol::MediaCodecFamily::Aac => "AAC",
                     crate::media_protocol::MediaCodecFamily::Mp3 => "MP3",
+                    crate::media_protocol::MediaCodecFamily::Flac => "FLAC",
                     crate::media_protocol::MediaCodecFamily::Pcm => "PCM",
                     crate::media_protocol::MediaCodecFamily::None => "none",
                     _ => "unknown",

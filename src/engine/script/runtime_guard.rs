@@ -86,12 +86,20 @@ pub(super) fn finish_host(
     outcome
         .fetch_actions
         .append(&mut state.pending_fetch_actions);
+    // The synchronous Beacon budget covers this realm's unsent action batch. Once the
+    // actions are handed to the renderer's Fetch queue, a later task may enqueue again;
+    // otherwise a long-lived page would exhaust its quota permanently after 64 KiB.
+    state.beacon_queued_bytes = 0;
+    state.beacon_queued_count = 0;
     outcome
         .websocket_actions
         .append(&mut state.pending_websocket_actions);
     outcome
         .database_actions
         .append(&mut state.pending_database_actions);
+    outcome
+        .speech_actions
+        .append(&mut state.pending_speech_actions);
     outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);

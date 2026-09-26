@@ -5,7 +5,7 @@ use crate::media_protocol::{MediaCapabilityReport, MediaLimits};
 use std::ptr::null_mut;
 use std::time::Instant;
 use windows::Win32::Media::MediaFoundation::{
-    IMFActivate, MFAudioFormat_AAC, MFMediaType_Audio, MFMediaType_Video,
+    IMFActivate, MFAudioFormat_AAC, MFAudioFormat_FLAC, MFMediaType_Audio, MFMediaType_Video,
     MFT_CATEGORY_AUDIO_DECODER, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_ALL,
     MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY, MFT_REGISTER_TYPE_INFO, MFTEnumEx, MFVideoFormat_H264,
 };
@@ -27,19 +27,30 @@ pub(in crate::media_process) fn probe(limits: MediaLimits) -> MediaCapabilityRep
         MFMediaType_Video,
         MFVideoFormat_H264,
         limits.max_decoder_candidates,
+        true,
     );
     let (aac_hresult, aac_decoders) = enumerate_decoders(
         MFT_CATEGORY_AUDIO_DECODER,
         MFMediaType_Audio,
         MFAudioFormat_AAC,
         limits.max_decoder_candidates,
+        true,
+    );
+    let (flac_hresult, flac_decoders) = enumerate_decoders(
+        MFT_CATEGORY_AUDIO_DECODER,
+        MFMediaType_Audio,
+        MFAudioFormat_FLAC,
+        limits.max_decoder_candidates,
+        false,
     );
     MediaCapabilityReport {
         startup_hresult: 0,
         h264_hresult,
         aac_hresult,
+        flac_hresult,
         h264_decoders,
         aac_decoders,
+        flac_decoders,
         probe_micros: elapsed_micros(started),
     }
 }
@@ -49,20 +60,34 @@ fn failed_report(status: i32, started: Instant) -> MediaCapabilityReport {
         startup_hresult: status,
         h264_hresult: status,
         aac_hresult: status,
+        flac_hresult: status,
         h264_decoders: 0,
         aac_decoders: 0,
+        flac_decoders: 0,
         probe_micros: elapsed_micros(started),
     }
 }
 
-fn enumerate_decoders(category: GUID, major: GUID, subtype: GUID, maximum: u16) -> (i32, u16) {
+fn enumerate_decoders(
+    category: GUID,
+    major: GUID,
+    subtype: GUID,
+    maximum: u16,
+    web_only: bool,
+) -> (i32, u16) {
     let input = MFT_REGISTER_TYPE_INFO {
         guidMajorType: major,
         guidSubtype: subtype,
     };
     let mut pointer: *mut Option<IMFActivate> = null_mut();
     let mut count = 0_u32;
-    let flags = MFT_ENUM_FLAG_ALL | MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY;
+    // Native FLAC is not registered as a "web only" transform on all Windows
+    // installations, though Source Reader can still activate it for file media.
+    let flags = if web_only {
+        MFT_ENUM_FLAG_ALL | MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY
+    } else {
+        MFT_ENUM_FLAG_ALL
+    };
     let result = unsafe {
         MFTEnumEx(
             category,

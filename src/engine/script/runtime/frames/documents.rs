@@ -195,6 +195,7 @@ pub(in crate::engine::script::runtime) fn append(
         .websocket_actions
         .append(&mut other.websocket_actions);
     outcome.database_actions.append(&mut other.database_actions);
+    outcome.speech_actions.append(&mut other.speech_actions);
     outcome.worker_actions.append(&mut other.worker_actions);
     // A child document's nodes are not parent invalidation roots, but its paint
     // still has to be recomposed when a streamed resource completes.

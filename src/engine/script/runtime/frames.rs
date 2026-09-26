@@ -359,6 +359,9 @@ impl ScriptRuntime {
             .database_actions
             .append(&mut self.host.borrow_mut().pending_database_actions);
         outcome
+            .speech_actions
+            .append(&mut self.host.borrow_mut().pending_speech_actions);
+        outcome
             .worker_actions
             .append(&mut self.host.borrow_mut().pending_worker_actions);
         outcome

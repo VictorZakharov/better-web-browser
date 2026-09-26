@@ -288,9 +288,15 @@ fn supported_media_type(kind: &str) -> bool {
     );
     let mpeg = essence == "audio/mpeg";
     let aac = essence == "audio/aac";
+    // RFC 9639 applies to native FLAC only and defines no media-type parameters.
+    // Ogg FLAC remains unsupported even though the codec itself can be decoded.
+    let flac = matches!(essence.as_str(), "audio/flac" | "audio/x-flac");
+    if flac {
+        return parts.next().is_none();
+    }
     let mp4 = matches!(
         essence.as_str(),
-        "video/mp4" | "audio/mp4" | "application/mp4"
+        "video/mp4" | "audio/mp4" | "audio/m4a" | "audio/x-m4a" | "application/mp4"
     );
     if !wave && !mpeg && !aac && !mp4 {
         return false;
@@ -343,7 +349,7 @@ fn supported_media_type(kind: &str) -> bool {
             .strip_prefix("avc1.")
             .is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
     });
-    (has_audio || (essence != "audio/mp4" && has_video))
+    (has_audio || (!essence.starts_with("audio/") && has_video))
         && codecs.len() == usize::from(has_audio) + usize::from(has_video)
 }
 

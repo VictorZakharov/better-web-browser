@@ -1,13 +1,15 @@
 //! Complete-source audio without a fabricated video stream.
 //!
 //! Media Foundation owns container sniffing and decoding inside the restricted worker.
-//! Only the native PCM, MP3, and AAC subtypes that this worker can pull as 16-bit PCM
+//! Only the native PCM, MP3, AAC, and FLAC subtypes that this worker can pull as 16-bit PCM
 //! are admitted. The browser does not trust an HTTP Content-Type as codec evidence.
 
 use super::*;
 use crate::limits::MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES;
 use crate::media_protocol::MediaBufferedExtent;
-use windows::Win32::Media::MediaFoundation::{MF_MT_AUDIO_BITS_PER_SAMPLE, MFAudioFormat_MP3};
+use windows::Win32::Media::MediaFoundation::{
+    MF_MT_AUDIO_BITS_PER_SAMPLE, MFAudioFormat_FLAC, MFAudioFormat_MP3,
+};
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +36,8 @@ pub(super) fn decode(
         MediaCodecFamily::Aac
     } else if subtype == MFAudioFormat_MP3 {
         MediaCodecFamily::Mp3
+    } else if subtype == MFAudioFormat_FLAC {
+        MediaCodecFamily::Flac
     } else if subtype == MFAudioFormat_PCM {
         MediaCodecFamily::Pcm
     } else {

@@ -84,6 +84,9 @@ impl ChildConnection {
         self.next_batch_id = batch_id.checked_add(1).unwrap_or(1);
         let streaming = requests
             .iter()
+            .filter(|request| {
+                request.head.initiator != crate::renderer_protocol::FetchInitiator::Beacon
+            })
             .map(|request| {
                 (
                     request.head.request_id,
@@ -91,6 +94,7 @@ impl ChildConnection {
                 )
             })
             .collect::<Vec<_>>();
+        expected.retain(|id| streaming.iter().any(|(registered, _)| id == registered));
         self.writer
             .send_renderer(&RendererMessage::FetchBatchStart {
                 document,

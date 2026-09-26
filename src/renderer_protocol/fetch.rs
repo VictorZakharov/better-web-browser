@@ -20,7 +20,7 @@ pub enum ResourceDestination {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FetchInitiator {
-    /// Browser-owned DNS resolution only; never an HTTP request.
+    /// Browser-owned resource hint (DNS-only or speculative prefetch).
     NetworkHint,
     ChildNavigation,
     ChildResource,
@@ -28,6 +28,8 @@ pub enum FetchInitiator {
     ClassicScript,
     ModuleScript,
     ScriptApi,
+    /// One-way, browser-owned keepalive POST; no response is exposed to the renderer.
+    Beacon,
     ClassicWorker,
     ModuleWorker,
 }

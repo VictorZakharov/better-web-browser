@@ -63,8 +63,8 @@
             const mode = String(init.mode);
             if (mode !== 'open' && mode !== 'closed') throw new TypeError('mode must be open or closed');
             const slotAssignment = init.slotAssignment === undefined ? 'named' : String(init.slotAssignment);
-            if (slotAssignment !== 'named')
-                throw new DOMException('Manual slot assignment is not implemented', 'NotSupportedError');
+            if (slotAssignment !== 'named' && slotAssignment !== 'manual')
+                throw new TypeError('Invalid slot assignment mode');
             const validBuiltIn = new Set([
                 'article', 'aside', 'blockquote', 'body', 'div', 'footer', 'h1', 'h2', 'h3',
                 'h4', 'h5', 'h6', 'header', 'main', 'nav', 'p', 'section', 'span'
@@ -75,7 +75,7 @@
             if (this.namespaceURI !== htmlNamespace || (!validBuiltIn && !validCustomName))
                 throw new DOMException('This element cannot host a shadow tree', 'NotSupportedError');
             const root = wrap(host('attachShadow', nodeId(this), mode, !!init.delegatesFocus,
-                !!init.serializable, !!init.clonable));
+                !!init.serializable, !!init.clonable, slotAssignment));
             if (!root) throw new DOMException('This element already hosts a shadow tree', 'NotSupportedError');
             scheduleSlotChangeCheck();
             return root;

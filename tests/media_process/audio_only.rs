@@ -1,6 +1,6 @@
 //! Silent contained-worker audio-only acceptance. No video frame may be fabricated.
 
-use super::{MediaCodecFamily, MediaSession, SERIAL, decode_base64, decode_options};
+use super::{MediaCodecFamily, MediaSession, SERIAL, decode_base64, decode_options, sha256};
 use std::time::Duration;
 
 fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
@@ -10,6 +10,20 @@ fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
     let mut options = decode_options();
     options.silent_audio = true;
     let mut session = MediaSession::launch(options).expect("launch hidden contained media worker");
+    if codec == MediaCodecFamily::Flac {
+        let capability = session.probe().expect("probe contained FLAC decoder");
+        assert!(
+            capability.startup_hresult >= 0 && capability.flac_hresult >= 0,
+            "contained FLAC decoder probe failed: {capability:?}"
+        );
+        if capability.flac_decoders == 0 {
+            eprintln!(
+                "skipping contained FLAC playback: this Windows host has no FLAC Media Foundation decoder"
+            );
+            session.shutdown().expect("clean media worker shutdown");
+            return;
+        }
+    }
     let (source, report) = session
         .decode_owned_audio_fixture(bytes)
         .expect("decode audio without a video frame");
@@ -94,4 +108,19 @@ fn mp3_audio_only_play_pause_seek() {
 fn adts_aac_audio_only_play_pause_seek() {
     let bytes = decode_base64(include_str!("../fixtures/media/test-1s-audio.aac.base64"));
     verify_playback(&bytes, MediaCodecFamily::Aac);
+}
+
+#[test]
+fn native_flac_audio_only_play_pause_seek() {
+    let bytes = decode_base64(include_str!("../fixtures/media/test-1s-audio.flac.base64"));
+    assert_eq!(bytes.len(), 20_333);
+    assert_eq!(
+        sha256(&bytes),
+        [
+            0xdd, 0x80, 0x80, 0xcb, 0x04, 0xe2, 0x82, 0x22, 0xc5, 0x85, 0xc5, 0x52, 0xe6, 0xf7,
+            0x6a, 0x66, 0x69, 0xc7, 0x89, 0xae, 0xb6, 0x21, 0xb8, 0x02, 0xec, 0xfe, 0x72, 0x89,
+            0x49, 0xad, 0xc7, 0xad,
+        ]
+    );
+    verify_playback(&bytes, MediaCodecFamily::Flac);
 }

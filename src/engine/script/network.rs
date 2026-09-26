@@ -1,6 +1,7 @@
 //! Script-facing Fetch request translation and asynchronous completion delivery.
 
 mod base64;
+mod beacon;
 pub(super) mod database_host;
 pub(crate) mod response;
 pub(super) mod websocket_host;
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub enum ScriptFetchAction {
     Start { id: u32, request: Box<FetchRequest> },
+    Beacon { request: Box<FetchRequest> },
     Abort { id: u32 },
     Consume { id: u32, total: u32 },
 }
@@ -104,6 +106,7 @@ pub(super) fn network_host_call(
             });
             Ok(Some(JsValue::from(id)))
         }
+        "beaconStart" => Ok(Some(beacon::queue(&argument_string(args, 1)?, state)?)),
         "fetchBufferLimit" => Ok(Some(JsValue::from(
             crate::limits::MAX_FETCH_STREAM_WINDOW_BYTES as u32,
         ))),

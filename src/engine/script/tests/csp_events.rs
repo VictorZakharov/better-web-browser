@@ -285,3 +285,124 @@ fn dynamic_meta_csp_takes_effect_within_the_same_task_without_attribute_reproces
         );
     }
 }
+
+#[test]
+fn parser_meta_csp_blocks_eval_but_allows_authorized_inline_script() {
+    let dom = dom::parse_with_scripting(
+        r#"<head><meta http-equiv="Content-Security-Policy"
+            content="script-src 'unsafe-inline'"></head>
+            <body><output></output><script>
+            const output = document.querySelector('output');
+            try { eval('true'); output.textContent = 'eval-allowed'; }
+            catch (error) { output.textContent = error.name; }
+            </script></body>"#,
+        true,
+    );
+    let meta = dom.elements_named("meta").next().unwrap();
+    let script = dom.elements_named("script").next().unwrap();
+    let input = ScriptInput {
+        source_url: "https://example.com/".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime.process_parser_csp_meta(&meta).unwrap();
+    let outcome = runtime.execute_initial(&[input]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "EvalError"
+    );
+}
+
+#[test]
+fn response_csp_blocks_eval_after_realm_creation() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><output></output><script>
+        try { Function('return true')(); document.querySelector('output').textContent = 'allowed'; }
+        catch (error) { document.querySelector('output').textContent = error.name; }
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let mut headers = HeaderList::new();
+    headers
+        .append("content-security-policy", "script-src 'unsafe-inline'")
+        .unwrap();
+    runtime.set_document_policy(Arc::new(
+        PolicyContainer::from_headers("https://example.com/", &headers).unwrap(),
+    ));
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "EvalError"
+    );
+}
+
+#[test]
+fn dynamically_inserted_meta_csp_blocks_eval_in_the_same_script() {
+    let (dom, outcome) = execute_html(
+        r#"<body><output></output><script>
+        const meta = document.createElement('meta');
+        meta.setAttribute('http-equiv', 'Content-Security-Policy');
+        meta.setAttribute('content', "script-src 'unsafe-inline'");
+        document.head.appendChild(meta);
+        const output = document.querySelector('output');
+        try { eval('true'); output.textContent = 'eval-allowed'; }
+        catch (error) { output.textContent = error.name; }
+        </script></body>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "EvalError"
+    );
+}
+
+#[test]
+fn response_csp_with_unsafe_eval_keeps_string_generation_available() {
+    let dom = dom::parse_with_scripting(
+        r#"<body><output></output><script>
+        const generated = Function('return 42')();
+        document.querySelector('output').textContent = String(generated);
+        </script></body>"#,
+        true,
+    );
+    let script = dom.elements_named("script").next().unwrap();
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    let mut headers = HeaderList::new();
+    headers
+        .append(
+            "content-security-policy",
+            "script-src 'unsafe-inline' 'unsafe-eval'",
+        )
+        .unwrap();
+    runtime.set_document_policy(Arc::new(
+        PolicyContainer::from_headers("https://example.com/", &headers).unwrap(),
+    ));
+    let outcome = runtime.execute_initial(&[ScriptInput {
+        source_url: "https://example.com/".into(),
+        code: script.text_content(),
+        node: script,
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: true,
+    }]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "42"
+    );
+}

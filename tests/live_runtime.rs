@@ -10,6 +10,8 @@ mod support;
 use support::*;
 #[path = "live_runtime/authored_controls.rs"]
 mod authored_controls;
+#[path = "live_runtime/beacon.rs"]
+mod beacon;
 #[path = "live_runtime/deferred_scripts.rs"]
 mod deferred_scripts;
 #[path = "live_runtime/document_lifecycle.rs"]
@@ -44,12 +46,16 @@ mod parser_notifications;
 mod parser_writes;
 #[path = "live_runtime/parsing.rs"]
 mod parsing;
+#[path = "live_runtime/prefetch.rs"]
+mod prefetch;
 #[path = "live_runtime/reload.rs"]
 mod reload;
 #[path = "live_runtime/resize_observers.rs"]
 mod resize_observers;
 #[path = "live_runtime/scrolling.rs"]
 mod scrolling;
+#[path = "live_runtime/speech.rs"]
+mod speech;
 #[path = "live_runtime/stacking.rs"]
 mod stacking;
 #[path = "live_runtime/streaming_navigation.rs"]

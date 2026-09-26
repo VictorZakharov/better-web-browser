@@ -125,3 +125,40 @@ fn adts_aac_is_decoded_as_audio_only_and_seekable() {
     playback.seek(5_000_000).unwrap();
     assert!(playback.next_sample().unwrap().is_some());
 }
+
+#[test]
+fn native_flac_is_decoded_as_audio_only_and_seekable() {
+    let capability = super::super::capabilities::probe(MediaLimits::default());
+    assert!(
+        capability.startup_hresult >= 0 && capability.flac_hresult >= 0,
+        "FLAC decoder probe failed: {capability:?}"
+    );
+    if capability.flac_decoders == 0 {
+        eprintln!(
+            "skipping native FLAC decode: this Windows host has no FLAC Media Foundation decoder"
+        );
+        return;
+    }
+    let bytes = decode_fixture(include_str!(
+        "../../../../tests/fixtures/media/test-1s-audio.flac.base64"
+    ));
+    let decoded = super::super::decode(&bytes, MediaLimits::default()).unwrap();
+    assert!(decoded.playback.is_none());
+    assert_eq!(decoded.report.video_codec, MediaCodecFamily::None);
+    assert_eq!(decoded.report.audio_codec, MediaCodecFamily::Flac);
+    assert_eq!(decoded.report.audio_sample_rate, 44_100);
+    assert_eq!(decoded.report.audio_channels, 1);
+    assert!(decoded.report.audio_samples > 0);
+    assert!(decoded.report.duration_100ns >= 9_000_000);
+    let mut playback = AudioDecoder::open(
+        &bytes,
+        decoded.report.audio_codec,
+        decoded.report.audio_samples,
+        decoded.report.audio_sample_rate,
+        decoded.report.audio_channels,
+    )
+    .unwrap();
+    assert!(playback.next_sample().unwrap().is_some());
+    playback.seek(5_000_000).unwrap();
+    assert!(playback.next_sample().unwrap().is_some());
+}

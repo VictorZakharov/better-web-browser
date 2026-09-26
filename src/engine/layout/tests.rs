@@ -8,5 +8,6 @@ mod edge_cases;
 mod flex_sizing;
 mod general;
 mod pseudo;
+mod shadow_manual;
 mod truncation;
 mod truncation_dynamic;
