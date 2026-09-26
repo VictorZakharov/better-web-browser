@@ -82,3 +82,89 @@ fn rejects_vendor_media_queries_for_other_engines() {
     let body = dom.elements_named("body").next().unwrap();
     assert_eq!(styles.get(&body).color, Color::rgb(0, 128, 0));
 }
+
+#[test]
+fn media_range_and_group_conditions_control_stylesheet_rules() {
+    let dom = dom::parse(
+        r#"<style>
+            .ranged, .grouped, .outside { display: none }
+            @media (500px < width <= 1000px) and (orientation: landscape) {
+                .ranged { display: block }
+            }
+            @media ((width > 700px) or (height > 700px)) {
+                .grouped { display: block }
+            }
+            @media (width > 1200px) { .outside { display: block } }
+        </style><div class="ranged"></div><div class="grouped"></div>
+        <div class="outside"></div>"#,
+    );
+    let display = |width: f32, height: f32, class: &str| {
+        let node = dom
+            .elements_named("div")
+            .find(|node| node.has_class(class))
+            .unwrap();
+        StyleSet::from_sources_for_viewport(&dom, "https://example.test/", &[], width, height)
+            .get(&node)
+            .display
+    };
+    assert_eq!(display(800.0, 600.0, "ranged"), Display::Block);
+    assert_eq!(display(800.0, 600.0, "grouped"), Display::Block);
+    assert_eq!(display(800.0, 600.0, "outside"), Display::None);
+    assert_eq!(display(500.0, 800.0, "ranged"), Display::None);
+    assert_eq!(display(500.0, 800.0, "grouped"), Display::Block);
+    assert_eq!(display(1300.0, 700.0, "outside"), Display::Block);
+}
+
+#[test]
+fn invalid_conditional_syntax_cannot_enable_a_stylesheet_branch() {
+    let dom = dom::parse(
+        r#"<style>
+            .valid, .malformed-media, .malformed-supports, .negated-malformed { display: none }
+            @media (width >= 600px), :: { .valid { display: block } }
+            @media (width >= 600px) trailing { .malformed-media { display: block } }
+            @supports (display: grid) trailing { .malformed-supports { display: block } }
+            @supports not (display: grid) trailing { .negated-malformed { display: block } }
+        </style><div class="valid"></div><div class="malformed-media"></div>
+        <div class="malformed-supports"></div><div class="negated-malformed"></div>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let display = |class| {
+        let node = dom
+            .elements_named("div")
+            .find(|node| node.has_class(class))
+            .unwrap();
+        styles.get(&node).display
+    };
+    assert_eq!(display("valid"), Display::Block);
+    assert_eq!(display("malformed-media"), Display::None);
+    assert_eq!(display("malformed-supports"), Display::None);
+    assert_eq!(display("negated-malformed"), Display::None);
+}
+
+#[test]
+fn supports_conditions_combine_declarations_and_supported_selectors() {
+    let dom = dom::parse(
+        r#"<style>
+            .compound, .selector, .unknown-selector { display: none }
+            @supports ((display: grid) and (position: sticky)) or (display: flex) {
+                .compound { display: block }
+            }
+            @supports selector(.card > .title) { .selector { display: block } }
+            @supports selector(:totally-unknown-pseudo) {
+                .unknown-selector { display: block }
+            }
+        </style><div class="compound"></div><div class="selector"></div>
+        <div class="unknown-selector"></div>"#,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 800.0);
+    let display = |class| {
+        let node = dom
+            .elements_named("div")
+            .find(|node| node.has_class(class))
+            .unwrap();
+        styles.get(&node).display
+    };
+    assert_eq!(display("compound"), Display::Block);
+    assert_eq!(display("selector"), Display::Block);
+    assert_eq!(display("unknown-selector"), Display::None);
+}

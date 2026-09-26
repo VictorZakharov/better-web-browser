@@ -40,7 +40,7 @@ Current page support includes:
 - [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
 - [URL and native request resolution](docs/url-request-resolution.md), explicit public bases, live query parameters, and requests independent of author URL replacements
 - [Synchronous document streams and replacement](docs/document-streams-and-pre-wrap.md), plus [parser mutation notifications and autonomous custom-element construction](docs/parser-observation-and-cssom.md)
-- A growing CSS cascade with custom properties, `calc()` lengths, [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), block/inline flow, flex, grid, table, float, and positioned layout
+- A growing CSS cascade with custom properties, `calc()` lengths, [cascade layers](docs/css-cascade-layers.md), [nested rules and Selectors Level 4 features](docs/css-nesting-selectors.md), [conditional queries and scoped rules](docs/css-conditional-scope.md), block/inline flow, flex, grid, table, float, and positioned layout
 - Standards-based layout fixes and their headless Chrome comparisons are tracked in [layout compatibility](docs/layout-standards.md), including explicit remaining gaps.
 - External stylesheets with [nested import loading and separate script/paint gates](docs/stylesheet-loading-dependencies.md), CSS background images, raster images, alpha compositing, inline/external SVG geometry (SVG text is not yet painted), and renderer-owned webfont parsing plus Rust text shaping, fallback, and rasterization
 - [Owned and imported CSSOM](docs/parser-observation-and-cssom.md): preferred titled sheets, per-occurrence import identity, rule edits reflected in the cascade, and constructed/adopted sheets
@@ -262,12 +262,14 @@ events; it does not bypass native scrolling or directly mutate the page's JavaSc
 
 ### Web-platform regression suite
 
-A pinned, curated 397-file Web Platform Test suite covers 3,393 upstream harness subtests across HTML
+A pinned, curated 546-file Web Platform Test suite covers 5,960 upstream harness subtests across HTML
 and detached HTML/XML parsing, DOM and mutation, events, event-loop ordering, URLs, Fetch/XHR, cookies, forms, modules,
 Web IDL, window/port messaging, [Web Storage values and persistence](docs/web-storage.md), User Timing/PerformanceObserver,
-and CSS cascade/selectors/layout and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
-after preparing that checkout, the suite runs offline with one hidden command. All 3,393 selected
-subtests pass at the pinned revision, with no expected-failure, skip, or timeout allowances:
+and CSS cascade/selectors/layout, media and feature queries, scoped rules and imports, CSSOM,
+and stylesheet MIME validation. Upstream fixtures stay in a separate sparse WPT checkout;
+after preparing that checkout, the suite runs offline with one hidden command. All 5,960 selected
+subtests pass at the pinned revision in the 2026-09-26 hidden run, with no expected-failure,
+skip, or timeout allowances:
 
 ```powershell
 .\scripts\checkout-wpt.ps1 -Destination ..\wpt
@@ -431,6 +433,16 @@ returned HTTP 200 with zero JavaScript errors and no renderer exit. This is a
 cross-date observation, not a controlled attribution of those three points
 to CSS changes.
 
+The [conditional CSS, scoped cascade, and CSSOM batch](docs/css-conditional-scope.md)
+rendered **423 / 588** with Breeze's default identity in a 2026-09-26
+fresh-profile hidden release run at the same viewport, scale, locale, and
+10-second settle: **unchanged** from the preceding 423 / 588 observation.
+The run returned HTTP 200, showed no JavaScript errors or renderer exits,
+and rendered the score in the captured image. HTML5test does not award
+points for most media-query, feature-query, scope, or CSSOM behavior; the
+newly passing curated WPT cases and focused cascade tests are the acceptance
+evidence for this standards slice, not an inferred score gain.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã—720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -438,8 +450,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-26-batch3.json `
-  -Screenshot target/html5test/2026-09-26-batch3.png
+  -Output target/html5test/2026-09-26-batch4.json `
+  -Screenshot target/html5test/2026-09-26-batch4.png
 ```
 
 New releases must refresh or explicitly date these observations using the

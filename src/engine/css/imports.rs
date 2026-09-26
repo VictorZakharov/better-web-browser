@@ -11,6 +11,9 @@ mod graph;
 #[cfg(test)]
 #[path = "imports/tests.rs"]
 mod graph_tests;
+#[cfg(test)]
+#[path = "imports/scope_tests.rs"]
+mod scope_tests;
 pub(crate) use graph::expand;
 pub(crate) use graph::expand_owned;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +37,12 @@ pub(crate) struct Import {
     pub(crate) media: String,
     pub(crate) supports: Option<String>,
     pub(crate) layer: Option<String>,
+    /// None: no import scope; empty: implicit owner-parent scope from either `scope`
+    /// or `scope()` (canonicalized to the bare form in CSSOM); otherwise function contents.
+    pub(crate) scope: Option<String>,
+    /// Layer statements preceding this occurrence in its own stylesheet. Cascade 6 allows
+    /// these between imports, so they cannot all be hoisted to the beginning of the sheet.
+    pub(crate) preceding_layers: Vec<LayerPath>,
 }
 
 impl Import {
@@ -54,8 +63,7 @@ pub(crate) fn parse(source: &str) -> Vec<Import> {
     let mut input = Parser::new(&mut input);
     let mut rules = ImportParser {
         closed: false,
-        before_first_import: true,
-        leading_layers: Vec::new(),
+        pending_layers: Vec::new(),
     };
     StyleSheetParser::new(&mut input, &mut rules)
         .filter_map(Result::ok)
@@ -64,23 +72,9 @@ pub(crate) fn parse(source: &str) -> Vec<Import> {
         .collect()
 }
 
-pub(crate) fn leading_layer_statements(source: &str) -> Vec<LayerPath> {
-    let (source, _) = bounded_utf8_prefix(source, MAX_CSS_SOURCE_BYTES);
-    let mut input = ParserInput::new(source);
-    let mut input = Parser::new(&mut input);
-    let mut rules = ImportParser {
-        closed: false,
-        before_first_import: true,
-        leading_layers: Vec::new(),
-    };
-    for _ in StyleSheetParser::new(&mut input, &mut rules) {}
-    rules.leading_layers
-}
-
 struct ImportParser {
     closed: bool,
-    before_first_import: bool,
-    leading_layers: Vec<LayerPath>,
+    pending_layers: Vec<LayerPath>,
 }
 
 impl<'i> AtRuleParser<'i> for ImportParser {
@@ -98,15 +92,10 @@ impl<'i> AtRuleParser<'i> for ImportParser {
         }
         if name.eq_ignore_ascii_case("layer") {
             let statement = condition_text(input, 0)?;
-            if self.before_first_import {
-                if let Some(names) =
-                    super::layers::parse_layer_statement(&format!("@layer {statement}"))
-                {
-                    self.leading_layers.extend(names);
-                }
-            } else {
-                // A layer statement following an import closes the import prefix.
-                self.closed = true;
+            if let Some(names) =
+                super::layers::parse_layer_statement(&format!("@layer {statement}"))
+            {
+                self.pending_layers.extend(names);
             }
             return Ok(None);
         }
@@ -115,40 +104,72 @@ impl<'i> AtRuleParser<'i> for ImportParser {
             return Err(input.new_custom_error(()));
         }
         let href = input.expect_url_or_string()?.to_string();
-        self.before_first_import = false;
-        let layer = if input
-            .try_parse(|p| p.expect_ident_matching("layer"))
-            .is_ok()
-        {
-            Some(String::new())
-        } else if input
-            .try_parse(|p| p.expect_function_matching("layer"))
-            .is_ok()
-        {
-            Some(input.parse_nested_block(|p| condition_text(p, 0))?)
-        } else {
-            None
-        };
-        if layer
-            .as_deref()
-            .is_some_and(|name| !name.is_empty() && parse_layer_name(name).is_none())
-        {
-            return Err(input.new_custom_error(()));
+        // Cascade 6 allows these three modifiers in any order, but no modifier
+        // can appear twice. The remaining token stream is the media-query list.
+        let mut layer = None;
+        let mut scope = None;
+        let mut supports = None;
+        loop {
+            if input
+                .try_parse(|p| p.expect_ident_matching("layer"))
+                .is_ok()
+            {
+                if layer.replace(String::new()).is_some() {
+                    return Err(input.new_custom_error(()));
+                }
+            } else if input
+                .try_parse(|p| p.expect_function_matching("layer"))
+                .is_ok()
+            {
+                let name = input.parse_nested_block(|p| condition_text(p, 0))?;
+                if parse_layer_name(&name).is_none() || layer.replace(name).is_some() {
+                    return Err(input.new_custom_error(()));
+                }
+            } else if input
+                .try_parse(|p| p.expect_ident_matching("scope"))
+                .is_ok()
+            {
+                if scope.replace(String::new()).is_some() {
+                    return Err(input.new_custom_error(()));
+                }
+            } else if input
+                .try_parse(|p| p.expect_function_matching("scope"))
+                .is_ok()
+            {
+                let contents = input.parse_nested_block(|p| condition_text(p, 0))?;
+                if super::stylesheet::import_scope_prelude(&contents).is_none()
+                    || scope.replace(contents).is_some()
+                {
+                    return Err(input.new_custom_error(()));
+                }
+            } else if input
+                .try_parse(|p| p.expect_function_matching("supports"))
+                .is_ok()
+            {
+                let condition = input.parse_nested_block(|p| condition_text(p, 0))?;
+                // `supports()` accepts either a full supports condition or a bare
+                // declaration, whose parentheses are implied by Cascade 6. A
+                // syntactically valid but unsupported feature is still an import;
+                // it simply does not fetch or apply the child sheet.
+                if condition.is_empty()
+                    || (!super::supports::supports_condition_valid(&condition)
+                        && !super::supports::supports_import_declaration_valid(&condition))
+                    || supports.replace(condition).is_some()
+                {
+                    return Err(input.new_custom_error(()));
+                }
+            } else {
+                break;
+            }
         }
-        let supports = if input
-            .try_parse(|p| p.expect_function_matching("supports"))
-            .is_ok()
-        {
-            Some(input.parse_nested_block(|p| condition_text(p, 0))?)
-        } else {
-            None
-        };
         let media = condition_text(input, 0)?;
         Ok(Some(Import {
             href,
             media,
             supports,
             layer,
+            scope,
+            preceding_layers: std::mem::take(&mut self.pending_layers),
         }))
     }
 
@@ -250,11 +271,15 @@ mod tests {
     }
 
     #[test]
-    fn leading_layer_statements_precede_imports_and_later_statements_close_them() {
-        let source = "@layer base, theme; @import 'a.css' layer(theme); @layer later; @import 'ignored.css';";
-        assert_eq!(leading_layer_statements(source).len(), 2);
+    fn layer_statements_can_precede_and_separate_imports() {
+        let source =
+            "@layer base, theme; @import 'a.css' layer(theme); @layer later; @import 'b.css';";
         let imports = parse(source);
-        assert_eq!(imports.len(), 1);
+        assert_eq!(imports.len(), 2);
+        assert_eq!(imports[0].preceding_layers.len(), 2);
         assert_eq!(imports[0].layer.as_deref(), Some("theme"));
+        assert_eq!(imports[1].preceding_layers.len(), 1);
+        assert_eq!(imports[1].href, "b.css");
+        assert!(parse("@import 'a'; @layer valid; p{} @import 'invalid';").len() == 1);
     }
 }

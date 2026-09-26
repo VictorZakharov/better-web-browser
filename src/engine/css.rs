@@ -19,7 +19,7 @@ mod selector_model;
 mod selector_parser;
 mod selector_validity;
 mod shorthands;
-mod stylesheet;
+pub(crate) mod stylesheet;
 pub(crate) mod supports;
 mod syntax;
 pub(crate) mod transform;

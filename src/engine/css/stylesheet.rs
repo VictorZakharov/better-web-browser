@@ -12,7 +12,11 @@ use crate::limits::{
 use std::rc::Rc;
 mod declarations;
 mod nesting;
+mod scope;
 pub(super) use declarations::parse_declarations;
+pub(super) use scope::CssScope;
+pub(crate) use scope::import_scope_prelude;
+pub(crate) use scope::scope_boundary_text;
 
 #[derive(Clone, Debug)]
 pub(super) struct Rule {
@@ -31,6 +35,7 @@ pub(super) struct RuleData {
     pub(super) declarations: Vec<Declaration>,
     pub(super) base_url: String,
     pub(super) scope: RuleScope,
+    pub(super) css_scopes: Vec<CssScope>,
 }
 
 impl std::ops::Deref for Rule {
@@ -102,6 +107,8 @@ pub(super) fn parse_stylesheet_with_rule_budget(
         output,
         scope,
         rule_budget,
+        None,
+        &[],
         &mut events,
     );
 }
@@ -115,6 +122,8 @@ pub(super) fn parse_stylesheet_with_layer_events(
     output: &mut Vec<Rule>,
     scope: RuleScope,
     rule_budget: usize,
+    implicit_scope_root: Option<NodeId>,
+    import_scope_prefixes: &[String],
     events: &mut Vec<LayerEvent>,
 ) {
     if output.len() >= MAX_PAGE_CSS_RULES || rule_budget == 0 {
@@ -127,6 +136,18 @@ pub(super) fn parse_stylesheet_with_layer_events(
         .saturating_add(MAX_CSS_RULES_PER_STYLESHEET.min(rule_budget))
         .min(MAX_PAGE_CSS_RULES);
     let mut next_anonymous = 1;
+    let mut import_scopes = Vec::with_capacity(import_scope_prefixes.len());
+    for contents in import_scope_prefixes {
+        let Some(prelude) = scope::import_scope_prelude(contents) else {
+            return;
+        };
+        let Some(boundary) =
+            scope::parse_scope_prelude(&prelude, !import_scopes.is_empty(), implicit_scope_root)
+        else {
+            return;
+        };
+        import_scopes.push(boundary);
+    }
     parse_rule_list(
         &css,
         base_url,
@@ -137,6 +158,9 @@ pub(super) fn parse_stylesheet_with_layer_events(
         0,
         rule_limit,
         &[],
+        &import_scopes,
+        false,
+        implicit_scope_root,
         &mut next_anonymous,
         events,
     );
@@ -153,6 +177,9 @@ fn parse_rule_list(
     nesting_depth: usize,
     rule_limit: usize,
     current_layer: &[LayerSegment],
+    css_scopes: &[CssScope],
+    relative_scope_selectors: bool,
+    implicit_scope_root: Option<NodeId>,
     next_anonymous: &mut u64,
     events: &mut Vec<LayerEvent>,
 ) {
@@ -203,6 +230,9 @@ fn parse_rule_list(
                     nesting_depth + 1,
                     rule_limit,
                     current_layer,
+                    css_scopes,
+                    relative_scope_selectors,
+                    implicit_scope_root,
                     next_anonymous,
                     events,
                 );
@@ -219,6 +249,9 @@ fn parse_rule_list(
                     nesting_depth + 1,
                     rule_limit,
                     current_layer,
+                    css_scopes,
+                    relative_scope_selectors,
+                    implicit_scope_root,
                     next_anonymous,
                     events,
                 );
@@ -245,9 +278,37 @@ fn parse_rule_list(
                 nesting_depth + 1,
                 rule_limit,
                 &path,
+                css_scopes,
+                relative_scope_selectors,
+                implicit_scope_root,
                 next_anonymous,
                 events,
             );
+        } else if let Some(boundaries) = at_rule_prelude(prelude, "scope") {
+            if let Some(boundary) =
+                scope::parse_scope_prelude(boundaries, !css_scopes.is_empty(), implicit_scope_root)
+            {
+                let mut nested = css_scopes.to_vec();
+                nested.push(boundary);
+                scope::parse_scope_contents(
+                    body,
+                    nesting_depth + 1,
+                    current_layer,
+                    &mut nesting::Context {
+                        base_url,
+                        environment: media_environment,
+                        next_order,
+                        output,
+                        scope,
+                        css_scopes: &nested,
+                        relative_scope_selectors: true,
+                        implicit_scope_root,
+                        rule_limit,
+                        next_anonymous,
+                        events,
+                    },
+                );
+            }
         } else if !prelude.starts_with('@') {
             nesting::parse_style_rule(
                 prelude,
@@ -261,6 +322,9 @@ fn parse_rule_list(
                     next_order,
                     output,
                     scope,
+                    css_scopes,
+                    relative_scope_selectors,
+                    implicit_scope_root,
                     rule_limit,
                     next_anonymous,
                     events,

@@ -265,7 +265,9 @@ fn parse_compound_selector_with_depth(
                         "in-range" => compound.requires_in_range = true,
                         "out-of-range" => compound.requires_out_of_range = true,
                         "active" | "visited" | "focus-visible" => compound.never_matches = true,
-                        _ => compound.never_matches = true,
+                        // An unknown pseudo-class invalidates an unforgiving selector list.
+                        // Known but unimplemented pseudos above stay syntactically valid.
+                        _ => return None,
                     }
                 }
             }
@@ -282,7 +284,7 @@ fn parse_compound_selector_with_depth(
     Some((compound, specificity))
 }
 
-fn selector_is_supported(selector: &Selector) -> bool {
+pub(super) fn selector_is_supported(selector: &Selector) -> bool {
     selector.compounds.iter().all(|compound| {
         !compound.never_matches
             && compound

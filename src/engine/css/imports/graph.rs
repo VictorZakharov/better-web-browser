@@ -16,6 +16,8 @@ pub(crate) struct Expansion<'a> {
 pub(crate) struct ExpandedSheet<'a> {
     pub(crate) sheet: Cow<'a, StylesheetSource>,
     pub(crate) layer_prefix: LayerPath,
+    /// Outer-to-inner import scopes for this particular occurrence.
+    pub(crate) scope_prefixes: Vec<String>,
 }
 
 impl std::ops::Deref for ExpandedSheet<'_> {
@@ -69,7 +71,7 @@ pub(crate) fn expand_owned<'a>(
         },
         next_anonymous: 1,
     };
-    graph.visit(base_url, imports, &[]);
+    graph.visit(base_url, imports, &[], &[]);
     graph.result
 }
 
@@ -85,10 +87,25 @@ struct Graph<'a, 'b> {
 }
 
 impl Graph<'_, '_> {
-    fn visit(&mut self, base: &str, imports: &[Import], parent_layer: &[LayerSegment]) {
+    fn visit(
+        &mut self,
+        base: &str,
+        imports: &[Import],
+        parent_layer: &[LayerSegment],
+        parent_scopes: &[String],
+    ) {
         let environment = self.environment;
         for (index, import) in imports.iter().enumerate() {
             self.occurrence.push(index);
+            // A statement before this import participates in layer order even when
+            // the import's media/supports condition is false or its fetch fails.
+            for declared in &import.preceding_layers {
+                let mut path = parent_layer.to_vec();
+                path.extend(declared.iter().cloned());
+                self.result
+                    .layer_declarations
+                    .push((self.result.sheets.len(), path));
+            }
             let overridden = self.overrides.iter().find(|s| s.path == self.occurrence);
             let mut effective = import.clone();
             if let Some(sheet) = overridden {
@@ -99,6 +116,10 @@ impl Graph<'_, '_> {
                 continue;
             }
             let mut layer_prefix = parent_layer.to_vec();
+            let mut scope_prefixes = parent_scopes.to_vec();
+            if let Some(scope) = &import.scope {
+                scope_prefixes.push(scope.clone());
+            }
             if let Some(name) = import.layer.as_deref() {
                 if name.is_empty() {
                     layer_prefix.push(LayerSegment::ImportAnonymous(self.next_anonymous));
@@ -141,12 +162,18 @@ impl Graph<'_, '_> {
                 };
                 self.path.push(url);
                 self.path.push(sheet.base_url.clone());
-                self.visit(&sheet.base_url, &sheet.imports, &layer_prefix);
+                self.visit(
+                    &sheet.base_url,
+                    &sheet.imports,
+                    &layer_prefix,
+                    &scope_prefixes,
+                );
                 self.path.pop();
                 self.path.pop();
                 self.result.sheets.push(ExpandedSheet {
                     sheet,
                     layer_prefix,
+                    scope_prefixes,
                 });
             }
             self.occurrence.pop();

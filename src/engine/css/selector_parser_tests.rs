@@ -43,6 +43,9 @@ fn forgiving_lists_ignore_unsupported_members_but_not_is_unforgiving() {
     assert!(parse_selector("p:where(.ready, :unsupported)").is_some());
     assert!(parse_selector("p:not(.ready, :unsupported)").is_none());
     assert!(parse_selector("p:not(.ready,)").is_none());
+    assert!(parse_selector("p:unsupported").is_none());
+    assert!(parse_selector("p:unsupported()").is_none());
+    assert!(parse_selector("p:focus-visible").is_some());
 }
 
 #[test]
