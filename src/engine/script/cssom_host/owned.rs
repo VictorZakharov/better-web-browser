@@ -19,6 +19,7 @@ pub(super) fn call(
                         js_string(i.media),
                         i.supports.map_or_else(JsValue::null, js_string),
                         i.layer.map_or_else(JsValue::null, js_string),
+                        i.scope.map_or_else(JsValue::null, js_string),
                     ])
                 });
             return Ok(Some(value));

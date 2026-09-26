@@ -105,7 +105,7 @@
     CSSStyleRule = class CSSStyleRule extends CSSGroupingRule {
         constructor(sheet, text, token) {
             super(sheet, text, token, 'defer');
-            const open = text.indexOf('{');
+            const open = cssRuleBlockStart(text);
             const close = text.lastIndexOf('}');
             this.__selector = text.slice(0, open).trim();
             const body = parseNestedCssBody(sheet,
@@ -119,9 +119,12 @@
         set selectorText(value) { this.__selector = String(value).trim(); this.__changed(); }
         get style() { return this.__style; }
         get cssText() {
-            return this.__pristine ? this.__text :
-                this.__selector + ' { ' + this.__style.cssText + ' ' +
-                this.__serializedBody() + ' }';
+            const declarations = this.__style.cssText;
+            if (this.__rules.length === 0)
+                return this.__selector + ' { ' + declarations + (declarations ? ' ' : '') + '}';
+            const leading = declarations ? ' ' + declarations : '';
+            const children = this.__rules.map(rule => '  ' + rule.cssText.replace(/\n/g, '\n  '));
+            return this.__selector + ' {' + leading + '\n' + children.join('\n') + '\n}';
         }
         set cssText(value) {
             const parsed = createCssRule(this.parentStyleSheet, String(value), this.__nestedContext);

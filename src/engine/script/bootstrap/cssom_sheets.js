@@ -1,25 +1,89 @@
+    // A MediaList stores parsed media queries, not comma-separated source fragments.
+    // CSSOM requires the setter to parse the whole list, but append/delete to parse
+    // exactly one query and compare its serialization.
+    // https://drafts.csswg.org/cssom/#the-medialist-interface
+    const mediaListToken = {};
+    function splitMediaQueryList(text) {
+        if (!text) return [];
+        const parts = [];
+        let start = 0;
+        let quote = '';
+        let escaped = false;
+        const closers = [];
+        for (let index = 0; index < text.length; index++) {
+            const character = text[index];
+            if (escaped) { escaped = false; continue; }
+            if (character === '\\') { escaped = true; continue; }
+            if (quote) {
+                if (character === quote) quote = '';
+                continue;
+            }
+            if (character === '"' || character === "'") { quote = character; continue; }
+            if (character === '(') closers.push(')');
+            else if (character === '[') closers.push(']');
+            else if (character === '{') closers.push('}');
+            else if (character === closers[closers.length - 1]) closers.pop();
+            else if (character === ',' && closers.length === 0) {
+                parts.push(text.slice(start, index).trim());
+                start = index + 1;
+            }
+        }
+        parts.push(text.slice(start).trim());
+        return parts;
+    }
+    function oneMediaQuery(text) {
+        const queries = splitMediaQueryList(host('mediaSerialize', String(text)));
+        return queries.length === 1 ? queries[0] : null;
+    }
     class MediaList {
-        constructor(text = '', changed = () => {}) {
+        constructor(text = '', changed = () => {}, token) {
+            if (token !== mediaListToken) throw new TypeError('Illegal constructor');
             this.__changed = changed;
             this.__items = [];
+            this.__indexedLength = 0;
             this.mediaText = text;
         }
         get mediaText() { return this.__items.join(', '); }
         set mediaText(value) {
-            this.__items = String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+            const text = value === null ? '' : String(value);
+            this.__items = splitMediaQueryList(host('mediaSerialize', text));
+            this.__syncIndices();
             this.__changed();
         }
         get length() { return this.__items.length; }
-        item(index) { return this.__items[Number(index)] ?? null; }
+        item(index) {
+            if (arguments.length === 0) throw new TypeError('MediaList.item requires an index');
+            return this.__items[Number(index) >>> 0] ?? null;
+        }
         appendMedium(value) {
-            value = String(value).trim();
-            if (value && !this.__items.includes(value)) { this.__items.push(value); this.__changed(); }
+            if (arguments.length === 0) throw new TypeError('MediaList.appendMedium requires a query');
+            const query = oneMediaQuery(value);
+            if (query !== null && !this.__items.includes(query)) {
+                this.__items.push(query);
+                this.__syncIndices();
+                this.__changed();
+            }
         }
         deleteMedium(value) {
-            const index = this.__items.indexOf(String(value).trim());
+            if (arguments.length === 0) throw new TypeError('MediaList.deleteMedium requires a query');
+            const query = oneMediaQuery(value);
+            if (query === null) return;
+            const index = this.__items.indexOf(query);
             if (index < 0) throw new DOMException('Media query was not found', 'NotFoundError');
-            this.__items.splice(index, 1);
+            this.__items = this.__items.filter(item => item !== query);
+            this.__syncIndices();
             this.__changed();
+        }
+        __syncIndices() {
+            for (let index = 0; index < this.__indexedLength; index++) delete this[index];
+            this.__indexedLength = this.__items.length;
+            for (let index = 0; index < this.__indexedLength; index++) {
+                Object.defineProperty(this, index, {
+                    configurable: true,
+                    enumerable: true,
+                    get: () => this.__items[index]
+                });
+            }
         }
         toString() { return this.mediaText; }
         [Symbol.iterator]() { return this.__items[Symbol.iterator](); }
@@ -68,7 +132,7 @@
             this.__modifying = false;
             this.__initializing = false;
             this.__ownerRule = null;
-            this.__media = new MediaList(options.media || '', () => this.__notifyRoots());
+            this.__media = new MediaList(options.media ?? '', () => this.__notifyRoots(), mediaListToken);
         }
         get type() { return 'text/css'; }
         get href() { return this.__href; }
@@ -108,19 +172,16 @@
             if (parsed.length !== 1)
                 throw new DOMException('Expected exactly one CSS rule', 'SyntaxError');
             const next = createCssRule(this, parsed[0]);
+            if (next.constructor === CSSRule && !parsed[0].trimStart().startsWith('@'))
+                throw new DOMException('Expected one valid CSS rule', 'SyntaxError');
+            if (/^\s*@import\b/i.test(parsed[0]) && !(next instanceof CSSImportRule))
+                throw new DOMException('Invalid @import rule', 'SyntaxError');
             if (this.__constructed && next instanceof CSSImportRule)
                 throw new DOMException('@import is not allowed in constructed sheets', 'SyntaxError');
             const preceding = this.__rules.slice(0, index);
             const following = this.__rules.slice(index);
-            const lastImport = preceding.findLastIndex(r => r instanceof CSSImportRule);
             if ((next instanceof CSSImportRule &&
-                    (preceding.some(r => !(r instanceof CSSImportRule || r instanceof CSSLayerStatementRule)) ||
-                     (lastImport >= 0 && preceding.slice(lastImport + 1)
-                         .some(r => r instanceof CSSLayerStatementRule)) ||
-                     following.some(r => r instanceof CSSLayerStatementRule))) ||
-                (next instanceof CSSLayerStatementRule &&
-                    preceding.some(r => r instanceof CSSImportRule) &&
-                    following.some(r => r instanceof CSSImportRule)) ||
+                    preceding.some(r => !(r instanceof CSSImportRule || r instanceof CSSLayerStatementRule))) ||
                 (!(next instanceof CSSImportRule || next instanceof CSSLayerStatementRule) &&
                     following.some(r => r instanceof CSSImportRule)))
                 throw new DOMException('Invalid ordering of @import and @layer', 'HierarchyRequestError');

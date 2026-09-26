@@ -142,9 +142,15 @@
         supports(property, value) {
             if (arguments.length === 0)
                 throw new TypeError("CSS.supports requires at least one argument");
-            const condition = arguments.length === 1 ? String(property) :
-                '(' + String(property) + ': ' + String(value) + ')';
-            return !!host('cssSupports', condition);
+            if (arguments.length === 1) {
+                const condition = String(property);
+                // The one-argument overload also accepts a bare declaration, with
+                // implied parentheses. The two-argument overload does not.
+                // https://drafts.csswg.org/css-conditional-3/#dom-css-supports
+                return !!host('cssSupports', condition) ||
+                    !!host('cssSupports', '(' + condition + ')');
+            }
+            return !!host('cssSupportsDeclaration', String(property), String(value));
         },
         escape(value) { return String(value).replace(/[^a-zA-Z0-9_-]/g, match => '\\' + match); }
     };

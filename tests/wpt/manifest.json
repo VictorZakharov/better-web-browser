@@ -11,6 +11,7 @@
     "expectations": "forbidden"
   },
   "support": [
+    "resources/testharnessreport.js",
     "common/gc.js",
     "common/sab.js",
     "encoding/resources/encodings.js",
@@ -30,6 +31,7 @@
     "html/semantics/scripting-1/the-script-element/execution-timing/scripts/include-1.js",
     "css/cssom/support/import-rule.css",
     "css/cssom/support/import-red.css",
+    "css/css-cascade/resources/scope-imported.css",
     "custom-elements/resources/custom-elements-helpers.js",
     "dom/nodes/mutationobservers.js",
     "html/webappapis/dynamic-markup-insertion/document-write/005.js",
@@ -1277,6 +1279,26 @@
     {"path":"html/semantics/forms/the-button-element/button-validationmessage.html","area":"Forms","expected":"pass"},
     {"path":"html/semantics/forms/the-button-element/button-validity.html","area":"Forms","expected":"pass"},
     {"path":"html/semantics/forms/the-button-element/button-willvalidate.html","area":"Forms","expected":"pass"},
-    {"path":"html/semantics/forms/the-button-element/button-willvalidate-readonly-attribute.html","area":"Forms","expected":"pass"}
+    {"path":"html/semantics/forms/the-button-element/button-willvalidate-readonly-attribute.html","area":"Forms","expected":"pass"},
+    {"path":"css/css-conditional/js/CSS-supports-L3.html","area":"CSS Conditional Rules","expected":"pass"},
+    {"path":"css/css-conditional/js/CSS-supports-L4.html","area":"CSS Conditional Rules","expected":"pass"},
+    {"path":"css/css-conditional/js/CSS-supports-selector-detecting-invalid-in-logical-combinations.html","area":"CSS Conditional Rules","expected":"pass"},
+    {"path":"css/css-conditional/js/supports-conditionText.html","area":"CSS Conditional Rules","expected":"pass"},
+    {"path":"css/css-conditional/at-supports-matches.html","area":"CSS Conditional Rules","expected":"pass"},
+    {"path":"css/mediaqueries/aspect-ratio-serialization.html","area":"CSS Media Queries","expected":"pass"},
+    {"path":"css/mediaqueries/mq-unknown-feature-custom-property.html","area":"CSS Media Queries","expected":"pass"},
+    {"path":"css/cssom/medialist-appendmedium-parse-single-and-dedup.html","area":"CSSOM MediaList","expected":"pass"},
+    {"path":"css/cssom/medialist-deletemedium-parse-and-remove-all.html","area":"CSSOM MediaList","expected":"pass"},
+    {"path":"css/cssom/medialist-interfaces-001.html","area":"CSSOM MediaList","expected":"pass"},
+    {"path":"css/cssom/serialize-media-rule.html","area":"CSSOM serialization","expected":"pass"},
+    {"path":"css/css-cascade/scope-cssom.html","area":"CSSOM serialization","expected":"pass"},
+    {"path":"css/css-cascade/scope-supports.html","area":"CSS Scope","expected":"pass"},
+    {"path":"css/css-cascade/scope-media.html","area":"CSS Scope","expected":"pass"},
+    {"path":"css/css-cascade/scope-import-implicit.html","area":"CSS scoped imports","expected":"pass"},
+    {"path":"css/css-cascade/scope-import-scope-start.html","area":"CSS scoped imports","expected":"pass"},
+    {"path":"css/css-cascade/scope-import-scope-end.html","area":"CSS scoped imports","expected":"pass"},
+    {"path":"css/css-cascade/scope-import-multiple.html","area":"CSS scoped imports","expected":"pass"},
+    {"path":"css/css-cascade/scope-declarations.html","area":"CSS Scope","expected":"pass"},
+    {"path":"css/css-cascade/scope-implicit.html","area":"CSS Scope","expected":"pass"}
   ]
 }

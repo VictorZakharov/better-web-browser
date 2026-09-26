@@ -1,5 +1,6 @@
 use super::*;
-use crate::engine::css::StylesheetSource;
+use crate::engine::css::{Color, StyleSet, StylesheetSource};
+use crate::engine::dom;
 
 #[test]
 fn import_conditions_ignore_comments_without_joining_tokens_or_rewriting_strings() {
@@ -97,4 +98,56 @@ fn occurrence_budget_bounds_exponential_import_expansion() {
     assert!(result.truncated);
     assert!(result.urls.len() <= MAX_IMPORT_OCCURRENCES);
     assert!(result.sheets.len() <= MAX_IMPORT_OCCURRENCES);
+}
+
+#[test]
+fn layer_statements_between_imports_keep_their_cascade_position() {
+    let document = dom::parse(
+        "<style>@import 'empty.css'; @layer before; \
+         @import 'blue.css' layer(after); \
+         @layer before { p { color: red } }</style><p>text</p>",
+    );
+    let styles = StyleSet::from_sources_for_media_environment(
+        &document,
+        "https://example.test/page",
+        &[
+            sheet("empty.css", ""),
+            sheet("blue.css", "p { color: blue }"),
+        ],
+        MediaEnvironment::new(800.0, 600.0, 1.0, false),
+    );
+    assert_eq!(
+        styles
+            .get(&document.elements_named("p").next().unwrap())
+            .color,
+        Color::rgb(0, 0, 255),
+        "the later `after` layer wins over `before` even though its rules were imported"
+    );
+}
+
+#[test]
+fn nested_sheet_layer_statements_between_imports_keep_their_cascade_position() {
+    let document = dom::parse("<style>@import 'parent.css' layer(container);</style><p>text</p>");
+    let parent = sheet(
+        "parent.css",
+        "@import 'empty.css'; @layer before; \
+         @import 'blue.css' layer(after); \
+         @layer before { p { color: red } }",
+    );
+    let styles = StyleSet::from_sources_for_media_environment(
+        &document,
+        "https://example.test/page",
+        &[
+            parent,
+            sheet("empty.css", ""),
+            sheet("blue.css", "p { color: blue }"),
+        ],
+        MediaEnvironment::new(800.0, 600.0, 1.0, false),
+    );
+    assert_eq!(
+        styles
+            .get(&document.elements_named("p").next().unwrap())
+            .color,
+        Color::rgb(0, 0, 255)
+    );
 }

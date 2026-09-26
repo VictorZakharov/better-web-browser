@@ -45,7 +45,11 @@ pub(super) fn selector_matches(selector: &Selector, node: &NodeRef) -> bool {
     selector_matches_with_scope(selector, node, None)
 }
 
-fn selector_matches_with_scope(selector: &Selector, node: &NodeRef, scope: Option<NodeId>) -> bool {
+pub(super) fn selector_matches_with_scope(
+    selector: &Selector,
+    node: &NodeRef,
+    scope: Option<NodeId>,
+) -> bool {
     fn matches_at(
         selector: &Selector,
         index: usize,

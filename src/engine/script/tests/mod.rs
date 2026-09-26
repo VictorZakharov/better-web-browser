@@ -41,6 +41,7 @@ mod check_visibility;
 mod checkable;
 mod collections;
 mod compatibility;
+mod conditional_query_integration;
 mod crypto;
 mod csp_events;
 mod cssom;

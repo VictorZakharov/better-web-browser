@@ -59,6 +59,19 @@ pub(super) fn style_host_call(
             crate::engine::css::supports::supports_matches(&condition),
         )));
     }
+    if operation == "cssSupportsConditionValid" {
+        let condition = argument_string(args, 1)?;
+        return Ok(Some(JsValue::from(
+            crate::engine::css::supports::supports_condition_valid(&condition),
+        )));
+    }
+    if operation == "cssSupportsDeclaration" {
+        let property = argument_string(args, 1)?;
+        let value = argument_string(args, 2)?;
+        return Ok(Some(JsValue::from(
+            crate::engine::css::supports::supports_declaration_value(&property, &value),
+        )));
+    }
     if operation == "normalizeCssColor" {
         let value = argument_string(args, 1)?;
         return Ok(Some(normalize_css_color(&value)));

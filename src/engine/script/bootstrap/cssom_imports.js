@@ -1,3 +1,15 @@
+    function serializeCssString(value) {
+        let result = '"';
+        for (const character of value) {
+            const code = character.codePointAt(0);
+            if (code === 0) result += '\uFFFD';
+            else if (code < 0x20 || code === 0x7f) result += '\\' + code.toString(16) + ' ';
+            else if (character === '"' || character === '\\') result += '\\' + character;
+            else result += character;
+        }
+        return result + '"';
+    }
+
     // One object per import occurrence, even when network bytes are shared by URL.
     class CSSImportRule extends CSSRule {
         constructor(parent, text, fields, token) {
@@ -5,8 +17,9 @@
             this.__href = fields[0];
             this.__supports = fields[2];
             this.__layer = fields[3];
+            this.__scope = fields[4];
             this.__sheet = null;
-            this.__media = new MediaList(fields[1], () => this.parentStyleSheet?.__notifyRoots());
+            this.__media = new MediaList(fields[1], () => this.parentStyleSheet?.__notifyRoots(), mediaListToken);
         }
         get type() { return 3; }
         get href() { return this.__href; }
@@ -15,8 +28,9 @@
         get media() { return this.__media; }
         set media(value) { this.__media.mediaText = value; }
         get cssText() {
-            return '@import url("' + this.href.replace(/["\\]/g, '\\$&') + '")' +
+            return '@import url(' + serializeCssString(this.href) + ')' +
                 (this.layerName === null ? '' : this.layerName === '' ? ' layer' : ' layer(' + this.layerName + ')') +
+                (this.__scope === null ? '' : this.__scope === '' ? ' scope' : ' scope(' + this.__scope + ')') +
                 (this.supportsText === null ? '' : ' supports(' + this.supportsText + ')') +
                 (this.media.mediaText ? ' ' + this.media.mediaText : '') + ';';
         }

@@ -3,7 +3,7 @@
 use super::*;
 
 pub(crate) fn parse_length(value: &str) -> Option<Length> {
-    let value = value.trim().trim_end_matches("!important").trim();
+    let value = value.trim();
     if value
         .get(..5)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("calc("))
@@ -11,30 +11,33 @@ pub(crate) fn parse_length(value: &str) -> Option<Length> {
     {
         return parse_calc_length(value);
     }
-    if value == "auto" {
-        return Some(Length::Auto);
-    }
-    if value == "0" {
-        return Some(Length::Px(0.0));
-    }
-    for (suffix, constructor) in [
-        ("px", Length::Px as fn(f32) -> Length),
-        ("pt", |value| Length::Px(value * 96.0 / 72.0)),
-        ("em", Length::Em),
-        ("rem", Length::Rem),
-        ("vw", Length::Vw),
-        ("vh", Length::Vh),
-        ("vmin", Length::Vmin),
-        ("vmax", Length::Vmax),
-        ("%", Length::Percent),
-    ] {
-        if let Some(number) = value.strip_suffix(suffix)
-            && let Ok(number) = number.trim().parse::<f32>()
-        {
-            return Some(constructor(number));
+    // CSS dimensions are a single token: whitespace cannot separate the number and unit.
+    // CSS Values 4 §5.4: https://www.w3.org/TR/css-values-4/#dimensions
+    let mut input = ParserInput::new(value);
+    let mut parser = Parser::new(&mut input);
+    let token = parser.next().ok()?.clone();
+    parser.expect_exhausted().ok()?;
+    match token {
+        Token::Ident(name) if name.eq_ignore_ascii_case("auto") => Some(Length::Auto),
+        Token::Number { value: 0.0, .. } => Some(Length::Px(0.0)),
+        Token::Percentage { unit_value, .. } if unit_value.is_finite() => {
+            Some(Length::Percent(unit_value * 100.0))
         }
+        Token::Dimension { value, unit, .. } if value.is_finite() => {
+            match unit.to_ascii_lowercase().as_str() {
+                "px" => Some(Length::Px(value)),
+                "pt" => Some(Length::Px(value * 96.0 / 72.0)),
+                "em" => Some(Length::Em(value)),
+                "rem" => Some(Length::Rem(value)),
+                "vw" => Some(Length::Vw(value)),
+                "vh" => Some(Length::Vh(value)),
+                "vmin" => Some(Length::Vmin(value)),
+                "vmax" => Some(Length::Vmax(value)),
+                _ => None,
+            }
+        }
+        _ => None,
     }
-    None
 }
 
 pub(crate) fn parse_opacity(value: &str) -> Option<f32> {
@@ -262,3 +265,6 @@ pub(super) fn parse_calc_value<'i, 't>(
         _ => Err(input.new_custom_error::<(), ()>(())),
     }
 }
+
+#[cfg(test)]
+mod tests;

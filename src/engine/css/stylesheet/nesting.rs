@@ -16,15 +16,22 @@ pub(super) struct Context<'a> {
     pub(super) next_order: &'a mut u32,
     pub(super) output: &'a mut Vec<Rule>,
     pub(super) scope: RuleScope,
+    pub(super) css_scopes: &'a [CssScope],
+    pub(super) relative_scope_selectors: bool,
+    pub(super) implicit_scope_root: Option<NodeId>,
     pub(super) rule_limit: usize,
     pub(super) next_anonymous: &'a mut u64,
     pub(super) events: &'a mut Vec<LayerEvent>,
 }
 
 #[derive(Clone, Copy)]
-enum BlockItem<'a> {
+pub(super) enum BlockItem<'a> {
     Declarations(&'a str),
-    Rule { prelude: &'a str, body: &'a str },
+    Rule {
+        prelude: &'a str,
+        body: &'a str,
+        source: &'a str,
+    },
     Statement(&'a str),
 }
 
@@ -40,7 +47,12 @@ pub(super) fn parse_style_rule(
     if depth >= MAX_CSS_NESTING_DEPTH || context.output.len() >= context.rule_limit {
         return;
     }
-    let Some(selectors) = parse_style_selectors(prelude, parent, context.scope) else {
+    let Some(selectors) = parse_style_selectors(
+        prelude,
+        parent,
+        context.scope,
+        context.relative_scope_selectors,
+    ) else {
         return;
     };
     parse_style_contents(body, depth, layer, &selectors, true, context);
@@ -50,6 +62,7 @@ fn parse_style_selectors(
     prelude: &str,
     parent: Option<&[StyleSelector]>,
     scope: RuleScope,
+    is_css_scoped: bool,
 ) -> Option<Vec<StyleSelector>> {
     let parent_selectors = parent.map(|parents| {
         parents
@@ -92,6 +105,8 @@ fn parse_style_selectors(
             });
         } else {
             let (source, rule_scope, host_condition) = scoped_selector(member, scope)?;
+            let scoped_source = is_css_scoped.then(|| scope::scoped_selector_source(source));
+            let source = scoped_source.as_deref().unwrap_or(source);
             let host_condition = host_condition.map(parse_selector).transpose_option()?;
             let (mut selector, pseudo) = parse_style_rule_selector(source)?;
             if let Some(condition) = host_condition.as_ref() {
@@ -178,7 +193,7 @@ fn parse_style_contents(
                     }
                 }
             }
-            BlockItem::Rule { prelude, body } => {
+            BlockItem::Rule { prelude, body, .. } => {
                 if first {
                     emit_rules(selectors, Vec::new(), layer, context);
                     first = false;
@@ -203,6 +218,38 @@ fn parse_style_contents(
                     }
                     context.events.push(LayerEvent::Declare(path.clone()));
                     parse_style_contents(body, depth + 1, &path, selectors, false, context);
+                } else if let Some(boundaries) = at_rule_prelude(prelude, "scope") {
+                    let parents = selectors
+                        .iter()
+                        .filter(|selector| selector.pseudo.is_none())
+                        .map(|selector| selector.selector.clone())
+                        .collect::<Vec<_>>();
+                    if let Some(boundary) = scope::parse_scope_prelude_in_style(
+                        boundaries,
+                        &parents,
+                        context.implicit_scope_root,
+                    ) {
+                        let mut nested = context.css_scopes.to_vec();
+                        nested.push(boundary);
+                        scope::parse_scope_contents(
+                            body,
+                            depth + 1,
+                            layer,
+                            &mut Context {
+                                base_url: context.base_url,
+                                environment: context.environment,
+                                next_order: &mut *context.next_order,
+                                output: &mut *context.output,
+                                scope: context.scope,
+                                css_scopes: &nested,
+                                relative_scope_selectors: true,
+                                implicit_scope_root: context.implicit_scope_root,
+                                rule_limit: context.rule_limit,
+                                next_anonymous: &mut *context.next_anonymous,
+                                events: &mut *context.events,
+                            },
+                        );
+                    }
                 } else if !prelude.starts_with('@') {
                     parse_style_rule(prelude, body, depth + 1, layer, Some(selectors), context);
                 }
@@ -235,6 +282,7 @@ fn emit_rules(
                 declarations: declarations.clone(),
                 base_url: context.base_url.to_string(),
                 scope: parsed.scope,
+                css_scopes: context.css_scopes.to_vec(),
             }),
         });
         context
@@ -244,7 +292,31 @@ fn emit_rules(
     }
 }
 
-fn block_items(input: &str) -> Vec<BlockItem<'_>> {
+/// CSS Cascade 6 wraps each contiguous @scope declaration run in a zero-specificity rule.
+pub(super) fn emit_scoped_declarations(
+    text: &str,
+    layer: &[LayerSegment],
+    context: &mut Context<'_>,
+) {
+    let declarations = parse_declarations(text);
+    if declarations.is_empty() {
+        return;
+    }
+    let selector = parse_selector(":where(:scope)").expect("fixed scoped declaration selector");
+    emit_rules(
+        &[StyleSelector {
+            selector,
+            pseudo: None,
+            host_condition: None,
+            scope: context.scope,
+        }],
+        declarations,
+        layer,
+        context,
+    );
+}
+
+pub(super) fn block_items(input: &str) -> Vec<BlockItem<'_>> {
     let mut items = Vec::new();
     let mut cursor = 0;
     let mut declarations_start = 0;
@@ -304,6 +376,7 @@ fn block_items(input: &str) -> Vec<BlockItem<'_>> {
                 items.push(BlockItem::Rule {
                     prelude,
                     body: &input[cursor + 1..close],
+                    source: &input[item_start..close + 1],
                 });
                 cursor = close + 1;
                 item_start = cursor;

@@ -1,7 +1,7 @@
 use super::*;
 use crate::engine::MediaEnvironment;
 
-fn media_runtime(
+pub(super) fn media_runtime(
     html: &str,
     width: f32,
     height: f32,
@@ -78,6 +78,34 @@ fn initial_window_metrics_use_the_document_media_environment() {
             .attr("data-metrics")
             .as_deref(),
         Some("1000,700,2,1000,700")
+    );
+}
+
+#[test]
+fn square_viewport_orientation_is_portrait_in_script_and_styles() {
+    let (dom, _runtime) = media_runtime(
+        r#"<style>
+            #target { color: red }
+            @media (orientation: portrait) { #target { color: blue } }
+        </style><body><div id="target"></div><script>
+            document.body.setAttribute('data-orientation', [
+                matchMedia('(orientation: portrait)').matches,
+                matchMedia('(orientation: landscape)').matches,
+                getComputedStyle(document.getElementById('target')).color
+            ].join('|'));
+        </script></body>"#,
+        800.0,
+        800.0,
+        1.0,
+        false,
+    );
+
+    assert_eq!(
+        dom.elements_named("body")
+            .next()
+            .and_then(|body| body.attr("data-orientation"))
+            .as_deref(),
+        Some("true|false|rgb(0, 0, 255)")
     );
 }
 

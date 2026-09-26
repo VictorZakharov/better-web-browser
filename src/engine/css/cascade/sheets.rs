@@ -17,7 +17,9 @@ struct SheetInput {
     source: String,
     base_url: String,
     scope: RuleScope,
+    implicit_scope_root: Option<NodeId>,
     layer_prefix: LayerPath,
+    import_scope_prefixes: Vec<String>,
     declared_layer: Option<LayerPath>,
 }
 
@@ -83,10 +85,8 @@ pub(super) fn collect(
         .iter()
         .filter(|source| source.owner_url.is_none())
     {
+        let implicit_scope_root = default_scope_root(document);
         let owner = inputs.len() as u32;
-        for layer in crate::engine::css::imports::leading_layer_statements(&source.source) {
-            inputs.push(SheetInput::layer_marker(layer, RuleScope::Document));
-        }
         let imports = crate::engine::css::imports::expand(
             &source.base_url,
             &source.imports,
@@ -106,7 +106,9 @@ pub(super) fn collect(
                 source: imported.source.clone(),
                 base_url: imported.base_url.clone(),
                 scope: RuleScope::Document,
+                implicit_scope_root,
                 layer_prefix: import_owner_path(&imported.layer_prefix, owner),
+                import_scope_prefixes: imported.scope_prefixes,
                 declared_layer: None,
             });
         }
@@ -120,7 +122,9 @@ pub(super) fn collect(
             source: source.source.clone(),
             base_url: source.base_url.clone(),
             scope: RuleScope::Document,
+            implicit_scope_root,
             layer_prefix: Vec::new(),
+            import_scope_prefixes: Vec::new(),
             declared_layer: None,
         });
     }
@@ -173,6 +177,7 @@ fn append_adopted(
     inputs: &mut Vec<SheetInput>,
     scope: RuleScope,
 ) {
+    let implicit_scope_root = default_scope_root(root);
     for sheet in root.adopted_stylesheets() {
         if !sheet.media.trim().is_empty()
             && !media::media_matches_for_environment(&sheet.media, environment)
@@ -183,7 +188,9 @@ fn append_adopted(
             source: sheet.source,
             base_url: sheet.base_url,
             scope,
+            implicit_scope_root,
             layer_prefix: Vec::new(),
+            import_scope_prefixes: Vec::new(),
             declared_layer: None,
         });
     }
@@ -195,10 +202,18 @@ impl SheetInput {
             source: String::new(),
             base_url: String::new(),
             scope,
+            implicit_scope_root: None,
             layer_prefix: Vec::new(),
+            import_scope_prefixes: Vec::new(),
             declared_layer: Some(path),
         }
     }
+}
+
+fn default_scope_root(root: &NodeRef) -> Option<NodeId> {
+    // CSS Cascade 6 §3.5.4 uses the containing node-tree root when a sheet has no
+    // owner parent. For a document-adopted sheet this is the Document node, not html.
+    root.shadow_host().map(|host| host.id()).or(Some(root.id()))
 }
 
 #[cfg(test)]

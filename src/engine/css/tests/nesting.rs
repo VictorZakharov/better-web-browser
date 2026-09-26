@@ -11,6 +11,21 @@ fn color_of(dom: &dom::Dom, id: &str) -> Color {
 }
 
 #[test]
+fn unknown_pseudo_invalidates_a_whole_style_rule_selector_list() {
+    let dom = dom::parse(
+        "<style>
+           #unknown, :unsupported-pseudo { color: red }
+           #function, :unsupported-function() { color: red }
+           #known, :focus-visible { color: blue }
+         </style>
+         <span id=unknown></span><span id=function></span><span id=known></span>",
+    );
+    assert_eq!(color_of(&dom, "unknown"), Color::rgb(0, 0, 0));
+    assert_eq!(color_of(&dom, "function"), Color::rgb(0, 0, 0));
+    assert_eq!(color_of(&dom, "known"), Color::rgb(0, 0, 255));
+}
+
+#[test]
 fn nested_descendant_and_explicit_child_rules_match() {
     let dom = dom::parse(
         "<style>.card { color: red; .title { color: blue } > .direct { color: green } }</style>

@@ -9,11 +9,43 @@
         return name.startsWith('--') ? name : name.toLowerCase();
     };
 
+    // A brace in a function, parenthesized condition, or attribute selector is
+    // a component value, not the opening brace of a CSS rule.
+    function cssRuleBlockStart(source) {
+        const closers = [];
+        let quote = '';
+        let comment = false;
+        let escaped = false;
+        for (let index = 0; index < source.length; index++) {
+            const character = source[index], next = source[index + 1];
+            if (comment) {
+                if (character === '*' && next === '/') { comment = false; index++; }
+                continue;
+            }
+            if (escaped) { escaped = false; continue; }
+            if (character === '\\') { escaped = true; continue; }
+            if (quote) {
+                if (character === quote) quote = '';
+                continue;
+            }
+            if (character === '/' && next === '*') { comment = true; index++; continue; }
+            if (character === '"' || character === "'") { quote = character; continue; }
+            if (character === '(') closers.push(')');
+            else if (character === '[') closers.push(']');
+            else if (character === '{') {
+                if (closers.length === 0) return index;
+                closers.push('}');
+            } else if (character === closers[closers.length - 1]) closers.pop();
+        }
+        return -1;
+    }
+
     function scanCssRules(source) {
         source = String(source);
         const rules = [];
         let start = 0;
         let depth = 0;
+        const closers = [];
         let quote = '';
         let comment = false;
         let escaped = false;
@@ -25,16 +57,26 @@
                 if (character === '*' && next === '/') { comment = false; index++; }
                 continue;
             }
+            if (escaped) { escaped = false; continue; }
+            if (character === '\\') { escaped = true; continue; }
             if (quote) {
-                if (escaped) escaped = false;
-                else if (character === '\\') escaped = true;
-                else if (character === quote) quote = '';
+                if (character === quote) quote = '';
                 continue;
             }
             if (character === '/' && next === '*') { comment = true; index++; continue; }
             if (character === '"' || character === "'") { quote = character; continue; }
-            if (character === '{') { depth++; sawBlock = true; continue; }
-            if (character === '}' && depth > 0) {
+            if (character === '(') { closers.push(')'); continue; }
+            if (character === '[') { closers.push(']'); continue; }
+            if (character === '{') {
+                if (closers.length > 0) closers.push('}');
+                else { depth++; sawBlock = true; }
+                continue;
+            }
+            if (character === closers[closers.length - 1]) {
+                closers.pop();
+                continue;
+            }
+            if (character === '}' && depth > 0 && closers.length === 0) {
                 depth--;
                 if (depth === 0 && sawBlock) {
                     const rule = source.slice(start, index + 1).trim();
@@ -44,7 +86,7 @@
                 }
                 continue;
             }
-            if (character === ';' && depth === 0) {
+            if (character === ';' && depth === 0 && closers.length === 0) {
                 const rule = source.slice(start, index + 1).trim();
                 if (rule) rules.push(rule);
                 start = index + 1;
@@ -157,7 +199,7 @@
             ? host('stylesheetImport', text) : null;
         if (imported) return new CSSImportRule(sheet, text, imported, cssRuleConstructionToken);
         if (/^@layer(?:\s|\{|;)/i.test(text)) {
-            const open = text.indexOf('{');
+            const open = cssRuleBlockStart(text);
             const block = open >= 0 && text.trimEnd().endsWith('}');
             const prelude = (block ? text.slice(0, open) : text.slice(0, text.lastIndexOf(';'))).trim();
             const names = host('stylesheetLayerNames', prelude, block);
@@ -168,14 +210,24 @@
                     nestedContext)
                 : new CSSLayerStatementRule(sheet, text, names, cssRuleConstructionToken);
         }
-        const open = text.indexOf('{');
+        const open = cssRuleBlockStart(text);
         if (open >= 0 && text.trimEnd().endsWith('}')) {
-            if (/^@media\s/i.test(text))
+            if (/^@scope(?=\s|\{|\()/i.test(text)) {
+                const boundaries = host('stylesheetScopeBoundaries', text.slice(6, open).trim());
+                if (boundaries === null)
+                    throw new DOMException('Invalid @scope rule', 'SyntaxError');
+                return new CSSScopeRule(sheet, text, boundaries, cssRuleConstructionToken);
+            }
+            if (/^@media(?=\s|\()/i.test(text))
                 return new CSSMediaRule(sheet, text, text.slice(6, open).trim(),
                     cssRuleConstructionToken, nestedContext);
-            if (/^@supports\s/i.test(text))
-                return new CSSSupportsRule(sheet, text, text.slice(9, open).trim(),
+            if (/^@supports(?=\s|\()/i.test(text)) {
+                const condition = text.slice(9, open).trim();
+                if (!host('cssSupportsConditionValid', condition))
+                    throw new DOMException('Invalid @supports condition', 'SyntaxError');
+                return new CSSSupportsRule(sheet, text, condition,
                     cssRuleConstructionToken, nestedContext);
+            }
         }
         return open > 0 && !text.trimStart().startsWith('@')
             ? new CSSStyleRule(sheet, text, cssRuleConstructionToken)
@@ -184,7 +236,6 @@
 
     function parseCssRules(sheet, text) {
         let importsAllowed = true;
-        let sawImport = false;
         const rules = [];
         for (const source of scanCssRules(text)) {
             const text = source.replace(/^(?:\s|\/\*[\s\S]*?\*\/)+/, '');
@@ -192,7 +243,7 @@
             if (/^@import\b/i.test(text)) {
                 if (sheet.__constructed || !importsAllowed) continue;
                 const rule = createCssRule(sheet, text);
-                if (rule instanceof CSSImportRule) { rules.push(rule); sawImport = true; }
+                if (rule instanceof CSSImportRule) rules.push(rule);
             } else {
                 let rule;
                 try { rule = createCssRule(sheet, text); }
@@ -200,7 +251,8 @@
                     if (error?.name === 'SyntaxError') continue;
                     throw error;
                 }
-                if (!(rule instanceof CSSLayerStatementRule) || sawImport)
+                if (rule.constructor === CSSRule && !text.startsWith('@')) continue;
+                if (!(rule instanceof CSSLayerStatementRule))
                     importsAllowed = false;
                 rules.push(rule);
             }

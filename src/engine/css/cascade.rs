@@ -6,6 +6,7 @@ mod presentational;
 mod pseudo;
 mod refresh;
 mod root_units;
+mod scope;
 mod sheets;
 mod sources;
 pub use sources::StylesheetSource;
@@ -297,6 +298,9 @@ impl StyleSet {
             .collect::<Vec<_>>();
         let ancestors = std::cell::OnceCell::new();
         matching.retain(|rule| {
+            if !rule.css_scopes.is_empty() {
+                return scope::proximity(rule, node).is_some();
+            }
             if !super::selector_match::AncestorFilter::needed(&rule.selector) {
                 selector_matches(&rule.selector, node)
             } else {

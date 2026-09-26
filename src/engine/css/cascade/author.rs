@@ -66,29 +66,39 @@ impl StyleSet {
                     RuleScope::Host(_) => outer_context.saturating_add(1),
                     RuleScope::Slotted(_) => slot_context,
                 };
-                (*rule, context)
+                let proximity = scope::proximity(rule, node).unwrap_or(usize::MAX);
+                (*rule, context, proximity)
             })
             .collect::<Vec<_>>();
-        let layered = rules.iter().any(|(rule, _)| rule.layer_rank != u32::MAX);
+        let layered = rules.iter().any(|(rule, _, _)| rule.layer_rank != u32::MAX);
         let mixed_context = rules
             .first()
             .is_some_and(|first| rules.iter().any(|rule| rule.1 != first.1));
-        rules.sort_by(|(left, left_context), (right, right_context)| {
-            right_context
-                .cmp(left_context)
-                .then_with(|| left.layer_rank.cmp(&right.layer_rank))
-                .then_with(|| left.selector.specificity.cmp(&right.selector.specificity))
-                .then_with(|| left.order.cmp(&right.order))
-        });
+        rules.sort_by(
+            |(left, left_context, left_proximity), (right, right_context, right_proximity)| {
+                right_context
+                    .cmp(left_context)
+                    .then_with(|| left.layer_rank.cmp(&right.layer_rank))
+                    .then_with(|| left.selector.specificity.cmp(&right.selector.specificity))
+                    .then_with(|| right_proximity.cmp(left_proximity))
+                    .then_with(|| left.order.cmp(&right.order))
+            },
+        );
         for important in [false, true] {
             if important && (layered || mixed_context) {
-                rules.sort_by(|(left, left_context), (right, right_context)| {
-                    left_context
-                        .cmp(right_context)
-                        .then_with(|| right.layer_rank.cmp(&left.layer_rank))
-                        .then_with(|| left.selector.specificity.cmp(&right.selector.specificity))
-                        .then_with(|| left.order.cmp(&right.order))
-                });
+                rules.sort_by(
+                    |(left, left_context, left_proximity),
+                     (right, right_context, right_proximity)| {
+                        left_context
+                            .cmp(right_context)
+                            .then_with(|| right.layer_rank.cmp(&left.layer_rank))
+                            .then_with(|| {
+                                left.selector.specificity.cmp(&right.selector.specificity)
+                            })
+                            .then_with(|| right_proximity.cmp(left_proximity))
+                            .then_with(|| left.order.cmp(&right.order))
+                    },
+                );
             }
             let mut inline = inline_declarations
                 .iter()
@@ -103,7 +113,7 @@ impl StyleSet {
                     },
                 });
             let mut inserted_inline = false;
-            for (rule, context) in &rules {
+            for (rule, context, _) in &rules {
                 if important && !inserted_inline && *context > outer_context {
                     cascaded.extend(inline.by_ref());
                     inserted_inline = true;

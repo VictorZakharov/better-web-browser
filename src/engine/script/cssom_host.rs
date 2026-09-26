@@ -25,6 +25,19 @@ pub(super) fn cssom_host_call(
                     .unwrap_or_else(JsValue::null),
             ));
         }
+        "stylesheetScopeBoundaries" => {
+            let prelude = argument_string(args, 1)?;
+            return Ok(Some(
+                crate::engine::css::stylesheet::scope_boundary_text(&prelude)
+                    .map(|(start, end)| {
+                        JsValue::Array(vec![
+                            start.map_or_else(JsValue::null, js_string),
+                            end.map_or_else(JsValue::null, js_string),
+                        ])
+                    })
+                    .unwrap_or_else(JsValue::null),
+            ));
+        }
         "stylesheetSource" => {
             let url = argument_string(args, 1)?;
             let url = url.split('#').next().unwrap_or(&url);
