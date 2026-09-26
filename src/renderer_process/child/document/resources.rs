@@ -73,6 +73,25 @@ pub(super) fn discard_resource_preloads(
 }
 
 impl DocumentRuntime {
+    /// Initial resource admission precedes creation of the script realm. Publish those media
+    /// selections once the realm exists, before parser scripts can read `currentSrc`.
+    pub(super) fn dispatch_initial_media_selections(&mut self) -> Result<(), String> {
+        let selections = self
+            .pending_resource_preloads
+            .iter()
+            .flat_map(|pending| pending.by_request.values())
+            .filter(|resource| self.page.is_current_media_resource(resource))
+            .filter_map(|resource| match resource {
+                PageResource::Media { node, url, .. } => Some((*node, url.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (node, url) in selections {
+            self.dispatch_media_source(node, "selected", &url, "")?;
+        }
+        Ok(())
+    }
+
     pub(super) fn start_presentational_preloads(
         &mut self,
         connection: &mut ChildConnection,
@@ -84,11 +103,27 @@ impl DocumentRuntime {
             // not a style/layout change (notably an inline sheet's initial load event).
             self.resource_event_pending = true;
         }
+        // Resource load/error handlers can install a meta CSP before adding more resources.
+        // Browser admission must see that policy before this method sends a new Fetch batch.
+        connection.send_policy_updates(self.id, &mut self.pending_async_outcome)?;
         if let Some(runtime) = self.script_runtime.as_mut() {
             self.parser_scripts.prepare_modules(runtime);
         }
+        let live_hints = self.page.current_origin_hints();
+        let already_admitted = self
+            .loaded_resources
+            .iter()
+            .filter(|resource| is_network_hint(resource))
+            .count()
+            + self
+                .pending_resource_preloads
+                .iter()
+                .flat_map(|pending| pending.by_request.values())
+                .filter(|resource| is_network_hint(resource))
+                .count();
+        let mut available_hints = 2_usize.saturating_sub(already_admitted);
         let mut seen = HashSet::new();
-        let resources = self
+        let mut resources = self
             .page
             .resources
             .iter()
@@ -103,11 +138,29 @@ impl DocumentRuntime {
                     .any(|pending| pending.contains(resource))
             })
             .filter(|resource| seen.insert(resource.clone()))
+            .filter(|resource| {
+                if !is_network_hint(resource) {
+                    return true;
+                }
+                if available_hints == 0 || !live_hints.contains(resource) {
+                    return false;
+                }
+                available_hints -= 1;
+                true
+            })
             .collect::<Vec<_>>();
+        // Hints are opportunistic and must not take a transport slot ahead of resources needed
+        // to render this document. The broker still enforces its global concurrent-fetch cap.
+        resources.sort_by_key(is_network_hint);
         let resources = self.admit_cached_preloads(connection, resources)?;
         let (requests, by_request, integrity_by_request) =
             resource_requests(connection, self.id, resources, Some(&self.page));
         if let Some(batch) = connection.start_fetch_batch(self.id, requests)? {
+            for resource in by_request.values() {
+                if let PageResource::Media { url, node, .. } = resource {
+                    self.dispatch_media_source(*node, "selected", url, "")?;
+                }
+            }
             self.pending_resource_preloads.push(PendingResourceFetch {
                 batch,
                 by_request,
@@ -210,6 +263,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
     matches!(
         resource,
         PageResource::Preload { .. }
+            | PageResource::OriginHint { .. }
             | PageResource::Stylesheet { .. }
             | PageResource::Image { .. }
             | PageResource::Media { .. }
@@ -219,6 +273,7 @@ fn is_presentational_resource(resource: &PageResource) -> bool {
 
 fn resource_label(resource: &PageResource) -> String {
     let (kind, url) = match resource {
+        PageResource::OriginHint { origin } => ("origin hint", origin),
         PageResource::Preload { url, .. } => ("preload", url),
         PageResource::Stylesheet { url } => ("stylesheet", url),
         PageResource::Image { url } => ("image", url),
@@ -228,6 +283,10 @@ fn resource_label(resource: &PageResource) -> String {
     };
     let url = bounded_utf8_prefix(url, 384).0;
     format!("{kind} {url}")
+}
+
+fn is_network_hint(resource: &PageResource) -> bool {
+    matches!(resource, PageResource::OriginHint { .. })
 }
 
 type ResourceRequestBatch = (

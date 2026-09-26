@@ -151,8 +151,13 @@ impl MediaCapabilityReport {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum MediaCodecFamily {
+    None = 0,
     H264 = 1,
     AacLc = 2,
+    Pcm = 3,
+    Mp3 = 4,
+    /// AAC profile not established by the native stream subtype alone.
+    Aac = 5,
 }
 
 impl MediaCodecFamily {
@@ -162,8 +167,12 @@ impl MediaCodecFamily {
 
     pub(crate) fn from_wire(value: u16) -> Result<Self, MediaProtocolError> {
         match value {
+            0 => Ok(Self::None),
             1 => Ok(Self::H264),
             2 => Ok(Self::AacLc),
+            3 => Ok(Self::Pcm),
+            4 => Ok(Self::Mp3),
+            5 => Ok(Self::Aac),
             _ => Err(MediaProtocolError::InvalidPayload("codec family")),
         }
     }
@@ -285,7 +294,8 @@ pub enum WorkerMediaMessage {
     Decoded {
         request_id: u64,
         report: MediaDecodeReport,
-        frame: crate::media_frame_protocol::MediaVideoFrameMetadata,
+        /// Audio-only sources have no video frame or frame-pipe transfer.
+        frame: Option<crate::media_frame_protocol::MediaVideoFrameMetadata>,
     },
     Appended {
         buffered: MediaBufferedExtent,

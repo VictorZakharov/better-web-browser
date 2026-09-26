@@ -5,6 +5,7 @@ impl Page {
     pub(crate) fn reset_document_stream(&mut self) {
         self.scripts.clear();
         self.resources.clear();
+        self.media_selections.clear();
         self.stylesheet_sources.clear();
         self.external_stylesheets.clear();
         self.dom
@@ -14,6 +15,7 @@ impl Page {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_parser_runtime(
         &self,
+        policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
         cookie_version: u64,
         cookie_header: &str,
         local: crate::storage::StorageAreaSnapshot,
@@ -26,6 +28,7 @@ impl Page {
             &self.source_url,
             &self.character_set,
         );
+        runtime.set_document_policy(policy);
         runtime.set_media_environment(self.media_environment);
         runtime.set_layout_viewport(self.layout_viewport.0, self.layout_viewport.1);
         runtime.set_quirks_mode(
@@ -68,16 +71,20 @@ impl Page {
         self.hide_scripted_noscript();
         let resources = resources::discover_non_script_resources(
             &self.dom,
+            &self.source_url,
             &self.base_url,
             self.media_environment,
         );
         for resource in resources {
-            if !matches!(resource, PageResource::Script { .. })
-                && !self.resources.contains(&resource)
+            if !matches!(
+                resource,
+                PageResource::Script { .. } | PageResource::Media { .. }
+            ) && !self.resources.contains(&resource)
             {
                 self.resources.push(resource);
             }
         }
+        self.refresh_media_sources();
         self.discover_stylesheet_dependencies();
     }
 

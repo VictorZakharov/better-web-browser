@@ -65,6 +65,10 @@ impl FrameDocument {
             parser.dom().quirks_mode.get() != html5ever::tree_builder::QuirksMode::NoQuirks,
         );
         match step {
+            ParserStep::CspMeta(node) => match runtime.process_parser_csp_meta(&node) {
+                Ok(update) => append(&mut outcome, update),
+                Err(error) => outcome.errors.push(error),
+            },
             ParserStep::Encoding(label) => {
                 if let Some(input) = &mut self.input {
                     input.restart = input.decoder.change_encoding(&label);
@@ -185,6 +189,7 @@ pub(in crate::engine::script::runtime) fn append(
     outcome.errors.append(&mut other.errors);
     outcome.console.append(&mut other.console);
     outcome.diagnostics.append(&mut other.diagnostics);
+    outcome.policy_updates.append(&mut other.policy_updates);
     outcome.fetch_actions.append(&mut other.fetch_actions);
     outcome
         .websocket_actions

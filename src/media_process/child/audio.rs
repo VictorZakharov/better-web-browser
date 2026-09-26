@@ -265,6 +265,7 @@ fn playback_state(
 struct AudioDecoderQueue {
     segments: Vec<AudioDecoderSegment>,
     current: usize,
+    codec: crate::media_protocol::MediaCodecFamily,
     sample_rate: u32,
     channels: u16,
 }
@@ -280,6 +281,7 @@ impl AudioDecoderQueue {
         let mut queue = Self {
             segments: Vec::new(),
             current: 0,
+            codec: report.audio_codec,
             sample_rate: report.audio_sample_rate,
             channels: report.audio_channels,
         };
@@ -288,11 +290,15 @@ impl AudioDecoderQueue {
     }
 
     fn append(&mut self, bytes: &[u8], report: AudioTrackReport) -> Result<(), String> {
-        if report.audio_sample_rate != self.sample_rate || report.audio_channels != self.channels {
-            return Err("incremental AAC format changed".into());
+        if report.audio_codec != self.codec
+            || report.audio_sample_rate != self.sample_rate
+            || report.audio_channels != self.channels
+        {
+            return Err("incremental audio format changed".into());
         }
         let decoder = AudioDecoder::open(
             bytes,
+            report.audio_codec,
             report.audio_samples,
             report.audio_sample_rate,
             report.audio_channels,

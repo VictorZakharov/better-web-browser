@@ -10,6 +10,10 @@ pub(super) fn encode_document_start(
     writer.string(&start.url)?;
     writer.u16(start.status);
     writer.string(&start.content_type)?;
+    writer.u32(start.csp_policies.len() as u32);
+    for policy in &start.csp_policies {
+        writer.string(policy)?;
+    }
     writer.u32(start.diagnostic_selectors.len() as u32);
     for selector in &start.diagnostic_selectors {
         writer.string(selector)?;
@@ -28,6 +32,15 @@ pub(super) fn decode_document_start(
         url: reader.string(MAX_URL_BYTES)?,
         status: reader.u16()?,
         content_type: reader.string(16 * 1024)?,
+        csp_policies: {
+            let count = reader.u32()? as usize;
+            if count > 32 {
+                return Err(ProtocolError::InvalidPayload("document CSP"));
+            }
+            (0..count)
+                .map(|_| reader.string(16 * 1024))
+                .collect::<Result<Vec<_>, _>>()?
+        },
         diagnostic_selectors: {
             let count = reader.u32()? as usize;
             if count > crate::limits::MAX_PAGE_DIAGNOSTIC_SELECTORS {

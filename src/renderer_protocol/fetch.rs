@@ -15,10 +15,13 @@ pub enum ResourceDestination {
     Font,
     Fetch,
     Video,
+    Audio,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FetchInitiator {
+    /// Browser-owned DNS resolution only; never an HTTP request.
+    NetworkHint,
     ChildNavigation,
     ChildResource,
     Subresource,

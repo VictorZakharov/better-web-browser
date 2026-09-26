@@ -57,7 +57,7 @@ impl Fixture {
             .send(Ok(WorkerMediaMessage::Decoded {
                 request_id: self.client.next_request,
                 report: report(),
-                frame: metadata,
+                frame: Some(metadata),
             }))
             .unwrap();
         self.controls
@@ -78,7 +78,7 @@ impl Fixture {
             self.client.decode(&[1, 2], || Ok(()))
         }
         .unwrap();
-        assert_eq!(decoded.frame.metadata.source_id, source_id);
+        assert_eq!(decoded.frame.unwrap().metadata.source_id, source_id);
         assert_eq!(self.client.active_source, Some(source_id));
         source_id
     }

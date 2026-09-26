@@ -34,8 +34,9 @@ pub(crate) struct MediaClientEndpoints {
 }
 
 pub(crate) struct RendererMediaDecode {
+    pub(crate) source_id: u64,
     pub(crate) report: MediaDecodeReport,
-    pub(crate) frame: DecodedMediaFrame,
+    pub(crate) frame: Option<DecodedMediaFrame>,
 }
 
 pub(crate) struct MediaClient {
@@ -146,8 +147,9 @@ impl MediaClient {
                 report,
                 frame,
             } if actual == request_id
-                && frame.source_id == source_id
-                && frame.frame_id == frame_id =>
+                && frame.as_ref().is_none_or(|frame| {
+                    frame.source_id == source_id && frame.frame_id == frame_id
+                }) =>
             {
                 (report, frame)
             }
@@ -162,10 +164,19 @@ impl MediaClient {
         report
             .validate(self.limits)
             .map_err(|error| format!("invalid media decode report: {error}"))?;
-        let frame = self.receive_frame(metadata)?;
-        self.acknowledge(metadata.source_id, metadata.frame_id)?;
-        self.active_source = Some(metadata.source_id);
-        Ok(RendererMediaDecode { report, frame })
+        let frame = if let Some(metadata) = metadata {
+            let frame = self.receive_frame(metadata)?;
+            self.acknowledge(metadata.source_id, metadata.frame_id)?;
+            Some(frame)
+        } else {
+            None
+        };
+        self.active_source = Some(source_id);
+        Ok(RendererMediaDecode {
+            source_id,
+            report,
+            frame,
+        })
     }
 
     pub(crate) fn decode_tracks(
@@ -225,7 +236,7 @@ impl MediaClient {
             WorkerMediaMessage::Decoded {
                 request_id: actual,
                 report,
-                frame,
+                frame: Some(frame),
             } if actual == request_id
                 && frame.source_id == video_source_id
                 && frame.frame_id == frame_id =>
@@ -246,7 +257,11 @@ impl MediaClient {
         let frame = self.receive_frame(metadata)?;
         self.acknowledge(metadata.source_id, metadata.frame_id)?;
         self.active_source = Some(metadata.source_id);
-        Ok(RendererMediaDecode { report, frame })
+        Ok(RendererMediaDecode {
+            source_id: video_source_id,
+            report,
+            frame: Some(frame),
+        })
     }
 
     pub(crate) fn next_frame(

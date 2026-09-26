@@ -100,12 +100,11 @@ fn connect_src_self_matches_secure_websocket_but_not_foreign_or_downgraded_hosts
     assert!(insecure.allows_url("connect-src", "wss://example.test/socket", 0));
 }
 #[test]
-fn unimplemented_features_refuse_policy_instead_of_bypassing_it() {
+fn known_unsupported_enforcement_directives_refuse_policy_instead_of_bypassing_it() {
     for value in [
-        "script-src 'sha256-hash'",
-        "script-src 'trusted-types-eval'",
         "require-trusted-types-for 'script'",
         "sandbox allow-scripts",
+        "upgrade-insecure-requests",
     ] {
         let mut headers = HeaderList::new();
         headers.append("content-security-policy", value).unwrap();
@@ -114,6 +113,25 @@ fn unimplemented_features_refuse_policy_instead_of_bypassing_it() {
             "{value}"
         );
     }
+}
+
+#[test]
+fn valid_source_siblings_survive_unsupported_tokens_and_hash_sources() {
+    let url = "https://example.test/page";
+    let mut policies =
+        policy(&["script-src 'self' 'sha256-aGVsbG8=' invalid?source; future-directive ignored"]);
+    assert!(policies.allows_url("script-src-elem", "https://example.test/app.js", 0));
+    assert!(!policies.allows_url("script-src-elem", "https://other.test/app.js", 0));
+    assert!(!policies.allows_inline(false));
+    policies
+        .append_meta(url, "img-src 'self' invalid?source; future-directive x")
+        .unwrap();
+    assert!(policies.allows_url("img-src", "https://example.test/image.png", 0));
+    assert!(!policies.allows_url("img-src", "https://other.test/image.png", 0));
+    policies
+        .append_meta(url, "connect-src invalid?source")
+        .unwrap();
+    assert!(!policies.allows_url("connect-src", "https://example.test/api", 0));
 }
 
 #[test]
@@ -262,4 +280,67 @@ fn nonce_disables_unsafe_inline_but_authorizes_matching_script_element() {
     assert!(policy.allows_inline_with_nonce(false, Some("AbC123=")));
     assert!(!policy.allows_inline_with_nonce(false, Some("abc123=")));
     assert!(!policy.allows_inline_with_nonce(true, Some("AbC123=")));
+}
+
+#[test]
+fn style_hash_source_does_not_reenable_unsafe_inline_without_style_admission() {
+    let hashed = policy(&["style-src 'unsafe-inline' 'sha256-aGVsbG8='"]);
+    assert!(!hashed.allows_style_inline());
+    let plain = policy(&["style-src 'unsafe-inline'"]);
+    assert!(plain.allows_style_inline());
+}
+
+#[test]
+fn meta_policy_only_tightens_response_policy_and_ignores_forbidden_directives() {
+    let mut policies = policy(&["img-src https://images.example.test"]);
+    policies
+        .append_meta(
+            "https://example.test/page",
+            "script-src 'none'; img-src 'self'; frame-ancestors 'none'; sandbox; report-uri /report",
+        )
+        .unwrap();
+    assert!(!policies.allows_inline(false));
+    assert!(!policies.allows_url("img-src", "https://images.example.test/a.png", 0));
+    assert!(!policies.allows_url("img-src", "https://example.test/a.png", 0));
+    assert!(!policies.checks_ancestors());
+    assert_eq!(policies.serialized_policies().count(), 2);
+}
+
+#[test]
+fn invalid_meta_policy_does_not_replace_previous_policy() {
+    let mut policies = policy(&["script-src 'none'"]);
+    assert!(
+        policies
+            .append_meta("invalid URL", "img-src 'self'")
+            .is_err()
+    );
+    assert_eq!(policies.serialized_policies().count(), 1);
+    assert!(!policies.allows_inline(false));
+}
+
+#[test]
+fn resource_hints_use_each_policys_explicit_fetch_source_union() {
+    let cdn = "https://cdn.test/";
+    let mut policies = policy(&["default-src 'none'; img-src https://cdn.test"]);
+    assert!(policies.allows_resource_hint(cdn));
+    assert!(!policies.allows_resource_hint("https://elsewhere.test/"));
+    policies
+        .append_meta(
+            "https://example.test/page",
+            "default-src 'none'; font-src https://cdn.test",
+        )
+        .unwrap();
+    assert!(policies.allows_resource_hint(cdn));
+    policies
+        .append_meta("https://example.test/page", "default-src 'none'")
+        .unwrap();
+    assert!(!policies.allows_resource_hint(cdn));
+}
+
+#[test]
+fn resource_hints_without_default_src_are_unrestricted_by_other_fetch_lists() {
+    let policies = policy(&["connect-src 'none'"]);
+    assert!(policies.allows_resource_hint("https://cdn.test/"));
+    let policies = policy(&["default-src 'self'"]);
+    assert!(!policies.allows_resource_hint("https://example.test/"));
 }

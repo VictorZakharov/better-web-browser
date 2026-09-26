@@ -1,10 +1,15 @@
 //! Enforced source-list policy containers for child documents.
 //! https://www.w3.org/TR/CSP3/#framework-directives
-//! Unsupported policy features fail closed at admission; they are not ignored.
+//! Known unsupported enforcement directives fail closed. Unknown directives and
+//! unmatched source expressions follow CSP3's forward-compatible parsing rules.
+//! Inline hash admission currently covers script elements. Style-element hash
+//! admission and `'unsafe-hashes'` for attributes require separate lifecycle hooks.
+mod inline;
 mod sources;
 #[cfg(test)]
 mod tests;
 use super::{FetchError, FetchErrorKind, HeaderList, RequestDestination};
+pub use inline::InlineScriptViolation;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -37,7 +42,89 @@ struct Policy {
     mixed_content: bool,
 }
 
+fn parse_policy(url: &str, serialized: &str, from_meta: bool) -> Result<Policy, FetchError> {
+    let mut policy = Policy {
+        origin: url::Url::parse(url).map_err(|_| unsupported("origin URL"))?,
+        serialized: serialized.trim().to_owned(),
+        directives: HashMap::new(),
+        mixed_content: false,
+    };
+    for directive in serialized.split(';') {
+        let mut tokens = directive.split_ascii_whitespace();
+        let Some(name) = tokens.next().map(str::to_ascii_lowercase) else {
+            continue;
+        };
+        if policy.directives.contains_key(&name) {
+            continue;
+        }
+        if from_meta && matches!(name.as_str(), "report-uri" | "frame-ancestors" | "sandbox") {
+            continue;
+        }
+        let mut values: Vec<_> = tokens.map(str::to_owned).collect();
+        if name == "block-all-mixed-content" {
+            policy.mixed_content = true;
+        } else if matches!(name.as_str(), "report-uri" | "report-to") {
+            // Reporting does not affect enforcement. Until reporting is implemented,
+            // preserve the remaining directives in this policy.
+            continue;
+        } else if !matches!(
+            name.as_str(),
+            "default-src"
+                | "script-src"
+                | "script-src-elem"
+                | "script-src-attr"
+                | "style-src"
+                | "style-src-elem"
+                | "style-src-attr"
+                | "connect-src"
+                | "img-src"
+                | "font-src"
+                | "media-src"
+                | "manifest-src"
+                | "object-src"
+                | "child-src"
+                | "frame-src"
+                | "worker-src"
+                | "base-uri"
+                | "form-action"
+                | "frame-ancestors"
+        ) {
+            if matches!(
+                name.as_str(),
+                "sandbox"
+                    | "upgrade-insecure-requests"
+                    | "require-trusted-types-for"
+                    | "trusted-types"
+                    | "navigate-to"
+                    | "webrtc"
+            ) {
+                return Err(unsupported(&name));
+            }
+            // CSP3 §2.2.1 ignores unknown directive names for forward compatibility.
+            continue;
+        } else {
+            // Matching ignores invalid or unsupported source expressions individually.
+            // An empty remaining list denies the directive rather than relaxing it.
+            values.retain(|value| sources::supported(value));
+        }
+        policy.directives.insert(name, values);
+    }
+    Ok(policy)
+}
+
 impl PolicyContainer {
+    pub fn from_serialized_policies(url: &str, policies: &[String]) -> Result<Self, FetchError> {
+        if policies.len() > 32 {
+            return Err(unsupported("policy count"));
+        }
+        Ok(Self {
+            policies: policies
+                .iter()
+                .map(|policy| parse_policy(url, policy, false))
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+
     pub fn from_headers(url: &str, headers: &HeaderList) -> Result<Self, FetchError> {
         let mut result = Self::default();
         for header in headers.values("content-security-policy") {
@@ -45,59 +132,27 @@ impl PolicyContainer {
                 if result.policies.len() >= 32 {
                     return Err(unsupported("policy count"));
                 }
-                let mut policy = Policy {
-                    origin: url::Url::parse(url).map_err(|_| unsupported("origin URL"))?,
-                    serialized: serialized.trim().to_owned(),
-                    directives: HashMap::new(),
-                    mixed_content: false,
-                };
-                for directive in serialized.split(';') {
-                    let mut tokens = directive.split_ascii_whitespace();
-                    let Some(name) = tokens.next().map(str::to_ascii_lowercase) else {
-                        continue;
-                    };
-                    if policy.directives.contains_key(&name) {
-                        continue;
-                    }
-                    let values: Vec<_> = tokens.map(str::to_owned).collect();
-                    if name == "block-all-mixed-content" {
-                        policy.mixed_content = true;
-                    } else if name == "report-uri" {
-                        // Reporting does not affect enforcement. Until reporting is
-                        // implemented, preserve the remaining directives in this policy.
-                        continue;
-                    } else if !matches!(
-                        name.as_str(),
-                        "default-src"
-                            | "script-src"
-                            | "script-src-elem"
-                            | "script-src-attr"
-                            | "style-src"
-                            | "style-src-elem"
-                            | "style-src-attr"
-                            | "connect-src"
-                            | "img-src"
-                            | "font-src"
-                            | "media-src"
-                            | "manifest-src"
-                            | "object-src"
-                            | "child-src"
-                            | "frame-src"
-                            | "worker-src"
-                            | "base-uri"
-                            | "form-action"
-                            | "frame-ancestors"
-                    ) {
-                        return Err(unsupported(&name));
-                    } else if values.iter().any(|value| !sources::supported(value)) {
-                        return Err(unsupported(&format!("{name} source expression")));
-                    }
-                    policy.directives.insert(name, values);
-                }
-                result.policies.push(policy);
+                result.policies.push(parse_policy(url, serialized, false)?);
             }
         }
         Ok(result)
+    }
+
+    /// Meta policies start at insertion time and restrict, rather than replace, response policies.
+    /// HTML ignores these three directives for a meta-delivered policy.
+    /// https://html.spec.whatwg.org/multipage/semantics.html#attr-meta-http-equiv-content-security-policy
+    pub fn append_meta(&mut self, url: &str, serialized: &str) -> Result<(), FetchError> {
+        if self.policies.len() >= 32 {
+            return Err(unsupported("policy count"));
+        }
+        self.policies.push(parse_policy(url, serialized, true)?);
+        Ok(())
+    }
+
+    pub fn serialized_policies(&self) -> impl Iterator<Item = &str> {
+        self.policies
+            .iter()
+            .map(|policy| policy.serialized.as_str())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -117,6 +172,45 @@ impl PolicyContainer {
                     list.iter()
                         .any(|source| sources::matches(source, &url, &policy.origin, redirects))
                 })
+        })
+    }
+
+    /// CSP3 §6.7.2.2 admits a resource hint when *any explicit fetch source list*
+    /// matches, but only if this policy contains `default-src` at all. Each
+    /// policy in the container is still checked independently.
+    /// https://www.w3.org/TR/CSP3/#does-resource-hint-request-violate-policy
+    pub fn allows_resource_hint(&self, url: &str) -> bool {
+        let Ok(url) = url::Url::parse(url) else {
+            return false;
+        };
+        const FETCH_DIRECTIVES: &[&str] = &[
+            "child-src",
+            "connect-src",
+            "font-src",
+            "frame-src",
+            "img-src",
+            "manifest-src",
+            "media-src",
+            "object-src",
+            "script-src",
+            "script-src-elem",
+            "style-src",
+            "style-src-elem",
+            "worker-src",
+        ];
+        self.policies.iter().all(|policy| {
+            if policy.mixed_content && policy.origin.scheme() == "https" && url.scheme() == "http" {
+                return false;
+            }
+            if !policy.directives.contains_key("default-src") {
+                return true;
+            }
+            FETCH_DIRECTIVES.iter().any(|name| {
+                policy.directives.get(*name).is_some_and(|list| {
+                    list.iter()
+                        .any(|source| sources::matches(source, &url, &policy.origin, 0))
+                })
+            })
         })
     }
 
@@ -156,64 +250,19 @@ impl PolicyContainer {
             .collect()
     }
 
-    pub fn allows_inline(&self, attribute: bool) -> bool {
-        self.allows_inline_with_nonce(attribute, None)
-    }
-
-    pub fn allows_inline_with_nonce(&self, attribute: bool, nonce: Option<&str>) -> bool {
-        let directive = if attribute {
-            "script-src-attr"
-        } else {
-            "script-src-elem"
-        };
-        self.policies.iter().all(|policy| {
-            policy.list(directive).is_none_or(|list| {
-                if !attribute && nonce_matches(list, nonce) {
-                    return true;
-                }
-                if has_keyword(list, "'strict-dynamic'")
-                    || list.iter().any(|source| {
-                        sources::nonce_value(source).is_some() || sources::hash_source(source)
-                    })
-                {
-                    return false;
-                }
-                has_keyword(list, "'unsafe-inline'")
-            })
-        })
-    }
-
-    /// Each enforcing policy that rejects an inline script reports separately.
-    /// Keep the original serialization for `SecurityPolicyViolationEvent`, not a
-    /// reconstructed directive map which could change casing or source order.
-    pub fn inline_script_violations(&self, nonce: Option<&str>) -> Vec<InlineScriptViolation<'_>> {
-        self.policies
-            .iter()
-            .filter_map(|policy| {
-                let list = policy.list("script-src-elem")?;
-                if nonce_matches(list, nonce) {
-                    return None;
-                }
-                let restricted = has_keyword(list, "'strict-dynamic'")
-                    || list.iter().any(|source| {
-                        sources::nonce_value(source).is_some() || sources::hash_source(source)
-                    });
-                if !restricted && has_keyword(list, "'unsafe-inline'") {
-                    return None;
-                }
-                Some(InlineScriptViolation {
-                    original_policy: &policy.serialized,
-                    report_sample: has_keyword(list, "'report-sample'"),
-                })
-            })
-            .collect()
-    }
-
     pub fn allows_eval(&self) -> bool {
         self.allows_keyword("script-src", "'unsafe-eval'")
     }
     pub fn allows_style_inline(&self) -> bool {
-        self.allows_keyword("style-src-elem", "'unsafe-inline'")
+        // Style hash sources are recognized but are not admitted until style
+        // processing can preserve policy timing and report violations.
+        self.policies.iter().all(|policy| {
+            policy.list("style-src-elem").is_none_or(|list| {
+                !list.iter().any(|source| {
+                    sources::nonce_value(source).is_some() || sources::hash_source(source)
+                }) && has_keyword(list, "'unsafe-inline'")
+            })
+        })
     }
 
     fn allows_keyword(&self, directive: &str, keyword: &str) -> bool {
@@ -256,6 +305,7 @@ impl PolicyContainer {
             RequestDestination::Image => "img-src",
             RequestDestination::Font => "font-src",
             RequestDestination::Video => "media-src",
+            RequestDestination::Audio => "media-src",
         };
         let allowed = if destination == RequestDestination::Script {
             self.allows_script_url(
@@ -276,12 +326,6 @@ impl PolicyContainer {
             ))
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InlineScriptViolation<'a> {
-    pub original_policy: &'a str,
-    pub report_sample: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

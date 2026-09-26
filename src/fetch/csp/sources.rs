@@ -1,4 +1,7 @@
 //! CSP source-expression recognition and URL matching.
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use sha2::{Digest, Sha256, Sha384, Sha512};
 use url::Url;
 
 pub(super) fn supported(source: &str) -> bool {
@@ -15,7 +18,9 @@ pub(super) fn supported(source: &str) -> bool {
     ) {
         return true;
     }
-    if nonce_value(source).is_some() {
+    // `unsafe-hashes` is intentionally not recognized until script/style
+    // attribute source text is checked by the respective execution paths.
+    if nonce_value(source).is_some() || hash_source(source) {
         return true;
     }
     if source.contains(['\'', '"', '@', '?', '#', '\\']) || !source.is_ascii() {
@@ -33,20 +38,49 @@ pub(super) fn nonce_value(source: &str) -> Option<&str> {
 }
 
 pub(super) fn hash_source(source: &str) -> bool {
-    ["'sha256-", "'sha384-", "'sha512-"].iter().any(|prefix| {
-        source
-            .strip_prefix(prefix)
-            .and_then(|value| value.strip_suffix('\''))
-            .is_some_and(valid_base64_value)
-    })
+    hash_parts(source).is_some()
+}
+
+/// CSP3 hashes the UTF-8 encoding of the exact inline source and compares its
+/// standard base64 digest with base64url normalized to the same alphabet.
+pub(super) fn hash_matches(expression: &str, source: &str) -> bool {
+    let Some((algorithm, expected)) = hash_parts(expression) else {
+        return false;
+    };
+    let actual = if algorithm.eq_ignore_ascii_case("sha256") {
+        STANDARD.encode(Sha256::digest(source.as_bytes()))
+    } else if algorithm.eq_ignore_ascii_case("sha384") {
+        STANDARD.encode(Sha384::digest(source.as_bytes()))
+    } else {
+        STANDARD.encode(Sha512::digest(source.as_bytes()))
+    };
+    actual == expected.replace('-', "+").replace('_', "/")
+}
+
+fn hash_parts(source: &str) -> Option<(&str, &str)> {
+    let (algorithm, value) = source
+        .strip_prefix('\'')?
+        .strip_suffix('\'')?
+        .split_once('-')?;
+    (matches_ignore_ascii_case(algorithm, &["sha256", "sha384", "sha512"])
+        && valid_base64_value(value))
+    .then_some((algorithm, value))
+}
+
+fn matches_ignore_ascii_case(value: &str, candidates: &[&str]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
 }
 
 fn valid_base64_value(value: &str) -> bool {
-    !value.is_empty()
+    let unpadded = value.trim_end_matches('=');
+    !unpadded.is_empty()
         && value.len() <= 256
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'-' | b'_' | b'=')
-        })
+        && value.len() - unpadded.len() <= 2
+        && unpadded
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'-' | b'_'))
 }
 
 pub(super) fn matches(source: &str, url: &Url, origin: &Url, redirects: usize) -> bool {

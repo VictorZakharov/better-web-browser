@@ -40,6 +40,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/forms_validity.js"),
     include_str!("bootstrap/checkable.js"),
     include_str!("bootstrap/activation.js"),
+    include_str!("bootstrap/media_types.js"),
     include_str!("bootstrap/media.js"),
     include_str!("bootstrap/media_text_tracks.js"),
     include_str!("bootstrap/media_audio_tracks.js"),

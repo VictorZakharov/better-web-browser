@@ -11,32 +11,52 @@ impl DocumentRuntime {
         if self.page.select_media_video_track(node, true) {
             self.rendering.dirty = true;
         }
-        let metadata = decode.frame.metadata;
         let report = decode.report;
-        let key = self.page.install_media_frame(
-            node,
-            DecodedImage {
-                width: metadata.width,
-                height: metadata.height,
-                bgra: decode.frame.bgra,
-            },
-        )?;
-        self.sent_images.remove(&key);
+        let (clock, frame_end, width, height, frames_submitted) = if let Some(frame) = decode.frame
+        {
+            let metadata = frame.metadata;
+            let key = self.page.install_media_frame(
+                node,
+                DecodedImage {
+                    width: metadata.width,
+                    height: metadata.height,
+                    bgra: frame.bgra,
+                },
+            )?;
+            self.sent_images.remove(&key);
+            (
+                metadata.timestamp_100ns.max(0) as u64,
+                frame_end(metadata),
+                metadata.width,
+                metadata.height,
+                1,
+            )
+        } else {
+            (
+                report.buffered.audio_start_100ns.max(0) as u64,
+                report.duration_100ns,
+                0,
+                0,
+                0,
+            )
+        };
         self.media = Some(MediaPlayback {
             node,
-            source_id: metadata.source_id,
-            clock_100ns: metadata.timestamp_100ns.max(0) as u64,
-            frame_end_100ns: frame_end(metadata),
+            source_id: decode.source_id,
+            clock_100ns: clock,
+            frame_end_100ns: frame_end,
             duration_100ns: report.duration_100ns,
             buffered: report.buffered,
             playing: false,
             ended: false,
             video_ended: false,
-            width: metadata.width,
-            height: metadata.height,
+            width,
+            height,
+            video_codec: report.video_codec,
+            audio_codec: report.audio_codec,
             mime_type,
             encoded_bytes: report.encoded_bytes,
-            frames_submitted: 1,
+            frames_submitted,
             dropped_frames: 0,
         });
         self.media_failure = None;
@@ -79,7 +99,9 @@ impl DocumentRuntime {
         playback.playing = snapshot.state.playing;
         playback.ended = snapshot.state.ended;
         // These are producer counts; the browser can coalesce superseded frames under load.
-        playback.frames_submitted = snapshot.published.saturating_add(1);
+        playback.frames_submitted = snapshot
+            .published
+            .saturating_add(u64::from(playback.width != 0));
         playback.dropped_frames = snapshot.dropped;
         let mut resized = false;
         if let Some(frame) = snapshot.frame {

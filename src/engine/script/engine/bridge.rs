@@ -185,7 +185,7 @@ fn host_call_callback(
         return;
     }
     if operation == "runParserScript" {
-        super::parser_scripts::run(scope, arguments);
+        super::parser_scripts::run(scope, arguments, return_value);
         return;
     }
     if operation == "parserMicrotaskCheckpoint" {

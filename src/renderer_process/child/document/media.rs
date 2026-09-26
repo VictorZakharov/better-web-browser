@@ -31,6 +31,8 @@ pub(super) struct MediaPlayback {
     video_ended: bool,
     width: u32,
     height: u32,
+    video_codec: crate::media_protocol::MediaCodecFamily,
+    audio_codec: crate::media_protocol::MediaCodecFamily,
     mime_type: String,
     encoded_bytes: u64,
     frames_submitted: u64,
@@ -137,6 +139,31 @@ impl DocumentRuntime {
         Ok(())
     }
 
+    pub(super) fn dispatch_media_source(
+        &mut self,
+        node: NodeId,
+        disposition: &'static str,
+        source_url: &str,
+        reason: &'static str,
+    ) -> Result<bool, String> {
+        let Some(target) = self.page.dom.find_node(node) else {
+            return Ok(false);
+        };
+        let response = self.dispatch_user_input(crate::engine::UserInputEvent::MediaSource {
+            target,
+            disposition,
+            source_url: source_url.to_string(),
+            reason,
+        })?;
+        let changed = response.outcome.render_requested;
+        super::merge_outcome(
+            &mut self.pending_async_outcome,
+            response.outcome,
+            self.page.dom.document.id(),
+        );
+        Ok(changed)
+    }
+
     fn media_state_outcome(
         &mut self,
         request_id: u64,
@@ -192,8 +219,20 @@ impl DocumentRuntime {
                 duration_100ns: playback.duration_100ns,
                 backend: "Windows Media Foundation / XAudio2".into(),
                 mime_type: playback.mime_type.clone(),
-                video_codec: "H.264".into(),
-                audio_codec: "AAC-LC".into(),
+                video_codec: match playback.video_codec {
+                    crate::media_protocol::MediaCodecFamily::H264 => "H.264",
+                    _ => "none",
+                }
+                .into(),
+                audio_codec: match playback.audio_codec {
+                    crate::media_protocol::MediaCodecFamily::AacLc => "AAC-LC",
+                    crate::media_protocol::MediaCodecFamily::Aac => "AAC",
+                    crate::media_protocol::MediaCodecFamily::Mp3 => "MP3",
+                    crate::media_protocol::MediaCodecFamily::Pcm => "PCM",
+                    crate::media_protocol::MediaCodecFamily::None => "none",
+                    _ => "unknown",
+                }
+                .into(),
                 encoded_queue_bytes: playback.encoded_bytes,
                 // The worker retains committed segments for seeking. The 8 MiB
                 // queue limit applies to each IPC batch; this cumulative value

@@ -34,3 +34,32 @@ The fixture content retains the upstream BSD-3-Clause license in `LICENSE-WPT.md
 | --- | ---: | --- |
 | Video track | 12,345 | `f9a4878d6826eb8691299c19a3e188805471dd54ba1cca4b9bd064d14c7a515f` |
 | Audio track | 1,563 | `7448850fd2861adaf9a26bc286ca53d80bca7ad18f4807c3b03e4563192abfdb` |
+
+## Ordinary video-only MP4
+
+`test-1s-video.mp4.base64` is a nonfragmented stream-copy remux of the same
+BSD-3-Clause WPT fixture. It exercises the Media Foundation Source Reader path
+for complete, ordinary H.264-only MP4 files, separately from the fragmented
+track path above. It was produced with the same development-only FFmpeg build:
+
+```text
+ffmpeg -i test-1s.mp4 -map 0:v:0 -c copy -movflags +faststart video-only.mp4
+```
+
+The decoded file is 12,366 bytes with SHA-256
+`52b9685901be7572653e088cfd13eaa62e49d552efa2db8c77d667ce5490629f`.
+
+## MP3 audio fixture
+
+`test-1s-audio.mp3.base64` is a 64 kb/s MP3 re-encode of the BSD-3-Clause
+WPT `test-1s-audio-fragmented.mp4.base64` fixture above. It was produced
+with the locally installed FFmpeg `N-111280-gd51b0580e4-20230625` using
+`-map 0:a:0 -c:a libmp3lame -b:a 64k -f mp3`. FFmpeg is a development-only
+conversion tool, not linked into or distributed with Breeze. The decoded MP3
+is 8,712 bytes and has SHA-256
+`41fecf66af79b153fa5053cdef47a7a0f860fd968e29a7bbf723f110733306b1`.
+
+`test-1s-audio.aac.base64` is a stream-copy ADTS remux of the same WPT AAC
+track, produced with `-map 0:a:0 -c:a copy -f adts` using that development-only
+FFmpeg build. The decoded ADTS file is 603 bytes and has SHA-256
+`22ff76c842f90ab11f582eb98b7e0135fa0affd9186033f47bb3b258383c155b`.

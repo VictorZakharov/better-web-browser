@@ -31,7 +31,15 @@ impl DocumentRuntime {
         // authoritative parser continues. Bytes are cached, but execution is admitted only when
         // that parser reaches the actual element. A speculative response cannot prepare a script:
         // https://html.spec.whatwg.org/multipage/parsing.html#speculative-html-parsing
-        let preloads = crate::engine::page::discover_script_preloads(&decoded.text, &start.url);
+        // A future meta CSP cannot be enforced retroactively against speculative requests.
+        // `http-equiv` is an attribute name (character references cannot hide it); this
+        // conservative scan may also defer speculation for other pragmas, but never misses
+        // a meta CSP that the authoritative parser could recognize.
+        let preloads = if !may_speculate_before_parsing(&decoded.text) {
+            Default::default()
+        } else {
+            crate::engine::page::discover_script_preloads(&decoded.text, &start.url)
+        };
         let (pending_first_paint, pending_deferred) = start_resource_preloads(
             connection,
             start.document,
@@ -158,9 +166,17 @@ impl DocumentRuntime {
         let document = runtime.id;
         let mut outcome = ScriptOutcome::default();
         if runtime.parser.is_some() {
+            let policy = std::sync::Arc::new(
+                crate::fetch::csp::PolicyContainer::from_serialized_policies(
+                    &start.url,
+                    &start.csp_policies,
+                )
+                .map_err(|error| error.to_string())?,
+            );
             let (mut script_runtime, initial) = runtime
                 .page
                 .start_parser_runtime(
+                    policy,
                     state.cookie_version,
                     &state.cookie_header,
                     state.local_storage,
@@ -177,6 +193,7 @@ impl DocumentRuntime {
                 script_runtime.restore_restart_state(state);
             }
             runtime.script_runtime = Some(script_runtime);
+            runtime.dispatch_initial_media_selections()?;
             outcome = initial;
             runtime.advance_parser(connection, &mut outcome)?;
             if runtime.encoding_restart_pending() {
@@ -184,6 +201,7 @@ impl DocumentRuntime {
                 return runtime.restart_encoding(connection);
             }
         }
+        connection.send_policy_updates(document, &mut outcome)?;
         runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;
         merge_outcome(
@@ -257,5 +275,28 @@ impl DocumentRuntime {
             });
         let presentation = runtime.presentation(outcome, style, report, connection)?;
         Ok(LoadResult::Ready(Box::new(runtime), presentation))
+    }
+}
+
+fn may_speculate_before_parsing(html: &str) -> bool {
+    !html
+        .as_bytes()
+        .windows(b"http-equiv".len())
+        .any(|window| window.eq_ignore_ascii_case(b"http-equiv"))
+}
+
+#[cfg(test)]
+mod csp_preload_tests {
+    use super::may_speculate_before_parsing;
+
+    #[test]
+    fn meta_pragma_candidates_defer_speculative_requests_until_parser_policy() {
+        assert!(!may_speculate_before_parsing(
+            "<meta HTTP-EQUIV='Content-Security-Policy' content=\"default-src 'none'\">\
+             <script src='https://cdn.test/app.js'></script>"
+        ));
+        assert!(may_speculate_before_parsing(
+            "<script src='https://cdn.test/app.js'></script>"
+        ));
     }
 }

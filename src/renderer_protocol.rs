@@ -55,9 +55,9 @@ pub use presentation::{
     ShadowRootDiagnostics, StyleDiagnostics, StyleReport,
 };
 pub use state::{
-    CookieMutation, CookieStateSnapshot, DocumentState, StateSnapshotApplied, StateSnapshotKind,
-    StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
-    StorageSync,
+    CookieMutation, CookieStateSnapshot, DocumentState, PolicyMutation, StateSnapshotApplied,
+    StateSnapshotKind, StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry,
+    StorageSnapshotStart, StorageSync,
 };
 
 pub const MAGIC: [u8; 4] = *b"BRZ1";

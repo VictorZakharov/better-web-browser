@@ -112,6 +112,177 @@ fn media_limits_and_capabilities_fail_closed() {
 }
 
 #[test]
+fn audio_only_report_requires_real_audio_and_no_video_metadata() {
+    let report = MediaDecodeReport {
+        buffered: MediaBufferedExtent {
+            audio_end_100ns: 10_000_000,
+            ..Default::default()
+        },
+        encoded_bytes: 88_244,
+        video_codec: MediaCodecFamily::None,
+        audio_codec: MediaCodecFamily::Pcm,
+        source_reader_hresult: 0,
+        video_decode_hresult: 0,
+        audio_decode_hresult: 0,
+        video_width: 0,
+        video_height: 0,
+        audio_sample_rate: 44_100,
+        audio_channels: 1,
+        video_samples: 0,
+        audio_samples: 10,
+        video_decoded_bytes: 0,
+        audio_decoded_bytes: 88_200,
+        video_first_timestamp_100ns: 0,
+        video_last_timestamp_100ns: 0,
+        audio_first_timestamp_100ns: 0,
+        audio_last_timestamp_100ns: 9_000_000,
+        duration_100ns: 10_000_000,
+        decode_micros: 100,
+    };
+    assert!(report.validate(MediaLimits::default()).is_ok());
+    for forged in [
+        MediaDecodeReport {
+            video_width: 1,
+            ..report
+        },
+        MediaDecodeReport {
+            video_samples: 1,
+            ..report
+        },
+        MediaDecodeReport {
+            buffered: MediaBufferedExtent {
+                video_end_100ns: 10_000_000,
+                ..report.buffered
+            },
+            ..report
+        },
+        MediaDecodeReport {
+            audio_codec: MediaCodecFamily::None,
+            ..report
+        },
+        MediaDecodeReport {
+            audio_samples: 0,
+            ..report
+        },
+    ] {
+        assert!(forged.validate(MediaLimits::default()).is_err());
+    }
+    let mut bytes = Vec::new();
+    MediaFrameWriter::new(&mut bytes, session(15))
+        .send_worker(&WorkerMediaMessage::Decoded {
+            request_id: 8,
+            report,
+            frame: None,
+        })
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(bytes), session(15))
+            .read_worker()
+            .unwrap(),
+        WorkerMediaMessage::Decoded {
+            request_id: 8,
+            report,
+            frame: None,
+        }
+    );
+}
+
+#[test]
+fn video_only_report_requires_real_video_and_no_audio_metadata() {
+    let report = MediaDecodeReport {
+        buffered: MediaBufferedExtent {
+            video_end_100ns: 10_000_000,
+            ..Default::default()
+        },
+        encoded_bytes: 12_345,
+        video_codec: MediaCodecFamily::H264,
+        audio_codec: MediaCodecFamily::None,
+        source_reader_hresult: 0,
+        video_decode_hresult: 0,
+        audio_decode_hresult: 0,
+        video_width: 320,
+        video_height: 240,
+        audio_sample_rate: 0,
+        audio_channels: 0,
+        video_samples: 25,
+        audio_samples: 0,
+        video_decoded_bytes: 25 * 320 * 240 * 3 / 2,
+        audio_decoded_bytes: 0,
+        video_first_timestamp_100ns: 0,
+        video_last_timestamp_100ns: 9_600_000,
+        audio_first_timestamp_100ns: 0,
+        audio_last_timestamp_100ns: 0,
+        duration_100ns: 10_000_000,
+        decode_micros: 100,
+    };
+    assert!(report.validate(MediaLimits::default()).is_ok());
+    for forged in [
+        MediaDecodeReport {
+            audio_sample_rate: 44_100,
+            ..report
+        },
+        MediaDecodeReport {
+            audio_samples: 1,
+            ..report
+        },
+        MediaDecodeReport {
+            audio_decoded_bytes: 1,
+            ..report
+        },
+        MediaDecodeReport {
+            audio_last_timestamp_100ns: 1,
+            ..report
+        },
+        MediaDecodeReport {
+            buffered: MediaBufferedExtent {
+                audio_end_100ns: 10_000_000,
+                ..report.buffered
+            },
+            ..report
+        },
+        MediaDecodeReport {
+            video_samples: 0,
+            ..report
+        },
+        MediaDecodeReport {
+            video_codec: MediaCodecFamily::None,
+            ..report
+        },
+    ] {
+        assert!(forged.validate(MediaLimits::default()).is_err());
+    }
+    let mut bytes = Vec::new();
+    let frame = MediaVideoFrameMetadata {
+        source_id: 4,
+        frame_id: 6,
+        timestamp_100ns: 0,
+        duration_100ns: 400_000,
+        width: 320,
+        height: 240,
+        stride: 320,
+        format: MediaPixelFormat::Nv12,
+        data_length: 115_200,
+    };
+    MediaFrameWriter::new(&mut bytes, session(16))
+        .send_worker(&WorkerMediaMessage::Decoded {
+            request_id: 9,
+            report,
+            frame: Some(frame),
+        })
+        .unwrap();
+    assert_eq!(
+        MediaFrameReader::new(Cursor::new(bytes), session(16))
+            .read_worker()
+            .unwrap(),
+        WorkerMediaMessage::Decoded {
+            request_id: 9,
+            report,
+            frame: Some(frame),
+        }
+    );
+}
+
+#[test]
 fn nonce_debug_output_never_discloses_secret_bytes() {
     let nonce = Nonce::new([0xab; 32]);
     let debug = format!("{nonce:?}");

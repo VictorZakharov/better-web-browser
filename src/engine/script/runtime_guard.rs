@@ -80,14 +80,9 @@ pub(super) fn finish_host(
     outcome.history_actions.append(&mut state.history_actions);
     outcome.cookie_updates.append(&mut state.cookie_updates);
     outcome.storage_updates.append(&mut state.storage_updates);
-    let client = state.fetch_client;
-    let policy = state.policy.clone();
-    for action in &mut state.pending_fetch_actions {
-        if let ScriptFetchAction::Start { request, .. } = action {
-            request.client = client;
-            request.policy = policy.clone();
-        }
-    }
+    outcome
+        .policy_updates
+        .append(&mut state.pending_policy_updates);
     outcome
         .fetch_actions
         .append(&mut state.pending_fetch_actions);

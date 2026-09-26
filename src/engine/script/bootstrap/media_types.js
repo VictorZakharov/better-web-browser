@@ -1,0 +1,35 @@
+    // A MIME claim is meaningful only when the contained media worker can demux and decode it.
+    // A codec-less container remains "maybe" when it can carry formats we cannot decode.
+    // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
+    const supportedMediaType = type => {
+        const source = String(type).trim().toLowerCase();
+        if (!source) return '';
+        const [essence, ...parameters] = source.split(';').map(part => part.trim());
+        const mp4 = essence === 'video/mp4' || essence === 'audio/mp4'
+            || essence === 'application/mp4';
+        const wave = essence === 'audio/wav' || essence === 'audio/wave'
+            || essence === 'audio/x-wav' || essence === 'audio/vnd.wave';
+        const mpeg = essence === 'audio/mpeg';
+        const aac = essence === 'audio/aac';
+        if (!mp4 && !wave && !mpeg && !aac) return '';
+
+        const codecParameters = parameters.filter(parameter => /^codecs(?:\s|=|$)/.test(parameter));
+        if (codecParameters.length > 1) return '';
+        if (!codecParameters.length) return 'maybe';
+        if (!/^codecs\s*=/.test(codecParameters[0])) return '';
+        const codecValue = codecParameters[0].slice(codecParameters[0].indexOf('=') + 1)
+            .trim().replace(/^(?:"([^"]*)"|'([^']*)')$/, (_, double, single) => double ?? single);
+        const codecs = codecValue.split(',').map(codec => codec.trim());
+        if (codecs.some(codec => !codec)) return '';
+
+        if (wave) return codecs.length === 1 && (codecs[0] === '1' || codecs[0] === 'pcm')
+            ? 'probably' : '';
+        if (mpeg) return codecs.length === 1 && codecs[0] === 'mp3' ? 'probably' : '';
+        if (aac) return codecs.length === 1 && codecs[0] === 'mp4a.40.2' ? 'probably' : '';
+        const hasAudio = codecs.includes('mp4a.40.2');
+        const hasVideo = codecs.some(codec => /^avc1\.[0-9a-f]{6}$/.test(codec));
+        if (codecs.length !== Number(hasAudio) + Number(hasVideo)) return '';
+        // The contained worker owns a monotonic playback clock for complete video-only MP4.
+        // A video-only stream must not be advertised under the audio/mp4 essence.
+        return hasAudio || (hasVideo && essence !== 'audio/mp4') ? 'probably' : '';
+    };

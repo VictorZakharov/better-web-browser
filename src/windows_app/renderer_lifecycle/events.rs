@@ -204,6 +204,15 @@ impl BrowserState {
                         self.contain_page_engine_failure(id, error);
                     }
                 }
+                RendererEvent::PolicyMutation(mutation) => {
+                    let mut policy_error = None;
+                    self.process_for_tab(id, |state| {
+                        policy_error = state.renderer_fetches.append_meta_policy(mutation).err();
+                    });
+                    if let Some(error) = policy_error {
+                        self.contain_page_engine_failure(id, error);
+                    }
+                }
                 RendererEvent::StorageMutation(request) => {
                     // Only combine adjacent intents in this bounded UI turn. Navigation,
                     // presentation, and other-area events remain ordering barriers.

@@ -154,6 +154,13 @@ impl Broker {
                 mutation.validate()?;
                 self.emit_event(RendererEvent::CookieMutation(mutation))?;
             }
+            RendererMessage::PolicyMutation(mutation) => {
+                if self.active_document != Some(mutation.document) {
+                    return Ok(());
+                }
+                mutation.validate()?;
+                self.emit_event(RendererEvent::PolicyMutation(mutation))?;
+            }
             RendererMessage::StorageMutation(request) => {
                 if self.active_document != Some(request.document) {
                     return Ok(());

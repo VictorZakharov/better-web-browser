@@ -32,6 +32,8 @@ impl Page {
             character_set: self.character_set.clone(),
             base_url: self.base_url.clone(),
             resources: Vec::new(),
+            media_selections: HashMap::new(),
+            next_media_selection_id: 1,
             scripts: Vec::new(),
             external_stylesheets: self.external_stylesheets.clone(),
             stylesheet_sources: self.stylesheet_sources.clone(),

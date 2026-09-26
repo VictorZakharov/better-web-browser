@@ -59,6 +59,7 @@ impl EventSender {
             RendererEvent::FetchBatch { .. }
                 | RendererEvent::FetchAbort { .. }
                 | RendererEvent::StorageMutation(_)
+                | RendererEvent::PolicyMutation(_)
                 | RendererEvent::WebSocketCommand(_)
                 | RendererEvent::DatabaseCommand(_)
         ) {
@@ -248,6 +249,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::VideoFrame(update) => Some(update.identity.document),
         RendererEvent::RuntimeUpdate(update) => Some(update.document),
         RendererEvent::CookieMutation(mutation) => Some(mutation.document),
+        RendererEvent::PolicyMutation(mutation) => Some(mutation.document),
         RendererEvent::StorageMutation(request) => Some(request.document),
         RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::DatabaseCommand(command) => Some(command.document),

@@ -84,7 +84,8 @@
             let snapshot;
             try { snapshot = mediaConfigurationSnapshot(configuration); }
             catch (error) { return Promise.reject(error); }
-            const contentSupported = source => !source || supportedMediaType(source.contentType) !== '';
+            const contentSupported = source => !source ||
+                supportedMediaType(source.contentType) !== '';
             const supported = snapshot.type !== 'webrtc' &&
                 !snapshot.keySystemConfiguration &&
                 contentSupported(snapshot.video) && contentSupported(snapshot.audio);

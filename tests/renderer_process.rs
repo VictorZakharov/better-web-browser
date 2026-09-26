@@ -12,6 +12,8 @@ mod checkable;
 mod clock_backpressure;
 #[path = "renderer_process/crypto.rs"]
 mod crypto;
+#[path = "renderer_process/csp_ordering.rs"]
+mod csp_ordering;
 #[path = "renderer_process/event_notifications.rs"]
 mod event_notifications;
 #[path = "renderer_process/exit_diagnostics.rs"]

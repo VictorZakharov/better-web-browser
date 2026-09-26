@@ -213,6 +213,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
             return encode_renderer_input(message);
         }
         RendererMessage::CookieMutation(_)
+        | RendererMessage::PolicyMutation(_)
         | RendererMessage::StorageMutation(_)
         | RendererMessage::StateSnapshotApplied(_) => {
             return encode_renderer_state(message);
@@ -269,7 +270,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
         }
         0x0102 | 0x0104 | 0x0106 | 0x0108 | 0x010a | 0x010c | 0x0112 | 0x0114 | 0x0116 | 0x0118
         | 0x011a | 0x011e | 0x0120 => decode_renderer_document(kind, payload),
-        0x0132 | 0x0134 | 0x0136 => decode_renderer_state(kind, payload),
+        0x0132 | 0x0134 | 0x0136 | 0x013a => decode_renderer_state(kind, payload),
         0x0150 | 0x0152 => decode_renderer_input(kind, payload),
         0x8002 => {
             require_length(payload, 16)?;

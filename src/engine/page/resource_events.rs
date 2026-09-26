@@ -12,7 +12,9 @@ impl Page {
             .filter(|resource| {
                 !matches!(
                     resource,
-                    PageResource::Image { .. } | PageResource::Preload { .. }
+                    PageResource::Image { .. }
+                        | PageResource::Preload { .. }
+                        | PageResource::OriginHint { .. }
                 )
             })
             .cloned()
@@ -90,6 +92,20 @@ impl Page {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origin_hints_do_not_delay_the_document_load_event() {
+        let page = Page::parse(
+            "<link rel=preconnect href='https://cdn.example.test/asset'>",
+            "https://example.test/page",
+        );
+        assert!(
+            page.resources
+                .iter()
+                .any(|resource| { matches!(resource, PageResource::OriginHint { .. }) })
+        );
+        assert!(page.document_load_resources().is_empty());
+    }
 
     #[test]
     fn css_use_of_a_lazy_image_url_still_delays_load_without_hydrating_more_styles() {

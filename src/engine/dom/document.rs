@@ -8,6 +8,7 @@ use html5ever::tendril::TendrilSink;
 use html5ever::tree_builder::TreeBuilderOpts;
 use html5ever::{ParseOpts, parse_document};
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 #[path = "parser_custom_elements.rs"]
@@ -28,6 +29,7 @@ pub struct Dom {
     pub(super) observable_parser: bool,
     pub(crate) parser_mutations: Rc<RefCell<Vec<parser_mutations::ParserMutation>>>,
     pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
+    pub(super) parser_csp_meta: RefCell<VecDeque<NodeRef>>,
 }
 
 impl Default for Dom {
@@ -47,6 +49,7 @@ impl Dom {
             observable_parser: false,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
+            parser_csp_meta: Default::default(),
         }
     }
 
@@ -59,6 +62,7 @@ impl Dom {
             observable_parser: false,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
+            parser_csp_meta: Default::default(),
         }
     }
 }

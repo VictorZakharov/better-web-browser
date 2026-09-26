@@ -199,6 +199,39 @@ fn consecutive_fetch_batches_wait_for_browser_drain_without_failing() {
 }
 
 #[test]
+fn meta_csp_mutation_cannot_be_overtaken_by_following_fetch_batch() {
+    let (sender, receiver) = bounded();
+    let document = DocumentId::new(31).unwrap();
+    sender
+        .send(RendererEvent::PolicyMutation(
+            crate::renderer_protocol::PolicyMutation {
+                document,
+                client_id: 0,
+                serialized: "default-src 'none'".into(),
+            },
+        ))
+        .unwrap();
+    let producer = std::thread::spawn(move || {
+        sender
+            .send(RendererEvent::FetchBatch {
+                document,
+                requests: Vec::new(),
+            })
+            .unwrap();
+    });
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::PolicyMutation(mutation)
+            if mutation.document == document && mutation.serialized == "default-src 'none'"
+    ));
+    producer.join().unwrap();
+    assert!(matches!(
+        receiver.try_recv().unwrap(),
+        RendererEvent::FetchBatch { document: next, .. } if next == document
+    ));
+}
+
+#[test]
 fn cancelled_transactional_fetch_batches_are_discarded_and_reusable() {
     let (sender, receiver) = bounded();
     let replaced = DocumentId::new(1).unwrap();

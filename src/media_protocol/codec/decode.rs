@@ -186,7 +186,10 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
                 decode_micros: cursor.u64()?,
                 buffered: super::wire::decode_buffered(&mut cursor)?,
             };
-            let frame = decode_frame_metadata(&mut cursor)?;
+            let frame = cursor
+                .boolean()?
+                .then(|| decode_frame_metadata(&mut cursor))
+                .transpose()?;
             WorkerMediaMessage::Decoded {
                 request_id,
                 report,
@@ -250,9 +253,16 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
     }
     if let WorkerMediaMessage::Decoded { report, frame, .. } = message {
         report.validate(MediaLimits::default())?;
-        frame
-            .validate()
-            .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+        if frame.is_some() != (report.video_codec == MediaCodecFamily::H264) {
+            return Err(MediaProtocolError::InvalidPayload(
+                "decoded video frame presence",
+            ));
+        }
+        if let Some(frame) = frame {
+            frame
+                .validate()
+                .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+        }
     }
     if let WorkerMediaMessage::FrameReady { frame } = message {
         frame

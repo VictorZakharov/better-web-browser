@@ -114,3 +114,39 @@ fn module_worker_entry_cannot_claim_a_cross_origin_response_client() {
         FetchErrorKind::InvalidRequest
     );
 }
+
+#[test]
+fn media_potential_cors_settings_are_reconstructed_without_opaque_cookie_leakage() {
+    let document = DocumentId::new(1).unwrap();
+    let mut request = intent(document, "https://media.example.test/clip.mp4");
+    request.head.initiator = FetchInitiator::Subresource;
+    request.head.destination = ResourceDestination::Video;
+    request.head.mode = FetchMode::NoCors;
+    request.head.credentials = FetchCredentials::Include;
+
+    let opaque = reconstruct("https://example.test/page", request.clone()).unwrap();
+    assert_eq!(opaque.mode, RequestMode::NoCors);
+    // The decoder currently receives opaque encoded bytes in the renderer. Keep
+    // cross-origin cookies out of that path until it has a separate trusted owner.
+    assert_eq!(opaque.credentials, CredentialsMode::SameOrigin);
+
+    request.head.mode = FetchMode::Cors;
+    request.head.credentials = FetchCredentials::SameOrigin;
+    let anonymous = reconstruct("https://example.test/page", request.clone()).unwrap();
+    assert_eq!(anonymous.mode, RequestMode::Cors);
+    assert_eq!(anonymous.credentials, CredentialsMode::SameOrigin);
+
+    request.head.credentials = FetchCredentials::Include;
+    let credentialed = reconstruct("https://example.test/page", request.clone()).unwrap();
+    assert_eq!(credentialed.mode, RequestMode::Cors);
+    assert_eq!(credentialed.credentials, CredentialsMode::Include);
+
+    request.head.mode = FetchMode::NoCors;
+    request.head.credentials = FetchCredentials::SameOrigin;
+    assert_eq!(
+        reconstruct("https://example.test/page", request)
+            .unwrap_err()
+            .kind(),
+        FetchErrorKind::InvalidRequest
+    );
+}

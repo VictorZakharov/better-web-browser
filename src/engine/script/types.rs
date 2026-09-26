@@ -119,6 +119,7 @@ pub struct ScriptOutcome {
     pub history_actions: Vec<ScriptHistoryAction>,
     pub cookie_updates: Vec<String>,
     pub storage_updates: Vec<StorageWrite>,
+    pub policy_updates: Vec<ScriptPolicyUpdate>,
     pub storage_event_receipts: Vec<(crate::storage::StorageAreaKind, u64)>,
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub websocket_actions: Vec<ScriptWebSocketAction>,
@@ -131,6 +132,12 @@ pub struct ScriptOutcome {
     pub runtime_stopped: bool,
     pub render_requested: bool,
     pub invalidation: RenderInvalidation,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptPolicyUpdate {
+    pub client: crate::fetch::RequestClient,
+    pub serialized: String,
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +203,7 @@ pub enum ScriptMediaCommand {
         audio_bytes: Vec<u8>,
     },
     Reset,
+    Reload,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -323,6 +331,12 @@ pub enum UserInputEvent {
         width: u32,
         height: u32,
         buffered: Option<[[f64; 2]; 2]>,
+    },
+    MediaSource {
+        target: NodeRef,
+        disposition: &'static str,
+        source_url: String,
+        reason: &'static str,
     },
 }
 

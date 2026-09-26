@@ -32,20 +32,31 @@ impl MediaDecodeReport {
     pub fn validate(self, limits: MediaLimits) -> Result<(), MediaProtocolError> {
         limits.validate()?;
         self.buffered.validate()?;
-        if self.buffered.video_end_100ns == 0
-            || self.buffered.audio_end_100ns == 0
-            || self.buffered.end_100ns() > self.duration_100ns
+        if self.encoded_bytes == 0 || self.encoded_bytes > limits.max_encoded_bytes {
+            return Err(MediaProtocolError::InvalidPayload("decoded source length"));
+        }
+        let has_video = self.video_codec == MediaCodecFamily::H264;
+        let has_audio = self.audio_codec != MediaCodecFamily::None;
+        if (!has_video && (self.video_codec != MediaCodecFamily::None || !has_audio))
+            || (has_audio
+                && !matches!(
+                    self.audio_codec,
+                    MediaCodecFamily::AacLc
+                        | MediaCodecFamily::Aac
+                        | MediaCodecFamily::Pcm
+                        | MediaCodecFamily::Mp3
+                ))
+            || (has_video && has_audio && self.audio_codec != MediaCodecFamily::AacLc)
+        {
+            return Err(MediaProtocolError::InvalidPayload("decoded codec family"));
+        }
+        if self.buffered.end_100ns() > self.duration_100ns
+            || (self.buffered.video_end_100ns != 0) != has_video
+            || (self.buffered.audio_end_100ns != 0) != has_audio
         {
             return Err(MediaProtocolError::InvalidPayload(
                 "decoded buffered extents",
             ));
-        }
-        if self.encoded_bytes == 0 || self.encoded_bytes > limits.max_encoded_bytes {
-            return Err(MediaProtocolError::InvalidPayload("decoded source length"));
-        }
-        if self.video_codec != MediaCodecFamily::H264 || self.audio_codec != MediaCodecFamily::AacLc
-        {
-            return Err(MediaProtocolError::InvalidPayload("decoded codec family"));
         }
         if self.source_reader_hresult < 0
             || self.video_decode_hresult < 0
@@ -53,24 +64,40 @@ impl MediaDecodeReport {
         {
             return Err(MediaProtocolError::InvalidPayload("decode HRESULT"));
         }
-        if self.video_width == 0
-            || self.video_height == 0
-            || self.video_width > limits.max_dimension
-            || self.video_height > limits.max_dimension
+        if (has_video
+            && (self.video_width == 0
+                || self.video_height == 0
+                || self.video_width > limits.max_dimension
+                || self.video_height > limits.max_dimension
+                || self.buffered.video_end_100ns == 0))
+            || (!has_video
+                && (self.video_width != 0
+                    || self.video_height != 0
+                    || self.buffered.video_end_100ns != 0
+                    || self.video_samples != 0
+                    || self.video_decoded_bytes != 0
+                    || self.video_first_timestamp_100ns != 0
+                    || self.video_last_timestamp_100ns != 0))
         {
             return Err(MediaProtocolError::InvalidPayload(
                 "decoded video dimensions",
             ));
         }
-        if self.audio_sample_rate == 0
-            || self.audio_sample_rate > 384_000
-            || self.audio_channels == 0
-            || self.audio_channels > 32
+        if (has_audio
+            && (self.audio_sample_rate == 0
+                || self.audio_sample_rate > 384_000
+                || self.audio_channels == 0
+                || self.audio_channels > 32))
+            || (!has_audio && (self.audio_sample_rate != 0 || self.audio_channels != 0))
         {
             return Err(MediaProtocolError::InvalidPayload("decoded audio format"));
         }
-        if self.video_samples == 0
-            || self.audio_samples == 0
+        if (has_video && self.video_samples == 0)
+            || (has_audio && self.audio_samples == 0)
+            || (!has_audio
+                && (self.audio_samples != 0
+                    || self.audio_first_timestamp_100ns != 0
+                    || self.audio_last_timestamp_100ns != 0))
             || self.video_samples as usize > MAX_MEDIA_DECODED_SAMPLES
             || self.audio_samples as usize > MAX_MEDIA_DECODED_SAMPLES
         {
@@ -91,10 +118,14 @@ impl MediaDecodeReport {
             .ok_or(MediaProtocolError::InvalidPayload(
                 "decoded audio byte count",
             ))?;
-        if self.video_decoded_bytes == 0 || self.video_decoded_bytes > maximum_video_bytes {
+        if has_video
+            && (self.video_decoded_bytes == 0 || self.video_decoded_bytes > maximum_video_bytes)
+        {
             return Err(MediaProtocolError::InvalidPayload("decoded byte count"));
         }
-        if self.audio_decoded_bytes == 0 || self.audio_decoded_bytes > maximum_audio_bytes {
+        if (has_audio && self.audio_decoded_bytes == 0)
+            || self.audio_decoded_bytes > maximum_audio_bytes
+        {
             return Err(MediaProtocolError::InvalidPayload("decoded byte count"));
         }
         if self.duration_100ns == 0 || self.duration_100ns > MAX_MEDIA_DURATION_100NS {

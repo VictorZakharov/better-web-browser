@@ -160,6 +160,7 @@ pub(super) fn media_host_call(
             }
         }
         "reset" => ScriptMediaCommand::Reset,
+        "reload" => ScriptMediaCommand::Reload,
         _ => return Ok(Some(JsValue::undefined())),
     };
     state.pending_media_actions.push(ScriptMediaAction {

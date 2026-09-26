@@ -39,6 +39,11 @@ impl BrowserState {
             url: page.final_url.clone(),
             status: page.status,
             content_type: page.content_type,
+            csp_policies: page
+                .policy
+                .serialized_policies()
+                .map(str::to_owned)
+                .collect(),
             diagnostic_selectors: self
                 .benchmark
                 .as_ref()

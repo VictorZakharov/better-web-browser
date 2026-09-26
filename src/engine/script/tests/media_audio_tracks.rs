@@ -2,6 +2,37 @@ use super::media_source_segments::{MediaTaskTestRuntime, execute_media_source};
 use super::*;
 
 #[test]
+fn video_only_decode_does_not_fabricate_an_audio_track() {
+    let (dom, mut runtime, outcome) = execute_media_source(
+        r#"<video></video><output></output><script>
+        const video = document.querySelector('video');
+        video.onloadedmetadata = () => document.querySelector('output').textContent =
+            video.audioTracks.length + ':' + video.videoTracks.length;
+        </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    let result = runtime.dispatch_media_and_tasks(UserInputEvent::Media {
+        target: dom.elements_named("video").next().unwrap(),
+        request_id: 0,
+        disposition: "loaded",
+        current_time: 0.0,
+        duration: 8.0,
+        width: 320,
+        height: 240,
+        buffered: Some([[0.0, 8.0], [0.0, 0.0]]),
+    });
+    assert!(
+        result.outcome.errors.is_empty(),
+        "{:?}",
+        result.outcome.errors
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "0:1"
+    );
+}
+
+#[test]
 fn decoded_audio_track_is_live_and_controls_the_mixer() {
     let (dom, mut runtime, outcome) = execute_media_source(
         r#"<video></video><output></output><script>

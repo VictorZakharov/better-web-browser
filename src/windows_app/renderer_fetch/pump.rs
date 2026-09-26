@@ -63,6 +63,9 @@ fn start(
     registry: &RendererFetchRegistry,
 ) -> Step<Job> {
     let id = request.head.request_id;
+    if request.head.initiator == FetchInitiator::NetworkHint {
+        return resolve_network_hint(request, signal, client, sink, document, registry);
+    }
     let target = request.head.resulting_client;
     let result = (|| {
         request
@@ -159,6 +162,61 @@ fn start(
         total: 0,
         pending: None,
     })))
+}
+
+fn resolve_network_hint(
+    request: RendererFetchRequest,
+    signal: FetchSignal,
+    client: &winhttp::HttpClient,
+    sink: &FetchResponseSink,
+    document: DocumentId,
+    registry: &RendererFetchRegistry,
+) -> Step<Job> {
+    let id = request.head.request_id;
+    let result = (|| {
+        request
+            .validate()
+            .map_err(|error| FetchError::new(FetchErrorKind::InvalidRequest, error.to_string()))?;
+        validate_document_identity(document, request.head.document)?;
+        if request.head.destination != ResourceDestination::Fetch
+            || request.head.method != "GET"
+            || !request.head.headers.is_empty()
+            || !request.body.is_empty()
+            || request.head.resulting_client.id != 0
+            || request.head.script_source.is_some()
+            || request.head.mode != FetchMode::NoCors
+            || request.head.credentials != FetchCredentials::Omit
+        {
+            return Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                "invalid origin hint intent",
+            ));
+        }
+        let should_resolve = registry
+            .clients
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .admit_network_hint(document, request.head.client, &request.head.url)?;
+        if should_resolve {
+            client.warm_origin_dns(&request.head.url, &signal)?;
+        }
+        Ok(())
+    })();
+    let response = FetchResponseHead {
+        request_id: id,
+        result: match result {
+            Ok(()) => FetchResponseResult::Success {
+                response_type: FetchResponseType::Basic,
+                urls: vec![request.head.url],
+                status: 204,
+                headers: Vec::new(),
+            },
+            Err(error) => FetchResponseResult::Failure(wire_error(&error)),
+        },
+    };
+    let _ = sink.start(response);
+    let _ = sink.end(id, 0);
+    Step::Done(0)
 }
 
 impl BodyJob {

@@ -141,6 +141,12 @@ fn reconstruct(
     let body_is_empty = renderer.body.is_empty();
     let renderer_body = renderer.body;
     let mut request = match head.initiator {
+        FetchInitiator::NetworkHint => {
+            return Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                "DNS hints do not construct a Fetch request",
+            ));
+        }
         FetchInitiator::ChildNavigation => {
             if head.resulting_client.id == 0 || head.destination != ResourceDestination::Document {
                 return Err(FetchError::new(
@@ -213,6 +219,35 @@ fn reconstruct(
             request.credentials = credentials(head.credentials);
             request.referrer_policy = referrer_policy(head.referrer_policy);
         }
+        if head.initiator == FetchInitiator::Subresource
+            && matches!(
+                head.destination,
+                ResourceDestination::Audio | ResourceDestination::Video
+            )
+        {
+            // HTML media uses the potential-CORS setting. A CORS response is checked before
+            // its bytes are streamed to the renderer. A no-CORS response, however, is opaque
+            // only to script; the renderer still receives encoded bytes for its contained
+            // decoder. Until that path can keep credentialed opaque bytes outside the renderer,
+            // do not let a compromised renderer turn a media intent into a cross-origin
+            // cookie-bearing read. Same-origin credentials continue to work.
+            match (head.mode, head.credentials) {
+                (FetchMode::NoCors, FetchCredentials::Include) => {
+                    request.mode = RequestMode::NoCors;
+                    request.credentials = CredentialsMode::SameOrigin;
+                }
+                (FetchMode::Cors, FetchCredentials::SameOrigin | FetchCredentials::Include) => {
+                    request.mode = RequestMode::Cors;
+                    request.credentials = credentials(head.credentials);
+                }
+                _ => {
+                    return Err(FetchError::new(
+                        FetchErrorKind::InvalidRequest,
+                        "invalid media CORS setting",
+                    ));
+                }
+            }
+        }
     }
     request.script_source = head.script_source;
     Ok(request)
@@ -265,6 +300,7 @@ fn destination(value: ResourceDestination) -> RequestDestination {
         ResourceDestination::Font => RequestDestination::Font,
         ResourceDestination::Fetch => RequestDestination::Fetch,
         ResourceDestination::Video => RequestDestination::Video,
+        ResourceDestination::Audio => RequestDestination::Audio,
     }
 }
 

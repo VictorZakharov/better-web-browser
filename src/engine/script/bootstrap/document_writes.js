@@ -13,8 +13,7 @@
                     document._currentScript = wrap(next.node);
                     host('parserScriptEnter', nodeId(target));
                     try {
-                        host('runParserScript', prepared.code, prepared.url);
-                        host('parserWriteExecuted');
+                        runPreparedInlineScript(wrap(next.node), prepared);
                     } catch (error) {
                         reportGlobalException(error, 'written script', windowObject, prepared.url);
                     } finally {

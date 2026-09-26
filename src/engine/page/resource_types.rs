@@ -6,6 +6,11 @@ use crate::fetch::{CredentialsMode, ReferrerPolicy, RequestMode};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageResource {
+    /// A speculative origin resolution. `preconnect` currently performs the DNS portion of
+    /// its handshake; no HTTP request or response is associated with either hint.
+    OriginHint {
+        origin: String,
+    },
     /// A link preload fetches into a document-scoped cache; it does not execute or apply bytes.
     Preload {
         url: String,
@@ -26,6 +31,13 @@ pub enum PageResource {
     Media {
         url: String,
         node: NodeId,
+        kind: MediaElementKind,
+        /// The selected direct child, or None when the media element's src wins.
+        source_node: Option<NodeId>,
+        /// Distinguishes replacement/fallback fetches even when the URL repeats.
+        selection_id: u64,
+        mode: RequestMode,
+        credentials: CredentialsMode,
     },
     Script {
         url: String,
@@ -39,6 +51,12 @@ pub enum PageResource {
         weight: u16,
         italic: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MediaElementKind {
+    Audio,
+    Video,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

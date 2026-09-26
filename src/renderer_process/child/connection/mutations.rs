@@ -1,16 +1,34 @@
 //! Outgoing browser-owned mutation intents and completed storage-event receipts.
 use super::*;
 use crate::renderer_protocol::{
-    CookieMutation, StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest,
+    CookieMutation, PolicyMutation, StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest,
 };
 use crate::storage::StorageAreaKind;
 
 impl ChildConnection {
+    pub(in crate::renderer_process::child) fn send_policy_updates(
+        &mut self,
+        document: DocumentId,
+        outcome: &mut crate::engine::ScriptOutcome,
+    ) -> Result<(), String> {
+        for update in outcome.policy_updates.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::PolicyMutation(PolicyMutation {
+                    document,
+                    client_id: update.client.id,
+                    serialized: update.serialized,
+                }))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
     pub(in crate::renderer_process::child) fn send_state_mutations(
         &mut self,
         document: DocumentId,
         outcome: &mut crate::engine::ScriptOutcome,
     ) -> Result<(), String> {
+        self.send_policy_updates(document, outcome)?;
         for (area, version) in outcome.storage_event_receipts.drain(..) {
             self.send_state_snapshot_applied(StateSnapshotApplied {
                 document,

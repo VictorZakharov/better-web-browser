@@ -4,8 +4,9 @@ use super::input::{
     PointerCursorResult, PointerLockRequest, PointerLockResponse, PresentationAcknowledgement,
 };
 use super::state::{
-    CookieMutation, CookieStateSnapshot, StateSnapshotApplied, StorageMutationRequest,
-    StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart, StorageSync,
+    CookieMutation, CookieStateSnapshot, PolicyMutation, StateSnapshotApplied,
+    StorageMutationRequest, StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
+    StorageSync,
 };
 use super::{
     DatabaseCommand, DatabaseEvent, DocumentId, DocumentStart, FetchRequestHead,
@@ -246,6 +247,7 @@ pub enum RendererMessage {
     FullscreenRequest(FullscreenRequest),
     PointerLockRequest(PointerLockRequest),
     CookieMutation(CookieMutation),
+    PolicyMutation(PolicyMutation),
     StorageMutation(StorageMutationRequest),
     StateSnapshotApplied(StateSnapshotApplied),
     Restrictions(RestrictionReport),

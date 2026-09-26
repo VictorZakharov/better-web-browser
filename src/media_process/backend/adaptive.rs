@@ -70,5 +70,8 @@ pub(super) fn decode(
     report
         .validate(limits)
         .map_err(|error| format!("validate adaptive decoded media: {error}"))?;
-    Ok(DecodedMedia { report, playback })
+    Ok(DecodedMedia {
+        report,
+        playback: Some(playback),
+    })
 }
