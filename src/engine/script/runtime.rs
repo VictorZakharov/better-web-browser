@@ -43,10 +43,19 @@ impl ScriptRuntime {
         &mut self,
         node: &NodeRef,
     ) -> Result<ScriptOutcome, String> {
-        let mut host = self.host.borrow_mut();
-        host.process_inserted_csp_meta(node)?;
+        let policy_updates = {
+            let mut host = self.host.borrow_mut();
+            host.process_inserted_csp_meta(node)?;
+            std::mem::take(&mut host.pending_policy_updates)
+        };
+        if !policy_updates.is_empty() {
+            self.context
+                .as_deref_mut()
+                .expect("parser CSP requires an active realm")
+                .refresh_code_generation_policy();
+        }
         Ok(ScriptOutcome {
-            policy_updates: std::mem::take(&mut host.pending_policy_updates),
+            policy_updates,
             ..ScriptOutcome::default()
         })
     }
@@ -56,6 +65,10 @@ impl ScriptRuntime {
         policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
     ) {
         self.host.borrow_mut().policy = policy;
+        self.context
+            .as_deref_mut()
+            .expect("document CSP requires an active realm")
+            .refresh_code_generation_policy();
     }
 
     pub(crate) fn document_url(&self) -> String {

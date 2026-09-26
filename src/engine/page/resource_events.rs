@@ -14,6 +14,7 @@ impl Page {
                     resource,
                     PageResource::Image { .. }
                         | PageResource::Preload { .. }
+                        | PageResource::Prefetch { .. }
                         | PageResource::OriginHint { .. }
                 )
             })
@@ -76,6 +77,16 @@ impl Page {
                     .and_then(|href| super::super::css::imports::resolve(&self.base_url, &href))
                     .map(|url| PageResource::Stylesheet { url })
             }
+            "link"
+                if node.attr("rel").is_some_and(|rel| {
+                    rel.split_ascii_whitespace()
+                        .any(|token| token.eq_ignore_ascii_case("prefetch"))
+                }) =>
+            {
+                super::resource_hints::discover_link_hints(node, &self.source_url, &self.base_url)
+                    .into_iter()
+                    .find(|resource| matches!(resource, PageResource::Prefetch { .. }))
+            }
             "img" | "image" => self.image_url(node).map(|url| PageResource::Image { url }),
             "input"
                 if node
@@ -105,6 +116,21 @@ mod tests {
                 .any(|resource| { matches!(resource, PageResource::OriginHint { .. }) })
         );
         assert!(page.document_load_resources().is_empty());
+    }
+
+    #[test]
+    fn document_prefetch_has_link_owner_but_does_not_block_current_document_load() {
+        let page = Page::parse(
+            "<link rel=prefetch href='/next'>",
+            "https://example.test/current",
+        );
+        let link = page.dom.elements_named("link").next().unwrap();
+        let prefetch = PageResource::Prefetch {
+            url: "https://example.test/next".into(),
+        };
+        assert_eq!(page.resource_event_key(&link), Some(prefetch.clone()));
+        assert!(page.resources.contains(&prefetch));
+        assert!(!page.document_load_resources().contains(&prefetch));
     }
 
     #[test]

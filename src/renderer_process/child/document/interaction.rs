@@ -222,8 +222,12 @@ impl DocumentRuntime {
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
         self.pending_databases.append(&mut outcome.database_actions);
+        self.pending_speech_requests
+            .append(&mut outcome.speech_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
+        self.start_pending_beacons(connection)?;
+        self.start_pending_speech_requests(connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 

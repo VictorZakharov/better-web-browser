@@ -11,6 +11,11 @@ pub enum PageResource {
     OriginHint {
         origin: String,
     },
+    /// Best-effort fetch of a same-origin document for a future navigation. The browser owns
+    /// admission and cache reuse; speculative bytes are never installed in this document.
+    Prefetch {
+        url: String,
+    },
     /// A link preload fetches into a document-scoped cache; it does not execute or apply bytes.
     Preload {
         url: String,

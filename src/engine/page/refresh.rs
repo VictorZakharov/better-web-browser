@@ -76,6 +76,7 @@ impl Page {
             }),
             PageResource::Stylesheet { .. } => true,
             PageResource::OriginHint { .. }
+            | PageResource::Prefetch { .. }
             | PageResource::Preload { .. }
             | PageResource::Image { .. }
             | PageResource::Media { .. }

@@ -12,6 +12,10 @@ mod audio_only;
 mod cadence;
 #[path = "media/failure.rs"]
 mod failure;
+#[path = "media/flac_source.rs"]
+mod flac_source;
+#[path = "media/m4a_alias.rs"]
+mod m4a_alias;
 #[path = "media/seeking.rs"]
 mod seeking;
 #[path = "media/source_fallback.rs"]

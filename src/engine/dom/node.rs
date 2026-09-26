@@ -32,15 +32,6 @@ pub enum ShadowRootMode {
     Closed,
 }
 
-impl ShadowRootMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Closed => "closed",
-        }
-    }
-}
-
 /// A stable, opaque node identity composed of its allocation namespace and local sequence number.
 /// The namespace remains stable when DOM adoption changes `ownerDocument`; values are never reused
 /// during the process lifetime and can cross an IPC boundary as a `u128`.
@@ -146,6 +137,7 @@ pub struct Node {
     pub children: RefCell<Vec<NodeRef>>,
     adopted_stylesheets: RefCell<Vec<AdoptedStyleSheet>>,
     sheet_state: std::cell::OnceCell<Box<RefCell<stylesheets::SheetState>>>,
+    pub(super) manual_slot_state: std::cell::OnceCell<RefCell<super::shadow::ManualSlotState>>,
     /// UA scrolling state is not a DOM mutation and is not copied by cloneNode.
     pub(crate) scroll_offset: Cell<(f32, f32)>,
     pub data: NodeData,
@@ -209,6 +201,7 @@ pub struct ElementData {
 pub struct ShadowRootData {
     pub(super) host: Weak<Node>,
     pub mode: ShadowRootMode,
+    pub manual_slot_assignment: bool,
     pub delegates_focus: bool,
     pub serializable: bool,
     pub clonable: bool,
@@ -230,6 +223,7 @@ impl Node {
             children: RefCell::new(Vec::new()),
             adopted_stylesheets: RefCell::new(Vec::new()),
             sheet_state: std::cell::OnceCell::new(),
+            manual_slot_state: std::cell::OnceCell::new(),
             scroll_offset: Cell::new((0.0, 0.0)),
             data,
         })

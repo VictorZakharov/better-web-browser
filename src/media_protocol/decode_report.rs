@@ -45,6 +45,7 @@ impl MediaDecodeReport {
                         | MediaCodecFamily::Aac
                         | MediaCodecFamily::Pcm
                         | MediaCodecFamily::Mp3
+                        | MediaCodecFamily::Flac
                 ))
             || (has_video && has_audio && self.audio_codec != MediaCodecFamily::AacLc)
         {

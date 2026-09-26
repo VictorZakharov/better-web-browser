@@ -3,7 +3,7 @@
 use crate::limits::MAX_FETCH_STREAM_CHUNK_BYTES;
 use crate::renderer_protocol::{
     BrowserFetchError, DatabaseEvent, DocumentId, FetchResponseAbort, FetchResponseEnd,
-    FetchResponseHead, TransferChunk, WebSocketEvent,
+    FetchResponseHead, SpeechUpdate, TransferChunk, WebSocketEvent,
 };
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -32,6 +32,13 @@ pub struct DatabaseEventSink {
     wake: super::wake::BrokerWake,
 }
 
+#[derive(Clone)]
+pub struct SpeechUpdateSink {
+    document: DocumentId,
+    sender: mpsc::SyncSender<FetchStreamEvent>,
+    wake: super::wake::BrokerWake,
+}
+
 pub(super) enum FetchStreamEvent {
     Start {
         document: DocumentId,
@@ -51,6 +58,47 @@ pub(super) enum FetchStreamEvent {
     },
     WebSocket(WebSocketEvent),
     Database(DatabaseEvent),
+    Speech(SpeechUpdate),
+}
+
+impl SpeechUpdateSink {
+    pub(super) fn new(
+        document: DocumentId,
+        sender: mpsc::SyncSender<FetchStreamEvent>,
+        wake: super::wake::BrokerWake,
+    ) -> Self {
+        Self {
+            document,
+            sender,
+            wake,
+        }
+    }
+
+    pub fn send(&self, update: SpeechUpdate) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        if update.document != self.document {
+            return Err("speech update document mismatch".into());
+        }
+        self.wake.notify();
+        self.sender
+            .send(FetchStreamEvent::Speech(update))
+            .map_err(|_| "renderer speech stream is no longer available".to_string())?;
+        self.wake.notify();
+        Ok(())
+    }
+
+    /// UI-thread rejection paths must never wait behind a full renderer mailbox.
+    pub fn try_send(&self, update: SpeechUpdate) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        if update.document != self.document {
+            return Err("speech update document mismatch".into());
+        }
+        self.sender
+            .try_send(FetchStreamEvent::Speech(update))
+            .map_err(|error| format!("renderer speech mailbox unavailable: {error}"))?;
+        self.wake.notify();
+        Ok(())
+    }
 }
 
 impl DatabaseEventSink {
@@ -207,6 +255,25 @@ mod tests {
     use super::*;
     use crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS;
     use std::time::Duration;
+
+    #[test]
+    fn ui_speech_rejection_never_waits_behind_a_full_renderer_mailbox() {
+        let document = DocumentId::new(7).unwrap();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let sink =
+            SpeechUpdateSink::new(document, sender, super::super::wake::BrokerWake::default());
+        let update = SpeechUpdate {
+            document,
+            utterance_id: 12,
+            event: crate::renderer_protocol::SpeechEvent::Error("denied".into()),
+        };
+        sink.try_send(update.clone()).unwrap();
+        assert!(sink.try_send(update).is_err());
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            FetchStreamEvent::Speech(_)
+        ));
+    }
 
     #[test]
     fn producer_blocks_when_the_bounded_stream_queue_is_full() {

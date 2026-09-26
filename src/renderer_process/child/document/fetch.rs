@@ -26,6 +26,12 @@ pub(super) fn page_resource_request(
             ResourceDestination::Fetch,
             FetchMode::NoCors,
         ),
+        PageResource::Prefetch { url } => (
+            url,
+            FetchInitiator::NetworkHint,
+            ResourceDestination::Document,
+            FetchMode::NoCors,
+        ),
         PageResource::Preload {
             url,
             as_type,
@@ -119,7 +125,9 @@ pub(super) fn page_resource_request(
             headers: Vec::new(),
             mode,
             credentials: match resource {
-                PageResource::OriginHint { .. } => FetchCredentials::Omit,
+                PageResource::OriginHint { .. } | PageResource::Prefetch { .. } => {
+                    FetchCredentials::Omit
+                }
                 PageResource::Preload {
                     credentials: value, ..
                 } => credentials(*value),
@@ -199,6 +207,16 @@ pub(super) fn script_api_request(
         },
         body,
     }
+}
+
+pub(super) fn script_beacon_request(
+    request_id: u64,
+    document: DocumentId,
+    request: FetchRequest,
+) -> RendererFetchRequest {
+    let mut wire = script_api_request(request_id, document, request);
+    wire.head.initiator = FetchInitiator::Beacon;
+    wire
 }
 
 pub(super) fn into_fetch_result(

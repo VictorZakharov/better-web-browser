@@ -69,6 +69,14 @@ impl Broker {
                         .map_err(|error| error.to_string())?;
                 }
             }
+            FetchStreamEvent::Speech(update) => {
+                if self.active_document == Some(update.document) {
+                    update.validate().map_err(|error| error.to_string())?;
+                    self.writer()
+                        .send_browser(&BrowserMessage::SpeechUpdate(update))
+                        .map_err(|error| error.to_string())?;
+                }
+            }
             FetchStreamEvent::WebSocket(event) => {
                 if self.active_document == Some(event.document) {
                     event.validate().map_err(|error| error.to_string())?;

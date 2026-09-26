@@ -5,12 +5,19 @@
         const source = String(type).trim().toLowerCase();
         if (!source) return '';
         const [essence, ...parameters] = source.split(';').map(part => part.trim());
+        // Both M4A aliases identify the same AAC-bearing ISO-BMFF files decoded by the
+        // media worker. Keep container and codec checks identical to audio/mp4.
         const mp4 = essence === 'video/mp4' || essence === 'audio/mp4'
+            || essence === 'audio/m4a' || essence === 'audio/x-m4a'
             || essence === 'application/mp4';
         const wave = essence === 'audio/wav' || essence === 'audio/wave'
             || essence === 'audio/x-wav' || essence === 'audio/vnd.wave';
         const mpeg = essence === 'audio/mpeg';
         const aac = essence === 'audio/aac';
+        // RFC 9639 registers native FLAC as audio/flac; audio/x-flac is its deprecated
+        // alias. This decoder does not imply support for FLAC in Ogg or another container.
+        const flac = essence === 'audio/flac' || essence === 'audio/x-flac';
+        if (flac) return parameters.length ? '' : 'maybe';
         if (!mp4 && !wave && !mpeg && !aac) return '';
 
         const codecParameters = parameters.filter(parameter => /^codecs(?:\s|=|$)/.test(parameter));
@@ -31,5 +38,5 @@
         if (codecs.length !== Number(hasAudio) + Number(hasVideo)) return '';
         // The contained worker owns a monotonic playback clock for complete video-only MP4.
         // A video-only stream must not be advertised under the audio/mp4 essence.
-        return hasAudio || (hasVideo && essence !== 'audio/mp4') ? 'probably' : '';
+        return hasAudio || (hasVideo && !essence.startsWith('audio/')) ? 'probably' : '';
     };

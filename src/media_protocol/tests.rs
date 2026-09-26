@@ -52,11 +52,28 @@ fn media_limits_and_capabilities_fail_closed() {
         startup_hresult: -1,
         h264_hresult: -1,
         aac_hresult: -1,
+        flac_hresult: -1,
         h264_decoders: 1,
         aac_decoders: 0,
+        flac_decoders: 0,
         probe_micros: 1,
     };
     assert!(impossible_report.validate(MediaLimits::default()).is_err());
+    let impossible_flac_report = MediaCapabilityReport {
+        startup_hresult: 0,
+        h264_hresult: 0,
+        aac_hresult: 0,
+        flac_hresult: -1,
+        h264_decoders: 0,
+        aac_decoders: 0,
+        flac_decoders: 1,
+        probe_micros: 1,
+    };
+    assert!(
+        impossible_flac_report
+            .validate(MediaLimits::default())
+            .is_err()
+    );
 
     let impossible_decode = MediaDecodeReport {
         buffered: MediaBufferedExtent {
@@ -140,6 +157,19 @@ fn audio_only_report_requires_real_audio_and_no_video_metadata() {
         decode_micros: 100,
     };
     assert!(report.validate(MediaLimits::default()).is_ok());
+    assert_eq!(MediaCodecFamily::Flac.wire_code(), 6);
+    assert_eq!(
+        MediaCodecFamily::from_wire(6).unwrap(),
+        MediaCodecFamily::Flac
+    );
+    assert!(
+        MediaDecodeReport {
+            audio_codec: MediaCodecFamily::Flac,
+            ..report
+        }
+        .validate(MediaLimits::default())
+        .is_ok()
+    );
     for forged in [
         MediaDecodeReport {
             video_width: 1,

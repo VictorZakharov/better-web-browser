@@ -1,5 +1,6 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
+mod beacon;
 mod clients;
 mod database;
 mod pump;
@@ -63,7 +64,18 @@ pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String>
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .activate(document);
-    let requests = requests
+    let mut ordinary = Vec::new();
+    for request in requests {
+        if request.head.initiator == FetchInitiator::Beacon {
+            beacon::submit(request, document, &document_url, &client, &registry)?;
+        } else {
+            ordinary.push(request);
+        }
+    }
+    if ordinary.is_empty() {
+        return Ok(());
+    }
+    let requests = ordinary
         .into_iter()
         .map(|request| {
             let request_id = request.head.request_id;
@@ -173,7 +185,7 @@ fn reconstruct(
         FetchInitiator::ClassicWorker | FetchInitiator::ModuleWorker => {
             worker::reconstruct(&head, authoritative_document_url)?
         }
-        FetchInitiator::ScriptApi => {
+        FetchInitiator::ScriptApi | FetchInitiator::Beacon => {
             let mut request = FetchRequest::script(&head.url, authoritative_document_url)?;
             request.response_body_limit = MAX_RENDERER_FETCH_STREAM_BYTES;
             request.destination = destination(head.destination);
@@ -192,7 +204,10 @@ fn reconstruct(
         }
     };
 
-    if head.initiator != FetchInitiator::ScriptApi {
+    if !matches!(
+        head.initiator,
+        FetchInitiator::ScriptApi | FetchInitiator::Beacon
+    ) {
         if head.method != "GET" || !head.headers.is_empty() || !body_is_empty {
             return Err(FetchError::new(
                 FetchErrorKind::InvalidRequest,

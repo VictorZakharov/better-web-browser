@@ -24,6 +24,7 @@ fn execute_html(html: &str) -> (super::super::dom::Dom, ScriptOutcome) {
 
 mod adjacent_insertion;
 mod attributes;
+mod beacon;
 mod bindings;
 mod canvas;
 mod canvas_bitmap;

@@ -37,8 +37,10 @@ unicode-bidi = "0.3.18"
 unicode-script = "0.5.8"
 unicode-segmentation = "1.13.3"
 windows = { version = "0.62.2", features = [
+    "Win32_Globalization",
     "Win32_Media_Audio_XAudio2",
     "Win32_Media_MediaFoundation",
+    "Win32_Media_Speech",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",

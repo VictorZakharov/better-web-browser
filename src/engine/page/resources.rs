@@ -60,6 +60,7 @@ pub(super) fn discover_non_script_resources(
     let mut seen_stylesheets = HashSet::new();
     let mut preload_count = 0;
     let mut origin_hint_count = 0;
+    let mut prefetch_count = 0;
     for link in Node::shadow_including_descendants(&dom.document)
         .filter(|node| node.tag_name() == Some("link"))
     {
@@ -67,9 +68,19 @@ pub(super) fn discover_non_script_resources(
         for hint in super::resource_hints::discover_link_hints(&link, document_url, base_url) {
             // OS DNS resolution can block a background worker until the platform times out.
             // Keep no more than two origins eligible per document.
-            if origin_hint_count < 2 && !resources.contains(&hint) {
-                resources.push(hint);
-                origin_hint_count += 1;
+            if resources.contains(&hint) {
+                continue;
+            }
+            match hint {
+                PageResource::OriginHint { .. } if origin_hint_count < 2 => {
+                    resources.push(hint);
+                    origin_hint_count += 1;
+                }
+                PageResource::Prefetch { .. } if prefetch_count < 2 => {
+                    resources.push(hint);
+                    prefetch_count += 1;
+                }
+                _ => {}
             }
         }
         if preload_count < 32

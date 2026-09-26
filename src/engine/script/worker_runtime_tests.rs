@@ -124,6 +124,52 @@ fn worker_response_policy_blocks_imports_and_fetches_without_affecting_its_entry
 }
 
 #[test]
+fn worker_response_policy_gates_string_and_wasm_compilation_after_bootstrap() {
+    let source = r#"
+        const result = [];
+        try { eval('7'); result.push('eval'); } catch (_) { result.push('blocked'); }
+        try { Function('return 7')(); result.push('function'); } catch (_) { result.push('blocked'); }
+        try {
+            new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+            result.push('wasm');
+        } catch (_) { result.push('blocked'); }
+        postMessage(result.join('|'));
+    "#;
+    let loader: Arc<WorkerSourceLoader> = Arc::new(|url, _| Err(format!("unexpected {url}")));
+    for (directive, expected) in [
+        ("script-src 'self'", "\"blocked|blocked|blocked\""),
+        ("script-src 'self' 'unsafe-eval'", "\"eval|function|wasm\""),
+    ] {
+        let mut headers = HeaderList::new();
+        headers
+            .append("content-security-policy", directive)
+            .unwrap();
+        let policy = Arc::new(
+            crate::fetch::csp::PolicyContainer::from_headers(
+                "https://example.com/worker.js",
+                &headers,
+            )
+            .unwrap(),
+        );
+        let (runtime, outcome) = WorkerRuntime::start_with_policy(
+            "https://example.com/worker.js",
+            source,
+            "",
+            ScriptKind::Classic,
+            Arc::clone(&loader),
+            policy,
+        );
+        assert!(runtime.is_some(), "{directive}: {:?}", outcome.errors);
+        assert!(
+            outcome.errors.is_empty(),
+            "{directive}: {:?}",
+            outcome.errors
+        );
+        assert_eq!(outcome.messages, [expected], "{directive}");
+    }
+}
+
+#[test]
 fn worker_module_dependency_obeys_entry_response_policy() {
     let mut headers = HeaderList::new();
     headers

@@ -1,5 +1,7 @@
 use super::support::{LoopbackServer, TestResponse};
-use crate::fetch::{FetchErrorKind, FetchRequest, RequestCache, RequestMode};
+use crate::fetch::{
+    FetchErrorKind, FetchRequest, FetchUrl, RedirectMode, Referrer, RequestCache, RequestMode,
+};
 use crate::winhttp::HttpClient;
 use std::sync::{
     Arc,
@@ -32,6 +34,57 @@ fn fresh_get_is_reused_and_reload_replaces_it() {
     reload.cache = RequestCache::Reload;
     assert_eq!(client.fetch(reload).unwrap().body.as_bytes(), b"body-2");
     assert_eq!(client.get(&url).unwrap().body.as_bytes(), b"body-2");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn complete_document_prefetch_reuses_navigation_partition_but_not_new_cookie_state() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let server = LoopbackServer::start({
+        let calls = calls.clone();
+        move |_| {
+            let count = calls.fetch_add(1, Ordering::SeqCst) + 1;
+            TestResponse::new(200, format!("document-{count}"))
+                .header("Cache-Control", "private, max-age=60")
+        }
+    });
+    let client = client();
+    let source = server.url("/current");
+    let target = server.url("/next");
+    let navigation = || {
+        let mut request = FetchRequest::navigation(&target).unwrap();
+        let source = FetchUrl::parse(&source).unwrap();
+        request.origin = Some(source.origin());
+        request.referrer = Referrer::Url(source);
+        request
+    };
+    // A prefetch is browser-owned, consumes the full stream, and differs only in its
+    // conservative redirect policy and body limit from a future navigation.
+    let mut prefetch = navigation();
+    prefetch.redirect = RedirectMode::Error;
+    prefetch.response_body_limit = 2 * 1024 * 1024;
+    assert_eq!(
+        client
+            .fetch_stream(prefetch)
+            .unwrap()
+            .into_buffered()
+            .unwrap()
+            .body
+            .as_bytes(),
+        b"document-1"
+    );
+    assert_eq!(
+        client.fetch(navigation()).unwrap().body.as_bytes(),
+        b"document-1"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // Private-cache keys include the actual outbound Cookie header, not just URL and origin.
+    client.set_cookie(&target, "session=new; Path=/").unwrap();
+    assert_eq!(
+        client.fetch(navigation()).unwrap().body.as_bytes(),
+        b"document-2"
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
 

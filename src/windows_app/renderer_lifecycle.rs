@@ -113,6 +113,7 @@ impl BrowserState {
     }
 
     pub(super) unsafe fn replace_renderer_for_navigation(&mut self, id: TabId) {
+        self.retire_speech_for_tab(id);
         let session = self.tabs.get_mut(id).and_then(|tab| {
             tab.storage_subscription = None;
             tab.deferred_renderer_events.clear();

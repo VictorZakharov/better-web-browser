@@ -2,8 +2,8 @@
 //!
 //! DNS prefetch and preconnect are origin hints, not resource downloads. The latter currently
 //! performs the DNS portion of the handshake, which HTML explicitly permits under resource
-//! constraints. `prefetch` is not admitted here: Breeze's HTTP cache partitions speculative
-//! subresources from navigations, and serving one as the other would bypass that boundary.
+//! constraints. Document prefetch is a separate, same-origin subset of the HTML hint: the browser
+//! fetches with future-navigation settings and admits only complete, cacheable responses.
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-dns-prefetch
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-preconnect
 //! https://html.spec.whatwg.org/multipage/links.html#link-type-prefetch
@@ -14,7 +14,7 @@ use crate::navigation::{ParsedUrl, resolve_url};
 use std::collections::HashSet;
 
 impl super::Page {
-    pub(crate) fn current_origin_hints(&self) -> HashSet<PageResource> {
+    pub(crate) fn current_network_hints(&self) -> HashSet<PageResource> {
         Node::shadow_including_descendants(&self.dom.document)
             .filter(|node| node.tag_name() == Some("link"))
             .flat_map(|node| discover_link_hints(&node, &self.source_url, &self.base_url))
@@ -51,6 +51,26 @@ pub(super) fn discover_link_hints(
             origin: target.origin(),
         });
     }
+    // The prefetch path is deliberately restricted to same-origin documents. Other destinations
+    // need a cache key matching their eventual Fetch mode/destination/credentials; inventing one
+    // here could leak or misapply a response. The browser repeats this admission authoritatively.
+    if tokens
+        .iter()
+        .any(|token| token.eq_ignore_ascii_case("prefetch"))
+        && ParsedUrl::parse(document_url).is_ok_and(|document| document.origin() == target.origin())
+        && link.attr("crossorigin").is_none()
+        && link.attr("as").is_none()
+        && link.attr("integrity").is_none()
+        && link.attr("referrerpolicy").is_none()
+        && link.attr("media").is_none()
+        && link
+            .attr("type")
+            .is_none_or(|mime| mime.trim().eq_ignore_ascii_case("text/html"))
+    {
+        hints.push(PageResource::Prefetch {
+            url: target.canonical(),
+        });
+    }
     hints
 }
 
@@ -81,17 +101,26 @@ mod tests {
     }
 
     #[test]
-    fn prefetch_does_not_claim_to_warm_an_unreusable_cache_partition() {
+    fn same_origin_document_prefetch_is_separate_from_origin_hints() {
         let page = Page::parse(
             "<link rel=prefetch href=/next>\
              <link rel=prefetch href=https://other.test/next>\
              <link rel=prefetch href=/script.js as=script>\
              <link rel=prefetch href=/next crossorigin>\
              <link rel=prefetch href=/next integrity='sha256-test'>\
+             <link rel=prefetch href=/next media=print>\
              <link rel=prefetch href=/image.png type=image/png>",
             "https://example.test/current",
         );
-        assert!(page.resources.is_empty());
+        assert_eq!(
+            page.resources
+                .iter()
+                .filter(|resource| matches!(resource, PageResource::Prefetch { .. }))
+                .collect::<Vec<_>>(),
+            vec![&PageResource::Prefetch {
+                url: "https://example.test/next".into()
+            }]
+        );
     }
 
     #[test]

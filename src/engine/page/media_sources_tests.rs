@@ -33,6 +33,34 @@ fn direct_audio_src_is_discovered() {
 }
 
 #[test]
+fn m4a_alias_selects_aac_source_but_not_video_only_codec() {
+    assert!(supported_media_type("audio/m4a; codecs=mp4a.40.2"));
+    assert!(supported_media_type("audio/x-m4a; codecs=mp4a.40.2"));
+    assert!(!supported_media_type("audio/m4a; codecs=avc1.42e01e"));
+    let page = Page::parse(
+        r#"<audio><source src="video.m4a" type='audio/x-m4a; codecs="avc1.42e01e"'>
+                 <source src="song.m4a" type='audio/x-m4a; codecs="mp4a.40.2"'>
+                 <source src="fallback.mp4" type="audio/mp4"></audio>"#,
+        "https://example.com/music/",
+    );
+    assert!(matches!(page.resources.as_slice(),
+        [PageResource::Media { url, .. }] if url == "https://example.com/music/song.m4a"));
+}
+
+#[test]
+fn native_flac_source_is_selected_without_claiming_ogg_flac() {
+    let page = Page::parse(
+        r#"<audio><source src="skip.ogg" type='audio/ogg; codecs="flac"'>
+                 <source src="skip.flac" type='audio/flac; codecs="flac"'>
+                 <source src="song.flac" type="audio/flac">
+                 <source src="fallback.mp3" type="audio/mpeg"></audio>"#,
+        "https://example.com/music/",
+    );
+    assert!(matches!(page.resources.as_slice(),
+        [PageResource::Media { url, .. }] if url == "https://example.com/music/song.flac"));
+}
+
+#[test]
 fn video_only_mp4_source_is_selected_without_an_aac_track() {
     let page = Page::parse(
         "<video><source src='silent.mp4' type='video/mp4; codecs=\"avc1.42e01e\"'>\

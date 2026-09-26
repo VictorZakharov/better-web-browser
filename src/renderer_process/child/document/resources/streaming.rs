@@ -1,21 +1,63 @@
 //! Event-loop-friendly script Fetch lifecycle and response-stream delivery.
 
-use super::super::fetch::{into_fetch_error, into_fetch_head_result, script_api_request};
+use super::super::fetch::{
+    into_fetch_error, into_fetch_head_result, script_api_request, script_beacon_request,
+};
 use super::super::reporting::{micros, runtime_report};
 use super::super::{AdvanceResult, DocumentRuntime};
 use crate::engine::{ScriptFetchAction, ScriptFetchEvent, ScriptOutcome, StyleRefreshStats};
 use crate::renderer_process::child::connection::{ChildConnection, ScriptFetchDelivery};
 use crate::renderer_protocol::{
-    DatabaseEvent, PageLoadReport, RendererRuntimeUpdate, WebSocketEvent, WebSocketEventKind,
+    DatabaseEvent, PageLoadReport, RendererRuntimeUpdate, SpeechEvent, SpeechRequest, SpeechUpdate,
+    WebSocketEvent, WebSocketEventKind,
 };
 use std::collections::HashSet;
 use std::time::Instant;
 
 impl DocumentRuntime {
+    pub(in crate::renderer_process::child) fn start_pending_speech_requests(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        for action in std::mem::take(&mut self.pending_speech_requests) {
+            connection.send_speech_request(SpeechRequest {
+                document: self.id,
+                utterance_id: action.utterance_id,
+                action: action.action,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Flush one-way requests before sending a navigation mutation. Ordinary Fetch remains
+    /// document-owned; a Beacon must cross the IPC boundary while its client still exists.
+    pub(in crate::renderer_process::child) fn start_pending_beacons(
+        &mut self,
+        connection: &mut ChildConnection,
+    ) -> Result<(), String> {
+        let mut retained = Vec::new();
+        let mut beacons = Vec::new();
+        for action in std::mem::take(&mut self.pending_fetches) {
+            match action {
+                ScriptFetchAction::Beacon { request } => {
+                    let id = connection.allocate_request_id();
+                    beacons.push(script_beacon_request(id, self.id, *request));
+                }
+                other => retained.push(other),
+            }
+        }
+        self.pending_fetches = retained;
+        if !beacons.is_empty() {
+            connection.start_streaming_fetch_batch(self.id, beacons)?;
+        }
+        Ok(())
+    }
+
     pub(in crate::renderer_process::child) fn start_pending_fetches(
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
+        self.start_pending_speech_requests(connection)?;
         for action in std::mem::take(&mut self.pending_websockets) {
             connection.send_websocket_command(crate::renderer_protocol::WebSocketCommand {
                 document: self.id,
@@ -37,7 +79,9 @@ impl DocumentRuntime {
             .iter()
             .filter_map(|action| match action {
                 ScriptFetchAction::Abort { id } => Some(*id),
-                ScriptFetchAction::Start { .. } | ScriptFetchAction::Consume { .. } => None,
+                ScriptFetchAction::Start { .. }
+                | ScriptFetchAction::Beacon { .. }
+                | ScriptFetchAction::Consume { .. } => None,
             })
             .collect::<HashSet<_>>();
 
@@ -54,6 +98,11 @@ impl DocumentRuntime {
         let mut requests = Vec::new();
         let mut started = Vec::new();
         for action in actions {
+            if let ScriptFetchAction::Beacon { request } = action {
+                let wire_id = connection.allocate_request_id();
+                requests.push(script_beacon_request(wire_id, self.id, *request));
+                continue;
+            }
             if let ScriptFetchAction::Consume { id, total } = &action
                 && let Some((&wire_id, _)) = self
                     .active_script_fetches
@@ -207,6 +256,37 @@ impl DocumentRuntime {
         )
     }
 
+    pub(in crate::renderer_process::child) fn deliver_speech_update(
+        &mut self,
+        update: SpeechUpdate,
+        connection: &mut ChildConnection,
+    ) -> Result<Option<AdvanceResult>, String> {
+        if update.document != self.id {
+            return Ok(None);
+        }
+        let terminal = matches!(
+            update.event,
+            SpeechEvent::Ended
+                | SpeechEvent::Cancelled
+                | SpeechEvent::Error(_)
+                | SpeechEvent::Voices(_)
+        );
+        let previous_timer_micros = self.next_timer_micros();
+        let started = Instant::now();
+        let outcome = self
+            .script_runtime
+            .as_mut()
+            .map(|runtime| runtime.deliver_speech_update(update))
+            .unwrap_or_default();
+        self.complete_network_script_outcome(
+            outcome,
+            terminal,
+            previous_timer_micros,
+            started,
+            connection,
+        )
+    }
+
     fn complete_network_script_outcome(
         &mut self,
         mut outcome: ScriptOutcome,
@@ -219,6 +299,8 @@ impl DocumentRuntime {
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
         self.pending_databases.append(&mut outcome.database_actions);
+        self.pending_speech_requests
+            .append(&mut outcome.speech_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         // Abort and chained Fetch actions produced by a network callback belong to the same

@@ -62,6 +62,7 @@ impl EventSender {
                 | RendererEvent::PolicyMutation(_)
                 | RendererEvent::WebSocketCommand(_)
                 | RendererEvent::DatabaseCommand(_)
+                | RendererEvent::SpeechRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -253,6 +254,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::StorageMutation(request) => Some(request.document),
         RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::DatabaseCommand(command) => Some(command.document),
+        RendererEvent::SpeechRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }

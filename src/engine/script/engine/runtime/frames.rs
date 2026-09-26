@@ -31,12 +31,11 @@ impl Context {
             .run(|isolate| {
                 v8::scope!(let scope, isolate);
                 let context = v8::Local::new(scope, &self.context);
-                if let Some(host) = super::super::node_wrappers::host(context) {
-                    let host = host.borrow();
-                    context.set_allow_generation_from_strings(
-                        !host.sandbox.scripts_blocked && host.policy.allows_eval(),
-                    );
-                }
+                let allowed = context
+                    .get_slot::<super::super::bridge::HostBridge>()
+                    .and_then(|bridge| bridge.code_generation_allowed())
+                    .unwrap_or(false);
+                context.set_allow_generation_from_strings(allowed);
                 Ok(())
             })
             .expect("policy update does not execute author code");

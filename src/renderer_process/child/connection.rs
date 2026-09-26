@@ -6,6 +6,7 @@ mod media;
 mod mutations;
 mod navigation;
 mod runtime;
+mod speech;
 mod state;
 mod websocket;
 mod writer;
@@ -234,6 +235,7 @@ impl ChildConnection {
             BrowserMessage::StorageSync(sync) => self.synchronize_storage(sync),
             BrowserMessage::WebSocketEvent(event) => self.deliver_websocket_event(event),
             BrowserMessage::DatabaseEvent(event) => self.deliver_database_event(event),
+            BrowserMessage::SpeechUpdate(update) => self.deliver_speech_update(update),
             BrowserMessage::AdvanceTime {
                 document,
                 elapsed_micros,

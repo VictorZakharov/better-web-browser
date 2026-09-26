@@ -63,3 +63,20 @@ is 8,712 bytes and has SHA-256
 track, produced with `-map 0:a:0 -c:a copy -f adts` using that development-only
 FFmpeg build. The decoded ADTS file is 603 bytes and has SHA-256
 `22ff76c842f90ab11f582eb98b7e0135fa0affd9186033f47bb3b258383c155b`.
+
+## Self-authored native FLAC audio fixture
+
+`test-1s-audio.flac.base64` encodes a one-second 440 Hz mono sine wave generated
+from a synthetic signal, not a third-party recording. The output is native FLAC
+(`fLaC` signature), not Ogg or Matroska. It was generated with the locally
+installed FFmpeg `N-111280-gd51b0580e4-20230625`:
+
+```text
+ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:sample_rate=44100:duration=1 -ac 1 -c:a flac -y test-1s-audio.flac
+```
+
+The decoded file is 20,333 bytes with SHA-256
+`dd8080cb04e28222c585c552e6f76a6669c789aeb621b802ecfe728949adc7ad`.
+FFmpeg is a development-only fixture generator, not a runtime, build, or test
+dependency. The fixture tests decoding, play/pause, and seeking in the contained
+Windows Media Foundation worker before Breeze advertises `audio/flac` support.

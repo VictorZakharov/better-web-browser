@@ -39,6 +39,7 @@ impl ResourceEvents {
             PageResource::Stylesheet { .. }
                 | PageResource::Image { .. }
                 | PageResource::Preload { .. }
+                | PageResource::Prefetch { .. }
         ) {
             self.completed.insert(resource.clone(), event);
             self.scanned_version = None;

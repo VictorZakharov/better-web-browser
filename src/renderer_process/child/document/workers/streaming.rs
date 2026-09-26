@@ -25,6 +25,9 @@ impl WorkerFetches {
                     )?;
                     self.active.insert(wire_id, (worker, id));
                 }
+                ScriptFetchAction::Beacon { .. } => {
+                    // WorkerNavigator has no Beacon method in this implementation.
+                }
                 ScriptFetchAction::Consume { id, total } => {
                     if let Some((&wire_id, _)) = self
                         .active

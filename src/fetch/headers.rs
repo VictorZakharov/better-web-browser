@@ -147,7 +147,7 @@ pub(crate) fn is_cors_safelisted_response_header(name: &str) -> bool {
     )
 }
 
-pub(crate) fn is_cors_safelisted_request_header(header: &Header) -> bool {
+pub fn is_cors_safelisted_request_header(header: &Header) -> bool {
     let name = header.name();
     let value = header.value().as_bytes();
     if value.len() > 128 {

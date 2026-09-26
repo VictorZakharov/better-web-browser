@@ -121,6 +121,9 @@ impl BrowserState {
                 RendererEvent::DatabaseCommand(command) => {
                     self.handle_database_command(id, command);
                 }
+                RendererEvent::SpeechRequest(request) => {
+                    self.handle_speech_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)

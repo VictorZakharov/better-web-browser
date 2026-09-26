@@ -124,6 +124,7 @@ pub struct ScriptOutcome {
     pub fetch_actions: Vec<ScriptFetchAction>,
     pub websocket_actions: Vec<ScriptWebSocketAction>,
     pub database_actions: Vec<ScriptDatabaseAction>,
+    pub speech_actions: Vec<ScriptSpeechAction>,
     pub worker_actions: Vec<ScriptWorkerAction>,
     pub fullscreen_actions: Vec<ScriptFullscreenAction>,
     pub pointer_lock_actions: Vec<ScriptPointerLockAction>,
@@ -138,6 +139,12 @@ pub struct ScriptOutcome {
 pub struct ScriptPolicyUpdate {
     pub client: crate::fetch::RequestClient,
     pub serialized: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptSpeechAction {
+    pub utterance_id: u64,
+    pub action: crate::renderer_protocol::SpeechAction,
 }
 
 #[derive(Debug, Clone)]

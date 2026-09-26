@@ -1,7 +1,25 @@
 //! Shadow-tree ownership, slot assignment, and composed-tree traversal.
 
 use super::node::{Node, NodeData, NodeRef, ShadowRootData, ShadowRootMode};
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
+use std::rc::Weak;
+
+#[derive(Default)]
+pub(super) struct ManualSlotState {
+    assigned_slot: Option<Weak<Node>>,
+    assigned_nodes: Vec<Weak<Node>>,
+}
+
+impl ShadowRootMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
+}
 
 impl Node {
     pub fn attach_shadow(
@@ -10,6 +28,24 @@ impl Node {
         delegates_focus: bool,
         serializable: bool,
         clonable: bool,
+    ) -> Option<NodeRef> {
+        Self::attach_shadow_with_assignment(
+            host,
+            mode,
+            delegates_focus,
+            serializable,
+            clonable,
+            false,
+        )
+    }
+
+    pub fn attach_shadow_with_assignment(
+        host: &NodeRef,
+        mode: ShadowRootMode,
+        delegates_focus: bool,
+        serializable: bool,
+        clonable: bool,
+        manual_slot_assignment: bool,
     ) -> Option<NodeRef> {
         let element = host.element()?;
         if element.shadow_root.borrow().is_some() {
@@ -20,6 +56,7 @@ impl Node {
             NodeData::ShadowRoot(ShadowRootData {
                 host: Rc::downgrade(host),
                 mode,
+                manual_slot_assignment,
                 delegates_focus,
                 serializable,
                 clonable,
@@ -57,6 +94,18 @@ impl Node {
     pub fn assigned_slot(node: &NodeRef) -> Option<NodeRef> {
         let host = node.parent()?;
         let shadow = host.shadow_root()?;
+        if matches!(&shadow.data, NodeData::ShadowRoot(root) if root.manual_slot_assignment) {
+            let assigned = node
+                .manual_slot_state
+                .get()?
+                .borrow()
+                .assigned_slot
+                .as_ref()?
+                .upgrade()?;
+            return (assigned.tag_name() == Some("slot")
+                && Node::tree_root(&assigned).id() == shadow.id())
+            .then_some(assigned);
+        }
         let wanted = node.attr("slot").unwrap_or_default();
         Node::descendants(&shadow).skip(1).find(|candidate| {
             candidate.tag_name() == Some("slot")
@@ -72,20 +121,38 @@ impl Node {
         let Some(host) = root.shadow_host() else {
             return Vec::new();
         };
-        let name = slot.attr("name").unwrap_or_default();
-        let mut assigned = host
-            .children
-            .borrow()
-            .iter()
-            .filter(|node| {
-                matches!(
-                    node.data,
-                    NodeData::Element(_) | NodeData::Text(_) | NodeData::Cdata(_)
-                ) && node.attr("slot").unwrap_or_default() == name
-                    && Node::assigned_slot(node).is_some_and(|assigned| assigned.id() == slot.id())
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut assigned = if matches!(&root.data, NodeData::ShadowRoot(data) if data.manual_slot_assignment)
+        {
+            slot.manual_slot_state
+                .get()
+                .map(|state| {
+                    state
+                        .borrow()
+                        .assigned_nodes
+                        .iter()
+                        .filter_map(Weak::upgrade)
+                        .filter(|node| {
+                            node.parent().is_some_and(|parent| parent.id() == host.id())
+                                && Node::assigned_slot(node)
+                                    .is_some_and(|assigned| assigned.id() == slot.id())
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        } else {
+            let name = slot.attr("name").unwrap_or_default();
+            host.children
+                .borrow()
+                .iter()
+                .filter(|node| {
+                    matches!(node.data, NodeData::Element(_) | NodeData::Text(_))
+                        && node.attr("slot").unwrap_or_default() == name
+                        && Node::assigned_slot(node)
+                            .is_some_and(|assigned| assigned.id() == slot.id())
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         if !flatten {
             return assigned;
         }
@@ -101,6 +168,76 @@ impl Node {
             }
         }
         flattened
+    }
+
+    /// HTMLSlotElement.assign() stores an ordered set of weak slottables. The assignment
+    /// survives temporary detachment, but only direct children of the current host distribute.
+    /// https://html.spec.whatwg.org/multipage/scripting.html#dom-slot-assign
+    pub fn assign_manual_nodes(slot: &NodeRef, nodes: &[NodeRef]) -> Vec<NodeRef> {
+        if slot.tag_name() != Some("slot") {
+            return Vec::new();
+        }
+        // The HTML algorithm returns before changing manual assignment state when this
+        // slot is not in a shadow tree using manual slot assignment.
+        let root = Node::tree_root(slot);
+        if !matches!(&root.data, NodeData::ShadowRoot(data) if data.manual_slot_assignment) {
+            return Vec::new();
+        }
+        let state = slot
+            .manual_slot_state
+            .get_or_init(|| RefCell::new(ManualSlotState::default()));
+        let previous = std::mem::take(&mut state.borrow_mut().assigned_nodes);
+        for node in previous.into_iter().filter_map(|node| node.upgrade()) {
+            let current = node
+                .manual_slot_state
+                .get_or_init(|| RefCell::new(ManualSlotState::default()));
+            let mut current = current.borrow_mut();
+            if current
+                .assigned_slot
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .is_some_and(|assigned| assigned.id() == slot.id())
+            {
+                current.assigned_slot = None;
+            }
+        }
+        let mut affected = vec![slot.clone()];
+        let mut seen = HashSet::new();
+        let mut assigned = Vec::new();
+        for node in nodes {
+            if !matches!(node.data, NodeData::Element(_) | NodeData::Text(_))
+                || !seen.insert(node.id())
+            {
+                continue;
+            }
+            let current = node
+                .manual_slot_state
+                .get_or_init(|| RefCell::new(ManualSlotState::default()));
+            let prior_slot = current
+                .borrow()
+                .assigned_slot
+                .as_ref()
+                .and_then(Weak::upgrade);
+            if let Some(prior_slot) = prior_slot.filter(|prior| prior.id() != slot.id()) {
+                if let Some(prior) = prior_slot.manual_slot_state.get() {
+                    prior.borrow_mut().assigned_nodes.retain(|candidate| {
+                        candidate
+                            .upgrade()
+                            .is_some_and(|candidate| candidate.id() != node.id())
+                    });
+                }
+                if !affected.iter().any(|item| item.id() == prior_slot.id()) {
+                    affected.push(prior_slot);
+                }
+            }
+            current.borrow_mut().assigned_slot = Some(Rc::downgrade(slot));
+            assigned.push(Rc::downgrade(node));
+        }
+        state.borrow_mut().assigned_nodes = assigned;
+        for changed in &affected {
+            changed.mark_mutated();
+        }
+        affected
     }
 
     pub fn composed_parent(node: &NodeRef) -> Option<NodeRef> {
@@ -170,53 +307,4 @@ impl Iterator for ComposedDescendants {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn named_slots_define_composed_children_without_changing_light_parentage() {
-        let host = Node::create_element("div");
-        let named = Node::create_element_for(&host, "span");
-        named.set_attr("slot", "title");
-        let default = Node::create_text_for(&host, "body");
-        Node::append_child(&host, named.clone());
-        Node::append_child(&host, default.clone());
-        let root = Node::attach_shadow(&host, ShadowRootMode::Open, false, false, false).unwrap();
-        let title_slot = Node::create_element_for(&host, "slot");
-        title_slot.set_attr("name", "title");
-        let default_slot = Node::create_element_for(&host, "slot");
-        Node::append_child(&root, title_slot.clone());
-        Node::append_child(&root, default_slot.clone());
-
-        assert_eq!(Node::assigned_nodes(&title_slot, false)[0].id(), named.id());
-        assert_eq!(
-            Node::assigned_nodes(&default_slot, false)[0].id(),
-            default.id()
-        );
-        assert_eq!(named.parent().unwrap().id(), host.id());
-        assert_eq!(Node::composed_parent(&named).unwrap().id(), title_slot.id());
-        assert_eq!(Node::composed_children(&host)[0].id(), title_slot.id());
-    }
-
-    #[test]
-    fn nested_shadow_roots_share_the_document_only_through_shadow_including_traversal() {
-        let document = Node::create_document();
-        let outer = Node::create_element_for(&document, "x-outer");
-        Node::append_child(&document, outer.clone());
-        let outer_root =
-            Node::attach_shadow(&outer, ShadowRootMode::Open, false, false, false).unwrap();
-        let inner = Node::create_element_for(&document, "x-inner");
-        Node::append_child(&outer_root, inner.clone());
-        let inner_root =
-            Node::attach_shadow(&inner, ShadowRootMode::Closed, false, false, false).unwrap();
-        let content = Node::create_element_for(&document, "p");
-        Node::append_child(&inner_root, content.clone());
-
-        assert_eq!(Node::tree_root(&content).id(), inner_root.id());
-        assert_eq!(Node::shadow_including_root(&content).id(), document.id());
-        assert!(!Node::descendants(&document).any(|node| node.id() == content.id()));
-        assert!(
-            Node::shadow_including_descendants(&document).any(|node| node.id() == content.id())
-        );
-    }
-}
+mod tests;
