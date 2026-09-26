@@ -10,6 +10,7 @@ mod writes;
 pub(crate) enum ParserStep {
     Script(NodeRef),
     CustomElement(NodeRef),
+    CspMeta(NodeRef),
     Encoding(String),
     NeedInput,
     End,
@@ -79,6 +80,7 @@ impl HtmlParser {
             observable_parser: true,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
+            parser_csp_meta: Default::default(),
         };
         parser.parser = driver::Driver::new(dom);
         parser
@@ -208,6 +210,7 @@ mod tests {
                     ParserStep::NeedInput => break,
                     ParserStep::Encoding(_) => {}
                     ParserStep::CustomElement(_) => panic!("test has no custom element registry"),
+                    ParserStep::CspMeta(_) => panic!("test has no CSP meta element"),
                     ParserStep::End => panic!("chunk exhaustion finalized HTML"),
                 }
             }
@@ -287,6 +290,28 @@ mod tests {
             .unwrap();
         assert!(written < tail);
         assert!(matches!(parser.advance(), ParserStep::End));
+    }
+
+    #[test]
+    fn meta_csp_checkpoint_precedes_following_hint_and_script() {
+        let mut parser = HtmlParser::new(
+            "<head><script>before()</script><meta http-equiv='Content-Security-Policy' \
+             content=\"default-src 'none'\"><link rel=preconnect href='https://cdn.test'>\
+             <script>after()</script></head>",
+        );
+        let ParserStep::Script(first) = parser.advance() else {
+            panic!("missing script before CSP meta");
+        };
+        assert_eq!(first.text_content(), "before()");
+        let ParserStep::CspMeta(meta) = parser.advance() else {
+            panic!("meta CSP did not establish a parser checkpoint");
+        };
+        assert_eq!(meta.attr("content").as_deref(), Some("default-src 'none'"));
+        assert!(parser.dom().elements_named("link").next().is_none());
+        let ParserStep::Script(second) = parser.advance() else {
+            panic!("missing script after CSP meta");
+        };
+        assert_eq!(second.text_content(), "after()");
     }
 
     #[test]

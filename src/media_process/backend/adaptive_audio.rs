@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Clone, Copy)]
 pub(in crate::media_process) struct AudioTrackReport {
+    pub audio_codec: MediaCodecFamily,
     pub audio_samples: u32,
     pub audio_sample_rate: u32,
     pub audio_channels: u16,
@@ -12,6 +13,7 @@ pub(in crate::media_process) struct AudioTrackReport {
 impl From<MediaDecodeReport> for AudioTrackReport {
     fn from(report: MediaDecodeReport) -> Self {
         Self {
+            audio_codec: report.audio_codec,
             audio_samples: report.audio_samples,
             audio_sample_rate: report.audio_sample_rate,
             audio_channels: report.audio_channels,
@@ -85,6 +87,7 @@ pub(super) fn inspect(
         return Err("adaptive audio format exceeds worker limits".into());
     }
     let report = AudioTrackReport {
+        audio_codec: MediaCodecFamily::AacLc,
         audio_samples: audio.samples,
         audio_sample_rate,
         audio_channels: audio_channels as u16,

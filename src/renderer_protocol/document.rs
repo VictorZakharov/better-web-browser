@@ -50,6 +50,8 @@ pub struct DocumentStart {
     pub url: String,
     pub status: u16,
     pub content_type: String,
+    /// Enforcing response policies already admitted by the browser's CSP parser.
+    pub csp_policies: Vec<String>,
     pub diagnostic_selectors: Vec<String>,
     pub body_length: u32,
     pub viewport: PresentedViewport,
@@ -63,6 +65,14 @@ impl DocumentStart {
         }
         if self.content_type.len() > 16 * 1024 {
             return Err(ProtocolError::InvalidPayload("document metadata"));
+        }
+        if self.csp_policies.len() > 32
+            || self
+                .csp_policies
+                .iter()
+                .any(|policy| policy.len() > 16 * 1024)
+        {
+            return Err(ProtocolError::InvalidPayload("document CSP"));
         }
         if self.diagnostic_selectors.len() > MAX_PAGE_DIAGNOSTIC_SELECTORS
             || self.diagnostic_selectors.iter().any(|selector| {

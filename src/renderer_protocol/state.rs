@@ -123,6 +123,23 @@ pub struct CookieMutation {
     pub assignment: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolicyMutation {
+    pub document: DocumentId,
+    /// Zero is the top-level document; child Fetch clients use their committed ID.
+    pub client_id: u64,
+    pub serialized: String,
+}
+
+impl PolicyMutation {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.serialized.is_empty() || self.serialized.len() > 16 * 1024 {
+            return Err(ProtocolError::InvalidPayload("meta CSP policy"));
+        }
+        Ok(())
+    }
+}
+
 impl CookieMutation {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if self.assignment.len() > MAX_COOKIE_ASSIGNMENT_BYTES {

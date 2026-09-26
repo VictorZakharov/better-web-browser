@@ -26,7 +26,9 @@ impl DocumentRuntime {
             let admitted = self.page.resources.contains(&resource)
                 || self.parser_scripts.contains(&resource)
                 || (self.parser.is_some() && matches!(resource, PageResource::Script { .. }));
-            if require_authoritative_match && !admitted {
+            let current_media = !matches!(resource, PageResource::Media { .. })
+                || self.page.is_current_media_resource(&resource);
+            if !current_media || (require_authoritative_match && !admitted) {
                 continue;
             }
             self.loaded_resources.insert(resource.clone());
@@ -44,6 +46,10 @@ impl DocumentRuntime {
                     response.status
                 ));
                 retained |= self.dispatch_resource_event(&resource, "error")?;
+                continue;
+            }
+            if matches!(resource, PageResource::OriginHint { .. }) {
+                // DNS has no response body and never mutates the active document.
                 continue;
             }
             let eligible = matches!(
@@ -111,6 +117,9 @@ impl DocumentRuntime {
             let bytes = response.body.into_bytes();
             let installed = match resource {
                 PageResource::Preload { .. } => unreachable!("preload handled before installation"),
+                PageResource::OriginHint { .. } => {
+                    unreachable!("network hint handled before installation")
+                }
                 PageResource::Stylesheet { url } => self
                     .page
                     .add_linked_stylesheet_response(
@@ -121,8 +130,11 @@ impl DocumentRuntime {
                     .then_some(())
                     .ok_or_else(|| "stylesheet was not installed".to_string()),
                 PageResource::Image { url } => self.page.add_image(url, &bytes),
-                PageResource::Media { node, .. } => {
-                    let mime_type = content_type.unwrap_or_else(|| "video/mp4".into());
+                PageResource::Media { node, kind, .. } => {
+                    let mime_type = content_type.unwrap_or_else(|| match kind {
+                        crate::engine::page::MediaElementKind::Audio => "audio/mpeg".into(),
+                        crate::engine::page::MediaElementKind::Video => "video/mp4".into(),
+                    });
                     let result = connection
                         .decode_media(&bytes)
                         .and_then(|decode| self.install_media_decode(node, decode, mime_type));
@@ -174,7 +186,11 @@ impl DocumentRuntime {
                 }
                 Err(error) => {
                     self.record_resource_diagnostic(format!("{label}: {error}"));
-                    retained |= self.dispatch_resource_event(&event_resource, "error")?;
+                    retained |= if matches!(event_resource, PageResource::Media { .. }) {
+                        self.dispatch_media_failure(&event_resource, "decode")?
+                    } else {
+                        self.dispatch_resource_event(&event_resource, "error")?
+                    };
                 }
             }
         }

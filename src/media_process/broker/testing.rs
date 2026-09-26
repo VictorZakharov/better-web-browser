@@ -7,6 +7,7 @@ use crate::media_protocol::{
     BrowserMediaMessage, MediaDecodeReport, MediaPlaybackState, MediaRestrictionReport,
     MediaSessionId, MediaTestCommand, WorkerMediaMessage,
 };
+mod audio;
 mod failure;
 mod playback;
 
@@ -112,7 +113,10 @@ impl MediaSession {
             });
             let response = self.receive("decode", self.command_timeout);
             let failure = match &response {
-                Ok(WorkerMediaMessage::Decoded { .. }) => None,
+                Ok(WorkerMediaMessage::Decoded { frame: Some(_), .. }) => None,
+                Ok(WorkerMediaMessage::Decoded { frame: None, .. }) => {
+                    Some("video fixture decoded without a video frame".into())
+                }
                 Ok(WorkerMediaMessage::DecodeFailed { error, .. }) => {
                     Some(format!("media worker rejected decode: {error}"))
                 }
@@ -146,7 +150,7 @@ impl MediaSession {
             Ok(WorkerMediaMessage::Decoded {
                 request_id: actual,
                 report,
-                frame,
+                frame: Some(frame),
             }) if actual == request_id => {
                 if let Err(error) = report.validate(self.limits) {
                     return self.protocol_failure(&format!("invalid media decode report: {error}"));

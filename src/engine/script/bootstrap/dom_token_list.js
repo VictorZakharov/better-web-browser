@@ -57,7 +57,7 @@
                   throw new TypeError('This DOMTokenList has no supported tokens');
               const name = this.element.localName;
               if (name === 'link')
-                  return new Set(['stylesheet', 'preload', 'modulepreload']).has(String(token).toLowerCase());
+                  return new Set(['stylesheet', 'preload', 'modulepreload', 'dns-prefetch', 'preconnect']).has(String(token).toLowerCase());
               if (name === 'a' || name === 'area')
                   return new Set(['noopener', 'noreferrer']).has(String(token).toLowerCase());
               throw new TypeError('This DOMTokenList has no supported tokens');

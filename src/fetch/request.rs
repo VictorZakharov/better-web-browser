@@ -24,6 +24,7 @@ pub enum RequestDestination {
     Font,
     Fetch,
     Video,
+    Audio,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -6,26 +6,22 @@ use better_web_browser::renderer_protocol::{
     ResourceDestination, TransferChunk,
 };
 use std::time::Duration;
+#[path = "media/audio_only.rs"]
+mod audio_only;
 #[path = "media/cadence.rs"]
 mod cadence;
 #[path = "media/failure.rs"]
 mod failure;
 #[path = "media/seeking.rs"]
 mod seeking;
+#[path = "media/source_fallback.rs"]
+mod source_fallback;
+#[path = "media/source_replacement.rs"]
+mod source_replacement;
 #[path = "media/starvation.rs"]
 mod starvation;
-
-fn run_scheduled_renderer_timer(
-    session: &RendererSession,
-    document: better_web_browser::renderer_protocol::DocumentId,
-    next_timer_micros: Option<u64>,
-) {
-    if let Some(delay) = next_timer_micros {
-        session
-            .advance_time(document, Duration::from_micros(delay), 64)
-            .expect("run the renderer's advertised media checkpoint");
-    }
-}
+#[path = "media/video_only.rs"]
+mod video_only;
 
 #[test]
 fn contained_renderer_decodes_and_presents_video_without_browser_frame_ownership() {

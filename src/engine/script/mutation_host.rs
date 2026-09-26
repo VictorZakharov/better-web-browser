@@ -18,8 +18,8 @@ pub(super) fn mutation_host_call(
     }
     let value = match operation {
         "prepareInsertedScript" => scripts::prepare(args, state)?,
-        "appendChild" => append_child(args, state),
-        "insertBefore" => insert_before(args, state),
+        "appendChild" => append_child(args, state)?,
+        "insertBefore" => insert_before(args, state)?,
         "removeChild" => remove_child(args, state),
         "remove" => remove(args, state),
         "adoptNode" => adopt_node(args, state),
@@ -72,7 +72,7 @@ fn enforce_tree_budget(state: &HostState) -> JsResult<()> {
     Ok(())
 }
 
-fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
+fn append_child(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let parent = state.node(argument_id(args, 1));
     let child = state.node(argument_id(args, 2));
     let previous_parent = child.as_ref().and_then(|child| child.parent());
@@ -83,6 +83,9 @@ fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
     if changed {
         if let (Some(parent), Some(child)) = (parent.as_ref(), child.as_ref()) {
             state.adopt_subtree(parent, child);
+            state
+                .process_inserted_csp_meta(child)
+                .map_err(|error| JsNativeError::typ().with_message(error))?;
         }
         let kind = child
             .as_ref()
@@ -102,14 +105,14 @@ fn append_child(args: &[JsValue], state: &mut HostState) -> JsValue {
             ));
         }
     }
-    JsValue::from(if changed {
+    Ok(JsValue::from(if changed {
         child.map(|node| state.id_for(&node)).unwrap_or_default()
     } else {
         0
-    })
+    }))
 }
 
-fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
+fn insert_before(args: &[JsValue], state: &mut HostState) -> JsResult<JsValue> {
     let parent = state.node(argument_id(args, 1));
     let child = state.node(argument_id(args, 2));
     let previous_parent = child.as_ref().and_then(|child| child.parent());
@@ -131,6 +134,9 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
     if changed {
         if let (Some(parent), Some(child)) = (parent.as_ref(), child.as_ref()) {
             state.adopt_subtree(parent, child);
+            state
+                .process_inserted_csp_meta(child)
+                .map_err(|error| JsNativeError::typ().with_message(error))?;
         }
         let kind = child
             .as_ref()
@@ -144,11 +150,11 @@ fn insert_before(args: &[JsValue], state: &mut HostState) -> JsValue {
         }
         state.diagnose("insert node before sibling".into());
     }
-    JsValue::from(if changed {
+    Ok(JsValue::from(if changed {
         child.map(|node| state.id_for(&node)).unwrap_or_default()
     } else {
         0
-    })
+    }))
 }
 
 fn remove_child(args: &[JsValue], state: &mut HostState) -> JsValue {
@@ -325,6 +331,11 @@ fn mutate_inner_html(args: &[JsValue], state: &mut HostState, append: bool) -> J
         true
     });
     if changed {
+        if let Some(node) = node.as_ref() {
+            state
+                .process_inserted_csp_meta(node)
+                .map_err(|error| JsNativeError::typ().with_message(error))?;
+        }
         for removed in &removed {
             state.record_removed_subtree(removed);
         }

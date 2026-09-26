@@ -139,6 +139,19 @@ impl Dom {
         Node::control_child_changed(parent);
         parent.mark_children_mutated();
         Node::stylesheet_subtree_inserted(&child);
+        if parent.tag_name() == Some("head")
+            && child.tag_name() == Some("meta")
+            && child
+                .attr("http-equiv")
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("content-security-policy"))
+            && Node::tree_root(parent).id() == self.document.id()
+        {
+            self.parser_csp_meta.borrow_mut().push_back(child.clone());
+        }
         self.queue_parser_record(record);
+    }
+
+    pub(crate) fn pending_parser_csp_meta(&self) -> Option<NodeRef> {
+        self.parser_csp_meta.borrow_mut().pop_front()
     }
 }

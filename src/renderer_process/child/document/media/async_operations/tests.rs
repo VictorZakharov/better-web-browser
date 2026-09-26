@@ -46,6 +46,8 @@ fn previous_playback() -> MediaPlayback {
         video_ended: false,
         width: 2,
         height: 2,
+        video_codec: MediaCodecFamily::H264,
+        audio_codec: MediaCodecFamily::AacLc,
         mime_type: "video/mp4".into(),
         encoded_bytes: 2,
         frames_submitted: 1,
@@ -64,6 +66,7 @@ fn buffered() -> MediaBufferedExtent {
 
 fn decoded_replacement() -> RendererMediaDecode {
     RendererMediaDecode {
+        source_id: 2,
         report: MediaDecodeReport {
             buffered: buffered(),
             encoded_bytes: 2,
@@ -87,7 +90,7 @@ fn decoded_replacement() -> RendererMediaDecode {
             duration_100ns: 333_333,
             decode_micros: 1,
         },
-        frame: DecodedMediaFrame {
+        frame: Some(DecodedMediaFrame {
             metadata: MediaVideoFrameMetadata {
                 source_id: 2,
                 frame_id: 2,
@@ -101,6 +104,6 @@ fn decoded_replacement() -> RendererMediaDecode {
             },
             nv12: vec![16, 16, 16, 16, 128, 128],
             bgra: vec![0; 16].into(),
-        },
+        }),
     }
 }

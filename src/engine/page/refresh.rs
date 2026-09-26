@@ -1,6 +1,7 @@
 use super::*;
 use crate::engine::css::Display;
 use crate::engine::dom::Node;
+use crate::engine::font::WebFontFace;
 use crate::engine::font::discover_font_faces;
 use crate::engine::invalidation::RenderInvalidation;
 use std::collections::HashSet;
@@ -74,7 +75,8 @@ impl Page {
                     && script.blocks_first_paint
             }),
             PageResource::Stylesheet { .. } => true,
-            PageResource::Preload { .. }
+            PageResource::OriginHint { .. }
+            | PageResource::Preload { .. }
             | PageResource::Image { .. }
             | PageResource::Media { .. }
             | PageResource::Font { .. } => false,
@@ -119,14 +121,22 @@ impl Page {
         self.media_environment = self
             .media_environment
             .with_viewport(viewport_width, viewport_height);
-        let (resources, _) = discover_resources(&self.dom, &self.base_url, self.media_environment);
+        let (resources, _) = discover_resources(
+            &self.dom,
+            &self.source_url,
+            &self.base_url,
+            self.media_environment,
+        );
         for resource in resources {
-            if !matches!(resource, PageResource::Script { .. })
-                && !self.resources.contains(&resource)
+            if !matches!(
+                resource,
+                PageResource::Script { .. } | PageResource::Media { .. }
+            ) && !self.resources.contains(&resource)
             {
                 self.resources.push(resource);
             }
         }
+        self.refresh_media_sources();
         let mut available_faces = Vec::new();
         self.discover_stylesheet_dependencies();
         for source in &self.stylesheet_sources {

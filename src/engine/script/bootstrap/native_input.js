@@ -230,6 +230,7 @@
                 case 'fullscreen': return applyFullscreenResponse(input);
                 case 'pointerLock': return applyPointerLockResponse(input);
                 case 'media': return applyMediaResponse(input);
+                case 'mediaSource': return applyOrdinaryMediaSourceEvent(input);
                 default: return false;
             }
         }

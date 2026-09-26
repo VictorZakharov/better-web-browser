@@ -47,6 +47,7 @@ fn owned_fragmented_tracks_decode_independently_without_fabricating_the_other_ex
     let report = decoded.audio.unwrap();
     let mut decoder = AudioDecoder::open(
         &audio,
+        report.audio_codec,
         report.audio_samples,
         report.audio_sample_rate,
         report.audio_channels,
@@ -103,6 +104,7 @@ fn seeking_into_a_disjoint_seven_minute_segment_decodes_both_tracks() {
     let report = appended.audio.unwrap();
     let mut decoder = AudioDecoder::open(
         &shifted_audio,
+        report.audio_codec,
         report.audio_samples,
         report.audio_sample_rate,
         report.audio_channels,

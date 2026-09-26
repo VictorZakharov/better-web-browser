@@ -1,16 +1,20 @@
 mod embedded;
+mod font_loading;
 mod integrity;
 pub(crate) use integrity::{resource_integrity, stylesheet_crossorigin};
 mod link_preloads;
 mod media;
+mod media_sources;
+pub(crate) use media_sources::MediaSourceAdvance;
 mod parsing;
 mod preload;
 mod refresh;
 mod rendering;
 mod resource_events;
+mod resource_hints;
 mod resource_types;
 mod responsive_images;
-pub use resource_types::{PageResource, PageScript, PreloadAs};
+pub use resource_types::{MediaElementKind, PageResource, PageScript, PreloadAs};
 mod resources;
 pub(crate) use resources::prepare_script as prepare_written_script;
 mod scripts;
@@ -30,7 +34,7 @@ pub(crate) use self::svg::{
 use super::css::media::MediaEnvironment;
 use super::css::{StyleRefreshStats, StyleSet};
 use super::dom::{self, Dom, Node, NodeId, NodeRef};
-use super::font::{WebFont, WebFontFace, decode_web_font};
+use super::font::WebFont;
 use super::script::{
     self, ScriptFetchOptions, ScriptInput, ScriptKind, ScriptOutcome, ScriptRuntime,
 };
@@ -64,6 +68,8 @@ pub struct Page {
     pub character_set: String,
     base_url: String,
     pub resources: Vec<PageResource>,
+    media_selections: HashMap<NodeId, media_sources::MediaSelection>,
+    next_media_selection_id: u64,
     pub scripts: Vec<PageScript>,
     pub external_stylesheets: Vec<String>,
     stylesheet_sources: Vec<crate::engine::css::StylesheetSource>,
@@ -108,7 +114,8 @@ impl Page {
             .collect();
         let base_url = document_base_url(&dom, source_url);
         let media_environment = MediaEnvironment::new(1280.0, 720.0, 1.0, false);
-        let (resources, scripts) = discover_resources(&dom, &base_url, media_environment);
+        let (resources, scripts) =
+            discover_resources(&dom, source_url, &base_url, media_environment);
 
         let mut images = HashMap::new();
         let mut inline_svg_versions = HashMap::new();
@@ -131,6 +138,8 @@ impl Page {
             character_set: "UTF-8".to_string(),
             base_url,
             resources,
+            media_selections: HashMap::new(),
+            next_media_selection_id: 1,
             scripts,
             external_stylesheets: Vec::new(),
             stylesheet_sources: Vec::new(),
@@ -144,6 +153,7 @@ impl Page {
             media_environment,
             layout_viewport: (1280.0, 720.0),
         };
+        page.refresh_media_sources();
         page.install_embedded_images();
         page.discover_stylesheet_dependencies();
         page
@@ -193,33 +203,6 @@ impl Page {
     #[cfg(test)]
     pub(crate) fn add_linked_stylesheet(&mut self, source_url: &str, css: String) -> bool {
         self.install_stylesheet(super::css::StylesheetSource::linked(source_url, css))
-    }
-
-    pub fn add_font(
-        &mut self,
-        url: String,
-        family: String,
-        weight: u16,
-        italic: bool,
-        bytes: &[u8],
-    ) -> Result<(), String> {
-        if self.fonts.iter().any(|font| {
-            font.family.eq_ignore_ascii_case(&family)
-                && font.weight == weight
-                && font.italic == italic
-        }) {
-            return Ok(());
-        }
-        let face = WebFontFace {
-            family,
-            weight,
-            weight_min: f32::from(weight),
-            weight_max: f32::from(weight),
-            italic,
-            url,
-        };
-        self.fonts.push(decode_web_font(&face, bytes)?);
-        Ok(())
     }
 
     pub fn add_script(

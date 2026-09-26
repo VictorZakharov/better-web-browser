@@ -2,9 +2,7 @@ use super::{MAX_IMAGES, PageResource, PageScript};
 use crate::engine::css::media::{MediaEnvironment, media_matches_for_environment};
 use crate::engine::dom::{Dom, Node, NodeRef};
 use crate::engine::script;
-use crate::limits::{
-    MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT, MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS,
-};
+use crate::limits::{MAX_PAGE_SCRIPTS as MAX_SCRIPTS, MAX_STYLESHEETS};
 use crate::navigation::{resolve_resource_url, resolve_url};
 use std::collections::HashSet;
 
@@ -17,10 +15,11 @@ pub(super) fn document_base_url(dom: &Dom, source_url: &str) -> String {
 
 pub(super) fn discover_resources(
     dom: &Dom,
+    document_url: &str,
     base_url: &str,
     environment: MediaEnvironment,
 ) -> (Vec<PageResource>, Vec<PageScript>) {
-    let mut resources = discover_non_script_resources(dom, base_url, environment);
+    let mut resources = discover_non_script_resources(dom, document_url, base_url, environment);
     let mut scripts = Vec::new();
     let mut seen_script_resources = HashSet::new();
     for node in Node::descendants(&dom.document) {
@@ -53,16 +52,26 @@ pub(super) fn discover_resources(
 
 pub(super) fn discover_non_script_resources(
     dom: &Dom,
+    document_url: &str,
     base_url: &str,
     environment: MediaEnvironment,
 ) -> Vec<PageResource> {
     let mut resources = Vec::new();
     let mut seen_stylesheets = HashSet::new();
     let mut preload_count = 0;
+    let mut origin_hint_count = 0;
     for link in Node::shadow_including_descendants(&dom.document)
         .filter(|node| node.tag_name() == Some("link"))
     {
         let rel = link.attr("rel").unwrap_or_default();
+        for hint in super::resource_hints::discover_link_hints(&link, document_url, base_url) {
+            // OS DNS resolution can block a background worker until the platform times out.
+            // Keep no more than two origins eligible per document.
+            if origin_hint_count < 2 && !resources.contains(&hint) {
+                resources.push(hint);
+                origin_hint_count += 1;
+            }
+        }
         if preload_count < 32
             && rel.split_ascii_whitespace().any(|token| {
                 token.eq_ignore_ascii_case("preload") || token.eq_ignore_ascii_case("modulepreload")
@@ -113,35 +122,7 @@ pub(super) fn discover_non_script_resources(
         }
     }
 
-    let mut discovered_media = 0;
-    for node in Node::shadow_including_descendants(&dom.document) {
-        if node.tag_name() != Some("video")
-            || discovered_media >= MAX_ACTIVE_MEDIA_ELEMENTS_PER_DOCUMENT
-        {
-            continue;
-        }
-        let source = node
-            .attr("src")
-            .filter(|source| !source.trim().is_empty())
-            .or_else(|| {
-                node.children.borrow().iter().find_map(|child| {
-                    (child.tag_name() == Some("source")
-                        && child
-                            .attr("type")
-                            .is_none_or(|kind| supported_media_type(&kind)))
-                    .then(|| child.attr("src"))
-                    .flatten()
-                    .filter(|source| !source.trim().is_empty())
-                })
-            });
-        if let Some(url) = source.and_then(|source| resolve_resource_url(base_url, source.trim())) {
-            resources.push(PageResource::Media {
-                url,
-                node: node.id(),
-            });
-            discovered_media += 1;
-        }
-    }
+    resources.extend(super::media_sources::discover(dom, base_url, environment));
 
     resources
 }
@@ -268,17 +249,5 @@ pub(super) fn supported_image_type(kind: &str) -> bool {
             | "image/vnd.microsoft.icon"
             | "image/webp"
             | "image/x-icon"
-    )
-}
-
-fn supported_media_type(kind: &str) -> bool {
-    matches!(
-        kind.split(';')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str(),
-        "video/mp4" | "application/mp4"
     )
 }

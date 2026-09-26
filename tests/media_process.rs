@@ -8,10 +8,14 @@ use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[path = "media_process/audio_only.rs"]
+mod audio_only;
 #[path = "media_process/playback.rs"]
 mod playback;
 #[path = "media_process/support.rs"]
 mod support;
+#[path = "media_process/video_only.rs"]
+mod video_only;
 
 use support::{capture_frame_if_requested, decode_base64, decode_options, options, sha256};
 

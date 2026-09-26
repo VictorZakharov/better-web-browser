@@ -20,13 +20,32 @@
         document._currentScript = node.getRootNode() instanceof ShadowRoot ? null : node;
         host('parserScriptEnter', nodeId(document));
         try {
-            host('runParserScript', prepared.code, prepared.url);
-            host('parserWriteExecuted');
+            runPreparedInlineScript(node, prepared);
         } catch (error) {
             reportGlobalException(error, 'inline script', windowObject, prepared.url);
         } finally {
             host('parserScriptLeave', nodeId(document));
             document._currentScript = previous;
+        }
+    }
+    function runPreparedInlineScript(node, prepared) {
+        const result = host('runParserScript', prepared.code, prepared.url, nodeId(node));
+        if (result === true) {
+            host('parserWriteExecuted');
+        } else if (typeof result === 'string') {
+            const report = JSON.parse(result);
+            for (const violation of report.violations) {
+                document.__queuePolicyViolation(nodeId(node), {
+                    documentURI: report.documentUrl,
+                    blockedURI: 'inline',
+                    effectiveDirective: 'script-src-elem',
+                    violatedDirective: 'script-src-elem',
+                    originalPolicy: violation.originalPolicy,
+                    sourceFile: report.documentUrl,
+                    sample: violation.sample,
+                    disposition: 'enforce',
+                });
+            }
         }
     }
     function scriptChildrenChanged(parent) {

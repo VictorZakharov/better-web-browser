@@ -251,7 +251,7 @@ fn browser_and_worker_messages_round_trip() {
             .send_worker(&WorkerMediaMessage::Decoded {
                 request_id: 12,
                 report: decoded,
-                frame,
+                frame: Some(frame),
             })
             .unwrap();
         worker_writer
@@ -288,7 +288,7 @@ fn browser_and_worker_messages_round_trip() {
         WorkerMediaMessage::Decoded {
             request_id: 12,
             report: decoded,
-            frame,
+            frame: Some(frame),
         }
     );
     assert_eq!(

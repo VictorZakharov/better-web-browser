@@ -1,25 +1,20 @@
-use crate::media_protocol::{
-    MediaCapabilityReport, MediaCodecFamily, MediaDecodeReport, MediaLimits,
-};
-use std::ptr::null_mut;
+use crate::media_protocol::{MediaCodecFamily, MediaDecodeReport, MediaLimits};
 use std::time::Instant;
 use windows::Win32::Foundation::HGLOBAL;
 use windows::Win32::Media::MediaFoundation::{
-    IMFActivate, IMFSourceReader, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
-    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
-    MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_VERSION, MFAudioFormat_AAC, MFAudioFormat_PCM,
-    MFCreateMFByteStreamOnStream, MFCreateMediaType, MFCreateSourceReaderFromByteStream,
-    MFMediaType_Audio, MFMediaType_Video, MFSTARTUP_FULL, MFShutdown, MFStartup,
-    MFT_CATEGORY_AUDIO_DECODER, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_ALL,
-    MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY, MFT_REGISTER_TYPE_INFO, MFTEnumEx, MFVideoFormat_H264,
-    MFVideoFormat_NV12,
+    IMFSourceReader, MF_E_INVALIDSTREAMNUMBER, MF_MT_AUDIO_NUM_CHANNELS,
+    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
+    MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_VERSION,
+    MFAudioFormat_AAC, MFAudioFormat_PCM, MFCreateMFByteStreamOnStream, MFCreateMediaType,
+    MFCreateSourceReaderFromByteStream, MFMediaType_Audio, MFMediaType_Video, MFSTARTUP_FULL,
+    MFShutdown, MFStartup, MFVideoFormat_H264, MFVideoFormat_NV12,
 };
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
 use windows::Win32::System::Com::StructuredStorage::{
     PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
 };
 use windows::Win32::System::Com::{
-    COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize, STREAM_SEEK_SET,
+    COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize, STREAM_SEEK_SET,
 };
 use windows::Win32::System::Variant::VT_I8;
 use windows::core::GUID;
@@ -27,6 +22,8 @@ use windows::core::GUID;
 mod adaptive;
 mod adaptive_audio;
 mod append;
+mod audio_only;
+mod capabilities;
 mod source;
 use source::*;
 mod audio;
@@ -35,48 +32,19 @@ mod h264;
 mod playback;
 mod stream;
 mod video_buffer;
+mod video_only;
 
 pub(in crate::media_process) use adaptive_audio::AudioTrackReport;
 pub(super) use append::decode_append;
 pub(in crate::media_process) use audio::AudioDecoder;
+use capabilities::ActivationList;
+pub(super) use capabilities::probe;
 pub(in crate::media_process) use playback::{DecodedVideoSample, VideoDecoder};
 use stream::read_stream;
 
 pub(super) struct DecodedMedia {
     pub(super) report: MediaDecodeReport,
-    pub(super) playback: VideoDecoder,
-}
-
-pub(super) fn probe(limits: MediaLimits) -> MediaCapabilityReport {
-    let started = Instant::now();
-    let _apartment = match ComApartment::initialize() {
-        Ok(apartment) => apartment,
-        Err(status) => return failed_report(status, started),
-    };
-    let _foundation = match MediaFoundation::start() {
-        Ok(foundation) => foundation,
-        Err(status) => return failed_report(status, started),
-    };
-    let (h264_hresult, h264_decoders) = enumerate_decoders(
-        MFT_CATEGORY_VIDEO_DECODER,
-        MFMediaType_Video,
-        MFVideoFormat_H264,
-        limits.max_decoder_candidates,
-    );
-    let (aac_hresult, aac_decoders) = enumerate_decoders(
-        MFT_CATEGORY_AUDIO_DECODER,
-        MFMediaType_Audio,
-        MFAudioFormat_AAC,
-        limits.max_decoder_candidates,
-    );
-    MediaCapabilityReport {
-        startup_hresult: 0,
-        h264_hresult,
-        aac_hresult,
-        h264_decoders,
-        aac_decoders,
-        probe_micros: elapsed_micros(started),
-    }
+    pub(super) playback: Option<VideoDecoder>,
 }
 
 pub(super) fn decode(bytes: &[u8], limits: MediaLimits) -> Result<DecodedMedia, String> {
@@ -116,6 +84,17 @@ fn decode_sources(
         .map_err(|status| format!("start Media Foundation: HRESULT {status:#x}"))?;
 
     let video_reader = source_reader(video_bytes)?;
+    match unsafe {
+        video_reader.GetNativeMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32, 0)
+    } {
+        Ok(_) => {}
+        Err(error) if error.code() == MF_E_INVALIDSTREAMNUMBER => {
+            // Only a missing video stream admits audio-only playback. A failed type
+            // read for an existing stream must not silently change the source kind.
+            return audio_only::decode(&video_reader, encoded_bytes, limits, started);
+        }
+        Err(error) => return Err(format!("read native video type: {error}")),
+    }
     select_stream(
         &video_reader,
         MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
@@ -160,6 +139,25 @@ fn decode_sources(
     )?;
 
     let audio_reader = source_reader(audio_bytes)?;
+    match unsafe {
+        audio_reader.GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32, 0)
+    } {
+        Ok(_) => {}
+        Err(error) if error.code() == MF_E_INVALIDSTREAMNUMBER => {
+            // A missing audio stream is a valid complete video resource. Other
+            // Media Foundation failures must not silently turn into video-only playback.
+            return video_only::decode(
+                video_bytes,
+                encoded_bytes,
+                limits,
+                started,
+                video_width,
+                video_height,
+                video,
+            );
+        }
+        Err(error) => return Err(format!("read native audio type: {error}")),
+    }
     select_stream(
         &audio_reader,
         MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
@@ -260,7 +258,10 @@ fn decode_sources(
         .validate(limits)
         .map_err(|error| format!("validate decoded media: {error}"))?;
     let playback = VideoDecoder::open(video_bytes, limits, report.video_samples)?;
-    Ok(DecodedMedia { report, playback })
+    Ok(DecodedMedia {
+        report,
+        playback: Some(playback),
+    })
 }
 
 fn native_stream_summary(
@@ -272,62 +273,6 @@ fn native_stream_summary(
     let reader = source_reader(bytes)?;
     select_stream(&reader, stream, name)?;
     read_stream(&reader, stream, name, limits.max_decoded_frame_bytes)
-}
-
-fn failed_report(status: i32, started: Instant) -> MediaCapabilityReport {
-    MediaCapabilityReport {
-        startup_hresult: status,
-        h264_hresult: status,
-        aac_hresult: status,
-        h264_decoders: 0,
-        aac_decoders: 0,
-        probe_micros: elapsed_micros(started),
-    }
-}
-
-fn enumerate_decoders(category: GUID, major: GUID, subtype: GUID, maximum: u16) -> (i32, u16) {
-    let input = MFT_REGISTER_TYPE_INFO {
-        guidMajorType: major,
-        guidSubtype: subtype,
-    };
-    let mut pointer: *mut Option<IMFActivate> = null_mut();
-    let mut count = 0_u32;
-    let flags = MFT_ENUM_FLAG_ALL | MFT_ENUM_FLAG_SORTANDFILTER_WEB_ONLY;
-    let result = unsafe {
-        MFTEnumEx(
-            category,
-            flags,
-            Some(&raw const input),
-            None,
-            &mut pointer,
-            &mut count,
-        )
-    };
-    let _activations = ActivationList { pointer, count };
-    match result {
-        Ok(()) => (0, count.min(u32::from(maximum)) as u16),
-        Err(error) => (error.code().0, 0),
-    }
-    // `activations` releases every IMFActivate and the COM-allocated array here.
-}
-
-struct ActivationList {
-    pointer: *mut Option<IMFActivate>,
-    count: u32,
-}
-
-impl Drop for ActivationList {
-    fn drop(&mut self) {
-        if self.pointer.is_null() {
-            return;
-        }
-        let activations =
-            unsafe { std::slice::from_raw_parts_mut(self.pointer, self.count as usize) };
-        for activation in activations {
-            drop(activation.take());
-        }
-        unsafe { CoTaskMemFree(Some(self.pointer.cast())) };
-    }
 }
 
 struct ComApartment;

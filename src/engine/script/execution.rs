@@ -1,6 +1,6 @@
 //! Script evaluation and bounded event-loop settlement for an owned document realm.
 #[path = "csp_reporting.rs"]
-mod csp_reporting;
+pub(super) mod csp_reporting;
 
 use super::dynamic_scripts::drain_dynamic_scripts;
 use super::timer_execution::{
@@ -307,9 +307,11 @@ pub(super) fn evaluate_script(
             .policy
             .allows_script_url("script-src-elem", &script.source_url, 0, &source)
     } else {
-        host.borrow()
-            .policy
-            .allows_inline_with_nonce(false, source.nonce.as_deref())
+        host.borrow().policy.allows_inline_script(
+            source.nonce.as_deref(),
+            &script.code,
+            source.parser_inserted,
+        )
     };
     if host.borrow().sandbox.scripts_blocked || !allowed {
         if !allowed {

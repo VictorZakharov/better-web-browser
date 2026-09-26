@@ -21,8 +21,8 @@ use super::launcher::{RendererLaunchOptions, launch};
 use super::windows::{process_sample, terminate_job, terminate_job_checked, wait_for_process};
 use crate::renderer_protocol::{
     BrowserMessage, BrowsingContextId, ContainmentReport, CookieMutation, DocumentId, FrameReader,
-    FrameWriter, NavigationCause, NavigationDisposition, PointerCursorResult, ProtocolError,
-    RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation,
+    FrameWriter, NavigationCause, NavigationDisposition, PointerCursorResult, PolicyMutation,
+    ProtocolError, RendererFetchRequest, RendererLimits, RendererMessage, RendererPresentation,
     RendererRuntimeUpdate, RendererSessionId, RestrictionReport, StorageMutationRequest,
     TestCommand,
 };
@@ -107,6 +107,7 @@ pub enum RendererEvent {
     FullscreenRequested(crate::renderer_protocol::FullscreenRequest),
     PointerLockRequested(crate::renderer_protocol::PointerLockRequest),
     CookieMutation(CookieMutation),
+    PolicyMutation(PolicyMutation),
     StorageMutation(StorageMutationRequest),
     WebSocketCommand(crate::renderer_protocol::WebSocketCommand),
     DatabaseCommand(crate::renderer_protocol::DatabaseCommand),

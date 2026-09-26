@@ -92,6 +92,8 @@ pub(super) fn network_host_call(
                 &serialized,
             )?;
             request.origin = Some(state.document_origin.clone());
+            request.client = state.fetch_client;
+            request.policy = state.policy.clone();
             let id = state
                 .fetch_identifiers
                 .borrow_mut()

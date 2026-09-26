@@ -20,6 +20,12 @@ pub(super) fn page_resource_request(
     resource: &PageResource,
 ) -> RendererFetchRequest {
     let (url, initiator, destination, mode) = match resource {
+        PageResource::OriginHint { origin } => (
+            origin,
+            FetchInitiator::NetworkHint,
+            ResourceDestination::Fetch,
+            FetchMode::NoCors,
+        ),
         PageResource::Preload {
             url,
             as_type,
@@ -52,11 +58,19 @@ pub(super) fn page_resource_request(
             ResourceDestination::Image,
             FetchMode::NoCors,
         ),
-        PageResource::Media { url, .. } => (
+        PageResource::Media {
+            url,
+            kind,
+            mode: request_mode,
+            ..
+        } => (
             url,
             FetchInitiator::Subresource,
-            ResourceDestination::Video,
-            FetchMode::NoCors,
+            match kind {
+                crate::engine::page::MediaElementKind::Audio => ResourceDestination::Audio,
+                crate::engine::page::MediaElementKind::Video => ResourceDestination::Video,
+            },
+            mode(*request_mode),
         ),
         PageResource::Script {
             url,
@@ -105,12 +119,16 @@ pub(super) fn page_resource_request(
             headers: Vec::new(),
             mode,
             credentials: match resource {
+                PageResource::OriginHint { .. } => FetchCredentials::Omit,
                 PageResource::Preload {
                     credentials: value, ..
                 } => credentials(*value),
                 PageResource::Script { fetch_options, .. } => {
                     credentials(fetch_options.credentials)
                 }
+                PageResource::Media {
+                    credentials: value, ..
+                } => credentials(*value),
                 _ => FetchCredentials::SameOrigin,
             },
             cache: FetchCache::Default,
@@ -239,6 +257,7 @@ fn destination(value: RequestDestination) -> ResourceDestination {
         RequestDestination::Document => ResourceDestination::Document,
         RequestDestination::Fetch => ResourceDestination::Fetch,
         RequestDestination::Video => ResourceDestination::Video,
+        RequestDestination::Audio => ResourceDestination::Audio,
     }
 }
 
@@ -321,75 +340,4 @@ fn error_kind_from_wire(value: BrowserFetchErrorKind) -> FetchErrorKind {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn response(content_type: &str) -> FetchResponse {
-        let mut headers = HeaderList::new();
-        if !content_type.is_empty() {
-            headers.append("content-type", content_type).unwrap();
-        }
-        FetchResponse {
-            response_type: ResponseType::Basic,
-            url_list: vec![FetchUrl::parse("https://example.com/module.js").unwrap()],
-            status: 200,
-            headers,
-            body: Body::from_bytes(b"export default 1".to_vec()),
-        }
-    }
-
-    #[test]
-    fn module_script_responses_require_a_javascript_mime_type() {
-        for mime in [
-            "text/javascript",
-            "TEXT/JAVASCRIPT; charset=utf-8",
-            "application/ecmascript",
-            "text/javascript1.5",
-        ] {
-            assert!(validate_script_response(&response(mime), ScriptKind::Module).is_ok());
-        }
-        for mime in ["", "text/plain", "text/html", "application/json"] {
-            assert!(validate_script_response(&response(mime), ScriptKind::Module).is_err());
-            assert!(validate_script_response(&response(mime), ScriptKind::Classic).is_ok());
-        }
-    }
-
-    #[test]
-    fn script_elements_preserve_cors_credentials_and_referrer_policy() {
-        let document = DocumentId::new(1).unwrap();
-        let options = crate::engine::ScriptFetchOptions::for_element(
-            ScriptKind::Module,
-            Some("use-credentials"),
-            Some("no-referrer"),
-        );
-        let request = page_resource_request(
-            7,
-            document,
-            &PageResource::Script {
-                url: "https://cdn.example/module.js".into(),
-                kind: ScriptKind::Module,
-                fetch_options: options,
-                script_source: crate::fetch::csp::ScriptSource::default(),
-            },
-        );
-        assert_eq!(request.head.mode, FetchMode::Cors);
-        assert_eq!(request.head.credentials, FetchCredentials::Include);
-        assert_eq!(
-            request.head.referrer_policy,
-            FetchReferrerPolicy::NoReferrer
-        );
-
-        let classic = page_resource_request(
-            8,
-            document,
-            &PageResource::Script {
-                url: "https://example.com/classic.js".into(),
-                kind: ScriptKind::Classic,
-                fetch_options: crate::engine::ScriptFetchOptions::for_kind(ScriptKind::Classic),
-                script_source: crate::fetch::csp::ScriptSource::default(),
-            },
-        );
-        assert_eq!(classic.head.mode, FetchMode::NoCors);
-        assert_eq!(classic.head.credentials, FetchCredentials::Include);
-    }
-}
+mod tests;

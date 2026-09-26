@@ -10,7 +10,9 @@ use super::{
     WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
     WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
 };
-use crate::media_protocol::{BrowserMediaMessage, MediaLimits, WorkerMediaMessage};
+use crate::media_protocol::{
+    BrowserMediaMessage, MediaCodecFamily, MediaLimits, WorkerMediaMessage,
+};
 
 pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), MediaProtocolError> {
     let mut payload = Vec::new();
@@ -206,9 +208,16 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
         } => {
             require_nonzero(request_id, "decode request")?;
             report.validate(MediaLimits::default())?;
-            frame
-                .validate()
-                .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+            if frame.is_some() != (report.video_codec == MediaCodecFamily::H264) {
+                return Err(MediaProtocolError::InvalidPayload(
+                    "decoded video frame presence",
+                ));
+            }
+            if let Some(frame) = frame {
+                frame
+                    .validate()
+                    .map_err(|_| MediaProtocolError::InvalidPayload("video frame metadata"))?;
+            }
             vec_u64(&mut payload, request_id);
             vec_u64(&mut payload, report.encoded_bytes);
             vec_u16(&mut payload, report.video_codec.wire_code());
@@ -231,7 +240,10 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             vec_u64(&mut payload, report.duration_100ns);
             vec_u64(&mut payload, report.decode_micros);
             super::wire::encode_buffered(&mut payload, report.buffered);
-            encode_frame_metadata(&mut payload, frame);
+            boolean(&mut payload, frame.is_some());
+            if let Some(frame) = frame {
+                encode_frame_metadata(&mut payload, frame);
+            }
             WORKER_DECODED
         }
         WorkerMediaMessage::Appended {

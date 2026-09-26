@@ -2,13 +2,15 @@
 use super::*;
 use better_web_browser::fetch::{Origin, RequestClient};
 use better_web_browser::renderer_protocol::FetchRequestHead;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+mod hints;
 
 #[derive(Default)]
 pub(super) struct Clients {
     document: Option<DocumentId>,
     root: Option<Client>,
     records: HashMap<u64, Option<Client>>,
+    admitted_hint_origins: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -19,12 +21,32 @@ pub(in crate::windows_app) struct Client {
 }
 
 impl Clients {
+    pub fn append_meta(
+        &mut self,
+        mutation: &better_web_browser::renderer_protocol::PolicyMutation,
+    ) -> Result<(), FetchError> {
+        self.check_document(mutation.document)?;
+        let client = if mutation.client_id == 0 {
+            self.root.as_mut()
+        } else {
+            self.records
+                .get_mut(&mutation.client_id)
+                .and_then(Option::as_mut)
+        }
+        .ok_or_else(|| invalid("meta CSP client is not active"))?;
+        let mut policy = (*client.policy).clone();
+        policy.append_meta(&client.url, &mutation.serialized)?;
+        client.policy = Arc::new(policy);
+        Ok(())
+    }
+
     // Called synchronously only after the UI verifies that the batch is for its current document.
     pub fn activate(&mut self, document: DocumentId) {
         if self.document != Some(document) {
             self.document = Some(document);
             self.root = None;
             self.records.clear();
+            self.admitted_hint_origins.clear();
         }
     }
 

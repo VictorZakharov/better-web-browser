@@ -4,7 +4,7 @@ use crate::limits::{
 };
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{
-    BrowserMessage, CookieMutation, CookieStateSnapshot, DocumentId, ProtocolError,
+    BrowserMessage, CookieMutation, CookieStateSnapshot, DocumentId, PolicyMutation, ProtocolError,
     RendererMessage, StateSnapshotApplied, StateSnapshotKind, StorageMutationRequest,
     StorageSnapshotEnd, StorageSnapshotEntry, StorageSnapshotStart,
 };
@@ -113,6 +113,13 @@ pub(super) fn encode_renderer_state(
             writer.string(&mutation.assignment)?;
             0x0132
         }
+        RendererMessage::PolicyMutation(mutation) => {
+            mutation.validate()?;
+            writer.u64(mutation.document.get());
+            writer.u64(mutation.client_id);
+            writer.string(&mutation.serialized)?;
+            0x013a
+        }
         RendererMessage::StorageMutation(request) => {
             request.validate()?;
             writer.u64(request.document.get());
@@ -159,6 +166,15 @@ pub(super) fn decode_renderer_state(
             };
             mutation.validate()?;
             RendererMessage::CookieMutation(mutation)
+        }
+        0x013a => {
+            let mutation = PolicyMutation {
+                document: DocumentId::new(reader.u64()?)?,
+                client_id: reader.u64()?,
+                serialized: reader.string(16 * 1024)?,
+            };
+            mutation.validate()?;
+            RendererMessage::PolicyMutation(mutation)
         }
         0x0134 => {
             let document = DocumentId::new(reader.u64()?)?;

@@ -3,6 +3,63 @@
     // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
     // https://www.w3.org/TR/media-source-2/#mediasource-detach
     const mediaLoadGeneration = new WeakMap();
+    const hasOrdinaryMediaSource = element => element.hasAttribute('src')
+        || element.querySelector('source') !== null;
+    const beginOrdinaryMediaLoad = element => {
+        const state = mediaStateFor(element);
+        if (state.networkState !== HTMLMediaElement.NETWORK_EMPTY
+            || !hasOrdinaryMediaSource(element)) return;
+        state.networkState = HTMLMediaElement.NETWORK_LOADING;
+        queueMediaEvent(element, 'loadstart');
+    };
+    const rejectDeferredMediaPlayback = (element, error) => {
+        for (const [id, request] of pendingMediaRequests) {
+            if (request.element !== element || !request.deferredOrdinaryPlayback) continue;
+            pendingMediaRequests.delete(id);
+            request.reject(error);
+        }
+    };
+    const startDeferredMediaPlayback = element => {
+        const state = mediaStateFor(element);
+        const volumeMillis = effectiveVolumeMillis(state);
+        let started = false;
+        for (const [id, request] of pendingMediaRequests) {
+            if (request.element !== element || !request.deferredOrdinaryPlayback) continue;
+            request.deferredOrdinaryPlayback = false;
+            mediaCommand(element, id, 'playback', true, volumeMillis);
+            started = true;
+        }
+        return started;
+    };
+    const applyOrdinaryMediaSourceEvent = input => {
+        const element = wrap(Number(input.target) || 0);
+        if (!(element instanceof HTMLMediaElement) || mediaSourceForElement.has(element)) return false;
+        const state = mediaStateFor(element);
+        switch (input.disposition) {
+            case 'loading':
+                beginOrdinaryMediaLoad(element);
+                return true;
+            case 'selected':
+                beginOrdinaryMediaLoad(element);
+                state.currentSrc = String(input.sourceUrl || '');
+                return true;
+            case 'error':
+                rejectDeferredMediaPlayback(element,
+                    new DOMException('The media resource could not be loaded', 'NotSupportedError'));
+                state.error = new MediaError(MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
+                    'The media resource could not be loaded');
+                state.networkState = HTMLMediaElement.NETWORK_NO_SOURCE;
+                queueMediaEvent(element, 'error');
+                return true;
+            case 'waiting':
+                rejectDeferredMediaPlayback(element,
+                    new DOMException('No supported media source is available', 'NotSupportedError'));
+                state.networkState = HTMLMediaElement.NETWORK_NO_SOURCE;
+                return true;
+            default:
+                return false;
+        }
+    };
     const detachMediaSource = element => {
         const source = mediaSourceForElement.get(element);
         if (!source) return;
@@ -62,7 +119,10 @@
     const selectMediaSource = element => {
         const value = element.getAttribute('src');
         const source = objectUrlValue(value);
-        if (!(source instanceof MediaSource)) return;
+        if (!(source instanceof MediaSource)) {
+            beginOrdinaryMediaLoad(element);
+            return;
+        }
         if (source.readyState !== 'closed') {
             const state = mediaStateFor(element);
             state.error = new MediaError(MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED,
@@ -76,6 +136,11 @@
         state.currentSrc = value;
         queueMediaEvent(element, 'loadstart');
         source.__attach(element);
+    };
+    const restartMediaLoad = element => {
+        if (!(objectUrlValue(element.getAttribute('src')) instanceof MediaSource))
+            mediaCommand(element, 0, 'reload');
+        selectMediaSource(element);
     };
     const mediaSourceAttributeChanged = element => {
         if (mediaStateFor(element).networkState !== HTMLMediaElement.NETWORK_EMPTY

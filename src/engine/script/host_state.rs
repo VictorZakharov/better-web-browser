@@ -1,11 +1,13 @@
 //! Per-document native state shared with the V8 realm.
 
+use super::types::ScriptPolicyUpdate;
 use super::*;
 use crate::engine::MediaEnvironment;
 use crate::navigation::resolve_url;
 
 mod base_url;
 mod cookies;
+mod csp;
 mod fetches;
 mod focus;
 pub(crate) mod geometry;
@@ -41,6 +43,8 @@ pub(super) struct HostState {
     pub(super) embedded: bool,
     pub(super) fetch_client: crate::fetch::RequestClient,
     pub(super) policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
+    pub(super) processed_csp_meta: HashSet<NodeId>,
+    pub(super) pending_policy_updates: Vec<ScriptPolicyUpdate>,
     api_base_cache: RefCell<Option<base_url::CachedBaseUrl>>,
     pub(super) pointer_path: Vec<NodeRef>,
     pub(super) focused_node: Option<NodeRef>,
@@ -152,6 +156,8 @@ impl HostState {
             embedded: false,
             fetch_client: Default::default(),
             policy: Default::default(),
+            processed_csp_meta: HashSet::new(),
+            pending_policy_updates: Vec::new(),
             api_base_cache: RefCell::new(None),
             document_character_set: character_set.to_string(),
             stylesheet_sources: Vec::new(),

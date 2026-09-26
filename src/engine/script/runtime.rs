@@ -39,6 +39,25 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    pub(crate) fn process_parser_csp_meta(
+        &mut self,
+        node: &NodeRef,
+    ) -> Result<ScriptOutcome, String> {
+        let mut host = self.host.borrow_mut();
+        host.process_inserted_csp_meta(node)?;
+        Ok(ScriptOutcome {
+            policy_updates: std::mem::take(&mut host.pending_policy_updates),
+            ..ScriptOutcome::default()
+        })
+    }
+
+    pub(crate) fn set_document_policy(
+        &mut self,
+        policy: std::sync::Arc<crate::fetch::csp::PolicyContainer>,
+    ) {
+        self.host.borrow_mut().policy = policy;
+    }
+
     pub(crate) fn document_url(&self) -> String {
         self.host.borrow().document_url.clone()
     }

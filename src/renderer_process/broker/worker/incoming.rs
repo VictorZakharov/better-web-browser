@@ -94,6 +94,7 @@ impl Broker {
                     | RendererMessage::FullscreenRequest(_)
                     | RendererMessage::PointerLockRequest(_)
                     | RendererMessage::CookieMutation(_)
+                    | RendererMessage::PolicyMutation(_)
                     | RendererMessage::StorageMutation(_)
                     | RendererMessage::WebSocketCommand(_)
                     | RendererMessage::DatabaseCommand(_)

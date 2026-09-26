@@ -108,6 +108,7 @@ impl PreloadKey {
                     false,
                 ),
                 PageResource::Media { .. } => return None,
+                PageResource::OriginHint { .. } => return None,
             };
         Some(Self {
             url,

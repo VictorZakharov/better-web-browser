@@ -5,16 +5,17 @@ use super::{
 use crate::limits::{
     MAX_MEDIA_DECODED_AUDIO_SAMPLE_BYTES, MAX_MEDIA_DECODED_SAMPLES, MAX_MEDIA_DURATION_100NS,
 };
+use crate::media_protocol::MediaCodecFamily;
 use windows::Win32::Media::MediaFoundation::{
     IMFSourceReader, MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_NUM_CHANNELS,
     MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
-    MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR, MFAudioFormat_AAC, MFAudioFormat_PCM,
-    MFMediaType_Audio,
+    MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR, MFAudioFormat_AAC, MFAudioFormat_MP3,
+    MFAudioFormat_PCM, MFMediaType_Audio,
 };
 
 const PCM_BITS_PER_SAMPLE: u32 = 16;
 
-/// Pull-driven AAC-to-PCM decoder owned exclusively by the restricted media process.
+/// Pull-driven allowlisted audio-to-PCM decoder owned by the restricted media process.
 pub(in crate::media_process) struct AudioDecoder {
     reader: IMFSourceReader,
     remaining_samples: u32,
@@ -28,6 +29,7 @@ pub(in crate::media_process) struct AudioDecoder {
 impl AudioDecoder {
     pub(in crate::media_process) fn open(
         bytes: &[u8],
+        codec: MediaCodecFamily,
         expected_samples: u32,
         expected_sample_rate: u32,
         expected_channels: u16,
@@ -45,12 +47,18 @@ impl AudioDecoder {
             MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
             "playback audio",
         )?;
+        let native_subtype = match codec {
+            MediaCodecFamily::AacLc | MediaCodecFamily::Aac => MFAudioFormat_AAC,
+            MediaCodecFamily::Mp3 => MFAudioFormat_MP3,
+            MediaCodecFamily::Pcm => MFAudioFormat_PCM,
+            _ => return Err("playback audio codec is unsupported".into()),
+        };
         verify_native_type(
             &reader,
             MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32,
             MFMediaType_Audio,
-            MFAudioFormat_AAC,
-            "AAC audio",
+            native_subtype,
+            "playback audio",
         )?;
         let audio_type = output_type(MFMediaType_Audio, MFAudioFormat_PCM)?;
         unsafe {

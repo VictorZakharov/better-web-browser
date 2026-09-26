@@ -40,6 +40,7 @@ impl DocumentRuntime {
                     break;
                 }
                 self.execute_pending_parser_script(connection, outcome)?;
+                connection.send_policy_updates(self.id, outcome)?;
                 if self.parser_scripts.blocked() {
                     self.start_presentational_preloads(connection)?;
                     if started.elapsed() >= Duration::from_millis(8) {
@@ -97,6 +98,15 @@ impl DocumentRuntime {
                 );
             }
             match step {
+                ParserStep::CspMeta(node) => {
+                    if let Some(runtime) = self.script_runtime.as_mut() {
+                        merge_outcome(
+                            outcome,
+                            runtime.process_parser_csp_meta(&node)?,
+                            self.page.dom.document.id(),
+                        );
+                    }
+                }
                 ParserStep::CustomElement(node) => {
                     self.construct_parser_element(node, outcome);
                 }
@@ -136,6 +146,7 @@ impl DocumentRuntime {
                     }
                 }
             }
+            connection.send_policy_updates(self.id, outcome)?;
             self.start_presentational_preloads(connection)?;
             self.sync_script_layout_page();
             if started.elapsed() >= Duration::from_millis(8) {

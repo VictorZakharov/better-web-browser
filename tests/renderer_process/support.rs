@@ -21,6 +21,18 @@ pub(super) fn options() -> RendererLaunchOptions {
     options
 }
 
+pub(super) fn run_scheduled_renderer_timer(
+    session: &RendererSession,
+    document: DocumentId,
+    next_timer_micros: Option<u64>,
+) {
+    if let Some(delay) = next_timer_micros {
+        session
+            .advance_time(document, Duration::from_micros(delay), 64)
+            .expect("run the renderer's advertised media checkpoint");
+    }
+}
+
 pub(super) fn hung_task_options() -> RendererLaunchOptions {
     let mut options = options();
     options.unresponsive_timeout = Duration::from_millis(300);
@@ -76,6 +88,7 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
         url: format!("https://example.test/{}", document.get()),
         status: 200,
         content_type: "text/html; charset=utf-8".into(),
+        csp_policies: Vec::new(),
         diagnostic_selectors: Vec::new(),
         body_length: body_length as u32,
         viewport: PresentedViewport {

@@ -94,6 +94,31 @@ fn renderer_messages_round_trip() {
 }
 
 #[test]
+fn meta_csp_policy_mutations_round_trip_and_reject_oversized_values() {
+    let mutation = PolicyMutation {
+        document: DocumentId::new(11).unwrap(),
+        client_id: 0,
+        serialized: "default-src 'none'; img-src https://cdn.test".into(),
+    };
+    let message = RendererMessage::PolicyMutation(mutation.clone());
+    assert_eq!(
+        FrameReader::new(Cursor::new(encoded_renderer(&message)), session())
+            .read_renderer()
+            .unwrap(),
+        message
+    );
+    let oversized = RendererMessage::PolicyMutation(PolicyMutation {
+        serialized: "x".repeat(16 * 1024 + 1),
+        ..mutation
+    });
+    assert!(
+        FrameWriter::new(Vec::new(), session())
+            .send_renderer(&oversized)
+            .is_err()
+    );
+}
+
+#[test]
 fn pointer_cursor_results_round_trip_and_reject_invalid_fields() {
     let document = DocumentId::new(11).unwrap();
     for cursor in [PointerCursor::Default, PointerCursor::Pointer] {
@@ -135,6 +160,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
         url: "https://example.test/".into(),
         status: 200,
         content_type: "text/html".into(),
+        csp_policies: vec!["script-src 'self'".into()],
         diagnostic_selectors: vec!["#main".into(), ".content".into()],
         body_length: 10,
         viewport: PresentedViewport {

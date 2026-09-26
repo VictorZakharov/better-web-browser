@@ -28,7 +28,14 @@ pub(super) fn queue_script_violation(
         } else {
             state
                 .policy
-                .inline_script_violations(script.node.attr("nonce").as_deref())
+                .inline_script_violations_for_source(
+                    script.node.attr("nonce").as_deref(),
+                    Some(&script.code),
+                    script
+                        .node
+                        .element()
+                        .is_some_and(|element| element.script_parser_inserted.get()),
+                )
                 .into_iter()
                 .map(|violation| {
                     (
@@ -98,7 +105,7 @@ fn strip_blocked_url(source: &str, document_url: &str) -> String {
     }
 }
 
-fn strip_report_url(source: &str) -> String {
+pub(in crate::engine::script) fn strip_report_url(source: &str) -> String {
     let Ok(mut url) = url::Url::parse(source) else {
         return source.to_owned();
     };

@@ -204,5 +204,15 @@ fn payload(host: &Rc<RefCell<HostState>>, event: UserInputEvent) -> serde_json::
             "disposition": disposition, "currentTime": current_time, "duration": duration,
             "width": width, "height": height, "buffered": buffered
         }),
+        UserInputEvent::MediaSource {
+            target: node,
+            disposition,
+            source_url,
+            reason,
+        } => serde_json::json!({
+            "kind": "mediaSource", "target": target(Some(node)),
+            "disposition": disposition, "sourceUrl": source_url,
+            "reason": reason
+        }),
     }
 }

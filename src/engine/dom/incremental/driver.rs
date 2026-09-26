@@ -40,13 +40,15 @@ impl TokenSink for ObservableTreeBuilder {
 
     fn process_token(&self, token: Token, line: u64) -> TokenSinkResult<ParserStep> {
         match self.builder.process_token(token, line) {
-            TokenSinkResult::Continue => self
-                .builder
-                .sink
-                .pending_parser_element()
-                .map_or(TokenSinkResult::Continue, |node| {
+            TokenSinkResult::Continue => {
+                if let Some(node) = self.builder.sink.pending_parser_element() {
                     TokenSinkResult::Script(ParserStep::CustomElement(node))
-                }),
+                } else if let Some(node) = self.builder.sink.pending_parser_csp_meta() {
+                    TokenSinkResult::Script(ParserStep::CspMeta(node))
+                } else {
+                    TokenSinkResult::Continue
+                }
+            }
             TokenSinkResult::Script(node) => TokenSinkResult::Script(ParserStep::Script(node)),
             TokenSinkResult::Plaintext => TokenSinkResult::Plaintext,
             TokenSinkResult::RawData(kind) => TokenSinkResult::RawData(kind),

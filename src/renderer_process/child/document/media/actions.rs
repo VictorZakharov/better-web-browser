@@ -52,6 +52,10 @@ impl DocumentRuntime {
             }
             return Ok(Some("reset"));
         }
+        if matches!(&action.command, ScriptMediaCommand::Reload) {
+            self.page.reload_media_source(action.node);
+            return Ok(None);
+        }
         if let ScriptMediaCommand::Commit { mime_type, bytes } = &action.command {
             if !supports_media_track(mime_type, "video/mp4", "avc1.")
                 || !mime_type.to_ascii_lowercase().contains("mp4a.40.2")
@@ -188,9 +192,13 @@ impl DocumentRuntime {
                 let decoded = connection
                     .seek_media_playback(source_id, *position_100ns)
                     .and_then(|state| {
-                        connection
-                            .next_media_frame(source_id)
-                            .map(|frame| (state, frame))
+                        if playback.width == 0 {
+                            Ok((state, None))
+                        } else {
+                            connection
+                                .next_media_frame(source_id)
+                                .map(|frame| (state, frame))
+                        }
                     });
                 let (state, frame) = match decoded {
                     Ok(decoded) => decoded,
@@ -224,12 +232,15 @@ impl DocumentRuntime {
                         playback.height = metadata.height;
                         playback.frames_submitted = playback.frames_submitted.saturating_add(1);
                     }
-                } else if let Some(playback) = self.media.as_mut() {
+                } else if let Some(playback) = self.media.as_mut()
+                    && playback.width != 0
+                {
                     playback.video_ended = true;
                 }
                 Ok(Some("seeked"))
             }
             ScriptMediaCommand::Reset => unreachable!(),
+            ScriptMediaCommand::Reload => unreachable!(),
             ScriptMediaCommand::Commit { .. } => unreachable!(),
             ScriptMediaCommand::CommitAdaptive { .. } => unreachable!(),
             ScriptMediaCommand::AppendAdaptive { .. } => unreachable!(),

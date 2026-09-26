@@ -1,5 +1,6 @@
 //! Public HTTP client facade and one-hop bounded WinHTTP transport.
 
+mod hints;
 #[cfg(test)]
 mod protocol_tests;
 

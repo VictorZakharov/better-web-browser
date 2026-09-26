@@ -224,6 +224,9 @@ impl DocumentRuntime {
         // Abort and chained Fetch actions produced by a network callback belong to the same
         // networking task. Submit them before accepting the next response chunk so cancellation
         // does not wait for an unrelated clock tick.
+        // A callback can insert a meta CSP and start a request in the same task. The browser
+        // owns network admission, so it must receive the policy before that request.
+        connection.send_policy_updates(self.id, &mut outcome)?;
         self.start_pending_fetches(connection)?;
         // A FontFace URL load resolves from this networking task, not from a clock or input
         // task. Install its decoded face before deciding whether this callback needs layout.

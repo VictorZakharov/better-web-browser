@@ -49,6 +49,7 @@ fn destination(request: &FetchRequest) -> &'static str {
         RequestDestination::Font => "font",
         RequestDestination::Fetch => "empty",
         RequestDestination::Video => "video",
+        RequestDestination::Audio => "audio",
     }
 }
 
@@ -175,6 +176,24 @@ mod tests {
                 "sec-fetch-mode"
             )
             .as_deref(),
+            Some("no-cors")
+        );
+    }
+
+    #[test]
+    fn audio_subresource_sends_audio_fetch_destination() {
+        let request = FetchRequest::subresource(
+            "https://example.com/clip.mp3",
+            "https://example.com/page",
+            RequestDestination::Audio,
+        )
+        .unwrap();
+        assert_eq!(
+            header(&request, &[request.url.as_str()], "sec-fetch-dest").as_deref(),
+            Some("audio")
+        );
+        assert_eq!(
+            header(&request, &[request.url.as_str()], "sec-fetch-mode").as_deref(),
             Some("no-cors")
         );
     }

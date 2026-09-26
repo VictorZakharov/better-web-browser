@@ -10,6 +10,15 @@ impl DocumentRuntime {
         resource: &PageResource,
         event_type: &'static str,
     ) -> Result<bool, String> {
+        if matches!(resource, PageResource::Media { .. }) {
+            // HTML media elements have their own load/error lifecycle; the generic
+            // resource owner table intentionally tracks images, styles, and links.
+            return if event_type == "error" {
+                self.dispatch_media_failure(resource, "network")
+            } else {
+                Ok(false)
+            };
+        }
         if event_type == "load" && matches!(resource, PageResource::Stylesheet { .. }) {
             // CSSOM insertRule can load another import after its owner already fired load.
             // Resource visibility must not depend on dispatching a second owner event.
@@ -26,6 +35,49 @@ impl DocumentRuntime {
         // An event may enqueue network/timer work without changing any rendered box.
         // Wake the scheduler independently of the visual invalidation it produced.
         Ok(self.pending_async_outcome.render_requested)
+    }
+
+    pub(super) fn dispatch_media_failure(
+        &mut self,
+        resource: &PageResource,
+        reason: &'static str,
+    ) -> Result<bool, String> {
+        let PageResource::Media {
+            url,
+            node,
+            source_node,
+            ..
+        } = resource
+        else {
+            return Ok(false);
+        };
+        if !self.page.is_current_media_resource(resource) {
+            return Ok(false);
+        }
+        let Some(source_node) = source_node else {
+            return self.dispatch_media_source(*node, "error", url, reason);
+        };
+        let mut changed = false;
+        if let Some(target) = self.page.dom.find_node(*source_node) {
+            let response = self.dispatch_user_input(crate::engine::UserInputEvent::Simple {
+                target,
+                event_type: "error",
+                bubbles: false,
+                cancelable: false,
+            })?;
+            changed |= response.outcome.render_requested;
+            super::super::merge_outcome(
+                &mut self.pending_async_outcome,
+                response.outcome,
+                self.page.dom.document.id(),
+            );
+        }
+        if self.page.advance_media_source(resource)
+            == crate::engine::page::MediaSourceAdvance::Waiting
+        {
+            changed |= self.dispatch_media_source(*node, "waiting", url, "")?;
+        }
+        Ok(changed)
     }
 
     pub(in crate::renderer_process::child::document) fn dispatch_cached_resource_events(

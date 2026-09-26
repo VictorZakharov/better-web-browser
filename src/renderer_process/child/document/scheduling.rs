@@ -117,6 +117,7 @@ impl DocumentRuntime {
         }
         self.execute_pending_parser_script(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
+        connection.send_policy_updates(self.id, &mut outcome)?;
         self.start_pending_fetches(connection)?;
         let document_url = self.page.source_url.clone();
         let document_root = self.page.dom.document.id();
@@ -135,6 +136,7 @@ impl DocumentRuntime {
             },
         )?;
 
+        connection.send_policy_updates(self.id, &mut outcome)?;
         self.start_dynamic_script_fetches(connection)?;
         self.finish_ready_dynamic_scripts(connection)?;
 
@@ -167,6 +169,7 @@ impl DocumentRuntime {
             script_time += timer_started.elapsed();
             merge_outcome(&mut outcome, timed, self.page.dom.document.id());
         }
+        connection.send_policy_updates(self.id, &mut outcome)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
@@ -188,6 +191,7 @@ impl DocumentRuntime {
                 outcome: &mut outcome,
             },
         )?;
+        connection.send_policy_updates(self.id, &mut outcome)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);

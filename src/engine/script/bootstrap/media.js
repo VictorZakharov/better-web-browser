@@ -44,19 +44,6 @@
         traceMediaLifecycle(element, 'request:' + command);
         return host('mediaRequest', nodeId(element), requestId || nextMediaRequest++, command, ...args);
     };
-    const supportedMediaType = type => {
-        const source = String(type).trim().toLowerCase();
-        if (!source) return '';
-        const [essence, ...parameters] = source.split(';').map(part => part.trim());
-        if (essence !== 'video/mp4' && essence !== 'audio/mp4' && essence !== 'application/mp4')
-            return '';
-        const codecsParameter = parameters.find(parameter => parameter.startsWith('codecs='));
-        if (!codecsParameter) return 'maybe';
-        const codecs = codecsParameter.slice(codecsParameter.indexOf('=') + 1)
-            .replace(/^['\"]|['\"]$/g, '').split(',').map(codec => codec.trim());
-        if (!codecs.length || codecs.some(codec => !/^(avc1\.|mp4a\.40\.2$)/.test(codec))) return '';
-        return 'probably';
-    };
     const mediaStateFor = element => {
         let state = mediaStates.get(element);
         if (!state) {
@@ -189,24 +176,38 @@
             resetMediaElement(this);
             const generation = mediaLoadGeneration.get(this);
             queueMediaTask(() => {
-                if (mediaLoadGeneration.get(this) === generation) selectMediaSource(this);
+                if (mediaLoadGeneration.get(this) === generation) restartMediaLoad(this);
             });
         }
         play() {
             if (!host('mediaPlaybackSupported'))
                 return Promise.reject(new DOMException('Embedded media playback is not supported yet', 'NotSupportedError'));
             const state = mediaStateFor(this);
+            if (state.error) return Promise.reject(new DOMException(
+                'The media resource cannot be played', 'NotSupportedError'));
+            // HTML restarts a completed resource before resuming playback. Keep the seek
+            // ahead of the playback command so the worker can repaint the first frame.
+            if (state.ended && !mediaSourceForElement.has(this)) this.currentTime = 0;
             const requestId = nextMediaRequest++;
             return new Promise((resolve, reject) => {
-                pendingMediaRequests.set(requestId, { element: this, resolve, reject });
+                const pending = { element: this, resolve, reject };
+                pendingMediaRequests.set(requestId, pending);
                 const volumeMillis = effectiveVolumeMillis(state);
-                if (!prepareMediaSourcePlayback(this, requestId, volumeMillis))
-                    mediaCommand(this, requestId, 'playback', true, volumeMillis);
+                if (prepareMediaSourcePlayback(this, requestId, volumeMillis)) return;
+                if (state.readyState === HTMLMediaElement.HAVE_NOTHING
+                    && hasOrdinaryMediaSource(this)) {
+                    pending.deferredOrdinaryPlayback = true;
+                    beginOrdinaryMediaLoad(this);
+                    return;
+                }
+                mediaCommand(this, requestId, 'playback', true, volumeMillis);
             });
         }
         pause() {
             const state = mediaStateFor(this);
             rejectSeekingPlayback(this);
+            rejectDeferredMediaPlayback(this,
+                new DOMException('Playback was interrupted by pause()', 'AbortError'));
             if (!state.paused) {
                 state.paused = true;
                 queueMediaEvent(this, 'pause');
@@ -307,11 +308,15 @@
                 updateTextTracks(element);
                 state.networkState = HTMLMediaElement.NETWORK_IDLE;
                 state.readyState = HTMLMediaElement.HAVE_CURRENT_DATA;
-                state.currentSrc = element.src;
+                state.currentSrc = state.currentSrc || element.src;
                 state.duration = Number(input.duration);
                 state.videoWidth = Number(input.width) || 0;
                 state.videoHeight = Number(input.height) || 0;
-                exposeDecodedAudioTrack(element);
+                // The worker reports separate buffered extents. A video-only MP4 has no
+                // decoded audio stream and must not fabricate an AudioTrack merely because
+                // its media clock can now advance without XAudio2.
+                if (!input.buffered || Number(input.buffered[1]?.[1]) > 0)
+                    exposeDecodedAudioTrack(element);
                 if (state.videoWidth && state.videoHeight) exposeDecodedVideoTrack(element);
                 state.buffered = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
                 state.seekable = new TimeRanges(timeRangesConstructionToken, [[0, state.duration]]);
@@ -321,7 +326,8 @@
                 element.dispatchEvent(markTrusted(new Event('loadedmetadata')));
                 element.dispatchEvent(markTrusted(new Event('loadeddata')));
                 updateMediaCanPlay(element);
-                if (element.autoplay) element.play().catch(() => {});
+                const resumedPendingPlay = startDeferredMediaPlayback(element);
+                if (element.autoplay && !resumedPendingPlay) element.play().catch(() => {});
                 return true;
             case 'playing':
                 const wasPaused = state.paused;
@@ -366,6 +372,8 @@
                 return true;
             case 'media-error':
                 pending?.reject(new DOMException('Media decode failed', 'NotSupportedError'));
+                rejectDeferredMediaPlayback(element,
+                    new DOMException('Media loading failed', 'NotSupportedError'));
                 notifyMediaSourceError(element);
                 if (!state.error) {
                     state.error = new MediaError(MediaError.MEDIA_ERR_DECODE, 'Media decode failed');

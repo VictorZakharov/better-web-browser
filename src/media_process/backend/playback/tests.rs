@@ -1,4 +1,30 @@
 use super::*;
+
+#[test]
+fn complete_video_only_fixture_seeks_with_media_foundation() {
+    use base64::Engine as _;
+
+    let encoded: String =
+        include_str!("../../../../tests/fixtures/media/test-1s-video-fragmented.mp4.base64")
+            .chars()
+            .filter(|character| !character.is_ascii_whitespace())
+            .collect();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .expect("decode WPT H.264 fixture");
+    let decoded =
+        super::super::decode(&bytes, MediaLimits::default()).expect("decode video-only fixture");
+    let mut playback = decoded.playback.expect("video decoder");
+    playback
+        .seek(decoded.report.duration_100ns.saturating_sub(100_000))
+        .expect("seek H.264-only MP4");
+    assert!(
+        playback
+            .next_frame()
+            .expect("decode sought frame")
+            .is_some()
+    );
+}
 use crate::media_process::backend::fragmented_mp4::VideoSample;
 
 #[test]
