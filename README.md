@@ -423,6 +423,14 @@ Both runs returned HTTP 200 without JavaScript errors or renderer exits.
 Different User-Agent modes can receive different test code, so their scores
 should not be treated as interchangeable or as full conformance evidence.
 
+The subsequent [CSS cascade layers, nesting, and Selectors Level 4 slice](docs/css-nesting-selectors.md)
+rendered **423 / 588** with Breeze's default identity in a 2026-09-26
+fresh-profile hidden release run using the same viewport, scale, locale, and
+10-second settle: **+3** versus the prior dated 420 / 588 observation. It
+returned HTTP 200 with zero JavaScript errors and no renderer exit. This is a
+cross-date observation, not a controlled attribution of those three points
+to CSS changes.
+
 Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã—720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
 
@@ -430,8 +438,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280Ã
 ./scripts/run-hidden-benchmark.ps1 -Url https://html5test.co/ -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-24-animation-media-breeze.json `
-  -Screenshot target/html5test/2026-09-24-animation-media-breeze.png
+  -Output target/html5test/2026-09-26-batch3.json `
+  -Screenshot target/html5test/2026-09-26-batch3.png
 ```
 
 New releases must refresh or explicitly date these observations using the
