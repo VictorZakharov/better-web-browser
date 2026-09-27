@@ -132,7 +132,7 @@ impl<'a> Cursor<'a> {
         Self { remaining: bytes }
     }
 
-    fn take(&mut self, count: usize) -> Result<&'a [u8], MediaProtocolError> {
+    pub(super) fn take(&mut self, count: usize) -> Result<&'a [u8], MediaProtocolError> {
         if self.remaining.len() < count {
             return Err(MediaProtocolError::InvalidPayload("truncated payload"));
         }

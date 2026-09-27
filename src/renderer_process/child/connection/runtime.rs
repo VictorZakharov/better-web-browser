@@ -98,6 +98,7 @@ impl ChildConnection {
 
     pub(super) fn begin_document(&mut self, start: DocumentStart) -> Result<(), String> {
         start.validate().map_err(|error| error.to_string())?;
+        let document = start.document;
         if self.incoming_document.is_some() || self.document.is_some() {
             return Err("renderer already owns a document".into());
         }
@@ -113,6 +114,7 @@ impl ChildConnection {
             state: super::IncomingDocumentState::new(start.document),
             start,
         });
+        self.activate_graph_pcm(document);
         Ok(())
     }
 
@@ -158,6 +160,7 @@ impl ChildConnection {
                 self.document = Some(*runtime);
             }
             Ok(Ok(LoadResult::Navigate(url, text))) => {
+                self.retire_graph_pcm(document);
                 self.prepared_text = Some(*text);
                 self.writer
                     .send_renderer(&RendererMessage::NavigationRequested {

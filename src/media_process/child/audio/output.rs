@@ -11,6 +11,8 @@ use windows::Win32::Media::Audio::XAudio2::{
 use windows::Win32::Media::Audio::{AudioCategory_Media, WAVE_FORMAT_PCM, WAVEFORMATEX};
 use windows::core::PCWSTR;
 
+mod graph;
+
 const QUEUED_AUDIO_SAMPLES: usize = 4;
 const NTDDI_WIN10: u32 = 0x0a00_0000;
 // XAudio2 returns HRESULT_FROM_WIN32(ERROR_NOT_FOUND) when Windows has no default audio endpoint.

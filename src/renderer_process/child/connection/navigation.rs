@@ -20,6 +20,7 @@ impl ChildConnection {
             self.incoming_document = None;
         }
         self.retire_video();
+        self.retire_graph_pcm(document);
         self.cancel_document_fetches(document);
         if self
             .incoming_storage_update
@@ -154,6 +155,7 @@ impl ChildConnection {
                 self.document = Some(*runtime);
             }
             Ok(LoadResult::Navigate(url, text)) => {
+                self.retire_graph_pcm(document);
                 self.prepared_text = Some(*text);
                 self.writer
                     .send_renderer(&RendererMessage::NavigationRequested {

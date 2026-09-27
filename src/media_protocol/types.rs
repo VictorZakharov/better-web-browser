@@ -6,6 +6,9 @@ use crate::limits::{
     MEDIA_COMMAND_TIMEOUT,
 };
 
+mod graph;
+pub use graph::{GraphPcmFormat, GraphPcmStatus, MAX_GRAPH_PCM_FRAMES};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MediaSessionId(u64);
 
@@ -212,7 +215,7 @@ pub enum MediaTestCommand {
     ProbeRestrictions { loopback_port: u16 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BrowserMediaMessage {
     Hello {
         nonce: Nonce,
@@ -264,6 +267,18 @@ pub enum BrowserMediaMessage {
     SeekPlayback {
         source_id: u64,
         position_100ns: u64,
+    },
+    QueueGraphPcm {
+        request_id: u64,
+        document_id: u64,
+        context_id: u64,
+        format: GraphPcmFormat,
+        pcm: Vec<u8>,
+    },
+    CloseGraphPcm {
+        request_id: u64,
+        document_id: u64,
+        context_id: u64,
     },
     Test(MediaTestCommand),
 }
@@ -331,5 +346,9 @@ pub enum WorkerMediaMessage {
         source_id: u64,
     },
     PlaybackState(MediaPlaybackState),
+    GraphPcmStatus {
+        request_id: u64,
+        status: GraphPcmStatus,
+    },
     Restrictions(MediaRestrictionReport),
 }

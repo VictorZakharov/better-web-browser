@@ -1,16 +1,18 @@
 use super::wire::{Cursor, decode_frame_metadata, decode_limits, decode_test};
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS,
-    BROWSER_HELLO, BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_CLOSE_GRAPH_PCM,
+    BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS, BROWSER_HELLO, BROWSER_PING,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_QUEUE_GRAPH_PCM, BROWSER_REQUEST_FRAME,
     BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
     MediaProtocolError, WORKER_APPENDED, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
-    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
-    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
+    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_GRAPH_PCM_STATUS,
+    WORKER_PLAYBACK_STATE, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
+    WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
-    BrowserMediaMessage, ContainmentReport, MediaCapabilityReport, MediaCodecFamily,
-    MediaDecodeReport, MediaLimits, MediaPlaybackState, MediaRestrictionReport, Nonce,
-    WorkerMediaMessage,
+    BrowserMediaMessage, ContainmentReport, GraphPcmFormat, GraphPcmStatus, MediaCapabilityReport,
+    MediaCodecFamily, MediaDecodeReport, MediaLimits, MediaPlaybackState, MediaRestrictionReport,
+    Nonce, WorkerMediaMessage,
 };
 
 pub(super) fn browser(
@@ -127,6 +129,30 @@ pub(super) fn browser(
                 position_100ns,
             }
         }
+        BROWSER_QUEUE_GRAPH_PCM => {
+            let request_id = cursor.nonzero_u64("graph PCM request")?;
+            let document_id = cursor.nonzero_u64("graph PCM document")?;
+            let context_id = cursor.nonzero_u64("graph PCM context")?;
+            let format = GraphPcmFormat {
+                sample_rate: cursor.u32()?,
+                channels: cursor.u16()?,
+            };
+            let length = usize::from(cursor.u16()?);
+            format.validate(length)?;
+            let pcm = cursor.take(length)?.to_vec();
+            BrowserMediaMessage::QueueGraphPcm {
+                request_id,
+                document_id,
+                context_id,
+                format,
+                pcm,
+            }
+        }
+        BROWSER_CLOSE_GRAPH_PCM => BrowserMediaMessage::CloseGraphPcm {
+            request_id: cursor.nonzero_u64("graph PCM request")?,
+            document_id: cursor.nonzero_u64("graph PCM document")?,
+            context_id: cursor.nonzero_u64("graph PCM context")?,
+        },
         BROWSER_TEST => BrowserMediaMessage::Test(decode_test(&mut cursor)?),
         _ => return Err(MediaProtocolError::UnexpectedMessage(kind)),
     };
@@ -239,6 +265,10 @@ pub(super) fn worker(kind: u16, payload: &[u8]) -> Result<WorkerMediaMessage, Me
             playing: cursor.boolean()?,
             ended: cursor.boolean()?,
         }),
+        WORKER_GRAPH_PCM_STATUS => WorkerMediaMessage::GraphPcmStatus {
+            request_id: cursor.nonzero_u64("graph PCM request")?,
+            status: GraphPcmStatus::from_wire(cursor.byte()?)?,
+        },
         WORKER_RESTRICTIONS => WorkerMediaMessage::Restrictions(MediaRestrictionReport {
             child_launch_denied: cursor.boolean()?,
             loopback_denied: cursor.boolean()?,

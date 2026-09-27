@@ -1,6 +1,8 @@
 use super::*;
 use std::sync::{Arc, Mutex, mpsc};
+mod graph;
 mod video;
+use graph::GraphPcmPump;
 
 pub(in crate::renderer_process::child) enum MediaOperationCompletion {
     Decoded(Result<crate::media_process::RendererMediaDecode, String>),
@@ -11,6 +13,8 @@ pub(super) struct AsyncMediaClient {
     client: Arc<Mutex<crate::media_process::MediaClient>>,
     pending: Option<mpsc::Receiver<MediaOperationCompletion>>,
     video: video::VideoPump,
+    graph: Option<GraphPcmPump>,
+    graph_document: u64,
 }
 
 impl AsyncMediaClient {
@@ -23,6 +27,8 @@ impl AsyncMediaClient {
             video: video::VideoPump::new(Arc::clone(&client), writer),
             client,
             pending: None,
+            graph: None,
+            graph_document: 0,
         }
     }
 

@@ -1,5 +1,6 @@
 //! Renderer-side client for a browser-launched contained media worker.
 mod append;
+mod graph;
 mod retirement;
 
 use super::broker::DecodedMediaFrame;

@@ -33,6 +33,9 @@ pub(super) const BROWSER_DECODE_TRACKS: u16 = 20;
 pub(super) const WORKER_DECODE_FAILED: u16 = 21;
 pub(super) const BROWSER_APPEND_TRACKS: u16 = 22;
 pub(super) const WORKER_APPENDED: u16 = 23;
+pub(super) const BROWSER_QUEUE_GRAPH_PCM: u16 = 24;
+pub(super) const BROWSER_CLOSE_GRAPH_PCM: u16 = 25;
+pub(super) const WORKER_GRAPH_PCM_STATUS: u16 = 26;
 pub(super) const BROWSER_TEST: u16 = 0x8001;
 pub(super) const WORKER_RESTRICTIONS: u16 = 0x8002;
 const FLAG_NONE: u16 = 0;
@@ -115,7 +118,7 @@ impl<W: Write> MediaFrameWriter<W> {
         &mut self,
         message: &BrowserMediaMessage,
     ) -> Result<(), MediaProtocolError> {
-        let (kind, payload) = encode::browser(*message)?;
+        let (kind, payload) = encode::browser(message.clone())?;
         self.write_frame(kind, &payload)
     }
 
@@ -250,6 +253,8 @@ impl Direction {
                     | BROWSER_SET_PLAYBACK
                     | BROWSER_PLAYBACK_STATE
                     | BROWSER_SEEK_PLAYBACK
+                    | BROWSER_QUEUE_GRAPH_PCM
+                    | BROWSER_CLOSE_GRAPH_PCM
                     | BROWSER_TEST
             ),
             Self::Worker => matches!(
@@ -265,6 +270,7 @@ impl Direction {
                     | WORKER_FRAME_READY
                     | WORKER_END_OF_STREAM
                     | WORKER_PLAYBACK_STATE
+                    | WORKER_GRAPH_PCM_STATUS
                     | WORKER_RESTRICTIONS
             ),
         }

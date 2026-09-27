@@ -329,6 +329,7 @@ impl ChildConnection {
         detail: String,
     ) -> Result<(), String> {
         self.retire_video();
+        self.retire_graph_pcm(document);
         self.document.take();
         self.failed_document = Some(document);
         let detail = bounded_detail(&detail);
@@ -339,6 +340,7 @@ impl ChildConnection {
 
     fn shutdown(&mut self) -> Result<(), String> {
         self.retire_video();
+        self.retire_all_graph_pcm();
         self.document.take();
         self.incoming_document.take();
         self.writer

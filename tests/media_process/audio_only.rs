@@ -72,6 +72,10 @@ fn verify_playback(bytes: &[u8], codec: MediaCodecFamily) {
 
 #[test]
 fn pcm_wave_audio_only_play_pause_seek() {
+    verify_playback(&wave_audio_fixture(), MediaCodecFamily::Pcm);
+}
+
+fn wave_audio_fixture() -> Vec<u8> {
     let pcm = vec![0_u8; 44_100 * 2];
     let mut wave = Vec::with_capacity(pcm.len() + 44);
     wave.extend_from_slice(b"RIFF");
@@ -87,7 +91,54 @@ fn pcm_wave_audio_only_play_pause_seek() {
     wave.extend_from_slice(b"data");
     wave.extend_from_slice(&u32::try_from(pcm.len()).unwrap().to_le_bytes());
     wave.extend_from_slice(&pcm);
-    verify_playback(&wave, MediaCodecFamily::Pcm);
+    wave
+}
+
+#[test]
+fn graph_pcm_stream_coexists_with_decoded_audio_playback() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut options = decode_options();
+    options.silent_audio = true;
+    let mut session = MediaSession::launch(options).expect("launch hidden contained media worker");
+    let (source, _) = session
+        .decode_owned_audio_fixture(&wave_audio_fixture())
+        .expect("decode PCM wave fixture");
+    session
+        .set_owned_fixture_playback(source, true, 0)
+        .expect("start decoded audio playback");
+    let format = better_web_browser::media_protocol::GraphPcmFormat {
+        sample_rate: 48_000,
+        channels: 2,
+    };
+    assert!(
+        session
+            .queue_owned_graph_pcm_fixture(11, 13, format, vec![0; 512])
+            .expect("queue graph PCM")
+    );
+    assert!(
+        !session
+            .queue_owned_graph_pcm_fixture(11, 14, format, vec![0; 512])
+            .expect("reject competing graph context")
+    );
+    std::thread::sleep(Duration::from_millis(50));
+    let state = session
+        .owned_fixture_playback_state(source)
+        .expect("query decoded audio after graph PCM");
+    assert!(state.playing && state.position_100ns > 0, "{state:?}");
+    assert!(!session.close_owned_graph_pcm_fixture(12, 13).unwrap());
+    assert!(session.close_owned_graph_pcm_fixture(11, 13).unwrap());
+    assert!(
+        session
+            .queue_owned_graph_pcm_fixture(11, 14, format, vec![0; 512])
+            .expect("admit a new graph context after close")
+    );
+    let state = session
+        .owned_fixture_playback_state(source)
+        .expect("decoded playback remains after graph close");
+    assert!(state.playing && state.position_100ns > 0, "{state:?}");
+    session.shutdown().expect("clean media worker shutdown");
 }
 
 #[test]
