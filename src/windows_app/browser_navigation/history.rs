@@ -47,17 +47,38 @@ impl BrowserState {
         // HTML schedules traversal as a later task. All synchronous push/replaceState calls
         // in this renderer report must commit before any queued go/back/forward runs, even if
         // script called go() first and then pushed a new entry before yielding.
+        // An earlier report may already be waiting for queue space. New report tasks must
+        // join the tail instead of overtaking that deferred traversal.
+        let mut admission_blocked = !self.history_traversals.deferred.is_empty();
         for action in actions {
             if !self.navigation.owns_document(document) {
                 return true;
             }
-            if let HistoryAction::Traverse { delta } = action
-                && self.traverse_history(*delta) == TraversalResult::NewDocument
-            {
-                return true;
+            if let HistoryAction::Traverse { delta } = action {
+                if admission_blocked {
+                    self.defer_history_traversal(*delta);
+                    continue;
+                }
+                match self.traverse_history(*delta) {
+                    TraversalResult::NewDocument => return true,
+                    TraversalResult::AdmissionFailed => {
+                        // The renderer input queue is full. Keep this and later deltas in
+                        // report order; the input-drain path retries once it makes room.
+                        self.defer_history_traversal(*delta);
+                        admission_blocked = true;
+                    }
+                    TraversalResult::NoChange | TraversalResult::SameDocument => {}
+                }
             }
         }
         false
+    }
+
+    fn defer_history_traversal(&mut self, delta: i32) {
+        if !enqueue_deferred_traversal(&mut self.history_traversals, delta) {
+            self.incidents
+                .record("history", "deferred traversal queue is full");
+        }
     }
 
     unsafe fn apply_history_update(
@@ -123,12 +144,7 @@ impl BrowserState {
             if self.navigation.owns_document(document) {
                 // The next step is relative to the entry activated by the pending popstate.
                 // Do not resolve its target, or tear down the renderer, until that task ends.
-                if self.history_traversals.deferred.len() < MAX_PENDING_RENDERER_INPUTS {
-                    self.history_traversals.deferred.push_back(delta);
-                } else {
-                    self.incidents
-                        .record("history", "deferred traversal queue is full");
-                }
+                self.defer_history_traversal(delta);
                 return TraversalResult::NoChange;
             }
             self.history_traversals.clear();
@@ -239,6 +255,17 @@ fn history_target_index(index: usize, length: usize, delta: i32) -> Option<usize
     (target < length).then_some(target)
 }
 
+fn enqueue_deferred_traversal(
+    queue: &mut crate::windows_app::tab_state::HistoryTraversalQueue,
+    delta: i32,
+) -> bool {
+    if queue.deferred.len() >= MAX_PENDING_RENDERER_INPUTS {
+        return false;
+    }
+    queue.deferred.push_back(delta);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,5 +277,21 @@ mod tests {
         assert_eq!(history_target_index(2, 3, i32::MIN), None);
         assert_eq!(history_target_index(1, 3, -1), Some(0));
         assert_eq!(history_target_index(1, 3, 1), Some(2));
+    }
+
+    #[test]
+    fn admission_retry_preserves_report_order_and_stays_bounded() {
+        let mut queue = crate::windows_app::tab_state::HistoryTraversalQueue::default();
+        for delta in [-1, -1, 1] {
+            assert!(enqueue_deferred_traversal(&mut queue, delta));
+        }
+        assert_eq!(queue.deferred.into_iter().collect::<Vec<_>>(), [-1, -1, 1]);
+
+        let mut queue = crate::windows_app::tab_state::HistoryTraversalQueue::default();
+        for _ in 0..MAX_PENDING_RENDERER_INPUTS {
+            assert!(enqueue_deferred_traversal(&mut queue, -1));
+        }
+        assert!(!enqueue_deferred_traversal(&mut queue, 1));
+        assert_eq!(queue.deferred.len(), MAX_PENDING_RENDERER_INPUTS);
     }
 }
