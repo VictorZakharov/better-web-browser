@@ -186,6 +186,36 @@
     }
     class HTMLTemplateElement extends HTMLElement {
         get content() { return wrap(host('templateContent', nodeId(this))); }
+        get htmlFor() { return this.getAttribute('for') || ''; }
+        set htmlFor(value) { this.setAttribute('for', String(value)); }
+        get shadowRootMode() {
+            const value = (this.getAttribute('shadowrootmode') || '').toLowerCase();
+            return value === 'open' || value === 'closed' ? value : '';
+        }
+        set shadowRootMode(value) { this.setAttribute('shadowrootmode', String(value)); }
+        get shadowRootDelegatesFocus() { return this.hasAttribute('shadowrootdelegatesfocus'); }
+        set shadowRootDelegatesFocus(value) {
+            this.toggleAttribute('shadowrootdelegatesfocus', !!value);
+        }
+        get shadowRootSerializable() { return this.hasAttribute('shadowrootserializable'); }
+        set shadowRootSerializable(value) {
+            this.toggleAttribute('shadowrootserializable', !!value);
+        }
+        get shadowRootSlotAssignment() {
+            const value = (this.getAttribute('shadowrootslotassignment') || '').toLowerCase();
+            return value === 'manual' ? 'manual' : 'named';
+        }
+        set shadowRootSlotAssignment(value) {
+            this.setAttribute('shadowrootslotassignment', String(value));
+        }
+        get shadowRootClonable() { return this.hasAttribute('shadowrootclonable'); }
+        set shadowRootClonable(value) { this.toggleAttribute('shadowrootclonable', !!value); }
+        get shadowRootCustomElementRegistry() {
+            return this.getAttribute('shadowrootcustomelementregistry') || '';
+        }
+        set shadowRootCustomElementRegistry(value) {
+            this.setAttribute('shadowrootcustomelementregistry', String(value));
+        }
     }
     class HTMLFormElement extends HTMLElement {
         get elements() {

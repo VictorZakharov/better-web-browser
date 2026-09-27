@@ -7,6 +7,7 @@ pub(in crate::engine::script) struct DocumentRegistry {
     pub(in crate::engine::script) owner_documents: HashMap<NodeId, u64>,
     pub(in crate::engine::script) document_roots: HashMap<u64, std::rc::Weak<Node>>,
     pub(in crate::engine::script) html_documents: HashSet<u64>,
+    pub(in crate::engine::script) scoped_custom_element_documents: HashSet<u64>,
     pub(in crate::engine::script) document_metadata:
         HashMap<NodeId, super::super::dom_host::DocumentMetadata>,
     pub(in crate::engine::script) template_contents_documents: HashMap<u64, u64>,
@@ -24,6 +25,8 @@ impl DocumentRegistry {
         self.owner_documents
             .retain(|_, owner| !dead.contains(owner));
         self.html_documents.retain(|owner| !dead.contains(owner));
+        self.scoped_custom_element_documents
+            .retain(|owner| !dead.contains(owner));
         self.document_metadata
             .retain(|node, _| !dead.contains(&node.document()));
         self.template_contents_documents
@@ -38,6 +41,9 @@ impl HostState {
         shared.owner_documents.extend(old.owner_documents.drain());
         shared.document_roots.extend(old.document_roots.drain());
         shared.html_documents.extend(old.html_documents.drain());
+        shared
+            .scoped_custom_element_documents
+            .extend(old.scoped_custom_element_documents.drain());
         shared
             .document_metadata
             .extend(old.document_metadata.drain());

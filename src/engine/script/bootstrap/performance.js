@@ -1,7 +1,7 @@
 // Shared Window/Worker Performance Timeline. Continued by user_timing.js and performance_observer.js.
 (() => {
     'use strict';
-    const host = globalThis.__hostCall;
+    const host = __hostCall;
     const hooks = globalThis.__performanceHooks;
     delete globalThis.__performanceHooks;
     const serialize = globalThis.__serializeClone, deserialize = globalThis.__deserializeClone;

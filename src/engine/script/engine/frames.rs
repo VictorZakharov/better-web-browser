@@ -32,6 +32,7 @@ struct ChildRealm {
     navigation_epoch: u64,
     context: v8::Global<v8::Context>,
     _storage_dispatch: v8::Global<v8::Function>,
+    _private_hooks: HashMap<String, v8::Global<v8::Function>>,
     host: Rc<RefCell<HostState>>,
     parent_document: NodeId,
     parent_host: Weak<RefCell<HostState>>,
@@ -43,6 +44,7 @@ pub(super) type RealmSnapshot = (
     v8::Global<v8::Context>,
     Rc<RefCell<HostState>>,
     v8::Global<v8::Function>,
+    HashMap<String, v8::Global<v8::Function>>,
 );
 
 impl FrameTree {
@@ -108,6 +110,7 @@ impl FrameTree {
                     child.context.clone(),
                     Rc::clone(&child.host),
                     child._storage_dispatch.clone(),
+                    child._private_hooks.clone(),
                 )
             })
             .collect()

@@ -126,7 +126,7 @@ pub(super) fn execute_inner(
     // An async-only document still completes parsing before its first external script arrives.
     let finish_lifecycle =
         scripts.is_empty() || scripts.iter().any(|script| script.finish_lifecycle);
-    if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
+    if let Err(error) = context.call_global("__setCurrentScript", &[JsValue::from(0)]) {
         outcome
             .errors
             .push(format!("clear current script: {error}"));
@@ -263,7 +263,7 @@ pub(super) fn execute_additional_inner(
         );
     }
 
-    if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
+    if let Err(error) = context.call_global("__setCurrentScript", &[JsValue::from(0)]) {
         outcome
             .errors
             .push(format!("finish additional script task: {error}"));
@@ -335,10 +335,8 @@ pub(super) fn evaluate_script(
         );
     }
     let node_id = host.borrow_mut().id_for(&script.node);
-    let current_script = format!(
-        "(() => {{ const old = document.currentScript; document.__setCurrentScript({node_id}); if (document.currentScript.getRootNode() instanceof ShadowRoot) document.__setCurrentScript(0); return old ? old.__id : 0; }})()"
-    );
-    let previous_script = match context.eval(Source::from_bytes(&current_script)) {
+    let previous_script = match context.call_global("__setCurrentScript", &[JsValue::from(node_id)])
+    {
         Ok(value) => value.as_number().unwrap_or_default() as u32,
         Err(error) => {
             outcome.errors.push(format!(
@@ -387,8 +385,8 @@ pub(super) fn evaluate_script(
         ));
     }
 
-    let restore = format!("document.__setCurrentScript({previous_script});");
-    if let Err(error) = context.eval(Source::from_bytes(&restore)) {
+    if let Err(error) = context.call_global("__setCurrentScript", &[JsValue::from(previous_script)])
+    {
         outcome.errors.push(format!(
             "{}: clear current script: {error}",
             script.source_url

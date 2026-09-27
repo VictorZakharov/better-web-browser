@@ -82,6 +82,14 @@ impl ScriptRuntime {
         self.host.borrow().document_url.clone()
     }
 
+    pub(crate) fn focused_node_id(&self) -> Option<crate::engine::dom::NodeId> {
+        self.host
+            .borrow()
+            .focused_node
+            .as_ref()
+            .map(|node| node.id())
+    }
+
     pub fn new(document: NodeRef, document_url: &str) -> Self {
         Self::new_with_character_set(document, document_url, "UTF-8")
     }

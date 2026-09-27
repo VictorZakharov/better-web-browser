@@ -1,5 +1,14 @@
 use super::super::*;
 
+#[path = "shadow/has_slotted.rs"]
+mod has_slotted;
+#[path = "shadow/host_context.rs"]
+mod host_context;
+#[path = "shadow/parts.rs"]
+mod parts;
+#[path = "shadow/slotted.rs"]
+mod slotted;
+
 #[test]
 fn scopes_shadow_rules_and_inherits_through_slots_in_the_composed_tree() {
     let dom = dom::parse(
@@ -203,6 +212,120 @@ fn adopted_host_descendant_rules_match_the_owning_shadow_hosts_state() {
     let styles = StyleSet::from_dom(&dom, &[], 1000.0);
     assert_eq!(styles.get(&media[0]).position, Position::Absolute);
     assert_eq!(styles.get(&media[1]).position, Position::Relative);
+}
+
+#[test]
+fn host_child_rules_require_the_leftmost_target_to_be_a_shadow_root_child() {
+    let dom = dom::parse("<x-card class=active></x-card>");
+    let host = dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        r#"<style>
+          :host(.active) > .direct { color: red }
+          :host(.active) > .direct .leaf { font-size: 23px }
+          :host(.active) .descendant { color: blue }
+          :host(.inactive) > .direct { color: green }
+        </style>
+        <div class=direct id=first><span class=leaf id=first-leaf></span></div>
+        <section><div class=direct id=deep><span class=leaf id=deep-leaf></span>
+          <span class=descendant id=match></span></div></section>"#,
+        true,
+    );
+    let by_id = |id| Node::descendants(&root).find(|node| node.attr("id").as_deref() == Some(id));
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(
+        styles.get(&by_id("first").unwrap()).color,
+        Color::rgb(255, 0, 0)
+    );
+    assert_ne!(
+        styles.get(&by_id("deep").unwrap()).color,
+        Color::rgb(255, 0, 0)
+    );
+    assert_eq!(styles.get(&by_id("first-leaf").unwrap()).font_size, 23.0);
+    assert_ne!(styles.get(&by_id("deep-leaf").unwrap()).font_size, 23.0);
+    assert_eq!(
+        styles.get(&by_id("match").unwrap()).color,
+        Color::rgb(0, 0, 255)
+    );
+}
+
+#[test]
+fn host_argument_is_a_compound_and_ordinary_selectors_cannot_match_the_featureless_host() {
+    let dom = dom::parse("<main class=outer><x-card class=active></x-card></main>");
+    let host = dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        r#"<style>
+          :host { color: #123456 }
+          :HOST(.active) { color: #234567 }
+          :host(.outer > x-card) { color: red }
+          :host(.active).other { color: green }
+          x-card, .active { color: blue }
+        </style><slot></slot>"#,
+        true,
+    );
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&host).color, Color::rgb(0x23, 0x45, 0x67));
+}
+
+#[test]
+fn parser_created_declarative_root_applies_host_and_direct_child_rules() {
+    let dom = dom::parse(
+        r#"<div id=card class=active><template shadowrootmode=closed>
+          <style>:host(.active) { color: #123456 }
+            :host(.active) > .direct { font-size: 25px }</style>
+          <span class=direct id=first>first</span>
+          <section><span class=direct id=deep>deep</span></section>
+        </template></div>"#,
+    );
+    let host = dom.elements_named("div").next().unwrap();
+    let root = host.shadow_root().expect("parser attaches the closed root");
+    let by_id = |id| Node::descendants(&root).find(|node| node.attr("id").as_deref() == Some(id));
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&host).color, Color::rgb(0x12, 0x34, 0x56));
+    assert_eq!(styles.get(&by_id("first").unwrap()).font_size, 25.0);
+    assert_ne!(styles.get(&by_id("deep").unwrap()).font_size, 25.0);
+}
+
+#[test]
+fn host_text_inside_an_attribute_selector_is_not_a_shadow_pseudo_class() {
+    let dom = dom::parse("<x-card></x-card>");
+    let host = dom.elements_named("x-card").next().unwrap();
+    let root = Node::attach_shadow(
+        &host,
+        crate::engine::dom::ShadowRootMode::Open,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    Node::replace_inner_html(
+        &root,
+        r#"<style>[data-label=":host"] { color: red }</style>
+           <span data-label=":host">text</span>"#,
+        true,
+    );
+    let span = Node::descendants(&root)
+        .find(|node| node.tag_name() == Some("span"))
+        .unwrap();
+    let styles = StyleSet::from_dom(&dom, &[], 1000.0);
+    assert_eq!(styles.get(&span).color, Color::rgb(255, 0, 0));
 }
 
 #[test]

@@ -201,6 +201,10 @@ pub struct ElementData {
 pub struct ShadowRootData {
     pub(super) host: Weak<Node>,
     pub mode: ShadowRootMode,
+    pub declarative: Cell<bool>, // Parser-created until attachShadow() reuses it.
+    pub registry_is_global: Cell<bool>,
+    pub registry_is_null: Cell<bool>,
+    pub keep_registry_null: Cell<bool>,
     pub manual_slot_assignment: bool,
     pub delegates_focus: bool,
     pub serializable: bool,

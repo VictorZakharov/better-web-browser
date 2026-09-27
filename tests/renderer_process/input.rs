@@ -16,6 +16,8 @@ mod helpers;
 mod nested_scrolling;
 #[path = "input/scroll_composition.rs"]
 mod scroll_composition;
+#[path = "input/shadow_focus.rs"]
+mod shadow_focus;
 use helpers::*;
 
 #[test]

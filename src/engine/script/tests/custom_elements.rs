@@ -179,7 +179,8 @@ fn registry_validation_and_explicit_fragment_upgrade_are_bounded() {
             }), 'TypeError');
             expect('customized-built-in', () => customElements.define('x-built-in', class extends HTMLElement {},
                 { extends: 'button' }), 'NotSupportedError');
-            expect('foreign-document', () => customElements.upgrade(document), 'NotSupportedError');
+            expect('global-document-initialize', () => customElements.initialize(document), 'NotSupportedError');
+            customElements.upgrade(document);
             const scoped = new CustomElementRegistry();
             class ScopedElement extends HTMLElement {}
             scoped.define('x-scoped', ScopedElement);

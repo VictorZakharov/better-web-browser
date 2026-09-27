@@ -122,7 +122,7 @@ pub(super) fn create<'s>(
     let active = Rc::clone(&context.get_slot::<FrameLink>()?.active);
     let top_key = v8::String::new(scope, "top")?;
     let top = parent.global(scope).get(scope, top_key.into())?;
-    let storage_dispatch = {
+    let (storage_dispatch, private_hooks) = {
         let scope = &mut v8::ContextScope::new(scope, context);
         install_host_call(scope, context).ok()?;
         let element_key = v8::String::new(scope, "__frameElement")?;
@@ -149,6 +149,26 @@ pub(super) fn create<'s>(
             let ready = v8::String::new(scope, "__setDocumentComplete()")?;
             v8::Script::compile(scope, ready, None)?.run(scope)?;
         }
+        // Retain parser hooks privately too. A same-origin parent must not be
+        // able to pass guessed node IDs into a child realm's wrapper cache.
+        let mut private_hooks = HashMap::new();
+        for name in [
+            "__trackModulePromise",
+            "__parserDomChanged",
+            "__constructParserElement",
+            "__resumeDocumentStream",
+            "__setCurrentScript",
+            "__dispatchNodeEvent",
+            "__queuePolicyViolation",
+        ] {
+            let key = v8::String::new(scope, name)?;
+            let function = context.global(scope).get(scope, key.into())?;
+            let function = v8::Local::<v8::Function>::try_from(function).ok()?;
+            if context.global(scope).delete(scope, key.into()) != Some(true) {
+                return None;
+            }
+            private_hooks.insert(name.into(), v8::Global::new(scope, function));
+        }
         // Match top-level initialization: author code must not obtain the private trusted
         // StorageEvent dispatcher merely by accessing a same-origin child Window.
         let key = v8::String::new(scope, "__dispatchStorageEvent")?;
@@ -157,7 +177,7 @@ pub(super) fn create<'s>(
         if context.global(scope).delete(scope, key.into()) != Some(true) {
             return None;
         }
-        v8::Global::new(scope, function)
+        (v8::Global::new(scope, function), private_hooks)
     };
     // Install code-generation restrictions after trusted bootstrap initialization.
     context.set_allow_generation_from_strings(
@@ -171,6 +191,7 @@ pub(super) fn create<'s>(
         navigation_epoch: 0,
         context: v8::Global::new(scope, context),
         _storage_dispatch: storage_dispatch,
+        _private_hooks: private_hooks,
         host,
         parent_document,
         parent_host: Rc::downgrade(&parent_host),

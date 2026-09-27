@@ -9,7 +9,7 @@
         (element instanceof HTMLInputElement &&
             /^(text|search|tel|url|email|password)$/.test(element.type));
     const editorContext = () => {
-        const active = document.activeElement;
+        const active = focusedAreaForDocument(document) || document.activeElement;
         if (textControl(active)) return { control: active, host: active, range: null };
         const selection = documentSelection;
         const range = selection.rangeCount ? selection.getRangeAt(0) : null;

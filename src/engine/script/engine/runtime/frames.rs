@@ -138,7 +138,7 @@ impl Context {
         self.agent.borrow_mut().run(|isolate| {
             v8::scope!(let scope, isolate);
             let mut contexts = Vec::new();
-            for (id, context, host, storage_dispatch) in snapshots {
+            for (id, context, host, storage_dispatch, mut private_hooks) in snapshots {
                 if known.contains(&id) {
                     continue;
                 }
@@ -146,12 +146,10 @@ impl Context {
                 let imports = local
                     .get_slot::<super::super::dynamic_imports::Imports>()
                     .ok_or_else(|| allocation_error("child module registry"))?;
+                private_hooks.insert("__dispatchStorageEvent".into(), storage_dispatch);
                 let context = Box::new(Self {
                     context,
-                    private_hooks: HashMap::from([(
-                        "__dispatchStorageEvent".into(),
-                        storage_dispatch,
-                    )]),
+                    private_hooks,
                     imports,
                     _frames: Rc::clone(&self._frames),
                     next_module_promise: 1,

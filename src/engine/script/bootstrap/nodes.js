@@ -58,8 +58,10 @@
             ? wrap(host('templateContent', nodeId(element))) : element;
         const wasConnected = target.isConnected;
         const removedChildren = [...target.childNodes];
+        for (const child of removedChildren) captureRegistryTree(child);
         for (const child of removedChildren) iteratorPreRemove(child);
         host('innerHtmlSet', nodeId(element), value == null ? '' : String(value));
+        if (removedChildren.length) repairDetachedFocus();
         for (let index = removedChildren.length - 1; index >= 0; index--)
             rangeAfterRemovingNode(removedChildren[index], target, index);
         markChildCollectionsChanged(target);
@@ -78,7 +80,6 @@
             else if (!isTemplateContents) upgradeCustomElementTree(child);
         }
         if (wasConnected) refreshWindowNamedProperties(removedChildren.concat(addedChildren));
-        scheduleSlotChangeCheck();
         scriptChildrenChanged(target);
     };
 
@@ -121,6 +122,7 @@
             const removedChildren = characterData ? [] : [...this.childNodes];
             const nextText = value == null ? '' : String(value);
             const namedAccessChanged = this.isConnected && removedChildren.some(child => child.nodeType === 1);
+            for (const child of removedChildren) captureRegistryTree(child);
             for (const child of removedChildren) iteratorPreRemove(child);
             host('textSet', nodeId(this), nextText);
             if (characterData) {
@@ -130,7 +132,10 @@
                 for (let index = removedChildren.length - 1; index >= 0; index--)
                     rangeAfterRemovingNode(removedChildren[index], this, index);
             }
-            if (!characterData) markChildCollectionsChanged(this);
+            if (!characterData) {
+                if (removedChildren.length) repairDetachedFocus();
+                markChildCollectionsChanged(this);
+            }
             const addedChildren = characterData ? [] : [...this.childNodes];
             if (!characterData) rangeAfterInsertingNodes(this, 0, addedChildren.length);
             if (characterData) queueMutationRecord(this, 'characterData', { oldValue });
@@ -140,7 +145,6 @@
             });
             if (this.isConnected) for (const child of removedChildren) disconnectElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(removedChildren);
-            scheduleSlotChangeCheck();
             scriptChildrenChanged(characterData ? this.parentNode : this);
         }
         get isConnected() {
@@ -150,6 +154,10 @@
             if (!(isNode(child))) throw new TypeError('appendChild requires a Node');
             ensurePreInsertionValidity(child, this);
             const records = insertionRecords(child);
+            const targetDocument = this instanceof Document ? this : this.ownerDocument;
+            for (const record of records)
+                if (record.oldParent || record.oldDocument !== targetDocument)
+                    captureRegistryTree(record.node);
             for (const record of records) if (record.oldParent) iteratorPreRemove(record.node);
             let insertionIndex = this.childNodes.length;
             insertionIndex -= records.filter(record => record.oldParent === this).length;
@@ -159,11 +167,13 @@
                 rangeAfterRemovingRecords(records);
                 rangeAfterInsertingNodes(this, insertionIndex, nodes.length);
             }
-            if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
-                records.map(record => record.oldParent));
+            if (inserted) {
+                if (records.some(record => record.oldParent)) repairDetachedFocus();
+                markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
+                    records.map(record => record.oldParent));
+            }
             if (inserted) queueInsertionMutationRecords(this, child, records);
             if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
-            if (inserted) scheduleSlotChangeCheck();
             if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }
@@ -172,6 +182,10 @@
             if (reference != null && !(isNode(reference))) throw new TypeError('reference must be a Node');
             ensurePreInsertionValidity(child, this, reference);
             const records = insertionRecords(child);
+            const targetDocument = this instanceof Document ? this : this.ownerDocument;
+            for (const record of records)
+                if (record.oldParent || record.oldDocument !== targetDocument)
+                    captureRegistryTree(record.node);
             for (const record of records) if (record.oldParent && child !== reference)
                 iteratorPreRemove(record.node);
             let insertionIndex = reference ? Array.from(this.childNodes).indexOf(reference) :
@@ -185,11 +199,13 @@
                 rangeAfterRemovingRecords(records);
                 rangeAfterInsertingNodes(this, insertionIndex, nodes.length);
             }
-            if (inserted) markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
-                records.map(record => record.oldParent));
+            if (inserted) {
+                if (records.some(record => record.oldParent)) repairDetachedFocus();
+                markChildCollectionsChanged(this, child.nodeType === 11 ? child : null,
+                    records.map(record => record.oldParent));
+            }
             if (inserted) queueInsertionMutationRecords(this, child, records);
             if (inserted && this.isConnected) refreshWindowNamedProperties(nodes);
-            if (inserted) scheduleSlotChangeCheck();
             if (inserted) finishInsertion(this, records);
             return inserted ? child : null;
         }
@@ -225,8 +241,12 @@
             const previousSibling = isNode(child) ? child.previousSibling : null;
             const nextSibling = isNode(child) ? child.nextSibling : null;
             const removedIndex = isNode(child) ? Array.from(this.childNodes).indexOf(child) : -1;
-            if (removedIndex >= 0) iteratorPreRemove(child);
+            if (removedIndex >= 0) {
+                captureRegistryTree(child);
+                iteratorPreRemove(child);
+            }
             if (!(isNode(child)) || !host('removeChild', nodeId(this), nodeId(child))) throw new Error('node is not a child');
+            repairDetachedFocus();
             rangeAfterRemovingNode(child, this, removedIndex);
             markChildCollectionsChanged(this);
             queueMutationRecord(this, 'childList', {
@@ -234,7 +254,6 @@
             });
             if (wasConnected) disconnectElementTree(child);
             if (namedAccessChanged) refreshWindowNamedProperties(child);
-            scheduleSlotChangeCheck();
             scriptChildrenChanged(this);
             return child;
         }
@@ -247,7 +266,10 @@
         isSameNode(other = null) { return compareNodes(this, other, true); }
         getRootNode(options = {}) { return wrap(host('rootNode', nodeId(this), !!Object(options).composed)); }
         cloneNode(deep = false) {
+            if (this instanceof ShadowRoot)
+                throw new DOMException('Shadow roots cannot be cloned directly', 'NotSupportedError');
             const clone = wrap(host('cloneNode', nodeId(this), !!deep));
+            transferClonedRegistries(this, clone, clone instanceof Document ? clone : clone.ownerDocument);
             upgradeCustomElementTree(clone);
             return clone;
         }

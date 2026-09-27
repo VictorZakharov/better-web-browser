@@ -5,6 +5,20 @@
         return 'data-' + property.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase());
     };
     class DOMStringMap {}
+    // HTML's integer parser accepts an initial signed decimal run; trailing
+    // non-digits do not invalidate the parsed tabindex value.
+    // https://html.spec.whatwg.org/multipage/interaction.html#attr-tabindex
+    const parsedTabindex = element => {
+        const raw = element.getAttribute('tabindex');
+        if (raw === null) return null;
+        const match = /^[\t\n\f\r ]*([+-]?\d+)/.exec(raw);
+        return match ? Number(match[1]) : null;
+    };
+    const isSummaryForParentDetails = element => {
+        const parent = element.parentElement;
+        return parent?.localName === 'details' &&
+            [...parent.children].find(child => child.localName === 'summary') === element;
+    };
     const datasetFor = element => new Proxy(new DOMStringMap(), {
         get(target, property, receiver) {
             if (typeof property !== 'string' || property in target) return Reflect.get(target, property, receiver);
@@ -39,6 +53,16 @@
             super(id, ...metadata);
         }
         get dataset() { return this.__dataset ||= datasetFor(this); }
+        get tabIndex() {
+            const value = parsedTabindex(this);
+            if (value !== null && value >= -2147483648 && value <= 2147483647)
+                return value;
+            if (['a', 'area', 'button', 'frame', 'iframe', 'input', 'object',
+                'select', 'textarea'].includes(this.localName)) return 0;
+            if (this.localName === 'summary' && isSummaryForParentDetails(this)) return 0;
+            return -1;
+        }
+        set tabIndex(value) { this.setAttribute('tabindex', String((+value) | 0)); }
         get title() { return this.getAttribute('title') || ''; }
         set title(value) { this.setAttribute('title', String(value)); }
         get draggable() {

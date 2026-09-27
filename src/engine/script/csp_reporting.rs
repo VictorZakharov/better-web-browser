@@ -76,8 +76,10 @@ pub(super) fn queue_script_violation(
             "sample": sample,
             "disposition": "enforce",
         });
-        let dispatch = format!("document.__queuePolicyViolation({node_id}, {init});");
-        if let Err(error) = context.eval(Source::from_bytes(&dispatch)) {
+        if let Err(error) = context.call_global(
+            "__queuePolicyViolation",
+            &[JsValue::from(node_id), JsValue::from(init.to_string())],
+        ) {
             outcome.errors.push(format!(
                 "{}: queue CSP violation event: {error}",
                 script.source_url

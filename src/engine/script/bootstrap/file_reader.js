@@ -5,7 +5,7 @@
     delete globalThis.__fileReaderSnapshot;
     const schedule = globalThis.setTimeout, cancel = globalThis.clearTimeout;
     const trusted = globalThis.__markTrustedEvent, Progress = globalThis.ProgressEvent;
-    const host = globalThis.__hostCall, Exception = globalThis.DOMException;
+    const host = __hostCall, Exception = globalThis.DOMException;
     const dispatch = EventTarget.prototype.dispatchEvent;
     const add = EventTarget.prototype.addEventListener, remove = EventTarget.prototype.removeEventListener;
     const states = new WeakMap();

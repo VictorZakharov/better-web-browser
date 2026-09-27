@@ -35,7 +35,8 @@ The normal page surface is always the default. **Reader** is an explicit optiona
 
 Current page support includes:
 
-- HTML5 tree construction with an engine-owned DOM
+- HTML5 tree construction with an engine-owned DOM, including [declarative Shadow DOM parsing](docs/declarative-shadow-dom.md)
+- [Scoped custom-element registries](docs/scoped-custom-elements.md), shadow-root serialization, slot-change delivery, focus retargeting, and selected CSS shadow selectors and part forwarding
 - [Live DOM collection iteration and supported CSSOM property exposure](docs/collections-and-capabilities.md), with mutation-aware iterators and authored capability fallbacks
 - [Detached HTML/XML DOMParser documents](docs/detached-document-parsing.md), inert parsing, namespace-aware XML nodes, and shared XHR document-response parsing
 - [URL and native request resolution](docs/url-request-resolution.md), explicit public bases, live query parameters, and requests independent of author URL replacements

@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn discovers_scripts_in_declarative_roots_but_not_ordinary_templates() {
+    let page = Page::parse_scripted(
+        r#"<body><div><template shadowrootmode=open>
+            <script>document.title='shadow';</script>
+            <script src=/shadow.js></script>
+        </template></div>
+        <template><script>document.title='inert';</script></template>"#,
+        "https://example.com/",
+    );
+    assert_eq!(page.scripts.len(), 2);
+    assert!(
+        page.scripts
+            .iter()
+            .all(|script| Node::tree_root(&script.node).shadow_host().is_some())
+    );
+    assert!(page.resources.iter().any(|resource| matches!(
+        resource,
+        PageResource::Script { url, .. } if url == "https://example.com/shadow.js"
+    )));
+}
+
+#[test]
 fn discovers_external_scripts_and_executes_dom_mutations() {
     let mut page = Page::parse_scripted(
         r#"<body><main id="app"></main><script src="/library.js"></script>

@@ -63,6 +63,46 @@ fn network_custom_elements_run_before_their_child_tokens() {
 }
 
 #[test]
+fn scoped_declarative_shadow_definition_constructs_before_parser_insertion() {
+    let report = run(r#"<!doctype html><body><script>
+        window.order=[];
+        window.scoped=new CustomElementRegistry();
+        window.scoped.define('x-stream-scope',class extends HTMLElement {
+          static observedAttributes=['id','data-value'];
+          constructor(){super();window.order.push(['construct',this.attributes.length,
+            this.parentNode===null,this.childNodes.length]);}
+          attributeChangedCallback(name){window.order.push(['attribute',name,this.isConnected]);}
+          connectedCallback(){window.order.push(['connect',this.id,this.childNodes.length]);}
+        });
+        document.write('<div id=host><template shadowrootmode=open shadowrootcustomelementregistry>');
+        window.scoped.initialize(document.getElementById('host').shadowRoot);
+        document.write('<x-stream-scope id=scoped data-value=ready><b>child</b></x-stream-scope></template></div>');
+        document.write('<x-stream-scope id=outside></x-stream-scope>');
+        document.write('<div id=null-host><template shadowrootmode=open shadowrootcustomelementregistry><x-stream-scope id=uninitialized></x-stream-scope></template></div>');
+        const scopedNode=document.getElementById('host').shadowRoot.querySelector('x-stream-scope');
+        const outside=document.getElementById('outside');
+        const uninitialized=document.getElementById('null-host').shadowRoot.firstElementChild;
+        const before=JSON.stringify(window.order)===JSON.stringify([
+          ['construct',0,true,0],['attribute','id',false],
+          ['attribute','data-value',false],['connect','scoped',0]]) &&
+          scopedNode.customElementRegistry===window.scoped &&
+          outside.customElementRegistry===customElements &&
+          uninitialized.customElementRegistry===null;
+        window.globalConstructed=0;
+        customElements.define('x-stream-scope',class extends HTMLElement {
+          constructor(){super();window.globalConstructed++;}
+        });
+        document.title=JSON.stringify([before,window.globalConstructed,
+          scopedNode instanceof window.scoped.get('x-stream-scope'),
+          document.getElementById('host').shadowRoot.customElementRegistry===window.scoped]);
+      </script>"#);
+    assert_eq!(
+        report["titles"]["document_title"], "[true,1,true,true]",
+        "{report}"
+    );
+}
+
+#[test]
 fn parser_attribute_reactions_reject_dynamic_markup_and_templates_stay_inert() {
     let report = run(r#"<!doctype html><body><script>
       window.order=[];

@@ -1,14 +1,6 @@
 //! CSS Nesting Level 1: ordered declarations and nested style/group rules.
+use super::style_selectors::{StyleSelector, parse_style_selectors};
 use super::*;
-use crate::engine::css::selector_parser::parse_style_rule_selector_with_parent;
-
-#[derive(Clone)]
-pub(super) struct StyleSelector {
-    selector: Selector,
-    pseudo: Option<PseudoElement>,
-    host_condition: Option<Selector>,
-    scope: RuleScope,
-}
 
 pub(super) struct Context<'a> {
     pub(super) base_url: &'a str,
@@ -56,96 +48,6 @@ pub(super) fn parse_style_rule(
         return;
     };
     parse_style_contents(body, depth, layer, &selectors, true, context);
-}
-
-fn parse_style_selectors(
-    prelude: &str,
-    parent: Option<&[StyleSelector]>,
-    scope: RuleScope,
-    is_css_scoped: bool,
-) -> Option<Vec<StyleSelector>> {
-    let parent_selectors = parent.map(|parents| {
-        parents
-            .iter()
-            .filter(|parent| parent.pseudo.is_none())
-            .map(|parent| parent.selector.clone())
-            .collect::<Vec<_>>()
-    });
-    let parent_specificity = parent.and_then(|parents| {
-        parents
-            .iter()
-            .map(|parent| parent.selector.specificity)
-            .max()
-    });
-    let mut selectors = Vec::new();
-    for member in split_css_top_level(prelude, ',') {
-        let member = member.trim();
-        if member.is_empty() {
-            return None;
-        }
-        if let Some(parents) = parent {
-            // Nested selectors in host/slotted rules require a composed-tree selector model.
-            // Keep their declarations, but do not leak unsupported nested rules across roots.
-            if parents
-                .iter()
-                .any(|parent| matches!(parent.scope, RuleScope::Host(_) | RuleScope::Slotted(_)))
-            {
-                return None;
-            }
-            let (selector, pseudo) = parse_style_rule_selector_with_parent(
-                member,
-                parent_selectors.as_deref(),
-                parent_specificity,
-            )?;
-            selectors.push(StyleSelector {
-                selector,
-                pseudo,
-                host_condition: None,
-                scope,
-            });
-        } else {
-            let (source, rule_scope, host_condition) = scoped_selector(member, scope)?;
-            let scoped_source = is_css_scoped.then(|| scope::scoped_selector_source(source));
-            let source = scoped_source.as_deref().unwrap_or(source);
-            let host_condition = host_condition.map(parse_selector).transpose_option()?;
-            let (mut selector, pseudo) = parse_style_rule_selector(source)?;
-            if let Some(condition) = host_condition.as_ref() {
-                selector.specificity.ids = selector
-                    .specificity
-                    .ids
-                    .saturating_add(condition.specificity.ids);
-                selector.specificity.classes = selector
-                    .specificity
-                    .classes
-                    .saturating_add(condition.specificity.classes);
-                selector.specificity.tags = selector
-                    .specificity
-                    .tags
-                    .saturating_add(condition.specificity.tags);
-            }
-            selectors.push(StyleSelector {
-                selector,
-                pseudo,
-                host_condition,
-                scope: rule_scope,
-            });
-        }
-    }
-    (!selectors.is_empty()).then_some(selectors)
-}
-
-trait TransposeOption<T> {
-    fn transpose_option(self) -> Option<Option<T>>;
-}
-
-impl<T> TransposeOption<T> for Option<Option<T>> {
-    fn transpose_option(self) -> Option<Option<T>> {
-        match self {
-            Some(Some(value)) => Some(Some(value)),
-            Some(None) => None,
-            None => Some(None),
-        }
-    }
 }
 
 fn parse_style_contents(
@@ -279,6 +181,10 @@ fn emit_rules(
                 selector: parsed.selector.clone(),
                 pseudo: parsed.pseudo,
                 host_condition: parsed.host_condition.clone(),
+                host_context: parsed.host_context,
+                slotted_origin: parsed.slotted_origin.clone(),
+                slotted_host_child: parsed.slotted_host_child,
+                part: parsed.part.clone(),
                 declarations: declarations.clone(),
                 base_url: context.base_url.to_string(),
                 scope: parsed.scope,
@@ -308,6 +214,10 @@ pub(super) fn emit_scoped_declarations(
             selector,
             pseudo: None,
             host_condition: None,
+            host_context: false,
+            slotted_origin: None,
+            slotted_host_child: false,
+            part: None,
             scope: context.scope,
         }],
         declarations,

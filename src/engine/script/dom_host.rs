@@ -7,7 +7,7 @@ mod equality;
 mod metadata;
 mod named;
 mod parsing;
-use construction::{create_document, create_html_document, subtree_size};
+use construction::{clone_size, create_document, create_html_document, subtree_size};
 use metadata::{element_qualified_name, node_metadata, node_name, node_type};
 pub(super) use named::NamedPropertyIndex;
 use named::{named_property_candidates, named_property_names, named_property_nodes};
@@ -73,6 +73,10 @@ pub(super) fn dom_host_call(
                 response_url.as_deref(),
             )?)
         }
+        "parseHtmlUnsafeDocument" => JsValue::from(parsing::parse_html_unsafe_document(
+            state,
+            &argument_string(args, 1)?,
+        )?),
         "documentContentType" => js_string(state.node(argument_id(args, 1)).map_or_else(
             || "text/html".to_string(),
             |node| {
@@ -222,14 +226,16 @@ pub(super) fn dom_host_call(
             )
         }
         "cloneNode" => {
-            let source = state.node(argument_id(args, 1));
+            let source = state
+                .node(argument_id(args, 1))
+                .filter(|node| !matches!(node.data, NodeData::ShadowRoot(_)));
             let deep = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
             if let Some(source) = source.as_ref() {
                 let is_document = state
                     .document_for(source)
                     .is_some_and(|owner| owner.id() == source.id());
                 state.ensure_node_capacity(
-                    (if deep { subtree_size(source) } else { 1 }) + usize::from(is_document),
+                    clone_size(source, deep).saturating_add(usize::from(is_document)),
                 )?;
             }
             let clone = source.map(|source| {
@@ -266,10 +272,12 @@ pub(super) fn dom_host_call(
         }
         "importNode" => {
             let owner = state.node(argument_id(args, 1));
-            let source = state.node(argument_id(args, 2));
+            let source = state
+                .node(argument_id(args, 2))
+                .filter(|node| !matches!(node.data, NodeData::ShadowRoot(_)));
             let deep = args.get(3).and_then(JsValue::as_boolean).unwrap_or(false);
             if let Some(source) = source.as_ref() {
-                state.ensure_node_capacity(if deep { subtree_size(source) } else { 1 })?;
+                state.ensure_node_capacity(clone_size(source, deep))?;
             }
             let clone = owner.zip(source).and_then(|(owner, source)| {
                 if matches!(source.data, NodeData::Document)

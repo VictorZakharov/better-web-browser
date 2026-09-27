@@ -1,6 +1,6 @@
 (() => {
     'use strict';
-    const host = globalThis.__hostCall;
+    const host = __hostCall;
     const NativeTypeError = TypeError, NativeDOMException = DOMException, Bytes = Uint8Array;
     // Use internal-slot getters, not author-controlled properties, constructors or tags.
     const typed = Object.getPrototypeOf(Bytes.prototype);

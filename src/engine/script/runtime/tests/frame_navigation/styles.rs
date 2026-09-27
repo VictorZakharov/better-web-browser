@@ -106,7 +106,7 @@ fn fetch_identifiers_cannot_be_used_to_abort_another_document_request() {
     let result = evaluate(
         &mut runtime,
         &dom,
-        "f.contentWindow.eval('__hostCall(\"fetchAbort\",1);__hostCall(\"fetchConsumed\",1,300)');",
+        "f.contentWindow.eval('if (\"__hostCall\" in globalThis) throw Error(\"bridge was public\"); try { __hostCall(\"fetchAbort\",1); throw Error(\"bridge was callable\"); } catch (error) { if (error.name !== \"ReferenceError\") throw error; }');",
     );
     assert!(
         result.fetch_actions.is_empty(),

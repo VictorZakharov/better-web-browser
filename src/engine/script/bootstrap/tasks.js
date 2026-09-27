@@ -194,15 +194,33 @@
             mutationObserverMicrotaskQueued = false;
             const notify = [...pendingMutationObservers];
             pendingMutationObservers.clear();
+            const signalSet = [...signalSlots];
+            signalSlots.clear();
             for (const observer of notify) {
                 const records = observer.takeRecords();
                 if (!records.length) continue;
                 try { observer.callback.call(observer, records, observer); }
                 catch (error) { reportGlobalException(error); }
             }
+            // https://dom.spec.whatwg.org/#notify-mutation-observers
+            // DOM's signal-slot set is cloned before observers run and delivered
+            // after their callbacks. Changes made by a callback belong to the
+            // next mutation-observer microtask, not this delivery batch.
+            for (const slot of signalSet) {
+                // Match other engine-generated events. The current trusted-event
+                // marker is author-accessible, so this is not a security boundary.
+                try { applyNative(nativeEventDispatch, slot,
+                    [markTrusted(new Event('slotchange', { bubbles: true }))]); }
+                catch (error) { reportGlobalException(error); }
+            }
         });
     };
+    queueSignalSlotsMicrotask = queueMutationObserverMicrotask;
+    if (signalSlots.size) queueMutationObserverMicrotask();
     const queueMutationRecord = (target, type, details = {}, ancestors = null) => {
+        // Assignment changes signal slots even when nobody observes mutations.
+        // Check synchronously so change-then-restore in one task is still signaled.
+        scheduleSlotChangeCheck(target, type, details);
         if (!mutationRegistrationCount || suppressedMutationRecordTargets.has(target)) return;
         const interested = new Map();
         for (const node of ancestors || mutationAncestors(target)) {

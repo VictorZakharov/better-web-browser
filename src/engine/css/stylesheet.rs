@@ -12,11 +12,21 @@ use crate::limits::{
 use std::rc::Rc;
 mod declarations;
 mod nesting;
+mod part_selectors;
 mod scope;
+mod shadow_selectors;
+mod style_selectors;
 pub(super) use declarations::parse_declarations;
 pub(super) use scope::CssScope;
 pub(crate) use scope::import_scope_prelude;
 pub(crate) use scope::scope_boundary_text;
+use shadow_selectors::scoped_selector;
+
+#[derive(Clone, Debug)]
+pub(super) struct PartSelector {
+    pub(super) origin: Selector,
+    pub(super) names: Vec<String>,
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct Rule {
@@ -32,6 +42,10 @@ pub(super) struct RuleData {
     pub(super) selector: Selector,
     pub(super) pseudo: Option<PseudoElement>,
     pub(super) host_condition: Option<Selector>,
+    pub(super) host_context: bool,
+    pub(super) slotted_origin: Option<Selector>,
+    pub(super) slotted_host_child: bool,
+    pub(super) part: Option<PartSelector>,
     pub(super) declarations: Vec<Declaration>,
     pub(super) base_url: String,
     pub(super) scope: RuleScope,
@@ -51,6 +65,7 @@ pub(super) enum RuleScope {
     Document,
     Shadow(NodeId),
     Host(NodeId),
+    HostChild(NodeId),
     Slotted(NodeId),
 }
 
@@ -333,52 +348,6 @@ fn parse_rule_list(
         }
         cursor = close + 1;
     }
-}
-
-fn scoped_selector(selector: &str, scope: RuleScope) -> Option<(&str, RuleScope, Option<&str>)> {
-    let RuleScope::Shadow(root) = scope else {
-        return Some((selector, scope, None));
-    };
-    if selector == ":host" {
-        return Some(("*", RuleScope::Host(root), None));
-    }
-    if let Some(condition) = selector
-        .strip_prefix(":host(")
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        return Some((condition.trim(), RuleScope::Host(root), None));
-    }
-    if let Some(slotted) = selector
-        .strip_prefix("::slotted(")
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        return Some((slotted.trim(), RuleScope::Slotted(root), None));
-    }
-    if let Some((condition, descendant)) = split_host_descendant(selector) {
-        return Some((descendant, RuleScope::Shadow(root), Some(condition)));
-    }
-    // Complex :host/::slotted selectors need selector-tree boundary representation. Ignoring
-    // them is safer than leaking a shadow rule into the document tree.
-    if selector.contains(":host") || selector.contains("::slotted") {
-        return None;
-    }
-    Some((selector, scope, None))
-}
-
-fn split_host_descendant(selector: &str) -> Option<(&str, &str)> {
-    let after_host = selector.strip_prefix(":host")?;
-    let (condition, remainder) = if after_host.starts_with('(') {
-        let open = selector.len() - after_host.len();
-        let close = find_matching_parenthesis(selector, open)?;
-        (&selector[open + 1..close], &selector[close + 1..])
-    } else {
-        ("*", after_host)
-    };
-    let descendant = remainder.trim_start();
-    if descendant.is_empty() || descendant.starts_with(['>', '+', '~']) {
-        return None;
-    }
-    Some((condition.trim(), descendant))
 }
 
 pub(super) fn strip_comments(css: &str) -> String {

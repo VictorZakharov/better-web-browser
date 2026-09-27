@@ -20,7 +20,8 @@
         }
         if (target.defaultView) erase(target.defaultView);
         documentReadiness.set(target, 'loading');
-        target.activeElement = null;
+        repairDetachedFocus();
+        setFocusedAreaForDocument(target, null);
         markChildCollectionsChanged(target);
         if (removed.length) queueMutationRecord(target, 'childList', { removedNodes: removed });
         refreshWindowNamedProperties();

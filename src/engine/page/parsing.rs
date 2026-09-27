@@ -55,11 +55,13 @@ impl Page {
         node: NodeRef,
         ordinal: usize,
     ) -> Option<PageScript> {
+        // A script in a connected declarative shadow root is connected through its host.
+        // Ordinary template contents have a different shadow-including root and stay inert.
         if ordinal > crate::limits::MAX_PAGE_SCRIPTS
             || node
                 .element()
                 .is_none_or(|element| element.script_started.get())
-            || !Node::descendants(&self.dom.document).any(|candidate| candidate.id() == node.id())
+            || Node::shadow_including_root(&node).id() != self.dom.document.id()
         {
             return None;
         }

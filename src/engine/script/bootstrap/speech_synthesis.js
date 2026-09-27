@@ -2,7 +2,7 @@
 // https://wicg.github.io/speech-api/#tts-section
 (() => {
     'use strict';
-    const native = globalThis.__hostCall;
+    const native = __hostCall;
     const trusted = globalThis.__markTrustedEvent || (event => event);
     const pending = new Map();
     let voices = [];

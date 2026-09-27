@@ -26,6 +26,7 @@ mod dynamic_scripts;
 pub(crate) mod engine;
 mod execution;
 mod fullscreen_host;
+mod get_html_host;
 mod history_host;
 mod host_call;
 mod host_profiling;
