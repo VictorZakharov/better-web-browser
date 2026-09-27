@@ -56,6 +56,53 @@ fn target_and_curve_automation_use_continuous_sample_values() {
 }
 
 #[test]
+fn value_curve_reaches_its_endpoint_before_a_following_ramp() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(1, 128, 8000);
+        const source = context.createConstantSource();
+        source.offset.setValueCurveAtTime([0, 1], 0, 4 / 8000);
+        source.offset.linearRampToValueAtTime(0, 8 / 8000);
+        source.connect(context.destination);
+        source.start();
+        context.startRendering().then(buffer => {
+            const samples = buffer.getChannelData(0);
+            const near = (frame, expected) =>
+                Math.abs(samples[frame] - expected) < 0.00001;
+            if (!near(0, 0) || !near(2, 0.5) || !near(4, 1) ||
+                !near(6, 0.5) || !near(8, 0))
+                throw Error('curve endpoint was not the following ramp anchor');
+            console.log('curve-to-ramp anchor passed');
+        });
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.console, ["log: curve-to-ramp anchor passed"]);
+}
+
+#[test]
+fn zero_target_time_constant_jumps_to_target() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(1, 128, 8000);
+        const source = context.createConstantSource();
+        source.offset.setTargetAtTime(0, 2 / 8000, 0);
+        source.connect(context.destination);
+        source.start();
+        context.startRendering().then(buffer => {
+            const samples = buffer.getChannelData(0);
+            if (samples[0] !== 1 || samples[1] !== 1 ||
+                samples[2] !== 0 || samples[3] !== 0)
+                throw Error('zero time constant did not jump at the target time');
+            console.log('zero target time constant passed');
+        });
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.console, ["log: zero target time constant passed"]);
+}
+
+#[test]
 fn cancel_and_hold_keeps_partial_ramp_and_curve_shaping() {
     let (_, outcome) = execute_html(
         r#"<body><script>

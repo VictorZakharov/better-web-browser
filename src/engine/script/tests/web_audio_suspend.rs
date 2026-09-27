@@ -55,3 +55,66 @@ fn offline_suspension_rejects_duplicate_and_out_of_range_times() {
         ["log: offline suspension validation passed"]
     );
 }
+
+#[test]
+fn automation_scheduled_in_the_past_anchors_at_current_render_time() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(1, 512, 8000);
+        const source = context.createConstantSource();
+        source.offset.value = 0;
+        source.connect(context.destination);
+        source.start();
+        const paused = context.suspend(128 / 8000);
+        const rendering = context.startRendering();
+        paused.then(() => {
+            source.offset.setValueAtTime(0, 0);
+            source.offset.linearRampToValueAtTime(1, 384 / 8000);
+            return context.resume();
+        });
+        rendering.then(buffer => {
+            const samples = buffer.getChannelData(0);
+            if (Math.abs(samples[256] - 0.5) > 0.00001 ||
+                Math.abs(samples[384] - 1) > 0.00001)
+                throw Error('past automation used an old ramp anchor');
+            console.log('past automation time clamped passed');
+        });
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        outcome.console,
+        ["log: past automation time clamped passed"]
+    );
+}
+
+#[test]
+fn cancellation_in_the_past_keeps_events_before_current_render_time() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(1, 512, 8000);
+        const source = context.createConstantSource();
+        source.offset.setValueAtTime(2, 0);
+        source.offset.setValueAtTime(3, 384 / 8000);
+        source.connect(context.destination);
+        source.start();
+        const paused = context.suspend(128 / 8000);
+        const rendering = context.startRendering();
+        paused.then(() => {
+            source.offset.cancelScheduledValues(0);
+            return context.resume();
+        });
+        rendering.then(buffer => {
+            const samples = buffer.getChannelData(0);
+            if (samples[256] !== 2 || samples[384] !== 2)
+                throw Error('past cancellation removed a completed event');
+            console.log('past cancellation time clamped passed');
+        });
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        outcome.console,
+        ["log: past cancellation time clamped passed"]
+    );
+}

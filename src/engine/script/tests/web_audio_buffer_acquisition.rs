@@ -62,6 +62,37 @@ fn buffer_assignment_after_start_acquires_at_assignment() {
 }
 
 #[test]
+fn bufferless_source_cannot_restart_when_buffer_is_assigned_after_it_ends() {
+    let (_, outcome) = execute_html(
+        r#"<body><script>
+        const context = new OfflineAudioContext(1, 256, 8000);
+        const source = context.createBufferSource();
+        source.connect(context.destination);
+        source.start(0);
+        const paused = context.suspend(128 / 8000);
+        const rendering = context.startRendering();
+        paused.then(() => {
+            const buffer = context.createBuffer(1, 128, 8000);
+            buffer.getChannelData(0).fill(0.5);
+            source.buffer = buffer;
+            return context.resume();
+        });
+        rendering.then(result => {
+            const samples = result.getChannelData(0);
+            console.log(samples.every(sample => sample === 0) ?
+                'ended bufferless source stayed silent' :
+                'ended bufferless source restarted');
+        });
+    </script>"#,
+    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        outcome.console,
+        ["log: ended bufferless source stayed silent"]
+    );
+}
+
+#[test]
 fn snapshot_budget_failure_does_not_schedule_the_source() {
     let (_, outcome) = execute_html(
         r#"<body><script>

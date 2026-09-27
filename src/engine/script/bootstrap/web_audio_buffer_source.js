@@ -71,11 +71,14 @@
             if (value !== null && state.bufferSet)
                 throw new DOMException('AudioBufferSourceNode buffer was already set',
                     'InvalidStateError');
-            if (value !== null && audioScheduledState.get(this).start !== null) {
+            const schedule = audioScheduledState.get(this);
+            if (value !== null && schedule.start !== null) {
                 acquireBufferSourceContent(this, value);
                 state.position = Math.min(state.offset, value.duration) * value.sampleRate;
+                // The setter acquires content after start, but a finished source cannot use it.
+                if (schedule.ended) releaseBufferSourceContent(this);
             }
-            if (value === null && audioScheduledState.get(this).start !== null)
+            if (value === null && schedule.start !== null)
                 releaseBufferSourceContent(this);
             if (value !== null) state.bufferSet = true;
             state.buffer = value;
@@ -115,7 +118,8 @@
         const schedule = audioScheduledState.get(node);
         const buffer = state.acquired;
         const output = silence(buffer?.numberOfChannels || 1, frames);
-        if (schedule.start === null) return output;
+        // §1.9.6 ends processing after a null buffer stops; late assignment cannot restart it.
+        if (schedule.start === null || schedule.ended) return output;
         for (let i = 0; i < frames; ++i) {
             const time = (frame + i) / node.context.sampleRate;
             if (time < schedule.start) continue;

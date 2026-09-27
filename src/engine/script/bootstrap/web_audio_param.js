@@ -3,6 +3,9 @@
     let nextAutomationEvent = 1;
     const scheduleAudioParamEvent = (param, event) => {
         const state = audioParamState.get(param);
+        // Web Audio schedules a requested time in the past at currentTime;
+        // retaining its old anchor would change the slope of a later ramp.
+        event.time = Math.max(event.time, state.context.currentTime);
         if (state.events.length >= 4096)
             throw new DOMException('Too many scheduled automation events', 'NotSupportedError');
         const contextState = audioContextState.get(state.context);
@@ -12,6 +15,7 @@
             throw new DOMException('Audio automation curves exceed the context memory limit',
                 'NotSupportedError');
         const end = event.type === 'curve' ? event.time + event.duration : event.time;
+        if (!Number.isFinite(end)) throw new TypeError('Automation end must be finite');
         for (const existing of state.events) {
             if (existing.type === 'curve' &&
                 event.time < (existing.holdTime ?? existing.time + existing.duration) &&
@@ -30,7 +34,8 @@
     const audioParamActiveValue = (active, value, time) => {
         if (!active) return value;
         if (active.type === 'target')
-            return active.value + (active.initial - active.value) *
+            return active.constant === 0 ? active.value :
+                active.value + (active.initial - active.value) *
                 Math.exp(-(time - active.time) / active.constant);
         const position = Math.min(1, Math.max(0,
             (Math.min(time, active.holdTime ?? Infinity) - active.time) / active.duration));
@@ -67,13 +72,25 @@
         }
         const previous = low ? state.checkpoints[low - 1] :
             { value: state.intrinsic, active: null };
-        const anchor = low ? state.events[low - 1].time : 0;
+        let anchor = low ? state.events[low - 1].time : 0;
+        let anchorValue = previous.value;
+        // A value curve implicitly holds its final sample at its end. A later
+        // ramp begins there; it must not overwrite the curve or ramp from its
+        // original start and pre-curve value.
+        if (previous.active?.type === 'curve') {
+            const curveEnd = previous.active.holdTime ??
+                previous.active.time + previous.active.duration;
+            if (time < curveEnd)
+                return audioParamActiveValue(previous.active, previous.value, time);
+            anchor = curveEnd;
+            anchorValue = audioParamActiveValue(previous.active, previous.value, curveEnd);
+        }
         const next = state.events[low];
         if (next?.type === 'linear' && next.time > anchor)
-            return previous.value + (next.value - previous.value) *
+            return anchorValue + (next.value - anchorValue) *
                 (time - anchor) / (next.time - anchor);
-        if (next?.type === 'exponential' && next.time > anchor && previous.value > 0)
-            return previous.value * Math.pow(next.value / previous.value,
+        if (next?.type === 'exponential' && next.time > anchor && anchorValue > 0)
+            return anchorValue * Math.pow(next.value / anchorValue,
                 (time - anchor) / (next.time - anchor));
         return audioParamActiveValue(previous.active, previous.value, time);
     };
@@ -149,10 +166,12 @@
                 time: nonnegative(endTime, 'endTime') });
         }
         setTargetAtTime(target, startTime, timeConstant) {
+            const constant = finiteFloat(timeConstant, 'timeConstant');
+            if (constant < 0) throw new RangeError('timeConstant must be nonnegative');
             return scheduleAudioParamEvent(this, { type: 'target',
                 value: finiteFloat(target, 'target'),
                 time: nonnegative(startTime, 'startTime'),
-                constant: positive(timeConstant, 'timeConstant') });
+                constant });
         }
         setValueCurveAtTime(values, startTime, duration) {
             if (values == null || typeof values[Symbol.iterator] !== 'function')
@@ -173,8 +192,9 @@
                 time, duration });
         }
         cancelScheduledValues(cancelTime) {
-            cancelTime = nonnegative(cancelTime, 'cancelTime');
             const state = audioParamState.get(this);
+            cancelTime = Math.max(nonnegative(cancelTime, 'cancelTime'),
+                state.context.currentTime);
             const contextState = audioContextState.get(state.context);
             state.events = state.events.filter(event => {
                 const keep = event.time < cancelTime &&
@@ -187,8 +207,9 @@
             return this;
         }
         cancelAndHoldAtTime(cancelTime) {
-            cancelTime = nonnegative(cancelTime, 'cancelTime');
             const state = audioParamState.get(this);
+            cancelTime = Math.max(nonnegative(cancelTime, 'cancelTime'),
+                state.context.currentTime);
             const held = audioParamValueAt(this, cancelTime);
             const next = state.events.find(event => event.time > cancelTime);
             const curve = state.events.find(event => event.type === 'curve' &&
