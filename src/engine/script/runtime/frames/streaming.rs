@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::dom::incremental::HtmlParser;
 use crate::fetch::FetchResponse;
-use crate::winhttp::{DecodedText, DocumentDecoder};
+use crate::text_decode::{DecodedText, DocumentDecoder};
 
 pub(super) struct Input {
     pub decoder: DocumentDecoder,

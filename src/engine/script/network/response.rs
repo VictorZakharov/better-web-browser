@@ -15,7 +15,7 @@ pub(crate) fn decode(
         String::from_utf8_lossy(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes))
             .into_owned()
     } else {
-        crate::winhttp::decode_text(bytes, response.content_type())
+        crate::text_decode::decode_text(bytes, response.content_type())
     };
     Ok((response.final_url().as_str().to_owned(), source))
 }

@@ -212,7 +212,7 @@ impl ScriptRuntime {
             .insert(url.clone(), response.is_some());
         if let Some(response) = response {
             let css =
-                crate::winhttp::decode_text(response.body.as_bytes(), response.content_type());
+                crate::text_decode::decode_text(response.body.as_bytes(), response.content_type());
             let mut source = StylesheetSource::linked(&url, css);
             source.base_url = response.final_url().as_str().into();
             host.stylesheet_sources.push(source);

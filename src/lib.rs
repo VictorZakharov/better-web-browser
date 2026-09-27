@@ -9,6 +9,7 @@ pub mod metrics;
 pub mod navigation;
 pub mod renderer_protocol;
 pub mod storage;
+pub(crate) mod text_decode;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod media_data_protocol;
