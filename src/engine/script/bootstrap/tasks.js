@@ -17,6 +17,10 @@
         return id;
     };
     const queueMediaTask = callback => queueTimer(callback, 0, false, [], 'media element task', 'mediaTaskSchedule');
+    // Hand off a private, non-cancelable task source to the Web Audio bootstrap.
+    // web_audio_base.js consumes and deletes this hook before author scripts run.
+    windowObject.__webAudioRenderTask = callback =>
+        queueTimer(callback, 0, false, [], 'Web Audio render task', 'mediaTaskSchedule');
     windowObject.setTimeout = (callback, delay, ...args) => queueTimer(callback, delay, false, args);
     windowObject.setInterval = (callback, delay, ...args) => queueTimer(callback, delay, true, args);
     windowObject.clearTimeout = windowObject.clearInterval = id => {

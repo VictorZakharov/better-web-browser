@@ -3,12 +3,14 @@ use super::wire::{
     vec_u16, vec_u64,
 };
 use super::{
-    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS,
-    BROWSER_HELLO, BROWSER_PING, BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_REQUEST_FRAME,
+    BROWSER_ACKNOWLEDGE_FRAME, BROWSER_APPEND_TRACKS, BROWSER_CLOSE_GRAPH_PCM,
+    BROWSER_DECODE_SOURCE, BROWSER_DECODE_TRACKS, BROWSER_HELLO, BROWSER_PING,
+    BROWSER_PLAYBACK_STATE, BROWSER_PROBE, BROWSER_QUEUE_GRAPH_PCM, BROWSER_REQUEST_FRAME,
     BROWSER_SEEK_PLAYBACK, BROWSER_SET_PLAYBACK, BROWSER_SHUTDOWN, BROWSER_TEST,
     MediaProtocolError, WORKER_APPENDED, WORKER_CAPABILITY, WORKER_DECODE_FAILED, WORKER_DECODED,
-    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_PLAYBACK_STATE,
-    WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS, WORKER_SHUTDOWN_COMPLETE,
+    WORKER_END_OF_STREAM, WORKER_FRAME_ACKNOWLEDGED, WORKER_FRAME_READY, WORKER_GRAPH_PCM_STATUS,
+    WORKER_PLAYBACK_STATE, WORKER_PONG, WORKER_READY, WORKER_RESTRICTIONS,
+    WORKER_SHUTDOWN_COMPLETE,
 };
 use crate::media_protocol::{
     BrowserMediaMessage, MediaCodecFamily, MediaLimits, WorkerMediaMessage,
@@ -166,6 +168,39 @@ pub(super) fn browser(message: BrowserMediaMessage) -> Result<(u16, Vec<u8>), Me
             vec_u64(&mut payload, position_100ns);
             BROWSER_SEEK_PLAYBACK
         }
+        BrowserMediaMessage::QueueGraphPcm {
+            request_id,
+            document_id,
+            context_id,
+            format,
+            pcm,
+        } => {
+            require_nonzero(request_id, "graph PCM request")?;
+            require_nonzero(document_id, "graph PCM document")?;
+            require_nonzero(context_id, "graph PCM context")?;
+            format.validate(pcm.len())?;
+            vec_u64(&mut payload, request_id);
+            vec_u64(&mut payload, document_id);
+            vec_u64(&mut payload, context_id);
+            super::wire::vec_u32(&mut payload, format.sample_rate);
+            vec_u16(&mut payload, format.channels);
+            vec_u16(&mut payload, pcm.len() as u16);
+            payload.extend_from_slice(&pcm);
+            BROWSER_QUEUE_GRAPH_PCM
+        }
+        BrowserMediaMessage::CloseGraphPcm {
+            request_id,
+            document_id,
+            context_id,
+        } => {
+            require_nonzero(request_id, "graph PCM request")?;
+            require_nonzero(document_id, "graph PCM document")?;
+            require_nonzero(context_id, "graph PCM context")?;
+            vec_u64(&mut payload, request_id);
+            vec_u64(&mut payload, document_id);
+            vec_u64(&mut payload, context_id);
+            BROWSER_CLOSE_GRAPH_PCM
+        }
         BrowserMediaMessage::Test(command) => {
             encode_test(&mut payload, command);
             BROWSER_TEST
@@ -313,6 +348,12 @@ pub(super) fn worker(message: WorkerMediaMessage) -> Result<(u16, Vec<u8>), Medi
             boolean(&mut payload, state.playing);
             boolean(&mut payload, state.ended);
             WORKER_PLAYBACK_STATE
+        }
+        WorkerMediaMessage::GraphPcmStatus { request_id, status } => {
+            require_nonzero(request_id, "graph PCM request")?;
+            vec_u64(&mut payload, request_id);
+            payload.push(status as u8);
+            WORKER_GRAPH_PCM_STATUS
         }
         WorkerMediaMessage::Restrictions(report) => {
             boolean(&mut payload, report.child_launch_denied);

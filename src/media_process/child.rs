@@ -147,6 +147,7 @@ fn command_loop(
     silent_audio: bool,
 ) -> Result<(), String> {
     let mut playback = Playback::new(silent_audio);
+    let mut graph_audio = audio::graph::GraphAudio::new(silent_audio);
     loop {
         match reader
             .read_browser()
@@ -294,6 +295,35 @@ fn command_loop(
                 let state = playback.seek(source_id, position_100ns)?;
                 writer
                     .send_worker(&WorkerMediaMessage::PlaybackState(state))
+                    .map_err(|error| error.to_string())?;
+            }
+            BrowserMediaMessage::QueueGraphPcm {
+                request_id,
+                document_id,
+                context_id,
+                format,
+                pcm,
+            } => {
+                // A graph voice failure must not terminate the worker's unrelated decode path.
+                let status = graph_audio
+                    .queue(document_id, context_id, format, pcm)
+                    .unwrap_or(crate::media_protocol::GraphPcmStatus::Rejected);
+                writer
+                    .send_worker(&WorkerMediaMessage::GraphPcmStatus { request_id, status })
+                    .map_err(|error| error.to_string())?;
+            }
+            BrowserMediaMessage::CloseGraphPcm {
+                request_id,
+                document_id,
+                context_id,
+            } => {
+                let status = if graph_audio.close(document_id, context_id) {
+                    crate::media_protocol::GraphPcmStatus::Accepted
+                } else {
+                    crate::media_protocol::GraphPcmStatus::Rejected
+                };
+                writer
+                    .send_worker(&WorkerMediaMessage::GraphPcmStatus { request_id, status })
                     .map_err(|error| error.to_string())?;
             }
             BrowserMediaMessage::Test(command) if test_mode => {

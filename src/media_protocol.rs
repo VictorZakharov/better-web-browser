@@ -2,7 +2,8 @@
 //!
 //! This protocol deliberately has distinct magic, version, session identity, tags, and payload
 //! limits from renderer IPC. Media workers never deserialize Rust object graphs or receive URLs,
-//! credentials, request headers, encoded media, or decoded frames in this foundation slice.
+//! credentials, request headers, or native pointers. Encoded and decoded media use separate data
+//! pipes; small graph PCM chunks are bounded inline.
 
 mod buffered;
 mod codec;
@@ -13,9 +14,11 @@ pub use crate::media_frame_protocol::{MediaPixelFormat, MediaVideoFrameMetadata}
 pub use buffered::MediaBufferedExtent;
 pub use codec::{MediaFrameReader, MediaFrameWriter, MediaProtocolError};
 pub use decode_report::MediaDecodeReport;
+pub(crate) use types::MAX_GRAPH_PCM_FRAMES;
 pub use types::{
-    BrowserMediaMessage, MediaCapabilityReport, MediaCodecFamily, MediaLimits, MediaPlaybackState,
-    MediaRestrictionReport, MediaSessionId, MediaTestCommand, WorkerMediaMessage,
+    BrowserMediaMessage, GraphPcmFormat, GraphPcmStatus, MediaCapabilityReport, MediaCodecFamily,
+    MediaLimits, MediaPlaybackState, MediaRestrictionReport, MediaSessionId, MediaTestCommand,
+    WorkerMediaMessage,
 };
 
 pub use crate::renderer_protocol::{ContainmentReport, Nonce};
@@ -23,7 +26,7 @@ pub use crate::renderer_protocol::{ContainmentReport, Nonce};
 pub const MEDIA_MAGIC: [u8; 4] = *b"BRM1";
 pub const MEDIA_HEADER_LENGTH: usize = 32;
 pub const MEDIA_PROTOCOL_MAJOR: u16 = 1;
-pub const MEDIA_PROTOCOL_MINOR: u16 = 7;
+pub const MEDIA_PROTOCOL_MINOR: u16 = 8;
 
 #[cfg(test)]
 mod tests;

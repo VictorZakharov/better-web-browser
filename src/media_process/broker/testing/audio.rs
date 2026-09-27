@@ -4,6 +4,64 @@ use super::*;
 
 impl MediaSession {
     #[doc(hidden)]
+    pub fn queue_owned_graph_pcm_fixture(
+        &mut self,
+        document_id: u64,
+        context_id: u64,
+        format: crate::media_protocol::GraphPcmFormat,
+        pcm: Vec<u8>,
+    ) -> Result<bool, String> {
+        self.require_test_mode()?;
+        let request_id = self.allocate_request()?;
+        self.send(
+            BrowserMediaMessage::QueueGraphPcm {
+                request_id,
+                document_id,
+                context_id,
+                format,
+                pcm,
+            },
+            "queue graph PCM fixture",
+        )?;
+        match self.receive("queue graph PCM fixture", self.command_timeout)? {
+            WorkerMediaMessage::GraphPcmStatus {
+                request_id: actual,
+                status,
+            } if actual == request_id => {
+                Ok(status == crate::media_protocol::GraphPcmStatus::Accepted)
+            }
+            _ => self.protocol_failure("media worker returned wrong graph PCM status"),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn close_owned_graph_pcm_fixture(
+        &mut self,
+        document_id: u64,
+        context_id: u64,
+    ) -> Result<bool, String> {
+        self.require_test_mode()?;
+        let request_id = self.allocate_request()?;
+        self.send(
+            BrowserMediaMessage::CloseGraphPcm {
+                request_id,
+                document_id,
+                context_id,
+            },
+            "close graph PCM fixture",
+        )?;
+        match self.receive("close graph PCM fixture", self.command_timeout)? {
+            WorkerMediaMessage::GraphPcmStatus {
+                request_id: actual,
+                status,
+            } if actual == request_id => {
+                Ok(status == crate::media_protocol::GraphPcmStatus::Accepted)
+            }
+            _ => self.protocol_failure("media worker returned wrong graph PCM close status"),
+        }
+    }
+
+    #[doc(hidden)]
     pub fn decode_owned_audio_fixture(
         &mut self,
         bytes: &[u8],

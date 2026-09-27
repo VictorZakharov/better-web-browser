@@ -5,6 +5,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+pub(super) mod graph;
 mod output;
 use output::AudioOutput;
 
