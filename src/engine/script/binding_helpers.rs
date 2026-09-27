@@ -2,7 +2,10 @@
 
 use super::*;
 mod serialization;
-pub(super) use serialization::{serialize_children, serialize_html_node, serialize_xml_node};
+pub(super) use serialization::{
+    serialize_children, serialize_children_with_shadow_roots, serialize_html_node,
+    serialize_xml_node,
+};
 
 pub(super) fn argument_string(arguments: &[JsValue], index: usize) -> JsResult<String> {
     match arguments.get(index) {

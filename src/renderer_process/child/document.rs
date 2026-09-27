@@ -223,6 +223,9 @@ impl DocumentRuntime {
         style: StyleRefreshStats,
         load: PageLoadReport,
     ) -> Result<AdvanceResult, String> {
+        if let Some(runtime) = self.script_runtime.as_ref() {
+            self.focused_node = runtime.focused_node_id();
+        }
         if self.rendering_is_blocked() {
             return Ok(self.blocked_render_update(outcome, load));
         }

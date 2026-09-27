@@ -3,6 +3,28 @@ use super::support::*;
 use std::{fs, net::TcpListener, thread, time::Duration};
 
 #[test]
+fn parser_inserted_declarative_shadow_script_runs_at_its_parser_checkpoint() {
+    let report = super::parser_writes::run(
+        r#"<!doctype html><body>
+        <script>window.order=[];</script>
+        <div id=host><template shadowrootmode=open>
+          <script>order.push('shadow', document.currentScript === null,
+            document.getElementById('tail') === null);</script>
+        </template></div>
+        <template><script>order.push('inert');</script></template>
+        <div id=tail></div>
+        <script>
+          order.push(!!document.getElementById('host').shadowRoot.querySelector('script'));
+          document.title=JSON.stringify(order);
+        </script>"#,
+    );
+    assert_eq!(
+        report["titles"]["document_title"], r#"["shadow",true,true,true]"#,
+        "{report}"
+    );
+}
+
+#[test]
 fn parser_prefix_scrollbar_changes_do_not_change_the_media_viewport() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

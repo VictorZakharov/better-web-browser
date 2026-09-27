@@ -60,11 +60,15 @@ impl StyleSet {
         let mut rules = matching
             .iter()
             .map(|rule| {
-                let context = match rule.scope {
-                    RuleScope::Document => 0,
-                    RuleScope::Shadow(_) => outer_context,
-                    RuleScope::Host(_) => outer_context.saturating_add(1),
-                    RuleScope::Slotted(_) => slot_context,
+                let context = if rule.part.is_some() {
+                    part_context_depth(node, rule.scope).unwrap_or(outer_context)
+                } else {
+                    match rule.scope {
+                        RuleScope::Document => 0,
+                        RuleScope::Shadow(_) | RuleScope::HostChild(_) => outer_context,
+                        RuleScope::Host(_) => outer_context.saturating_add(1),
+                        RuleScope::Slotted(_) => slot_context,
+                    }
                 };
                 let proximity = scope::proximity(rule, node).unwrap_or(usize::MAX);
                 (*rule, context, proximity)
@@ -305,6 +309,19 @@ fn shadow_context_depth(root: &NodeRef) -> u8 {
         current = Node::tree_root(&host);
     }
     depth
+}
+
+fn part_context_depth(node: &NodeRef, scope: RuleScope) -> Option<u8> {
+    let RuleScope::Shadow(source_root) = scope else {
+        return matches!(scope, RuleScope::Document).then_some(0);
+    };
+    let mut root = Node::tree_root(node);
+    loop {
+        if root.id() == source_root {
+            return Some(shadow_context_depth(&root));
+        }
+        root = Node::tree_root(&root.shadow_host()?);
+    }
 }
 
 fn might_revert_layer(value: &str) -> bool {

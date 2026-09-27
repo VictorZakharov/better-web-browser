@@ -4,7 +4,7 @@ use super::{Dom, NodeRef, budget, document::chunk_end};
 use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
 use html5ever::TokenizerResult;
 use html5ever::buffer_queue::BufferQueue;
-mod driver;
+pub(super) mod driver;
 mod writes;
 
 pub(crate) enum ParserStep {
@@ -34,9 +34,12 @@ impl HtmlParser {
         let (source, truncated) = bounded_utf8_prefix(source, MAX_HTML_INPUT_BYTES);
         let dom = Dom {
             observable_parser: true,
+            allow_declarative_shadow_roots: true,
+            pending_shadowrootmode_spelling: Default::default(),
+            document_registry_is_null: false,
             ..Default::default()
         };
-        let parser = driver::Driver::new(dom);
+        let parser = driver::Driver::new(dom, true);
         if truncated {
             parser
                 .tokenizer
@@ -78,11 +81,14 @@ impl HtmlParser {
             errors: Default::default(),
             quirks_mode: std::cell::Cell::new(html5ever::tree_builder::QuirksMode::NoQuirks),
             observable_parser: true,
+            allow_declarative_shadow_roots: true,
+            pending_shadowrootmode_spelling: Default::default(),
+            document_registry_is_null: false,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
         };
-        parser.parser = driver::Driver::new(dom);
+        parser.parser = driver::Driver::new(dom, true);
         parser
     }
 

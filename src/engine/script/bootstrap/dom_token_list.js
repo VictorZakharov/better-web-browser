@@ -34,21 +34,38 @@
         }
         _tokens() { return [...new Set((this.element.getAttribute(this.attribute) || '').split(/[\t\n\f\r ]+/).filter(Boolean))]; }
         _set(tokens) { this.element.setAttribute(this.attribute, [...new Set(tokens)].join(' ')); }
+        _validated(tokens) {
+            const strings = tokens.map(String);
+            for (const token of strings) {
+                if (!token) throw new DOMException('Token must not be empty', 'SyntaxError');
+                if (/[\t\n\f\r ]/.test(token))
+                    throw new DOMException('Token must not contain ASCII whitespace', 'InvalidCharacterError');
+            }
+            return strings;
+        }
         contains(token) { return this._tokens().includes(String(token)); }
-        add(...tokens) { this._set(this._tokens().concat(tokens.map(String))); }
-        remove(...tokens) { const remove = new Set(tokens.map(String)); this._set(this._tokens().filter(token => !remove.has(token))); }
+        add(...tokens) { this._set(this._tokens().concat(this._validated(tokens))); }
+        remove(...tokens) {
+            const remove = new Set(this._validated(tokens));
+            this._set(this._tokens().filter(token => !remove.has(token)));
+        }
         toggle(token, force) {
-            token = String(token);
+            token = this._validated([token])[0];
+            if (arguments.length > 1) force = Boolean(force);
             const present = this.contains(token);
-            if (force === true || (!present && force !== false)) { this.add(token); return true; }
-            if (present) this.remove(token);
+            if (present) {
+                if (force === undefined || !force) { this.remove(token); return false; }
+                return true;
+            }
+            if (force === undefined || force) { this.add(token); return true; }
             return false;
         }
           replace(oldToken, newToken) {
+            [oldToken, newToken] = this._validated([oldToken, newToken]);
             const tokens = this._tokens();
-            const index = tokens.indexOf(String(oldToken));
+            const index = tokens.indexOf(oldToken);
             if (index < 0) return false;
-            tokens[index] = String(newToken);
+            tokens[index] = newToken;
             this._set(tokens);
               return true;
           }

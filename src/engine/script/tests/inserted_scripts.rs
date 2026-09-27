@@ -109,6 +109,28 @@ fn inline_async_defer_and_shadow_root_current_script_follow_classic_rules() {
 }
 
 #[test]
+fn hostile_shadow_root_has_instance_cannot_change_current_script_in_closed_tree() {
+    assert_eq!(
+        result(
+            r#"<!doctype html><body><script>
+      const host = document.createElement('div'); document.body.append(host);
+      const shadow = host.attachShadow({mode:'closed'});
+      Object.defineProperty(ShadowRoot, Symbol.hasInstance, {
+        configurable: true,
+        value(node) { return node === shadow ? false :
+          Function.prototype[Symbol.hasInstance].call(this, node); }
+      });
+      const script = document.createElement('script');
+      script.text = 'document.body.dataset.shadowCurrent = String(document.currentScript === null)';
+      shadow.append(script);
+      document.body.dataset.result = document.body.dataset.shadowCurrent;
+    </script>"#
+        ),
+        "true"
+    );
+}
+
+#[test]
 fn recursive_inline_insertion_stops_at_the_shared_script_count_limit() {
     assert_eq!(
         result(

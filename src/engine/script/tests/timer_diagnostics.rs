@@ -5,9 +5,11 @@ use crate::limits::MAX_DOM_TREE_MUTATIONS_PER_TASK;
 fn timer_budget_errors_identify_the_callback() {
     let (_, outcome) = execute_html(&format!(
         r#"<body><script>
+            const nodes = [];
+            for (let i = 0; i < {}; i++) nodes.push(document.createElement('i'));
+            const detached = document.createElement('div');
             setTimeout(function youtubeBatch() {{
-                for (let i = 0; i < {}; i++)
-                    document.body.appendChild(document.createElement('i'));
+                for (const node of nodes) detached.appendChild(node);
             }}, 0);
         </script></body>"#,
         MAX_DOM_TREE_MUTATIONS_PER_TASK + 1

@@ -50,6 +50,48 @@ pub(super) fn subtree_size(root: &NodeRef) -> usize {
         {
             stack.push(template);
         }
+        if let Some(shadow) = node.shadow_root() {
+            stack.push(shadow);
+        }
     }
     count
 }
+
+/// Count exactly the nodes a DOM clone will allocate before creating any of them.
+/// A template always gets its content fragment, while a clonable shadow tree is
+/// copied in full even when the host's light tree is cloned shallowly.
+pub(super) fn clone_size(root: &NodeRef, deep: bool) -> usize {
+    let mut count = 0_usize;
+    let mut stack = vec![(root.clone(), deep)];
+    while let Some((node, copy_children)) = stack.pop() {
+        count = count.saturating_add(1);
+        if count > MAX_DOM_NODES {
+            return count;
+        }
+        if copy_children {
+            stack.extend(
+                node.children
+                    .borrow()
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .map(|child| (child, true)),
+            );
+        }
+        if let Some(template) = node
+            .element()
+            .and_then(|element| element.template_contents.borrow().clone())
+        {
+            stack.push((template, copy_children));
+        }
+        if let Some(shadow) = node.shadow_root()
+            && matches!(&shadow.data, NodeData::ShadowRoot(data) if data.clonable)
+        {
+            stack.push((shadow, true));
+        }
+    }
+    count
+}
+
+#[cfg(test)]
+mod tests;

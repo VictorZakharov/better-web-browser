@@ -33,8 +33,10 @@ pub(super) fn dispatch_script_event(
     event_type: &str,
     source_url: &str,
 ) {
-    let dispatch = format!("document.__dispatchNodeEvent({node_id}, '{event_type}');");
-    if let Err(error) = context.eval(Source::from_bytes(&dispatch)) {
+    if let Err(error) = context.call_global(
+        "__dispatchNodeEvent",
+        &[JsValue::from(node_id), JsValue::from(event_type.to_owned())],
+    ) {
         outcome.errors.push(format!(
             "{source_url}: dispatch {event_type} event: {error}"
         ));

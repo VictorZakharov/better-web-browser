@@ -14,14 +14,39 @@ pub(super) fn parse_document(
     kind: &str,
     response_url: Option<&str>,
 ) -> JsResult<u32> {
+    parse_document_with_options(state, input, kind, response_url, false)
+}
+
+pub(super) fn parse_html_unsafe_document(state: &mut HostState, input: &str) -> JsResult<u32> {
+    // HTML Standard: this detached Document is about:blank, UTF-8, scripting
+    // disabled, and explicitly permits declarative shadow roots.
+    parse_document_with_options(state, input, "text/html", Some("about:blank"), true)
+}
+
+fn parse_document_with_options(
+    state: &mut HostState,
+    input: &str,
+    kind: &str,
+    response_url: Option<&str>,
+    allow_declarative_shadow_roots: bool,
+) -> JsResult<u32> {
+    let operation = if allow_declarative_shadow_roots {
+        "Document.parseHTMLUnsafe"
+    } else {
+        "DOMParser"
+    };
     if input.len() > crate::limits::MAX_HTML_INPUT_BYTES {
         return Err(JsNativeError::range()
-            .with_message("DOMParser input exceeds the document byte limit")
+            .with_message(format!("{operation} input exceeds the document byte limit"))
             .into());
     }
     let html = kind == "text/html";
     let (document, quirks) = if html {
-        let dom = crate::engine::dom::parse(input);
+        let dom = if allow_declarative_shadow_roots {
+            crate::engine::dom::document::parse_detached_html_with_shadow_roots(input)
+        } else {
+            crate::engine::dom::document::parse_detached_html(input)
+        };
         if dom
             .errors
             .borrow()
@@ -29,7 +54,7 @@ pub(super) fn parse_document(
             .any(|error| error.starts_with("safety limit:"))
         {
             return Err(JsNativeError::range()
-                .with_message("DOMParser input exceeds the DOM safety limits")
+                .with_message(format!("{operation} input exceeds the DOM safety limits"))
                 .into());
         }
         (
@@ -53,6 +78,9 @@ pub(super) fn parse_document(
                 element.script_started.set(true);
             }
             stack.extend(element.template_contents.borrow().iter().cloned());
+        }
+        if let Some(shadow) = node.shadow_root() {
+            stack.push(shadow);
         }
         stack.extend(node.children.borrow().iter().cloned());
     }

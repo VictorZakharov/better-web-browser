@@ -53,6 +53,9 @@
         get className() { return this.getAttribute('class') || ''; }
         set className(value) { this.setAttribute('class', value); }
         get classList() { return this.__classList ||= new DOMTokenList(this, 'class'); }
+        // CSS Shadow Module: [SameObject, PutForwards=value] DOMTokenList.
+        get part() { return this.__part ||= new DOMTokenList(this, 'part'); }
+        set part(value) { this.part.value = value; }
         get style() { return this.__style ||= styleProxy(this); }
         // ElementCSSInlineStyle declares [PutForwards=cssText]. Assigning `element.style`
         // therefore updates the existing declaration instead of replacing the same-object value.
@@ -69,18 +72,35 @@
                 'article', 'aside', 'blockquote', 'body', 'div', 'footer', 'h1', 'h2', 'h3',
                 'h4', 'h5', 'h6', 'header', 'main', 'nav', 'p', 'section', 'span'
             ]).has(this.localName);
-            const validCustomName = /^[a-z][.0-9_a-z-]*-[.0-9_a-z-]*$/.test(this.localName) &&
-                !new Set(['annotation-xml', 'color-profile', 'font-face', 'font-face-src',
-                    'font-face-uri', 'font-face-format', 'font-face-name', 'missing-glyph']).has(this.localName);
+            const validCustomName = validCustomElementName(this.localName);
             if (this.namespaceURI !== htmlNamespace || (!validBuiltIn && !validCustomName))
                 throw new DOMException('This element cannot host a shadow tree', 'NotSupportedError');
-            const root = wrap(host('attachShadow', nodeId(this), mode, !!init.delegatesFocus,
-                !!init.serializable, !!init.clonable, slotAssignment));
+            const delegatesFocus = !!init.delegatesFocus;
+            const serializable = !!init.serializable;
+            const clonable = !!init.clonable;
+            const registry = registryForShadowInit(this.ownerDocument, init);
+            const registryIsGlobal = registry !== null && !registryStates.get(registry).scoped;
+            const existing = shadowRootForTraversal(this);
+            const reused = existing && existing.mode === mode &&
+                host('shadowDeclarative', nodeId(existing));
+            const removed = reused ? [...existing.childNodes] : [];
+            for (const child of removed) iteratorPreRemove(child);
+            const root = wrap(host('attachShadow', nodeId(this), mode, delegatesFocus,
+                serializable, clonable, slotAssignment, registryIsGlobal, registry === null));
             if (!root) throw new DOMException('This element already hosts a shadow tree', 'NotSupportedError');
-            scheduleSlotChangeCheck();
+            if (!reused) rememberShadowRegistry(root, registry);
+            if (reused && root === existing && removed.length) {
+                repairDetachedFocus();
+                for (let index = removed.length - 1; index >= 0; index--)
+                    rangeAfterRemovingNode(removed[index], root, index);
+                markChildCollectionsChanged(root);
+                queueMutationRecord(root, 'childList', { removedNodes: removed });
+                if (root.isConnected) for (const child of removed) disconnectElementTree(child);
+            }
             return root;
         }
         get shadowRoot() { return wrap(host('shadowRoot', nodeId(this))); }
+        get customElementRegistry() { return elementRegistryFor(this); }
         get innerHTML() { return host('innerHtmlGet', nodeId(this)); }
         set innerHTML(value) { replaceElementInnerHtml(this, value); }
         get outerHTML() { return host('outerHtmlGet', nodeId(this)); }
@@ -116,7 +136,6 @@
             queueAttributeMutation(this, current, oldValue, value);
             maybeRefreshNamedProperties(this, current.namespace, current.localName, oldValue, value);
             if (current.namespace === null) maybeRefreshPatternVerdict(this, current.localName);
-            scheduleSlotChangeCheck();
         }
         removeAttribute(name) {
             name = normalizedQualifiedName(this, name);
@@ -129,7 +148,6 @@
             queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             maybeRefreshPatternVerdict(this, record.localName);
-            scheduleSlotChangeCheck();
         }
         removeAttributeNS(namespace, localName) {
             namespace = normalizedNamespace(namespace);
@@ -143,7 +161,6 @@
             queueAttributeMutation(this, record, record.value, null);
             maybeRefreshNamedProperties(this, record.namespace, record.localName, record.value, null);
             if (record.namespace === null) maybeRefreshPatternVerdict(this, record.localName);
-            scheduleSlotChangeCheck();
         }
         hasAttribute(name) { return host('attrHas', nodeId(this), normalizedQualifiedName(this, name)); }
         hasAttributeNS(namespace, localName) {
@@ -228,18 +245,8 @@
                 if (details instanceof HTMLDetailsElement && firstSummary === this) details.open = !details.open;
             }
         }
-        focus() {
-            if (document.activeElement === this) return;
-            host('setFocus', nodeId(this));
-            document.activeElement = this;
-            this.dispatchEvent(new FocusEvent('focus'));
-        }
-        blur() {
-            if (document.activeElement !== this) return;
-            host('setFocus', 0);
-            document.activeElement = document.body;
-            this.dispatchEvent(new FocusEvent('blur'));
-        }
+        focus(options) { focusElement(this, options); }
+        blur() { blurElement(this); }
     }
     installParentNodeMembers(Element.prototype);
     installChildNodeMembers(Element.prototype);

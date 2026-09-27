@@ -4,13 +4,12 @@ use super::budget::enforce;
 use super::node::{Node, NodeData, NodeId, NodeIdAllocator, NodeRef};
 use crate::limits::{MAX_DOM_NODES, MAX_HTML_INPUT_BYTES, bounded_utf8_prefix};
 use html5ever::interface::tree_builder::QuirksMode;
-use html5ever::tendril::TendrilSink;
-use html5ever::tree_builder::TreeBuilderOpts;
-use html5ever::{ParseOpts, parse_document};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+#[path = "declarative_shadow.rs"]
+mod declarative_shadow;
 #[path = "parser_custom_elements.rs"]
 mod parser_custom_elements;
 #[path = "parser_mutations.rs"]
@@ -27,6 +26,12 @@ pub struct Dom {
     pub errors: RefCell<Vec<String>>,
     pub quirks_mode: Cell<QuirksMode>,
     pub(super) observable_parser: bool,
+    /// The HTML parser opts in for navigations and document.write, not fragment or DOMParser input.
+    pub(super) allow_declarative_shadow_roots: bool,
+    /// Original enum spelling while html5ever evaluates a template start token.
+    pub(super) pending_shadowrootmode_spelling: RefCell<Option<String>>,
+    /// Detached documents have a null custom-element registry until initialized.
+    pub(super) document_registry_is_null: bool,
     pub(crate) parser_mutations: Rc<RefCell<Vec<parser_mutations::ParserMutation>>>,
     pub(super) parser_elements: Rc<parser_custom_elements::ParserElements>,
     pub(super) parser_csp_meta: RefCell<VecDeque<NodeRef>>,
@@ -47,6 +52,9 @@ impl Dom {
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             observable_parser: false,
+            allow_declarative_shadow_roots: false,
+            pending_shadowrootmode_spelling: Default::default(),
+            document_registry_is_null: false,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
@@ -60,6 +68,9 @@ impl Dom {
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(quirks_mode),
             observable_parser: false,
+            allow_declarative_shadow_roots: false,
+            pending_shadowrootmode_spelling: Default::default(),
+            document_registry_is_null: false,
             parser_mutations: Default::default(),
             parser_elements: Default::default(),
             parser_csp_meta: Default::default(),
@@ -72,32 +83,41 @@ pub fn parse(html: &str) -> Dom {
 }
 
 pub fn parse_with_scripting(html: &str, scripting_enabled: bool) -> Dom {
-    let sink = Dom::default();
+    parse_document_with_options(html, scripting_enabled, true, false)
+}
+
+/// DOMParser's detached documents do not opt in to declarative shadow roots.
+pub(crate) fn parse_detached_html(html: &str) -> Dom {
+    parse_document_with_options(html, false, false, true)
+}
+
+/// Document.parseHTMLUnsafe creates a detached, scripting-disabled document
+/// whose HTML parser explicitly allows declarative shadow roots.
+pub(crate) fn parse_detached_html_with_shadow_roots(html: &str) -> Dom {
+    parse_document_with_options(html, false, true, true)
+}
+
+fn parse_document_with_options(
+    html: &str,
+    scripting_enabled: bool,
+    allow_shadow_roots: bool,
+    document_registry_is_null: bool,
+) -> Dom {
+    let sink = Dom {
+        allow_declarative_shadow_roots: allow_shadow_roots,
+        document_registry_is_null,
+        ..Default::default()
+    };
     let identity = Rc::clone(&sink.identity);
     let start_nodes = identity.allocated_nodes();
     let (html, input_truncated) = bounded_utf8_prefix(html, MAX_HTML_INPUT_BYTES);
-    let mut parser = parse_document(
+    let (dom, nodes_truncated) = super::incremental::driver::parse_document_tokens(
         sink,
-        ParseOpts {
-            tree_builder: TreeBuilderOpts {
-                scripting_enabled,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+        html,
+        scripting_enabled,
+        &identity,
+        start_nodes,
     );
-    let mut cursor = 0_usize;
-    let mut nodes_truncated = false;
-    while cursor < html.len() {
-        let end = chunk_end(html, cursor);
-        parser.process(html[cursor..end].into());
-        cursor = end;
-        if identity.allocated_nodes().saturating_sub(start_nodes) >= MAX_DOM_NODES {
-            nodes_truncated = cursor < html.len();
-            break;
-        }
-    }
-    let dom = parser.finish();
     if input_truncated {
         dom.errors.borrow_mut().push(format!(
             "safety limit: HTML input was truncated at {MAX_HTML_INPUT_BYTES} bytes"

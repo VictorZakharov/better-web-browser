@@ -212,6 +212,30 @@ impl Context {
                 kind: JsErrorKind::Type,
                 message: "module Promise is unavailable".into(),
             })?;
+        if let Some(hook) = self.private_hooks.get("__trackModulePromise").cloned() {
+            // Browser bootstrap captured the native bridge in a closure and
+            // removed this hook from Window. Pass the V8 Promise directly so
+            // neither it nor the native bridge is temporarily page-visible.
+            let context = self.context.clone();
+            return self.agent.borrow_mut().run(|isolate| {
+                v8::scope!(let scope, isolate);
+                let context = v8::Local::new(scope, &context);
+                let scope = &mut v8::ContextScope::new(scope, context);
+                v8::tc_scope!(let tc, scope);
+                let hook = v8::Local::new(tc, &hook);
+                let promise = v8::Local::new(tc, &promise);
+                let operation = v8::String::new(tc, operation)
+                    .ok_or_else(|| allocation_error("module completion operation"))?;
+                let completion_id = v8::Integer::new_from_unsigned(tc, completion_id);
+                let arguments: [v8::Local<v8::Value>; 3] =
+                    [promise.into(), operation.into(), completion_id.into()];
+                let receiver: v8::Local<v8::Value> = context.global(tc).into();
+                hook.call(tc, receiver, &arguments)
+                    .ok_or_else(|| caught_error(tc, "track module Promise"))?;
+                Ok(())
+            });
+        }
+        // Worker bootstrap retains its own worker-scoped native bridge.
         let property = format!("__breezeModulePromise{promise_id}");
         {
             let context = self.context.clone();

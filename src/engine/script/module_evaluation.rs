@@ -11,7 +11,7 @@ pub(super) fn evaluate_module(
     source_loader: &mut Option<&mut DynamicScriptLoader<'_>>,
     total_bytes: &std::cell::Cell<usize>,
 ) -> bool {
-    if let Err(error) = context.eval(Source::from_bytes("document.__setCurrentScript(0);")) {
+    if let Err(error) = context.call_global("__setCurrentScript", &[JsValue::from(0)]) {
         outcome.errors.push(format!(
             "{}: clear document.currentScript: {error}",
             script.source_url

@@ -45,9 +45,21 @@ impl TreeSink for Dom {
     fn create_element(
         &self,
         name: QualName,
-        attrs: Vec<Attribute>,
+        mut attrs: Vec<Attribute>,
         flags: ElementFlags,
     ) -> Self::Handle {
+        if name.ns.as_ref() == "http://www.w3.org/1999/xhtml"
+            && name.local.as_ref() == "template"
+            && let Some(authored) = self.pending_shadowrootmode_spelling.borrow().as_ref()
+            && let Some(mode) = attrs.iter_mut().find(|attribute| {
+                attribute.name.ns.as_ref().is_empty()
+                    && attribute.name.local.as_ref() == "shadowrootmode"
+            })
+        {
+            // The token adapter folds only html5ever's private enum gate. A
+            // fallback template remains author-visible and keeps its value.
+            mode.value = authored.as_str().into();
+        }
         let template_contents = flags
             .template
             .then(|| Node::new_in(Rc::clone(&self.identity), NodeData::Document));
@@ -177,6 +189,25 @@ impl TreeSink for Dom {
                 .clone(),
             _ => panic!("get_template_contents called for a non-element node"),
         }
+    }
+
+    fn allow_declarative_shadow_roots(&self, intended_parent: &Self::Handle) -> bool {
+        if !self.allow_declarative_shadow_roots {
+            return false;
+        }
+        // Ordinary template contents belong to an inert owner document. A shadow root,
+        // by contrast, retains the active parser's declarative-shadow permission.
+        let root = Node::tree_root(intended_parent);
+        !matches!(root.data, NodeData::Document) || root.id() == self.document.id()
+    }
+
+    fn attach_declarative_shadow(
+        &self,
+        location: &Self::Handle,
+        template: &Self::Handle,
+        attrs: &[Attribute],
+    ) -> bool {
+        super::declarative_shadow::attach(self, location, template, attrs)
     }
 
     fn same_node(&self, left: &Self::Handle, right: &Self::Handle) -> bool {

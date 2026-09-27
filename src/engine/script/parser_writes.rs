@@ -229,8 +229,14 @@ impl HostState {
         self.layout_geometry_initialized = false;
         self.pending_layout_invalidation
             .record(document, Some(document), MutationKind::Stylesheet);
-        let new_elements = Node::descendants(document)
-            .filter(|node| node.element().is_some() && !self.node_ids.contains_key(&node.id()))
+        let new_elements = Node::shadow_including_descendants(document)
+            .filter(|node| {
+                node.element().is_some()
+                    && (!self.node_ids.contains_key(&node.id())
+                        || node
+                            .shadow_root()
+                            .is_some_and(|root| !self.node_ids.contains_key(&root.id())))
+            })
             .collect::<Vec<_>>();
         self.register_subtree(document);
         new_elements

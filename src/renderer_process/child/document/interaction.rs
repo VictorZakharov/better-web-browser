@@ -59,10 +59,13 @@ impl DocumentRuntime {
                 let scroll_key = (input.phase == KeyPhase::Down).then(|| input.key.clone());
                 let key_code = key_code(&input.key);
                 let activates_form = input.phase == KeyPhase::Down && input.key == "Enter";
-                let target = input
-                    .target
-                    .and_then(|target| self.resolve_target(target))
-                    .or_else(|| self.focused_node.and_then(|id| self.page.dom.find_node(id)));
+                // Keyboard events target the focused area, which can be inside a
+                // shadow tree even when UI accessibility exposes its host. The
+                // input packet's target is only a fallback when no area is focused.
+                let target = self
+                    .focused_node
+                    .and_then(|id| self.page.dom.find_node(id))
+                    .or_else(|| input.target.and_then(|target| self.resolve_target(target)));
                 let target_id = target.as_ref().map(|node| node.id());
                 let result = self.dispatch_user_input(UserInputEvent::Keyboard {
                     target,

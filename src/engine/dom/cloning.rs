@@ -54,8 +54,7 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
                     .as_ref()
                     .map(|_| Node::new_in(Rc::clone(&identity), NodeData::Document)),
             ),
-            // DOM cloning excludes an attached shadow tree unless the separate clonable-shadow
-            // algorithm is explicitly requested. cloneNode() therefore starts without one.
+            // The clonable shadow root is attached after the light-tree copy is constructed.
             shadow_root: RefCell::new(None),
             mathml_annotation_xml_integration_point: element
                 .mathml_annotation_xml_integration_point,
@@ -76,8 +75,47 @@ fn clone_in(identity: Rc<NodeIdAllocator>, source: &NodeRef, deep: bool) -> Node
         clone_children(&clone, source);
         clone_template_contents(&clone, source);
     }
+    clone_shadow_tree(&clone, source);
     source.propagate_clone_state(&clone);
     clone
+}
+
+fn clone_shadow_tree(target: &NodeRef, source: &NodeRef) {
+    let Some(shadow) = source.shadow_root() else {
+        return;
+    };
+    let NodeData::ShadowRoot(data) = &shadow.data else {
+        return;
+    };
+    if !data.clonable {
+        return;
+    }
+    // https://dom.spec.whatwg.org/#concept-node-clone
+    // A clonable shadow tree is copied with all of its children even for cloneNode(false).
+    // The host retains its own light-tree depth choice, and recursive cloning handles
+    // nested hosts with clonable (or deliberately non-clonable) shadow roots.
+    let copied = Node::attach_shadow_with_assignment(
+        target,
+        data.mode,
+        data.delegates_focus,
+        data.serializable,
+        data.clonable,
+        data.manual_slot_assignment,
+    )
+    .expect("a newly cloned host must not already have a shadow root");
+    if let NodeData::ShadowRoot(copied_data) = &copied.data {
+        copied_data.declarative.set(data.declarative.get());
+        copied_data
+            .registry_is_global
+            .set(data.registry_is_global.get());
+        copied_data
+            .registry_is_null
+            .set(data.registry_is_null.get());
+        copied_data
+            .keep_registry_null
+            .set(data.keep_registry_null.get());
+    }
+    clone_children(&copied, &shadow);
 }
 
 fn clone_children(target: &NodeRef, source: &NodeRef) {
@@ -103,21 +141,4 @@ fn clone_template_contents(target: &NodeRef, source: &NodeRef) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::dom;
-
-    #[test]
-    fn deep_import_allocates_the_target_documents_identity() {
-        let source = dom::parse("<section id='source'><span>text</span></section>");
-        let target = Node::create_document();
-        let section = source.elements_named("section").next().unwrap();
-
-        let clone = Node::clone_for(&target, &section, true);
-
-        assert_eq!(clone.id().document(), target.id().document());
-        assert_ne!(clone.id(), section.id());
-        assert_eq!(clone.attr("id").as_deref(), Some("source"));
-        assert_eq!(clone.text_content(), "text");
-    }
-}
+mod tests;

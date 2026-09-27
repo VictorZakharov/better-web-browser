@@ -1,6 +1,10 @@
 // core.js through tasks.js share one root IIFE, with nested private helpers. The DOMException
 // prefix and subsequent network/worker extensions own independent IIFEs. V8 compiles the result.
 pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
+    // The browser's native bridge is captured only by bootstrap closures. A
+    // page-global bridge would let author code guess node IDs and inspect
+    // closed shadow trees (or invoke unrelated privileged host operations).
+    "(function (__hostCall) {\n'use strict';\n",
     include_str!("bootstrap/dom_exception.js"),
     include_str!("bootstrap/web_url.js"),
     include_str!("bootstrap/url_pattern.js"),
@@ -77,6 +81,8 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/traversal.js"),
     include_str!("bootstrap/traversal_iterator.js"),
     include_str!("bootstrap/document.js"),
+    include_str!("bootstrap/focus_state.js"),
+    include_str!("bootstrap/get_html.js"),
     include_str!("bootstrap/dom_parser.js"),
     include_str!("bootstrap/xml_serializer.js"),
     include_str!("bootstrap/document_writes.js"),
@@ -112,6 +118,7 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/pointer_boundary.js"),
     include_str!("bootstrap/drag_interaction.js"),
     include_str!("bootstrap/custom_elements.js"),
+    include_str!("bootstrap/custom_registry_scopes.js"),
     include_str!("bootstrap/parser_custom_elements.js"),
     include_str!("bootstrap/url.js"),
     // Observer closures capture the private task exception reporter before
@@ -177,4 +184,15 @@ pub(super) const BROWSER_BOOTSTRAP: &str = concat!(
     include_str!("bootstrap/native_ports.js"),
     include_str!("bootstrap/workers.js"),
     include_str!("bootstrap/url_cleanup.js"),
+    r#"
+    globalThis.__trackModulePromise = (promise, operation, completionId) => {
+        promise.then(
+            () => __hostCall(operation, completionId, true, ''),
+            reason => __hostCall(operation, completionId, false, String(reason))
+        );
+    };
+    if (!delete globalThis.__hostCall)
+        throw new Error('Could not remove the native browser bridge from Window');
+})(globalThis.__hostCall);
+"#,
 );

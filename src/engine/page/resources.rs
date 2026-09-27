@@ -22,7 +22,7 @@ pub(super) fn discover_resources(
     let mut resources = discover_non_script_resources(dom, document_url, base_url, environment);
     let mut scripts = Vec::new();
     let mut seen_script_resources = HashSet::new();
-    for node in Node::descendants(&dom.document) {
+    for node in Node::shadow_including_descendants(&dom.document) {
         if node.tag_name() != Some("script") || scripts.len() >= MAX_SCRIPTS {
             continue;
         }

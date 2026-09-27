@@ -82,6 +82,14 @@ impl Dom {
             .map(|p| p.node.clone())
     }
 
+    pub(crate) fn pending_parser_element_intended_parent(&self) -> Option<NodeRef> {
+        self.parser_elements
+            .pending
+            .borrow()
+            .as_ref()
+            .and_then(|p| p.insertion.as_ref().map(|(parent, _)| parent.clone()))
+    }
+
     pub(crate) fn fail_parser_element(&self) -> Option<NodeRef> {
         let node = self.pending_parser_element()?;
         let replacement = Node::create_element_for(&self.document, node.tag_name()?);

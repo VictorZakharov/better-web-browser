@@ -7,6 +7,7 @@ mod ident;
 mod structural;
 mod tokens;
 pub(super) use attributes::parse_attribute_selector;
+pub(super) use ident::parse_identifier as parse_css_identifier;
 use tokens::selector_tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -246,6 +247,7 @@ fn parse_compound_selector_with_depth(
                         "only-child" => compound.requires_only_child = true,
                         "only-of-type" => compound.requires_only_of_type = true,
                         "empty" => compound.requires_empty = true,
+                        "has-slotted" => compound.requires_has_slotted = true,
                         "root" => compound.requires_root = true,
                         "scope" => compound.requires_scope = true,
                         "enabled" => compound.requires_enabled = true,

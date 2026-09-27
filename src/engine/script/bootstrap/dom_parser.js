@@ -16,6 +16,28 @@
         }
     }
     Object.defineProperty(DOMParser.prototype, Symbol.toStringTag, { value: 'DOMParser', configurable: true });
+    // Unlike DOMParser, this static HTML parser opts its detached document in
+    // to declarative shadow roots. No scripts run while the document is parsed.
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-parsehtmlunsafe
+    Object.defineProperty(Document, 'parseHTMLUnsafe', {
+        configurable: true, writable: true, enumerable: true,
+        value: function parseHTMLUnsafe(input, options = {}) {
+            if (arguments.length === 0) throw new TypeError('parseHTMLUnsafe requires HTML input');
+            if (typeof input === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
+            // Web IDL converts arguments left-to-right: input's DOMString
+            // conversion precedes any observable options-dictionary getter.
+            input = String(input);
+            if (options != null) {
+                if (typeof options !== 'object' && typeof options !== 'function')
+                    throw new TypeError('parseHTMLUnsafe options must be a dictionary');
+                // A supplied sanitizer must never be silently ignored on an unsafe API.
+                // The default, unsanitized path is supported; Sanitizer is not yet.
+                if (options.sanitizer !== undefined)
+                    throw new DOMException('Sanitizer options are not supported', 'NotSupportedError');
+            }
+            return wrap(host('parseHtmlUnsafeDocument', input));
+        }
+    });
     // XHR uses the same native parser, but has its own MIME/URL/error-document contract.
     globalThis.__parseXhrDocument = (input, mime, url, allowHtml) => {
         const type = mime.split(';', 1)[0].trim().toLowerCase() || 'text/xml';

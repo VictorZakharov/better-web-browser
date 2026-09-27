@@ -1,7 +1,7 @@
 //! Shadow-tree ownership, slot assignment, and composed-tree traversal.
 
 use super::node::{Node, NodeData, NodeRef, ShadowRootData, ShadowRootMode};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::rc::Weak;
@@ -10,6 +10,16 @@ use std::rc::Weak;
 pub(super) struct ManualSlotState {
     assigned_slot: Option<Weak<Node>>,
     assigned_nodes: Vec<Weak<Node>>,
+}
+
+pub(super) struct DeclarativeShadowOptions {
+    pub(super) mode: ShadowRootMode,
+    pub(super) delegates_focus: bool,
+    pub(super) serializable: bool,
+    pub(super) clonable: bool,
+    pub(super) manual_slot_assignment: bool,
+    pub(super) registry_is_null: bool,
+    pub(super) keep_registry_null: bool,
 }
 
 impl ShadowRootMode {
@@ -48,14 +58,31 @@ impl Node {
         manual_slot_assignment: bool,
     ) -> Option<NodeRef> {
         let element = host.element()?;
-        if element.shadow_root.borrow().is_some() {
-            return None;
+        if let Some(root) = element.shadow_root.borrow().as_ref() {
+            let NodeData::ShadowRoot(shadow) = &root.data else {
+                return None;
+            };
+            if !shadow.declarative.get() || shadow.mode != mode {
+                return None;
+            }
+            let root = root.clone();
+            // DOM's attachShadow algorithm reuses and empties a matching declarative root.
+            let children = root.children.borrow().clone();
+            for child in children {
+                Node::remove_child(&root, &child);
+            }
+            shadow.declarative.set(false);
+            return Some(root);
         }
         let root = Node::new_in(
             Rc::clone(&host.identity),
             NodeData::ShadowRoot(ShadowRootData {
                 host: Rc::downgrade(host),
                 mode,
+                declarative: Cell::new(false),
+                registry_is_global: Cell::new(true),
+                registry_is_null: Cell::new(false),
+                keep_registry_null: Cell::new(false),
                 manual_slot_assignment,
                 delegates_focus,
                 serializable,
@@ -64,6 +91,30 @@ impl Node {
         );
         *element.shadow_root.borrow_mut() = Some(root.clone());
         host.mark_mutated();
+        Some(root)
+    }
+
+    pub(super) fn attach_declarative_shadow(
+        host: &NodeRef,
+        options: DeclarativeShadowOptions,
+    ) -> Option<NodeRef> {
+        if host.shadow_root().is_some() {
+            return None;
+        }
+        let root = Self::attach_shadow_with_assignment(
+            host,
+            options.mode,
+            options.delegates_focus,
+            options.serializable,
+            options.clonable,
+            options.manual_slot_assignment,
+        )?;
+        if let NodeData::ShadowRoot(shadow) = &root.data {
+            shadow.declarative.set(true);
+            shadow.registry_is_global.set(!options.registry_is_null);
+            shadow.registry_is_null.set(options.registry_is_null);
+            shadow.keep_registry_null.set(options.keep_registry_null);
+        }
         Some(root)
     }
 
@@ -249,6 +300,28 @@ impl Node {
         }
         let parent = node.parent()?;
         parent.shadow_host().or(Some(parent))
+    }
+
+    /// A connected DOM node can still be absent from the rendered flat tree:
+    /// an unassigned light child of a shadow host, or slot fallback suppressed
+    /// by assigned nodes. Focusability must not infer rendering from connection.
+    pub fn is_in_composed_tree(node: &NodeRef) -> bool {
+        let mut current = node.clone();
+        loop {
+            if matches!(current.data, NodeData::Document) {
+                return true;
+            }
+            let Some(parent) = Node::composed_parent(&current) else {
+                return false;
+            };
+            if !Node::composed_children(&parent)
+                .iter()
+                .any(|child| child.id() == current.id())
+            {
+                return false;
+            }
+            current = parent;
+        }
     }
 
     pub fn composed_children(node: &NodeRef) -> Vec<NodeRef> {

@@ -3,11 +3,7 @@ use super::dom::{Node, NodeData, NodeId, NodeRef};
 use super::invalidation::{InvalidationImpact, MutationKind, RenderInvalidation};
 use super::layout::RectF;
 use super::scheduler::{EventLoopScheduler, ScheduledWork, TaskHandle, TaskSource};
-use crate::limits::{
-    MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES,
-    MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE, MAX_SCRIPT_BYTES,
-    MAX_SCRIPT_NAVIGATIONS,
-};
+use crate::limits::{MAX_DOM_NODES, MAX_DYNAMIC_SCRIPTS, MAX_PAGE_SCRIPT_BYTES, MAX_SCRIPT_BYTES};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -26,6 +22,7 @@ mod dynamic_scripts;
 pub(crate) mod engine;
 mod execution;
 mod fullscreen_host;
+mod get_html_host;
 mod history_host;
 mod host_call;
 mod host_profiling;

@@ -4,6 +4,7 @@ mod attributes;
 mod linguistic;
 #[path = "selector_editing.rs"]
 mod selector_editing;
+mod shadow_pseudo;
 mod structural;
 pub(super) use ancestor_filter::{AncestorFilter, AncestorFilterCache};
 
@@ -14,6 +15,7 @@ use super::selector_validity::{
 use super::*;
 use attributes::attribute_matches;
 use selector_editing::matches_read_write;
+use shadow_pseudo::matches_has_slotted;
 
 pub(crate) struct CompiledSelectorList {
     selectors: Vec<Selector>,
@@ -50,41 +52,74 @@ pub(super) fn selector_matches_with_scope(
     node: &NodeRef,
     scope: Option<NodeId>,
 ) -> bool {
+    selector_matches_with_boundary(selector, node, scope, None)
+}
+
+/// Match the target side of `:host(...) > target` against the owning shadow
+/// tree. The leftmost compound must be a direct child of that shadow root;
+/// ordinary selector ancestry must never cross into the light tree.
+pub(super) fn selector_matches_with_shadow_host_child(
+    selector: &Selector,
+    node: &NodeRef,
+    shadow_root: NodeId,
+) -> bool {
+    selector_matches_with_boundary(selector, node, None, Some(shadow_root))
+}
+
+fn selector_matches_with_boundary(
+    selector: &Selector,
+    node: &NodeRef,
+    scope: Option<NodeId>,
+    direct_shadow_child: Option<NodeId>,
+) -> bool {
     fn matches_at(
         selector: &Selector,
         index: usize,
         node: &NodeRef,
         scope: Option<NodeId>,
+        direct_shadow_child: Option<NodeId>,
     ) -> bool {
         if !compound_matches(&selector.compounds[index], node, scope) {
             return false;
         }
         if index == 0 {
-            return true;
+            return direct_shadow_child
+                .is_none_or(|root| node.parent().is_some_and(|parent| parent.id() == root));
         }
         match selector.combinators[index - 1] {
-            Combinator::Child => node
-                .parent()
-                .is_some_and(|parent| matches_at(selector, index - 1, &parent, scope)),
+            Combinator::Child => node.parent().is_some_and(|parent| {
+                matches_at(selector, index - 1, &parent, scope, direct_shadow_child)
+            }),
             Combinator::Descendant => {
                 let mut ancestor = node.parent();
                 while let Some(candidate) = ancestor {
-                    if matches_at(selector, index - 1, &candidate, scope) {
+                    if matches_at(selector, index - 1, &candidate, scope, direct_shadow_child) {
                         return true;
                     }
                     ancestor = candidate.parent();
                 }
                 false
             }
-            Combinator::AdjacentSibling => previous_element_siblings(node)
-                .next()
-                .is_some_and(|sibling| matches_at(selector, index - 1, &sibling, scope)),
-            Combinator::GeneralSibling => previous_element_siblings(node)
-                .any(|sibling| matches_at(selector, index - 1, &sibling, scope)),
+            Combinator::AdjacentSibling => {
+                previous_element_siblings(node)
+                    .next()
+                    .is_some_and(|sibling| {
+                        matches_at(selector, index - 1, &sibling, scope, direct_shadow_child)
+                    })
+            }
+            Combinator::GeneralSibling => previous_element_siblings(node).any(|sibling| {
+                matches_at(selector, index - 1, &sibling, scope, direct_shadow_child)
+            }),
         }
     }
 
-    matches_at(selector, selector.compounds.len() - 1, node, scope)
+    matches_at(
+        selector,
+        selector.compounds.len() - 1,
+        node,
+        scope,
+        direct_shadow_child,
+    )
 }
 
 fn previous_element_siblings(node: &NodeRef) -> impl Iterator<Item = NodeRef> {
@@ -205,6 +240,9 @@ pub(super) fn compound_matches(
         return false;
     }
     if selector.requires_fullscreen && !node.is_fullscreen() {
+        return false;
+    }
+    if selector.requires_has_slotted && !matches_has_slotted(node) {
         return false;
     }
     if !structural::compound_structural_matches(selector, node, scope) {

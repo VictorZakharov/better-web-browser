@@ -70,7 +70,7 @@ fn child_cannot_forge_a_parent_worker_identifier() {
     let result = evaluate(
         &mut runtime,
         &dom,
-        "f.contentWindow.eval('__hostCall(\"workerTerminate\",1);__hostCall(\"workerPostMessage\",1,\"null\")');",
+        "f.contentWindow.eval('if (\"__hostCall\" in globalThis) throw Error(\"bridge was public\"); try { __hostCall(\"workerTerminate\",1); throw Error(\"bridge was callable\"); } catch (error) { if (error.name !== \"ReferenceError\") throw error; }');",
     );
     assert!(
         result.worker_actions.is_empty(),

@@ -12,12 +12,18 @@
             for (const step of pending) step();
         }
     }
+    const isHtmlScript = node => {
+        const id = nodeId(node);
+        return host('nodeType', id) === 1 && host('namespaceUri', id) === htmlNamespace &&
+            host('localName', id) === 'script';
+    };
     function prepareInsertedScript(node) {
-        if (!(node instanceof HTMLScriptElement)) return;
+        if (!isHtmlScript(node)) return;
         const prepared = host('prepareInsertedScript', nodeId(node));
         if (!prepared) return;
         const previous = document._currentScript;
-        document._currentScript = node.getRootNode() instanceof ShadowRoot ? null : node;
+        const root = host('rootNode', nodeId(node), false);
+        document._currentScript = root && host('shadowHost', root) ? null : node;
         host('parserScriptEnter', nodeId(document));
         try {
             runPreparedInlineScript(node, prepared);
@@ -35,7 +41,7 @@
         } else if (typeof result === 'string') {
             const report = JSON.parse(result);
             for (const violation of report.violations) {
-                document.__queuePolicyViolation(nodeId(node), {
+                queuePolicyViolation(node, {
                     documentURI: report.documentUrl,
                     blockedURI: 'inline',
                     effectiveDirective: 'script-src-elem',
@@ -49,7 +55,7 @@
         }
     }
     function scriptChildrenChanged(parent) {
-        if (!(parent instanceof HTMLScriptElement)) return;
+        if (!isHtmlScript(parent)) return;
         if (scriptMutationBatch) scriptMutationBatch.push(() => prepareInsertedScript(parent));
         else prepareInsertedScript(parent);
     }
@@ -59,7 +65,7 @@
             // Snapshot before any script executes: removed later siblings are then checked
             // for connectivity at preparation, and newly inserted nodes run their own steps.
             for (const node of inclusiveElementDescendants(root))
-                if (node instanceof HTMLScriptElement) scripts.push(node);
+                if (isHtmlScript(node)) scripts.push(node);
         }
         const run = () => {
             for (const script of scripts) prepareInsertedScript(script);

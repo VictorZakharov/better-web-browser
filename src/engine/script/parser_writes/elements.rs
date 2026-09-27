@@ -11,6 +11,19 @@ pub(super) fn dispatch(
             .register_parser_custom_element(argument_string(args, 1)?);
         return Ok(Some(JsValue::undefined()));
     }
+    if operation == "parserElementIntendedParent" {
+        let parent = host
+            .write_session(argument_id(args, 1))
+            .and_then(|session| {
+                session
+                    .parser
+                    .dom()
+                    .pending_parser_element_intended_parent()
+            });
+        return Ok(Some(JsValue::from(
+            parent.as_ref().map_or(0, |node| host.id_for(node)),
+        )));
+    }
     if !matches!(
         operation,
         "parserElementFailed"

@@ -1,6 +1,6 @@
 (() => {
     'use strict';
-    const host = globalThis.__hostCall;
+    const host = __hostCall;
     // The interface is [SecureContext]. Do not advertise it when the native provider is absent.
     if (!host('cryptoSecureContext') || !host('cryptoSubtleAvailable')) return;
     const Bytes = Uint8Array, isView = ArrayBuffer.isView;

@@ -36,10 +36,16 @@ fn blocked_inline_script_queues_trusted_policy_event_with_sample_and_policy() {
     let dom = dom::parse_with_scripting(
         r#"<body><output id=status></output>
         <script nonce=allowed>
+          const nativeDispatch = EventTarget.prototype.dispatchEvent;
+          EventTarget.prototype.dispatchEvent = function(event) {
+            if (event.type === 'securitypolicyviolation') window.interceptedPolicyTarget = this;
+            return nativeDispatch.call(this, event);
+          };
           document.addEventListener('securitypolicyviolation', event => {
             document.querySelector('output').textContent = [event.isTrusted,
               event.target.localName, event.blockedURI, event.effectiveDirective,
-              event.originalPolicy, event.sample.startsWith('window.neverRuns')].join('|');
+              event.originalPolicy, event.sample.startsWith('window.neverRuns'),
+              window.interceptedPolicyTarget === undefined].join('|');
           });
         </script>
         <script>window.neverRuns = true;</script></body>"#,
@@ -75,7 +81,7 @@ fn blocked_inline_script_queues_trusted_policy_event_with_sample_and_policy() {
     assert!(event.errors.is_empty(), "{:?}", event.errors);
     assert_eq!(
         output.text_content(),
-        "true|script|inline|script-src-elem|script-src 'nonce-allowed' 'report-sample'|true"
+        "true|script|inline|script-src-elem|script-src 'nonce-allowed' 'report-sample'|true|true"
     );
 }
 

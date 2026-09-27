@@ -19,6 +19,10 @@ impl DocumentRuntime {
             UserInputEvent::Scroll { .. } | UserInputEvent::Viewport { .. }
         );
         let result = runtime.dispatch_user_input(event);
+        // Script focus may target a shadow descendant rather than the node in the
+        // native input packet. Keyboard routing and accessibility use the actual
+        // focused DOM anchor, not its retargeted document.activeElement.
+        self.focused_node = runtime.focused_node_id();
         // Native dispatch drains Promise jobs before returning. Coalesce with any geometry
         // publication and deliver from advance(), not from cancelable author event propagation.
         // https://www.w3.org/TR/intersection-observer/#queue-intersection-observer-task

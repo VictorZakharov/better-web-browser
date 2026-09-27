@@ -8,6 +8,21 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         ))
         .map_err(|error| format!("initialize browser bindings: {error}"))?;
     context
+        .capture_hook("__trackModulePromise")
+        .map_err(|error| format!("capture private module completion hook: {error}"))?;
+    for name in [
+        "__parserDomChanged",
+        "__constructParserElement",
+        "__resumeDocumentStream",
+        "__setCurrentScript",
+        "__dispatchNodeEvent",
+        "__queuePolicyViolation",
+    ] {
+        context
+            .capture_hook(name)
+            .map_err(|error| format!("capture private {name} hook: {error}"))?;
+    }
+    context
         .install_window_bindings()
         .map_err(|error| format!("initialize window messaging: {error}"))?;
     context

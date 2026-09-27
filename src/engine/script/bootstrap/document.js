@@ -107,15 +107,21 @@
             super(Number(id) || host('createDocument', '', ''), ...metadata);
             cache.set(nodeId(this), this);
             documentReadiness.set(this, host('isPrimaryDocument', nodeId(this)) ? 'loading' : 'complete');
-            this.activeElement = null;
             this._currentScript = null;
         }
-        createElement(name) {
-            return maybeUpgradeCustomElement(wrap(host('createElement', nodeId(this), String(name))), true);
+        get activeElement() { return activeElementForRoot(this); }
+        get customElementRegistry() { return documentRegistryFor(this); }
+        createElement(name, options) {
+            const registry = registryForCreationOptions(this, options);
+            const element = wrap(host('createElement', nodeId(this), String(name)));
+            rememberElementRegistry(element, registry);
+            return maybeUpgradeCustomElement(element, true);
         }
-        createElementNS(namespace, name) {
+        createElementNS(namespace, name, options) {
+            const registry = registryForCreationOptions(this, options);
             const element = wrap(host('createElementNS', nodeId(this),
                 namespace == null ? '' : String(namespace), String(name)));
+            rememberElementRegistry(element, registry);
             return maybeUpgradeCustomElement(element, true);
         }
         createTextNode(text) { return wrap(host('createText', nodeId(this), String(text))); }
@@ -131,10 +137,14 @@
         }
         createAttribute(localName) { return createAttributeFor(this, localName); }
         createAttributeNS(namespace, qualifiedName) { return createAttributeNsFor(this, namespace, qualifiedName); }
-        importNode(node, deep = false) {
+        importNode(node, options = false) {
             if (!(isNode(node))) throw new TypeError('importNode requires a Node');
-            const imported = wrap(host('importNode', nodeId(this), nodeId(node), !!deep));
+            if (node instanceof Document || node instanceof ShadowRoot)
+                throw new DOMException('Documents and shadow roots cannot be imported', 'NotSupportedError');
+            const { deep, fallback } = importRegistryOptions(this, options);
+            const imported = wrap(host('importNode', nodeId(this), nodeId(node), deep));
             if (!imported) throw new DOMException('Documents cannot be imported', 'NotSupportedError');
+            transferClonedRegistries(node, imported, this, fallback);
             upgradeCustomElementTree(imported);
             return imported;
         }
@@ -142,13 +152,17 @@
             if (!(isNode(node))) throw new TypeError('adoptNode requires a Node');
             if (node instanceof Document)
                 throw new DOMException('Documents cannot be adopted', 'NotSupportedError');
+            if (node instanceof ShadowRoot)
+                throw new DOMException('Shadow roots cannot be adopted directly', 'HierarchyRequestError');
             const oldDocument = node.ownerDocument;
             const oldParent = node.parentNode;
             const wasConnected = node.isConnected;
+            if (oldDocument !== this || oldParent) captureRegistryTree(node);
             if (oldParent) iteratorPreRemove(node);
             if (wasConnected) disconnectElementTree(node);
             const adopted = wrap(host('adoptNode', nodeId(this), nodeId(node)));
             if (!adopted) throw new DOMException('The node cannot be adopted', 'NotSupportedError');
+            if (wasConnected) repairDetachedFocus();
             markChildCollectionsChanged(oldParent);
             if (oldDocument !== this) adoptCustomElementTree(adopted, oldDocument, this);
             return adopted;
@@ -206,21 +220,6 @@
                 (host('isPrimaryDocument', nodeId(this)) ? windowObject : null);
         }
         get implementation() { return this.__implementation ||= new DOMImplementation(); }
-        __setCurrentScript(id) { this._currentScript = wrap(id); }
-        __dispatchNodeEvent(id, type) {
-            const target = wrap(id);
-            if (target) target.dispatchEvent(markTrusted(new Event(String(type))));
-        }
-        __queuePolicyViolation(id, init) {
-            // CSP reports after the responsible script's task has completed. A removed
-            // element reports at Document so the violation is not silently lost.
-            setTimeout(() => {
-                const node = wrap(id);
-                const target = node?.isConnected ? node : this;
-                target.dispatchEvent(markTrusted(new SecurityPolicyViolationEvent(
-                    'securitypolicyviolation', { ...init, bubbles: true, composed: true })));
-            }, 0);
-        }
         write(...parts) {
             const text = parts.map(value => {
                 if (typeof value === 'symbol') throw new TypeError('Cannot convert a Symbol to a string');
@@ -260,8 +259,38 @@
     }
     class XMLDocument extends Document {}
     installParentNodeMembers(Document.prototype);
+    globalThis.__setCurrentScript = id => {
+        const previous = document._currentScript;
+        const next = wrap(id);
+        // Classic scripts in shadow trees do not expose themselves through
+        // document.currentScript. Use native root identity, not author-overridable
+        // getRootNode() or a page-callable raw-ID Document method.
+        const root = next && host('rootNode', nodeId(next), false);
+        document._currentScript = root && host('shadowHost', root) ? null : next;
+        return previous ? nodeId(previous) : 0;
+    };
+    globalThis.__dispatchNodeEvent = (id, type) => {
+        const target = wrap(id);
+        if (target) applyNative(nativeEventDispatch, target,
+            [markTrusted(new Event(String(type)))]);
+    };
+    queuePolicyViolation = (node, init) => {
+        // CSP reports after the responsible script's task has completed. A removed
+        // element reports at Document so the violation is not silently lost.
+        setTimeout(() => {
+            const id = nodeId(node);
+            const root = id && host('rootNode', id, true);
+            const target = root && host('nodeType', root) === 9 ? node : document;
+            applyNative(nativeEventDispatch, target,
+                [markTrusted(new SecurityPolicyViolationEvent(
+                    'securitypolicyviolation', { ...init, bubbles: true, composed: true }))]);
+        }, 0);
+    };
+    globalThis.__queuePolicyViolation = (id, payload) =>
+        queuePolicyViolation(wrap(id), JSON.parse(payload));
     const parserDomChanged = (ids, mutations = []) => {
         parserCollectionEpoch++;
+        repairDetachedFocus();
         for (const record of mutations) {
             for (const id of [...record.added, ...record.removed]) invalidateMutationAncestors(wrap(id));
             queueMutationRecord(wrap(record.target), record.type, {
@@ -271,9 +300,17 @@
                 oldValue: record.oldValue
             }, record.ancestors.map(wrap));
         }
-        for (const node of list(ids)) {
-            if (node.localName === 'iframe') host('frameWindow', nodeId(node), node);
-            maybeUpgradeCustomElement(node, false, true);
+        for (const id of String(ids).split(',').filter(Boolean).map(Number)) {
+            // These IDs originate in the parser, including descendants of closed
+            // roots. Read their type/name natively before exposing a wrapper to
+            // author-replaceable instanceof or DOM getters.
+            const type = host('nodeType', id);
+            const localName = type === 1 ? host('localName', id) : null;
+            const node = wrap(id);
+            if (type === 1)
+                registerShadowRootForTraversal(node, host('shadowRootForTraversal', id), true);
+            if (localName === 'iframe') host('frameWindow', id, node);
+            if (type === 1) maybeUpgradeCustomElement(node, false, true);
         }
         refreshParserEventHandlerAttributes();
         refreshWindowNamedProperties();
@@ -316,6 +353,7 @@
         else if (type === 8) node = new Comment(id, type, metadata[1], null, null);
         else node = new Text(id, type, metadata[1], null, null);
         cache.set(id, node);
+        if (type === 1) registerShadowRootForTraversal(node, Number(metadata[6]));
         if (metadata[5] === 'handlers') initializeEventHandlerAttributes(node);
         return node;
     }

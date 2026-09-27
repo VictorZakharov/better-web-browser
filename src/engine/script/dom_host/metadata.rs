@@ -30,7 +30,7 @@ pub(super) fn node_name(state: &HostState, node: &NodeRef) -> String {
 
 pub(super) fn node_metadata(state: &HostState, node: &NodeRef) -> String {
     format!(
-        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}",
         node_type(state, Some(node)),
         node_name(state, node),
         node.tag_name().unwrap_or_default(),
@@ -50,6 +50,9 @@ pub(super) fn node_metadata(state: &HostState, node: &NodeRef) -> String {
         } else {
             ""
         },
+        node.shadow_root()
+            .and_then(|root| state.node_ids.get(&root.id()).copied())
+            .unwrap_or_default(),
     )
 }
 

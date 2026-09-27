@@ -30,6 +30,7 @@ pub(super) struct CompoundSelector {
     pub(super) requires_only_child: bool,
     pub(super) requires_only_of_type: bool,
     pub(super) requires_empty: bool,
+    pub(super) requires_has_slotted: bool,
     pub(super) requires_root: bool,
     pub(super) requires_scope: bool,
     pub(super) requires_enabled: bool,

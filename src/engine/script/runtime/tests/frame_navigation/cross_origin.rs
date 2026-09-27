@@ -84,7 +84,10 @@ fn same_origin_sandbox_cannot_navigate_parent_through_borrowed_functions() {
         f.srcdoc = `<script>
             for (const run of [() => parent.location.href = '/escape', () => parent.location.assign('/escape'),
                 () => parent.location.replace('/escape'), () => parent.__hostCall('navigate', '/escape')]) {
-                try { run(); parent.result.push(false); } catch(e) { parent.result.push(e.name === 'SecurityError'); }
+                try { run(); parent.result.push(false); } catch(e) {
+                    parent.result.push(e.name === 'SecurityError' ||
+                        (e.name === 'TypeError' && !('__hostCall' in parent)));
+                }
             }
         <\/script>`;
         document.body.append(f);

@@ -1,5 +1,7 @@
 (() => {
     'use strict';
+    // __hostCall is the outer bootstrap closure's private native binding. The
+    // page-global property is removed when initialization ends.
     const host = function () { return __hostCall.apply(null, arguments); };
     if (typeof String.prototype.substr !== 'function') {
         Object.defineProperty(String.prototype, 'substr', {
@@ -41,6 +43,14 @@
     let customElementAttributeChanged = () => {};
     let scheduleSlotChangeCheck = () => {};
     let shadowRootForTraversal = () => null;
+    let focusedAreaForDocument = () => null;
+    let setFocusedAreaForDocument = () => {};
+    let activeElementForRoot = () => null;
+    let focusTargetForElement = () => null;
+    let focusElement = () => {};
+    let blurElement = () => {};
+    let repairDetachedFocus = () => {};
+    let queuePolicyViolation = () => {};
     let resetAttributeNameMode = () => {};
     let invalidateMutationAncestors = () => {};
     let replaceElementInnerHtml = () => {};

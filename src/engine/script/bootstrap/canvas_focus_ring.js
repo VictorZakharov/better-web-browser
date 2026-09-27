@@ -7,7 +7,7 @@
         const target = external ? element : pathOrElement;
         if (!(target instanceof Element))
             throw new TypeError('drawFocusIfNeeded requires an Element');
-        if (target !== document.activeElement || !this.canvas.contains(target)) return;
+        if (target !== focusedAreaForDocument(document) || !this.canvas.contains(target)) return;
         const path = canvasPathArgument(this, external ? pathOrElement : undefined);
         if (!path.subpaths.some(part => part.points.length > 1)) return;
         const previous = {

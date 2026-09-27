@@ -2,6 +2,7 @@
 
 use super::dynamic_scripts::drain_dynamic_scripts;
 use super::*;
+use crate::limits::MAX_POST_LOAD_TIMER_CALLBACKS as MAX_TIMER_CALLBACKS_PER_SLICE;
 
 // Each callback and its microtask checkpoint are one indivisible HTML task. Yield between tasks
 // after this wall-clock slice so rendering and the renderer control plane get an opportunity to

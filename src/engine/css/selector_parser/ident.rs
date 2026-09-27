@@ -2,7 +2,10 @@
 
 /// Returns the decoded identifier and the byte offset after it. A CSS escape
 /// consumes up to six hex digits and one optional following whitespace code point.
-pub(super) fn parse_identifier(input: &str, start: usize) -> Option<(String, usize)> {
+pub(in crate::engine::css) fn parse_identifier(
+    input: &str,
+    start: usize,
+) -> Option<(String, usize)> {
     let mut cursor = start;
     let mut value = String::new();
     let first = next_char(input, cursor)?;

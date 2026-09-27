@@ -150,7 +150,6 @@
         queueAttributeMutation(element, current, oldValue, value);
         maybeRefreshNamedProperties(element, current.namespace, current.localName, oldValue, value);
         maybeRefreshPatternVerdict(element, current.localName);
-        scheduleSlotChangeCheck();
     };
     const detachAttribute = (element, record, attribute) => {
         cacheForAttributes(element).attributes.delete(attributeKey(record.namespace, record.localName));

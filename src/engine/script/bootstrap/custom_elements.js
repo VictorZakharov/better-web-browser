@@ -4,16 +4,20 @@
     const customElementDefinitions = new WeakMap();
     const registryStates = new WeakMap();
     const definitionsByConstructor = new Map();
+    const activeConstructionRegistries = new Map();
     const alreadyConstructedMarker = {};
     const reservedCustomElementNames = new Set([
         'annotation-xml', 'color-profile', 'font-face', 'font-face-src', 'font-face-uri',
         'font-face-format', 'font-face-name', 'missing-glyph'
     ]);
-    // HTML defines this in terms of a valid element local name plus an ASCII-lowercase
-    // first character, a hyphen, and no ASCII uppercase. Keep the grammar explicit so
-    // punctuation rejected by the tokenizer cannot become a registry key.
+    // HTML builds on DOM's valid element local name. With an ASCII-alpha first
+    // character, DOM excludes only ASCII whitespace, NUL, slash, and ">";
+    // other punctuation and non-ASCII code points can be valid custom names.
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#valid-custom-element-name
+    // https://dom.spec.whatwg.org/#valid-element-local-name
     const validCustomElementName = name =>
-        /^[a-z][a-z0-9._:\-\u0080-\u{10ffff}]*$/u.test(name) &&
+        /^[a-z]/.test(name) &&
+        !/[A-Z\u0000\u0009\u000A\u000C\u000D\u0020\/>]/.test(name) &&
         name.includes('-') && !reservedCustomElementNames.has(name);
     const isConstructor = value => {
         if (typeof value !== 'function') return false;
@@ -86,11 +90,14 @@
     };
 
     let defaultCustomElementRegistry = null;
-    const definitionForElement = (registry, element) => {
-        if (!registry || element.namespaceURI !== htmlNamespace) return null;
+    const definitionForElement = element => {
+        const registry = elementRegistryFor(element);
+        const id = nodeId(element);
+        if (!registry || host('namespaceUri', id) !== htmlNamespace) return null;
         // Inert template/DOMImplementation documents have no default custom-element registry.
-        if (registry === defaultCustomElementRegistry && element.ownerDocument !== document) return null;
-        return registryStates.get(registry)?.definitionsByName.get(element.localName) || null;
+        if (registry === defaultCustomElementRegistry &&
+            host('ownerDocument', id) !== nodeId(document)) return null;
+        return registryStates.get(registry)?.definitionsByName.get(host('localName', id)) || null;
     };
     const upgradeElement = (element, definition, synchronous, parserInserted = false) => {
         const state = customElementStates.get(element);
@@ -103,6 +110,8 @@
         definition.constructionStack.push(element);
         if (parserInserted) throwOnDynamicMarkupInsertion++;
         customElementCallbackDepth++;
+        const previousConstructionRegistry = activeConstructionRegistries.get(definition.constructor);
+        activeConstructionRegistries.set(definition.constructor, definition.registry);
         try {
             const constructed = new definition.constructor();
             if (constructed !== element)
@@ -113,6 +122,9 @@
             reportGlobalException(error);
             return element;
         } finally {
+            if (previousConstructionRegistry === undefined)
+                activeConstructionRegistries.delete(definition.constructor);
+            else activeConstructionRegistries.set(definition.constructor, previousConstructionRegistry);
             customElementCallbackDepth--;
             if (parserInserted) throwOnDynamicMarkupInsertion--;
             definition.constructionStack.pop();
@@ -125,22 +137,25 @@
         });
         return element;
     };
-    const tryUpgradeElement = (element, registry, synchronous = false, parserInserted = false) => {
-        if (!(element instanceof Element)) return element;
-        const definition = definitionForElement(registry, element);
+    const tryUpgradeElement = (element, synchronous = false, parserInserted = false) => {
+        if (host('nodeType', nodeId(element)) !== 1) return element;
+        const definition = definitionForElement(element);
         return definition ? upgradeElement(element, definition, synchronous, parserInserted) : element;
     };
 
     maybeUpgradeCustomElement = (element, synchronous = false, parserInserted = false) =>
-        tryUpgradeElement(element, defaultCustomElementRegistry, synchronous, parserInserted);
-    upgradeCustomElementTree = (root, registry = defaultCustomElementRegistry) =>
+        tryUpgradeElement(element, synchronous, parserInserted);
+    upgradeCustomElementTree = (root, registry = null) =>
         withCustomElementReactions(() => {
-            for (const element of inclusiveElementDescendants(root)) tryUpgradeElement(element, registry);
+            for (const element of inclusiveElementDescendants(root)) {
+                if (registry === null || elementRegistryFor(element) === registry)
+                    tryUpgradeElement(element);
+            }
         });
     connectCustomElementTree = root => withCustomElementReactions(() => {
         for (const element of inclusiveElementDescendants(root)) {
             const wasCustom = customElementStates.get(element) === 'custom';
-            tryUpgradeElement(element, defaultCustomElementRegistry);
+            tryUpgradeElement(element);
             if (wasCustom) enqueueCustomElementCallback(element, 'connectedCallback');
         }
     });
@@ -150,6 +165,7 @@
     });
     adoptCustomElementTree = (root, oldDocument, newDocument) => withCustomElementReactions(() => {
         resetAttributeNameMode(root);
+        adoptRegistries(root, newDocument);
         for (const element of inclusiveElementDescendants(root))
             enqueueCustomElementCallback(element, 'adoptedCallback', [oldDocument, newDocument]);
     });
@@ -158,7 +174,8 @@
             'attributeChangedCallback', [name, oldValue, newValue, namespace]));
 
     constructCustomElement = constructor => {
-        const definition = definitionsByConstructor.get(constructor);
+        const definition = definitionsByConstructor.get(constructor)?.get(
+            activeConstructionRegistries.get(constructor) || defaultCustomElementRegistry);
         if (!definition) throw new TypeError('Invalid custom element constructor');
         const stack = definition.constructionStack;
         if (stack.length) {
@@ -170,6 +187,7 @@
             return element;
         }
         const element = wrap(host('createElement', nodeId(document), definition.localName));
+        rememberElementRegistry(element, definition.registry);
         Object.setPrototypeOf(element, definition.prototype);
         customElementDefinitions.set(element, definition);
         customElementStates.set(element, 'custom');
@@ -183,7 +201,8 @@
                 definitionsByConstructor: new Map(),
                 whenDefined: new Map(),
                 defining: false,
-                scoped: true
+                scoped: true,
+                documents: new Set()
             });
         }
         define(name, constructor, options = {}) {
@@ -195,7 +214,7 @@
             if (state.definitionsByName.has(name) || state.definitionsByConstructor.has(constructor))
                 throw new DOMException('The custom element is already defined', 'NotSupportedError');
             options = Object(options);
-            if (options.extends !== undefined)
+            if ('extends' in options)
                 throw new DOMException('Customized built-in elements are not supported', 'NotSupportedError');
             if (state.defining)
                 throw new DOMException('A custom element definition is already running', 'NotSupportedError');
@@ -230,9 +249,16 @@
             }
             state.definitionsByName.set(name, definition);
             state.definitionsByConstructor.set(constructor, definition);
-            definitionsByConstructor.set(constructor, definition);
-            if (this === defaultCustomElementRegistry) host('parserDefineCustomElement', name);
-            if (this === defaultCustomElementRegistry) upgradeCustomElementTree(document, this);
+            let constructorDefinitions = definitionsByConstructor.get(constructor);
+            if (!constructorDefinitions)
+                definitionsByConstructor.set(constructor, constructorDefinitions = new Map());
+            constructorDefinitions.set(this, definition);
+            // The native parser only needs candidate names; its JS continuation
+            // resolves the intended parent's actual (possibly scoped) registry.
+            host('parserDefineCustomElement', name);
+            const documents = state.scoped ? state.documents : [document];
+            for (const associatedDocument of documents)
+                upgradeCustomElementTree(associatedDocument, this);
             const pending = state.whenDefined.get(name);
             if (pending) {
                 state.whenDefined.delete(name);
@@ -261,10 +287,30 @@
         }
         upgrade(root) {
             if (!(isNode(root))) throw new TypeError('CustomElementRegistry.upgrade requires a Node');
-            const state = registryStates.get(this);
-            if (!state.scoped && (root instanceof Document || root.ownerDocument !== document))
-                throw new DOMException('The root does not use this custom element registry', 'NotSupportedError');
             upgradeCustomElementTree(root, this);
+        }
+        initialize(root) {
+            if (!(isNode(root))) throw new TypeError('CustomElementRegistry.initialize requires a Node');
+            const state = registryStates.get(this);
+            if (!state.scoped && (root instanceof Document ||
+                documentRegistryFor(root.ownerDocument) !== this))
+                throw new DOMException('The root does not use this global registry', 'NotSupportedError');
+            if (root instanceof Document && documentRegistryFor(root) === null) {
+                if (!host('documentRegistryInitializeScoped', nodeId(root)))
+                    throw new DOMException('Could not initialize the document registry', 'InvalidStateError');
+                documentRegistries.set(root, this);
+            }
+            else if (root instanceof ShadowRoot && shadowRegistryFor(root) === null) {
+                if (!host('shadowRegistryInitialize', nodeId(root), !state.scoped))
+                    throw new DOMException('Could not initialize the shadow registry', 'InvalidStateError');
+                rememberShadowRegistry(root, this);
+            }
+            withCustomElementReactions(() => {
+                for (const element of ordinaryElementDescendants(root)) {
+                    if (elementRegistryFor(element) === null) rememberElementRegistry(element, this);
+                    if (elementRegistryFor(element) === this) tryUpgradeElement(element);
+                }
+            });
         }
     }
     Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag,
