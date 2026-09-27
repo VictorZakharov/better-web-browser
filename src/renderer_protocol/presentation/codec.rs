@@ -14,6 +14,7 @@ use std::collections::HashSet;
 
 pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolError> {
     validate_glyph_rasters(value.glyph_epoch, &value.glyphs)?;
+    validate_retired_keys(&value.retired_image_keys, &value.images)?;
     if value.images.len() > MAX_PRESENTED_IMAGES {
         return Err(ProtocolError::InvalidPayload("presented image count"));
     }
@@ -43,6 +44,10 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
         writer.u32(image.image.height);
         writer.bytes(&image.image.bgra)?;
     }
+    writer.u32(value.retired_image_keys.len() as u32);
+    for key in &value.retired_image_keys {
+        writer.string(key)?;
+    }
     writer.u64(value.glyph_epoch);
     writer.u32(value.glyphs.len() as u32);
     for glyph in &value.glyphs {
@@ -57,6 +62,22 @@ pub(super) fn encode(value: &RendererPresentation) -> Result<Vec<u8>, ProtocolEr
         return Err(ProtocolError::PayloadTooLarge(bytes.len() as u32));
     }
     Ok(bytes)
+}
+
+fn validate_retired_keys(keys: &[String], images: &[PresentedImage]) -> Result<(), ProtocolError> {
+    if keys.len() > MAX_PRESENTED_IMAGES {
+        return Err(ProtocolError::InvalidPayload("retired image count"));
+    }
+    let mut unique = HashSet::with_capacity(keys.len());
+    if keys.iter().any(|key| {
+        key.is_empty()
+            || key.len() > MAX_URL_BYTES
+            || !unique.insert(key)
+            || images.iter().any(|image| image.url == *key)
+    }) {
+        return Err(ProtocolError::InvalidPayload("retired image key"));
+    }
+    Ok(())
 }
 
 fn validate_glyph_rasters(
@@ -163,6 +184,15 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
             },
         });
     }
+    let retired_count = reader.u32()? as usize;
+    if retired_count > MAX_PRESENTED_IMAGES {
+        return Err(ProtocolError::InvalidPayload("retired image count"));
+    }
+    let mut retired_image_keys = Vec::with_capacity(retired_count);
+    for _ in 0..retired_count {
+        retired_image_keys.push(reader.string(MAX_URL_BYTES)?);
+    }
+    validate_retired_keys(&retired_image_keys, &images)?;
     let glyph_epoch = reader.u64()?;
     if glyph_epoch == 0 {
         return Err(ProtocolError::InvalidPayload("glyph epoch"));
@@ -225,6 +255,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<RendererPresentation, ProtocolError
         reader: reader_document,
         layout,
         images,
+        retired_image_keys,
         glyph_epoch,
         glyphs,
         runtime,

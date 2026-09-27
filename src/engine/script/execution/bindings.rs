@@ -17,5 +17,8 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         .map_err(|error| format!("initialize child documents: {error}"))?;
     context
         .capture_hook("__dispatchStorageEvent")
-        .map_err(|error| format!("capture storage event dispatcher: {error}"))
+        .map_err(|error| format!("capture storage event dispatcher: {error}"))?;
+    context
+        .capture_hook("__takeCanvasPresentation")
+        .map_err(|error| format!("capture Canvas presentation snapshot: {error}"))
 }

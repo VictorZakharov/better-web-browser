@@ -24,6 +24,14 @@ impl ChildConnection {
             self.document = Some(runtime);
             return Ok(());
         }
+        if DocumentRuntime::is_worker_websocket(event.socket_id) {
+            // Unknown high-bit IDs are retired worker sockets, never page sockets.
+            let result = runtime.deliver_worker_websocket_event(event, self);
+            if !self.stopping {
+                self.document = Some(runtime);
+            }
+            return result;
+        }
         let document = event.document;
         let result = catch_unwind(AssertUnwindSafe(|| {
             runtime.deliver_websocket_event(event, self)

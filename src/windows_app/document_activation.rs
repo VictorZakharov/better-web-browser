@@ -204,7 +204,12 @@ impl BrowserState {
             self.presented_images.clear();
             self.image_bitmaps.clear();
         }
-        let images_changed = !presentation.images.is_empty();
+        let images_changed =
+            !presentation.images.is_empty() || !presentation.retired_image_keys.is_empty();
+        for key in std::mem::take(&mut presentation.retired_image_keys) {
+            self.image_bitmaps.remove(&key);
+            self.presented_images.remove(&key);
+        }
         for image in std::mem::take(&mut presentation.images) {
             if !first_presentation {
                 self.image_bitmaps.remove(&image.url);

@@ -3,10 +3,13 @@
 use super::binding_helpers::*;
 use super::*;
 
+mod canvas_presentation;
 pub(super) mod compression_host;
 mod font_host;
+mod graphics;
 mod module_completion;
 pub(super) mod navigation;
+pub(in crate::engine::script) mod notification;
 pub(in crate::engine::script) mod speech;
 mod storage;
 mod task_scheduling;
@@ -44,22 +47,13 @@ pub(super) fn dispatch_host_call(
     if let Some(value) = speech::dispatch(operation, args, state)? {
         return Ok(value);
     }
+    if let Some(value) = notification::dispatch(operation, args, state)? {
+        return Ok(value);
+    }
     if let Some(value) = super::workers::worker_host_call(operation, args, state)? {
         return Ok(value);
     }
-    if let Some(value) = super::fullscreen_host::fullscreen_host_call(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::pointer_lock_host::dispatch(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::media_host::media_host_call(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = font_host::dispatch(operation, args, state)? {
-        return Ok(value);
-    }
-    if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
+    if let Some(value) = graphics::dispatch(operation, args, state)? {
         return Ok(value);
     }
     if let Some(value) = super::attribute_host::attribute_host_call(operation, args, state)? {

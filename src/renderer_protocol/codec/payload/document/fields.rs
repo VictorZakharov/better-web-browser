@@ -21,6 +21,11 @@ pub(super) fn encode_document_start(
     writer.u32(start.body_length);
     encode_viewport(writer, start.viewport);
     writer.bool(start.prefers_dark_color_scheme);
+    writer.u8(match start.notification_permission {
+        crate::renderer_protocol::NotificationPermission::Default => 0,
+        crate::renderer_protocol::NotificationPermission::Granted => 1,
+        crate::renderer_protocol::NotificationPermission::Denied => 2,
+    });
     Ok(())
 }
 
@@ -55,6 +60,12 @@ pub(super) fn decode_document_start(
         body_length: reader.u32()?,
         viewport: decode_viewport(reader)?,
         prefers_dark_color_scheme: reader.bool()?,
+        notification_permission: match reader.u8()? {
+            0 => crate::renderer_protocol::NotificationPermission::Default,
+            1 => crate::renderer_protocol::NotificationPermission::Granted,
+            2 => crate::renderer_protocol::NotificationPermission::Denied,
+            _ => return Err(ProtocolError::InvalidPayload("notification permission")),
+        },
     };
     start.validate()?;
     Ok(start)

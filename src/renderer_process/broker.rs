@@ -45,7 +45,10 @@ use queue_depth::QueueDepth;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-pub use stream::{DatabaseEventSink, FetchResponseSink, SpeechUpdateSink, WebSocketEventSink};
+pub use stream::{
+    DatabaseEventSink, FetchResponseSink, NotificationUpdateSink, SpeechUpdateSink,
+    WebSocketEventSink,
+};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererState {
     Running,
@@ -112,6 +115,7 @@ pub enum RendererEvent {
     WebSocketCommand(crate::renderer_protocol::WebSocketCommand),
     DatabaseCommand(crate::renderer_protocol::DatabaseCommand),
     SpeechRequest(crate::renderer_protocol::SpeechRequest),
+    NotificationRequest(crate::renderer_protocol::NotificationRequest),
     Unresponsive,
     Exited(RendererExit),
 }
@@ -125,6 +129,11 @@ pub struct RendererSession {
     state_updates: state_updates::Sender,
     lifecycle: mpsc::Sender<worker::LifecycleCommand>,
     fetch_stream: mpsc::SyncSender<stream::FetchStreamEvent>,
+    database_events: mpsc::SyncSender<crate::renderer_protocol::DatabaseEvent>,
+    database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
+    database_overflow: Arc<std::sync::atomic::AtomicBool>,
+    notification_updates: mpsc::SyncSender<crate::renderer_protocol::NotificationUpdate>,
+    notification_overflow: Arc<std::sync::atomic::AtomicBool>,
     fetch_flow: Arc<flow::FetchFlow>,
     events: events::EventReceiver,
     incoming_depth: QueueDepth,
@@ -233,6 +242,15 @@ impl RendererSession {
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel();
         let (fetch_stream_tx, fetch_stream_rx) =
             mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        // Required database replies cannot wait behind Fetch body chunks.
+        let (database_events_tx, database_events_rx) =
+            mpsc::sync_channel(crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS);
+        let database_queued_bytes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let database_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Permission decisions and terminal Notification events settle renderer state.
+        // They cannot compete with bulk Fetch chunks in the lossy UI-thread lane.
+        let (notification_updates_tx, notification_updates_rx) = mpsc::sync_channel(256);
+        let notification_overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let fetch_flow = Arc::new(flow::FetchFlow::default());
         let worker_fetch_flow = Arc::clone(&fetch_flow);
         let (events_tx, events_rx) = events::bounded();
@@ -241,6 +259,9 @@ impl RendererSession {
         let worker_wake = wake.clone();
         let worker_command_depth = command_depth.clone();
         let worker_incoming_depth = incoming_depth.clone();
+        let worker_notification_overflow = Arc::clone(&notification_overflow);
+        let worker_database_overflow = Arc::clone(&database_overflow);
+        let worker_database_queued_bytes = Arc::clone(&database_queued_bytes);
         let handle = std::thread::Builder::new()
             .name("breeze-renderer-broker".into())
             .spawn(move || {
@@ -261,6 +282,11 @@ impl RendererSession {
                     state_updates: state_updates_rx,
                     lifecycle: lifecycle_rx,
                     fetch_stream: fetch_stream_rx,
+                    database_events: database_events_rx,
+                    database_queued_bytes: worker_database_queued_bytes,
+                    database_overflow: worker_database_overflow,
+                    notification_updates: notification_updates_rx,
+                    notification_overflow: worker_notification_overflow,
                     fetch_flow: worker_fetch_flow,
                     events: events_tx,
                     wake: worker_wake,
@@ -278,6 +304,11 @@ impl RendererSession {
             state_updates: state_updates_tx,
             lifecycle: lifecycle_tx,
             fetch_stream: fetch_stream_tx,
+            database_events: database_events_tx,
+            database_queued_bytes,
+            database_overflow,
+            notification_updates: notification_updates_tx,
+            notification_overflow,
             fetch_flow,
             events: events_rx,
             incoming_depth,

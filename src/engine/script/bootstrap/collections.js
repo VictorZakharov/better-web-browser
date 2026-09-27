@@ -34,8 +34,6 @@
                 names.push(item.id);
                 seen.add(item.id);
             }
-        }
-        for (const item of items) {
             const name = item.namespaceURI === htmlNamespace ? item.getAttribute('name') : null;
             if (name && !seen.has(name)) {
                 names.push(name);
@@ -55,9 +53,9 @@
             name = String(name);
             if (!name) return null;
             const items = collectionItems(this);
-            for (const item of items) if (item.id === name) return item;
             for (const item of items) {
-                if (item.namespaceURI === htmlNamespace && item.getAttribute('name') === name) return item;
+                if (item.id === name || (item.namespaceURI === htmlNamespace &&
+                    item.getAttribute('name') === name)) return item;
             }
             return null;
         }
@@ -68,8 +66,8 @@
     // HTMLCollection is a live legacy platform object: every access resolves the
     // current tree, while indexed and named properties remain ordinary reads.
     // https://dom.spec.whatwg.org/#interface-htmlcollection
-    const liveHtmlCollection = resolve => {
-        const target = new HTMLCollection(htmlCollectionConstructionToken);
+    const liveIndexedCollection = (resolve, constructor, named, setIndex = null) => {
+        const target = new constructor(htmlCollectionConstructionToken);
         const proxy = new Proxy(target, {
             get(target, property, receiver) {
                 const index = collectionIndex(property);
@@ -77,15 +75,23 @@
                 // an absent property falls through to ordinary prototype lookup.
                 // https://webidl.spec.whatwg.org/#legacy-platform-object-getownproperty
                 if (index !== null) return target.item(index) ?? Reflect.get(target, property, receiver);
-                if (typeof property === 'string' && !(property in target)) {
+                if (named && typeof property === 'string' && !(property in target)) {
                     return target.namedItem(property) || undefined;
                 }
                 return Reflect.get(target, property, receiver);
             },
+            set(target, property, value, receiver) {
+                const index = collectionIndex(property);
+                if (index !== null && setIndex) {
+                    setIndex(index, value);
+                    return true;
+                }
+                return Reflect.set(target, property, value, receiver);
+            },
             has(target, property) {
                 if (collectionIndex(property) !== null) return target.item(property) !== null || property in target;
-                return property in target ||
-                    (typeof property === 'string' && target.namedItem(property) !== null);
+                return property in target || (named && typeof property === 'string' &&
+                    target.namedItem(property) !== null);
             },
             ownKeys(target) {
                 const items = collectionItems(target);
@@ -98,10 +104,12 @@
                         seen.add(property);
                     }
                 }
-                for (const property of supportedCollectionNames(items)) {
-                    if (!seen.has(property)) {
-                        keys.push(property);
-                        seen.add(property);
+                if (named) {
+                    for (const property of supportedCollectionNames(items)) {
+                        if (!seen.has(property)) {
+                            keys.push(property);
+                            seen.add(property);
+                        }
                     }
                 }
                 return keys;
@@ -111,17 +119,23 @@
                 if (descriptor) return descriptor;
                 if (typeof property !== 'string') return undefined;
                 const index = collectionIndex(property);
+                if (index === null && !named) return undefined;
                 const value = index === null
                     ? target.namedItem(property)
                     : target.item(index);
                 if (value === null) return undefined;
-                return { configurable: true, enumerable: true, writable: false, value };
+                return { configurable: true, enumerable: index !== null,
+                    writable: index !== null && !!setIndex, value };
             }
         });
         htmlCollectionResolvers.set(target, resolve);
         htmlCollectionResolvers.set(proxy, resolve);
         return proxy;
     };
+    const liveHtmlCollection = (resolve, constructor = HTMLCollection, setIndex = null) =>
+        liveIndexedCollection(resolve, constructor, true, setIndex);
+    const liveNodeList = (resolve, constructor) =>
+        liveIndexedCollection(resolve, constructor, false);
 
     const selectorCollection = (root, selector) =>
         liveHtmlCollection(() => list(host('queryAll', nodeId(root), selector)));

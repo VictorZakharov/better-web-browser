@@ -56,6 +56,8 @@ pub struct DocumentStart {
     pub body_length: u32,
     pub viewport: PresentedViewport,
     pub prefers_dark_color_scheme: bool,
+    /// Browser-authoritative notification decision for this document's origin.
+    pub notification_permission: super::NotificationPermission,
 }
 
 impl DocumentStart {

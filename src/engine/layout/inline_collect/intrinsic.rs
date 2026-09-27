@@ -21,7 +21,7 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
             _ => return None,
         };
         let node = self.styles.node(id)?;
-        if !(matches!(node.tag_name(), Some("img" | "image" | "video"))
+        if !(matches!(node.tag_name(), Some("img" | "image" | "video" | "canvas"))
             || (node.tag_name() == Some("input")
                 && node
                     .attr("type")

@@ -20,21 +20,7 @@ pub(in crate::engine::script) fn dispatch(
 ) -> JsResult<Option<JsValue>> {
     match operation {
         "webSocketOpen" => {
-            let url = argument_string(args, 1)?;
-            if url.is_empty() || url.len() > MAX_URL_BYTES {
-                return Err(JsNativeError::range()
-                    .with_message("WebSocket URL exceeds the browser limit")
-                    .into());
-            }
-            let protocols: Vec<String> =
-                serde_json::from_str(&argument_string(args, 2)?).map_err(|_| {
-                    JsNativeError::typ().with_message("Invalid WebSocket subprotocol list")
-                })?;
-            if protocols.len() > 32 {
-                return Err(JsNativeError::range()
-                    .with_message("Too many WebSocket subprotocols")
-                    .into());
-            }
+            let operation = parse_open(args)?;
             let id = state
                 .fetch_identifiers
                 .borrow_mut()
@@ -42,7 +28,7 @@ pub(in crate::engine::script) fn dispatch(
             state.pending_websocket_actions.push(ScriptWebSocketAction {
                 id,
                 client: state.fetch_client,
-                operation: WebSocketOperation::Open { url, protocols },
+                operation,
             });
             Ok(Some(JsValue::from(id)))
         }
@@ -53,23 +39,10 @@ pub(in crate::engine::script) fn dispatch(
                     .with_message("Unknown WebSocket")
                     .into());
             }
-            let binary = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
-            let value = argument_string(args, 3)?;
-            let data = if binary {
-                super::decode_base64(&value)
-                    .map_err(|error| JsNativeError::typ().with_message(error))?
-            } else {
-                value.into_bytes()
-            };
-            if data.len() > MAX_WEBSOCKET_MESSAGE_BYTES {
-                return Err(JsNativeError::range()
-                    .with_message("WebSocket message exceeds the browser limit")
-                    .into());
-            }
             state.pending_websocket_actions.push(ScriptWebSocketAction {
                 id,
                 client: state.fetch_client,
-                operation: WebSocketOperation::Send { binary, data },
+                operation: parse_send(args)?,
             });
             Ok(Some(JsValue::undefined()))
         }
@@ -78,17 +51,55 @@ pub(in crate::engine::script) fn dispatch(
             if state.fetch_identifiers.borrow().owner(id) != Some(state.document.id()) {
                 return Ok(Some(JsValue::undefined()));
             }
-            let code = argument_id(args, 2) as u16;
-            let reason = argument_string(args, 3)?;
             state.pending_websocket_actions.push(ScriptWebSocketAction {
                 id,
                 client: state.fetch_client,
-                operation: WebSocketOperation::Close { code, reason },
+                operation: parse_close(args)?,
             });
             Ok(Some(JsValue::undefined()))
         }
         _ => Ok(None),
     }
+}
+
+pub(in crate::engine::script) fn parse_open(args: &[JsValue]) -> JsResult<WebSocketOperation> {
+    let url = argument_string(args, 1)?;
+    if url.is_empty() || url.len() > MAX_URL_BYTES {
+        return Err(JsNativeError::range()
+            .with_message("WebSocket URL exceeds the browser limit")
+            .into());
+    }
+    let protocols: Vec<String> = serde_json::from_str(&argument_string(args, 2)?)
+        .map_err(|_| JsNativeError::typ().with_message("Invalid WebSocket subprotocol list"))?;
+    if protocols.len() > 32 {
+        return Err(JsNativeError::range()
+            .with_message("Too many WebSocket subprotocols")
+            .into());
+    }
+    Ok(WebSocketOperation::Open { url, protocols })
+}
+
+pub(in crate::engine::script) fn parse_send(args: &[JsValue]) -> JsResult<WebSocketOperation> {
+    let binary = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
+    let value = argument_string(args, 3)?;
+    let data = if binary {
+        super::decode_base64(&value).map_err(|error| JsNativeError::typ().with_message(error))?
+    } else {
+        value.into_bytes()
+    };
+    if data.len() > MAX_WEBSOCKET_MESSAGE_BYTES {
+        return Err(JsNativeError::range()
+            .with_message("WebSocket message exceeds the browser limit")
+            .into());
+    }
+    Ok(WebSocketOperation::Send { binary, data })
+}
+
+pub(in crate::engine::script) fn parse_close(args: &[JsValue]) -> JsResult<WebSocketOperation> {
+    Ok(WebSocketOperation::Close {
+        code: argument_id(args, 2) as u16,
+        reason: argument_string(args, 3)?,
+    })
 }
 
 pub(in crate::engine::script) fn deliver_event(

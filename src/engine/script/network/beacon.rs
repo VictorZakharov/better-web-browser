@@ -15,6 +15,7 @@ pub(super) fn queue(serialized: &str, state: &mut HostState) -> JsResult<JsValue
             .unwrap_or(&state.document_url),
         serialized,
     )?;
+    request.keepalive = true;
     let body_len = request
         .body
         .as_ref()

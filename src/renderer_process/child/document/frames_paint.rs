@@ -16,24 +16,50 @@ pub(super) struct PaintedFrame {
     pub rect: RectF,
     pub page: Page,
     pub layout: LayoutOutput,
+    pub canvas_updates: HashSet<String>,
     pub children: Vec<PaintedFrame>,
 }
 
-pub(super) fn append_images(
+pub(super) fn append_image_candidates(
     frames: &[PaintedFrame],
-    sent: &mut HashSet<String>,
-    presented: &mut Vec<PresentedImage>,
+    sent: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    candidates: &mut Vec<super::image_deltas::ImageDelta>,
 ) {
     for frame in frames {
         for (url, image) in &frame.page.images {
-            if url.len() <= crate::limits::MAX_URL_BYTES && sent.insert(url.clone()) {
-                presented.push(PresentedImage {
-                    url: url.clone(),
-                    image: image.clone(),
+            let canvas_update = frame.canvas_updates.contains(url);
+            let already_sent = sent.contains(url);
+            if url.len() <= crate::limits::MAX_URL_BYTES
+                && (!already_sent || canvas_update)
+                && seen.insert(url.clone())
+            {
+                candidates.push(super::image_deltas::ImageDelta {
+                    presented: PresentedImage {
+                        url: url.clone(),
+                        image: image.clone(),
+                    },
+                    canvas_update,
+                    frame: Some(frame.document),
+                    already_sent,
                 });
             }
         }
-        append_images(&frame.children, sent, presented);
+        append_image_candidates(&frame.children, sent, seen, candidates);
+    }
+}
+
+pub(super) fn canvas_image_keys(frames: &[PaintedFrame], output: &mut HashSet<String>) {
+    for frame in frames {
+        output.extend(
+            frame
+                .page
+                .images
+                .keys()
+                .filter(|key| Page::is_canvas_image_key(key))
+                .cloned(),
+        );
+        canvas_image_keys(&frame.children, output);
     }
 }
 
@@ -134,6 +160,7 @@ fn compose_items(
             rect,
             page,
             layout,
+            canvas_updates: snapshot.canvas_updates,
             children,
         });
     }
@@ -187,6 +214,38 @@ mod tests {
     use crate::engine::layout::StickyLayer;
 
     #[test]
+    fn previously_sent_child_canvas_update_is_emitted_and_acknowledged() {
+        let mut page = Page::parse_scripted("<canvas width=1 height=1></canvas>", "about:blank");
+        let canvas = page.dom.elements_named("canvas").next().unwrap();
+        page.install_canvas_bitmap(canvas.id(), 1, 1, Some(vec![255, 0, 0, 255]))
+            .unwrap();
+        let canvas_updates = page.take_canvas_image_updates();
+        let key = canvas_updates.iter().next().unwrap().clone();
+        let document = page.dom.document.id();
+        let frame = PaintedFrame {
+            document,
+            rect: RectF {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            page,
+            layout: LayoutOutput::default(),
+            canvas_updates,
+            children: Vec::new(),
+        };
+        let sent = HashSet::from([key.clone()]);
+        let mut seen = HashSet::new();
+        let mut candidates = Vec::new();
+        append_image_candidates(&[frame], &sent, &mut seen, &mut candidates);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].presented.url, key);
+        assert!(candidates[0].canvas_update);
+        assert_eq!(candidates[0].frame, Some(document));
+    }
+
+    #[test]
     fn child_document_paints_in_its_own_viewport_and_receives_local_hits() {
         let child = dom::parse(
             "<style>body{margin:0}</style><button style='width:100px;height:40px'>child</button>",
@@ -212,6 +271,7 @@ mod tests {
             media_environment: MediaEnvironment::new(304.0, 78.0, 1.0, false),
             quirks_mode: false,
             images: HashMap::new(),
+            canvas_updates: HashSet::new(),
             children: Vec::new(),
             publish_geometry: Box::new(|_, _| {}),
         };

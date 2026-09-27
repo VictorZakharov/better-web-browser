@@ -6,6 +6,10 @@ mod accessibility;
 mod async_scripts;
 #[path = "renderer_process/backpressure.rs"]
 mod backpressure;
+#[path = "renderer_process/canvas_frames.rs"]
+mod canvas_frames;
+#[path = "renderer_process/canvas_presentation.rs"]
+mod canvas_presentation;
 #[path = "renderer_process/checkable.rs"]
 mod checkable;
 #[path = "renderer_process/clock_backpressure.rs"]
@@ -14,6 +18,8 @@ mod clock_backpressure;
 mod crypto;
 #[path = "renderer_process/csp_ordering.rs"]
 mod csp_ordering;
+#[path = "renderer_process/drag_drop.rs"]
+mod drag_drop;
 #[path = "renderer_process/event_notifications.rs"]
 mod event_notifications;
 #[path = "renderer_process/exit_diagnostics.rs"]
@@ -32,6 +38,8 @@ mod hover;
 mod input;
 #[path = "renderer_process/media.rs"]
 mod media;
+#[path = "renderer_process/notifications.rs"]
+mod notifications;
 #[path = "renderer_process/pointer_buttons.rs"]
 mod pointer_buttons;
 #[path = "renderer_process/pointer_lock.rs"]

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "resource_tests.rs"]
+mod resources;
 use crate::document::Document;
 use crate::renderer_protocol::{
     AccessibilityUpdate, DocumentId, DocumentNodeId, PageLoadReport, PresentedLayout,
@@ -29,6 +31,7 @@ fn presentation(revision: u64) -> RendererEvent {
         },
         layout: PresentedLayout::default(),
         images: Vec::new(),
+        retired_image_keys: Vec::new(),
         glyph_epoch: 0,
         glyphs: Vec::new(),
         runtime: RuntimeReport {
@@ -64,7 +67,7 @@ fn runtime_update(scripts_executed: u64, console: &str) -> RendererEvent {
 }
 
 #[test]
-fn presentation_bursts_keep_only_the_newest_snapshot() {
+fn adjacent_presentations_merge_but_diagnostic_preserves_fifo_barrier() {
     let (sender, receiver) = bounded();
     let mut first = presentation(1);
     let RendererEvent::Presentation(value) = &mut first else {
@@ -81,6 +84,12 @@ fn presentation_bursts_keep_only_the_newest_snapshot() {
     sender.try_send(presentation(2)).unwrap();
     sender.try_send(presentation(3)).unwrap();
 
+    let RendererEvent::Presentation(first) = receiver.try_recv().unwrap() else {
+        panic!("presentation before the diagnostic was reordered");
+    };
+    assert_eq!(first.revision, 1);
+    assert!(first.clock_advanced);
+    assert_eq!(first.runtime.console, ["revision 1"]);
     assert!(matches!(
         receiver.try_recv().unwrap(),
         RendererEvent::Diagnostic { code: 7, .. }
@@ -89,19 +98,38 @@ fn presentation_bursts_keep_only_the_newest_snapshot() {
         panic!("newest presentation was not retained");
     };
     assert_eq!(presentation.revision, 3);
-    assert!(presentation.clock_advanced);
-    assert!(presentation.accessibility.full);
+    assert!(!presentation.clock_advanced);
+    assert!(!presentation.accessibility.full);
     assert_eq!(presentation.accessibility.nodes[0].name, "revision 3");
-    assert_eq!(presentation.runtime.scripts_executed, 3);
-    assert_eq!(
-        presentation.runtime.console,
-        ["revision 1", "revision 2", "revision 3"]
-    );
-    assert_eq!(presentation.style.total_styles, 6);
+    assert_eq!(presentation.runtime.scripts_executed, 2);
+    assert_eq!(presentation.runtime.console, ["revision 2", "revision 3"]);
+    assert_eq!(presentation.style.total_styles, 5);
     assert!(matches!(
         receiver.try_recv(),
         Err(mpsc::TryRecvError::Empty)
     ));
+}
+
+#[test]
+fn runtime_update_between_presentations_keeps_console_and_navigation_order() {
+    let (sender, receiver) = bounded();
+    let first = presentation(1);
+    sender.try_send(first).unwrap();
+    sender.try_send(runtime_update(1, "between")).unwrap();
+    sender.try_send(presentation(2)).unwrap();
+
+    let RendererEvent::Presentation(first) = receiver.try_recv().unwrap() else {
+        panic!("first presentation must stay before the runtime update");
+    };
+    assert_eq!(first.runtime.console, ["revision 1"]);
+    let RendererEvent::RuntimeUpdate(middle) = receiver.try_recv().unwrap() else {
+        panic!("middle runtime update was lost");
+    };
+    assert_eq!(middle.runtime.console, ["between"]);
+    let RendererEvent::Presentation(last) = receiver.try_recv().unwrap() else {
+        panic!("last presentation must stay after the runtime update");
+    };
+    assert_eq!(last.runtime.console, ["revision 2"]);
 }
 
 #[test]

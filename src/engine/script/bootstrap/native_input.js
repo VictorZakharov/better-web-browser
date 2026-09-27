@@ -91,6 +91,12 @@
         return allowed;
     };
     const dispatchNativeKeyboard = input => {
+        // The DND processing model suppresses device input until the drag ends;
+        // Escape is the one keyboard action that aborts it.
+        if (pointerDrag?.active) {
+            if (input.phase === 'down' && input.key === 'Escape') cancelPointerDrag();
+            return true;
+        }
         const target = nativeTarget(input.target);
         const allowed = target.dispatchEvent(markTrusted(new KeyboardEvent(
         input.phase === 'down' ? 'keydown' : 'keyup', {
@@ -103,6 +109,7 @@
         return allowed;
     };
     const dispatchNativeText = input => {
+        if (pointerDrag?.active) return true;
         const target = nativeTarget(input.target);
         const value = String(input.value);
         // A user edit is an internal operation, not the programmatic value

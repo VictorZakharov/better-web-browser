@@ -12,6 +12,7 @@ mod frame_navigation;
 mod frames;
 mod idle;
 mod inserted_scripts;
+mod notification;
 mod scheduling;
 mod speech;
 mod storage_sync;

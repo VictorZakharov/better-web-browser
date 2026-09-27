@@ -2,6 +2,34 @@
 
 use super::*;
 
+pub(super) unsafe fn register_class(
+    instance: Hinstance,
+    name: &str,
+    window_proc: WindowProc,
+    background_color: usize,
+) -> Result<(), String> {
+    let name = wide(name);
+    let class = WindowClassEx {
+        size: size_of::<WindowClassEx>() as u32,
+        style: 0x0002 | 0x0001,
+        window_proc: Some(window_proc),
+        class_extra: 0,
+        window_extra: 0,
+        instance,
+        icon: null_mut(),
+        cursor: LoadCursorW(null_mut(), int_resource(IDC_ARROW)),
+        background: (background_color + 1) as Hbrush,
+        menu_name: null(),
+        class_name: name.as_ptr(),
+        small_icon: null_mut(),
+    };
+    if RegisterClassExW(&class) == 0 {
+        Err(last_error(&format!("register {name:?} window class")))
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) unsafe fn create_font(height: i32, weight: i32, italic: bool, face: &str) -> Hfont {
     let face = wide(face);
     CreateFontW(

@@ -4,6 +4,7 @@ use scheduler::Step;
 
 pub(super) enum Job {
     Request(Box<RendererFetchRequest>, FetchSignal),
+    Keepalive(Box<keepalive::Prepared>, FetchSignal),
     Body(Box<BodyJob>),
 }
 
@@ -12,12 +13,14 @@ pub(super) struct BodyJob {
     response: winhttp::StreamingFetchResponse,
     total: u32,
     pending: Option<TransferChunk>,
+    _keepalive_permit: Option<keepalive::Permit>,
 }
 
 impl Job {
     pub(super) fn id(&self) -> u64 {
         match self {
             Self::Request(request, _) => request.head.request_id,
+            Self::Keepalive(prepared, _) => prepared.id,
             Self::Body(body) => body.id,
         }
     }
@@ -44,6 +47,7 @@ impl Job {
                 document_url,
                 registry,
             ),
+            Self::Keepalive(prepared, signal) => start_keepalive(*prepared, signal, client, sink),
             Self::Body(mut body) => match body.advance(sink) {
                 Ok(true) => Step::Ready(Self::Body(body)),
                 Ok(false) => Step::Parked(Self::Body(body)),
@@ -136,6 +140,35 @@ fn start(
             return Step::Done(0);
         }
     }
+    begin_body(id, response, sink, None)
+}
+
+fn start_keepalive(
+    prepared: keepalive::Prepared,
+    signal: FetchSignal,
+    client: &winhttp::HttpClient,
+    sink: &FetchResponseSink,
+) -> Step<Job> {
+    let keepalive::Prepared {
+        id,
+        request,
+        permit,
+    } = prepared;
+    match client.fetch_stream(request.with_signal(signal)) {
+        Ok(response) => begin_body(id, response, sink, Some(permit)),
+        Err(error) => {
+            let _ = send_failure(sink, id, &error);
+            Step::Done(0)
+        }
+    }
+}
+
+fn begin_body(
+    id: u64,
+    response: winhttp::StreamingFetchResponse,
+    sink: &FetchResponseSink,
+    permit: Option<keepalive::Permit>,
+) -> Step<Job> {
     let head = FetchResponseHead {
         request_id: id,
         result: FetchResponseResult::Success {
@@ -161,6 +194,7 @@ fn start(
         response,
         total: 0,
         pending: None,
+        _keepalive_permit: permit,
     })))
 }
 

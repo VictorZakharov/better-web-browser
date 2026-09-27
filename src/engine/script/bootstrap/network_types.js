@@ -72,6 +72,9 @@
             return follower;
         }
     }
+    // Event listeners use the private brand, not an author-replaceable constructor.
+    globalThis.__installAbortSignalBrand(value => abortSignalInstances.has(value));
+    delete globalThis.__installAbortSignalBrand;
     Object.defineProperty(AbortSignal.prototype, 'onabort', {
         configurable: true, enumerable: true,
         get() { return this.__onabort || null; },

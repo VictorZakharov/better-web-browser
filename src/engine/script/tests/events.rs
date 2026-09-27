@@ -123,6 +123,82 @@ fn honors_once_passive_and_cancelation() {
 }
 
 #[test]
+fn abort_signal_removes_only_its_registered_event_listener() {
+    let status = status_after_script(
+        r#"<script>
+            const target = new EventTarget();
+            const first = new AbortController(), second = new AbortController();
+            const ignored = new AbortController(); ignored.abort();
+            const calls = [];
+            const listener = () => calls.push('registered');
+            target.addEventListener('test', listener, { signal: first.signal });
+            target.addEventListener('test', listener, { signal: second.signal });
+            target.addEventListener('test', () => calls.push('ignored'), { signal: ignored.signal });
+            second.abort();
+            target.dispatchEvent(new Event('test'));
+            first.abort();
+            target.dispatchEvent(new Event('test'));
+            const replacement = () => calls.push('replacement');
+            target.addEventListener('test', replacement, { signal: second.signal });
+            target.addEventListener('test', replacement, { signal: new AbortController().signal });
+            target.dispatchEvent(new Event('test'));
+            target.addEventListener('nullable', () => calls.push('nullable'), { signal: null });
+            target.dispatchEvent(new Event('nullable'));
+            let invalid = '';
+            try { target.addEventListener('test', listener, { signal: {} }); }
+            catch (error) { invalid = error.name; }
+            document.getElementById('status').textContent = calls.join(',') + '/' + invalid;
+        </script>"#,
+    );
+    assert_eq!(status, "registered,replacement,nullable/TypeError");
+}
+
+#[test]
+fn signal_abort_during_dispatch_skips_a_snapshotted_listener() {
+    let status = status_after_script(
+        r#"<script>
+            const target = new EventTarget(), controller = new AbortController();
+            const order = [];
+            target.addEventListener('test', () => { order.push('first'); controller.abort(); });
+            target.addEventListener('test', () => order.push('aborted'), { signal: controller.signal });
+            target.addEventListener('test', () => order.push('last'));
+            target.dispatchEvent(new Event('test'));
+            target.dispatchEvent(new Event('test'));
+            document.getElementById('status').textContent = order.join(',');
+        </script>"#,
+    );
+    assert_eq!(status, "first,last,first,last");
+}
+
+#[test]
+fn once_and_manual_removal_detach_their_abort_steps() {
+    let status = status_after_script(
+        r#"<script>
+            const target = new EventTarget(), old = new AbortController();
+            const next = new AbortController(), calls = [];
+            const listener = () => calls.push('call');
+            target.addEventListener('once', listener, { once: true, signal: old.signal });
+            target.dispatchEvent(new Event('once'));
+            target.addEventListener('once', listener, { signal: next.signal });
+            old.abort();
+            target.dispatchEvent(new Event('once'));
+            target.removeEventListener('once', listener);
+            target.addEventListener('once', listener, { signal: next.signal });
+            const NativeSignal = AbortSignal;
+            NativeSignal.__isSignal = () => false;
+            globalThis.AbortSignal = undefined;
+            target.addEventListener('branded', listener, { signal: next.signal });
+            target.dispatchEvent(new Event('branded'));
+            next.abort();
+            target.dispatchEvent(new Event('once'));
+            target.dispatchEvent(new Event('branded'));
+            document.getElementById('status').textContent = calls.join(',');
+        </script>"#,
+    );
+    assert_eq!(status, "call,call,call");
+}
+
+#[test]
 fn snapshots_additions_and_observes_removals_during_dispatch() {
     let status = status_after_script(
         r#"<button id="target"></button>

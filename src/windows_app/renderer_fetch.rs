@@ -1,8 +1,10 @@
 //! Browser-authoritative reconstruction and execution of renderer Fetch intents.
 
+mod batch;
 mod beacon;
 mod clients;
 mod database;
+mod keepalive;
 mod pump;
 mod registry;
 mod scheduler;
@@ -15,7 +17,7 @@ use better_web_browser::fetch::{
     RedirectMode, Referrer, ReferrerPolicy, RequestCache, RequestDestination, RequestMode,
     ResponseType,
 };
-use better_web_browser::limits::{MAX_PARALLEL_RENDERER_FETCHES, MAX_RENDERER_FETCH_STREAM_BYTES};
+use better_web_browser::limits::MAX_RENDERER_FETCH_STREAM_BYTES;
 use better_web_browser::renderer_process::FetchResponseSink;
 use better_web_browser::renderer_protocol::{
     BrowserFetchError, BrowserFetchErrorKind, DocumentId, FetchCache, FetchCredentials,
@@ -42,98 +44,11 @@ pub(super) struct RendererFetchBatch {
     pub(super) tab_router: super::browser_app::TabMessageRouter,
 }
 
+pub(super) use batch::spawn_fetch_batch;
 pub(in crate::windows_app) use clients::Client as RendererFetchClient;
 pub(super) use database::DatabaseWorker;
 pub(super) use registry::RendererFetchRegistry;
 pub(in crate::windows_app) use websocket::RendererWebSocketRegistry;
-
-pub(super) fn spawn_fetch_batch(batch: RendererFetchBatch) -> Result<(), String> {
-    let RendererFetchBatch {
-        tab_id,
-        document,
-        document_url,
-        requests,
-        client,
-        signal,
-        registry,
-        sink,
-        tab_router,
-    } = batch;
-    registry
-        .clients
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .activate(document);
-    let mut ordinary = Vec::new();
-    for request in requests {
-        if request.head.initiator == FetchInitiator::Beacon {
-            beacon::submit(request, document, &document_url, &client, &registry)?;
-        } else {
-            ordinary.push(request);
-        }
-    }
-    if ordinary.is_empty() {
-        return Ok(());
-    }
-    let requests = ordinary
-        .into_iter()
-        .map(|request| {
-            let request_id = request.head.request_id;
-            let request_signal = registry.register(document, request_id);
-            pump::Job::Request(Box::new(request), signal.any(&request_signal))
-        })
-        .collect::<Vec<_>>();
-    std::thread::Builder::new()
-        .name(format!("breeze-renderer-fetch-{}", tab_id.get()))
-        .spawn(move || {
-            let started = Instant::now();
-            // Keep every available network slot useful. Partitioning requests into fixed waves
-            // lets one slow media or font response prevent later styles and images from starting.
-            let bytes =
-                scheduler::execute_bounded(requests, MAX_PARALLEL_RENDERER_FETCHES, |job| {
-                    let request_id = job.id();
-                    let started = job.started();
-                    let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        job.step(&client, &sink, document, &document_url, &registry)
-                    }))
-                    .unwrap_or_else(|_| {
-                        let error = FetchError::new(
-                            FetchErrorKind::Network,
-                            "browser Fetch worker panicked",
-                        );
-                        if started {
-                            let _ = sink.abort(request_id, wire_error(&error));
-                        } else {
-                            let _ = send_failure(&sink, request_id, &error);
-                        }
-                        scheduler::Step::Done(0)
-                    });
-                    if matches!(step, scheduler::Step::Done(_)) {
-                        registry.complete(document, request_id);
-                    }
-                    step
-                });
-            let completion = Box::new(RendererFetchCompletion {
-                document,
-                bytes,
-                network_time: started.elapsed(),
-            });
-            let pointer = Box::into_raw(completion);
-            let posted = tab_router.destination(tab_id).is_some_and(|window| unsafe {
-                PostMessageW(
-                    window as Hwnd,
-                    WM_APP_RENDERER_FETCH_COMPLETE,
-                    tab_id.get() as usize,
-                    pointer as isize,
-                ) != 0
-            });
-            if !posted {
-                unsafe { drop(Box::from_raw(pointer)) };
-            }
-        })
-        .map(|_| ())
-        .map_err(|error| format!("start renderer Fetch worker: {error}"))
-}
 
 fn validate_document_identity(active: DocumentId, requested: DocumentId) -> Result<(), FetchError> {
     if requested == active {
@@ -194,6 +109,7 @@ fn reconstruct(
                 request.set_script_header(name, value)?;
             }
             request.body = (!body_is_empty).then(|| Body::from_bytes(renderer_body));
+            request.keepalive = head.keepalive;
             request.mode = mode(head.mode);
             request.credentials = credentials(head.credentials);
             request.cache = cache(head.cache);

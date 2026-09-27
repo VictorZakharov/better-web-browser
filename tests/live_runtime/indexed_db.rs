@@ -1,6 +1,86 @@
 //! An origin-owned IndexedDB request must survive renderer/broker/worker round trips.
 use super::*;
 
+#[path = "indexed_db/worker_retirement.rs"]
+mod worker_retirement;
+
+#[test]
+fn dedicated_worker_and_page_share_browser_owned_indexed_db() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind page fixture");
+    let address = listener.local_addr().unwrap();
+    let html = r#"<!doctype html><title>worker idb pending</title>
+        <style>body { background: rgb(220,20,20); } #state { height: 600px; }</style>
+        <div id="state">pending</div><script>
+        const fail = error => {
+            document.title = 'worker idb failure ' + (error?.name || error);
+            document.getElementById('state').textContent = document.title;
+        };
+        const worker = new Worker('/worker-idb.js');
+        worker.onerror = event => fail(event.message || 'worker error');
+        worker.onmessage = event => {
+            if (event.data.phase === 'worker-wrote') {
+                const opened = indexedDB.open('worker-shared');
+                opened.onerror = () => fail(opened.error);
+                opened.onsuccess = () => {
+                    const db = opened.result;
+                    const read = db.transaction('items');
+                    const value = read.objectStore('items').get('worker');
+                    read.onerror = () => fail(read.error);
+                    read.oncomplete = () => {
+                        if (value.result?.answer !== 42) return fail('worker value missing');
+                        const write = db.transaction('items', 'readwrite');
+                        write.objectStore('items').put({ answer: 43 }, 'page');
+                        write.onerror = () => fail(write.error);
+                        write.oncomplete = () => worker.postMessage('read-page');
+                    };
+                };
+            } else if (event.data.phase === 'done' && event.data.answer === 43) {
+                document.title = 'worker idb complete';
+                document.getElementById('state').textContent = document.title;
+                document.body.style.backgroundColor = 'rgb(17,170,34)';
+                worker.terminate();
+            } else fail('unexpected worker message');
+        };
+        </script>"#
+        .to_string();
+    let worker = r#"const opened = indexedDB.open('worker-shared', 1);
+        opened.onupgradeneeded = () => opened.result.createObjectStore('items');
+        opened.onerror = () => postMessage({ phase: 'error', name: opened.error?.name });
+        opened.onsuccess = () => {
+            const db = opened.result;
+            const write = db.transaction('items', 'readwrite');
+            write.objectStore('items').put({ answer: 42 }, 'worker');
+            write.onerror = () => postMessage({ phase: 'error', name: write.error?.name });
+            write.oncomplete = () => postMessage({ phase: 'worker-wrote' });
+            onmessage = () => {
+                const read = db.transaction('items');
+                const value = read.objectStore('items').get('page');
+                read.onerror = () => postMessage({ phase: 'error', name: read.error?.name });
+                read.oncomplete = () => postMessage({ phase: 'done', answer: value.result?.answer });
+            };
+        };"#
+        .to_string();
+    let server = thread::spawn(move || {
+        serve_parallel_fixtures(listener, 2, move |request| {
+            if request.contains("GET /worker-idb.js ") {
+                FixtureResponse::script(worker.clone(), Duration::ZERO)
+            } else {
+                FixtureResponse::html(html.clone())
+            }
+        })
+    });
+    let artifacts = TestArtifacts::new();
+    let url = format!("http://{address}/page");
+    let mut child = hidden_benchmark_with_fresh_profile_args(&url, &artifacts, 3500, &[]);
+    let status = wait_for_child(&mut child, Duration::from_secs(25));
+    server.join().unwrap().unwrap();
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+    let report = fs::read_to_string(&artifacts.json).unwrap();
+    assert!(report.contains("\"javascript_errors\": []"), "{report}");
+    assert!(report.contains("worker idb complete"), "{report}");
+    assert_green_capture(&artifacts, "Worker IndexedDB did not repaint the page");
+}
+
 #[test]
 fn indexed_db_secondary_indexes_and_upgrade_work_in_hidden_browser() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind page fixture");

@@ -156,6 +156,7 @@ pub enum BrowserMessage {
     WebSocketEvent(WebSocketEvent),
     DatabaseEvent(DatabaseEvent),
     SpeechUpdate(SpeechUpdate),
+    NotificationUpdate(super::NotificationUpdate),
     AdvanceTime {
         document: DocumentId,
         elapsed_micros: u64,
@@ -193,6 +194,7 @@ pub enum RendererMessage {
     WebSocketCommand(WebSocketCommand),
     DatabaseCommand(DatabaseCommand),
     SpeechRequest(SpeechRequest),
+    NotificationRequest(super::NotificationRequest),
     VideoFrame(super::VideoFrameChunk),
     Ready {
         nonce: Nonce,

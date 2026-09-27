@@ -2,15 +2,18 @@ use super::{
     PageLoadReport, RendererPresentation, RendererRuntimeUpdate, RuntimeReport, StyleReport,
 };
 use crate::renderer_protocol::ProtocolError;
+mod metadata;
+mod resources;
 
 impl RendererPresentation {
     /// Combines queued renderer output while preserving the observable effect of processing each
     /// presentation in order. The latest presentation owns snapshot state, while edge-triggered
-    /// runtime output, metrics, and one-shot resources must survive queue compaction.
+    /// runtime output, metrics, and one-shot resources must survive queue compaction. A second
+    /// result means the resource union would exceed its budget: deliver both originals in order.
     pub(crate) fn coalesce(
         mut self,
         mut next: RendererPresentation,
-    ) -> Result<RendererPresentation, ProtocolError> {
+    ) -> Result<(RendererPresentation, Option<RendererPresentation>), ProtocolError> {
         if self.document != next.document {
             return Err(ProtocolError::InvalidPayload(
                 "presentation coalescing document",
@@ -22,18 +25,20 @@ impl RendererPresentation {
             ));
         }
 
+        if !metadata::presentation_merge_is_bounded(&self, &next) {
+            return Ok((self, Some(next)));
+        }
+        resources::merge(&mut self, &mut next);
         next.accessibility = self.accessibility.coalesce(next.accessibility)?;
         next.clock_advanced |= self.clock_advanced;
         next.runtime = self.runtime.coalesce(next.runtime);
         next.style = self.style.coalesce(next.style);
         next.load = self.load.coalesce(next.load);
-        self.images.append(&mut next.images);
-        next.images = self.images;
-        if self.glyph_epoch == next.glyph_epoch {
-            self.glyphs.append(&mut next.glyphs);
-            next.glyphs = self.glyphs;
-        }
-        Ok(next)
+        Ok((next, None))
+    }
+
+    pub(crate) fn one_shot_resource_bytes(&self) -> usize {
+        resources::resource_bytes(self).saturating_add(metadata::runtime_bytes(&self.runtime))
     }
 }
 
@@ -137,16 +142,24 @@ impl PageLoadReport {
 }
 
 impl RendererRuntimeUpdate {
-    pub(crate) fn coalesce(self, mut next: Self) -> Result<Self, ProtocolError> {
+    pub(crate) fn coalesce(self, mut next: Self) -> Result<(Self, Option<Self>), ProtocolError> {
         if self.document != next.document {
             return Err(ProtocolError::InvalidPayload(
                 "runtime-update coalescing document",
             ));
         }
+        if !metadata::runtime_merge_is_bounded(&self, &next) {
+            return Ok((self, Some(next)));
+        }
         next.clock_advanced |= self.clock_advanced;
         next.runtime = self.runtime.coalesce(next.runtime);
         next.load = self.load.coalesce(next.load);
-        Ok(next)
+        Ok((next, None))
+    }
+
+    pub(crate) fn one_shot_resource_bytes(&self) -> usize {
+        metadata::runtime_update_overhead(self)
+            .saturating_add(metadata::runtime_bytes(&self.runtime))
     }
 }
 
@@ -157,6 +170,12 @@ mod tests {
     use crate::renderer_protocol::HistoryUpdate;
     use crate::renderer_protocol::PresentedImage;
     use crate::renderer_protocol::presentation::tests::sample;
+
+    fn merged(first: RendererPresentation, next: RendererPresentation) -> RendererPresentation {
+        let (value, remaining) = first.coalesce(next).unwrap();
+        assert!(remaining.is_none(), "small presentations should coalesce");
+        value
+    }
 
     #[test]
     fn coalesced_scroll_requests_keep_the_latest_offset_including_zero() {
@@ -264,7 +283,7 @@ mod tests {
         });
         next.glyphs[0].id = 2;
 
-        let combined = first.coalesce(next).unwrap();
+        let combined = merged(first, next);
         assert_eq!(combined.revision, 2);
         assert!(combined.clock_advanced);
         assert_eq!(combined.title, "newest snapshot");
@@ -331,9 +350,38 @@ mod tests {
         next.glyph_epoch = 2;
         next.glyphs[0].id = 2;
 
-        let combined = first.coalesce(next).unwrap();
+        let combined = merged(first, next);
         assert_eq!(combined.glyph_epoch, 2);
         assert_eq!(combined.glyphs.len(), 1);
         assert_eq!(combined.glyphs[0].id, 2);
+    }
+
+    #[test]
+    fn coalesced_image_retirement_obeys_later_update_order() {
+        let key = "breeze-internal:canvas:7";
+        let bitmap = PresentedImage {
+            url: key.into(),
+            image: DecodedImage {
+                width: 1,
+                height: 1,
+                bgra: vec![1; 4].into(),
+            },
+        };
+        let mut first = sample();
+        first.images.push(bitmap.clone());
+        let mut removal = sample();
+        removal.revision = 2;
+        removal.retired_image_keys.push(key.into());
+        let retired = merged(first, removal);
+        assert!(retired.images.is_empty());
+        assert_eq!(retired.retired_image_keys, [key]);
+
+        let mut replacement = sample();
+        replacement.revision = 3;
+        replacement.images.push(bitmap);
+        let restored = merged(retired, replacement);
+        assert!(restored.retired_image_keys.is_empty());
+        assert_eq!(restored.images.len(), 1);
+        assert_eq!(restored.images[0].url, key);
     }
 }

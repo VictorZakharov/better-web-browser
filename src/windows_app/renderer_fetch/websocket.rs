@@ -1,20 +1,19 @@
-//! Browser-owned WebSocket workers, bounded per document and retired on navigation.
+//! Browser-owned WebSocket transport; registry ownership is separate from WinHTTP I/O.
+
+mod registry;
+pub(in crate::windows_app) use registry::RendererWebSocketRegistry;
 
 use super::super::{BrowserState, tabs::TabId};
 use super::RendererFetchClient;
-use better_web_browser::fetch::{FetchSignal, RequestClient};
+use better_web_browser::fetch::FetchSignal;
 use better_web_browser::renderer_process::WebSocketEventSink;
 use better_web_browser::renderer_protocol::{
     DocumentId, WebSocketCommand, WebSocketEvent, WebSocketEventKind, WebSocketOperation,
 };
 use better_web_browser::winhttp::{HttpClient, WebSocketConnection, WebSocketFrame};
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
-
-const MAX_SOCKETS_PER_DOCUMENT: usize = 8;
-const COMMAND_QUEUE: usize = 32;
 
 impl BrowserState {
     pub(in crate::windows_app) fn handle_websocket_command(
@@ -44,123 +43,6 @@ impl BrowserState {
                     registry.command(command, owner, Arc::clone(&self.http_client), signal, sink)
                 }
                 Err(_) => reject(command.document, command.socket_id, &sink),
-            }
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub(in crate::windows_app) struct RendererWebSocketRegistry {
-    entries: Arc<Mutex<HashMap<(DocumentId, u64), SocketEntry>>>,
-}
-
-struct SocketEntry {
-    commands: mpsc::SyncSender<WebSocketOperation>,
-    canceled: Arc<AtomicBool>,
-    client: RequestClient,
-}
-
-impl RendererWebSocketRegistry {
-    pub(in crate::windows_app) fn cancel_all(&self) {
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        for (_, entry) in entries.drain() {
-            entry.canceled.store(true, Ordering::Release);
-            let _ = entry.commands.try_send(WebSocketOperation::Close {
-                code: 1001,
-                reason: String::new(),
-            });
-        }
-    }
-
-    pub(super) fn command(
-        &self,
-        command: WebSocketCommand,
-        owner: RendererFetchClient,
-        client: Arc<HttpClient>,
-        signal: FetchSignal,
-        sink: WebSocketEventSink,
-    ) {
-        let key = (command.document, command.socket_id);
-        match command.operation {
-            WebSocketOperation::Open { url, protocols } => {
-                let (sender, receiver) = mpsc::sync_channel(COMMAND_QUEUE);
-                let canceled = Arc::new(AtomicBool::new(false));
-                let admitted = {
-                    let mut entries = self
-                        .entries
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    if entries.contains_key(&key)
-                        || entries
-                            .keys()
-                            .filter(|(document, _)| *document == command.document)
-                            .count()
-                            >= MAX_SOCKETS_PER_DOCUMENT
-                    {
-                        false
-                    } else {
-                        entries.insert(
-                            key,
-                            SocketEntry {
-                                commands: sender,
-                                canceled: Arc::clone(&canceled),
-                                client: command.client,
-                            },
-                        );
-                        true
-                    }
-                };
-                if !admitted {
-                    emit_failure(&sink, key);
-                    return;
-                }
-                let registry = self.clone();
-                let failed_sink = sink.clone();
-                let launch = std::thread::Builder::new()
-                    .name(format!("breeze-websocket-{}", command.socket_id))
-                    .spawn(move || {
-                        run_socket(SocketJob {
-                            key,
-                            url,
-                            protocols,
-                            owner,
-                            client,
-                            signal,
-                            canceled,
-                            sink,
-                            receiver,
-                        });
-                        registry
-                            .entries
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner())
-                            .remove(&key);
-                    });
-                if launch.is_err() {
-                    self.entries
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .remove(&key);
-                    emit_failure(&failed_sink, key);
-                }
-            }
-            operation => {
-                let mut entries = self
-                    .entries
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                if let Some(entry) = entries.get(&key)
-                    && (entry.client != command.client
-                        || entry.commands.try_send(operation).is_err())
-                {
-                    entry.canceled.store(true, Ordering::Release);
-                    entries.remove(&key);
-                    drop(entries);
-                    emit_failure(&sink, key);
-                }
             }
         }
     }
@@ -261,6 +143,10 @@ fn run_socket(job: SocketJob) {
         emit_failure(&sink, key);
         return;
     }
+    if signal.is_aborted() || canceled.load(Ordering::Acquire) {
+        let _ = writer.unwrap().join();
+        return;
+    }
     emit(
         &sink,
         key,
@@ -357,7 +243,9 @@ fn writer_loop(
                 }
                 break;
             }
-            WebSocketOperation::Send { .. } | WebSocketOperation::Open { .. } => continue,
+            WebSocketOperation::Send { .. }
+            | WebSocketOperation::Open { .. }
+            | WebSocketOperation::Cancel => continue,
         };
         if result.is_err() {
             if !closing.swap(true, Ordering::AcqRel) {

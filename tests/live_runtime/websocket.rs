@@ -4,6 +4,9 @@ use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::ptr::{null, null_mut};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 #[test]
 fn websocket_roundtrip_reaches_the_retained_document_and_closes_cleanly() {
@@ -65,17 +68,226 @@ fn websocket_roundtrip_reaches_the_retained_document_and_closes_cleanly() {
     assert_green_capture(&artifacts, "WebSocket exchange did not repaint the page");
 }
 
+#[test]
+fn dedicated_worker_websocket_uses_worker_csp_and_roundtrips_frames() {
+    let http = TcpListener::bind("127.0.0.1:0").unwrap();
+    let http_address = http.local_addr().unwrap();
+    let websocket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let websocket_address = websocket.local_addr().unwrap();
+    let html = r#"<!doctype html><title>worker socket pending</title>
+        <style>body { background: rgb(220,20,20); } #state { height:600px; }</style>
+        <div id="state">pending</div><script>
+        const worker = new Worker('/worker-socket.js');
+        worker.onerror = event => { document.title = 'worker socket error ' + event.message; };
+        worker.onmessage = event => {
+            if (event.data !== 'complete') throw new Error('unexpected Worker socket result');
+            document.title = 'worker socket complete';
+            document.getElementById('state').textContent = document.title;
+            document.body.style.backgroundColor = 'rgb(17,170,34)';
+            worker.terminate();
+        };
+        </script>"#
+        .to_string();
+    let worker = format!(
+        r#"const socket = new WebSocket('ws://{websocket_address}/echo', 'chat');
+        socket.binaryType = 'arraybuffer';
+        const messages = [];
+        socket.onopen = event => {{
+            if (!event.isTrusted || socket.protocol !== 'chat') throw new Error('open contract');
+            socket.send('hello'); socket.send(new Uint8Array([0, 255, 42]));
+        }};
+        socket.onmessage = event => {{
+            if (!event.isTrusted) throw new Error('untrusted message');
+            messages.push(event.data);
+            if (messages.length !== 2) return;
+            if (messages[0] !== 'hello' || !(messages[1] instanceof ArrayBuffer) ||
+                String(new Uint8Array(messages[1])) !== '0,255,42')
+                throw new Error('frame conversion or order');
+            socket.close(1000);
+        }};
+        socket.onclose = event => {{
+            if (!event.isTrusted || !event.wasClean || event.code !== 1000)
+                throw new Error('close contract');
+            postMessage('complete');
+        }};
+        socket.onerror = () => {{ throw new Error('Worker WebSocket transport failed'); }};"#
+    );
+    let page_server = thread::spawn(move || {
+        serve_parallel_fixtures(http, 2, move |request| {
+            if request.contains("GET /worker-socket.js ") {
+                FixtureResponse::script(worker.clone(), Duration::ZERO).header(
+                    "Content-Security-Policy",
+                    format!("connect-src ws://{websocket_address}"),
+                )
+            } else {
+                FixtureResponse::html(html.clone()).header(
+                    "Content-Security-Policy",
+                    "connect-src 'none'; worker-src 'self'",
+                )
+            }
+        })
+    });
+    let socket_server = thread::spawn(move || serve_socket(websocket));
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark(&format!("http://{http_address}/page"), &artifacts, 2200);
+    let status = wait_for_child(&mut child, Duration::from_secs(25));
+    page_server.join().unwrap().unwrap();
+    socket_server.join().unwrap();
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+    let report = fs::read_to_string(&artifacts.json).unwrap();
+    assert!(report.contains("\"javascript_errors\": []"), "{report}");
+    assert!(report.contains("worker socket complete"), "{report}");
+    assert_green_capture(&artifacts, "Worker WebSocket did not repaint the page");
+}
+
+#[test]
+fn terminating_worker_revokes_its_inflight_websocket_handshake() {
+    run_worker_socket_teardown(false, false);
+}
+#[test]
+fn navigation_revokes_worker_inflight_websocket_handshake() {
+    run_worker_socket_teardown(true, false);
+}
+#[test]
+fn terminating_worker_closes_its_active_websocket() {
+    run_worker_socket_teardown(false, true);
+}
+
+fn run_worker_socket_teardown(navigate: bool, active: bool) {
+    let http = TcpListener::bind("127.0.0.1:0").unwrap();
+    let http_address = http.local_addr().unwrap();
+    let websocket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let websocket_address = websocket.local_addr().unwrap();
+    let seen = Arc::new(AtomicBool::new(false));
+    let page_seen = Arc::clone(&seen);
+    let socket_seen = Arc::clone(&seen);
+    let transition = if navigate {
+        "location.href = '/replacement';"
+    } else {
+        "worker.terminate(); document.title = 'worker socket retired'; document.body.style.backgroundColor = 'rgb(17,170,34)';"
+    };
+    let html = format!(
+        r#"<!doctype html><title>worker socket pending</title>
+        <style>body {{ background: rgb(220,20,20); height:600px; }}</style><script>
+        const worker = new Worker('/worker-socket.js');
+        worker.onerror = event => {{ throw new Error(event.message); }};
+        worker.onmessage = event => {{
+            if (event.data !== 'created') throw new Error('late Worker socket event');
+            fetch('/handshake-seen').then(response => response.text()).then(value => {{
+                if (value !== 'seen') throw new Error('handshake not seen');
+                {transition}
+            }});
+        }};
+        </script>"#
+    );
+    let ready = if active {
+        "socket.onopen = () => postMessage('created');"
+    } else {
+        "socket.onopen = () => postMessage('late-open'); postMessage('created');"
+    };
+    let worker = format!(
+        r#"const socket = new WebSocket('ws://{websocket_address}/delayed');
+        {ready}
+        socket.onerror = () => postMessage('late-error');
+        "#
+    );
+    let page_server = thread::spawn(move || {
+        serve_parallel_fixtures(http, if navigate { 4 } else { 3 }, move |request| {
+            if request.contains("GET /worker-socket.js ") {
+                FixtureResponse::script(worker.clone(), Duration::ZERO)
+            } else if request.contains("GET /handshake-seen ") {
+                let deadline = Instant::now() + Duration::from_secs(8);
+                while !page_seen.load(Ordering::Acquire) && Instant::now() < deadline {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                FixtureResponse::resource(
+                    if page_seen.load(Ordering::Acquire) {
+                        "seen"
+                    } else {
+                        "missing"
+                    },
+                    "text/plain",
+                    Duration::ZERO,
+                )
+            } else if request.contains("GET /replacement ") {
+                FixtureResponse::html(
+                    "<title>worker socket retired</title><style>body{background:rgb(17,170,34);height:600px}</style>",
+                )
+            } else {
+                FixtureResponse::html(html.clone())
+            }
+        })
+    });
+    let socket_server =
+        thread::spawn(move || serve_teardown_socket(websocket, socket_seen, active));
+    let artifacts = TestArtifacts::new();
+    let mut child = hidden_benchmark(&format!("http://{http_address}/page"), &artifacts, 2500);
+    let status = wait_for_child(&mut child, Duration::from_secs(25));
+    page_server.join().unwrap().unwrap();
+    socket_server.join().unwrap();
+    assert!(status.success(), "hidden Breeze run failed: {status}");
+    let report = fs::read_to_string(&artifacts.json).unwrap();
+    assert!(report.contains("\"javascript_errors\": []"), "{report}");
+    assert!(report.contains("worker socket retired"), "{report}");
+    assert_green_capture(&artifacts, "retired Worker socket changed the page");
+}
+
 fn serve_socket(listener: TcpListener) {
-    let (mut stream, _) = listener.accept().unwrap();
+    let mut stream = accept_socket(listener);
+    let request = read_headers(&mut stream);
+    assert!(request.contains("Origin: http://127.0.0.1:"));
+    assert!(request.contains("Sec-WebSocket-Protocol: chat"));
+    upgrade_socket(&mut stream, &request, "Sec-WebSocket-Protocol: chat\r\n");
+    assert_eq!(read_client_frame(&mut stream), (1, b"hello".to_vec()));
+    stream
+        .write_all(&[0x81, 5, b'h', b'e', b'l', b'l', b'o'])
+        .unwrap();
+    assert_eq!(read_client_frame(&mut stream), (2, vec![0, 255, 42]));
+    stream.write_all(&[0x82, 3, 0, 255, 42]).unwrap();
+    assert_eq!(read_client_frame(&mut stream).0, 8);
+    stream.write_all(&[0x88, 2, 0x03, 0xe8]).unwrap();
+}
+
+fn serve_teardown_socket(listener: TcpListener, seen: Arc<AtomicBool>, active: bool) {
+    let mut stream = accept_socket(listener);
+    let request = read_headers(&mut stream);
+    assert!(request.contains("Origin: http://127.0.0.1:"));
+    if !active {
+        seen.store(true, Ordering::Release);
+        thread::sleep(Duration::from_millis(700));
+    }
+    upgrade_socket(&mut stream, &request, "");
+    if active {
+        seen.store(true, Ordering::Release);
+        let (kind, payload) = read_client_frame(&mut stream);
+        assert_eq!((kind, payload), (8, vec![0x03, 0xe9]));
+        stream.write_all(&[0x88, 2, 0x03, 0xe9]).unwrap();
+        return;
+    }
+    let mut byte = [0];
+    match stream.read(&mut byte) {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+            ) => {}
+        other => panic!("retired Worker sent data or left socket open: {other:?}"),
+    }
+}
+
+fn accept_socket(listener: TcpListener) -> TcpStream {
+    let (stream, _) = listener.accept().unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(8)))
         .unwrap();
     stream
         .set_write_timeout(Some(Duration::from_secs(8)))
         .unwrap();
-    let request = read_headers(&mut stream);
-    assert!(request.contains("Origin: http://127.0.0.1:"));
-    assert!(request.contains("Sec-WebSocket-Protocol: chat"));
+    stream
+}
+
+fn upgrade_socket(stream: &mut TcpStream, request: &str, extra_headers: &str) {
     let key = request
         .lines()
         .find_map(|line| {
@@ -88,16 +300,8 @@ fn serve_socket(listener: TcpListener) {
         format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11").as_bytes(),
     ));
     stream.write_all(format!(
-        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: chat\r\n\r\n"
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n{extra_headers}\r\n"
     ).as_bytes()).unwrap();
-    assert_eq!(read_client_frame(&mut stream), (1, b"hello".to_vec()));
-    stream
-        .write_all(&[0x81, 5, b'h', b'e', b'l', b'l', b'o'])
-        .unwrap();
-    assert_eq!(read_client_frame(&mut stream), (2, vec![0, 255, 42]));
-    stream.write_all(&[0x82, 3, 0, 255, 42]).unwrap();
-    assert_eq!(read_client_frame(&mut stream).0, 8);
-    stream.write_all(&[0x88, 2, 0x03, 0xe8]).unwrap();
 }
 
 fn read_headers(stream: &mut TcpStream) -> String {

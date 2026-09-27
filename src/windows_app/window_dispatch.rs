@@ -62,6 +62,10 @@ unsafe fn dispatch_window_message(
     lparam: Lparam,
 ) -> Lresult {
     match message {
+        notifications::shell::WM_APP_NOTIFICATION => {
+            state.handle_notification_shell_event(wparam as u32, lparam as u32);
+            0
+        }
         WM_CREATE => {
             if state.create_controls().is_err() {
                 return -1;
@@ -410,7 +414,11 @@ unsafe fn dispatch_window_message(
             0
         }
         WM_DESTROY => {
+            for tab in state.tabs.iter() {
+                state.app.database_worker.retire_tab(tab.id);
+            }
             state.retire_speech_for_window();
+            state.retire_notifications_for_window();
             state.release_pointer_lock(false);
             KillTimer(window, ID_PERFORMANCE_MONITOR_TIMER);
             KillTimer(window, ID_SCROLL_ANIMATION_TIMER);

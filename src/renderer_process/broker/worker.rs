@@ -74,6 +74,11 @@ pub(super) struct BrokerResources {
     pub(super) state_updates: super::state_updates::Receiver,
     pub(super) lifecycle: mpsc::Receiver<LifecycleCommand>,
     pub(super) fetch_stream: mpsc::Receiver<FetchStreamEvent>,
+    pub(super) database_events: mpsc::Receiver<crate::renderer_protocol::DatabaseEvent>,
+    pub(super) database_queued_bytes: Arc<std::sync::atomic::AtomicUsize>,
+    pub(super) database_overflow: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) notification_updates: mpsc::Receiver<crate::renderer_protocol::NotificationUpdate>,
+    pub(super) notification_overflow: Arc<std::sync::atomic::AtomicBool>,
     pub(super) fetch_flow: Arc<super::flow::FetchFlow>,
     pub(super) events: super::events::EventSender,
     pub(super) wake: super::wake::BrokerWake,
@@ -147,7 +152,9 @@ impl Broker {
             self.process_commands();
             self.process_document_clock();
             self.process_messages();
+            self.process_database_events();
             self.process_fetch_stream();
+            self.process_notification_updates();
             self.process_navigation();
             if self.process_has_exited() {
                 self.finish_exit();

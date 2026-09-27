@@ -83,3 +83,30 @@ fn incomplete_number_remains_visible_but_never_submits_stale_value() {
         assert!(url.ends_with("/accepted?amount=125"), "{url}");
     }
 }
+
+#[test]
+fn live_radio_list_and_aborted_submit_listener_reach_form_navigation() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session = RendererSession::launch(options()).expect("hidden renderer");
+    let initial = load_html_document(
+        &session,
+        165,
+        r#"<form action='/accepted'><input type=radio name=choice value=a checked>
+        <input type=radio name=choice value=b><input name=q value=hello><button>Send</button></form>
+        <script>
+            const form = document.querySelector('form');
+            const cancel = new AbortController();
+            form.addEventListener('submit', event => event.preventDefault(), { signal: cancel.signal });
+            form.elements.namedItem('choice').value = 'b';
+            cancel.abort();
+        </script>"#,
+    );
+    acknowledge(&session, &initial);
+    let target = node_id(input(&initial).node_id.to_wire());
+    send_focus(&session, initial.document, 1, target);
+    send_enter(&session, initial.document, 2, target);
+    let (url, _, _) = wait_for_navigation_url(&session, initial.document);
+    assert!(url.ends_with("/accepted?choice=b&q=hello"), "{url}");
+}

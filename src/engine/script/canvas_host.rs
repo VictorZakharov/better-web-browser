@@ -8,7 +8,7 @@ use std::io::Cursor;
 #[cfg(windows)]
 mod text;
 
-const MAX_CANVAS_PIXELS: usize = 4 * 1024 * 1024;
+use crate::limits::MAX_CANVAS_PIXELS;
 const MAX_ENCODED_BYTES: usize = 24 * 1024 * 1024;
 
 pub(super) fn canvas_host_call(operation: &str, args: &[JsValue]) -> JsResult<Option<JsValue>> {

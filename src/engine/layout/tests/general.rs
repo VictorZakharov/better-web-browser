@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::layout::test_support::{CountingMeasurer, FixedMeasurer};
 
 mod aspect_ratio;
+mod canvas;
 mod grid;
 mod iframe;
 mod image_position;

@@ -3,6 +3,9 @@ use super::{DocumentId, ProtocolError};
 use crate::fetch::RequestClient;
 use crate::limits::MAX_INDEXED_DB_IPC_BYTES;
 
+/// Internal, one-way control command emitted when a dedicated-worker realm retires.
+pub const DATABASE_RETIRE_CLIENT_PAYLOAD: &str = r#"{"kind":"retireClient"}"#;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DatabaseCommand {
     pub document: DocumentId,

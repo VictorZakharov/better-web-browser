@@ -186,6 +186,12 @@ impl Broker {
                     self.emit_event(RendererEvent::SpeechRequest(request))?;
                 }
             }
+            RendererMessage::NotificationRequest(request) => {
+                request.validate()?;
+                if self.active_document == Some(request.document) {
+                    self.emit_event(RendererEvent::NotificationRequest(request))?;
+                }
+            }
             RendererMessage::StateSnapshotApplied(applied) => {
                 applied.validate()?;
                 if self.active_document != Some(applied.document) {

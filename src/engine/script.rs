@@ -59,6 +59,7 @@ mod worker_bootstrap;
 mod worker_host;
 mod worker_module;
 mod worker_runtime;
+mod worker_websocket_host;
 mod workers;
 use engine::{
     Context, HostBridge, JsError, JsNativeError, JsResult, JsString, JsValue, ModuleEvaluation,

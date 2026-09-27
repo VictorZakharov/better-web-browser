@@ -28,6 +28,8 @@ pub const MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_URL_BYTES: usize = 16 * 1024;
 pub const MAX_RESPONSE_BODY_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PREFLIGHT_BODY_BYTES: usize = 64 * 1024;
+/// Fetch's per-group in-flight keepalive upload budget (also used by Beacon).
+pub const MAX_KEEPALIVE_BODY_BYTES: usize = 64 * 1024;
 pub const MAX_REDIRECTS: usize = 20;
 pub const PAGE_RESOURCE_BUDGET: u64 = 32 * 1024 * 1024;
 
@@ -75,11 +77,18 @@ pub const MAX_STYLE_IMAGES: usize = 64;
 /// limit remains finite while the aggregate decoded-byte budget below is the memory boundary.
 pub const MAX_INLINE_SVGS: usize = 256;
 pub const MAX_PAGE_DECODED_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+/// Canvas 2D's bounded software backing store; keep the JS allocation limit in sync.
+pub const MAX_CANVAS_PIXELS: usize = 4 * 1024 * 1024;
+pub const MAX_PRESENTED_CANVASES: usize = 64;
 /// Aggregate decoded image identities retained by a document and accepted in one presentation.
 /// HTML images, CSS images, inline SVGs, the video placeholder, and bounded media sessions are
 /// admitted independently, so the presentation protocol must cover their combined maximum.
-pub const MAX_PRESENTED_IMAGES: usize =
-    MAX_PAGE_IMAGES + MAX_STYLE_IMAGES + MAX_INLINE_SVGS + MAX_MEDIA_SESSIONS_PER_TAB + 1;
+pub const MAX_PRESENTED_IMAGES: usize = MAX_PAGE_IMAGES
+    + MAX_STYLE_IMAGES
+    + MAX_INLINE_SVGS
+    + MAX_MEDIA_SESSIONS_PER_TAB
+    + MAX_PRESENTED_CANVASES
+    + 1;
 pub const MAX_WEB_FONTS: usize = 16;
 pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_FONT_TABLES: usize = 256;

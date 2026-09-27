@@ -9,6 +9,7 @@ mod font_actions;
 mod frames_paint;
 mod fullscreen;
 mod geometry;
+mod image_deltas;
 mod interaction;
 mod load;
 mod media;
@@ -36,7 +37,7 @@ use crate::engine::{
     ScriptRuntime, ScriptWorkerAction, StyleRefreshStats, layout_page_with_style_viewport,
 };
 use crate::limits::{
-    MAX_POST_LOAD_TIMER_CALLBACKS, MAX_RUNTIME_REPORT_ENTRIES, PAGE_RESOURCE_BUDGET,
+    MAX_POST_LOAD_TIMER_CALLBACKS, MAX_RUNTIME_REPORT_ENTRIES, MAX_URL_BYTES, PAGE_RESOURCE_BUDGET,
 };
 use crate::renderer_protocol::{
     DocumentId, DocumentStart, DocumentState, PageLoadReport, PresentedImage, PresentedLayout,
@@ -78,6 +79,7 @@ pub(super) struct DocumentRuntime {
     pending_websockets: Vec<crate::engine::ScriptWebSocketAction>,
     pending_databases: Vec<crate::engine::ScriptDatabaseAction>,
     pending_speech_requests: Vec<crate::engine::ScriptSpeechAction>,
+    pending_notification_requests: Vec<crate::engine::ScriptNotificationAction>,
     active_script_fetches: HashMap<u64, u32>,
     pending_worker_actions: Vec<ScriptWorkerAction>,
     deferred_network_load: PageLoadReport,
@@ -102,6 +104,8 @@ pub(super) struct DocumentRuntime {
     last_acknowledged_revision: u64,
     revision: u64,
     sent_images: HashSet<String>,
+    last_served_image_key: Option<String>,
+    image_budget_warning_sent: bool,
     diagnostic_selectors: Vec<String>,
     prefers_dark_color_scheme: bool,
     media: Option<media::MediaPlayback>,
@@ -249,17 +253,49 @@ impl DocumentRuntime {
             .revision
             .checked_add(1)
             .ok_or_else(|| "presentation revision exhausted".to_string())?;
-        let mut images = Vec::new();
+        let mut retired_image_keys = Vec::new();
+        let mut active_canvas_keys = self
+            .page
+            .images
+            .keys()
+            .filter(|key| Page::is_canvas_image_key(key))
+            .cloned()
+            .collect();
+        frames_paint::canvas_image_keys(&self.frame_paint, &mut active_canvas_keys);
+        self.sent_images.retain(|key| {
+            let retired = Page::is_canvas_image_key(key) && !active_canvas_keys.contains(key);
+            if retired {
+                retired_image_keys.push(key.clone());
+            }
+            !retired
+        });
+        let mut seen_candidates = HashSet::new();
+        let mut candidates = Vec::new();
         for (url, image) in &self.page.images {
-            if self.sent_images.insert(url.clone()) {
-                images.push(PresentedImage {
-                    url: url.clone(),
-                    image: image.clone(),
+            let canvas_update = self.page.has_canvas_image_update(url);
+            let already_sent = self.sent_images.contains(url);
+            if url.len() <= MAX_URL_BYTES
+                && (!already_sent || canvas_update)
+                && seen_candidates.insert(url.clone())
+            {
+                candidates.push(image_deltas::ImageDelta {
+                    presented: PresentedImage {
+                        url: url.clone(),
+                        image: image.clone(),
+                    },
+                    canvas_update,
+                    frame: None,
+                    already_sent,
                 });
             }
         }
-        frames_paint::append_images(&self.frame_paint, &mut self.sent_images, &mut images);
-        let next_timer_micros = self.next_timer_micros();
+        frames_paint::append_image_candidates(
+            &self.frame_paint,
+            &self.sent_images,
+            &mut seen_candidates,
+            &mut candidates,
+        );
+        image_deltas::order_for_delivery(&mut candidates, self.last_served_image_key.as_deref());
         let glyph_epoch = self.text.borrow().glyph_epoch();
         let glyphs = self.text.borrow_mut().take_pending_glyphs();
         let page_diagnostics = diagnostics::collect(
@@ -277,31 +313,35 @@ impl DocumentRuntime {
             self.accessibility_selection,
             &self.accessibility_values,
         )?;
-        Ok(AdvanceResult::Presentation(Box::new(
-            RendererPresentation {
-                document: self.id,
-                revision: self.revision,
-                clock_advanced: false,
-                title: self.page.title.clone(),
-                final_url: self.page.source_url.clone(),
-                status: self.status,
-                character_set: self.page.character_set.clone(),
-                reader: self.reader.clone(),
-                layout: PresentedLayout::from_layout(self.layout.clone()),
-                images,
-                glyph_epoch,
-                glyphs,
-                runtime: runtime_report(
-                    outcome,
-                    self.script_runtime.is_some(),
-                    self.media_runtime_report(),
-                ),
-                style: style_report(style),
-                load,
-                page_diagnostics,
-                accessibility,
-                next_timer_micros,
-            },
-        )))
+        let mut presentation = RendererPresentation {
+            document: self.id,
+            revision: self.revision,
+            clock_advanced: false,
+            title: self.page.title.clone(),
+            final_url: self.page.source_url.clone(),
+            status: self.status,
+            character_set: self.page.character_set.clone(),
+            reader: self.reader.clone(),
+            layout: PresentedLayout::from_layout(self.layout.clone()),
+            images: Vec::new(),
+            retired_image_keys,
+            glyph_epoch,
+            glyphs,
+            runtime: runtime_report(
+                outcome,
+                self.script_runtime.is_some(),
+                self.media_runtime_report(),
+            ),
+            style: style_report(style),
+            load,
+            page_diagnostics,
+            accessibility,
+            // Some(0) is the largest possible timer encoding. Deferred image
+            // work may change the actual timer after the wire-size preflight.
+            next_timer_micros: Some(0),
+        };
+        self.append_bounded_images(&mut presentation, &candidates)?;
+        presentation.next_timer_micros = self.next_timer_micros();
+        Ok(AdvanceResult::Presentation(Box::new(presentation)))
     }
 }

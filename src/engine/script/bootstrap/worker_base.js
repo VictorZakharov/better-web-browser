@@ -15,7 +15,7 @@
             this.timeStamp = Date.now(); this.__stopped = false;
         }
         get isTrusted() { return trustedEvents.has(this); }
-        preventDefault() { if (this.cancelable) this.defaultPrevented = true; }
+        preventDefault() { if (this.cancelable && !this.__passive) this.defaultPrevented = true; }
         stopPropagation() { this.__stopped = true; }
         stopImmediatePropagation() { this.__stopped = true; this.__immediate = true; }
     }
@@ -33,28 +33,67 @@
         }
     }
     const listeners = new WeakMap();
+    let isNativeAbortSignal = () => false;
+    Object.defineProperty(globalThis, '__installAbortSignalBrand', {
+        configurable: true, value: checker => { isNativeAbortSignal = checker; }
+    });
+    const recordsFor = target => {
+        let records = listeners.get(target);
+        if (!records) listeners.set(target, records = []);
+        return records;
+    };
+    const captureOption = options => typeof options === 'boolean' ? options : !!options?.capture;
+    const removeRecord = (target, record) => {
+        if (record.removed) return;
+        record.removed = true;
+        const records = listeners.get(target);
+        const index = records?.indexOf(record) ?? -1;
+        if (index >= 0) records.splice(index, 1);
+        if (record.abortRecord) removeRecord(record.signal, record.abortRecord);
+    };
+    const addRecord = (target, type, callback, options) => {
+        type = String(type);
+        const capture = captureOption(options);
+        const dictionary = typeof options === 'boolean' || options == null ? null : Object(options);
+        const once = !!dictionary?.once;
+        const passive = !!dictionary?.passive;
+        const signal = dictionary?.signal;
+        if (signal != null && !isNativeAbortSignal(signal))
+            throw new TypeError('Event listener signal must be an AbortSignal');
+        if (signal?.aborted || callback == null) return;
+        if (typeof callback !== 'function' && typeof callback !== 'object') return;
+        const records = recordsFor(target);
+        if (records.some(record => !record.removed && record.type === type &&
+            record.callback === callback && record.capture === capture)) return;
+        const record = { type, callback, capture, once, passive, signal, removed: false };
+        records.push(record);
+        if (signal) record.abortRecord = addRecord(signal, 'abort',
+            () => removeRecord(target, record), { once: true });
+        return record;
+    };
     class EventTarget {
         addEventListener(type, callback, options = {}) {
-            if (callback == null) return;
-            const list = listeners.get(this) || [];
-            if (!list.some(item => item.type === String(type) && item.callback === callback))
-                list.push({ type: String(type), callback, once: !!options?.once });
-            listeners.set(this, list);
+            addRecord(this, type, callback, options);
         }
-        removeEventListener(type, callback) {
-            const list = listeners.get(this);
-            if (list) listeners.set(this, list.filter(item => item.type !== String(type) || item.callback !== callback));
+        removeEventListener(type, callback, options = {}) {
+            const capture = captureOption(options);
+            const record = listeners.get(this)?.find(candidate => !candidate.removed &&
+                candidate.type === String(type) && candidate.callback === callback &&
+                candidate.capture === capture);
+            if (record) removeRecord(this, record);
         }
         dispatchEvent(event) {
             if (!(event instanceof Event)) throw new TypeError('dispatchEvent requires an Event');
             event.target = event.currentTarget = this;
             for (const item of [...(listeners.get(this) || [])]) {
-                if (item.type !== event.type) continue;
-                if (item.once) this.removeEventListener(item.type, item.callback);
+                if (item.removed || item.type !== event.type) continue;
+                if (item.once) removeRecord(this, item);
+                event.__passive = item.passive;
                 try {
                     if (typeof item.callback === 'function') item.callback.call(this, event);
                     else item.callback?.handleEvent?.call(item.callback, event);
                 } catch (error) { host('console', 'error', error?.stack || String(error)); }
+                finally { event.__passive = false; }
                 if (event.__immediate) break;
             }
             event.currentTarget = null;

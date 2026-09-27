@@ -13,9 +13,20 @@ pub struct WebSocketCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WebSocketOperation {
-    Open { url: String, protocols: Vec<String> },
-    Send { binary: bool, data: Vec<u8> },
-    Close { code: u16, reason: String },
+    Open {
+        url: String,
+        protocols: Vec<String>,
+    },
+    Send {
+        binary: bool,
+        data: Vec<u8>,
+    },
+    Close {
+        code: u16,
+        reason: String,
+    },
+    /// Renderer-owned realm teardown, not a script-visible close handshake.
+    Cancel,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

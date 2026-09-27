@@ -41,12 +41,17 @@ pub(in crate::engine::script) fn deliver_event(
     context: &mut Context,
     event: DatabaseEvent,
 ) -> JsResult<()> {
+    deliver_result(context, event.request_id as u32, event.payload)
+}
+
+pub(in crate::engine::script) fn deliver_result(
+    context: &mut Context,
+    id: u32,
+    payload: String,
+) -> JsResult<()> {
     context.call_global(
         "__receiveDatabaseEvent",
-        &[
-            JsValue::from(event.request_id as u32),
-            js_string(event.payload),
-        ],
+        &[JsValue::from(id), js_string(payload)],
     )?;
     context.run_jobs()
 }

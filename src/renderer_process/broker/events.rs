@@ -1,6 +1,7 @@
 //! Bounded renderer-to-browser event delivery.
 
 mod notification;
+mod presentations;
 
 use super::RendererEvent;
 use crate::limits::{MAX_QUEUED_RENDERER_EVENTS, MAX_QUEUED_RENDERER_FETCH_BATCHES};
@@ -63,6 +64,7 @@ impl EventSender {
                 | RendererEvent::WebSocketCommand(_)
                 | RendererEvent::DatabaseCommand(_)
                 | RendererEvent::SpeechRequest(_)
+                | RendererEvent::NotificationRequest(_)
         ) {
             self.send_lossless(event)
         } else {
@@ -95,39 +97,11 @@ impl EventSender {
                 RendererEvent::VideoFrame(next)
             }
             RendererEvent::Presentation(next) => {
-                let previous = state
-                    .events
-                    .iter()
-                    .position(|queued| {
-                        matches!(queued, RendererEvent::Presentation(previous) if previous.document == next.document)
-                    })
-                    .and_then(|index| state.events.remove(index))
-                    .map(|event| match event {
-                        RendererEvent::Presentation(presentation) => presentation,
-                        _ => unreachable!("presentation position changed while queue was locked"),
-                    });
-                state
-                    .events
-                    .retain(|queued| !matches!(queued, RendererEvent::Presentation(_)));
-                let next = match previous {
-                    Some(previous) => previous.coalesce(*next)?,
-                    None => *next,
-                };
-                RendererEvent::Presentation(Box::new(next))
+                RendererEvent::Presentation(presentations::coalesce(&mut state.events, next)?)
             }
-            RendererEvent::RuntimeUpdate(next) => {
-                if let Some(RendererEvent::RuntimeUpdate(previous)) = state.events.back_mut()
-                    && previous.document == next.document
-                {
-                    **previous = (**previous).clone().coalesce(*next)?;
-                    let notify = state.notification.request();
-                    drop(state);
-                    self.queue.changed.notify_one();
-                    notification::deliver(notify);
-                    return Ok(());
-                }
-                RendererEvent::RuntimeUpdate(next)
-            }
+            RendererEvent::RuntimeUpdate(next) => RendererEvent::RuntimeUpdate(
+                presentations::coalesce_runtime(&mut state.events, next)?,
+            ),
             RendererEvent::PointerCursor(next) => {
                 if state.events.iter().any(|queued| {
                     matches!(
@@ -146,7 +120,10 @@ impl EventSender {
             }
             event => event,
         };
-        while state.receiver_open && state.events.len() >= MAX_QUEUED_RENDERER_EVENTS {
+        while state.receiver_open
+            && (state.events.len() >= MAX_QUEUED_RENDERER_EVENTS
+                || presentations::exceeds_resource_budget(&state.events, &event))
+        {
             if !wait {
                 return Err(ProtocolError::InvalidPayload(
                     "browser renderer-event queue exhausted",
@@ -255,6 +232,7 @@ fn event_document(event: &RendererEvent) -> Option<crate::renderer_protocol::Doc
         RendererEvent::WebSocketCommand(command) => Some(command.document),
         RendererEvent::DatabaseCommand(command) => Some(command.document),
         RendererEvent::SpeechRequest(request) => Some(request.document),
+        RendererEvent::NotificationRequest(request) => Some(request.document),
         RendererEvent::FullscreenRequested(request) => Some(request.document),
         RendererEvent::PointerLockRequested(request) => Some(request.document),
         RendererEvent::Diagnostic { .. }

@@ -171,6 +171,7 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
             prefers_dark_color_scheme: true,
         },
         prefers_dark_color_scheme: true,
+        notification_permission: NotificationPermission::Granted,
     };
     let message = BrowserMessage::BeginDocument(start.clone());
     let decoded = FrameReader::new(Cursor::new(encoded_browser(&message)), session())

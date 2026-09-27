@@ -1,7 +1,8 @@
 use super::support::*;
+use better_web_browser::fetch::csp::PolicyContainer;
 use better_web_browser::renderer_process::{RendererEvent, RendererSession};
 use better_web_browser::renderer_protocol::{
-    DocumentId, FetchResponseHead, FetchResponseResult, FetchResponseType,
+    DocumentId, FetchInitiator, FetchResponseHead, FetchResponseResult, FetchResponseType,
 };
 use std::time::{Duration, Instant};
 
@@ -66,6 +67,70 @@ fn timer_sends_inserted_meta_policy_before_followup_fetch() {
     );
     acknowledge(&session, &initial);
     assert_timer_policy_before_fetch(&session, initial.document, "/blocked");
+    session.shutdown().unwrap();
+}
+
+#[test]
+fn click_flushes_meta_csp_and_cookie_before_keepalive_and_beacon() {
+    let _serial = SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = RendererSession::launch(options()).unwrap();
+    let initial = load_html_document(
+        &session,
+        199,
+        r#"<!doctype html><body>Click<script>
+        document.addEventListener('click', () => {
+            const meta = document.createElement('meta');
+            meta.setAttribute('http-equiv', 'Content-Security-Policy');
+            meta.setAttribute('content', "connect-src 'none'");
+            document.head.appendChild(meta);
+            document.cookie = 'proof=updated; path=/';
+            fetch('/keepalive', {method:'POST', body:'proof', keepalive:true}).catch(() => {});
+            navigator.sendBeacon('/beacon', 'proof');
+        });
+    </script>"#,
+    );
+    acknowledge(&session, &initial);
+    click(&session, initial.document, 1, 20.0, 20.0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut policy_seen = false;
+    let mut cookie_seen = false;
+    let mut seen = Vec::new();
+    while seen.len() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "missing survivable requests: {seen:?}"
+        );
+        match session.wait_for_event(Duration::from_secs(3)).unwrap() {
+            RendererEvent::PolicyMutation(update) if update.document == initial.document => {
+                assert_eq!(update.serialized, "connect-src 'none'");
+                let mut policy = PolicyContainer::default();
+                policy
+                    .append_meta("https://example.test/199", &update.serialized)
+                    .unwrap();
+                assert!(!policy.allows_url("connect-src", "https://example.test/keepalive", 0));
+                policy_seen = true;
+            }
+            RendererEvent::CookieMutation(update) if update.document == initial.document => {
+                assert!(update.assignment.contains("proof=updated"));
+                cookie_seen = true;
+            }
+            RendererEvent::FetchBatch { document, requests } if document == initial.document => {
+                assert!(
+                    policy_seen && cookie_seen,
+                    "request preceded CSP or cookie mutation"
+                );
+                seen.extend(requests.into_iter().map(|request| request.head.initiator));
+            }
+            RendererEvent::Diagnostic { .. }
+            | RendererEvent::Presentation(_)
+            | RendererEvent::RuntimeUpdate(_) => {}
+            event => panic!("unexpected click result: {event:?}"),
+        }
+    }
+    assert!(seen.contains(&FetchInitiator::ScriptApi));
+    assert!(seen.contains(&FetchInitiator::Beacon));
     session.shutdown().unwrap();
 }
 

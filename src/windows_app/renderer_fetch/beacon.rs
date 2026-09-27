@@ -36,6 +36,7 @@ pub(super) fn submit(
     validate_document_identity(document, renderer.head.document)
         .map_err(|error| error.to_string())?;
     let head = &renderer.head;
+    let body_bytes = renderer.body.len();
     // The untrusted renderer cannot turn a Beacon into a credentialed arbitrary method,
     // response read, child navigation, or a request with author-controlled headers.
     if head.destination != ResourceDestination::Fetch
@@ -54,7 +55,7 @@ pub(super) fn submit(
             .headers
             .iter()
             .any(|(name, _)| !name.eq_ignore_ascii_case("content-type"))
-        || renderer.body.len() > 64 * 1024
+        || body_bytes > better_web_browser::limits::MAX_KEEPALIVE_BODY_BYTES
     {
         return Err("invalid Beacon intent".into());
     }
@@ -77,11 +78,17 @@ pub(super) fn submit(
         // is an asynchronous delivery failure, not a fatal page-engine error.
         return Ok(());
     };
+    let Some(upload_permit) = registry.keepalive_budget.reserve(document, body_bytes) else {
+        // A queued Beacon is best-effort; it shares the document's Fetch keepalive
+        // upload budget and never bypasses a concurrent fetch(..., {keepalive:true}).
+        return Ok(());
+    };
     let client = Arc::clone(client);
     std::thread::Builder::new()
         .name("breeze-beacon".into())
         .spawn(move || {
             let _permit = permit;
+            let _upload_permit = upload_permit;
             if let Ok(mut response) = client.fetch_stream(request) {
                 while matches!(response.next_chunk(), Ok(Some(_))) {}
             }

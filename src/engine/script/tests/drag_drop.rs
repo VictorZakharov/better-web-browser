@@ -1,5 +1,7 @@
 use super::*;
 
+mod lifecycle;
+
 #[test]
 fn synthetic_clipboard_events_keep_data_isolated_from_other_events() {
     let (dom, outcome) = execute_html(
@@ -136,12 +138,18 @@ fn trusted_pointer_drag_moves_data_only_into_accepted_drop() {
                 events.push('end:' + event.dataTransfer.dropEffect);
                 document.querySelector('output').textContent = events.join('|');
             };
-            target.ondragenter = event => events.push('enter:' + event.dataTransfer.types[0]);
+            target.ondragenter = event => {
+                events.push('enter:' + event.dataTransfer.types[0]);
+                event.preventDefault();
+            };
             target.ondragover = event => {
                 events.push('over:' + event.dataTransfer.getData('text/plain'));
                 event.preventDefault();
             };
-            target.ondrop = event => events.push('drop:' + event.dataTransfer.getData('text/plain'));
+            target.ondrop = event => {
+                events.push('drop:' + event.dataTransfer.getData('text/plain'));
+                event.preventDefault();
+            };
         </script>"#,
         true,
     );
@@ -201,6 +209,7 @@ fn trusted_drag_protects_file_and_string_payloads_until_drop() {
                 shared.items.add(new File(['secret'], 'private.txt', {type:'text/plain'}));
                 checks.push(shared.files.length === 1, shared.getData('text/plain') === 'private');
             };
+            target.ondragenter = event => event.preventDefault();
             target.ondragover = event => {
                 const data = event.dataTransfer;
                 checks.push(data === shared, data.items.length === 2,
@@ -216,6 +225,7 @@ fn trusted_drag_protects_file_and_string_payloads_until_drop() {
                 const data = event.dataTransfer;
                 checks.push(data === shared, data.getData('text/plain') === 'private',
                     data.files.length === 1, data.files.item(0).name === 'private.txt');
+                event.preventDefault();
             };
             source.ondragend = () => {
                 checks.push(shared.getData('text/plain') === '', shared.items.length === 2,

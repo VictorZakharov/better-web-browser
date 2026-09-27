@@ -10,13 +10,18 @@ mod document;
 mod fetch;
 mod input;
 mod message;
+mod notification;
 mod presentation;
 mod speech;
 mod state;
 mod video;
 mod websocket;
 mod wire;
-pub use database::{DatabaseCommand, DatabaseEvent};
+pub use database::{DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent};
+pub use notification::{
+    NotificationAction, NotificationEvent, NotificationPermission, NotificationRequest,
+    NotificationUpdate,
+};
 pub use speech::{
     MAX_SPEECH_TEXT_BYTES, SpeechAction, SpeechEvent, SpeechRequest, SpeechUpdate, SpeechVoiceInfo,
 };

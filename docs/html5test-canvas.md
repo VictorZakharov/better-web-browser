@@ -35,6 +35,48 @@ README command.
   with sender detachment. A transferred DOM placeholder can export the live
   bitmap; worker tests cover path paint, filters, geometry, and reset.
 
+## Embedded DOM presentation
+
+- With scripting enabled, an HTML Canvas is laid out as a replaced element with
+  its `width`/`height` content attributes as intrinsic dimensions (default
+  300×150). Its transparent bitmap or painted pixels are placed in the page
+  display list, scaled by the existing replaced-image paint path. Canvas
+  fallback children remain available when scripting is disabled.
+- 2D drawing, `bitmaprenderer` transfers, `reset()`, and dimension changes
+  invalidate the presentation. At a rendering checkpoint, the renderer sends
+  actual straight-alpha RGBA pixels through the decoded-image transport;
+  presentation converts them to premultiplied BGRA. Subsequent paints replace
+  the same resource key and invalidate its browser-side bitmap cache. The same
+  path composes same-process child documents into their iframe paint boxes;
+  child Canvas repaints update the bitmap and removing an iframe retires it.
+- Up to 64 connected Canvas elements can be tracked, each at most 4,194,304
+  pixels, with a 64 MiB paint batch and the existing 64 MiB decoded-image page
+  budget. Child-frame decoded images share a separate 64 MiB budget. Detached
+  elements relinquish their tracked slot and retire their browser-side bitmap;
+  a reattached Canvas republishes its retained pixels without a new draw.
+  Tracking detached surfaces is bounded to 64 weak references, so an older
+  evicted surface needs a new draw after reattachment. Oversized or
+  zero-sized canvases keep their replaced box without a bitmap. A same-realm
+  OffscreenCanvas linked by `transferControlToOffscreen()` paints its DOM
+  placeholder; a placeholder transferred to a worker does not yet stream
+  worker-side updates into the page.
+- The 64 MiB renderer presentation wire limit includes layout, accessibility,
+  glyphs, image keys, and pixels. When root and child-frame image deltas do not
+  fit together, the renderer sends bounded subsets over successive rendering
+  checkpoints, prioritizing images never sent and rotating already-sent
+  repaints. An update is acknowledged only after its pixels are emitted. A
+  single decoded image that cannot fit alongside required metadata cannot be
+  carried by the current atomic image format; it remains cached for a later
+  checkpoint, reports one diagnostic, and does not cause an immediate retry
+  loop.
+  The earlier Canvas export batch also retains dirty bitmaps beyond its own
+  64 MiB limit and requests another checkpoint; it does not turn overflow into
+  a null bitmap (which would mean removing the previously presented pixels).
+
+The relevant HTML requirements are the Canvas element's [intrinsic dimensions,
+fallback content, and bitmap](https://html.spec.whatwg.org/multipage/canvas.html#the-canvas-element)
+and its [embedded-content rendering](https://html.spec.whatwg.org/multipage/rendering.html#embedded-content-rendering-rules).
+
 ## Paths, paint, and state
 
 - Path2D handles empty/copy construction and SVG path strings with absolute
@@ -62,8 +104,8 @@ README command.
 
 ## Intentional limits
 
-This is not full Canvas 2D. The bitmap is not painted into the page display
-list, including an OffscreenCanvas linked to a DOM placeholder. Text drawing,
+This is not full Canvas 2D. Worker-transferred OffscreenCanvas placeholders do
+not yet deliver updates to the DOM display list. Text drawing,
 HTML image-element and video image sources, pixel antialiasing, color spaces
 other than sRGB, and CSS filter URLs are not implemented. Blur uses a bounded
 box approximation; curves and arcs use bounded line-segment flattening.
