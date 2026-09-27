@@ -113,8 +113,11 @@ fn dom_mutation_budget_is_enforced_per_event_loop_task() {
 fn tree_mutation_budget_does_not_block_attribute_or_text_node_updates() {
     let (dom, outcome) = execute_html(&format!(
         r#"<body><div id="target">before</div><script>
+            const left = document.createElement('div');
+            const right = document.createElement('div');
+            const child = document.createElement('i');
             for (let i = 0; i < {}; i++)
-                document.body.appendChild(document.createElement('i'));
+                (i % 2 === 0 ? left : right).appendChild(child);
             const target = document.getElementById('target');
             target.setAttribute('data-state', 'ready');
             target.firstChild.textContent = 'after';
@@ -123,6 +126,7 @@ fn tree_mutation_budget_does_not_block_attribute_or_text_node_updates() {
     ));
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(outcome.mutation_count, MAX_DOM_TREE_MUTATIONS_PER_TASK + 2);
     let target = dom
         .elements_named("div")
         .find(|node| node.attr("id").as_deref() == Some("target"))
