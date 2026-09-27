@@ -48,12 +48,13 @@ impl DocumentRuntime {
                         self.page.dom.document.scroll_offset.set((0.0, y));
                     }
                     if current != url {
-                        outcome
-                            .history_actions
-                            .push(crate::engine::script::ScriptHistoryAction {
+                        outcome.history_actions.push(
+                            crate::engine::script::ScriptHistoryAction::Update {
                                 url: url.clone(),
                                 replace: false,
-                            });
+                                state: None,
+                            },
+                        );
                     }
                     outcome.render_requested = true;
                 }

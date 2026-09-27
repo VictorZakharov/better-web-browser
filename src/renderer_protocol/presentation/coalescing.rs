@@ -1,6 +1,7 @@
 use super::{
     PageLoadReport, RendererPresentation, RendererRuntimeUpdate, RuntimeReport, StyleReport,
 };
+use crate::limits::MAX_RUNTIME_REPORT_ENTRIES;
 use crate::renderer_protocol::ProtocolError;
 mod metadata;
 mod resources;
@@ -31,7 +32,7 @@ impl RendererPresentation {
         resources::merge(&mut self, &mut next);
         next.accessibility = self.accessibility.coalesce(next.accessibility)?;
         next.clock_advanced |= self.clock_advanced;
-        next.runtime = self.runtime.coalesce(next.runtime);
+        next.runtime = self.runtime.coalesce(next.runtime)?;
         next.style = self.style.coalesce(next.style);
         next.load = self.load.coalesce(next.load);
         Ok((next, None))
@@ -43,7 +44,31 @@ impl RendererPresentation {
 }
 
 impl RuntimeReport {
-    pub(crate) fn coalesce(mut self, mut next: Self) -> Self {
+    pub(crate) fn coalesce(mut self, mut next: Self) -> Result<Self, ProtocolError> {
+        for (prior, incoming) in [
+            (self.errors.len(), next.errors.len()),
+            (self.console.len(), next.console.len()),
+            (self.diagnostics.len(), next.diagnostics.len()),
+            (self.history_actions.len(), next.history_actions.len()),
+            (self.cookie_updates.len(), next.cookie_updates.len()),
+        ] {
+            if prior
+                .checked_add(incoming)
+                .is_none_or(|total| total > MAX_RUNTIME_REPORT_ENTRIES)
+            {
+                return Err(ProtocolError::InvalidPayload(
+                    "coalesced runtime entry count",
+                ));
+            }
+        }
+        if self.history_traversal_ack.is_some()
+            && next.history_traversal_ack.is_some()
+            && self.history_traversal_ack != next.history_traversal_ack
+        {
+            return Err(ProtocolError::InvalidPayload(
+                "coalesced history acknowledgements",
+            ));
+        }
         next.scripts_executed = self.scripts_executed.saturating_add(next.scripts_executed);
         next.dom_mutations = self.dom_mutations.saturating_add(next.dom_mutations);
         self.errors.append(&mut next.errors);
@@ -62,13 +87,16 @@ impl RuntimeReport {
                 (self.viewport_wheel_delta_y as f64 + next.viewport_wheel_delta_y as f64)
                     .clamp(-(f32::MAX as f64), f32::MAX as f64) as f32;
         }
-        self.history_updates.append(&mut next.history_updates);
-        next.history_updates = self.history_updates;
+        self.history_actions.append(&mut next.history_actions);
+        next.history_actions = self.history_actions;
+        if next.history_traversal_ack.is_none() {
+            next.history_traversal_ack = self.history_traversal_ack;
+        }
         self.cookie_updates.append(&mut next.cookie_updates);
         next.cookie_updates = self.cookie_updates;
         next.runtime_stopped |= self.runtime_stopped;
         next.render_requested |= self.render_requested;
-        next
+        Ok(next)
     }
 }
 
@@ -152,7 +180,7 @@ impl RendererRuntimeUpdate {
             return Ok((self, Some(next)));
         }
         next.clock_advanced |= self.clock_advanced;
-        next.runtime = self.runtime.coalesce(next.runtime);
+        next.runtime = self.runtime.coalesce(next.runtime)?;
         next.load = self.load.coalesce(next.load);
         Ok((next, None))
     }
@@ -167,7 +195,7 @@ impl RendererRuntimeUpdate {
 mod tests {
     use super::*;
     use crate::engine::DecodedImage;
-    use crate::renderer_protocol::HistoryUpdate;
+    use crate::renderer_protocol::HistoryAction;
     use crate::renderer_protocol::PresentedImage;
     use crate::renderer_protocol::presentation::tests::sample;
 
@@ -183,12 +211,14 @@ mod tests {
             viewport_scroll_y: Some(500.0),
             ..RuntimeReport::default()
         };
-        let retained = first.coalesce(RuntimeReport::default());
+        let retained = first.coalesce(RuntimeReport::default()).unwrap();
         assert_eq!(retained.viewport_scroll_y, Some(500.0));
-        let final_report = retained.coalesce(RuntimeReport {
-            viewport_scroll_y: Some(0.0),
-            ..RuntimeReport::default()
-        });
+        let final_report = retained
+            .coalesce(RuntimeReport {
+                viewport_scroll_y: Some(0.0),
+                ..RuntimeReport::default()
+            })
+            .unwrap();
         assert_eq!(final_report.viewport_scroll_y, Some(0.0));
     }
 
@@ -198,23 +228,49 @@ mod tests {
             viewport_wheel_delta_y: delta,
             ..RuntimeReport::default()
         };
-        let combined = wheel(126.0).coalesce(wheel(126.0)).coalesce(wheel(-40.0));
+        let combined = wheel(126.0)
+            .coalesce(wheel(126.0))
+            .unwrap()
+            .coalesce(wheel(-40.0))
+            .unwrap();
         assert_eq!(combined.viewport_wheel_delta_y, 212.0);
-        let repositioned = combined.coalesce(RuntimeReport {
-            viewport_scroll_y: Some(30.0),
-            viewport_wheel_delta_y: 5.0,
-            ..RuntimeReport::default()
-        });
+        let repositioned = combined
+            .coalesce(RuntimeReport {
+                viewport_scroll_y: Some(30.0),
+                viewport_wheel_delta_y: 5.0,
+                ..RuntimeReport::default()
+            })
+            .unwrap();
         assert_eq!(repositioned.viewport_wheel_delta_y, 5.0);
-        let next = repositioned.coalesce(wheel(20.0));
+        let next = repositioned.coalesce(wheel(20.0)).unwrap();
         assert_eq!(next.viewport_scroll_y, Some(30.0));
         assert_eq!(next.viewport_wheel_delta_y, 25.0);
         assert!(
             wheel(f32::MAX)
                 .coalesce(wheel(f32::MAX))
+                .unwrap()
                 .viewport_wheel_delta_y
                 .is_finite()
         );
+    }
+
+    #[test]
+    fn coalescing_rejects_an_unbounded_history_action_stream() {
+        let action = HistoryAction::Traverse { delta: -1 };
+        let first = RuntimeReport {
+            history_actions: vec![action.clone(); MAX_RUNTIME_REPORT_ENTRIES],
+            ..Default::default()
+        };
+        let next = RuntimeReport {
+            history_actions: vec![action],
+            ..Default::default()
+        };
+        assert!(matches!(
+            first.coalesce(next),
+            Err(ProtocolError::InvalidPayload(
+                "coalesced runtime entry count"
+            ))
+        ));
     }
 
     #[test]
@@ -228,9 +284,10 @@ mod tests {
             console: vec!["first console".into()],
             diagnostics: vec!["first diagnostic".into()],
             navigation_url: Some("https://example.test/redirect".into()),
-            history_updates: vec![HistoryUpdate {
+            history_actions: vec![HistoryAction::Update {
                 url: "https://example.test/first-state".into(),
                 replace: false,
+                state: None,
             }],
             cookie_updates: vec!["first=1".into()],
             runtime_active: true,
@@ -260,9 +317,10 @@ mod tests {
             errors: vec!["next error".into()],
             console: vec!["next console".into()],
             diagnostics: vec!["next diagnostic".into()],
-            history_updates: vec![HistoryUpdate {
+            history_actions: vec![HistoryAction::Update {
                 url: "https://example.test/next-state".into(),
                 replace: true,
+                state: None,
             }],
             cookie_updates: vec!["next=2".into()],
             runtime_stopped: true,
@@ -301,15 +359,17 @@ mod tests {
             Some("https://example.test/redirect")
         );
         assert_eq!(
-            combined.runtime.history_updates,
+            combined.runtime.history_actions,
             [
-                HistoryUpdate {
+                HistoryAction::Update {
                     url: "https://example.test/first-state".into(),
                     replace: false,
+                    state: None,
                 },
-                HistoryUpdate {
+                HistoryAction::Update {
                     url: "https://example.test/next-state".into(),
                     replace: true,
+                    state: None,
                 }
             ]
         );

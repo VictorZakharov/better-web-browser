@@ -24,7 +24,7 @@ impl BrowserState {
             self.set_status("Navigation to a named browsing context is not supported yet");
             return false;
         }
-        let history = if options.user_initiated {
+        let mut history = if options.user_initiated {
             if options.replace_history {
                 HistoryMode::Script
             } else {
@@ -66,6 +66,7 @@ impl BrowserState {
                 // Keep the tab-limit error without acknowledging the same revision twice.
                 return true;
             }
+            history = HistoryMode::Replace;
         }
         self.begin_navigation_request_for_tab(
             self.tabs.active_id(),

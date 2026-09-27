@@ -33,10 +33,10 @@ fn retained_custom_element_app_receives_title_events_after_async_history_navigat
             )
         );
         assert_eq!(outcome.history_actions.len(), 1);
-        assert_eq!(
-            outcome.history_actions[0].url,
-            format!("https://example.com/item/{step}")
-        );
+        assert!(matches!(
+            &outcome.history_actions[0],
+            ScriptHistoryAction::Update { url, .. } if url == &format!("https://example.com/item/{step}")
+        ));
         assert!(outcome.render_requested);
     }
 }

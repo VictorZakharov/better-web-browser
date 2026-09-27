@@ -32,6 +32,8 @@ mod form_validation;
 mod form_validation_presentation;
 #[path = "renderer_process/fullscreen.rs"]
 mod fullscreen;
+#[path = "renderer_process/history_traversal.rs"]
+mod history_traversal;
 #[path = "renderer_process/hover.rs"]
 mod hover;
 #[path = "renderer_process/input.rs"]

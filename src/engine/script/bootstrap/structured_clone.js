@@ -188,4 +188,7 @@
     globalThis.__cloneTransferList = transferList;
     globalThis.structuredClone = (value, options = {}) =>
         __deserializeClone(__serializeClone(value, transferList(options)));
+    // History keeps private references so page scripts cannot replace its storage clone.
+    globalThis.__setHistoryStateCloneBindings?.(globalThis.__serializeClone, globalThis.__deserializeClone);
+    delete globalThis.__setHistoryStateCloneBindings;
 })();

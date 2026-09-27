@@ -48,6 +48,7 @@ impl DocumentRuntime {
                 || (matches!(&input, DocumentInput::Scroll(_))
                     && !self.layout.sticky_offsets.is_empty());
         let mut cursor = None;
+        let mut history_traversal_ack = None;
         let (mut outcome, navigation) = match input {
             DocumentInput::Wheel(input) => (self.wheel_input(input)?, None),
             DocumentInput::Pointer(input) => {
@@ -181,10 +182,50 @@ impl DocumentRuntime {
                 })?;
                 (result.outcome, None)
             }
+            DocumentInput::History(input) => {
+                history_traversal_ack = Some(input.sequence);
+                let mut outcome = self
+                    .script_runtime
+                    .as_mut()
+                    .map(|runtime| {
+                        runtime.apply_history_traversal(
+                            &input.url,
+                            input.state.as_deref(),
+                            input.history_length,
+                            input.history_index,
+                        )
+                    })
+                    .unwrap_or_default();
+                self.page.source_url.clone_from(&input.url);
+                self.reader.source_url.clone_from(&input.url);
+                outcome.viewport_scroll_y = crate::engine::fragment_navigation::scroll_to_fragment(
+                    &self.page.dom.document,
+                    &input.url,
+                    &self.layout.node_bounds,
+                    &self.layout.scroll_boxes,
+                    self.layout.content_height - self.viewport.height,
+                );
+                if let Some(y) = outcome.viewport_scroll_y {
+                    self.page.dom.document.scroll_offset.set((0.0, y));
+                }
+                outcome.render_requested = true;
+                (outcome, None)
+            }
         };
         self.admit_user_input_outcome(&mut outcome, connection)?;
-        let presentation =
+        let mut presentation =
             self.presentation_after_user_input(outcome, force_accessibility_update, connection)?;
+        if let Some(sequence) = history_traversal_ack {
+            match presentation.as_mut() {
+                Some(AdvanceResult::Presentation(presentation)) => {
+                    presentation.runtime.history_traversal_ack = Some(sequence);
+                }
+                Some(AdvanceResult::Runtime(update)) => {
+                    update.runtime.history_traversal_ack = Some(sequence);
+                }
+                _ => return Err("history traversal produced no renderer report".into()),
+            }
+        }
         Ok(InteractionResult {
             presentation,
             navigation,

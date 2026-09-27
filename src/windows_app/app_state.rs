@@ -122,7 +122,9 @@ impl BrowserState {
             self.open_task_manager();
         }
         if let Some(url) = self.startup_url.take() {
-            self.navigate_from_input(&url, HistoryMode::Push, false);
+            // The command-line URL is this tab's initial entry; the queued home page is
+            // only the startup placeholder, not a Back destination.
+            self.navigate_from_input(&url, HistoryMode::Replace, false);
         } else {
             SetFocus(self.controls.address);
         }

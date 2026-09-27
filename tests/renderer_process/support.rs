@@ -91,6 +91,9 @@ pub(super) fn document_start(document: DocumentId, body_length: usize) -> Docume
         csp_policies: Vec::new(),
         diagnostic_selectors: Vec::new(),
         body_length: body_length as u32,
+        history_length: 1,
+        history_index: 0,
+        history_state: None,
         viewport: PresentedViewport {
             width: 800.0,
             height: 600.0,

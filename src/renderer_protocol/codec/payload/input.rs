@@ -1,4 +1,4 @@
-use crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES;
+use crate::limits::{MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_URL_BYTES};
 use crate::renderer_protocol::input::*;
 use crate::renderer_protocol::wire::{WireReader, WireWriter};
 use crate::renderer_protocol::{BrowserMessage, DocumentId, ProtocolError, RendererMessage};
@@ -62,6 +62,16 @@ pub(super) fn encode_browser_input(
                 DocumentInput::Lifecycle(input) => {
                     writer.u8(lifecycle_tag(input.state));
                     0x014b
+                }
+                DocumentInput::History(input) => {
+                    writer.string(&input.url)?;
+                    writer.bool(input.state.is_some());
+                    if let Some(state) = &input.state {
+                        writer.string(state)?;
+                    }
+                    writer.u32(input.history_length);
+                    writer.u32(input.history_index);
+                    0x0155
                 }
             }
         }
@@ -194,6 +204,17 @@ pub(super) fn decode_browser_input(
                 document,
                 sequence,
                 state: decode_lifecycle(reader.u8()?)?,
+            }),
+            0x0155 => DocumentInput::History(HistoryTraversalInput {
+                document,
+                sequence,
+                url: reader.string(MAX_URL_BYTES)?,
+                state: reader
+                    .bool()?
+                    .then(|| reader.string(MAX_HISTORY_STATE_BYTES))
+                    .transpose()?,
+                history_length: reader.u32()?,
+                history_index: reader.u32()?,
             }),
             _ => return Err(ProtocolError::UnexpectedMessage(kind)),
         };

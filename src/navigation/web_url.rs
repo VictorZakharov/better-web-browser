@@ -27,6 +27,27 @@ pub fn resolve_web_url(base: &str, reference: &str) -> Option<String> {
     parse_web_url(reference, Some(base))
 }
 
+/// HTML's scheme-specific predicate for a same-document History API URL.
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#can-have-its-url-rewritten
+pub fn can_rewrite_history_url(document: &str, target: &str) -> bool {
+    let (Ok(document), Ok(target)) = (Url::parse(document), Url::parse(target)) else {
+        return false;
+    };
+    if document.scheme() != target.scheme()
+        || document.username() != target.username()
+        || document.password() != target.password()
+        || document.host() != target.host()
+        || document.port() != target.port()
+    {
+        return false;
+    }
+    match target.scheme() {
+        "http" | "https" => true,
+        "file" => document.path() == target.path(),
+        _ => document.path() == target.path() && document.query() == target.query(),
+    }
+}
+
 fn normalize_opaque_path(mut parsed: Url) -> Url {
     // The URL opaque-path state encodes only the space directly before ? or #.
     // Keep this space after query/fragment removal as required by live searchParams.

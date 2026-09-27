@@ -15,6 +15,7 @@ pub(super) struct LoadedPage {
     pub(super) stream: Option<better_web_browser::renderer_process::NavigationBody>,
     pub(super) body: Vec<u8>,
     pub(super) final_url: String,
+    pub(super) redirected: bool,
     pub(super) status: u16,
     pub(super) content_type: String,
     pub(super) policy: std::sync::Arc<better_web_browser::fetch::csp::PolicyContainer>,
@@ -28,6 +29,7 @@ impl LoadedPage {
             stream: None,
             body: HOME_HTML.as_bytes().to_vec(),
             final_url: HOME_URL.into(),
+            redirected: false,
             status: 200,
             content_type: "text/html".into(),
             policy: Default::default(),
@@ -153,6 +155,10 @@ impl BrowserState {
         self.renderer_revision = presentation.revision;
         self.record_renderer_presentation_incident(&presentation, first_presentation);
 
+        self.apply_same_document_history_updates(
+            presentation.document,
+            &presentation.runtime.history_actions,
+        );
         if self.follow_runtime_navigation(
             &presentation.runtime,
             Some((presentation.document, presentation.revision)),
@@ -236,7 +242,10 @@ impl BrowserState {
         for glyph in std::mem::take(&mut presentation.glyphs) {
             self.presented_glyphs.insert(glyph.id, glyph);
         }
-        self.reader_url.clone_from(&presentation.final_url);
+        self.reader_url = self
+            .current_url()
+            .unwrap_or(&presentation.final_url)
+            .to_owned();
         self.surface = Surface::Page;
         if layout_changed {
             self.scroll_y = self.scroll_y.min(self.content_height.max(0));
@@ -260,19 +269,19 @@ impl BrowserState {
         self.renderer_input_poll_budget = 0;
 
         if first_presentation {
-            let history_index = self.history_index;
-            if let Some(current) = self.history.get_mut(history_index) {
-                current.clone_from(&presentation.final_url);
-            }
-            self.script_navigation
-                .record_committed(&presentation.final_url);
-            self.omnibox_text.clone_from(&presentation.final_url);
+            let committed_url = self
+                .renderer_load_metrics
+                .as_ref()
+                .map(|metrics| metrics.final_url.as_str())
+                .unwrap_or(&presentation.final_url)
+                .to_owned();
+            self.script_navigation.record_committed(&committed_url);
+            self.omnibox_text = self.current_url().unwrap_or(&committed_url).to_owned();
             if !self.processing_background_tab {
-                set_window_text(self.controls.address, &presentation.final_url);
+                set_window_text(self.controls.address, &self.omnibox_text);
                 set_window_text(self.controls.reader, "Reader");
             }
         }
-        self.apply_same_document_history_updates(&presentation.runtime.history_updates);
         self.update_active_tab_title(&presentation.title);
         self.apply_script_viewport_scroll(presentation.runtime.viewport_scroll_y);
         self.queue_css_wheel_scroll(presentation.runtime.viewport_wheel_delta_y);
@@ -352,6 +361,17 @@ impl BrowserState {
             true,
             true,
         );
+        // Retain the just-completed popstate task's console/metrics before admitting the next
+        // queued traversal, which might replace this renderer with a different document.
+        if self.apply_queued_history_traversals(
+            presentation.document,
+            &presentation.runtime.history_actions,
+        ) || self.acknowledge_history_traversal(
+            presentation.document,
+            presentation.runtime.history_traversal_ack,
+        ) {
+            return;
+        }
         self.schedule_script_runtime_wakeup();
         if first_presentation && !self.schedule_benchmark_navigation() {
             self.schedule_benchmark_finish();

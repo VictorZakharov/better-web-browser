@@ -411,6 +411,12 @@ pub(super) fn value_to_v8<'s>(
 }
 
 fn throw_error(scope: &mut v8::PinScope, error: JsError) {
+    if error.kind == JsErrorKind::Security {
+        // History URL rewriting throws a DOMException, not a renamed Error. Use the
+        // realm's captured constructor so author code cannot replace it before the throw.
+        super::messaging::throw_named(scope, "SecurityError", &error.message);
+        return;
+    }
     let Some(message) = v8::String::new(scope, &error.message) else {
         return;
     };
@@ -418,6 +424,7 @@ fn throw_error(scope: &mut v8::PinScope, error: JsError) {
         JsErrorKind::Error => v8::Exception::error(scope, message),
         JsErrorKind::Type => v8::Exception::type_error(scope, message),
         JsErrorKind::Range => v8::Exception::range_error(scope, message),
+        JsErrorKind::Security => unreachable!("handled by realm DOMException constructor"),
     };
     scope.throw_exception(exception);
 }

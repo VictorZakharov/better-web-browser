@@ -20,19 +20,33 @@ fn post() -> RuntimeReport {
 }
 
 #[test]
+fn history_traversal_ack_is_bounded_and_survives_wire_round_trip() {
+    let mut presentation = sample();
+    presentation.runtime.history_traversal_ack = Some(17);
+    let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
+    assert_eq!(decoded.runtime.history_traversal_ack, Some(17));
+
+    presentation.runtime.history_traversal_ack = Some(0);
+    assert!(presentation.encode().is_err());
+}
+
+#[test]
 fn navigation_payload_survives_wire_round_trip_and_unrelated_updates() {
     let mut presentation = sample();
-    presentation.runtime = post().coalesce(RuntimeReport::default());
+    presentation.runtime = post().coalesce(RuntimeReport::default()).unwrap();
     let decoded = RendererPresentation::decode(&presentation.encode().unwrap()).unwrap();
     assert_eq!(decoded.runtime.navigation_url, post().navigation_url);
     assert_eq!(
         decoded.runtime.navigation_options,
         post().navigation_options
     );
-    let get = decoded.runtime.coalesce(RuntimeReport {
-        navigation_url: Some("https://example.test/get".into()),
-        ..Default::default()
-    });
+    let get = decoded
+        .runtime
+        .coalesce(RuntimeReport {
+            navigation_url: Some("https://example.test/get".into()),
+            ..Default::default()
+        })
+        .unwrap();
     assert!(
         get.navigation_options.post.is_none(),
         "POST must not leak to a later GET"

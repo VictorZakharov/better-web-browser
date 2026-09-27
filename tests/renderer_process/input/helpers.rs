@@ -133,7 +133,7 @@ fn assert_quiet_geometry_update(
     assert!(!update.runtime.runtime_stopped);
     assert!(!update.runtime.render_requested);
     assert!(update.runtime.navigation_url.is_none());
-    assert!(update.runtime.history_updates.is_empty());
+    assert!(update.runtime.history_actions.is_empty());
     assert_eq!(update.runtime.dom_mutations, 0);
     assert!(!update.clock_advanced);
     // Sampling now happens before this update. Without active observers it can

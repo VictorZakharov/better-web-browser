@@ -2,8 +2,8 @@
 
 use super::ProtocolError;
 use crate::limits::{
-    MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTORS, MAX_RESPONSE_BODY_BYTES,
-    MAX_URL_BYTES,
+    MAX_HISTORY_STATE_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTOR_BYTES, MAX_PAGE_DIAGNOSTIC_SELECTORS,
+    MAX_RESPONSE_BODY_BYTES, MAX_SESSION_HISTORY_ENTRIES, MAX_URL_BYTES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -54,6 +54,9 @@ pub struct DocumentStart {
     pub csp_policies: Vec<String>,
     pub diagnostic_selectors: Vec<String>,
     pub body_length: u32,
+    pub history_length: u32,
+    pub history_index: u32,
+    pub history_state: Option<String>,
     pub viewport: PresentedViewport,
     pub prefers_dark_color_scheme: bool,
     /// Browser-authoritative notification decision for this document's origin.
@@ -87,6 +90,16 @@ impl DocumentStart {
         }
         if self.body_length as usize > MAX_RESPONSE_BODY_BYTES {
             return Err(ProtocolError::PayloadTooLarge(self.body_length));
+        }
+        if self.history_length == 0
+            || self.history_length as usize > MAX_SESSION_HISTORY_ENTRIES
+            || self.history_index >= self.history_length
+            || self
+                .history_state
+                .as_ref()
+                .is_some_and(|state| state.len() > MAX_HISTORY_STATE_BYTES)
+        {
+            return Err(ProtocolError::InvalidPayload("document history context"));
         }
         self.viewport.validate()?;
         Ok(())

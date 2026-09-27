@@ -56,7 +56,10 @@ fn fragment_navigation_updates_url_scroll_and_queued_hashchange_without_reloadin
     );
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert_eq!(outcome.history_actions.len(), 1);
-    assert!(outcome.history_actions[0].replace);
+    assert!(matches!(
+        &outcome.history_actions[0],
+        ScriptHistoryAction::Update { replace: true, .. }
+    ));
     assert!(
         outcome.viewport_scroll_y.is_none(),
         "unmatched fragments must not reset scroll"

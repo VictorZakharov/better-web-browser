@@ -44,11 +44,11 @@ pub use fetch::{
 };
 pub use input::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, FullscreenAction,
-    FullscreenDisposition, FullscreenRequest, FullscreenResponse, InputModifiers, KeyPhase,
-    KeyboardInput, LifecycleInput, NavigationCause, NavigationDisposition, PointerButton,
-    PointerCursor, PointerCursorResult, PointerInput, PointerLockDisposition, PointerLockRequest,
-    PointerLockResponse, PointerPhase, PresentationAcknowledgement, ScrollInput, TextInput,
-    WheelInput,
+    FullscreenDisposition, FullscreenRequest, FullscreenResponse, HistoryTraversalInput,
+    InputModifiers, KeyPhase, KeyboardInput, LifecycleInput, NavigationCause,
+    NavigationDisposition, PointerButton, PointerCursor, PointerCursorResult, PointerInput,
+    PointerLockDisposition, PointerLockRequest, PointerLockResponse, PointerPhase,
+    PresentationAcknowledgement, ScrollInput, TextInput, WheelInput,
 };
 pub use message::{
     BrowserMessage, BrowsingContextId, ContainmentReport, Nonce,
@@ -57,7 +57,7 @@ pub use message::{
     RendererLimits, RendererMessage, RendererSessionId, RestrictionReport, TestCommand,
 };
 pub use presentation::{
-    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryUpdate, MediaRuntimeReport,
+    AttributeDiagnostics, CustomPropertyDiagnostics, HistoryAction, MediaRuntimeReport,
     NodeDiagnostics, NodeIdentityDiagnostics, PageDiagnostics, PageLoadReport,
     PresentedGlyphRaster, PresentedImage, PresentedLayout, RendererPresentation,
     RendererRuntimeUpdate, ResourceDiagnostics, RuntimeReport, SelectorDiagnostics,
@@ -72,7 +72,7 @@ pub use state::{
 pub const MAGIC: [u8; 4] = *b"BRZ1";
 pub const HEADER_LENGTH: usize = 32;
 pub const PROTOCOL_MAJOR: u16 = 14;
-pub const PROTOCOL_MINOR: u16 = 2;
+pub const PROTOCOL_MINOR: u16 = 4;
 pub use crate::limits::{MAX_CONTROL_PAYLOAD, MAX_FRAME_PAYLOAD};
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ pub(in crate::engine::script) enum JsErrorKind {
     Error,
     Type,
     Range,
+    Security,
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +21,7 @@ impl fmt::Display for JsError {
             JsErrorKind::Error => "Error",
             JsErrorKind::Type => "TypeError",
             JsErrorKind::Range => "RangeError",
+            JsErrorKind::Security => "SecurityError",
         };
         write!(formatter, "{name}: {}", self.message)
     }
@@ -46,6 +48,10 @@ impl JsNativeError {
 
     pub(in crate::engine::script) fn range() -> Self {
         Self::new(JsErrorKind::Range)
+    }
+
+    pub(in crate::engine::script) fn security() -> Self {
+        Self::new(JsErrorKind::Security)
     }
 
     fn new(kind: JsErrorKind) -> Self {

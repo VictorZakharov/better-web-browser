@@ -163,6 +163,9 @@ fn document_start_diagnostic_selectors_round_trip_and_are_bounded() {
         csp_policies: vec!["script-src 'self'".into()],
         diagnostic_selectors: vec!["#main".into(), ".content".into()],
         body_length: 10,
+        history_length: 1,
+        history_index: 0,
+        history_state: Some("{\"t\":\"null\"}".into()),
         viewport: PresentedViewport {
             width: 800.0,
             height: 600.0,

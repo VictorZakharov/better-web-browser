@@ -1,6 +1,9 @@
 //! Complete document-owned state retained independently for each browser tab.
 
 mod failure;
+mod history;
+
+pub(super) use history::{HistoryEntry, HistoryTraversalQueue};
 
 use super::accessibility::AccessibilityDocument;
 use super::document_navigation::ScriptNavigationGuard;
@@ -49,8 +52,9 @@ pub(super) struct BrowserTab {
     pub(super) content_height: i32,
     pub(super) scroll_y: i32,
     pub(super) scroll_animation: ScrollAnimation,
-    pub(super) history: Vec<String>,
+    pub(super) history: Vec<HistoryEntry>,
     pub(super) history_index: usize,
+    pub(super) history_traversals: HistoryTraversalQueue,
     pub(super) script_navigation: ScriptNavigationGuard,
     pub(super) navigation: NavigationTransaction,
     pub(super) crashed: bool,
@@ -112,8 +116,9 @@ impl BrowserTab {
             content_height: 0,
             scroll_y: 0,
             scroll_animation: ScrollAnimation::default(),
-            history: Vec::new(),
+            history: vec![HistoryEntry::new(HOME_URL.into())],
             history_index: 0,
+            history_traversals: HistoryTraversalQueue::default(),
             script_navigation: ScriptNavigationGuard::default(),
             navigation: NavigationTransaction::new(LoadedPage::home()),
             crashed: false,
@@ -145,13 +150,6 @@ impl BrowserTab {
         }
     }
 
-    pub(super) fn current_url(&self) -> Option<&str> {
-        self.history
-            .get(self.history_index)
-            .map(String::as_str)
-            .filter(|url| !url.is_empty())
-    }
-
     pub(super) fn mark_crashed(&mut self, status: String) {
         self.storage_subscription = None;
         self.deferred_renderer_events.clear();
@@ -169,6 +167,7 @@ impl BrowserTab {
         self.renderer_input_poll_budget = 0;
         self.video_presentation = Default::default();
         self.pending_renderer_inputs.clear();
+        self.history_traversals.clear();
         self.renderer_revision = 0;
         self.renderer_load_metrics = None;
         self.page_diagnostics = Default::default();
@@ -184,6 +183,9 @@ impl BrowserTab {
         self.renderer_launch_receiver.take();
     }
 }
+
+#[cfg(test)]
+mod history_tests;
 
 impl IdentifiedTab for BrowserTab {
     fn tab_id(&self) -> TabId {
@@ -213,7 +215,7 @@ pub(super) enum TabFocus {
 pub(super) struct ClosedTab {
     pub(super) id: u64,
     pub(super) title: String,
-    pub(super) history: Vec<String>,
+    pub(super) history: Vec<HistoryEntry>,
     pub(super) history_index: usize,
 }
 
@@ -222,7 +224,15 @@ impl From<&BrowserTab> for ClosedTab {
         Self {
             id: NEXT_CLOSED_TAB_ID.fetch_add(1, Ordering::Relaxed),
             title: tab.title.clone(),
-            history: tab.history.clone(),
+            history: tab
+                .history
+                .iter()
+                .cloned()
+                .map(|mut entry| {
+                    entry.document = None;
+                    entry
+                })
+                .collect(),
             history_index: tab.history_index,
         }
     }
@@ -232,7 +242,7 @@ impl ClosedTab {
     pub(super) fn current_url(&self) -> Option<&str> {
         self.history
             .get(self.history_index)
-            .map(String::as_str)
+            .map(|entry| entry.url.as_str())
             .filter(|url| !url.is_empty())
     }
 }
@@ -260,16 +270,14 @@ mod tests {
     fn live_document_state_is_independent_between_tabs() {
         let mut tabs = TabCollection::new(BrowserTab::new(TabId::first()));
         tabs.active_mut()
-            .history
-            .push("https://first.example/".into());
+            .push_history_entry(HistoryEntry::new("https://first.example/".into()));
         tabs.active_mut().scroll_y = 420;
         tabs.active_mut().title = "First".into();
         tabs.active_mut().navigation.begin();
         tabs.active_mut().focus = TabFocus::Content;
         let second = tabs.add(true, BrowserTab::new).unwrap();
         tabs.active_mut()
-            .history
-            .push("https://second.example/".into());
+            .push_history_entry(HistoryEntry::new("https://second.example/".into()));
         tabs.active_mut().scroll_y = 17;
 
         tabs.activate(TabId::first());
@@ -321,8 +329,7 @@ mod tests {
             )
             .unwrap();
         tabs.active_mut()
-            .history
-            .push("https://sibling.example/".into());
+            .push_history_entry(HistoryEntry::new("https://sibling.example/".into()));
 
         tabs.activate(TabId::first());
         tabs.active_mut()

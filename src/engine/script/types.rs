@@ -167,9 +167,15 @@ pub enum ScriptFontAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScriptHistoryAction {
-    pub url: String,
-    pub replace: bool,
+pub enum ScriptHistoryAction {
+    Update {
+        url: String,
+        replace: bool,
+        state: Option<String>,
+    },
+    Traverse {
+        delta: i32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

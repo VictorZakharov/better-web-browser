@@ -69,6 +69,14 @@ fn document_input_and_presentation_acknowledgements_round_trip() {
             sequence: 6,
             state: DocumentLifecycle::Hidden,
         })),
+        BrowserMessage::Input(DocumentInput::History(HistoryTraversalInput {
+            document,
+            sequence: 7,
+            url: "https://example.test/page#prior".into(),
+            state: Some("{\"t\":\"null\"}".into()),
+            history_length: 3,
+            history_index: 1,
+        })),
         BrowserMessage::PresentationAcknowledged(PresentationAcknowledgement {
             document,
             revision: 4,
@@ -147,6 +155,31 @@ fn document_input_rejects_stale_sequences_and_unbounded_values() {
         }))),
         Err(ProtocolError::InvalidPayload("text input"))
     ));
+
+    for input in [
+        HistoryTraversalInput {
+            document,
+            sequence: 1,
+            url: "https://example.test/".into(),
+            state: Some("x".repeat(crate::limits::MAX_HISTORY_STATE_BYTES + 1)),
+            history_length: 1,
+            history_index: 0,
+        },
+        HistoryTraversalInput {
+            document,
+            sequence: 1,
+            url: "https://example.test/".into(),
+            state: None,
+            history_length: 1,
+            history_index: 1,
+        },
+    ] {
+        let mut writer = FrameWriter::new(Vec::new(), session());
+        assert!(matches!(
+            writer.send_browser(&BrowserMessage::Input(DocumentInput::History(input))),
+            Err(ProtocolError::InvalidPayload("history traversal input"))
+        ));
+    }
 
     let mut writer = FrameWriter::new(Vec::new(), session());
     assert!(matches!(
