@@ -55,6 +55,13 @@ impl BrowserState {
                 .map(|benchmark| benchmark.diagnostic_selectors.clone())
                 .unwrap_or_default(),
             body_length,
+            history_length: self.history.len() as u32,
+            history_index: self.history_index as u32,
+            history_state: history_state_for_response(
+                self.history.get(self.history_index),
+                &page.final_url,
+                page.redirected,
+            ),
             viewport: self.renderer_viewport(),
             prefers_dark_color_scheme: self.app.prefers_dark_color_scheme.get(),
         };
@@ -83,6 +90,7 @@ impl BrowserState {
                 return;
             }
         };
+        let redirected = page.redirected;
         let metrics = RendererLoadMetrics {
             final_url: page.final_url,
             status: page.status,
@@ -101,6 +109,10 @@ impl BrowserState {
                 if !self.navigation.document_submitted(document, Instant::now()) {
                     return;
                 }
+                // Commit the response URL to the entry that initiated this document before
+                // parser scripts can report pushState updates. First paint is not a safe
+                // commit point: runtime updates may arrive ahead of the first presentation.
+                self.commit_history_document(&metrics.final_url, redirected, document);
                 self.reader_url.clone_from(&metrics.final_url);
                 self.renderer_input_sequence = 0;
                 self.pointer_cursor_request = None;
@@ -131,5 +143,41 @@ impl BrowserState {
                 );
             }
         }
+    }
+}
+
+fn history_state_for_response(
+    entry: Option<&super::super::tab_state::HistoryEntry>,
+    response_url: &str,
+    redirected: bool,
+) -> Option<String> {
+    entry
+        .filter(|entry| !redirected && entry.url == response_url)
+        .and_then(|entry| entry.state.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::windows_app::tab_state::HistoryEntry;
+
+    #[test]
+    fn redirect_does_not_seed_prior_entry_state_into_new_origin() {
+        let mut entry = HistoryEntry::new("https://first.example/entry".into());
+        entry.state = Some("secret state".into());
+        assert_eq!(
+            history_state_for_response(Some(&entry), "https://second.example/destination", true),
+            None
+        );
+        assert_eq!(
+            history_state_for_response(Some(&entry), "https://first.example/entry", false),
+            Some("secret state".into())
+        );
+        // A chain can redirect away and back, leaving the same final URL. It still
+        // creates a new response and must not inherit the old entry's classic state.
+        assert_eq!(
+            history_state_for_response(Some(&entry), "https://first.example/entry", true),
+            None
+        );
     }
 }

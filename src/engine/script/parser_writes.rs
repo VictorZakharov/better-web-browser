@@ -171,6 +171,17 @@ fn prepare(host: &mut HostState, target: u32, id: u32) -> JsResult<JsValue> {
     {
         return Ok(JsValue::Null);
     }
+    if host.write_session(target).is_none() {
+        return Ok(JsValue::Null);
+    }
+    if node.namespace_uri() == Some("http://www.w3.org/1999/xhtml")
+        && node.attr("type").is_some_and(|kind| {
+            kind.trim_matches(|character| matches!(character, '\t' | '\n' | '\x0c' | '\r' | ' '))
+                .eq_ignore_ascii_case("importmap")
+        })
+    {
+        return Ok(prepare_written_import_map(host, &node));
+    }
     let Some(session) = host.write_session(target) else {
         return Ok(JsValue::Null);
     };
@@ -211,6 +222,46 @@ fn prepare(host: &mut HostState, target: u32, id: u32) -> JsResult<JsValue> {
     session.prepared.push((script, immediate));
     host.mark_script_started(&node);
     Ok(value)
+}
+
+fn prepare_written_import_map(host: &mut HostState, node: &NodeRef) -> JsValue {
+    let source = node.text_content();
+    if source.is_empty() && node.attr("src").is_none() {
+        return JsValue::Null;
+    }
+    host.mark_script_started(node);
+    if node.attr("src").is_none()
+        && (host.sandbox.scripts_blocked
+            || !host.policy.allows_inline_script(
+                node.attr("nonce").as_deref(),
+                &source,
+                node.element()
+                    .is_some_and(|element| element.script_parser_inserted.get()),
+            ))
+    {
+        host.diagnose("import map blocked by document policy".into());
+        return JsValue::Null;
+    }
+    // An import map is registered synchronously at the parser insertion point, before
+    // the next written script can resolve any module specifiers.
+    let result = if node.attr("src").is_some() {
+        Err("import maps cannot use a src attribute".into())
+    } else {
+        host.module_loader
+            .install_import_map(&source, &host.script_base_url())
+    };
+    match result {
+        Ok(diagnostics) => {
+            for diagnostic in diagnostics {
+                host.diagnose(format!("import map: {diagnostic}"));
+            }
+            JsValue::Null
+        }
+        Err(error) => {
+            host.diagnose(format!("import map: {error}"));
+            JsValue::Object(vec![("importMapError".into(), JsValue::from(true))])
+        }
+    }
 }
 
 fn limit_error(message: String) -> JsError {

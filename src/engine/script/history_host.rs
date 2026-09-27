@@ -9,10 +9,15 @@ pub(super) fn history_host_call(
     args: &[JsValue],
     state: &mut HostState,
 ) -> JsResult<Option<JsValue>> {
+    if operation == "historyCapacity" {
+        return Ok(Some(JsValue::from(
+            crate::limits::MAX_SESSION_HISTORY_ENTRIES as u32,
+        )));
+    }
     if operation == "fragmentNavigation" {
         return fragment_navigation(args, state).map(Some);
     }
-    if operation != "historyUpdate" {
+    if operation != "historyUpdate" && operation != "historyTraverse" {
         return Ok(None);
     }
     if state.history_actions.len() >= MAX_SCRIPT_NAVIGATIONS {
@@ -20,26 +25,54 @@ pub(super) fn history_host_call(
             .with_message("same-document history update limit reached")
             .into());
     }
+    if operation == "historyTraverse" {
+        let delta = args
+            .get(1)
+            .and_then(JsValue::as_number)
+            .filter(|value| {
+                value.is_finite() && *value >= i32::MIN as f64 && *value <= i32::MAX as f64
+            })
+            .map(|value| value as i32)
+            .ok_or_else(|| {
+                JsNativeError::range().with_message("history traversal delta is out of range")
+            })?;
+        state
+            .history_actions
+            .push(ScriptHistoryAction::Traverse { delta });
+        return Ok(Some(JsValue::undefined()));
+    }
     let value = argument_string(args, 1)?;
     let replace = args.get(2).and_then(JsValue::as_boolean).unwrap_or(false);
-    let resolved = crate::navigation::resolve_web_url(&state.document_url, &value)
-        .ok_or_else(|| JsNativeError::typ().with_message(format!("Invalid URL: {value}")))?;
-    let same_origin = matches!(
-        (
-            crate::fetch::Origin::parse(&state.document_url),
-            crate::fetch::Origin::parse(&resolved)
-        ),
-        (Ok(current), Ok(target)) if current.is_same_origin(&target)
-    );
-    if !same_origin {
-        return Err(JsNativeError::typ()
-            .with_message("History API URLs must be same-origin with the document")
+    let serialized_state = args
+        .get(3)
+        .filter(|value| !matches!(value, JsValue::Null | JsValue::Undefined))
+        .map(|_| argument_string(args, 3))
+        .transpose()?;
+    if serialized_state
+        .as_ref()
+        .is_some_and(|value| value.len() > crate::limits::MAX_HISTORY_STATE_BYTES)
+    {
+        return Err(JsNativeError::range()
+            .with_message("history state exceeds the per-entry size limit")
+            .into());
+    }
+    let resolved = if value.is_empty() {
+        state.document_url.clone()
+    } else {
+        crate::navigation::resolve_web_url(&state.document_url, &value).ok_or_else(|| {
+            JsNativeError::security().with_message(format!("Invalid history URL: {value}"))
+        })?
+    };
+    if !crate::navigation::can_rewrite_history_url(&state.document_url, &resolved) {
+        return Err(JsNativeError::security()
+            .with_message("History API URL cannot rewrite this document URL")
             .into());
     }
     state.document_url.clone_from(&resolved);
-    state.history_actions.push(ScriptHistoryAction {
+    state.history_actions.push(ScriptHistoryAction::Update {
         url: resolved.clone(),
         replace,
+        state: serialized_state,
     });
     Ok(Some(js_string(resolved)))
 }
@@ -72,9 +105,10 @@ fn fragment_navigation(args: &[JsValue], state: &mut HostState) -> JsResult<JsVa
     }
     if changed {
         state.document_url.clone_from(&resolved);
-        state.history_actions.push(ScriptHistoryAction {
+        state.history_actions.push(ScriptHistoryAction::Update {
             url: resolved.clone(),
             replace: args.get(2).and_then(JsValue::as_boolean).unwrap_or(false),
+            state: None,
         });
     }
     Ok(JsValue::Array(vec![
@@ -82,4 +116,38 @@ fn fragment_navigation(args: &[JsValue], state: &mut HostState) -> JsResult<JsVa
         y.map(|y| JsValue::from(f64::from(y)))
             .unwrap_or_else(JsValue::null),
     ]))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::navigation::can_rewrite_history_url;
+
+    #[test]
+    fn history_url_rewrite_follows_scheme_specific_html_rules() {
+        let allowed = [
+            ("https://example.test/home", "https://example.test/shop"),
+            ("https://example.test/home", "https://example.test/home?x=2"),
+            ("file:///dir/page.html", "file:///dir/page.html?x=1#part"),
+            ("about:blank", "about:blank#part"),
+        ];
+        let blocked = [
+            (
+                "https://example.test/home",
+                "https://user:pass@example.test/home",
+            ),
+            ("https://example.test/home", "http://example.test/home"),
+            ("file:///dir/page.html", "file:///dir/other.html"),
+            ("about:blank", "about:blank?x=1"),
+        ];
+        assert!(
+            allowed
+                .into_iter()
+                .all(|(from, to)| can_rewrite_history_url(from, to))
+        );
+        assert!(
+            blocked
+                .into_iter()
+                .all(|(from, to)| !can_rewrite_history_url(from, to))
+        );
+    }
 }

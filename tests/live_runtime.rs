@@ -26,6 +26,16 @@ mod event_source;
 mod flex_axes;
 #[path = "live_runtime/fullscreen.rs"]
 mod fullscreen;
+#[path = "live_runtime/history_group.rs"]
+mod history_group;
+#[path = "live_runtime/history_ordering.rs"]
+mod history_ordering;
+#[path = "live_runtime/history_queue.rs"]
+mod history_queue;
+#[path = "live_runtime/history_redirect.rs"]
+mod history_redirect;
+#[path = "live_runtime/history_traversal.rs"]
+mod history_traversal;
 #[path = "live_runtime/indexed_db.rs"]
 mod indexed_db;
 #[path = "live_runtime/inline_handlers.rs"]

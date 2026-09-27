@@ -1,7 +1,10 @@
 //! Document-scoped native input, lifecycle, and presentation acknowledgement values.
 
 use super::{DocumentId, ProtocolError};
-use crate::limits::MAX_RENDERER_TEXT_INPUT_BYTES;
+use crate::limits::{
+    MAX_HISTORY_STATE_BYTES, MAX_RENDERER_TEXT_INPUT_BYTES, MAX_SESSION_HISTORY_ENTRIES,
+    MAX_URL_BYTES,
+};
 
 mod pointer_lock;
 pub use pointer_lock::{PointerLockDisposition, PointerLockRequest, PointerLockResponse};
@@ -177,6 +180,16 @@ pub struct LifecycleInput {
     pub state: DocumentLifecycle,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryTraversalInput {
+    pub document: DocumentId,
+    pub sequence: u64,
+    pub url: String,
+    pub state: Option<String>,
+    pub history_length: u32,
+    pub history_index: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DocumentInput {
     Wheel(WheelInput),
@@ -186,6 +199,7 @@ pub enum DocumentInput {
     Focus(FocusInput),
     Scroll(ScrollInput),
     Lifecycle(LifecycleInput),
+    History(HistoryTraversalInput),
 }
 
 impl DocumentInput {
@@ -198,6 +212,7 @@ impl DocumentInput {
             Self::Focus(input) => input.document,
             Self::Scroll(input) => input.document,
             Self::Lifecycle(input) => input.document,
+            Self::History(input) => input.document,
         }
     }
 
@@ -210,6 +225,7 @@ impl DocumentInput {
             Self::Focus(input) => input.sequence,
             Self::Scroll(input) => input.sequence,
             Self::Lifecycle(input) => input.sequence,
+            Self::History(input) => input.sequence,
         }
     }
 
@@ -283,6 +299,22 @@ impl DocumentInput {
             }
             Self::Focus(_) | Self::Lifecycle(_) => Ok(()),
             Self::Scroll(input) => validate_coordinates(input.x, input.y),
+            Self::History(input) => {
+                if input.url.is_empty()
+                    || input.url.len() > MAX_URL_BYTES
+                    || input
+                        .state
+                        .as_ref()
+                        .is_some_and(|value| value.len() > MAX_HISTORY_STATE_BYTES)
+                    || input.history_length == 0
+                    || input.history_length as usize > MAX_SESSION_HISTORY_ENTRIES
+                    || input.history_index >= input.history_length
+                {
+                    Err(ProtocolError::InvalidPayload("history traversal input"))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 }

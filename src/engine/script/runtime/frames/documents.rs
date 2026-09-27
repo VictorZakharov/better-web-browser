@@ -75,14 +75,18 @@ impl FrameDocument {
                 }
             }
             ParserStep::Script(node) if self.scripts => {
-                self.ordinal += 1;
-                if self.ordinal <= crate::limits::MAX_PAGE_SCRIPTS {
-                    let base = runtime.host.borrow().script_base_url();
-                    if let Some(script) =
-                        crate::engine::page::prepare_written_script(node, &base, self.ordinal)
-                    {
-                        runtime.mark_parser_script_prepared(&script.node);
-                        self.queue.enqueue(script);
+                if let Some(import_map) = runtime.process_parser_import_map(&node) {
+                    append(&mut outcome, import_map);
+                } else {
+                    self.ordinal += 1;
+                    if self.ordinal <= crate::limits::MAX_PAGE_SCRIPTS {
+                        let base = runtime.host.borrow().script_base_url();
+                        if let Some(script) =
+                            crate::engine::page::prepare_written_script(node, &base, self.ordinal)
+                        {
+                            runtime.mark_parser_script_prepared(&script.node);
+                            self.queue.enqueue(script);
+                        }
                     }
                 }
             }

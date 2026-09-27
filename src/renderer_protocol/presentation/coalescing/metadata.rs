@@ -5,6 +5,7 @@ use super::{RendererPresentation, RendererRuntimeUpdate, RuntimeReport, resource
 use crate::limits::{
     MAX_CONTROL_PAYLOAD, MAX_RENDERER_PRESENTATION_BYTES, MAX_RUNTIME_REPORT_ENTRIES,
 };
+use crate::renderer_protocol::HistoryAction;
 
 pub(super) fn presentation_merge_is_bounded(
     previous: &RendererPresentation,
@@ -41,7 +42,7 @@ fn merged_runtime_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> Optio
             value.errors.len(),
             value.console.len(),
             value.diagnostics.len(),
-            value.history_updates.len(),
+            value.history_actions.len(),
             value.cookie_updates.len(),
         ]
     };
@@ -71,14 +72,32 @@ fn edge_bytes(value: &RuntimeReport) -> usize {
     .fold(0_usize, |bytes, text| {
         bytes.saturating_add(4).saturating_add(text.len())
     });
-    value.history_updates.iter().fold(strings, |bytes, update| {
-        bytes.saturating_add(5).saturating_add(update.url.len())
-    })
+    value
+        .history_actions
+        .iter()
+        .fold(strings, |bytes, action| match action {
+            HistoryAction::Update { url, state, .. } => bytes
+                .saturating_add(7)
+                .saturating_add(url.len())
+                .saturating_add(
+                    state
+                        .as_ref()
+                        .map_or(0, |state| 4_usize.saturating_add(state.len())),
+                ),
+            HistoryAction::Traverse { .. } => bytes.saturating_add(5),
+        })
 }
 
 fn snapshot_bytes(previous: &RuntimeReport, next: &RuntimeReport) -> usize {
     // Fixed fields and vector prefixes in encode_runtime, excluding optional bodies.
-    let mut bytes = 46_usize;
+    let mut bytes = 47_usize;
+    if next
+        .history_traversal_ack
+        .or(previous.history_traversal_ack)
+        .is_some()
+    {
+        bytes = bytes.saturating_add(8);
+    }
     let navigation = if next.navigation_url.is_some() {
         next
     } else {

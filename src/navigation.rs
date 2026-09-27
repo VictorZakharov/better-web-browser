@@ -4,7 +4,9 @@ use url::{Host, Url, form_urlencoded};
 
 pub mod request;
 mod web_url;
-pub use web_url::{parse_web_url, resolve_web_url, set_web_url_component, web_url_parts};
+pub use web_url::{
+    can_rewrite_history_url, parse_web_url, resolve_web_url, set_web_url_component, web_url_parts,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedUrl {

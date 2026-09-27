@@ -86,6 +86,7 @@ mod fullscreen;
 #[cfg(windows)]
 mod gamepads;
 mod get_html;
+mod history;
 mod hyperlinks;
 mod image_input;
 mod inserted_scripts;

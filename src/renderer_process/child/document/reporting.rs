@@ -1,6 +1,6 @@
 use crate::engine::invalidation::RenderInvalidation;
 use crate::engine::{ScriptOutcome, StyleRefreshStats};
-use crate::renderer_protocol::{HistoryUpdate, MediaRuntimeReport, RuntimeReport, StyleReport};
+use crate::renderer_protocol::{HistoryAction, MediaRuntimeReport, RuntimeReport, StyleReport};
 use std::time::Duration;
 mod telemetry;
 
@@ -79,14 +79,25 @@ pub(super) fn runtime_report(
         navigation_options: outcome.navigation_options,
         viewport_scroll_y: outcome.viewport_scroll_y,
         viewport_wheel_delta_y: outcome.viewport_wheel_delta_y,
-        history_updates: outcome
+        history_actions: outcome
             .history_actions
             .into_iter()
-            .map(|action| HistoryUpdate {
-                url: action.url,
-                replace: action.replace,
+            .map(|action| match action {
+                crate::engine::script::ScriptHistoryAction::Update {
+                    url,
+                    replace,
+                    state,
+                } => HistoryAction::Update {
+                    url,
+                    replace,
+                    state,
+                },
+                crate::engine::script::ScriptHistoryAction::Traverse { delta } => {
+                    HistoryAction::Traverse { delta }
+                }
             })
             .collect(),
+        history_traversal_ack: None,
         cookie_updates: outcome.cookie_updates,
         runtime_active,
         runtime_stopped: outcome.runtime_stopped,

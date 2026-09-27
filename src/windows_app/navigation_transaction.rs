@@ -210,6 +210,7 @@ mod tests {
             stream: None,
             body: b"page".to_vec(),
             final_url: "https://example.test/".into(),
+            redirected: false,
             status: 200,
             content_type: "text/html".into(),
             policy: Default::default(),

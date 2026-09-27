@@ -21,7 +21,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 pub(super) fn run(arguments: &[String]) -> Result<(), String> {
-    crate::engine::script::install_runtime_panic_hook();
+    crate::engine::script::runtime_guard::install_runtime_panic_hook();
     let mut options = ChildOptions::parse(arguments)?;
     crate::branding::install_renderer_user_agent_mode(options.user_agent_mode)?;
     let input_handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };

@@ -153,8 +153,12 @@ impl BrowserState {
     ) -> bool {
         let load = first.then(|| self.renderer_load_metrics.take()).flatten();
         let reached_page_ready = load.is_some();
+        let current_url = self
+            .current_url()
+            .unwrap_or(&presentation.final_url)
+            .to_owned();
         if let (Some(load), Some(benchmark)) = (load, self.benchmark.as_mut()) {
-            benchmark.final_url = presentation.final_url.clone();
+            benchmark.final_url = current_url;
             benchmark.status = u32::from(load.status);
             benchmark.bytes = load.bytes;
             benchmark.network_time = load.network_time;

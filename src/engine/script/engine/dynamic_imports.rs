@@ -58,8 +58,7 @@ pub(super) fn request<'s>(
             },
             options: ScriptFetchOptions::for_kind(ScriptKind::Module),
         });
-        let url =
-            crate::engine::script::module_loader::resolve_specifier(&origin.base, &specifier)?;
+        let url = host.module_loader.resolve(&origin.base, &specifier)?;
         let mut options = origin.options;
         // A classic script's no-CORS transport includes credentials, but its module
         // fetch options default to same-origin. Explicit use-credentials stays included.

@@ -18,6 +18,8 @@ mod dynamic_scripts;
 mod frames;
 pub(crate) use frames::FramePaintSnapshot;
 mod geometry;
+mod history;
+mod import_maps;
 mod memory;
 mod module_preparation;
 pub(crate) mod parser;

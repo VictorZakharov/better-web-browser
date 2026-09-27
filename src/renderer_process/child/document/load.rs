@@ -197,6 +197,11 @@ impl DocumentRuntime {
             {
                 script_runtime.restore_restart_state(state);
             }
+            script_runtime.set_history_metrics(
+                start.history_length,
+                start.history_index,
+                start.history_state.as_deref(),
+            )?;
             runtime.script_runtime = Some(script_runtime);
             runtime.dispatch_initial_media_selections()?;
             outcome = initial;

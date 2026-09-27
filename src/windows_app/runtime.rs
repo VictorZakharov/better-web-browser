@@ -43,10 +43,17 @@ impl BrowserState {
         }
         let benchmark_completed =
             self.record_renderer_runtime_metrics(&update.runtime, update.load, false);
+        self.apply_same_document_history_updates(update.document, &update.runtime.history_actions);
         if self.follow_runtime_navigation(&update.runtime, None) {
             return;
         }
-        self.apply_same_document_history_updates(&update.runtime.history_updates);
+        if self.apply_queued_history_traversals(update.document, &update.runtime.history_actions) {
+            return;
+        }
+        if self.acknowledge_history_traversal(update.document, update.runtime.history_traversal_ack)
+        {
+            return;
+        }
         self.apply_script_viewport_scroll(update.runtime.viewport_scroll_y);
         self.queue_css_wheel_scroll(update.runtime.viewport_wheel_delta_y);
         self.schedule_script_runtime_wakeup();

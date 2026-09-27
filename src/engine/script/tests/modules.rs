@@ -99,6 +99,122 @@ fn bare_module_specifiers_fail_without_running_the_module_body() {
 }
 
 #[test]
+fn import_map_resolves_bare_static_dependency_before_module_evaluation() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        "<body><div>pending</div><script type=module></script></body>",
+        true,
+    );
+    let input = ScriptInput {
+        node: dom.elements_named("script").next().unwrap(),
+        source_url: "https://example.com/app/main.js".into(),
+        code: "import {answer} from 'lib'; document.querySelector('div').textContent = answer;"
+            .into(),
+        kind: ScriptKind::Module,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    assert!(
+        runtime
+            .install_import_map(
+                r#"{"imports":{"lib":"./mapped.js"}}"#,
+                "https://example.com/"
+            )
+            .unwrap()
+            .is_empty()
+    );
+    let mut fetched = Vec::new();
+    let mut loader = |url: &str, kind: ScriptKind, _: ScriptFetchOptions| {
+        assert_eq!(kind, ScriptKind::Module);
+        fetched.push(url.to_owned());
+        Ok("export const answer = 42;".into())
+    };
+    let outcome = runtime.execute_initial_with_loader(&[input], Some(&mut loader));
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(fetched, ["https://example.com/mapped.js"]);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "42"
+    );
+}
+
+#[test]
+fn import_map_resolves_bare_dynamic_dependency() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        "<body><div>pending</div><script></script></body>",
+        true,
+    );
+    let input = ScriptInput {
+        node: dom.elements_named("script").next().unwrap(),
+        source_url: "https://example.com/app/start.js".into(),
+        code:
+            "import('lib').then(value => document.querySelector('div').textContent = value.answer);"
+                .into(),
+        kind: ScriptKind::Classic,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Classic),
+        finish_lifecycle: false,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime
+        .install_import_map(
+            r#"{"imports":{"lib":"./mapped.js"}}"#,
+            "https://example.com/",
+        )
+        .unwrap();
+    let started = runtime.execute_initial_before_document_completion(&[input], None);
+    assert!(started.errors.is_empty(), "{:?}", started.errors);
+    let requests = runtime.take_module_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, "https://example.com/mapped.js");
+    runtime.complete_module_fetch(
+        "https://example.com/mapped.js".into(),
+        Ok((
+            "https://example.com/mapped.js".into(),
+            "export const answer = 42;".into(),
+        )),
+    );
+    assert!(runtime.take_module_requests().is_empty());
+    for _ in 0..2 {
+        let settled = runtime.advance_time(Duration::ZERO, 1);
+        assert!(settled.errors.is_empty(), "{:?}", settled.errors);
+    }
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "42"
+    );
+}
+
+#[test]
+fn import_meta_resolve_uses_the_module_url_and_document_import_map() {
+    let dom = crate::engine::dom::parse_with_scripting(
+        "<body><div>pending</div><script type=module></script></body>",
+        true,
+    );
+    let input = ScriptInput {
+        node: dom.elements_named("script").next().unwrap(),
+        source_url: "https://example.com/app/main.js".into(),
+        code: "document.querySelector('div').textContent = import.meta.resolve('lib') + '|' + import.meta.resolve('./near.js');"
+            .into(),
+        kind: ScriptKind::Module,
+        fetch_options: ScriptFetchOptions::for_kind(ScriptKind::Module),
+        finish_lifecycle: true,
+    };
+    let mut runtime = ScriptRuntime::new(dom.document.clone(), "https://example.com/");
+    runtime
+        .install_import_map(
+            r#"{"imports":{"lib":"./mapped.js"}}"#,
+            "https://example.com/",
+        )
+        .unwrap();
+    let outcome = runtime.execute_initial(&[input]);
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
+    assert_eq!(
+        dom.elements_named("div").next().unwrap().text_content(),
+        "https://example.com/mapped.js|https://example.com/app/near.js"
+    );
+}
+
+#[test]
 fn top_level_await_does_not_delay_document_lifecycle() {
     let dom = crate::engine::dom::parse_with_scripting(
         "<body><div>pending</div><script type=module></script></body>",

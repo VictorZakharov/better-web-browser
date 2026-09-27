@@ -19,10 +19,12 @@
         if (result[1] !== null && setViewportScrollOffsets(viewportScrollX, result[1]))
             queueViewportScrollEvent();
         if (currentUrl !== oldURL) {
-            if (!replace) historyLength++;
             const newURL = currentUrl;
-            windowObject.setTimeout(() => windowObject.dispatchEvent(markTrusted(
+            historyState = null;
+            if (!replace) advanceHistoryIndex();
+            firePopState();
+            queueTimer(() => windowObject.dispatchEvent(markTrusted(
                 new HashChangeEvent('hashchange', { oldURL, newURL })
-            )), 0);
+            )), 0, false, [], 'fragment hashchange');
         }
     }

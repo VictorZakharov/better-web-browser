@@ -1,7 +1,10 @@
 //! Bounded serialization of document runtime updates, independent of presentation pixels.
 use super::super::wire::{WireReader, WireWriter};
-use super::{HistoryUpdate, MediaRuntimeReport, ProtocolError, RuntimeReport};
-use crate::limits::{MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES, MAX_URL_BYTES};
+use super::{HistoryAction, MediaRuntimeReport, ProtocolError, RuntimeReport};
+use crate::limits::{
+    MAX_HISTORY_STATE_BYTES, MAX_RUNTIME_REPORT_ENTRIES, MAX_RUNTIME_REPORT_TEXT_BYTES,
+    MAX_URL_BYTES,
+};
 
 pub(in crate::renderer_protocol) fn encode_runtime(
     writer: &mut WireWriter,
@@ -39,13 +42,47 @@ pub(in crate::renderer_protocol) fn encode_runtime(
         return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
     }
     writer.f32(report.viewport_wheel_delta_y);
-    if report.history_updates.len() > MAX_RUNTIME_REPORT_ENTRIES {
-        return Err(ProtocolError::InvalidPayload("history update count"));
+    if report.history_actions.len() > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history action count"));
     }
-    writer.u32(report.history_updates.len() as u32);
-    for update in &report.history_updates {
-        writer.string(&update.url)?;
-        writer.bool(update.replace);
+    writer.u32(report.history_actions.len() as u32);
+    for action in &report.history_actions {
+        match action {
+            HistoryAction::Update {
+                url,
+                replace,
+                state,
+            } => {
+                if url.is_empty()
+                    || url.len() > MAX_URL_BYTES
+                    || state
+                        .as_ref()
+                        .is_some_and(|value| value.len() > MAX_HISTORY_STATE_BYTES)
+                {
+                    return Err(ProtocolError::InvalidPayload("history update"));
+                }
+                writer.u8(1);
+                writer.string(url)?;
+                writer.bool(*replace);
+                writer.bool(state.is_some());
+                if let Some(state) = state {
+                    writer.string(state)?;
+                }
+            }
+            HistoryAction::Traverse { delta } => {
+                writer.u8(2);
+                writer.i32(*delta);
+            }
+        }
+    }
+    writer.bool(report.history_traversal_ack.is_some());
+    if let Some(sequence) = report.history_traversal_ack {
+        if sequence == 0 {
+            return Err(ProtocolError::InvalidPayload(
+                "history traversal acknowledgement",
+            ));
+        }
+        writer.u64(sequence);
     }
     encode_strings(
         writer,
@@ -104,16 +141,32 @@ pub(in crate::renderer_protocol) fn decode_runtime(
     if !viewport_wheel_delta_y.is_finite() {
         return Err(ProtocolError::InvalidPayload("viewport wheel delta"));
     }
-    let history_update_count = reader.u32()? as usize;
-    if history_update_count > MAX_RUNTIME_REPORT_ENTRIES {
-        return Err(ProtocolError::InvalidPayload("history update count"));
+    let history_action_count = reader.u32()? as usize;
+    if history_action_count > MAX_RUNTIME_REPORT_ENTRIES {
+        return Err(ProtocolError::InvalidPayload("history action count"));
     }
-    let mut history_updates = Vec::with_capacity(history_update_count);
-    for _ in 0..history_update_count {
-        history_updates.push(HistoryUpdate {
-            url: reader.string(MAX_URL_BYTES)?,
-            replace: reader.bool()?,
+    let mut history_actions = Vec::with_capacity(history_action_count);
+    for _ in 0..history_action_count {
+        history_actions.push(match reader.u8()? {
+            1 => HistoryAction::Update {
+                url: reader.string(MAX_URL_BYTES)?,
+                replace: reader.bool()?,
+                state: reader
+                    .bool()?
+                    .then(|| reader.string(MAX_HISTORY_STATE_BYTES))
+                    .transpose()?,
+            },
+            2 => HistoryAction::Traverse {
+                delta: reader.i32()?,
+            },
+            _ => return Err(ProtocolError::InvalidPayload("history action tag")),
         });
+    }
+    let history_traversal_ack = reader.bool()?.then(|| reader.u64()).transpose()?;
+    if history_traversal_ack == Some(0) {
+        return Err(ProtocolError::InvalidPayload(
+            "history traversal acknowledgement",
+        ));
     }
     let cookie_updates = decode_strings(reader)?;
     let runtime_active = reader.bool()?;
@@ -133,7 +186,8 @@ pub(in crate::renderer_protocol) fn decode_runtime(
         navigation_options,
         viewport_scroll_y,
         viewport_wheel_delta_y,
-        history_updates,
+        history_actions,
+        history_traversal_ack,
         cookie_updates,
         runtime_active,
         runtime_stopped,

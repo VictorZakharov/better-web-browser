@@ -3,6 +3,7 @@
 use super::tabs::TabId;
 use super::*;
 mod fetch;
+mod history;
 mod submission;
 use better_web_browser::fetch::{FetchController, Origin};
 use better_web_browser::navigation::request::FormPost;
@@ -14,64 +15,11 @@ pub(super) enum HistoryMode {
     Existing,
     Script,
     ScriptPush,
+    Replace,
     Recovery,
 }
 
 impl BrowserState {
-    pub(super) unsafe fn apply_same_document_history_updates(
-        &mut self,
-        updates: &[better_web_browser::renderer_protocol::HistoryUpdate],
-    ) {
-        for update in updates {
-            let Some(current) = self.current_url().map(str::to_owned) else {
-                continue;
-            };
-            let same_origin = matches!(
-                (Origin::parse(&current), Origin::parse(&update.url)),
-                (Ok(current), Ok(target)) if current.is_same_origin(&target)
-            );
-            if !same_origin {
-                self.incidents.record(
-                    "history",
-                    format!("rejected cross-origin same-document URL: {}", update.url),
-                );
-                continue;
-            }
-            if update.replace {
-                let index = self.history_index;
-                if let Some(entry) = self.history.get_mut(index) {
-                    entry.clone_from(&update.url);
-                } else {
-                    self.history.push(update.url.clone());
-                    self.history_index = self.history.len() - 1;
-                }
-            } else {
-                let next_index = self.history_index.saturating_add(1);
-                self.history.truncate(next_index);
-                self.history.push(update.url.clone());
-                self.history_index = self.history.len() - 1;
-            }
-            self.reader_url.clone_from(&update.url);
-            self.omnibox_text.clone_from(&update.url);
-            self.incidents.record(
-                "history",
-                format!(
-                    "{} same-document URL: {}",
-                    if update.replace { "replace" } else { "push" },
-                    update.url
-                ),
-            );
-            if let Some(benchmark) = self.benchmark.as_mut() {
-                benchmark.final_url.clone_from(&update.url);
-            }
-        }
-        if updates.is_empty() || self.processing_background_tab {
-            return;
-        }
-        set_window_text(self.controls.address, &self.omnibox_text);
-        self.update_history_buttons();
-    }
-
     pub(super) unsafe fn navigate_from_address(&mut self) {
         let input = window_text(self.controls.address);
         self.navigate_from_input(&input, HistoryMode::Push, true);
@@ -112,11 +60,7 @@ impl BrowserState {
     ) {
         let id = self.tabs.active_id();
         let tab = self.tabs.active();
-        let referrer = tab
-            .history
-            .get(tab.history_index)
-            .filter(|value| !value.is_empty())
-            .cloned();
+        let referrer = tab.current_url().map(str::to_owned);
         let user_activation = matches!(
             (tab.transient_activation, tab.navigation.active_document()),
             (Some((gesture_document, at)), Some(active_document))
@@ -188,6 +132,7 @@ impl BrowserState {
             tab.pointer_cursor = better_web_browser::renderer_protocol::PointerCursor::Default;
             tab.renderer_input_poll_budget = 0;
             tab.pending_renderer_inputs.clear();
+            tab.history_traversals.clear();
             tab.renderer_revision = 0;
             tab.video_presentation = Default::default();
             tab.last_renderer_snapshot = None;
@@ -200,21 +145,29 @@ impl BrowserState {
             tab.last_scroll_activity = None;
             tab.performance = TabPerformance::default();
             tab.scroll_animation = Default::default();
+            // The renderer is replaced for every full navigation. No older entry can retain
+            // an identity that would authorize a same-document traversal into that process.
+            tab.retire_history_documents();
             match history_mode {
                 HistoryMode::Push | HistoryMode::ScriptPush => {
                     if matches!(history_mode, HistoryMode::Push) {
                         tab.script_navigation.reset(&url);
                     }
-                    if tab.history.get(tab.history_index) != Some(&url) {
-                        if !tab.history.is_empty() {
-                            tab.history.truncate(tab.history_index + 1);
-                        }
-                        tab.history.push(url.clone());
-                        tab.history_index = tab.history.len() - 1;
+                    if tab.current_url() != Some(url.as_str()) {
+                        tab.push_history_entry(super::tab_state::HistoryEntry::new(url.clone()));
+                    } else {
+                        tab.replace_current_history_url(url.clone());
                     }
                 }
-                HistoryMode::Existing | HistoryMode::Recovery => tab.script_navigation.reset(&url),
-                HistoryMode::Script => {}
+                HistoryMode::Existing | HistoryMode::Recovery => {
+                    tab.script_navigation.reset(&url);
+                }
+                HistoryMode::Script | HistoryMode::Replace => {
+                    if matches!(history_mode, HistoryMode::Replace) {
+                        tab.script_navigation.reset(&url);
+                    }
+                    tab.replace_current_history_url(url.clone());
+                }
             }
             tab.crashed = false;
             tab.omnibox_text.clone_from(&url);
@@ -288,12 +241,13 @@ impl BrowserState {
                             user_activation,
                         )?;
                         let network_time = started.elapsed();
-                        let final_url = response
+                        let fetched_url = response
                             .url_list
                             .last()
                             .ok_or("navigation response has no URL")?
-                            .as_str()
-                            .to_string();
+                            .as_str();
+                        let redirected = response.url_list.len() > 1;
+                        let final_url = fetch::response_document_url(&url, fetched_url, redirected);
                         let status = response.status;
                         let content_type = response
                             .headers
@@ -312,6 +266,7 @@ impl BrowserState {
                                 stream: Some(stream.clone()),
                                 body: Vec::new(),
                                 final_url,
+                                redirected,
                                 status,
                                 content_type,
                                 policy,
@@ -352,36 +307,5 @@ impl BrowserState {
                 self.set_status(&format!("Could not start navigation: {error}"));
             }
         }
-    }
-
-    pub(super) unsafe fn go_back(&mut self) {
-        if self.history_index > 0 {
-            self.history_index -= 1;
-            let url = self.history[self.history_index].clone();
-            self.begin_navigation(url, HistoryMode::Existing);
-        }
-    }
-
-    pub(super) unsafe fn go_forward(&mut self) {
-        if self.history_index + 1 < self.history.len() {
-            self.history_index += 1;
-            let url = self.history[self.history_index].clone();
-            self.begin_navigation(url, HistoryMode::Existing);
-        }
-    }
-
-    pub(super) unsafe fn reload(&mut self) {
-        if let Some(url) = self.history.get(self.history_index).cloned() {
-            self.begin_navigation(url, HistoryMode::Existing);
-        }
-    }
-
-    pub(super) unsafe fn update_history_buttons(&self) {
-        EnableWindow(self.controls.back, (self.history_index > 0) as i32);
-        EnableWindow(
-            self.controls.forward,
-            (self.history_index + 1 < self.history.len()) as i32,
-        );
-        EnableWindow(self.controls.reload, (!self.history.is_empty()) as i32);
     }
 }

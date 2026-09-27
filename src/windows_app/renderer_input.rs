@@ -2,6 +2,7 @@
 
 mod keyboard;
 mod pointer;
+mod queue;
 mod wheel;
 
 pub(super) use pointer::current_buttons;
@@ -11,7 +12,6 @@ use super::tab_state::TabFocus;
 use super::tabs::TabId;
 use super::*;
 use better_web_browser::engine::dom::NodeId;
-use better_web_browser::limits::MAX_QUEUED_BROWSER_COMMANDS;
 use better_web_browser::renderer_protocol::{
     DocumentInput, DocumentLifecycle, DocumentNodeId, FocusInput, InputModifiers, KeyPhase,
     KeyboardInput, LifecycleInput, PointerButton, PointerInput, PointerPhase,
@@ -283,48 +283,6 @@ impl BrowserState {
             x: 0.0,
             y: self.scroll_y.max(0) as f32 / scale,
         }));
-    }
-
-    pub(super) unsafe fn flush_renderer_inputs_for(&mut self, id: TabId) {
-        for _ in 0..MAX_QUEUED_BROWSER_COMMANDS {
-            let delivery = {
-                let Some(tab) = self.tabs.get_mut(id) else {
-                    return;
-                };
-                let Some(input) = tab.pending_renderer_inputs.pop_front() else {
-                    return;
-                };
-                if !tab.navigation.owns_document(input.document()) {
-                    continue;
-                }
-                tab.renderer_session
-                    .as_ref()
-                    .ok_or_else(|| "renderer session is unavailable".to_string())
-                    .and_then(|session| session.try_send_input_retained(input))
-            };
-            match delivery {
-                Ok(None) => {}
-                Ok(Some(input)) => {
-                    if let Some(tab) = self.tabs.get_mut(id) {
-                        tab.pending_renderer_inputs.restore_front(input);
-                        tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
-                    }
-                    return;
-                }
-                Err(error) => {
-                    self.contain_page_engine_failure(
-                        id,
-                        format!("could not deliver document input: {error}"),
-                    );
-                    return;
-                }
-            }
-        }
-        if let Some(tab) = self.tabs.get_mut(id)
-            && !tab.pending_renderer_inputs.is_empty()
-        {
-            tab.renderer_input_poll_budget = RENDERER_INPUT_POLL_BUDGET;
-        }
     }
 
     pub(super) fn route_renderer_lifecycle(&mut self, state: DocumentLifecycle) {

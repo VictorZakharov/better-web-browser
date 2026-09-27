@@ -44,7 +44,7 @@ impl BrowserState {
             SetFocus(self.controls.address);
         }
         if let Some(url) = url {
-            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Push, None);
+            self.begin_navigation_for_tab(id, url, browser_navigation::HistoryMode::Replace, None);
         }
         InvalidateRect(self.window, null(), 0);
     }

@@ -163,9 +163,8 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x0181 => database::decode_event(payload).map(BrowserMessage::DatabaseEvent),
         0x0191 => speech::decode_update(payload).map(BrowserMessage::SpeechUpdate),
         0x01a1 => notification::decode_update(payload).map(BrowserMessage::NotificationUpdate),
-        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153 => {
-            decode_browser_input(kind, payload)
-        }
+        0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153
+        | 0x0155 => decode_browser_input(kind, payload),
         0x8001 => decode_test_command(payload).map(BrowserMessage::Test),
         _ => Err(ProtocolError::UnexpectedMessage(kind)),
     }

@@ -3,7 +3,7 @@ use crate::navigation::request::{FormPost, NavigationOptions};
 use crate::renderer_protocol::presentation::runtime_codec::encode_runtime;
 use crate::renderer_protocol::presentation::tests::sample;
 use crate::renderer_protocol::wire::WireWriter;
-use crate::renderer_protocol::{DocumentId, HistoryUpdate, MediaRuntimeReport, PageLoadReport};
+use crate::renderer_protocol::{DocumentId, HistoryAction, MediaRuntimeReport, PageLoadReport};
 
 fn encoded_runtime_len(report: &RuntimeReport) -> usize {
     let mut writer = WireWriter::new();
@@ -26,10 +26,15 @@ fn detailed_report() -> RuntimeReport {
         errors: vec!["error".into()],
         console: vec!["console".into(), "Unicode: 🦋".into()],
         diagnostics: vec!["diagnostic".into()],
-        history_updates: vec![HistoryUpdate {
-            url: "https://example.test/state".into(),
-            replace: true,
-        }],
+        history_actions: vec![
+            HistoryAction::Update {
+                url: "https://example.test/state".into(),
+                replace: true,
+                state: Some("{\"value\":1}".into()),
+            },
+            HistoryAction::Traverse { delta: -1 },
+        ],
+        history_traversal_ack: Some(7),
         cookie_updates: vec!["name=value".into()],
         navigation_url: Some("https://example.test/post".into()),
         navigation_options: NavigationOptions {
@@ -61,7 +66,7 @@ fn read_only_sizing_matches_wire_encoding_including_optional_fields() {
     }
     for next in [RuntimeReport::default(), report.clone()] {
         let expected = merged_runtime_bytes(&report, &next).unwrap();
-        let merged = report.clone().coalesce(next);
+        let merged = report.clone().coalesce(next).unwrap();
         assert_eq!(expected, encoded_runtime_len(&merged));
     }
     let value = update(report);
@@ -87,11 +92,12 @@ fn every_edge_vector_keeps_original_reports_when_its_count_limit_would_be_crosse
                 2 => report.diagnostics = values,
                 3 => report.cookie_updates = values,
                 _ => {
-                    report.history_updates = values
+                    report.history_actions = values
                         .into_iter()
-                        .map(|url| HistoryUpdate {
+                        .map(|url| HistoryAction::Update {
                             url,
                             replace: false,
+                            state: None,
                         })
                         .collect()
                 }

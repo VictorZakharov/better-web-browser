@@ -19,6 +19,12 @@ pub(super) fn encode_document_start(
         writer.string(selector)?;
     }
     writer.u32(start.body_length);
+    writer.u32(start.history_length);
+    writer.u32(start.history_index);
+    writer.bool(start.history_state.is_some());
+    if let Some(state) = &start.history_state {
+        writer.string(state)?;
+    }
     encode_viewport(writer, start.viewport);
     writer.bool(start.prefers_dark_color_scheme);
     writer.u8(match start.notification_permission {
@@ -58,6 +64,12 @@ pub(super) fn decode_document_start(
                 .collect::<Result<Vec<_>, _>>()?
         },
         body_length: reader.u32()?,
+        history_length: reader.u32()?,
+        history_index: reader.u32()?,
+        history_state: reader
+            .bool()?
+            .then(|| reader.string(crate::limits::MAX_HISTORY_STATE_BYTES))
+            .transpose()?,
         viewport: decode_viewport(reader)?,
         prefers_dark_color_scheme: reader.bool()?,
         notification_permission: match reader.u8()? {

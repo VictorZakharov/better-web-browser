@@ -35,5 +35,11 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         .map_err(|error| format!("capture storage event dispatcher: {error}"))?;
     context
         .capture_hook("__takeCanvasPresentation")
-        .map_err(|error| format!("capture Canvas presentation snapshot: {error}"))
+        .map_err(|error| format!("capture Canvas presentation snapshot: {error}"))?;
+    context
+        .capture_hook("__setHistoryMetrics")
+        .map_err(|error| format!("capture history context updater: {error}"))?;
+    context
+        .capture_hook("__applyHistoryTraversal")
+        .map_err(|error| format!("capture history traversal dispatcher: {error}"))
 }

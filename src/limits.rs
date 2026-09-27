@@ -26,6 +26,10 @@ pub const MAX_ADOPTED_STYLESHEETS: usize = 256;
 pub const MAX_ADOPTED_STYLESHEET_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 
 pub const MAX_URL_BYTES: usize = 16 * 1024;
+/// Per-entry serialized `history.state` crossing the renderer boundary.
+pub const MAX_HISTORY_STATE_BYTES: usize = 32 * 1024;
+/// Bounded session history retained by one tab (at most 16 MiB of state payloads).
+pub const MAX_SESSION_HISTORY_ENTRIES: usize = 512;
 pub const MAX_RESPONSE_BODY_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PREFLIGHT_BODY_BYTES: usize = 64 * 1024;
 /// Fetch's per-group in-flight keepalive upload budget (also used by Beacon).

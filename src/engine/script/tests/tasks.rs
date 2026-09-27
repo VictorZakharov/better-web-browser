@@ -187,19 +187,26 @@ fn records_ordered_same_document_history_updates_and_advances_the_document_url()
 
     assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
     assert!(outcome.navigation_url.is_none());
-    assert_eq!(
-        outcome.history_actions,
+    match outcome.history_actions.as_slice() {
         [
-            ScriptHistoryAction {
-                url: "https://example.com/watch?v=first".into(),
+            ScriptHistoryAction::Update {
+                url: first,
                 replace: false,
+                state: Some(first_state),
             },
-            ScriptHistoryAction {
-                url: "https://example.com/watch?v=second".into(),
+            ScriptHistoryAction::Update {
+                url: second,
                 replace: true,
-            }
-        ]
-    );
+                state: Some(second_state),
+            },
+        ] => {
+            assert_eq!(first, "https://example.com/watch?v=first");
+            assert_eq!(second, "https://example.com/watch?v=second");
+            assert!(first_state.contains("step"));
+            assert!(second_state.contains("step"));
+        }
+        actions => panic!("unexpected History actions: {actions:?}"),
+    }
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
         "https://example.com/watch?v=second|https://example.com/watch?v=second|2"
@@ -219,7 +226,7 @@ fn rejects_cross_origin_history_urls_without_changing_the_document_url() {
     assert!(outcome.history_actions.is_empty());
     assert_eq!(
         dom.elements_named("output").next().unwrap().text_content(),
-        "TypeError"
+        "SecurityError"
     );
 }
 
