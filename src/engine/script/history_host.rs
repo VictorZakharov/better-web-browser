@@ -2,6 +2,7 @@
 
 use super::binding_helpers::*;
 use super::*;
+use crate::limits::MAX_SCRIPT_NAVIGATIONS;
 
 pub(super) fn history_host_call(
     operation: &str,
