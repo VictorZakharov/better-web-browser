@@ -34,6 +34,8 @@ mod inline_handlers;
 mod inserted_scripts;
 #[path = "live_runtime/intersection_observers.rs"]
 mod intersection_observers;
+#[path = "live_runtime/keepalive.rs"]
+mod keepalive;
 #[path = "live_runtime/media_controls.rs"]
 mod media_controls;
 #[path = "live_runtime/navigation.rs"]

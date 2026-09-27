@@ -44,6 +44,7 @@ impl DocumentRuntime {
             || !self.pending_websockets.is_empty()
             || !self.pending_databases.is_empty()
             || !self.pending_speech_requests.is_empty()
+            || !self.pending_notification_requests.is_empty()
             || !self.pending_worker_actions.is_empty()
             || self.workers.has_work()
             || self
@@ -118,7 +119,7 @@ impl DocumentRuntime {
         }
         self.execute_pending_parser_script(connection, &mut outcome)?;
         script_time += async_script_started.elapsed();
-        connection.send_policy_updates(self.id, &mut outcome)?;
+        connection.send_network_state_updates(self.id, &mut outcome)?;
         self.start_pending_fetches(connection)?;
         let document_url = self.page.source_url.clone();
         let document_root = self.page.dom.document.id();
@@ -137,7 +138,7 @@ impl DocumentRuntime {
             },
         )?;
 
-        connection.send_policy_updates(self.id, &mut outcome)?;
+        connection.send_network_state_updates(self.id, &mut outcome)?;
         self.start_dynamic_script_fetches(connection)?;
         self.finish_ready_dynamic_scripts(connection)?;
 
@@ -170,13 +171,15 @@ impl DocumentRuntime {
             script_time += timer_started.elapsed();
             merge_outcome(&mut outcome, timed, self.page.dom.document.id());
         }
-        connection.send_policy_updates(self.id, &mut outcome)?;
+        connection.send_network_state_updates(self.id, &mut outcome)?;
         self.pending_fetches.append(&mut outcome.fetch_actions);
         self.pending_websockets
             .append(&mut outcome.websocket_actions);
         self.pending_databases.append(&mut outcome.database_actions);
         self.pending_speech_requests
             .append(&mut outcome.speech_actions);
+        self.pending_notification_requests
+            .append(&mut outcome.notification_actions);
         self.start_dynamic_script_fetches(connection)?;
         let worker_actions = std::mem::take(&mut outcome.worker_actions);
         connection.report_renderer_task_stage(format!(
@@ -201,6 +204,8 @@ impl DocumentRuntime {
         self.pending_databases.append(&mut outcome.database_actions);
         self.pending_speech_requests
             .append(&mut outcome.speech_actions);
+        self.pending_notification_requests
+            .append(&mut outcome.notification_actions);
         self.apply_media_actions(&mut outcome, connection)?;
         let media_changed = self.advance_media(elapsed, connection, &mut outcome)?;
         // Media events execute author script too. Admit their fetch/worker/media

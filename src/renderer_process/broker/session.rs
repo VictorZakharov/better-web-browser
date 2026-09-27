@@ -100,11 +100,27 @@ impl RendererSession {
     }
 
     pub fn database_event_sink(&self, document: DocumentId) -> DatabaseEventSink {
-        DatabaseEventSink::new(document, self.fetch_stream.clone(), self.wake.clone())
+        DatabaseEventSink::new(
+            document,
+            self.database_events.clone(),
+            Arc::clone(&self.database_queued_bytes),
+            Arc::clone(&self.database_overflow),
+            self.wake.clone(),
+        )
     }
 
     pub fn speech_update_sink(&self, document: DocumentId) -> SpeechUpdateSink {
         SpeechUpdateSink::new(document, self.fetch_stream.clone(), self.wake.clone())
+    }
+
+    pub fn notification_update_sink(&self, document: DocumentId) -> super::NotificationUpdateSink {
+        super::NotificationUpdateSink::new(
+            document,
+            self.fetch_stream.clone(),
+            self.notification_updates.clone(),
+            Arc::clone(&self.notification_overflow),
+            self.wake.clone(),
+        )
     }
 
     pub fn load_streaming_document(

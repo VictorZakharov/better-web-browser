@@ -114,6 +114,7 @@ pub struct FetchRequestHead {
     pub referrer: FetchReferrer,
     pub referrer_policy: FetchReferrerPolicy,
     pub body_length: u32,
+    pub keepalive: bool,
 }
 
 impl FetchRequestHead {
@@ -156,6 +157,14 @@ impl FetchRequestHead {
         }
         if self.body_length as usize > MAX_RESPONSE_BODY_BYTES {
             return Err(ProtocolError::PayloadTooLarge(self.body_length));
+        }
+        if self.keepalive
+            && (!matches!(
+                self.initiator,
+                FetchInitiator::ScriptApi | FetchInitiator::Beacon
+            ) || self.body_length as usize > crate::limits::MAX_KEEPALIVE_BODY_BYTES)
+        {
+            return Err(ProtocolError::InvalidPayload("renderer keepalive request"));
         }
         if let FetchReferrer::Url(url) = &self.referrer
             && url.len() > MAX_URL_BYTES

@@ -20,6 +20,7 @@ impl Page {
         cookie_header: &str,
         local: crate::storage::StorageAreaSnapshot,
         session: crate::storage::StorageAreaSnapshot,
+        notification_permission: crate::renderer_protocol::NotificationPermission,
         profiling: bool,
         layout_flush: script::LayoutFlushCallback,
     ) -> Result<(ScriptRuntime, ScriptOutcome), crate::storage::StorageError> {
@@ -29,6 +30,7 @@ impl Page {
             &self.character_set,
         );
         runtime.set_document_policy(policy);
+        runtime.set_notification_permission(notification_permission);
         runtime.set_media_environment(self.media_environment);
         runtime.set_layout_viewport(self.layout_viewport.0, self.layout_viewport.1);
         runtime.set_quirks_mode(

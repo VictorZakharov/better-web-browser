@@ -1,8 +1,14 @@
 use super::*;
 use crate::fetch::{Body, FetchResponse, FetchUrl, HeaderList, ResponseType};
 
+#[path = "worker_runtime_tests/event_listener.rs"]
+mod event_listener;
 #[path = "worker_runtime_tests/event_source.rs"]
 mod event_source;
+#[path = "worker_runtime_tests/indexed_db.rs"]
+mod indexed_db;
+#[path = "worker_runtime_tests/websocket.rs"]
+mod websocket;
 
 #[test]
 fn isolated_worker_dispatches_messages_and_timers() {

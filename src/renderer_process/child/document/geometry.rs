@@ -210,6 +210,28 @@ impl DocumentRuntime {
             self.rendering.dirty = true;
             return;
         }
+        self.page.prune_detached_canvas_images();
+        if let Some(runtime) = self.script_runtime.as_mut() {
+            match runtime.take_canvas_presentation() {
+                Ok(snapshots) => {
+                    for snapshot in snapshots {
+                        if let Err(error) = self.page.install_canvas_bitmap(
+                            snapshot.node,
+                            snapshot.width,
+                            snapshot.height,
+                            snapshot.pixels,
+                        ) && self.page.diagnostics.len() < 32
+                        {
+                            self.page.diagnostics.push(error);
+                        }
+                    }
+                }
+                Err(error) if self.page.diagnostics.len() < 32 => {
+                    self.page.diagnostics.push(error);
+                }
+                Err(_) => {}
+            }
+        }
         let mut text = self.text.borrow_mut();
         text.reset_layout_metrics();
         self.layout = layout_page_with_style_viewport(

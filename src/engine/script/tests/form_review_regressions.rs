@@ -187,3 +187,82 @@ fn saved_control_collections_stay_live_without_reading_the_getter_again() {
         "2|B|1|B|3|true|2|1|3|2|1"
     );
 }
+
+#[test]
+fn form_controls_named_item_returns_a_live_radio_node_list() {
+    let (dom, _) = result(
+        r#"<form id=f><input type=radio name=choice value=a>
+        <input type=radio name=choice checked><input name=single></form>
+        <input id=outside type=radio name=choice value=outside form=f>
+        <output></output><script>
+        const form = document.getElementById('f'), controls = form.elements;
+        const radios = controls.namedItem('choice');
+        const values = [controls instanceof HTMLFormControlsCollection,
+            radios instanceof RadioNodeList, radios instanceof NodeList,
+            radios.length, radios.value, radios.item(2).id,
+            controls.namedItem('single') === form.querySelector('[name=single]'),
+            controls.namedItem('missing') === null];
+        radios.value = 'a';
+        values.push(radios.value, radios[0].checked, radios[1].checked);
+        const added = document.createElement('input');
+        added.type = 'radio'; added.name = 'choice'; added.value = 'new';
+        form.append(added);
+        values.push(radios.length, radios[2] === added);
+        radios[0].name = 'other';
+        values.push(radios.length);
+        radios.value = 'outside';
+        values.push(radios.value, document.getElementById('outside').checked);
+        document.getElementById('outside').remove();
+        values.push(radios.length, radios.value);
+        document.querySelector('output').textContent = values.join('|');
+        </script>"#,
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true|true|true|3|on|outside|true|true|a|true|false|4|true|3|outside|true|2|"
+    );
+}
+
+#[test]
+fn options_collection_mutates_the_live_select_tree() {
+    let (dom, _) = result(
+        r#"<select id=s><optgroup id=group><option name=shared>A</option></optgroup>
+        <option id=shared>B</option></select>
+        <output></output><script>
+        const select = document.getElementById('s'), options = select.options;
+        const values = [options instanceof HTMLOptionsCollection, options === select.options,
+            options.namedItem('shared') === options[0], !Object.keys(options).includes('shared')];
+        const make = text => { const option = document.createElement('option'); option.text = text; return option; };
+        const c = make('C'), d = make('D'), e = make('E');
+        options.add(c, 0);
+        values.push(options[0] === c, c.parentElement.id);
+        options[1] = d;
+        values.push(options[1] === d, d.parentElement.id);
+        options[5] = e;
+        values.push(options.length, options[3].text === '', options[5] === e);
+        options[2] = null;
+        values.push(options.length, options[2].text === '');
+        options.length = 2;
+        values.push(options.length, options[0] === c, options[1] === d);
+        select.length = 3;
+        const f = make('F'); select.add(f, new Number(1));
+        values.push(options.length, options[1] === f, f.parentElement.id);
+        select.remove(0);
+        options.selectedIndex = 1;
+        values.push(options.length, select.selectedIndex, select.value === 'D');
+        let wrongType = '', wrongBefore = '', wrongLength = '';
+        try { options[0] = select; } catch (error) { wrongType = error.name; }
+        try { options.add(make('X'), document.querySelector('output')); }
+        catch (error) { wrongBefore = error.name; }
+        try { options.length = 1n; } catch (error) { wrongLength = error.name; }
+        values.push(wrongType, wrongBefore, wrongLength);
+        select.remove();
+        values.push(!select.isConnected, options.length);
+        document.querySelector('output').textContent = values.join('|');
+        </script>"#,
+    );
+    assert_eq!(
+        dom.elements_named("output").next().unwrap().text_content(),
+        "true|true|true|true|true|group|true|group|6|true|true|5|true|2|true|true|4|true|group|3|1|true|TypeError|NotFoundError|TypeError|true|3"
+    );
+}

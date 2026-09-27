@@ -12,6 +12,8 @@ pub struct WorkerRuntimeOutcome {
     pub messages: Vec<String>,
     pub port_events: Vec<WorkerPortEvent>,
     pub fetch_actions: Vec<ScriptFetchAction>,
+    pub database_actions: Vec<super::network::ScriptDatabaseAction>,
+    pub websocket_actions: Vec<super::network::ScriptWebSocketAction>,
     pub console: Vec<String>,
     pub errors: Vec<String>,
     pub closed: bool,
@@ -189,6 +191,42 @@ impl WorkerRuntime {
         outcome
     }
 
+    pub fn deliver_database_event(&mut self, id: u32, payload: String) -> WorkerRuntimeOutcome {
+        let mut outcome = WorkerRuntimeOutcome::default();
+        if self.host.borrow().closed {
+            return outcome;
+        }
+        if let Err(error) =
+            super::network::database_host::deliver_result(&mut self.context, id, payload)
+        {
+            outcome
+                .errors
+                .push(format!("deliver Worker IndexedDB event: {error}"));
+        }
+        self.settle_module_evaluation(&mut outcome);
+        self.collect(&mut outcome);
+        outcome
+    }
+
+    pub fn deliver_websocket_event(
+        &mut self,
+        event: crate::renderer_protocol::WebSocketEvent,
+    ) -> WorkerRuntimeOutcome {
+        let mut outcome = WorkerRuntimeOutcome::default();
+        if self.host.borrow().closed {
+            return outcome;
+        }
+        if let Err(error) = super::network::websocket_host::deliver_event(&mut self.context, event)
+        {
+            outcome
+                .errors
+                .push(format!("deliver Worker WebSocket event: {error}"));
+        }
+        self.settle_module_evaluation(&mut outcome);
+        self.collect(&mut outcome);
+        outcome
+    }
+
     pub fn advance_time(
         &mut self,
         advance: Duration,
@@ -240,6 +278,8 @@ impl WorkerRuntime {
         host.timers.clear();
         host.timer_handles.clear();
         host.fetch_actions.clear();
+        host.database_actions.clear();
+        host.websocket_actions.clear();
         host.module_evaluation_pending = false;
         host.module_evaluation_completion = None;
         self.pending_messages.clear();
@@ -309,6 +349,10 @@ impl WorkerRuntime {
         outcome.messages.append(&mut host.messages);
         outcome.port_events.append(&mut host.port_events);
         outcome.fetch_actions.append(&mut host.fetch_actions);
+        outcome.database_actions.append(&mut host.database_actions);
+        outcome
+            .websocket_actions
+            .append(&mut host.websocket_actions);
         outcome.console.append(&mut host.console);
         outcome.closed |= host.closed;
     }

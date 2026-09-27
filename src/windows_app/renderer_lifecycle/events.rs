@@ -124,6 +124,9 @@ impl BrowserState {
                 RendererEvent::SpeechRequest(request) => {
                     self.handle_speech_request(id, request);
                 }
+                RendererEvent::NotificationRequest(request) => {
+                    self.handle_notification_request(id, request);
+                }
                 RendererEvent::Presentation(presentation) => {
                     self.process_for_tab(id, |state| {
                         state.activate_renderer_presentation(*presentation)
@@ -352,6 +355,7 @@ impl BrowserState {
                     surface.title, surface.detail
                 )
             });
+            self.retire_database_for_tab(id);
             if let Some(tab) = self.tabs.get_mut(id) {
                 if let Some(status) = status.as_ref() {
                     tab.mark_crashed(status.clone());

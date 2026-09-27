@@ -224,10 +224,14 @@ impl DocumentRuntime {
         self.pending_databases.append(&mut outcome.database_actions);
         self.pending_speech_requests
             .append(&mut outcome.speech_actions);
+        self.pending_notification_requests
+            .append(&mut outcome.notification_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
-        self.start_pending_beacons(connection)?;
+        connection.send_network_state_updates(self.id, outcome)?;
+        self.start_pending_survivable_fetches(connection)?;
         self.start_pending_speech_requests(connection)?;
+        self.start_pending_notification_requests(connection)?;
         connection.send_state_mutations(self.id, outcome)
     }
 

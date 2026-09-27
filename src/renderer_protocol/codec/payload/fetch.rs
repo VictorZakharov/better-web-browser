@@ -40,6 +40,7 @@ pub(super) fn encode_request_head(
     encode_referrer(writer, &head.referrer)?;
     writer.u8(referrer_policy_tag(head.referrer_policy));
     writer.u32(head.body_length);
+    writer.u8(u8::from(head.keepalive));
     Ok(())
 }
 
@@ -80,6 +81,11 @@ pub(super) fn decode_request_head(
         referrer: decode_referrer(reader)?,
         referrer_policy: decode_referrer_policy(reader.u8()?)?,
         body_length: reader.u32()?,
+        keepalive: match reader.u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(ProtocolError::InvalidPayload("Fetch keepalive flag")),
+        },
     };
     head.validate()?;
     Ok(head)

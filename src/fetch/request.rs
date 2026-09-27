@@ -90,6 +90,8 @@ pub struct FetchRequest {
     pub method: String,
     pub headers: HeaderList,
     pub body: Option<Body>,
+    /// A script request may outlive its originating global while the browser owns its upload.
+    pub keepalive: bool,
     pub context: RequestContext,
     pub destination: RequestDestination,
     /// Browser-owned CSP input for script elements; never serialized as an HTTP header.
@@ -118,6 +120,7 @@ impl FetchRequest {
             method: "GET".into(),
             headers: HeaderList::new(),
             body: None,
+            keepalive: false,
             context: RequestContext::Navigation,
             destination: RequestDestination::Document,
             script_source: None,
@@ -154,6 +157,7 @@ impl FetchRequest {
             method: "GET".into(),
             headers: HeaderList::new(),
             body: None,
+            keepalive: false,
             context: RequestContext::Subresource,
             destination,
             script_source: None,
@@ -181,6 +185,7 @@ impl FetchRequest {
             method: "GET".into(),
             headers: HeaderList::new(),
             body: None,
+            keepalive: false,
             context: RequestContext::Script,
             destination: RequestDestination::Fetch,
             script_source: None,
@@ -269,6 +274,19 @@ impl FetchRequest {
             return Err(FetchError::new(
                 FetchErrorKind::InvalidRequest,
                 format!("{} requests cannot have a body", self.method),
+            ));
+        }
+        if self.keepalive
+            && (self.body.as_ref().map_or(0, |body| body.as_bytes().len())
+                > crate::limits::MAX_KEEPALIVE_BODY_BYTES
+                || !matches!(
+                    self.context,
+                    RequestContext::Script | RequestContext::WorkerScript
+                ))
+        {
+            return Err(FetchError::new(
+                FetchErrorKind::InvalidRequest,
+                "invalid keepalive request or body exceeds 64 KiB",
             ));
         }
         if matches!(

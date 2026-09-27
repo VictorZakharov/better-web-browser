@@ -1,3 +1,5 @@
+mod canvas;
+pub(crate) use canvas::intrinsic_size as canvas_intrinsic_size;
 mod embedded;
 mod font_loading;
 mod integrity;
@@ -76,6 +78,8 @@ pub struct Page {
     stylesheet_discovery: Option<(u64, usize, MediaEnvironment)>,
     cached_styles: Option<(f32, f32, StyleSet)>,
     pub images: HashMap<String, DecodedImage>,
+    canvas_image_updates: HashSet<String>,
+    scripting_enabled: bool,
     hidden_media_video: HashSet<NodeId>,
     inline_svg_versions: HashMap<NodeId, u64>,
     pub fonts: Vec<WebFont>,
@@ -100,7 +104,9 @@ impl Page {
                 node.set_attr("style", "display: none");
             }
         }
-        Self::from_dom(dom, source_url)
+        let mut page = Self::from_dom(dom, source_url);
+        page.scripting_enabled = scripting_enabled;
+        page
     }
 
     pub(crate) fn from_dom(dom: Dom, source_url: &str) -> Self {
@@ -146,6 +152,8 @@ impl Page {
             stylesheet_discovery: None,
             cached_styles: None,
             images,
+            canvas_image_updates: HashSet::new(),
+            scripting_enabled: true,
             hidden_media_video: HashSet::new(),
             inline_svg_versions,
             fonts: Vec::new(),
@@ -293,6 +301,9 @@ impl Page {
     }
 
     pub fn image_url(&self, node: &NodeRef) -> Option<String> {
+        if node.tag_name() == Some("canvas") {
+            return canvas::image_url(self, node);
+        }
         if node.tag_name() == Some("svg") {
             let key = inline_svg_key(node);
             return self.images.contains_key(&key).then_some(key);
@@ -301,6 +312,10 @@ impl Page {
             return Some(url);
         }
         resolve_image_url(node, &self.base_url, self.media_environment)
+    }
+
+    pub(crate) fn canvas_is_replaced(&self) -> bool {
+        self.scripting_enabled
     }
 }
 

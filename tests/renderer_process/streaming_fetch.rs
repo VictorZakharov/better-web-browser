@@ -8,6 +8,8 @@ use std::time::Duration;
 
 #[path = "streaming_fetch/frames.rs"]
 mod frames;
+#[path = "streaming_fetch/keepalive.rs"]
+mod keepalive;
 #[path = "streaming_fetch/progressive.rs"]
 mod progressive;
 
@@ -144,6 +146,7 @@ fn wait_for_fetch(
                 assert_eq!(requests.len(), 1);
                 return requests.pop().unwrap();
             }
+            RendererEvent::Presentation(presentation) if presentation.document == document => {}
             RendererEvent::Diagnostic { .. } | RendererEvent::RuntimeUpdate(_) => {}
             event => panic!("unexpected event while waiting for script Fetch: {event:?}"),
         }

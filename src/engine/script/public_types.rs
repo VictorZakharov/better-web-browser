@@ -3,6 +3,7 @@
 pub use super::types::{
     DynamicScriptLoader, DynamicScriptRequest, ScriptCaptionCue, ScriptFetchOptions,
     ScriptFontAction, ScriptFullscreenAction, ScriptHistoryAction, ScriptInput, ScriptKind,
-    ScriptMediaAction, ScriptMediaCommand, ScriptOutcome, ScriptPointerLockAction,
-    ScriptSpeechAction, UserInputEvent, UserInputModifiers, UserInputResult,
+    ScriptMediaAction, ScriptMediaCommand, ScriptNotificationAction, ScriptOutcome,
+    ScriptPointerLockAction, ScriptSpeechAction, UserInputEvent, UserInputModifiers,
+    UserInputResult,
 };

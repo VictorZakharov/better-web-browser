@@ -99,6 +99,9 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                     "img" | "image" | "video" | "iframe" => {
                         self.collect_image(node, style, link, output, containing_block)
                     }
+                    "canvas" if self.page.canvas_is_replaced() => {
+                        self.collect_image(node, style, link, output, containing_block)
+                    }
                     "input"
                         if node
                             .attr("type")
@@ -225,14 +228,20 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
         };
         let intrinsic = url.as_ref().and_then(|url| self.page.images.get(url));
         let is_video = node.tag_name() == Some("video");
+        let canvas = (node.tag_name() == Some("canvas"))
+            .then(|| crate::engine::page::canvas_intrinsic_size(node));
         let placeholder =
             is_video && url.as_deref() == Some(crate::engine::page::MEDIA_VIDEO_PLACEHOLDER);
-        let intrinsic_width = if is_frame || placeholder {
+        let intrinsic_width = if let Some((width, _)) = canvas {
+            width as f32
+        } else if is_frame || placeholder {
             300.0
         } else {
             intrinsic.map(|image| image.width as f32).unwrap_or(16.0)
         };
-        let intrinsic_height = if is_frame || placeholder {
+        let intrinsic_height = if let Some((_, height)) = canvas {
+            height as f32
+        } else if is_frame || placeholder {
             150.0
         } else {
             intrinsic.map(|image| image.height as f32).unwrap_or(16.0)

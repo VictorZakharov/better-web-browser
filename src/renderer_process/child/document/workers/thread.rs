@@ -71,7 +71,7 @@ pub(super) fn run_worker(config: WorkerConfig) {
         ))
     });
     let (runtime, initial) = WorkerRuntime::start_with_policy(
-        &config.url,
+        response_url,
         &source,
         &config.name,
         config.kind,
@@ -91,7 +91,10 @@ pub(super) fn run_worker(config: WorkerConfig) {
             .next_timer_delay()
             .unwrap_or(Duration::from_millis(100))
             .min(Duration::from_millis(100));
-        let command = config.commands.recv_timeout(timeout);
+        let (command, _charged_command) = match config.commands.recv_timeout(timeout) {
+            Ok(mut queued) => (Ok(queued.take()), Some(queued)),
+            Err(error) => (Err(error), None),
+        };
         if config.cancelled.load(Ordering::Acquire) {
             break;
         }
@@ -105,6 +108,18 @@ pub(super) fn run_worker(config: WorkerConfig) {
             Ok(WorkerCommand::Fetch { id, event }) => {
                 let fetched = runtime.deliver_fetch_event(id, event);
                 if drive_worker_outcome(&config, fetched) {
+                    break;
+                }
+            }
+            Ok(WorkerCommand::Database { id, payload }) => {
+                let result = runtime.deliver_database_event(id, payload);
+                if drive_worker_outcome(&config, result) {
+                    break;
+                }
+            }
+            Ok(WorkerCommand::WebSocket(event)) => {
+                let result = runtime.deliver_websocket_event(event);
+                if drive_worker_outcome(&config, result) {
                     break;
                 }
             }
@@ -151,6 +166,12 @@ fn emit(config: &WorkerConfig, mut outcome: WorkerRuntimeOutcome) {
             request.client = config.worker_client;
         }
     }
+    for action in &mut outcome.database_actions {
+        action.client = config.worker_client;
+    }
+    for action in &mut outcome.websocket_actions {
+        action.client = config.worker_client;
+    }
     let messages = outcome
         .messages
         .into_iter()
@@ -160,6 +181,8 @@ fn emit(config: &WorkerConfig, mut outcome: WorkerRuntimeOutcome) {
     let _ = config.events.send(WorkerEvent {
         id: config.id,
         fetch_actions: outcome.fetch_actions,
+        database_actions: outcome.database_actions,
+        websocket_actions: outcome.websocket_actions,
         messages,
         port_events: outcome.port_events,
         console: outcome.console,
@@ -175,6 +198,8 @@ fn emit_error(config: &WorkerConfig, error: String) {
     let _ = config.events.send(WorkerEvent {
         id: config.id,
         fetch_actions: Vec::new(),
+        database_actions: Vec::new(),
+        websocket_actions: Vec::new(),
         messages: vec![Err(error.clone())],
         port_events: Vec::new(),
         console: Vec::new(),

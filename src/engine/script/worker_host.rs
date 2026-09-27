@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 pub type WorkerSourceLoader =
     dyn Fn(&str, ScriptKind) -> Result<String, String> + Send + Sync + 'static;
+const MAX_WORKER_DATABASE_ACTIONS: usize = 64;
+const MAX_WORKER_DATABASE_ACTION_BYTES: usize = 8 * 1024 * 1024;
 
 pub(super) struct WorkerHostState {
     pub(super) source_url: String,
@@ -18,6 +20,10 @@ pub(super) struct WorkerHostState {
     pub(super) policy: Arc<crate::fetch::csp::PolicyContainer>,
     pub(super) next_fetch_id: u32,
     pub(super) fetch_actions: Vec<ScriptFetchAction>,
+    pub(super) next_database_id: u32,
+    pub(super) database_actions: Vec<super::network::ScriptDatabaseAction>,
+    pub(super) next_websocket_id: u32,
+    pub(super) websocket_actions: Vec<super::network::ScriptWebSocketAction>,
     pub(super) messages: Vec<String>,
     pub(super) port_events: Vec<WorkerPortEvent>,
     pub(super) console: Vec<String>,
@@ -54,6 +60,10 @@ impl WorkerHostState {
             policy,
             next_fetch_id: 1,
             fetch_actions: Vec::new(),
+            next_database_id: 1,
+            database_actions: Vec::new(),
+            next_websocket_id: 1,
+            websocket_actions: Vec::new(),
             messages: Vec::new(),
             port_events: Vec::new(),
             console: Vec::new(),
@@ -124,6 +134,9 @@ pub(super) fn dispatch_worker_host_call(
         return Ok(value);
     }
     if let Some(value) = super::canvas_host::canvas_host_call(operation, args)? {
+        return Ok(value);
+    }
+    if let Some(value) = super::worker_websocket_host::dispatch(operation, args, state)? {
         return Ok(value);
     }
     match operation {
@@ -209,6 +222,39 @@ pub(super) fn dispatch_worker_host_call(
                 id: argument_id(args, 1),
             });
             Ok(JsValue::undefined())
+        }
+        "databaseRequest" => {
+            let payload = argument_string(args, 1)?;
+            if payload.len() > crate::limits::MAX_INDEXED_DB_IPC_BYTES {
+                return Err(JsNativeError::range()
+                    .with_message("IndexedDB request exceeds the browser limit")
+                    .into());
+            }
+            let queued_bytes: usize = state
+                .database_actions
+                .iter()
+                .map(|action| action.payload.len())
+                .sum();
+            if state.database_actions.len() >= MAX_WORKER_DATABASE_ACTIONS
+                || queued_bytes.saturating_add(payload.len()) > MAX_WORKER_DATABASE_ACTION_BYTES
+            {
+                return Err(JsNativeError::range()
+                    .with_message("Worker IndexedDB task queue limit exceeded")
+                    .into());
+            }
+            let id = state.next_database_id;
+            state.next_database_id = id.checked_add(1).ok_or_else(|| {
+                JsNativeError::range().with_message("Worker IndexedDB identifiers were exhausted")
+            })?;
+            state
+                .database_actions
+                .push(super::network::ScriptDatabaseAction {
+                    id,
+                    // The renderer worker thread replaces this with its browser-committed client.
+                    client: crate::fetch::RequestClient::default(),
+                    payload,
+                });
+            Ok(JsValue::from(id))
         }
         "workerPost" => {
             state.messages.push(argument_string(args, 1)?);

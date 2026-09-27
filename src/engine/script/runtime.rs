@@ -9,6 +9,7 @@ use super::timer_execution::{TimerSlice, settle_timer_slice};
 use super::*;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+mod canvas_presentation;
 mod completions;
 pub(super) mod document_lifecycle;
 mod document_streams;
@@ -39,6 +40,12 @@ pub struct ScriptRuntime {
 }
 
 impl ScriptRuntime {
+    pub(crate) fn set_notification_permission(
+        &mut self,
+        permission: crate::renderer_protocol::NotificationPermission,
+    ) {
+        self.host.borrow_mut().notification_permission = permission;
+    }
     pub(crate) fn process_parser_csp_meta(
         &mut self,
         node: &NodeRef,
@@ -200,7 +207,7 @@ impl ScriptRuntime {
         {
             return Some(Duration::ZERO);
         }
-        if self.has_ready_document_task() {
+        if self.has_ready_document_task() || self.host.borrow().timers.render_requested() {
             return Some(Duration::ZERO);
         }
         let mut host = self.host.borrow_mut();

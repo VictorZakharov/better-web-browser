@@ -19,11 +19,13 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 .attr("type")
                 .is_some_and(|kind| kind.eq_ignore_ascii_case("image"))
             && node.attr("src").is_some_and(|src| !src.trim().is_empty());
-        if !image_input
-            && !matches!(
+        let canvas = node.tag_name() == Some("canvas") && self.page.canvas_is_replaced();
+        if !(image_input
+            || canvas
+            || matches!(
                 node.tag_name(),
                 Some("img" | "image" | "video" | "svg" | "iframe")
-            )
+            ))
         {
             return None;
         }
@@ -50,6 +52,19 @@ impl<M: TextMeasurer> LayoutEngine<'_, M> {
                 intrinsic_height,
                 tint: None,
                 alt: node.attr("aria-label").unwrap_or_default(),
+                available: image.is_some(),
+                embedded_frame: false,
+            });
+        }
+        if node.tag_name() == Some("canvas") {
+            let (width, height) = crate::engine::page::canvas_intrinsic_size(node);
+            let image = self.page.image_url(node);
+            return Some(BlockImage {
+                url: image.clone().unwrap_or_default(),
+                intrinsic_width: width as f32,
+                intrinsic_height: height as f32,
+                tint: None,
+                alt: String::new(),
                 available: image.is_some(),
                 embedded_frame: false,
             });

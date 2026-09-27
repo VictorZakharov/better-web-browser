@@ -3,10 +3,17 @@
 use crate::limits::MAX_FETCH_STREAM_CHUNK_BYTES;
 use crate::renderer_protocol::{
     BrowserFetchError, DatabaseEvent, DocumentId, FetchResponseAbort, FetchResponseEnd,
-    FetchResponseHead, SpeechUpdate, TransferChunk, WebSocketEvent,
+    FetchResponseHead, NotificationEvent, NotificationUpdate, SpeechUpdate, TransferChunk,
+    WebSocketEvent,
 };
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
+
+mod database;
+
+pub(super) const MAX_QUEUED_DATABASE_RESPONSE_BYTES: usize =
+    4 * crate::limits::MAX_INDEXED_DB_IPC_BYTES;
 
 #[derive(Clone)]
 pub struct FetchResponseSink {
@@ -28,7 +35,9 @@ pub struct WebSocketEventSink {
 #[derive(Clone)]
 pub struct DatabaseEventSink {
     document: DocumentId,
-    sender: mpsc::SyncSender<FetchStreamEvent>,
+    sender: mpsc::SyncSender<DatabaseEvent>,
+    queued_bytes: Arc<AtomicUsize>,
+    overflow: Arc<AtomicBool>,
     wake: super::wake::BrokerWake,
 }
 
@@ -36,6 +45,15 @@ pub struct DatabaseEventSink {
 pub struct SpeechUpdateSink {
     document: DocumentId,
     sender: mpsc::SyncSender<FetchStreamEvent>,
+    wake: super::wake::BrokerWake,
+}
+
+#[derive(Clone)]
+pub struct NotificationUpdateSink {
+    document: DocumentId,
+    sender: mpsc::SyncSender<FetchStreamEvent>,
+    required: mpsc::SyncSender<NotificationUpdate>,
+    overflow: Arc<AtomicBool>,
     wake: super::wake::BrokerWake,
 }
 
@@ -57,8 +75,58 @@ pub(super) enum FetchStreamEvent {
         abort: FetchResponseAbort,
     },
     WebSocket(WebSocketEvent),
-    Database(DatabaseEvent),
     Speech(SpeechUpdate),
+    Notification(NotificationUpdate),
+}
+
+impl NotificationUpdateSink {
+    pub(super) fn new(
+        document: DocumentId,
+        sender: mpsc::SyncSender<FetchStreamEvent>,
+        required: mpsc::SyncSender<NotificationUpdate>,
+        overflow: Arc<AtomicBool>,
+        wake: super::wake::BrokerWake,
+    ) -> Self {
+        Self {
+            document,
+            sender,
+            required,
+            overflow,
+            wake,
+        }
+    }
+
+    /// UI-thread delivery is nonblocking even if a renderer stops consuming updates.
+    pub fn try_send(&self, update: NotificationUpdate) -> Result<(), String> {
+        update.validate().map_err(|error| error.to_string())?;
+        if update.document != self.document {
+            return Err("notification update document mismatch".into());
+        }
+        if matches!(
+            update.event,
+            NotificationEvent::Permission(_) | NotificationEvent::Error | NotificationEvent::Closed
+        ) {
+            match self.required.try_send(update) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(_)) => {
+                    // Do not silently strand a pending Promise or notification.
+                    // The broker will terminate this overloaded session explicitly.
+                    self.overflow.store(true, Ordering::Release);
+                    self.wake.notify();
+                    return Err("renderer notification control mailbox is full".into());
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return Err("renderer notification control mailbox is closed".into());
+                }
+            }
+        } else {
+            self.sender
+                .try_send(FetchStreamEvent::Notification(update))
+                .map_err(|error| format!("renderer notification mailbox unavailable: {error}"))?;
+        }
+        self.wake.notify();
+        Ok(())
+    }
 }
 
 impl SpeechUpdateSink {
@@ -96,33 +164,6 @@ impl SpeechUpdateSink {
         self.sender
             .try_send(FetchStreamEvent::Speech(update))
             .map_err(|error| format!("renderer speech mailbox unavailable: {error}"))?;
-        self.wake.notify();
-        Ok(())
-    }
-}
-
-impl DatabaseEventSink {
-    pub(super) fn new(
-        document: DocumentId,
-        sender: mpsc::SyncSender<FetchStreamEvent>,
-        wake: super::wake::BrokerWake,
-    ) -> Self {
-        Self {
-            document,
-            sender,
-            wake,
-        }
-    }
-
-    pub fn send(&self, event: DatabaseEvent) -> Result<(), String> {
-        event.validate().map_err(|error| error.to_string())?;
-        if event.document != self.document {
-            return Err("IndexedDB event document mismatch".into());
-        }
-        self.wake.notify();
-        self.sender
-            .send(FetchStreamEvent::Database(event))
-            .map_err(|_| "renderer database stream is no longer available".to_string())?;
         self.wake.notify();
         Ok(())
     }
@@ -318,3 +359,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "stream/notification_tests.rs"]
+mod notification_tests;

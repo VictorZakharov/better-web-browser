@@ -14,6 +14,8 @@ use crate::renderer_protocol::{
 use std::collections::HashSet;
 use std::time::Instant;
 
+mod survivable;
+
 impl DocumentRuntime {
     pub(in crate::renderer_process::child) fn start_pending_speech_requests(
         &mut self,
@@ -29,35 +31,12 @@ impl DocumentRuntime {
         Ok(())
     }
 
-    /// Flush one-way requests before sending a navigation mutation. Ordinary Fetch remains
-    /// document-owned; a Beacon must cross the IPC boundary while its client still exists.
-    pub(in crate::renderer_process::child) fn start_pending_beacons(
-        &mut self,
-        connection: &mut ChildConnection,
-    ) -> Result<(), String> {
-        let mut retained = Vec::new();
-        let mut beacons = Vec::new();
-        for action in std::mem::take(&mut self.pending_fetches) {
-            match action {
-                ScriptFetchAction::Beacon { request } => {
-                    let id = connection.allocate_request_id();
-                    beacons.push(script_beacon_request(id, self.id, *request));
-                }
-                other => retained.push(other),
-            }
-        }
-        self.pending_fetches = retained;
-        if !beacons.is_empty() {
-            connection.start_streaming_fetch_batch(self.id, beacons)?;
-        }
-        Ok(())
-    }
-
     pub(in crate::renderer_process::child) fn start_pending_fetches(
         &mut self,
         connection: &mut ChildConnection,
     ) -> Result<(), String> {
         self.start_pending_speech_requests(connection)?;
+        self.start_pending_notification_requests(connection)?;
         for action in std::mem::take(&mut self.pending_websockets) {
             connection.send_websocket_command(crate::renderer_protocol::WebSocketCommand {
                 document: self.id,
@@ -179,7 +158,8 @@ impl DocumentRuntime {
             }
         };
         if self.workers.owns_fetch(request_id) {
-            self.workers.deliver_fetch(request_id, event);
+            self.workers
+                .deliver_fetch(request_id, event, connection, self.id)?;
             return Ok(None);
         }
         let Some(script_id) = self.active_script_fetches.get(&request_id).copied() else {
@@ -287,7 +267,7 @@ impl DocumentRuntime {
         )
     }
 
-    fn complete_network_script_outcome(
+    pub(super) fn complete_network_script_outcome(
         &mut self,
         mut outcome: ScriptOutcome,
         terminal: bool,
@@ -301,6 +281,8 @@ impl DocumentRuntime {
         self.pending_databases.append(&mut outcome.database_actions);
         self.pending_speech_requests
             .append(&mut outcome.speech_actions);
+        self.pending_notification_requests
+            .append(&mut outcome.notification_actions);
         self.pending_worker_actions
             .append(&mut outcome.worker_actions);
         // Abort and chained Fetch actions produced by a network callback belong to the same
@@ -308,7 +290,7 @@ impl DocumentRuntime {
         // does not wait for an unrelated clock tick.
         // A callback can insert a meta CSP and start a request in the same task. The browser
         // owns network admission, so it must receive the policy before that request.
-        connection.send_policy_updates(self.id, &mut outcome)?;
+        connection.send_network_state_updates(self.id, &mut outcome)?;
         self.start_pending_fetches(connection)?;
         // A FontFace URL load resolves from this networking task, not from a clock or input
         // task. Install its decoded face before deciding whether this callback needs layout.

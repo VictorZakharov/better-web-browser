@@ -49,6 +49,8 @@ pub(super) struct SerializedRequest {
     redirect: String,
     referrer: String,
     referrer_policy: String,
+    #[serde(default)]
+    keepalive: bool,
 }
 
 #[derive(Serialize)]
@@ -214,6 +216,7 @@ pub(super) fn request_from_serialized(
             )));
         }
     };
+    request.keepalive = init.keepalive;
     for (name, value) in init.headers {
         request
             .set_script_header(&name, &value)

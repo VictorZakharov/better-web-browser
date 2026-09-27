@@ -112,6 +112,7 @@ impl DocumentRuntime {
             pending_websockets: Vec::new(),
             pending_databases: Vec::new(),
             pending_speech_requests: Vec::new(),
+            pending_notification_requests: Vec::new(),
             active_script_fetches: HashMap::new(),
             pending_worker_actions: Vec::new(),
             deferred_network_load: PageLoadReport::default(),
@@ -139,6 +140,8 @@ impl DocumentRuntime {
             last_acknowledged_revision: 0,
             revision: 0,
             sent_images: HashSet::new(),
+            last_served_image_key: None,
+            image_budget_warning_sent: false,
             diagnostic_selectors: start.diagnostic_selectors,
             prefers_dark_color_scheme: start.prefers_dark_color_scheme,
             media: None,
@@ -182,6 +185,7 @@ impl DocumentRuntime {
                     &state.cookie_header,
                     state.local_storage,
                     state.session_storage,
+                    start.notification_permission,
                     !runtime.diagnostic_selectors.is_empty(),
                     runtime.script_layout_flush_callback(),
                 )
@@ -202,7 +206,7 @@ impl DocumentRuntime {
                 return runtime.restart_encoding(connection);
             }
         }
-        connection.send_policy_updates(document, &mut outcome)?;
+        connection.send_network_state_updates(document, &mut outcome)?;
         runtime.start_dynamic_script_fetches(connection)?;
         runtime.flush_pending_resource_events()?;
         merge_outcome(
@@ -216,8 +220,10 @@ impl DocumentRuntime {
         runtime.pending_websockets = std::mem::take(&mut outcome.websocket_actions);
         runtime.pending_databases = std::mem::take(&mut outcome.database_actions);
         runtime.pending_speech_requests = std::mem::take(&mut outcome.speech_actions);
+        runtime.pending_notification_requests = std::mem::take(&mut outcome.notification_actions);
         runtime.pending_worker_actions = std::mem::take(&mut outcome.worker_actions);
-        runtime.start_pending_beacons(connection)?;
+        connection.send_network_state_updates(document, &mut outcome)?;
+        runtime.start_pending_survivable_fetches(connection)?;
         connection.send_state_mutations(document, &mut outcome)?;
         let script_time = script_started.elapsed();
 

@@ -42,9 +42,17 @@
         get options() { return selectOptions(this); }
         get selectedOptions() { return selectSelectedOptions(this); }
         get length() { return this.options.length; }
+        set length(value) { this.options.length = value; }
+        item(index) { return this.options.item(index); }
+        namedItem(name) { return this.options.namedItem(name); }
+        add(element, before) { this.options.add(element, before); }
+        remove(index) {
+            if (arguments.length === 0) return Element.prototype.remove.call(this);
+            this.options.remove(index);
+        }
         get selectedIndex() { return host('selectSelectedIndex', nodeId(this)); }
         set selectedIndex(value) {
-            host('selectSetSelectedIndex', nodeId(this), Math.trunc(Number(value) || 0));
+            host('selectSetSelectedIndex', nodeId(this), (+value) | 0);
         }
         get value() { return host('selectValue', nodeId(this)); }
         set value(value) { host('selectSetValue', nodeId(this), String(value)); }
@@ -184,7 +192,8 @@
             return cachedControlCollection(formLists, this, () =>
                 Array.from(this.getRootNode().querySelectorAll(listedControlSelector))
                     .filter(element => associatedForm(element) === this &&
-                        !(element instanceof HTMLInputElement && element.type === 'image')));
+                        !(element instanceof HTMLInputElement && element.type === 'image')),
+                liveFormControlsCollection);
         }
         get length() { return this.elements.length; }
         get noValidate() { return this.hasAttribute('novalidate'); }
@@ -221,10 +230,10 @@
     const fieldsetLists = new WeakMap();
     const selectOptionLists = new WeakMap();
     const selectedOptionLists = new WeakMap();
-    function cachedControlCollection(cache, owner, resolve) {
+    function cachedControlCollection(cache, owner, resolve, make = liveHtmlCollection) {
         let list = cache.get(owner);
         if (!list) {
-            list = liveHtmlCollection(resolve);
+            list = make(resolve);
             cache.set(owner, list);
         }
         return list;
@@ -233,7 +242,7 @@
         return cachedControlCollection(selectOptionLists, select, () => {
             const ids = String(host('selectOptionIds', nodeId(select)));
             return ids ? ids.split(',').map(id => wrap(Number(id))).filter(Boolean) : [];
-        });
+        }, resolve => liveOptionsCollection(select, resolve));
     }
     function selectSelectedOptions(select) {
         return cachedControlCollection(selectedOptionLists, select,

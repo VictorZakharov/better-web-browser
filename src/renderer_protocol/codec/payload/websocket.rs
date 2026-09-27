@@ -33,6 +33,7 @@ pub(super) fn encode_command(command: &WebSocketCommand) -> Result<Vec<u8>, Prot
             writer.u16(*code);
             writer.string(reason)?;
         }
+        WebSocketOperation::Cancel => writer.u8(4),
     }
     Ok(writer.finish())
 }
@@ -66,6 +67,7 @@ pub(super) fn decode_command(payload: &[u8]) -> Result<WebSocketCommand, Protoco
             code: reader.u16()?,
             reason: reader.string(123)?,
         },
+        4 => WebSocketOperation::Cancel,
         _ => return Err(ProtocolError::InvalidPayload("WebSocket operation")),
     };
     reader.finish()?;
@@ -175,6 +177,14 @@ mod tests {
             },
         };
         assert_eq!(decode_event(&encode_event(&event).unwrap()).unwrap(), event);
+        let cancel = WebSocketCommand {
+            operation: WebSocketOperation::Cancel,
+            ..command
+        };
+        assert_eq!(
+            decode_command(&encode_command(&cancel).unwrap()).unwrap(),
+            cancel
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ mod database;
 mod document;
 mod fetch;
 mod input;
+mod notification;
 mod speech;
 mod state;
 mod storage_sync;
@@ -30,6 +31,9 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
     }
     if let BrowserMessage::SpeechUpdate(update) = message {
         return speech::encode_update(update).map(|bytes| (0x0191, bytes));
+    }
+    if let BrowserMessage::NotificationUpdate(update) = message {
+        return notification::encode_update(update).map(|bytes| (0x01a1, bytes));
     }
     if let BrowserMessage::WebSocketEvent(event) = message {
         return websocket::encode_event(event).map(|bytes| (0x0171, bytes));
@@ -86,6 +90,7 @@ pub(super) fn encode_browser(message: &BrowserMessage) -> Result<(u16, Vec<u8>),
         BrowserMessage::WebSocketEvent(_) => unreachable!("encoded above"),
         BrowserMessage::DatabaseEvent(_) => unreachable!("encoded above"),
         BrowserMessage::SpeechUpdate(_) => unreachable!("encoded above"),
+        BrowserMessage::NotificationUpdate(_) => unreachable!("encoded above"),
         BrowserMessage::Test(command) => {
             match command {
                 TestCommand::InternalError => payload.push(10),
@@ -157,6 +162,7 @@ pub(super) fn decode_browser(kind: u16, payload: &[u8]) -> Result<BrowserMessage
         0x0171 => websocket::decode_event(payload).map(BrowserMessage::WebSocketEvent),
         0x0181 => database::decode_event(payload).map(BrowserMessage::DatabaseEvent),
         0x0191 => speech::decode_update(payload).map(BrowserMessage::SpeechUpdate),
+        0x01a1 => notification::decode_update(payload).map(BrowserMessage::NotificationUpdate),
         0x0141 | 0x0143 | 0x0145 | 0x0147 | 0x0149 | 0x014b | 0x014d | 0x014f | 0x0151 | 0x0153 => {
             decode_browser_input(kind, payload)
         }
@@ -172,6 +178,9 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
     if let RendererMessage::SpeechRequest(request) = message {
         return speech::encode_request(request).map(|bytes| (0x0190, bytes));
     }
+    if let RendererMessage::NotificationRequest(request) = message {
+        return notification::encode_request(request).map(|bytes| (0x01a0, bytes));
+    }
     if let RendererMessage::WebSocketCommand(command) = message {
         return websocket::encode_command(command).map(|bytes| (0x0170, bytes));
     }
@@ -184,6 +193,7 @@ pub(super) fn encode_renderer(message: &RendererMessage) -> Result<(u16, Vec<u8>
         RendererMessage::WebSocketCommand(_) => unreachable!("encoded above"),
         RendererMessage::DatabaseCommand(_) => unreachable!("encoded above"),
         RendererMessage::SpeechRequest(_) => unreachable!("encoded above"),
+        RendererMessage::NotificationRequest(_) => unreachable!("encoded above"),
         RendererMessage::Ready {
             nonce,
             context,
@@ -250,6 +260,7 @@ pub(super) fn decode_renderer(kind: u16, payload: &[u8]) -> Result<RendererMessa
     match kind {
         0x0180 => database::decode_command(payload).map(RendererMessage::DatabaseCommand),
         0x0190 => speech::decode_request(payload).map(RendererMessage::SpeechRequest),
+        0x01a0 => notification::decode_request(payload).map(RendererMessage::NotificationRequest),
         0x0170 => websocket::decode_command(payload).map(RendererMessage::WebSocketCommand),
         2 => {
             require_length(payload, NONCE_LENGTH + 11)?;

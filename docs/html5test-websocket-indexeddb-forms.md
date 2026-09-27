@@ -10,38 +10,48 @@ conformance to those specifications.
 
 ## WebSocket ownership
 
-- The document realm has the WebSocket constructor, URL/protocol validation,
+- Document and dedicated-worker realms have the WebSocket constructor, URL/protocol validation,
   open/message/error/close events, text and binary sends, binaryType, buffered
   amount, and close-code handling. The page cannot open a socket directly.
 - The renderer sends a bounded command through its document broker. The
-  browser resolves the real client and origin, applies the page's CSP
-  connect-src and mixed-content policy, adds relevant cookies, and owns the
-  WinHTTP connection and frame transport.
-- Replies are document-scoped. Late frames for a retired navigation cannot
-  reach a new page. Queues and payloads have explicit ceilings rather than
-  unbounded renderer-to-browser memory use.
-- The hidden integration fixture checks a real loopback handshake, Origin and
-  subprotocol headers, a text frame, a binary frame, and a clean close while
-  asserting that the retained document repaints.
+  browser resolves the initiating page or committed worker client and its
+  origin, applies that client's CSP connect-src and mixed-content policy, adds
+  relevant cookies, and owns the WinHTTP connection and frame transport.
+  A worker uses its entry response's CSP, not its creator page's connect-src.
+- Worker sockets use a disjoint wire-ID namespace. Replies return only to the
+  initiating worker; late events after termination and late frames after a
+  retired navigation cannot reach the page or a new realm. Termination sends
+  a browser-side cancellation for active and in-flight sockets. Queues and
+  payloads have explicit ceilings rather than unbounded renderer-to-browser
+  memory use. At most eight sockets are admitted per document and 32 socket
+  pairs per browser process. Each established pair uses a reader and writer
+  thread, so this bounds socket-owned native threads to 64; canceled handshakes
+  keep their reservation until their threads exit.
+- Hidden integration fixtures check page and worker loopback handshakes,
+  Origin and subprotocol headers, text/binary frames, clean closes, Worker
+  response CSP, and in-flight handshake teardown on termination/navigation.
 
-This is a baseline for document WebSockets. Worker exposure, extension
-negotiation, compression, and broader network interoperability remain work
-to do; absence of these features must not be hidden behind a site-specific
-fallback.
+This is a baseline WebSocket implementation. Extension negotiation,
+compression, and broader network interoperability remain work to do. WinHTTP
+currently opens sockets synchronously: cancellation revokes the realm and
+suppresses late events immediately, but a blocked native handshake can occupy
+its worker thread until WinHTTP returns or times out; forcibly closing that
+synchronous request from another thread is unsafe. Absent features must not be
+hidden behind a site-specific fallback.
 
 ## IndexedDB ownership and behavior
 
 - Profile persistence belongs to the browser process. The renderer can only
-  request operations for a browser-resolved document/frame client. The page
-  cannot choose another origin or an arbitrary profile path.
+  request operations for a browser-resolved document, frame, or committed
+  dedicated-worker client. Script cannot choose another origin or a profile path.
 - Databases are partitioned by tuple origin. Opaque origins fail rather than
   sharing a global namespace. The browser bounds both individual IPC messages
   and on-disk origin/database size.
-- The exposed window API covers asynchronous open, upgrade, delete, database
-  listing, object-store creation/deletion, read-only and readwrite
-  transactions, structured-cloned values, generated keys, key paths, get,
-  getKey, put, add, delete, clear, count, getAll, getAllKeys, key ranges, and
-  forward/reverse object-store cursors.
+- The exposed window and dedicated-worker APIs cover asynchronous open,
+  upgrade, delete, database listing, object-store creation/deletion, read-only
+  and readwrite transactions, structured-cloned values, generated keys, key
+  paths, get, getKey, put, add, delete, clear, count, getAll, getAllKeys, key
+  ranges, and forward/reverse object-store cursors.
 - IndexedDB keys have their own type order: number, date, string, binary,
   array. NaN, infinities, malformed ranges, and excessive nesting fail at
   both the page and browser boundaries. Generated inline keys are injected
@@ -56,13 +66,50 @@ fallback.
 - Persistence uses a recoverable profile file. Tests check origin isolation,
   ordering, rollback, conflicting commits, malformed keys, nested generated
   keys, and reopening the same profile in a second hidden browser process.
+- Worker requests use the same browser-owned service and tuple-origin store as
+  their page. Replies return to the initiating worker's event loop; late replies
+  after worker termination cannot invoke a page callback. A hidden integration
+  fixture verifies worker write → page read/write → worker read. Another hidden
+  fixture terminates two Workers holding 64 successful browser Steps before
+  Commit, verifying rollback and session-capacity recovery. Opaque clients
+  are rejected using their committed origin, even if their response URL is a
+  non-opaque URL. Worker requests retain the existing 4 MiB IPC message limit;
+  one worker task can queue at most 64 requests and 8 MiB of request payloads.
+  Required replies use a separate broker lane capped at eight messages and
+  16 MiB of queued payloads; if that lane overflows,
+  the renderer session fails explicitly and uncommitted browser sessions abort
+  rather than stalling the browser-wide database service.
 
 This is not the complete IndexedDB API. Indexes, multiEntry/unique index
-constraints, worker realms, full connection blocking/versionchange
-coordination, cursor direction over indexes, the newer getAllRecords API,
-and complete cross-tab transaction scheduling are not implemented. Stored
-data is subject to an alpha quota and is not a substitute for a mature
-browser's durability guarantees.
+constraints, cursor direction over indexes, and worker realms have baseline
+coverage, but full connection blocking/versionchange coordination, the newer
+getAllRecords API, and complete cross-tab transaction scheduling are not
+implemented. Worker termination sends an ordered browser-side retirement
+control: earlier queued Steps finish first, then uncommitted sessions are
+aborted and their capacity is released. A late Step from that Worker client
+cannot recreate a session. Navigation, tab close, and renderer replacement
+also retire affected sessions; the idle limit remains a fallback for abandoned
+sessions. Stored data is subject to an alpha quota and is not a substitute
+for a mature browser's durability guarantees.
+
+## Dedicated Worker command mailbox
+
+The document renderer delivers page messages, MessagePort messages and closes,
+Fetch events, IndexedDB replies, and WebSocket events to each dedicated Worker
+through one nonblocking mailbox. The mailbox holds at most 1,024 queued commands
+per Worker and charges retained payloads against 32 MiB per Worker and 128 MiB
+across Workers in one document. An in-flight command keeps its byte charge
+until its Worker callback completes. These are implementation safety limits,
+not limits defined by the HTML Standard.
+
+If a command cannot be admitted, the renderer reports a Worker error and
+retires that Worker; it does not block the document or silently discard the
+message. Retirement sets an independent cancellation flag so a full mailbox
+cannot prevent termination, aborts active Worker Fetch requests, retires its
+browser-owned IndexedDB client, and cancels its live WebSockets. Late replies
+cannot be delivered to the page or a replacement Worker. Unit tests cover
+count and byte saturation, release after reception and disconnection, and
+Fetch/IndexedDB/WebSocket teardown on overflow.
 
 ## Temporal and color input states
 

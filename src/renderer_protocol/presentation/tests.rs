@@ -108,6 +108,7 @@ pub(super) fn sample() -> RendererPresentation {
             forms: Vec::new(),
         },
         images: Vec::new(),
+        retired_image_keys: Vec::new(),
         glyph_epoch: 1,
         glyphs: vec![PresentedGlyphRaster {
             id: 1,

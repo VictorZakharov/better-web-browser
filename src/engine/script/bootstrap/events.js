@@ -126,6 +126,10 @@
     const proxyStorage = new WeakMap();
     const storageProxy = new WeakMap();
     const legacyEventTargets = new WeakMap();
+    let isNativeAbortSignal = () => false;
+    Object.defineProperty(globalThis, '__installAbortSignalBrand', {
+        configurable: true, value: checker => { isNativeAbortSignal = checker; }
+    });
 
     const storageFor = target => proxyStorage.get(target) || target;
     const receiverFor = target => storageProxy.get(target) || target;
@@ -138,19 +142,28 @@
         options == null ? false : !!Object(options).capture;
     const listenerOptions = options => {
         if (typeof options === 'boolean' || options == null)
-            return { capture: captureOption(options), once: false, passive: false };
+            return { capture: captureOption(options), once: false, passive: false, signal: undefined };
         options = Object(options);
-        return { capture: !!options.capture, passive: !!options.passive, once: !!options.once };
+        const capture = !!options.capture;
+        const once = !!options.once;
+        const passive = !!options.passive;
+        const signal = options.signal;
+        if (signal != null && !isNativeAbortSignal(signal))
+            throw new TypeError('Event listener signal must be an AbortSignal');
+        return { capture, once, passive, signal };
     };
     const removeListener = (target, listener) => {
+        if (listener.removed) return;
         listener.removed = true;
         const listeners = listenerStore.get(target);
         const index = listeners?.indexOf(listener) ?? -1;
         if (index >= 0) listeners.splice(index, 1);
+        if (listener.abortRecord) removeListener(storageFor(listener.signal), listener.abortRecord);
     };
     const addListener = (target, type, callback, options) => {
         type = String(type);
         const flattened = listenerOptions(options);
+        if (flattened.signal?.aborted) return;
         if (callback == null) return;
         const kind = typeof callback;
         if (kind !== 'function' && kind !== 'object') return;
@@ -159,6 +172,13 @@
             listener.callback === callback && listener.capture === flattened.capture)) return;
         const listener = { type, callback, ...flattened, removed: false };
         listeners.push(listener);
+        // A signal removes the precise listener record, including during a dispatch
+        // snapshot. The abort observer is unregistered when once/manual removal wins.
+        // https://dom.spec.whatwg.org/#concept-event-listener-add
+        if (flattened.signal) {
+            listener.abortRecord = addListener(storageFor(flattened.signal), 'abort',
+                () => removeListener(target, listener), { once: true });
+        }
         return listener;
     };
 

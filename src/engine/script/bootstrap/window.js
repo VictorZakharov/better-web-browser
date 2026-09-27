@@ -102,6 +102,10 @@
     windowObject.HTMLMeterElement = HTMLMeterElement;
     windowObject.HTMLTemplateElement = HTMLTemplateElement;
     windowObject.HTMLFormElement = HTMLFormElement;
+    windowObject.NodeList = NodeList;
+    windowObject.RadioNodeList = RadioNodeList;
+    windowObject.HTMLFormControlsCollection = HTMLFormControlsCollection;
+    windowObject.HTMLOptionsCollection = HTMLOptionsCollection;
     windowObject.ValidityState = ValidityState;
     windowObject.Document = Document;
     windowObject.HTMLDocument = Document;

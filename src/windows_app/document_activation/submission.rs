@@ -35,6 +35,11 @@ impl BrowserState {
             }
         };
         let start = DocumentStart {
+            notification_permission: self
+                .app
+                .notifications
+                .borrow()
+                .permission_for_url(&page.final_url),
             document,
             url: page.final_url.clone(),
             status: page.status,

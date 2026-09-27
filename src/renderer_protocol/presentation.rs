@@ -175,6 +175,8 @@ pub struct RendererPresentation {
     pub reader: Document,
     pub layout: PresentedLayout,
     pub images: Vec<PresentedImage>,
+    /// Previously sent image keys no longer owned by this document revision.
+    pub retired_image_keys: Vec<String>,
     pub glyph_epoch: u64,
     pub glyphs: Vec<PresentedGlyphRaster>,
     pub runtime: RuntimeReport,

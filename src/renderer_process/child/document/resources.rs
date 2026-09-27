@@ -3,6 +3,7 @@
 pub(super) mod events;
 mod installation;
 mod lifecycle;
+mod notifications;
 pub(super) mod preloads;
 mod streaming;
 mod stylesheets;

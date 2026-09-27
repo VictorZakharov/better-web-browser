@@ -2,6 +2,7 @@ use super::*;
 use crate::engine::dom;
 mod dom_parser;
 mod serialization;
+mod url_pattern;
 mod url_resolution;
 mod xhr_document;
 
@@ -31,6 +32,7 @@ mod canvas_bitmap;
 mod canvas_blend;
 mod canvas_filter;
 mod canvas_focus_ring;
+mod canvas_presentation;
 mod canvas_shadow;
 mod canvas_stroke_styles;
 mod canvas_svg_path;

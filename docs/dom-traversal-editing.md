@@ -47,12 +47,18 @@ that traverse, mutate, or select nodes while rendering is in progress.
   expose string and File payloads with normalized MIME types. A pointer drag
   shares one store through trusted drag events. It is writable during
   `dragstart`, protected during motion, readable during `drop`, and disabled
-  afterward. A target must cancel `dragover` and negotiate an allowed effect
-  before the drop can deliver data.
+  afterward. Links and images contribute a resolved `text/uri-list` item before
+  `dragstart`. Starting the drag cancels the pointer stream; canceling `drag` or
+  pressing Escape aborts it. An ordinary target must cancel `dragenter` to
+  become the current target, cancel `dragover` with a permitted effect to
+  receive `drop`, and cancel `drop` for that operation to complete. If
+  `dragenter` is not canceled, subsequent `dragover` targets the body instead.
 - The current interaction is same-document pointer drag. Drag previews,
-  cross-window drag, native OS files, and clipboard-backed DataTransfer are
-  not provided. Exposing the interfaces is not a claim that those workflows
-  are implemented.
+  cross-window drag, native OS files, selected-text and editable-field default
+  drops, and clipboard-backed DataTransfer are not provided. The current
+  implementation also reuses one `DataTransfer` object through the drag rather
+  than exposing a fresh event-scoped object each time. Exposing the interfaces
+  is not a claim that those workflows are implemented.
 
 The behavior follows the [DOM Standard](https://dom.spec.whatwg.org/),
 [HTML editing](https://html.spec.whatwg.org/multipage/interaction.html#editing),

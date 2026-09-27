@@ -1,6 +1,46 @@
 use super::*;
 
 #[test]
+fn keepalive_intent_round_trips_and_cannot_be_forged_for_subresources() {
+    let head = FetchRequestHead {
+        client: Default::default(),
+        resulting_client: Default::default(),
+        embedding_client: Default::default(),
+        request_id: 9,
+        document: DocumentId::new(3).unwrap(),
+        initiator: FetchInitiator::ScriptApi,
+        destination: ResourceDestination::Fetch,
+        script_source: None,
+        url: "https://example.test/collect".into(),
+        method: "POST".into(),
+        headers: Vec::new(),
+        mode: FetchMode::Cors,
+        credentials: FetchCredentials::SameOrigin,
+        cache: FetchCache::Default,
+        redirect: FetchRedirect::Follow,
+        referrer: FetchReferrer::Client,
+        referrer_policy: FetchReferrerPolicy::StrictOriginWhenCrossOrigin,
+        body_length: 5,
+        keepalive: true,
+    };
+    let message = RendererMessage::FetchRequestStart {
+        batch_id: 7,
+        request: head.clone(),
+    };
+    let decoded = FrameReader::new(Cursor::new(encoded_renderer(&message)), session())
+        .read_renderer()
+        .unwrap();
+    assert_eq!(decoded, message);
+
+    let mut forged = head.clone();
+    forged.initiator = FetchInitiator::Subresource;
+    assert!(forged.validate().is_err());
+    forged = head;
+    forged.body_length = crate::limits::MAX_KEEPALIVE_BODY_BYTES as u32 + 1;
+    assert!(forged.validate().is_err());
+}
+
+#[test]
 fn fetch_credit_is_directional_and_rejects_zero_request_identity() {
     let message = RendererMessage::FetchResponseConsumed {
         document: DocumentId::new(4).unwrap(),

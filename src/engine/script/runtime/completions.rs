@@ -1,7 +1,8 @@
 //! Asynchronous Fetch and worker event delivery into the retained realm.
 use super::*;
 use crate::renderer_protocol::{
-    DatabaseEvent, SpeechEvent, SpeechUpdate, WebSocketEvent, WebSocketEventKind,
+    DatabaseEvent, NotificationEvent, NotificationUpdate, SpeechEvent, SpeechUpdate,
+    WebSocketEvent, WebSocketEventKind,
 };
 
 enum WorkerDelivery {
@@ -13,6 +14,49 @@ enum WorkerDelivery {
 }
 
 impl ScriptRuntime {
+    pub fn deliver_notification_update(&mut self, update: NotificationUpdate) -> ScriptOutcome {
+        let id = update.request_id as u32;
+        if let Some(child) = self.child_for_fetch(id) {
+            let owner = child.host.borrow().document.id();
+            let outcome = child.deliver_notification_update(update);
+            let outcome = self.collect_frame_result(owner, outcome);
+            return self.finish_guarded_run(Ok(outcome));
+        }
+        if !self.initialized {
+            return lifecycle_error("the document's initial scripts have not executed");
+        }
+        let Some(context) = self.context.as_deref_mut() else {
+            return inactive_runtime_outcome();
+        };
+        let terminal = matches!(
+            update.event,
+            NotificationEvent::Permission(_) | NotificationEvent::Closed | NotificationEvent::Error
+        );
+        let host = Rc::clone(&self.host);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            host.borrow_mut().begin_task();
+            if let NotificationEvent::Permission(permission) = update.event {
+                host.borrow_mut().notification_permission = permission;
+            }
+            let mut outcome = ScriptOutcome::default();
+            let started = Instant::now();
+            if let Err(error) =
+                super::super::host_call::notification::deliver_event(context, &update)
+            {
+                outcome
+                    .errors
+                    .push(format!("Notification event callback: {error}"));
+            }
+            super::module_lifecycle::drain(context, &host, &mut outcome);
+            outcome.record_timing("JavaScript Notification event", started.elapsed());
+            outcome
+        }));
+        if terminal {
+            self.host.borrow().fetch_identifiers.borrow_mut().finish(id);
+        }
+        self.finish_guarded_run(result)
+    }
+
     pub fn deliver_speech_update(&mut self, update: SpeechUpdate) -> ScriptOutcome {
         let id = update.utterance_id as u32;
         if let Some(child) = self.child_for_fetch(id) {

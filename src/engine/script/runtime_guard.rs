@@ -101,6 +101,9 @@ pub(super) fn finish_host(
         .speech_actions
         .append(&mut state.pending_speech_actions);
     outcome
+        .notification_actions
+        .append(&mut state.pending_notification_actions);
+    outcome
         .worker_actions
         .append(&mut state.pending_worker_actions);
     outcome

@@ -15,6 +15,7 @@ mod document_state;
 mod fullscreen;
 mod incident_log;
 mod navigation_transaction;
+mod notifications;
 mod page_controls;
 mod page_crash;
 mod paint_index;
@@ -69,13 +70,15 @@ use platform::*;
 use process_metrics::{process_cpu_ticks, process_memory};
 use reader_layout::layout_document;
 use rendering_resources::{DynamicFonts, FontKind, Fonts, GlyphBitmaps, ImageBitmaps};
-use std::collections::HashMap;
-use std::io;
-use std::path::PathBuf;
-use std::ptr::{null, null_mut};
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    io,
+    path::PathBuf,
+    ptr::{null, null_mut},
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use user_agent_options::ID_OPTIONS;
 use viewport::{DrawItem, Surface};
 use win32_helpers::*;
@@ -159,33 +162,5 @@ pub fn show_fatal_error(error: &str) {
     let title = wide(&format!("{PRODUCT_NAME} failed to start"));
     unsafe {
         MessageBoxW(null_mut(), message.as_ptr(), title.as_ptr(), 0x10);
-    }
-}
-
-unsafe fn register_class(
-    instance: Hinstance,
-    name: &str,
-    window_proc: WindowProc,
-    background_color: usize,
-) -> Result<(), String> {
-    let name = wide(name);
-    let class = WindowClassEx {
-        size: size_of::<WindowClassEx>() as u32,
-        style: 0x0002 | 0x0001,
-        window_proc: Some(window_proc),
-        class_extra: 0,
-        window_extra: 0,
-        instance,
-        icon: null_mut(),
-        cursor: LoadCursorW(null_mut(), int_resource(IDC_ARROW)),
-        background: (background_color + 1) as Hbrush,
-        menu_name: null(),
-        class_name: name.as_ptr(),
-        small_icon: null_mut(),
-    };
-    if RegisterClassExW(&class) == 0 {
-        Err(last_error(&format!("register {name:?} window class")))
-    } else {
-        Ok(())
     }
 }

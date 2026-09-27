@@ -14,6 +14,79 @@ pub(super) struct OutgoingFetch {
 }
 
 impl Broker {
+    pub(super) fn process_database_events(&mut self) {
+        if self
+            .resources()
+            .database_overflow
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            self.protocol_failure("renderer IndexedDB response mailbox overflow".into());
+            return;
+        }
+        for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
+            if !self.writer().has_page_command_capacity() {
+                break;
+            }
+            let event = match self.resources().database_events.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            };
+            self.resources()
+                .database_queued_bytes
+                .fetch_sub(event.payload.len(), std::sync::atomic::Ordering::AcqRel);
+            if self.active_document != Some(event.document) {
+                continue;
+            }
+            let result = event
+                .validate()
+                .map_err(|error| error.to_string())
+                .and_then(|_| {
+                    self.writer()
+                        .send_browser(&BrowserMessage::DatabaseEvent(event))
+                        .map_err(|error| error.to_string())
+                });
+            if let Err(error) = result {
+                self.protocol_failure(error);
+                break;
+            }
+        }
+    }
+
+    pub(super) fn process_notification_updates(&mut self) {
+        if self
+            .resources()
+            .notification_overflow
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            self.protocol_failure("renderer Notification control mailbox overflow".into());
+            return;
+        }
+        for _ in 0..crate::limits::MAX_QUEUED_FETCH_STREAM_CHUNKS {
+            if !self.writer().has_page_command_capacity() {
+                break;
+            }
+            let update = match self.resources().notification_updates.try_recv() {
+                Ok(update) => update,
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            };
+            if self.active_document != Some(update.document) {
+                continue;
+            }
+            let result = update
+                .validate()
+                .map_err(|error| error.to_string())
+                .and_then(|_| {
+                    self.writer()
+                        .send_browser(&BrowserMessage::NotificationUpdate(update))
+                        .map_err(|error| error.to_string())
+                });
+            if let Err(error) = result {
+                self.protocol_failure(error);
+                break;
+            }
+        }
+    }
+
     pub(super) fn register_fetch_response_policies(
         &mut self,
         requests: &[RendererFetchRequest],
@@ -61,19 +134,19 @@ impl Broker {
 
     fn process_fetch_stream_event(&mut self, event: FetchStreamEvent) -> Result<(), String> {
         match event {
-            FetchStreamEvent::Database(event) => {
-                if self.active_document == Some(event.document) {
-                    event.validate().map_err(|error| error.to_string())?;
-                    self.writer()
-                        .send_browser(&BrowserMessage::DatabaseEvent(event))
-                        .map_err(|error| error.to_string())?;
-                }
-            }
             FetchStreamEvent::Speech(update) => {
                 if self.active_document == Some(update.document) {
                     update.validate().map_err(|error| error.to_string())?;
                     self.writer()
                         .send_browser(&BrowserMessage::SpeechUpdate(update))
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            FetchStreamEvent::Notification(update) => {
+                if self.active_document == Some(update.document) {
+                    update.validate().map_err(|error| error.to_string())?;
+                    self.writer()
+                        .send_browser(&BrowserMessage::NotificationUpdate(update))
                         .map_err(|error| error.to_string())?;
                 }
             }

@@ -1,17 +1,21 @@
 //! Browser-owned, origin-authoritative IndexedDB worker. The UI never does disk I/O.
+mod worker;
+pub(in crate::windows_app) use worker::DatabaseWorker;
+
 use super::super::{BrowserState, tabs::TabId};
 use better_web_browser::indexed_db::{
     DbOperation, DbResult, DbSession, IndexedDb, StoreDefinition, TransactionMode,
 };
 use better_web_browser::renderer_process::DatabaseEventSink;
-use better_web_browser::renderer_protocol::{DatabaseCommand, DatabaseEvent, DocumentId};
+use better_web_browser::renderer_protocol::{
+    DATABASE_RETIRE_CLIENT_PAYLOAD, DatabaseCommand, DatabaseEvent, DocumentId,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const QUEUE_CAPACITY: usize = 64;
 const SESSION_CAPACITY: usize = 64;
 const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(120);
 
@@ -83,47 +87,6 @@ struct SessionValue {
     last_activity: Instant,
 }
 
-pub(in crate::windows_app) struct DatabaseWorker {
-    sender: mpsc::SyncSender<Job>,
-}
-
-impl DatabaseWorker {
-    pub(in crate::windows_app) fn new(database: Arc<IndexedDb>) -> Result<Self, String> {
-        let (sender, receiver) = mpsc::sync_channel::<Job>(QUEUE_CAPACITY);
-        std::thread::Builder::new()
-            .name("breeze-indexed-db".into())
-            .spawn(move || {
-                let mut sessions = HashMap::new();
-                while let Ok(job) = receiver.recv() {
-                    sessions.retain(|_, entry: &mut SessionValue| {
-                        entry.last_activity.elapsed() < SESSION_IDLE_LIMIT
-                    });
-                    let payload = execute(&database, &job, &mut sessions);
-                    let _ = job.sink.send(DatabaseEvent {
-                        document: job.document,
-                        request_id: job.request_id,
-                        payload: payload.to_string(),
-                    });
-                }
-            })
-            .map_err(|error| format!("start IndexedDB worker: {error}"))?;
-        Ok(Self { sender })
-    }
-
-    fn submit(&self, job: Job) {
-        if let Err(error) = self.sender.try_send(job) {
-            let job = match error {
-                mpsc::TrySendError::Full(job) | mpsc::TrySendError::Disconnected(job) => job,
-            };
-            let _ = job.sink.send(DatabaseEvent {
-                document: job.document,
-                request_id: job.request_id,
-                payload: error_payload("QuotaExceededError", "IndexedDB request queue is full"),
-            });
-        }
-    }
-}
-
 impl BrowserState {
     pub(in crate::windows_app) fn handle_database_command(
         &mut self,
@@ -149,7 +112,7 @@ impl BrowserState {
         };
         let Ok(owner) = clients.resolve_client(command.document, &document_url, command.client)
         else {
-            let _ = sink.send(DatabaseEvent {
+            let _ = sink.try_send(DatabaseEvent {
                 document: command.document,
                 request_id: command.request_id,
                 payload: error_payload(
@@ -159,16 +122,57 @@ impl BrowserState {
             });
             return;
         };
+        if command.payload == DATABASE_RETIRE_CLIENT_PAYLOAD {
+            // Only a committed Worker client may retire its own sessions. The
+            // control remains ordered after its earlier Step requests.
+            if command.client.id & (1_u64 << 63) != 0 && command.request_id & (1_u64 << 63) != 0 {
+                self.app
+                    .database_worker
+                    .retire_client(tab_id, command.document, command.client.id);
+            }
+            return;
+        }
+        // The committed client origin is authoritative. Its URL can remain a
+        // non-opaque response URL even when sandboxing narrows the client origin.
+        let Some(origin) = database_origin(&owner) else {
+            let _ = sink.try_send(DatabaseEvent {
+                document: command.document,
+                request_id: command.request_id,
+                payload: error_payload(
+                    "SecurityError",
+                    "IndexedDB is unavailable for an opaque origin",
+                ),
+            });
+            return;
+        };
         self.app.database_worker.submit(Job {
             tab_id,
             document: command.document,
             client_id: command.client.id,
             request_id: command.request_id,
-            origin_url: owner.url,
+            origin_url: origin,
             payload: command.payload,
             sink,
         });
     }
+}
+
+impl BrowserState {
+    pub(in crate::windows_app) fn retire_database_for_tab(&self, tab: TabId) {
+        if let Some(document) = self
+            .tabs
+            .iter()
+            .find(|candidate| candidate.id == tab)
+            .and_then(|candidate| candidate.navigation.active_document())
+        {
+            self.app.database_worker.retire_document(tab, document);
+        }
+    }
+}
+
+fn database_origin(client: &super::clients::Client) -> Option<String> {
+    let origin = client.origin.serialize();
+    (origin != "null").then_some(origin)
 }
 
 fn execute(
@@ -318,4 +322,25 @@ fn results_payload(kind: &str, results: Vec<DbResult>) -> Value {
 
 fn error_payload(name: &str, message: &str) -> String {
     json!({"kind":"error","name":name,"message":message}).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use better_web_browser::fetch::Origin;
+
+    #[test]
+    fn database_origin_uses_the_committed_client_not_its_url() {
+        let mut client = super::super::clients::Client {
+            policy: Arc::new(Default::default()),
+            url: "https://host.test/worker.js".into(),
+            origin: Origin::opaque(),
+        };
+        assert_eq!(database_origin(&client), None);
+        client.origin = Origin::parse("https://other.test/page").unwrap();
+        assert_eq!(
+            database_origin(&client).as_deref(),
+            Some("https://other.test")
+        );
+    }
 }

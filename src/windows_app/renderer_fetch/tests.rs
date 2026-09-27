@@ -21,6 +21,7 @@ pub(super) fn intent(document: DocumentId, url: &str) -> RendererFetchRequest {
             referrer: FetchReferrer::Client,
             referrer_policy: FetchReferrerPolicy::StrictOriginWhenCrossOrigin,
             body_length: 0,
+            keepalive: false,
         },
         body: Vec::new(),
     }

@@ -67,14 +67,7 @@ impl ChildConnection {
                 ))
                 .map_err(|error| error.to_string())?;
         }
-        for assignment in outcome.cookie_updates.drain(..) {
-            self.writer
-                .send_renderer(&RendererMessage::CookieMutation(CookieMutation {
-                    document,
-                    assignment,
-                }))
-                .map_err(|error| error.to_string())?;
-        }
+        self.send_cookie_updates(document, outcome)?;
         for write in outcome.storage_updates.drain(..) {
             self.writer
                 .send_renderer(&RendererMessage::StorageMutation(StorageMutationRequest {
@@ -82,6 +75,34 @@ impl ChildConnection {
                     sequence: write.sequence,
                     source_url: write.source_url,
                     mutation: write.mutation,
+                }))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Flush state that the browser must apply before any request started in the
+    /// same script task. Leave navigation, storage, and UI commands in their
+    /// normal state-mutation checkpoint.
+    pub(in crate::renderer_process::child) fn send_network_state_updates(
+        &mut self,
+        document: DocumentId,
+        outcome: &mut crate::engine::ScriptOutcome,
+    ) -> Result<(), String> {
+        self.send_policy_updates(document, outcome)?;
+        self.send_cookie_updates(document, outcome)
+    }
+
+    fn send_cookie_updates(
+        &mut self,
+        document: DocumentId,
+        outcome: &mut crate::engine::ScriptOutcome,
+    ) -> Result<(), String> {
+        for assignment in outcome.cookie_updates.drain(..) {
+            self.writer
+                .send_renderer(&RendererMessage::CookieMutation(CookieMutation {
+                    document,
+                    assignment,
                 }))
                 .map_err(|error| error.to_string())?;
         }

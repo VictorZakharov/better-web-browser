@@ -153,6 +153,7 @@ pub(super) fn page_resource_request(
                 _ => FetchReferrerPolicy::StrictOriginWhenCrossOrigin,
             },
             body_length: 0,
+            keepalive: false,
         },
         body: Vec::new(),
     }
@@ -204,6 +205,7 @@ pub(super) fn script_api_request(
             referrer: referrer(request.referrer),
             referrer_policy: referrer_policy(request.referrer_policy),
             body_length: body.len() as u32,
+            keepalive: request.keepalive,
         },
         body,
     }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::engine::script::ScriptFetchAction;
+mod canvas;
 mod cross_origin;
 mod effects;
 mod failures;
