@@ -1,6 +1,99 @@
 use super::*;
 
 #[test]
+fn parser_import_map_resolves_a_bare_dependency_before_module_preparation() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><div id=status>pending</div>
+        <script type=' ImPoRtMaP '>{"imports":{"example-lib":"/mapped.js"}}</script>
+        <script type=module>
+          import { value } from 'example-lib';
+          document.getElementById('status').textContent = value;
+        </script>"#,
+    );
+    driver.until_text("pending");
+    until_request(&mut driver, "mapped.js");
+    driver.respond(
+        "mapped.js",
+        "export const value = 'mapped dependency';",
+        200,
+    );
+    driver.until_text("mapped dependency");
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
+fn document_write_import_map_precedes_its_module_script() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><div id=status>pending</div><script>
+          document.write('<script type=importmap>{"imports":{"written":"/written.js"}}<\/script><script type=module>import { value } from "written"; document.getElementById("status").textContent=value;<\/script>');
+        </script>"#,
+    );
+    driver.until_text("pending");
+    until_request(&mut driver, "written.js");
+    driver.respond("written.js", "export const value = 'written map';", 200);
+    driver.until_text("written map");
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
+fn parser_import_map_obeys_inline_script_policy() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let mut driver = Driver::new(
+        r#"<!doctype html><meta http-equiv='Content-Security-Policy' content="script-src 'nonce-allowed'">
+        <div id=status>pending</div>
+        <script nonce=allowed>
+          document.addEventListener('error', event => {
+            if (event.target.id === 'module') document.getElementById('status').textContent = 'map blocked';
+          }, true);
+        </script>
+        <script type=importmap>{"imports":{"protected":"/must-not-fetch.js"}}</script>
+        <script id=module type=module nonce=allowed>import 'protected';</script>"#,
+    );
+    let expected = "bare module specifier is not mapped: protected";
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        assert!(Instant::now() < deadline, "no module-resolution error");
+        let (errors, advance) = match driver
+            .session
+            .wait_for_event(Duration::from_secs(3))
+            .unwrap()
+        {
+            RendererEvent::Presentation(presentation) => (
+                presentation.runtime.errors.clone(),
+                presentation.next_timer_micros.is_some(),
+            ),
+            RendererEvent::RuntimeUpdate(update) => (
+                update.runtime.errors.clone(),
+                update.next_timer_micros.is_some(),
+            ),
+            RendererEvent::PolicyMutation(_) | RendererEvent::Diagnostic { .. } => continue,
+            RendererEvent::FetchBatch { requests, .. } => {
+                for request in requests {
+                    driver.requests.insert(request.head.url.clone(), request);
+                }
+                continue;
+            }
+            event => panic!("unexpected event: {event:?}"),
+        };
+        if errors.iter().any(|error| error.contains(expected)) {
+            break;
+        }
+        if advance {
+            driver.advance();
+        }
+    }
+    assert!(
+        !driver
+            .requests
+            .keys()
+            .any(|url| url.ends_with("must-not-fetch.js"))
+    );
+    driver.session.shutdown().unwrap();
+}
+
+#[test]
 fn deferred_list_waits_in_order_while_async_and_first_presentation_proceed() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let mut driver = Driver::new(

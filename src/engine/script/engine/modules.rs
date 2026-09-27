@@ -1,3 +1,4 @@
+use super::bridge::HostBridge;
 use super::value::{JsError, JsErrorKind, JsResult};
 use crate::engine::script::module_loader::resolve_specifier;
 use std::cell::RefCell;
@@ -127,7 +128,7 @@ pub(super) fn evaluate(
                 .get(&url)
                 .map(|origin| origin.base.clone())
                 .unwrap_or_else(|| url.clone());
-            let dependency = resolve_specifier(&base, &specifier).map_err(type_error)?;
+            let dependency = resolve_in_context(context, &base, &specifier).map_err(type_error)?;
             if dependency != root_url
                 && !loaded_sources.contains_key(&dependency)
                 && !registry.by_url.borrow().contains_key(&dependency)
@@ -228,7 +229,7 @@ pub(super) fn resolve_module<'s>(
                 .map(|origin| origin.base.clone())
         })
         .unwrap_or(base);
-    let url = match resolve_specifier(&base, &specifier) {
+    let url = match resolve_in_context(context, &base, &specifier) {
         Ok(url) => url,
         Err(error) => {
             let message = v8::String::new(scope, &error)?;
@@ -239,6 +240,22 @@ pub(super) fn resolve_module<'s>(
     };
     let module = registry.by_url.borrow().get(&url).cloned()?;
     Some(v8::Local::new(scope, module))
+}
+
+/// Both graph discovery and V8 instantiation must consult the document's same
+/// import map, otherwise an apparently fetched dependency can fail to link.
+fn resolve_in_context(
+    context: v8::Local<'_, v8::Context>,
+    base: &str,
+    specifier: &str,
+) -> Result<String, String> {
+    if let Some(bridge) = context.get_slot::<HostBridge>()
+        && let HostBridge::Document(host) = &*bridge
+        && let Some(host) = host.upgrade()
+    {
+        return host.borrow().module_loader.resolve(base, specifier);
+    }
+    resolve_specifier(base, specifier)
 }
 
 pub(super) extern "C" fn initialize_import_meta(
@@ -273,6 +290,48 @@ pub(super) extern "C" fn initialize_import_meta(
         return;
     };
     let _ = meta.create_data_property(scope, key.into(), value.into());
+    let Some(resolve_key) = v8::String::new(scope, "resolve") else {
+        return;
+    };
+    let Some(resolve) = v8::Function::builder(resolve_import_meta)
+        .data(value.into())
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope)
+    else {
+        return;
+    };
+    let _ = meta.create_data_property(scope, resolve_key.into(), resolve.into());
+}
+
+/// `import.meta.resolve()` uses the referring module's URL, not the document URL.
+/// Keep it on the same document import-map path as static and dynamic imports.
+fn resolve_import_meta(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut result: v8::ReturnValue,
+) {
+    let Ok(base) = v8::Local::<v8::String>::try_from(args.data()) else {
+        return;
+    };
+    let base = base.to_rust_string_lossy(scope);
+    let Some(specifier) = args.get(0).to_string(scope) else {
+        return;
+    };
+    let specifier = specifier.to_rust_string_lossy(scope);
+    let url = resolve_in_context(scope.get_current_context(), &base, &specifier);
+    match url {
+        Ok(url) => {
+            if let Some(url) = v8::String::new(scope, &url) {
+                result.set(url.into());
+            }
+        }
+        Err(error) => {
+            if let Some(message) = v8::String::new(scope, &error) {
+                let exception = v8::Exception::type_error(scope, message);
+                scope.throw_exception(exception);
+            }
+        }
+    }
 }
 
 fn caught_error(

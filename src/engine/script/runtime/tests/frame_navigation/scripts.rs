@@ -71,6 +71,32 @@ fn child_dynamic_import_checks_mime_and_keeps_module_realm() {
 }
 
 #[test]
+fn child_parser_import_map_resolves_a_following_module() {
+    let (dom, mut runtime) = start(
+        r#"<body><script>
+        const f = document.createElement('iframe');
+        f.srcdoc = '<script type=importmap>{"imports":{"child-lib":"/child-mapped.js"}}<\/script><script type=module>import { value } from "child-lib"; parent.childMapValue=value;<\/script>';
+        document.body.append(f);
+    </script>"#,
+    );
+    let (id, fetch) = request(&mut runtime);
+    assert_eq!(fetch.url.as_str(), "https://example.com/child-mapped.js");
+    let mut module = response(fetch.url.as_str(), "export const value = 43;");
+    module
+        .headers
+        .append("content-type", "text/javascript")
+        .unwrap();
+    let result = runtime.complete_fetch_with_loader(id, Ok(module), None);
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    drain(&mut runtime);
+    evaluate(
+        &mut runtime,
+        &dom,
+        "if(childMapValue!==43) throw Error('child import map');",
+    );
+}
+
+#[test]
 fn initial_blank_location_navigation_does_not_navigate_parent() {
     let (dom, mut runtime) = start(
         r#"<body><script>

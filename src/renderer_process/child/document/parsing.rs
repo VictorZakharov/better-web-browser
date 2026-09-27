@@ -118,7 +118,13 @@ impl DocumentRuntime {
                 }
                 ParserStep::NeedInput => {}
                 ParserStep::Script(node) => {
-                    if let Some(script) = self.page.prepare_parser_script(node) {
+                    let import_map = self
+                        .script_runtime
+                        .as_mut()
+                        .and_then(|runtime| runtime.process_parser_import_map(&node));
+                    if let Some(import_map) = import_map {
+                        merge_outcome(outcome, import_map, self.page.dom.document.id());
+                    } else if let Some(script) = self.page.prepare_parser_script(node) {
                         if let Some(runtime) = self.script_runtime.as_mut() {
                             runtime.mark_parser_script_prepared(&script.node);
                         }

@@ -8,7 +8,9 @@
             if (next.customElement) constructParserElement(target, wrap(next.customElement));
             if (next.node) {
                 const prepared = host('parserWritePrepare', nodeId(target), next.node);
-                if (prepared) {
+                if (prepared && prepared.importMapError) {
+                    wrap(next.node).dispatchEvent(new Event('error'));
+                } else if (prepared) {
                     const previous = document._currentScript;
                     document._currentScript = wrap(next.node);
                     host('parserScriptEnter', nodeId(target));

@@ -207,6 +207,7 @@ impl Driver {
                         self.advance();
                     }
                 }
+                RendererEvent::PolicyMutation(_) => {}
                 RendererEvent::Diagnostic { .. } => {}
                 event => panic!("unexpected event: {event:?}"),
             }

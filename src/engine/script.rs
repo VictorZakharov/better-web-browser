@@ -28,6 +28,7 @@ mod host_call;
 mod host_profiling;
 mod host_state;
 mod idle_callbacks;
+pub(crate) mod import_maps;
 mod media_environment;
 mod media_host;
 mod module_evaluation;

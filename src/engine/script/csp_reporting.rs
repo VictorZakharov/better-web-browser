@@ -2,7 +2,7 @@
 //! responsible script task; sandbox denials are not CSP violations.
 use super::super::*;
 
-pub(super) fn queue_script_violation(
+pub(in crate::engine::script) fn queue_script_violation(
     context: &mut Context,
     host: &Rc<RefCell<HostState>>,
     outcome: &mut ScriptOutcome,
