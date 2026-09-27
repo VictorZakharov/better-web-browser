@@ -1,7 +1,11 @@
-//! HTTP text decoding with BOM, header, and bounded HTML-meta charset detection.
+//! Platform-independent HTTP text decoding shared by the script runtime and WinHTTP.
+//! Handles BOMs, headers, and bounded HTML-meta charset detection.
 
 use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE};
 pub(crate) mod stream;
+pub(crate) use stream::DocumentDecoder;
+#[cfg(test)]
+mod tests;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedText {
