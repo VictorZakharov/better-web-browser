@@ -17,9 +17,14 @@ Supported behavior:
   matches any pathname, query, and fragment on that origin. An omitted port in
   an authority string matches the default port, not every port.
 - Literal component matching, escaped punctuation, full wildcards, named
-  `:part` captures, optional `:part?` pathname segments, case-folded hostname
-  and scheme literals, and `ignoreCase` for pathname, search, and hash. Literal
-  internationalized hostnames and spaces in paths, queries, and fragments use
+  `:part` captures, optional `:part?` segments, and `:part+`/`:part*` repetition.
+  A pathname capture preceded by `/` repeats complete slash-prefixed segments;
+  hostname repetition stays within a label because `.` is not an automatic
+  prefix. A single unmodified named capture may also have literal text on
+  either side within its segment, such as
+  `/file-:name.html`. Hostname and scheme literals are case-folded; `ignoreCase`
+  applies to pathname, search, and hash. Literal internationalized hostnames
+  and spaces in paths, queries, and fragments use
   URL serialization rather than raw string comparison.
 - `test()` and `exec()` for absolute or base-relative URL strings and component
   dictionaries. `exec()` reports original inputs and per-component input and
@@ -28,12 +33,14 @@ Supported behavior:
 
 The compiler deliberately rejects syntax it cannot safely match, rather than
 silently treating it as a literal or advertising regexp support. Custom regexp
-groups, braced groups, repeated named groups, `+` repetition, adjacent captures,
-and mixed literal-and-capture pathname or hostname segments are not yet
-supported. Each component allows at most one full `*` wildcard; pathname `*`
-must be terminal. `hasRegExpGroups` is always `false` for successfully
-constructed patterns. Only Window exposure is included in this slice; Worker
-exposure remains separate work. Constructor-string parsing does not yet cover
+groups, braced groups, duplicate capture names, adjacent captures, multiple
+captures within one pathname/hostname segment, and modified captures with
+literal affixes are not yet supported. Repetition outside complete pathname
+or hostname segments is not supported, nor is repetition in other components.
+Each component allows at most one full `*` wildcard; pathname `*` must be
+terminal. `hasRegExpGroups` remains
+`false` for successfully constructed patterns. Only Window exposure is included
+in this slice; Worker exposure remains separate work. Constructor-string parsing does not yet cover
 opaque-scheme strings or the complete token grammar; use a component dictionary
 for supported patterns that cannot be expressed in a shorthand string. Dynamic
 hostname patterns with non-ASCII literal text are rejected until their IDNA

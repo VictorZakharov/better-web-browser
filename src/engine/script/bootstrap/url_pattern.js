@@ -8,9 +8,8 @@
     const names = ['protocol', 'username', 'password', 'hostname', 'port',
         'pathname', 'search', 'hash'];
     const slots = new WeakMap();
-    const MAX_PATTERN_LENGTH = 4096, MAX_COMPONENT_LENGTH = 8192, MAX_GROUPS = 16;
+    const MAX_PATTERN_LENGTH = 4096, MAX_COMPONENT_LENGTH = 8192;
     const specialPorts = { http: '80', https: '443', ws: '80', wss: '443', ftp: '21' };
-    const escapeRegExp = value => value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
     const escapePattern = value => value.replace(/[\\*:?{}()+]/g, '\\$&');
     const isRecord = value => value !== null && (typeof value === 'object' || typeof value === 'function');
     const isStringInput = value => value !== null && value !== undefined && !isRecord(value);
@@ -233,68 +232,6 @@
         if (pieces.hash !== undefined) init.hash = pieces.hash;
         return init;
     };
-    const compile = (name, input, ignoreCase) => {
-        if (input.length > MAX_PATTERN_LENGTH) throw new TypeError('URLPattern component is too long');
-        let source = '', pattern = '^', unnamed = 0, wildcardCount = 0;
-        let previousDelimiter = '', segmentHasCapture = false;
-        const groups = [], used = new Set();
-        const appendLiteral = (character, escaped = false) => {
-            const value = name === 'protocol' || name === 'hostname' ? character.toLowerCase() : character;
-            source += escaped ? '\\' + value : value;
-            pattern += escapeRegExp(value);
-            previousDelimiter = !escaped && (name === 'pathname' && value === '/' ||
-                name === 'hostname' && value === '.') ? value : '';
-            if (previousDelimiter) segmentHasCapture = false;
-        };
-        for (let i = 0; i < input.length; i++) {
-            const character = input[i];
-            if (character === '\\') {
-                if (++i >= input.length) throw new TypeError('Incomplete URLPattern escape');
-                appendLiteral(input[i], true); continue;
-            }
-            if (character === '*') {
-                if (++wildcardCount > 1 || name === 'pathname' && i !== input.length - 1 ||
-                    segmentHasCapture || name !== 'pathname' && groups.length)
-                    throw new TypeError('Ambiguous URLPattern wildcard');
-                const key = String(unnamed++);
-                groups.push(key); source += '*'; pattern += '(.*)'; previousDelimiter = '';
-                segmentHasCapture = true;
-                continue;
-            }
-            if (character === ':' && /[A-Za-z_]/.test(input[i + 1] || '')) {
-                let end = i + 2;
-                while (end < input.length && /[A-Za-z_0-9]/.test(input[end])) end++;
-                const key = input.slice(i + 1, end);
-                if (used.has(key)) throw new TypeError('Duplicate URLPattern group name');
-                const delimiter = name === 'pathname' ? '/' : name === 'hostname' ? '.' : null;
-                const after = end + (input[end] === '?' ? 1 : 0);
-                if (delimiter && (segmentHasCapture ||
-                    i > 0 && input[i - 1] !== delimiter ||
-                    after < input.length && input[after] !== delimiter) ||
-                    !delimiter && groups.length || name === 'hostname' && wildcardCount)
-                    throw new TypeError('Ambiguous URLPattern capture');
-                used.add(key); groups.push(key);
-                if (groups.length > MAX_GROUPS) throw new TypeError('Too many URLPattern groups');
-                const optional = input[end] === '?';
-                const atom = name === 'pathname' ? '[^/]+?' :
-                    name === 'hostname' ? '[^.]+?' : '.+?';
-                if (optional && previousDelimiter) {
-                    pattern = pattern.slice(0, -escapeRegExp(previousDelimiter).length);
-                    pattern += '(?:' + escapeRegExp(previousDelimiter) + '(' + atom + '))?';
-                } else pattern += '(' + atom + ')' + (optional ? '?' : '');
-                source += ':' + key + (optional ? '?' : '');
-                i = end - 1 + (optional ? 1 : 0); previousDelimiter = '';
-                segmentHasCapture = true;
-                continue;
-            }
-            if ('{}()+?'.includes(character))
-                throw new TypeError('Unsupported URLPattern group or modifier syntax');
-            appendLiteral(character);
-        }
-        if (groups.length > MAX_GROUPS) throw new TypeError('Too many URLPattern groups');
-        pattern += '$';
-        return { source, regexp: new RegExp(pattern, ignoreCase ? 'i' : ''), groups };
-    };
     const matchInput = (input, baseURL) => {
         const isURL = input instanceof URLConstructor;
         if (isStringInput(input) || isURL) {
@@ -352,7 +289,7 @@
             const ignoreCase = Boolean(settings?.ignoreCase);
             const components = processInit(init, 'pattern');
             const compiled = {};
-            for (const name of names) compiled[name] = compile(name, components[name],
+            for (const name of names) compiled[name] = compileURLPatternComponent(name, components[name],
                 ignoreCase && ['pathname', 'search', 'hash'].includes(name));
             slots.set(this, compiled);
         }

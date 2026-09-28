@@ -104,6 +104,68 @@ fn escaped_literals_optional_segments_and_case_options_are_real_matches() {
 }
 
 #[test]
+fn named_segment_repetition_preserves_prefix_and_capture_value() {
+    check(
+        r#"
+        const assert = (condition, message) => { if (!condition) throw Error(message); };
+        const required = new URLPattern({pathname: '/books/:chapters+'});
+        assert(required.pathname === '/books/:chapters+', 'required repetition serialization');
+        assert(required.exec({pathname: '/books/one/two/three'})?.pathname.groups.chapters ===
+            'one/two/three', 'required capture includes delimiters');
+        assert(required.exec({pathname: '/books/one'})?.pathname.groups.chapters === 'one',
+            'one segment satisfies plus');
+        assert(!required.test({pathname: '/books'}), 'plus requires a segment');
+        assert(!required.test({pathname: '/books/'}), 'plus rejects an empty segment');
+
+        const optional = new URLPattern({pathname: '/books/:chapters*'});
+        assert(optional.pathname === '/books/:chapters*', 'zero-or-more serialization');
+        assert(optional.exec({pathname: '/books'})?.pathname.groups.chapters === undefined,
+            'omitted automatic slash prefix and capture');
+        assert(optional.exec({pathname: '/books/one/two'})?.pathname.groups.chapters ===
+            'one/two', 'zero-or-more capture includes all repeated segments');
+        assert(!optional.test({pathname: '/books/'}), 'zero-or-more does not leave a slash');
+
+        const hostname = new URLPattern({hostname: ':label+.example.com'});
+        assert(hostname.exec('https://abc.example.com/')?.hostname.groups.label === 'abc',
+            'hostname repetition remains inside one label');
+        assert(!hostname.test('https://a.b.example.com/'),
+            'hostname dot is not an automatic repeated prefix');
+        const optionalHost = new URLPattern({hostname: 'api.:label?'});
+        assert(optionalHost.exec({hostname: 'api.'})?.hostname.groups.label === undefined,
+            'hostname optional group preserves preceding dot');
+        assert(optionalHost.exec({hostname: 'api.east'})?.hostname.groups.label === 'east',
+            'hostname optional group captures a label');
+    "#,
+    );
+}
+
+#[test]
+fn single_named_capture_can_have_literal_prefix_and_suffix_in_one_segment() {
+    check(
+        r#"
+        const assert = (condition, message) => { if (!condition) throw Error(message); };
+        const pathname = new URLPattern({pathname: '/reports/file-:slug.html'});
+        assert(pathname.pathname === '/reports/file-:slug.html', 'affixed getter');
+        assert(pathname.exec({pathname: '/reports/file-annual.html'})?.pathname.groups.slug ===
+            'annual', 'capture between literal affixes');
+        assert(!pathname.test({pathname: '/reports/file-.html'}), 'capture is nonempty');
+        assert(!pathname.test({pathname: '/reports/file-annual.csv'}), 'suffix is literal');
+        assert(!pathname.test({pathname: '/reports/file-a/b.html'}), 'segment boundary');
+        const hostname = new URLPattern({hostname: 'edge-:region.example.com'});
+        assert(hostname.exec('https://edge-us.example.com/')?.hostname.groups.region === 'us',
+            'literal hostname label prefix');
+        assert(!hostname.test('https://edge-.example.com/'), 'hostname capture nonempty');
+
+        for (const value of ['/x/:left:right', '/x/:id*tail', '/x/:id+tail',
+            '/x/file-:id+', '/x/:id(\\d+)']) {
+            let error; try { new URLPattern({pathname: value}); } catch (caught) { error = caught; }
+            assert(error instanceof TypeError, 'ambiguous or unsupported syntax rejects: ' + value);
+        }
+    "#,
+    );
+}
+
+#[test]
 fn unsupported_pattern_syntax_and_invalid_inputs_fail_closed() {
     check(
         r#"
