@@ -37,6 +37,9 @@ pub(super) fn initialize(context: &mut Context) -> Result<(), String> {
         .capture_hook("__dispatchBroadcastChannel")
         .map_err(|error| format!("capture BroadcastChannel dispatcher: {error}"))?;
     context
+        .capture_hook("__receiveClipboardUpdate")
+        .map_err(|error| format!("capture Clipboard completion hook: {error}"))?;
+    context
         .capture_hook("__takeCanvasPresentation")
         .map_err(|error| format!("capture Canvas presentation snapshot: {error}"))?;
     context

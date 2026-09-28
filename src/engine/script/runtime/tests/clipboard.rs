@@ -9,6 +9,8 @@ fn clipboard_is_secure_same_object_and_read_write_settle_after_browser_reply() {
     let dom = dom::parse_with_scripting(
         r#"<body><script>
             const clipboard = navigator.clipboard;
+            document.body.setAttribute('data-private-hook', typeof __receiveClipboardUpdate);
+            globalThis.__receiveClipboardUpdate = () => { throw Error('page completion spoof'); };
             document.body.setAttribute('data-shape', String(
                 clipboard === navigator.clipboard &&
                 clipboard instanceof Clipboard &&
@@ -26,6 +28,7 @@ fn clipboard_is_secure_same_object_and_read_write_settle_after_browser_reply() {
     let initial = runtime.execute_initial(&script_inputs(&dom));
     assert!(initial.errors.is_empty(), "{:?}", initial.errors);
     let body = dom.elements_named("body").next().unwrap();
+    assert_eq!(body.attr("data-private-hook").as_deref(), Some("undefined"));
     assert_eq!(body.attr("data-shape").as_deref(), Some("true"));
     assert_eq!(body.attr("data-written"), None);
     assert_eq!(initial.clipboard_actions.len(), 2);

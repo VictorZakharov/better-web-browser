@@ -3,7 +3,12 @@
 (() => {
     'use strict';
     const native = globalThis.__hostCall;
-    if (!native('clipboardAvailable')) return;
+    if (!native('clipboardAvailable')) {
+        // The embedder captures this hook in every realm, even where the
+        // public Clipboard API is unavailable.
+        globalThis.__receiveClipboardUpdate = () => {};
+        return;
+    }
     const pending = new Map();
     const internal = Symbol('Clipboard');
 
