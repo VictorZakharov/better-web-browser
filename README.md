@@ -506,13 +506,16 @@ pointer-drag lifecycle tests exercise the new behavior. These are partial APIs,
 not claims of full Geolocation, Media Capture, Web Audio, or DnD conformance.
 
 The 2026-09-28 [physical sensor batch](docs/sensors.md) rendered
-**468 / 588** with Breeze's default identity, up **10** from that day's
-**458 / 588** preceding release capture. Both used a fresh-profile hidden
-Windows x64 release run at 1280×720, 125% scale, `en-US`, and a 10-second
-settle; the sensor capture returned HTTP 200 with zero JavaScript errors or
-renderer exits. The score observes API availability, not sensor hardware or
-permission conformance. Fake-provider, protocol, and hidden-renderer tests
-exercise the physical-data contract without accessing the user's devices.
+**465–468 / 588** across three identical hidden runs with Breeze's default
+identity, up **7–10** from the merged PR #199 **458 / 588** baseline. All
+used a fresh-profile Windows x64 release run at 1280×720, 125% scale,
+`en-US`, and a 10-second settle, returning HTTP 200 with zero JavaScript
+errors or renderer exits. The two 468-point runs executed seven page scripts;
+the 465-point run executed six. The score observes API availability, not
+sensor hardware or permission conformance. Fake-provider, protocol, and
+hidden-renderer tests exercise the physical-data contract without accessing
+the user's devices. The adapter uses existing locked Windows API crates,
+without adding dependencies or copied upstream code.
 
 Reproduce the latest snapshot on Windows x64 with the release build above (1280×720 hidden window,
 125% scale, `en-US`, new profile); retain both the JSON diagnostics and rendered score:
@@ -522,8 +525,8 @@ Reproduce the latest snapshot on Windows x64 with the release build above (1280�
   -Browser target/release/better-web-browser.exe -FreshProfile `
   -WindowWidth 1280 -WindowHeight 720 -DeviceScaleFactor 1.25 -Locale en-US `
   -SettleMs 10000 -TimeoutSeconds 60 -DiagnosticSelector '#score' `
-  -Output target/html5test/2026-09-28-sensors-final.json `
-  -Screenshot target/html5test/2026-09-28-sensors-final.png
+  -Output target/html5test/2026-09-28-sensors-final-post199.json `
+  -Screenshot target/html5test/2026-09-28-sensors-final-post199.png
 ```
 
 New releases must refresh or explicitly date these observations using the

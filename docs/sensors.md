@@ -5,6 +5,9 @@ It does not synthesize readings to satisfy an API probe. A sensor without suitab
 hardware reports a `SensorErrorEvent` with `NotSupportedError` or
 `NotReadableError` after `start()`, and automated tests use a fake provider
 instead of touching the user's hardware.
+It uses Windows WinRT sensor APIs through the repository's existing locked
+`windows`/`windows-sys` crates; this slice adds no dependency, vendored
+material, or copied upstream implementation.
 
 ## Supported surface
 
@@ -70,12 +73,18 @@ orientation requires all three. Ambient light has its own
 separately granted capability. Permission prompts do not appear in headless
 benchmark modes.
 
+The native consent dialog defaults to **No**, so pressing Enter does not
+grant sensor access.
+
 The worker admits at most 32 streams, accepts commands through a bounded
 64-entry queue, and sends readings through a bounded renderer mailbox. It
 revokes sampling on tab switch or minimization immediately, and retires streams
 when the document, renderer, tab, or window exits. A disconnected renderer
-mailbox also terminates its stream. After a native permission dialog, the
-browser rechecks the document, renderer session, effective origin, and
+mailbox also terminates its stream. Readings waiting in the renderer broker
+carry a visibility generation: hiding a tab invalidates them, including when
+the same tab later becomes visible again. The renderer also ignores readings
+delivered after its document becomes hidden. After a native permission dialog,
+the browser rechecks the document, renderer session, effective origin, and
 foreground state before recording consent or starting a sensor. Sensor objects
 are initialized lazily after permission, and shutdown does not block on a
 faulty device driver. Source WinRT timestamps deduplicate repeated current
@@ -88,17 +97,20 @@ Device Orientation conformance.
 
 ## Hidden release observation
 
-On 2026-09-28, the sensor code at commit `4d83c28` rendered **468 / 588**
-on HTML5test.co, versus **458 / 588** for the preceding merged batch. The
-capture used the default browser identity, a fresh profile, 1280×720 hidden
-window, 125% device scale, `en-US`, and a 10-second settle. It returned HTTP
-200 with zero JavaScript errors, no renderer exit, and a successful hidden
-benchmark guard. The score reflects feature probes only: the benchmark is
+On 2026-09-28, the rebased sensor code at commit `57cc1c5` rendered
+**465–468 / 588** across three identical hidden HTML5test.co runs, versus
+**458 / 588** for merged `origin/main` after PR #199. Two runs rendered 468
+with seven page scripts executed; one rendered 465 with six. All used the
+default browser identity, a fresh profile, 1280×720 hidden window, 125% device
+scale, `en-US`, and a 10-second settle, and returned HTTP 200 with zero
+JavaScript errors, no renderer exit, and a successful hidden benchmark guard.
+The score reflects feature probes only: the benchmark is
 intentionally unable to invoke the physical sensor broker or permission UI.
 The fake WinRT provider and hidden renderer tests verify readings, permission
 gates, lifecycle, and IPC independently of that score. Captures are kept under
-`target/html5test/2026-09-28-sensors-{code,final}.{json,png}` and are not
-committed.
+`target/html5test/2026-09-28-sensors-rebased-{code,repeat,third}.{json,png}`
+and `target/html5test/2026-09-28-sensors-final-post199.{json,png}`; they are
+not committed.
 
 References: [W3C Device Orientation and Motion](https://www.w3.org/TR/orientation-event/),
 [Generic Sensor](https://www.w3.org/TR/generic-sensor/),
